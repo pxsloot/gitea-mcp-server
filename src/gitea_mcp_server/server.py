@@ -18,8 +18,11 @@ from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 logger = logging.getLogger(__name__)
 
 
-def load_swagger_spec() -> dict[str, Any]:
-    """Load Swagger spec from local file.
+async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
+    """Load Swagger spec from Gitea instance.
+
+    Args:
+        gitea_client: Client to use for fetching the spec
 
     Returns:
         Swagger spec as dictionary
@@ -27,29 +30,31 @@ def load_swagger_spec() -> dict[str, Any]:
     Raises:
         SpecError: If spec cannot be loaded or parsed
     """
-    spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
-    logger.info(f"Loading OpenAPI spec from {spec_path}")
+    # Construct URL: base_url without /api/v1 + /swagger.v1.json
+    base_url = gitea_client._config.url.rstrip("/")
+    if base_url.endswith("/api/v1"):
+        base_url = base_url[:-7]  # Remove "/api/v1"
+    spec_url = f"{base_url}/swagger.v1.json"
 
-    if not spec_path.exists():
-        raise SpecError(f"OpenAPI spec file not found: {spec_path}")
+    logger.info(f"Loading OpenAPI spec from {spec_url}")
 
     try:
         import json
 
-        with open(spec_path, encoding="utf-8") as f:
-            spec = json.load(f)
-            logger.info(
-                "Spec loaded",
-                extra={
-                    "spec_version": spec.get("swagger"),
-                    "paths_count": len(spec.get("paths", {})),
-                },
-            )
-            return spec
+        response = await gitea_client.request("GET", spec_url)
+        spec = response.json()
+        logger.info(
+            "Spec loaded",
+            extra={
+                "spec_version": spec.get("swagger"),
+                "paths_count": len(spec.get("paths", {})),
+            },
+        )
+        return spec
     except json.JSONDecodeError as e:
-        raise SpecError(f"Invalid JSON in spec file: {e}") from e
-    except OSError as e:
-        raise SpecError(f"Failed to read spec file: {e}") from e
+        raise SpecError(f"Invalid JSON in spec from {spec_url}: {e}") from e
+    except Exception as e:
+        raise SpecError(f"Failed to fetch spec from {spec_url}: {e}") from e
 
 
 async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
@@ -72,7 +77,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        spec = load_swagger_spec()
+        spec = await load_swagger_spec(gitea_client)
     except SpecError:
         raise
     except Exception as e:

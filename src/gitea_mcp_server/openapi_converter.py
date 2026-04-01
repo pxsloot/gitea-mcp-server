@@ -288,54 +288,58 @@ def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PL
             # Convert parameters (filters out body/formData)
             op_copy["parameters"] = convert_parameters(raw_params)
 
-            # Handle formData parameters -> requestBody (multipart/form-data + x-www-form-urlencoded)
-            form_params = [
-                p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
-            ]
-            if form_params:
-                schema_props = {}
-                required_fields = []
+            # Only add requestBody for methods that typically have bodies
+            if method in ("post", "put", "patch"):
+                # Handle formData parameters -> requestBody (multipart/form-data + x-www-form-urlencoded)
+                form_params = [
+                    p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
+                ]
+                if form_params:
+                    schema_props = {}
+                    required_fields = []
 
-                for param in form_params:
-                    name = param.get("name", "unnamed")
-                    if "schema" in param:
-                        prop_schema = normalize_schema(param["schema"])
-                    else:
-                        # Build simple schema from type fields
-                        prop_schema = {
-                            "type": param.get("type", "string"),
+                    for param in form_params:
+                        name = param.get("name", "unnamed")
+                        if "schema" in param:
+                            prop_schema = normalize_schema(param["schema"])
+                        else:
+                            # Build simple schema from type fields
+                            prop_schema = {
+                                "type": param.get("type", "string"),
+                            }
+                            if "description" in param:
+                                prop_schema["description"] = param["description"]
+                            prop_schema = normalize_schema(prop_schema)
+
+                        schema_props[name] = prop_schema
+                        if param.get("required", False):
+                            required_fields.append(name)
+
+                    if schema_props:
+                        form_schema = {"type": "object", "properties": schema_props}
+                        if required_fields:
+                            form_schema["required"] = required_fields
+
+                        op_copy["requestBody"] = {
+                            "content": {
+                                "multipart/form-data": {"schema": form_schema},
+                                "application/x-www-form-urlencoded": {"schema": form_schema},
+                            },
+                            "required": True,
                         }
-                        if "description" in param:
-                            prop_schema["description"] = param["description"]
-                        prop_schema = normalize_schema(prop_schema)
 
-                    schema_props[name] = prop_schema
-                    if param.get("required", False):
-                        required_fields.append(name)
-
-                if schema_props:
-                    form_schema = {"type": "object", "properties": schema_props}
-                    if required_fields:
-                        form_schema["required"] = required_fields
-
-                    op_copy["requestBody"] = {
-                        "content": {
-                            "multipart/form-data": {"schema": form_schema},
-                            "application/x-www-form-urlencoded": {"schema": form_schema},
-                        },
-                        "required": True,
-                    }
-
-            # Handle body parameters -> requestBody (application/json)
-            body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
-            if body_params:
-                body_param = body_params[0]
-                if "schema" in body_param:
-                    body_schema = convert_schema(body_param["schema"])
-                    op_copy["requestBody"] = {
-                        "content": {"application/json": {"schema": body_schema}},
-                        "required": body_param.get("required", True),
-                    }
+                # Handle body parameters -> requestBody (application/json)
+                body_params = [
+                    p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"
+                ]
+                if body_params:
+                    body_param = body_params[0]
+                    if "schema" in body_param:
+                        body_schema = convert_schema(body_param["schema"])
+                        op_copy["requestBody"] = {
+                            "content": {"application/json": {"schema": body_schema}},
+                            "required": body_param.get("required", True),
+                        }
 
             # Convert responses
             if "responses" in op_copy:
@@ -519,5 +523,102 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:  # no
     # Fix remaining $ref references throughout the entire spec
     spec = fix_references(spec)
 
+    # Add nullable for optional reference fields to match actual API behavior
+    _add_nullable_for_optional_refs(spec)
+
     logger.info("OpenAPI conversion completed successfully")
     return spec
+
+
+def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
+    """Mutate spec to allow null for optional reference and simple type properties.
+
+    Many Gitea API models include fields that are pointers or can be null, but the
+    Swagger spec does not mark these as nullable, causing strict validators to reject
+    responses where such fields are present with null value. This function walks through
+    all schemas and for any property that is optional (not in required), it makes the
+    property schema nullable:
+      - If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
+      - If it's a simple type (string, number, integer, boolean, array, object),
+        add 'null' to the type array.
+    """
+
+    def _process_schema(schema: dict[str, Any]) -> None:
+        if not isinstance(schema, dict):
+            return
+
+        # Remove email format to allow empty strings (Gitea returns empty string for hidden emails)
+        if schema.get("type") == "string" and schema.get("format") == "email":
+            schema.pop("format", None)
+
+        # Process properties if present
+        props = schema.get("properties")
+        if isinstance(props, dict):
+            required = set(schema.get("required", []))
+            for prop_name, prop_schema in props.items():
+                if not isinstance(prop_schema, dict):
+                    continue
+                # Remove email format to allow empty strings (before any type mutation)
+                if prop_schema.get("type") == "string" and prop_schema.get("format") == "email":
+                    prop_schema.pop("format", None)
+                # Only modify if property is optional
+                if prop_name not in required:
+                    # Case 1: $ref -> wrap with anyOf
+                    if (
+                        "$ref" in prop_schema
+                        and "anyOf" not in prop_schema
+                        and "oneOf" not in prop_schema
+                    ):
+                        ref = prop_schema["$ref"]
+                        props[prop_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
+                        # No need to recurse into the new anyOf; the referenced schema will be processed separately
+                        continue  # skip further recursion on this prop
+                    # Case 2: simple type -> add null
+                    elif (
+                        "type" in prop_schema
+                        and "anyOf" not in prop_schema
+                        and "oneOf" not in prop_schema
+                    ):
+                        t = prop_schema["type"]
+                        if isinstance(t, str):
+                            if t != "null":
+                                prop_schema["type"] = [t, "null"]
+                        elif isinstance(t, list) and "null" not in t:
+                            t.append("null")
+                        # Continue to recurse into nested structures (e.g., if it's an object with properties)
+                # Recurse into the property schema to handle nested objects/arrays
+                _process_schema(prop_schema)
+
+        # Process nested schemas inside allOf/anyOf/oneOf
+        for combo_key in ("allOf", "anyOf", "oneOf"):
+            items = schema.get(combo_key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        _process_schema(item)
+
+        # Process items if this is an array schema
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            _process_schema(items_schema)
+
+        # Process additionalProperties if it is a schema dict
+        add_props = schema.get("additionalProperties")
+        if isinstance(add_props, dict):
+            _process_schema(add_props)
+
+        # Process patternProperties
+        for key, value in schema.items():
+            if key == "patternProperties" and isinstance(value, dict):
+                for pat_schema in value.values():
+                    if isinstance(pat_schema, dict):
+                        _process_schema(pat_schema)
+
+    # Apply to all component schemas
+    components = spec.get("components", {})
+    schemas = components.get("schemas", {})
+    for schema in schemas.values():
+        if isinstance(schema, dict):
+            _process_schema(schema)
+
+    # Also process top-level schema if any? Usually not needed.

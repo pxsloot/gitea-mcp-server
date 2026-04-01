@@ -28,6 +28,8 @@ if [[ ! -f .env ]]; then
     log_warn "Please edit .env with your Gitea credentials before running."
 fi
 
+source .env
+
 # Check if virtual environment exists
 if [[ ! -d .venv ]]; then
     log_info "Creating virtual environment..."

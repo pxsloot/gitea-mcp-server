@@ -71,4 +71,5 @@ The GITEA_URL and GITEA_TOKEN env vars will enable the agent to interact with th
   those to access the gitea server with mcp tools.
 - The gitea-mcp-server will take in env var SSL_CERT_FILE and use it for python
   to recognize the system's ca-certificates. This will enable a local ca.
+- a 'environment cache' resource will be available with 'discovered data': username, organizations, repositories.
 

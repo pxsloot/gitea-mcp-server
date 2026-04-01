@@ -86,6 +86,43 @@ def _generate_tool_title(route: Any) -> str:
     return title
 
 
+def _add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
+    """Infer and add annotation hints from HTTP route properties.
+
+    Hints are based on HTTP method semantics:
+    - readOnlyHint: True for safe methods (GET, HEAD, OPTIONS)
+    - destructiveHint: True for DELETE (and any method that destroys data)
+    - idempotentHint: True for idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
+    - openWorldHint: Always True for Gitea tools (they interact with external server)
+
+    Existing annotation values are preserved; only None values are set.
+
+    Args:
+        route: HTTPRoute object with method attribute
+        annotations: ToolAnnotations instance to update
+    """
+    method = getattr(route, "method", None)
+
+    # Define method sets based on HTTP semantics
+    safe_methods = {"GET", "HEAD", "OPTIONS"}
+    destructive_methods = {"DELETE"}
+    idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
+
+    # Only add hints if they are currently None (preserve existing manual settings)
+    if annotations.readOnlyHint is None:
+        annotations.readOnlyHint = method in safe_methods
+
+    if annotations.destructiveHint is None:
+        annotations.destructiveHint = method in destructive_methods
+
+    if annotations.idempotentHint is None:
+        annotations.idempotentHint = method in idempotent_methods
+
+    if annotations.openWorldHint is None:
+        # All Gitea MCP tools interact with external Gitea server
+        annotations.openWorldHint = True
+
+
 def _customize_component(route: Any, component: Any) -> None:
     """Customize FastMCP components with tool annotations.
 
@@ -112,8 +149,11 @@ def _customize_component(route: Any, component: Any) -> None:
         existing = component.annotations
         component.annotations = ToolAnnotations(**existing)
 
-    # Set title and add category to tags
+    # Set title
     component.annotations.title = title
+
+    # Add inferred annotation hints based on HTTP method
+    _add_inferred_hints(route, component.annotations)
 
     # Add category to tags (used for grouping in MCP clients)
     if component.tags is None:

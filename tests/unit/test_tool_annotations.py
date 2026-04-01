@@ -4,8 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gitea_mcp_server.server import _categorize_tool, _generate_tool_title, _customize_component
+from gitea_mcp_server.server import (
+    _add_inferred_hints,
+    _categorize_tool,
+    _generate_tool_title,
+    _customize_component,
+)
 from fastmcp.tools.tool import ToolAnnotations
+from fastmcp.server.openapi import OpenAPITool
 
 
 class TestCategorizeTool:
@@ -101,6 +107,137 @@ class TestGenerateToolTitle:
         assert title == "Unnamed Tool"
 
 
+class TestInferredHints:
+    """Tests for annotation hints inferred from HTTP method."""
+
+    def test_readonly_hint_for_get_method(self):
+        route = MagicMock(path="/test", method="GET", summary="Test GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.idempotentHint is True
+        assert tool.annotations.openWorldHint is True
+
+    def test_readonly_hint_for_head_method(self):
+        route = MagicMock(path="/test", method="HEAD", summary="Test HEAD")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.readOnlyHint is True
+
+    def test_readonly_hint_for_options_method(self):
+        route = MagicMock(path="/test", method="OPTIONS", summary="Test OPTIONS")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.readOnlyHint is True
+
+    def test_destructive_hint_for_delete_method(self):
+        route = MagicMock(path="/test", method="DELETE", summary="Test DELETE")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.destructiveHint is True
+        assert tool.annotations.idempotentHint is True
+        assert tool.annotations.readOnlyHint is False
+
+    def test_put_method_is_idempotent_but_not_readonly(self):
+        route = MagicMock(path="/test", method="PUT", summary="Test PUT")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.idempotentHint is True
+        assert tool.annotations.readOnlyHint is False
+        assert tool.annotations.destructiveHint is False
+
+    def test_post_method_is_not_idempotent_by_default(self):
+        route = MagicMock(path="/test", method="POST", summary="Test POST")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.idempotentHint is False
+        assert tool.annotations.readOnlyHint is False
+        assert tool.annotations.destructiveHint is False
+
+    def test_patch_method_is_not_idempotent_by_default(self):
+        route = MagicMock(path="/test", method="PATCH", summary="Test PATCH")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        assert tool.annotations.idempotentHint is False
+        assert tool.annotations.readOnlyHint is False
+        assert tool.annotations.destructiveHint is False
+
+    def test_openworld_hint_always_true(self):
+        for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+            route = MagicMock(path="/test", method=method, summary=f"Test {method}")
+            tool = MagicMock(spec=OpenAPITool)
+            tool.annotations = ToolAnnotations()
+            tool.tags = set()
+
+            _add_inferred_hints(route, tool.annotations)
+
+            assert tool.annotations.openWorldHint is True, f"Failed for method {method}"
+
+    def test_preserves_existing_hints_when_already_set(self):
+        """Test that existing hint values are not overwritten by inference."""
+        route = MagicMock(path="/test", method="GET", summary="Test GET")
+
+        # GET would normally set readOnlyHint=True, but existing is False
+        existing = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = existing
+        tool.tags = set()
+
+        _add_inferred_hints(route, tool.annotations)
+
+        # Existing values should be preserved
+        assert tool.annotations.readOnlyHint is False  # Not overwritten to True
+        assert tool.annotations.destructiveHint is True  # Preserved
+        # idempotentHint should be added because it's None
+        assert tool.annotations.idempotentHint is True
+        # openWorldHint should be added
+        assert tool.annotations.openWorldHint is True
+
+    def test_all_hints_added_when_annotations_empty(self):
+        route = MagicMock(path="/test", method="POST", summary="Test POST")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.annotations = ToolAnnotations()  # All fields None
+        tool.tags = set()
+
+        _customize_component(route, tool)
+
+        # All hints should be set based on method
+        assert tool.annotations.readOnlyHint is False
+        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.idempotentHint is False
+        assert tool.annotations.openWorldHint is True
+        assert tool.annotations.title == "Test POST"  # Title uses summary as-is
+
+
 class TestCustomizeComponent:
     """Tests for the _customize_component function."""
 
@@ -115,8 +252,6 @@ class TestCustomizeComponent:
 
         # Should return early without modifying
         assert True  # No exception means pass
-
-    def test_adds_annotations_to_tool_without_existing(self):
         from fastmcp.server.openapi import OpenAPITool
 
         route = MagicMock(

@@ -1,11 +1,27 @@
 """Convert Swagger 2.0 spec to OpenAPI 3.1 format."""
 
 import logging
+import re
 from typing import Any, cast
 
 from gitea_mcp_server.exceptions import SpecError
 
 logger = logging.getLogger(__name__)
+
+
+def camel_to_snake(name: str) -> str:
+    """Convert camelCase or PascalCase to snake_case.
+
+    Handles consecutive uppercase letters properly:
+    - "GetURL" -> "get_url"
+    - "repoGet" -> "repo_get"
+    - "issueCreateIssue" -> "issue_create_issue"
+    """
+    # Insert underscore before uppercase letters followed by lowercase
+    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    # Insert underscore before uppercase letters that follow lowercase or digits
+    s2 = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1)
+    return s2.lower()
 
 
 def remove_swagger_fields(obj: dict[str, Any], fields: list[str]) -> None:
@@ -328,6 +344,9 @@ def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PL
             # Ensure operationId exists
             if "operationId" not in op_copy:
                 op_copy["operationId"] = f"{method}{path.replace('/', '_')}"
+
+            # Normalize operationId to snake_case for MCP compliance
+            op_copy["operationId"] = camel_to_snake(op_copy["operationId"])
 
             # Remove Swagger-specific fields from operation
             remove_swagger_fields(op_copy, ["produces", "consumes"])

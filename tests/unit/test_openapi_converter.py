@@ -9,6 +9,7 @@ import jsonschema
 
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import (
+    camel_to_snake,
     convert_definitions,
     convert_parameters,
     convert_paths,
@@ -363,3 +364,120 @@ class TestConvertSwaggerToOpenAPI:
             jsonschema.validate(instance=result, schema=OAS_3_1_SCHEMA)
         except jsonschema.ValidationError as e:
             pytest.fail(f"OpenAPI spec validation failed: {e.message}")
+
+
+class TestCamelToSnake:
+    """Tests for the camel_to_snake conversion function."""
+
+    def test_simple_camelcase(self):
+        assert camel_to_snake("getAllRepos") == "get_all_repos"
+
+    def test_simple_pascalcase(self):
+        assert camel_to_snake("CreateIssue") == "create_issue"
+
+    def test_multiple_camel_phrases(self):
+        assert camel_to_snake("issueCreateIssue") == "issue_create_issue"
+        assert camel_to_snake("repoGetBranch") == "repo_get_branch"
+
+    def test_consecutive_uppercase(self):
+        assert camel_to_snake("GetURL") == "get_url"
+        assert camel_to_snake("listAPIKeys") == "list_api_keys"
+
+    def test_single_word(self):
+        assert camel_to_snake("get") == "get"
+        assert camel_to_snake("GET") == "get"
+
+    def test_with_numbers(self):
+        assert camel_to_snake("getV1") == "get_v1"
+        assert (
+            camel_to_snake("list2FA") == "list2_fa"
+        )  # Digit not separated from following uppercase
+
+    def test_already_snake_case(self):
+        assert camel_to_snake("already_snake") == "already_snake"
+
+    def test_edge_cases(self):
+        assert camel_to_snake("") == ""
+        assert camel_to_snake("A") == "a"
+        assert camel_to_snake("AB") == "ab"
+
+
+class TestOperationIdNormalization:
+    """Tests for operationId snake_case conversion in convert_paths."""
+
+    def test_camelcase_operation_id_converted(self):
+        paths = {
+            "/repos": {
+                "get": {
+                    "operationId": "getAllRepos",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        assert result["/repos"]["get"]["operationId"] == "get_all_repos"
+
+    def test_pascalcase_operation_id_converted(self):
+        paths = {
+            "/issues": {
+                "post": {
+                    "operationId": "CreateIssue",
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        assert result["/issues"]["post"]["operationId"] == "create_issue"
+
+    def test_mixed_operation_id_converted(self):
+        paths = {
+            "/repos/{owner}/{repo}/branches": {
+                "get": {
+                    "operationId": "repoGetBranches",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        assert result["/repos/{owner}/{repo}/branches"]["get"]["operationId"] == "repo_get_branches"
+
+    def test_generated_operation_id_is_snake_case(self):
+        """Test that auto-generated operationIds are also snake_case."""
+        paths = {
+            "/users/{id}": {
+                "put": {
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        op_id = result["/users/{id}"]["put"]["operationId"]
+        # Generated: method + path with slashes replaced (keeps {param} syntax)
+        assert op_id == "put_users_{id}"
+        # Verify it's snake_case (no uppercase letters)
+        assert op_id == op_id.lower()
+
+    def test_complex_operation_id_with_acronyms(self):
+        paths = {
+            "/orgs/{org}/ teams": {
+                "get": {
+                    "operationId": "getOrgTeams",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        assert result["/orgs/{org}/ teams"]["get"]["operationId"] == "get_org_teams"
+
+    def test_preserves_snake_case_operation_id(self):
+        """Test that already snake_case operationIds remain unchanged."""
+        paths = {
+            "/test": {
+                "get": {
+                    "operationId": "already_snake_case",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        assert result["/test"]["get"]["operationId"] == "already_snake_case"

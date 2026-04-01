@@ -1,0 +1,44 @@
+# gitea admin user create  \
+#   --password pass --admin  \
+#   --fullname "Gitea Admin"  \
+#   --username gitea-mcp-server \
+#   --access-token \
+#   --email 'admin@local'
+#
+---
+services:
+  gitea:
+    image: codeberg.org/forgejo/forgejo:14
+    container_name: gitea-test
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - TZ=Europe/Amsterdam
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/data/gitea/gitea.db
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__SECRET_KEY=test-secret-key-change-in-production
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://localhost:3000
+      - GITEA__oauth2__ENABLE=true
+    ports:
+      - "3000:3000"
+      - "3022:22"
+    volumes:
+      - gitea-data:/data
+    networks:
+      - gitea-network
+    healthcheck:
+      test: ["CMD", "/usr/bin/curl", "-sLf", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+
+networks:
+  gitea-network:
+    driver: bridge
+
+volumes:
+  gitea-data: {}

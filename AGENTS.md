@@ -10,7 +10,7 @@ No direct edits to main. No bypassing. No exceptions.
 
 ## Quick Start
 
-1. **Load skills**: You **must always** load 'development-skill' and 'nodejs-skill' and any other available skill, even if there is only a 5% chance that the skill is relevant. 
+1. **Load skills**: You **must always** load 'development-skill' and any other available skill, even if there is only a 5% chance that the skill is relevant. 
 2. **Adhere to standards**: Read the relavant docs/*_STANDARDS.md
 3. **Find work**: Look for open issues with `priority/high` or `priority/medium` labels
 4. **Create branch**: `git switch -c type/XX-short-description` (XX = issue number)
@@ -20,8 +20,23 @@ No direct edits to main. No bypassing. No exceptions.
 
 ## Mandatory Rules
 
+### Keep detailed and up-to-date todos
+
+To keep focussed on the current task it is important to keep detailed and
+up-to-date todos.  Detailed and up-to-date todos are not only a good
+organizational tool for the agent, it is a progress indictator for the user.
+
+### Encountering Errors during testing
+
+In order to keep the context focussed and efficient
+
+- Ask a subagent for recommendations
+- Fix the code
+- Run tests
+- if necessary: repeat tasking a subagent
+
 ### Starting a task
-- **Always** load the mandatory 'developer-skill' and 'nodejs-skill' skills
+- **Always** load the mandatory 'developer-skill' skill
 
 ### Branch Naming
 

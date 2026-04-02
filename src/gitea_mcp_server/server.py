@@ -161,11 +161,12 @@ def _customize_component(route: Any, component: Any) -> None:
     component.tags.add(category)
 
 
-async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
-    """Load Swagger spec from Gitea instance.
+async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
+    """Load Swagger spec from Gitea instance or local file.
 
     Args:
-        gitea_client: Client to use for fetching the spec
+        gitea_client: Optional client to use for fetching the spec. If not provided,
+                     loads from local swagger.v1.json file.
 
     Returns:
         Swagger spec as dictionary
@@ -173,6 +174,30 @@ async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
     Raises:
         SpecError: If spec cannot be loaded or parsed
     """
+    if gitea_client is None:
+        # Fallback to loading local spec file (for testing)
+        logger.info("Loading OpenAPI spec from local swagger.v1.json")
+        try:
+            import json
+
+            spec_path = Path("swagger.v1.json")
+            if not spec_path.exists():
+                raise SpecError("Local swagger.v1.json file not found")
+            with open(spec_path) as f:
+                spec = json.load(f)
+            logger.info(
+                "Spec loaded",
+                extra={
+                    "spec_version": spec.get("swagger"),
+                    "paths_count": len(spec.get("paths", {})),
+                },
+            )
+            return spec
+        except json.JSONDecodeError as e:
+            raise SpecError(f"Invalid JSON in local swagger.v1.json: {e}") from e
+        except Exception as e:
+            raise SpecError(f"Failed to load local swagger.v1.json: {e}") from e
+
     # Construct URL: base_url without /api/v1 + /swagger.v1.json
     base_url = gitea_client._config.url.rstrip("/")
     if base_url.endswith("/api/v1"):

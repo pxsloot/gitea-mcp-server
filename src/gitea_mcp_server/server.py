@@ -214,8 +214,10 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
     logger.info("Loading OpenAPI spec from %s", spec_url)
 
     try:
-        response = await gitea_client.request("GET", spec_url)
-        remote_spec: dict[str, Any] = response.json()
+        remote_spec = await gitea_client.request("GET", spec_url)
+        # If request returned a string (unlikely for JSON), parse it
+        if isinstance(remote_spec, str):
+            remote_spec = json.loads(remote_spec)
         logger.info(
             "Spec loaded",
             extra={
@@ -226,6 +228,9 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
         return remote_spec
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
+        raise SpecError(msg) from e
+    except Exception as e:
+        msg = f"Failed to fetch or parse spec from {spec_url}: {e}"
         raise SpecError(msg) from e
     except Exception as e:
         msg = f"Failed to fetch spec from {spec_url}: {e}"

@@ -13,54 +13,45 @@ import logging
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.context import Context
 
 logger = logging.getLogger(__name__)
 
 
-async def _mcp_list_resources_impl(mcp: FastMCP) -> dict[str, Any]:
+async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
     """Implementation of mcp_list_resources.
 
-    This is separated to allow testing without the FastMCP decorator.
+    Uses FastMCP Context to list registered resources and templates.
 
     Args:
-        mcp: The FastMCP server instance
+        ctx: FastMCP Context object (injected automatically)
 
     Returns:
         Dictionary with 'resources' key and 'count' key
     """
     resources_list = []
 
-    # Access the internal resource registry
-    if hasattr(mcp, "_resources"):
-        for uri_template, resource in mcp._resources.items():
-            resource_info = {
-                "uri": uri_template,
-                "name": getattr(resource, "name", uri_template),
-                "description": getattr(resource, "description", ""),
-                "mimeType": getattr(resource, "mime_type", None),
-            }
-            resources_list.append(resource_info)
+    # Get all resources via Context
+    mcp_resources = await ctx.list_resources()
 
-    # Also check resource templates (parameterized URIs)
-    if hasattr(mcp, "_resource_templates"):
-        for uri_template, template in mcp._resource_templates.items():
-            template_info = {
-                "uri": uri_template,
-                "name": getattr(template, "name", uri_template),
-                "description": getattr(template, "description", ""),
-                "mimeType": getattr(template, "mime_type", None),
-                "isTemplate": True,
-            }
-            resources_list.append(template_info)
+    for resource in mcp_resources:
+        resource_info = {
+            "uri": str(resource.uri),
+            "name": resource.name,
+            "description": resource.description or "",
+            "mimeType": resource.mime_type,
+        }
+        resources_list.append(resource_info)
 
     return {"resources": resources_list, "count": len(resources_list)}
 
 
-async def _mcp_read_resource_impl(mcp: FastMCP, uri: str) -> str:
+async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
     """Implementation of mcp_read_resource.
 
     Args:
-        mcp: The FastMCP server instance
+        ctx: FastMCP Context object (injected automatically)
         uri: The resource URI to read
 
     Returns:
@@ -69,40 +60,20 @@ async def _mcp_read_resource_impl(mcp: FastMCP, uri: str) -> str:
     Raises:
         ValueError: If the resource is not found or cannot be read
     """
-    # If FastMCP's read_resource is available, use it (preferred path)
-    if hasattr(mcp, "read_resource"):
-        try:
-            content, mime_type = await mcp.read_resource(uri)
-        except Exception as e:
-            logger.exception("Failed to read resource %s via FastMCP", uri)
-            msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
-            raise ValueError(msg) from e
-        else:
-            logger.debug("Read resource %s (mime: %s)", uri, mime_type)
-            return content  # type: ignore[no-any-return]
+    try:
+        # ctx.read_resource returns a list of ReadResourceContents objects
+        contents = await ctx.read_resource(uri)
 
-    # Fallback: direct lookup in registries (for testing without FastMCP)
-    logger.warning("FastMCP.read_resource not available, attempting direct lookup")
+        if not contents:
+            msg = f"Resource '{uri}' returned no content"
+            raise ValueError(msg)
 
-    # Note: _resources and _resource_templates are internal FastMCP attributes
-    if uri in mcp._resources:  # type: ignore[attr-defined]
-        try:
-            resource_func = mcp._resources[uri]  # type: ignore[attr-defined]
-            result = await resource_func()
-        except Exception as e:
-            logger.exception("Failed to execute resource function for %s", uri)
-            msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
-            raise ValueError(msg) from e
-        else:
-            return str(result)
-
-    if uri in mcp._resource_templates:  # type: ignore[attr-defined]
-        # Templates need to be matched and called with parsed parameters
-        msg = "Resource template requires parameter parsing; use read_resource() directly"
-        raise ValueError(msg)
-
-    msg = f"Resource not found: {uri}"
-    raise ValueError(msg)
+        # Return the first content part's text (most resources have single part)
+        return contents[0].content
+    except Exception as e:
+        logger.exception("Failed to read resource %s", uri)
+        msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
+        raise ValueError(msg) from e
 
 
 def register_mcp_resource_tools(mcp: FastMCP) -> None:
@@ -115,7 +86,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     """
 
     @mcp.tool()
-    async def mcp_list_resources() -> dict[str, Any]:
+    async def mcp_list_resources(ctx: Context = CurrentContext()) -> dict[str, Any]:
         """List all available MCP resources.
 
         Returns a list of resource URIs and their metadata (name, description,
@@ -134,10 +105,10 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                 ...
             ]
         """
-        return await _mcp_list_resources_impl(mcp)
+        return await _mcp_list_resources_impl(ctx)
 
     @mcp.tool()
-    async def mcp_read_resource(uri: str) -> str:
+    async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> str:
         """Read the content of an MCP resource by URI.
 
         Fetches the resource from the server's resource registry and returns its
@@ -153,6 +124,6 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If the resource is not found or cannot be read
         """
-        return await _mcp_read_resource_impl(mcp, uri)
+        return await _mcp_read_resource_impl(ctx, uri)
 
     logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource")

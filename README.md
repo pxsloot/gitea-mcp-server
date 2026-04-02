@@ -7,6 +7,7 @@ MCP (Model Context Protocol) server for interacting with Gitea/Forgejo instances
 - **Auto-generated tools** from Gitea's OpenAPI spec (converted from Swagger 2.0)
 - **Rich tool annotations**: Automatically generated metadata (read-only, destructive, idempotent hints) for better discovery and safety
 - **Permission-aware**: Tools are filtered based on token capabilities
+- **MCP Resources**: Efficient, on-demand data retrieval via URI templates (`gitea://...`) with both auto-generated (raw JSON) and custom-formatted (Markdown) options
 - **Robust HTTP client** with retry logic and timeout handling
 - **Structured logging** (JSON or text format)
 - **Comprehensive test suite** with unit and integration tests
@@ -99,15 +100,18 @@ gitea-mcp-server/
 │   ├── client.py          # HTTP client with retry logic
 │   ├── openapi_converter.py  # Swagger 2.0 → OpenAPI 3.1 converter
 │   ├── server.py          # MCP server setup
+│   ├── resources.py       # MCP resources (auto-generated + custom)
 │   ├── logging_config.py  # Structured logging
 │   └── exceptions.py      # Custom exceptions
 ├── tests/
 │   ├── unit/
 │   │   ├── test_config.py
 │   │   ├── test_openapi_converter.py
-│   │   └── test_client.py
+│   │   ├── test_client.py
+│   │   └── test_resources.py
 │   ├── integration/
-│   │   └── test_server.py
+│   │   ├── test_server.py
+│   │   └── test_resources_integration.py
 │   └── conftest.py
 ├── docs/
 │   └── THOUGHTS.md        # Architecture and design notes
@@ -176,6 +180,20 @@ curl -H "Authorization: Bearer $GITEA_TOKEN" \
    - Remove deprecated fields (`consumes`, `produces`, `schemes`)
 3. Pass converted spec to `FastMCP.from_openapi()`
 4. FastMCP auto-generates tools from the spec
+
+### MCP Resources
+
+The server provides two types of resources via URI templates (`gitea://...`):
+
+- **Auto-generated resources**: All GET endpoints from the OpenAPI spec are automatically exposed as resources returning raw JSON. These are registered first and provide comprehensive coverage.
+- **Custom resources**: Manually implemented resources with user-friendly formatting (Markdown) and convenience wrappers. These are registered after auto-generated ones and automatically override them when URI templates match.
+
+This hybrid approach ensures:
+- Complete API coverage through auto-generation
+- Optimized, readable output for common use cases via custom resources
+- Easy customization and extension beyond the OpenAPI spec
+
+See `src/gitea_mcp_server/resources.py` for implementation details.
 
 ### HTTP Client
 

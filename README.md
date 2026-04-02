@@ -13,6 +13,138 @@ MCP (Model Context Protocol) server for interacting with Gitea/Forgejo instances
 - **Comprehensive test suite** with unit and integration tests
 - **Containerized development**: Includes docker-compose for local Gitea instance
 
+## Using MCP Resources
+
+MCP resources provide a discoverable, efficient way to read data from Gitea. Unlike tools, resources are accessed via URIs and support caching, making them ideal for data retrieval tasks.
+
+### Quick Start
+
+Agents should typically follow this pattern:
+
+#### 1. Discover Available Resources
+
+```python
+# List all resources and templates
+result = await mcp_list_resources()
+resources = result['resources']
+
+for resource in resources:
+    print(f"URI: {resource['uri']}")
+    print(f"Name: {resource['name']}")
+    print(f"Type: {resource['type']}")  # "resource" or "template"
+    print(f"Format: {resource['mimeType']}")
+    print(f"Tags: {', '.join(resource['tags'])}")
+    print()
+```
+
+#### 2. Read Resources
+
+```python
+# Static resource (no parameters)
+version = await mcp_read_resource("gitea://version")
+print(f"Server version: {version}")
+
+# Parameterized template (substitute values)
+repo_uri = "gitea://repos/mcp-server/gitea-mcp-server"
+readme = await mcp_read_resource(repo_uri + "/readme")
+print(readme)  # Plain text README
+
+# Get formatted repository info
+repo_info = await mcp_read_resource(repo_uri)
+print(repo_info)  # Markdown-formatted repository details
+```
+
+#### 3. Work with Templates
+
+Discover templates, then substitute parameters:
+
+```python
+# Find all repository-related templates
+resources = await mcp_list_resources()
+repo_templates = [r for r in resources['resources']
+                  if 'repos/{owner}/{repo}' in r['uri']]
+
+for template in repo_templates:
+    # Substitute parameters using .format() or f-strings
+    uri = template['uri'].format(owner='mcp-server', repo='gitea-mcp-server')
+    content = await mcp_read_resource(uri)
+
+    # Use the content...
+    if template['mimeType'] == 'text/markdown':
+        print(f"=== {template['name']} ===")
+        print(content)
+```
+
+### Resource Categories
+
+Resources are tagged for easy filtering:
+
+- **wrapper**: Human-friendly formatted content (Markdown). Use for display.
+- **raw**: Raw JSON from the API. Use for data processing.
+- **api**: Auto-generated from OpenAPI spec. Comprehensive but less formatted.
+- **repository**, **issue**, **pull_request**, **user**, **organization**: Entity types.
+
+### Complete Agent Workflow Example
+
+```python
+async def analyze_repository(owner: str, repo: str):
+    """Comprehensive repository analysis using resources."""
+
+    # 1. Get repository metadata (Markdown)
+    repo_uri = f"gitea://repos/{owner}/{repo}"
+    repo_info = await mcp_read_resource(repo_uri)
+    print(repo_info)
+
+    # 2. Get open issues (Markdown)
+    issues_uri = f"gitea://repos/{owner}/{repo}/issues/open"
+    issues = await mcp_read_resource(issues_uri)
+    print("\nOpen Issues:")
+    print(issues)
+
+    # 3. Get pull requests (Markdown)
+    prs_uri = f"gitea://repos/{owner}/{repo}/pulls/open"
+    prs = await mcp_read_resource(prs_uri)
+    print("\nOpen Pull Requests:")
+    print(prs)
+
+    # 4. Get README (plain text)
+    readme_uri = f"gitea://repos/{owner}/{repo}/readme"
+    readme = await mcp_read_resource(readme_uri)
+    print("\nREADME Preview (first 500 chars):")
+    print(readme[:500])
+
+    # 5. Get releases (Markdown)
+    releases_uri = f"gitea://repos/{owner}/{repo}/releases"
+    releases = await mcp_read_resource(releases_uri)
+    print("\nReleases:")
+    print(releases)
+
+    # 6. Get contributor info (JSON raw)
+    contributors_uri = f"gitea://repos/{owner}/{repo}/stats/contributors"
+    contributors_json = await mcp_read_resource(contributors_uri)
+    contributors = json.loads(contributors_json)
+    print(f"\nTotal contributors: {len(contributors)}")
+```
+
+### Why Resources Over Tools?
+
+Resources offer advantages for read operations:
+
+- **Discoverability**: List all available data sources dynamically
+- **Caching**: Built-in caching reduces API calls
+- **Consistency**: Standard URI-based access pattern
+- **Format control**: Choose between raw JSON or formatted output
+
+### Tips
+
+- Use `mimeType` from `mcp_list_resources` to anticipate content format
+- Wrapper resources (`tags` includes "wrapper") provide Markdown suitable for display
+- Raw resources (`tags` includes "raw") return JSON for programmatic access
+- Templates require exact parameter names from the URI (e.g., `{owner}`, `{repo}`)
+- Missing parameters or invalid URIs raise `ValueError`
+
+See `AGENT_GUIDELINES.md` for detailed best practices.
+
 ## Prerequisites
 
 - Python 3.11+

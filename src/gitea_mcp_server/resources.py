@@ -8,6 +8,17 @@ This module supports:
 - Manual resource overrides with custom formatting (Markdown, etc.)
 - Custom resources not in the OpenAPI spec
 
+Architecture:
+1. register_auto_generated_resources(): Creates resources for all GET endpoints in OpenAPI spec
+   - Returns raw JSON
+   - Skips URIs that will be covered by custom resources
+   - These provide comprehensive API coverage
+
+2. register_custom_resources(): Registers manually implemented resources
+   - Return formatted content (Markdown, plain text)
+   - Automatically override auto-generated resources with matching URIs
+   - Provide optimized, user-friendly output for common use cases
+
 Usage:
     from gitea_mcp_server import resources
 
@@ -207,11 +218,18 @@ def register_auto_generated_resources(
     These can be overridden by custom resources with the same URI.
     Skip URIs that are already covered by custom resources to avoid duplicates.
 
+    This function implements the "comprehensive coverage" layer:
+    - Every GET endpoint becomes a resource
+    - URI pattern: gitea://<openapi-path> (e.g., /repos/{owner}/{repo} → gitea://repos/{owner}/{repo})
+    - Returns raw JSON for maximum flexibility
+    - Only endpoints with path parameters are registered (FastMCP requirement)
+
     Args:
         mcp: FastMCP server instance
         gitea_client: GiteaClient for API calls
         openapi_spec: OpenAPI 3.1 specification dictionary
         skip_uris: Set of URI templates to skip. If None, uses default custom URIs.
+                   These URIs will be provided by custom resources with better formatting.
     """
     if skip_uris is None:
         # Default set: URIs that will be provided by custom resources
@@ -518,6 +536,22 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
     """Register custom-formatted and custom resources.
 
     These override any auto-generated resources with the same URI.
+
+    This function implements the "optimized UX" layer:
+    - Manually implemented resources with user-friendly formatting (Markdown)
+    - Convenience wrappers that combine data or filter by common criteria
+    - Strategically chosen to cover the most frequently accessed endpoints
+    - Registration order ensures these override auto-generated ones
+
+    Override mechanism:
+    - FastMCP registers resources in order; later registrations replace earlier ones
+    - Custom resources are registered AFTER auto-generated ones
+    - URIs match exactly, so gitea://repos/{owner}/{repo} custom replaces auto-generated
+
+    Tags semantic:
+    - "wrapper": Human-readable formatted output (Markdown/plain text)
+    - "repository", "issue", "pull_request", etc.: Entity type for filtering
+    - Cache TTLs are tuned per resource type (static data cached longer)
     """
 
     def make_resource(

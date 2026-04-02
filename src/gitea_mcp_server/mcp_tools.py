@@ -114,9 +114,52 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     async def mcp_list_resources(ctx: Context = CurrentContext()) -> dict[str, Any]:
         """List all available MCP resources.
 
-        Returns a list of resource URIs and their metadata (name, description,
-        MIME type if available). Agents can use this to discover what resources
-        are accessible.
+        This tool discovers all registered MCP resources and resource templates (parameterized URIs)
+        available from the server. Agents should call this first to discover what data they can access
+        and the available URI patterns.
+
+        Resources come in two types:
+        - **resource**: Concrete resources with fixed URIs (e.g., `gitea://version`)
+        - **template**: Parameterized URI templates requiring substitution (e.g., `gitea://repos/{owner}/{repo}`)
+
+        ## Return Structure
+
+        Returns a dictionary with two keys:
+        - `resources`: List of resource metadata dictionaries
+        - `count`: Total number of resources and templates
+
+        Each resource dictionary contains:
+        - `uri`: The resource URI (may be a template with `{param}` placeholders)
+        - `name`: Human-readable name
+        - `description`: Description of what the resource provides
+        - `mimeType`: MIME type of the content (e.g., "text/markdown", "application/json")
+        - `type`: Either "resource" or "template"
+        - `tags`: List of tags categorizing the resource (e.g., ["repository", "wrapper"])
+
+        ## Usage Example
+
+        ```python
+        # Agent pattern: discover then read
+        result = await mcp_list_resources()
+        print(f"Found {result['count']} resources")
+
+        for resource in result['resources']:
+            print(f"- {resource['uri']} ({resource['mimeType']})")
+
+            # Example: read a repository resource
+            if 'repos/{owner}/{repo}' in resource['uri']:
+                content = await mcp_read_resource(uri="gitea://repos/owner/repo")
+                print(content)
+        ```
+
+        ## Notes
+
+        - Templates require parameter substitution before calling `mcp_read_resource`
+        - Check the `tags` field to understand resource categories:
+          - `wrapper`: User-friendly formatted content (Markdown)
+          - `raw`: Raw JSON from API
+          - `api`: Auto-generated from OpenAPI spec
+        - The `mimeType` hints at the content format you'll receive
 
         Returns:
             Dictionary with 'resources' key containing a list of resource info:
@@ -125,7 +168,9 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                     "uri": "gitea://repos/{owner}/{repo}",
                     "name": "Repository",
                     "description": "Get full repository metadata",
-                    "mimeType": "text/markdown"
+                    "mimeType": "text/markdown",
+                    "type": "template",
+                    "tags": ["wrapper", "repository"]
                 },
                 ...
             ]
@@ -139,6 +184,73 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         Fetches the resource from the server's resource registry and returns its
         content as a string. Works with both static resources and parameterized
         resource templates.
+
+        ## Parameter: uri
+
+        The resource URI to read. This can be:
+        - A concrete URI: `gitea://version`, `gitea://repos/owner/repo`
+        - A template with parameters substituted: `gitea://repos/{owner}/{repo}` → `gitea://repos/mcp-server/gitea-mcp-server`
+
+        URI format: `gitea://<path>` where path follows the Gitea API structure.
+
+        ## Return Value
+
+        The resource content as a string. The format depends on the resource:
+        - `text/markdown`: Human-readable Markdown (for wrapper resources)
+        - `application/json`: Raw JSON (for auto-generated API resources)
+        - `text/plain`: Plain text (e.g., READMEs, file contents)
+        - Other MIME types as indicated in `mcp_list_resources`
+
+        ## Usage Examples
+
+        ### Reading a static resource
+        ```python
+        version = await mcp_read_resource("gitea://version")
+        print(f"Server version: {version}")
+        ```
+
+        ### Reading a parameterized template
+        ```python
+        # Discover available templates first
+        resources = await mcp_list_resources()
+        repo_template = next(r for r in resources['resources'] if r['uri'].endswith('repos/{owner}/{repo}'))
+
+        # Substitute parameters
+        uri = repo_template['uri'].format(owner='mcp-server', repo='gitea-mcp-server')
+        content = await mcp_read_resource(uri)
+
+        # Content is Markdown for wrapper resources
+        print(content)  # Formatted markdown with repo details
+        ```
+
+        ### Batch reading multiple resources
+        ```python
+        # Read repository, issues, and releases
+        repo_uri = "gitea://repos/owner/repo"
+        issues_uri = "gitea://repos/owner/repo/issues"
+        releases_uri = "gitea://repos/owner/repo/releases"
+
+        repo_info = await mcp_read_resource(repo_uri)
+        issues = await mcp_read_resource(issues_uri)
+        releases = await mcp_read_resource(releases_uri)
+        ```
+
+        ## Error Handling
+
+        Raises `ValueError` if:
+        - Resource not found (404)
+        - Missing required parameters in template URI
+        - Network or API errors occur
+
+        The error message includes the resource URI and failure reason.
+
+        ## Best Practices
+
+        1. **Always discover first**: Call `mcp_list_resources()` to see available URIs and their metadata
+        2. **Check MIME type**: Use the `mimeType` field to anticipate content format
+        3. **Use tags for filtering**: Filter resources by tags (e.g., "wrapper" for human-readable content)
+        4. **Handle errors gracefully**: Wrap calls in try-except to handle missing resources or API failures
+        5. **Cache when appropriate**: Resources have built-in caching; avoid repeated calls in tight loops
 
         Args:
             uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")

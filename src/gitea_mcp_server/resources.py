@@ -424,17 +424,17 @@ async def get_repository(owner: str, repo: str, gitea_client: GiteaClient) -> Re
 async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get repository README content."""
     try:
-        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/readme")
+        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
         if isinstance(response, str):
             return response
-        # If response is dict (from JSON), it might have content/base64
-        if isinstance(response, dict):
-            encoding = response.get("encoding")
+        if not isinstance(response, dict):
+            return str(response)
+        # Handle encoding like get_file does
+        if response.get("encoding") == "base64":
+            content = base64.b64decode(response.get("content", "")).decode("utf-8")
+        else:
             content = response.get("content", "")
-            if encoding == "base64":
-                return base64.b64decode(content).decode("utf-8")
-            return content if isinstance(content, str) else str(content)
-        return str(response)
+        return content
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
             raise ResourceError(

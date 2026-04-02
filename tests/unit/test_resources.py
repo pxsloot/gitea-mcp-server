@@ -358,7 +358,9 @@ class TestGetReadme:
         result = await get_readme("owner", "repo", mock_gitea_client)
 
         assert result == readme_content
-        mock_gitea_client.request.assert_called_once_with("GET", "/repos/owner/repo/readme")
+        mock_gitea_client.request.assert_called_once_with(
+            "GET", "/repos/owner/repo/contents/README.md"
+        )
 
     async def test_plain_text_content(self, mock_gitea_client):
         """Test README with plain text content (no base64 encoding)."""

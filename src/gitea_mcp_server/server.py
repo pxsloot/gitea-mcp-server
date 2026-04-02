@@ -17,6 +17,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.logging_config import setup_logging
+from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 
@@ -213,8 +214,10 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
     logger.info("Loading OpenAPI spec from %s", spec_url)
 
     try:
-        response = await gitea_client.request("GET", spec_url)
-        remote_spec: dict[str, Any] = response.json()
+        remote_spec = await gitea_client.request("GET", spec_url)
+        # If request returned a string (unlikely for JSON), parse it
+        if isinstance(remote_spec, str):
+            remote_spec = json.loads(remote_spec)
         logger.info(
             "Spec loaded",
             extra={
@@ -225,6 +228,9 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
         return remote_spec
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
+        raise SpecError(msg) from e
+    except Exception as e:
+        msg = f"Failed to fetch or parse spec from {spec_url}: {e}"
         raise SpecError(msg) from e
     except Exception as e:
         msg = f"Failed to fetch spec from {spec_url}: {e}"
@@ -286,6 +292,10 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec)
     # Register custom-formatted resources (Markdown) and overrides
     resources.register_custom_resources(mcp, gitea_client)
+
+    # Register MCP resource access tools (for agents to read resources)
+    logger.info("Registering MCP resource access tools...")
+    register_mcp_resource_tools(mcp)
 
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:

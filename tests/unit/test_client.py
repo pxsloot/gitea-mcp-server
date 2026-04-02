@@ -29,10 +29,10 @@ class TestGiteaClient:
         with respx.mock() as mock:
             mock.get("/api/v1/user").respond(200, json={"name": "testuser"})
 
-            response = await client.request("GET", "/user")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["name"] == "testuser"
+            result = await client.request("GET", "/user")
+            # Should return parsed JSON (dict)
+            assert isinstance(result, dict)
+            assert result["name"] == "testuser"
 
     @pytest.mark.asyncio
     async def test_404_error(self, config):
@@ -79,12 +79,12 @@ class TestGiteaClient:
         with respx.mock() as mock:
             mock.post("/api/v1/repos").respond(201, json={"id": 1, "name": "test-repo"})
 
-            response = await client.request(
+            result = await client.request(
                 "POST", "/repos", json={"name": "test-repo", "private": False}
             )
-            assert response.status_code == 201
-            data = response.json()
-            assert data["name"] == "test-repo"
+            # Should return parsed JSON (dict)
+            assert isinstance(result, dict)
+            assert result["name"] == "test-repo"
 
     @pytest.mark.asyncio
     async def test_client_lifecycle(self, config):
@@ -123,8 +123,10 @@ class TestGiteaClient:
             # respx matches by path, we need to set host too
             mock.get("https://other.example.com/api/test").respond(200, json={"ok": True})
 
-            response = await client.request("GET", "https://other.example.com/api/test")
-            assert response.status_code == 200
+            result = await client.request("GET", "https://other.example.com/api/test")
+            # Should return parsed JSON (dict)
+            assert isinstance(result, dict)
+            assert result["ok"] is True
 
     def test_initialization(self, config):
         """Test client initialization."""
@@ -138,5 +140,7 @@ class TestGiteaClient:
         async with GiteaClient(config) as client:
             with respx.mock() as mock:
                 mock.get("/api/v1/user").respond(200, json={"name": "test"})
-                response = await client.request("GET", "/user")
-                assert response.status_code == 200
+                result = await client.request("GET", "/user")
+                # Should return parsed JSON (dict)
+                assert isinstance(result, dict)
+                assert result["name"] == "test"

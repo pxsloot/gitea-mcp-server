@@ -2,16 +2,15 @@
 
 from unittest.mock import MagicMock
 
-import pytest
+from fastmcp.server.openapi import OpenAPITool
+from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.server import (
     _add_inferred_hints,
     _categorize_tool,
-    _generate_tool_title,
     _customize_component,
+    _generate_tool_title,
 )
-from fastmcp.tools.tool import ToolAnnotations
-from fastmcp.server.openapi import OpenAPITool
 
 
 class TestCategorizeTool:
@@ -252,7 +251,6 @@ class TestCustomizeComponent:
 
         # Should return early without modifying
         assert True  # No exception means pass
-        from fastmcp.server.openapi import OpenAPITool
 
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
@@ -271,8 +269,6 @@ class TestCustomizeComponent:
         assert "issue" in tool.tags
 
     def test_adds_annotations_to_tool_with_dict(self):
-        from fastmcp.server.openapi import OpenAPITool
-
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
         )
@@ -288,8 +284,6 @@ class TestCustomizeComponent:
         assert "issue" in tool.tags
 
     def test_converts_existing_toolannotations_properly(self):
-        from fastmcp.server.openapi import OpenAPITool
-
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}",
             summary="Get pull request",
@@ -309,8 +303,6 @@ class TestCustomizeComponent:
         assert "pull_request" in tool.tags
 
     def test_category_detection_various_paths(self):
-        from fastmcp.server.openapi import OpenAPITool
-
         test_cases = [
             ("/repos/{owner}/{repo}/issues", "issue"),
             ("/repos/{owner}/{repo}/pulls/{index}", "pull_request"),
@@ -337,8 +329,6 @@ class TestCustomizeComponent:
             assert expected_category in tool.tags
 
     def test_title_generation_from_operation_id(self):
-        from fastmcp.server.openapi import OpenAPITool
-
         route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "get_user_by_id"
@@ -350,18 +340,16 @@ class TestCustomizeComponent:
         assert tool.annotations.title == "Get User By Id"
 
     def test_long_operation_id_truncated(self):
-        from fastmcp.server.openapi import OpenAPITool
-
         long_op_id = (
             "this_is_a_very_long_operation_id_that_exceeds_fifty_characters_and_needs_truncation"
         )
         route = MagicMock(path="/test", summary=None, operation_id=long_op_id)
         tool = MagicMock(spec=OpenAPITool)
-        tool.name = long_op_id
+        tool.name = "test"
         tool.annotations = None
         tool.tags = set()
 
         _customize_component(route, tool)
 
-        assert len(tool.annotations.title) <= 53
+        assert len(tool.annotations.title) <= 53  # 50 + "..."
         assert tool.annotations.title.endswith("...")

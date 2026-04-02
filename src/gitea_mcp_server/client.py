@@ -2,10 +2,10 @@
 
 import asyncio
 import logging
+import ssl
 from typing import Any
 
 import httpx
-import ssl
 from tenacity import (
     retry,
     retry_if_exception,
@@ -17,6 +17,9 @@ from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import GiteaAPIError
 
 logger = logging.getLogger(__name__)
+
+# Constant for response preview length to avoid magic number
+_RESPONSE_PREVIEW_LIMIT = 100
 
 
 def _should_retry(exception: Exception) -> bool:
@@ -31,24 +34,17 @@ def _should_retry(exception: Exception) -> bool:
     if isinstance(exception, GiteaAPIError):
         if exception.status_code in {429, 408, 500, 502, 503, 504}:
             return True
-        # Check if underlying cause is a network-level HTTPError (non-status)
-        cause = exception.__cause__
-        if (
-            cause
-            and isinstance(cause, httpx.HTTPError)
-            and not isinstance(cause, httpx.HTTPStatusError)
-        ):
-            return True
+        # Retry if caused by httpx.HTTPError but not HTTPStatusError
+        if exception.__cause__:
+            return isinstance(exception.__cause__, httpx.HTTPError) and not isinstance(
+                exception.__cause__, httpx.HTTPStatusError
+            )
         return False
 
     # Direct httpx exceptions (should be rare if we always wrap, but handle anyway)
     if isinstance(exception, httpx.HTTPStatusError):
         return exception.response.status_code in {429, 408, 500, 502, 503, 504}
-    if isinstance(exception, httpx.HTTPError):
-        # Includes network errors, timeouts, etc.
-        return True
-
-    return False
+    return bool(isinstance(exception, httpx.HTTPError))  # Ensure bool return
 
 
 class GiteaClient:
@@ -91,7 +87,7 @@ class GiteaClient:
             )
         return self._client
 
-    @retry(
+    @retry(  # type: ignore[untyped-decorator]
         retry=retry_if_exception(_should_retry),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -135,52 +131,43 @@ class GiteaClient:
 
             # Raise for HTTP errors (including 429, which retry decorator will handle)
             response.raise_for_status()
-
-            return response
-
+            return response  # noqa: TRY300
         except httpx.HTTPStatusError as e:
-            error_msg = f"HTTP {e.response.status_code} error for {method} {url}"
+            error_msg = f"API request failed: {e!s}"
             try:
                 error_data = e.response.json()
                 error_detail = error_data.get("message", str(error_data))
                 error_msg += f": {error_detail}"
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # Limit response text to avoid log bloat and potential sensitive data
                 preview = e.response.text[:200] if e.response.text else ""
                 error_msg += f": {preview}"
 
-            logger.error(
+            logger.exception(
                 "API request failed",
                 extra={
                     "method": method,
                     "url": url,
                     "status_code": e.response.status_code,
-                    # Truncate response preview to reduce sensitive data exposure
+                    "error": str(e),
                     "response_preview": (
-                        e.response.text[:100] + "..."
-                        if e.response.text and len(e.response.text) > 100
+                        e.response.text[:_RESPONSE_PREVIEW_LIMIT] + "..."
+                        if e.response.text and len(e.response.text) > _RESPONSE_PREVIEW_LIMIT
                         else e.response.text
-                    )
-                    if e.response.text
-                    else None,
+                    ),
                 },
-                exc_info=True,
             )
-
             raise GiteaAPIError(error_msg, status_code=e.response.status_code) from e
-
         except httpx.RequestError as e:
             error_msg = f"Request failed for {method} {url}: {e!s}"
-            logger.error(
+            logger.exception(
                 "Request error",
                 extra={"method": method, "url": url, "error": str(e)},
-                exc_info=True,
             )
             raise GiteaAPIError(error_msg) from e
-
         except Exception as e:
             error_msg = f"Unexpected error during {method} {url}: {e!s}"
-            logger.error("Unexpected error", extra={"method": method, "url": url}, exc_info=True)
+            logger.exception("Unexpected error", extra={"method": method, "url": url})
             raise GiteaAPIError(error_msg) from e
 
     async def close(self) -> None:
@@ -189,7 +176,7 @@ class GiteaClient:
             try:
                 await self._client.aclose()
                 logger.debug("HTTP client closed")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 logger.warning("Error closing HTTP client", exc_info=True)
             finally:
                 self._client = None
@@ -198,6 +185,11 @@ class GiteaClient:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: BaseException | None,
+    ) -> None:
         """Async context manager exit."""
         await self.close()

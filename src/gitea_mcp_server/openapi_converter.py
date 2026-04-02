@@ -1,5 +1,7 @@
 """Convert Swagger 2.0 spec to OpenAPI 3.1 format."""
 
+# ruff: noqa: PLR0912,PLR0915
+
 import logging
 import re
 from typing import Any, cast
@@ -259,7 +261,7 @@ def convert_definitions(definitions: dict[str, Any]) -> dict[str, Any]:
     return cast("dict[str, Any]", fixed["definitions"])
 
 
-def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
+def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 paths to OpenAPI 3.1 format."""
     new_paths = {}
     allowed_methods = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
@@ -368,7 +370,7 @@ def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PL
     return new_paths
 
 
-def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
+def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 spec to OpenAPI 3.1.
 
     Args:
@@ -562,7 +564,7 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
 
     def _process_schema(schema: dict[str, Any]) -> None:
         if not isinstance(schema, dict):
-            return
+            return  # type: ignore[unreachable]
 
         # Process properties if present
         props = schema.get("properties")
@@ -630,7 +632,7 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
                         # No need to recurse into the new anyOf; the referenced schema will be processed separately
                         continue  # skip further recursion on this prop
                     # Case 2: simple type -> add null
-                    elif (
+                    if (
                         "type" in prop_schema
                         and "anyOf" not in prop_schema
                         and "oneOf" not in prop_schema

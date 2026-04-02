@@ -2,7 +2,6 @@
 
 import pytest
 import respx
-from httpx import Response
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
@@ -19,8 +18,7 @@ class TestGiteaClient:
             mp.setenv("GITEA_URL", "https://git.example.com")
             mp.setenv("GITEA_TOKEN", "test_token")
             mp.setenv("GITEA_VERIFY_SSL", "false")
-            if hasattr(Config, "_instance"):
-                delattr(Config, "_instance")
+            Config._instance = None
             yield Config.get()
 
     @pytest.mark.asyncio
@@ -79,7 +77,7 @@ class TestGiteaClient:
         client = GiteaClient(config)
 
         with respx.mock() as mock:
-            route = mock.post("/api/v1/repos").respond(201, json={"id": 1, "name": "test-repo"})
+            mock.post("/api/v1/repos").respond(201, json={"id": 1, "name": "test-repo"})
 
             response = await client.request(
                 "POST", "/repos", json={"name": "test-repo", "private": False}

@@ -1,8 +1,6 @@
 """Unit tests for configuration management."""
 
 import os
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -26,8 +24,7 @@ class TestConfig:
             },
             clear=True,
         ):
-            if hasattr(Config, "_instance"):
-                delattr(Config, "_instance")
+            Config._instance = None
             config = Config.get()
             assert config.url == "https://git.example.com"
             assert config.token == "test_token_123"
@@ -48,8 +45,7 @@ class TestConfig:
             os.chdir(tmp_path)
             try:
                 # Clear singleton to force reload
-                if hasattr(Config, "_instance"):
-                    delattr(Config, "_instance")
+                Config._instance = None
                 config = Config.get()
                 assert config.url == "https://test.example.com"
                 assert config.token == "test_token_from_file"
@@ -62,8 +58,7 @@ class TestConfig:
         monkeypatch.setenv("GITEA_URL", "https://git.example.com")
         monkeypatch.delenv("GITEA_TOKEN", raising=False)
 
-        if hasattr(Config, "_instance"):
-            delattr(Config, "_instance")
+        Config._instance = None
         with pytest.raises(ConfigError, match=r"GITEA_TOKEN.*Field required"):
             Config.get()
 
@@ -72,8 +67,7 @@ class TestConfig:
         monkeypatch.setenv("GITEA_URL", "not-a-url")
         monkeypatch.setenv("GITEA_TOKEN", "test_token")
 
-        if hasattr(Config, "_instance"):
-            delattr(Config, "_instance")
+        Config._instance = None
         with pytest.raises(ConfigError, match="must start with http:// or https://"):
             Config.get()
 
@@ -83,8 +77,7 @@ class TestConfig:
         monkeypatch.setenv("GITEA_TOKEN", "test_token")
         monkeypatch.setenv("LOG_LEVEL", "INVALID")
 
-        if hasattr(Config, "_instance"):
-            delattr(Config, "_instance")
+        Config._instance = None
         with pytest.raises(ConfigError, match="Invalid LOG_LEVEL"):
             Config.get()
 
@@ -93,14 +86,12 @@ class TestConfig:
         with patch.dict(
             os.environ, {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"}, clear=True
         ):
-            if hasattr(Config, "_instance"):
-                delattr(Config, "_instance")
+            Config._instance = None
             config = Config.get()
             assert config.base_url == "https://git.example.com/api/v1"
             # Ensure no double slash
             with patch.dict(os.environ, {"GITEA_URL": "https://git.example.com/"}):
-                if hasattr(Config, "_instance"):
-                    delattr(Config, "_instance")
+                Config._instance = None
                 config = Config.get()
                 assert config.base_url == "https://git.example.com/api/v1"
 
@@ -109,8 +100,7 @@ class TestConfig:
         with patch.dict(
             os.environ, {"GITEA_URL": "https://test.example.com", "GITEA_TOKEN": "test"}, clear=True
         ):
-            if hasattr(Config, "_instance"):
-                delattr(Config, "_instance")
+            Config._instance = None
             config1 = Config.get()
             config2 = Config.get()
             assert config1 is config2
@@ -121,7 +111,6 @@ class TestConfig:
         monkeypatch.setenv("GITEA_TOKEN", "test_token")
         monkeypatch.setenv("SSL_CERT_FILE", "/path/to/cert.pem")
 
-        if hasattr(Config, "_instance"):
-            delattr(Config, "_instance")
+        Config._instance = None
         config = Config.get()
         assert config.ssl_cert_file == "/path/to/cert.pem"

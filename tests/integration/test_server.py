@@ -335,3 +335,4 @@ class TestToolFiltering:
             tool_names = extract_tool_names(tools)
 
             assert len(tool_names) > 0
+

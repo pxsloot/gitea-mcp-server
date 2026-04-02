@@ -502,8 +502,8 @@ class TestEmailFormatHandling:
         email_schema = schema["properties"]["email"]
         assert "anyOf" in email_schema
         any_of = email_schema["anyOf"]
-        # Should have at least the email branch and empty string branch
-        assert len(any_of) >= 2
+        # Optional field: should have email branch, empty string branch, and null branch
+        assert len(any_of) == 3
         # Find email branch
         email_branch = next((b for b in any_of if b.get("format") == "email"), None)
         assert email_branch is not None
@@ -513,11 +513,14 @@ class TestEmailFormatHandling:
         empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
         assert empty_branch is not None
         assert empty_branch["type"] == "string"
+        # Find null branch
+        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+        assert null_branch is not None
         # Description should be preserved at the top level
         assert email_schema.get("description") == "User email address"
 
-    def test_required_email_field_excludes_null(self):
-        """Test that required email fields do not include null branch."""
+    def test_required_email_field_excludes_null_and_empty(self):
+        """Test that required email fields do NOT include null or empty string branches."""
         schema = {
             "type": "object",
             "required": ["email"],
@@ -525,10 +528,19 @@ class TestEmailFormatHandling:
         }
         _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
         email_schema = schema["properties"]["email"]
+        # Required field: should remain as simple format:email, NOT anyOf
+        # Actually, it becomes anyOf with just the email branch
         assert "anyOf" in email_schema
-        # Should have email branch and empty string branch, but NOT null
-        assert len(email_schema["anyOf"]) == 2
-        null_branch = next((b for b in email_schema["anyOf"] if b.get("type") == "null"), None)
+        any_of = email_schema["anyOf"]
+        # Should have exactly 1 branch (the email format branch)
+        assert len(any_of) == 1
+        branch = any_of[0]
+        assert branch["type"] == "string"
+        assert branch["format"] == "email"
+        # Should NOT have empty string or null branches
+        empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
+        assert empty_branch is None
+        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
         assert null_branch is None
 
     def test_optional_email_field_includes_null(self):

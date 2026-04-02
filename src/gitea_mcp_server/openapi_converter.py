@@ -570,6 +570,7 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
 
                 # --- Handle special string formats that need to allow empty strings ---
                 # Currently: 'email' fields need to accept "" because Gitea returns empty string for hidden emails
+                # BUT: only for optional fields. Required fields should NOT accept empty strings.
                 FORMATS_NEEDING_EMPTY = {"email"}  # Extendable set
                 if (
                     prop_schema.get("type") == "string"
@@ -583,12 +584,14 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
                         if k in prop_schema:
                             format_branch[k] = prop_schema[k]
 
-                    # Start anyOf with format branch and empty string branch
-                    any_of = [format_branch, {"type": "string", "maxLength": 0}]
+                    # Start anyOf with the format branch
+                    any_of = [format_branch]
 
-                    # If property is optional, also allow null
+                    # Only add empty string branch for optional properties (where hidden email "" may appear)
                     if prop_name not in required:
+                        any_of.append({"type": "string", "maxLength": 0})
                         any_of.append({"type": "null"})
+                    # For required properties, we do NOT add empty string branch - they must be valid emails
 
                     # Build new schema preserving metadata
                     new_schema = {"anyOf": any_of}

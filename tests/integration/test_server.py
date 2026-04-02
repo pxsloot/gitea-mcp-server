@@ -10,27 +10,48 @@ from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import extract_tool_names
 
 
+class SimpleConfig:
+    """Simple config stub for tests, mirrors essential Config behavior."""
+
+    def __init__(
+        self,
+        url="https://git.example.com",
+        token="test_token",
+        *,
+        verify_ssl=False,
+        ssl_cert_file=None,
+        log_level="ERROR",
+        log_format="text",
+        tool_filtering_enabled=True,
+    ):
+        self.url = url.rstrip("/")
+        self.token = token
+        self.verify_ssl = verify_ssl
+        self.ssl_cert_file = ssl_cert_file
+        self.log_level = log_level
+        self.log_format = log_format
+        self.tool_filtering_enabled = tool_filtering_enabled
+
+    @property
+    def base_url(self) -> str:
+        """Get the API base URL."""
+        return f"{self.url}/api/v1"
+
+
 class TestServerIntegration:
     """Integration tests for the server setup."""
 
     @pytest.mark.asyncio
     async def test_create_mcp_server(self):
         """Test server creation with mocked config."""
-        mock_config = type(
-            "MockConfig",
-            (),
-            {
-                "url": "https://git.example.com",
-                "base_url": "https://git.example.com/api/v1",
-                "token": "test_token",
-                "verify_ssl": False,
-                "ssl_cert_file": None,
-                "log_level": "INFO",
-                "log_format": "text",
-                "tool_filtering_enabled": False,
-            },
-        )()
-        gitea_client = GiteaClient(mock_config)
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="INFO",
+            log_format="text",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
 
         with respx.mock() as mock_http:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(
@@ -49,21 +70,13 @@ class TestServerIntegration:
     @pytest.mark.asyncio
     async def test_server_tools_discovery(self):
         """Test that tools are discovered from OpenAPI spec."""
-        mock_config = type(
-            "MockConfig",
-            (),
-            {
-                "url": "https://git.example.com",
-                "base_url": "https://git.example.com/api/v1",
-                "token": "test_token",
-                "verify_ssl": False,
-                "ssl_cert_file": None,
-                "log_level": "ERROR",
-                "log_format": "text",
-                "tool_filtering_enabled": False,
-            },
-        )()
-        gitea_client = GiteaClient(mock_config)
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
 
         logging.getLogger("fastmcp").setLevel(logging.WARNING)
 
@@ -96,10 +109,8 @@ class TestServerIntegration:
 
             if isinstance(tools, dict):
                 tool_names = list(tools.keys())
-            elif tools and hasattr(tools[0], "name"):
-                tool_names = [t.name for t in tools]
             else:
-                tool_names = tools
+                tool_names = [t.name for t in tools]
 
             assert len(tools) > 0
             assert any("issue" in name for name in tool_names), (
@@ -109,21 +120,13 @@ class TestServerIntegration:
     @pytest.mark.asyncio
     async def test_tool_call_with_mock_client(self):
         """Test calling a tool with a mocked HTTP client."""
-        mock_config = type(
-            "MockConfig",
-            (),
-            {
-                "url": "https://git.example.com",
-                "base_url": "https://git.example.com/api/v1",
-                "token": "test_token",
-                "verify_ssl": False,
-                "ssl_cert_file": None,
-                "log_level": "ERROR",
-                "log_format": "text",
-                "tool_filtering_enabled": False,
-            },
-        )()
-        gitea_client = GiteaClient(mock_config)
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
 
         swagger_spec = {
             "swagger": "2.0",
@@ -153,11 +156,19 @@ class TestServerIntegration:
                     tool = get_tools[0]
                     assert tool.name
                     assert tool.description
-                    assert (
-                        hasattr(tool, "inputSchema")
-                        or hasattr(tool, "output_schema")
-                        or hasattr(tool, "parameters")
-                    )
+                    assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
+                mcp = await create_mcp_server(gitea_client)
+                tools = await mcp.get_tools()
+
+                tool_list = list(tools.values()) if isinstance(tools, dict) else tools
+
+                get_tools = [t for t in tool_list if "get" in str(t).lower()]
+                if get_tools:
+                    if hasattr(get_tools[0], "name"):
+                        tool = get_tools[0]
+                        assert tool.name
+                        assert tool.description
+                        assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
                 else:
                     assert get_tools[0]
 
@@ -165,25 +176,22 @@ class TestServerIntegration:
 class TestToolFiltering:
     """Tests for tool permission filtering."""
 
-    def _make_mock_config(self, **overrides):
-        """Create a mock config object with required attributes."""
-        defaults = {
-            "url": "https://git.example.com",
-            "base_url": "https://git.example.com/api/v1",
-            "token": "test_token",
-            "verify_ssl": False,
-            "ssl_cert_file": None,
-            "log_level": "ERROR",
-            "log_format": "text",
-            "tool_filtering_enabled": True,
-        }
-        defaults.update(overrides)
-        return type("MockConfig", (), defaults)()
+    def _make_config(self, **overrides):
+        """Create a SimpleConfig instance with given overrides."""
+        return SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            verify_ssl=False,
+            ssl_cert_file=None,
+            log_level="ERROR",
+            log_format="text",
+            tool_filtering_enabled=overrides.get("tool_filtering_enabled", True),
+        )
 
     @pytest.mark.asyncio
     async def test_filtering_removes_admin_tools_for_non_admin_user(self):
         """Test that admin tools are filtered out when user is not admin."""
-        config = self._make_mock_config(tool_filtering_enabled=True)
+        config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
 
         swagger_spec = {
@@ -223,7 +231,7 @@ class TestToolFiltering:
     @pytest.mark.asyncio
     async def test_filtering_keeps_admin_tools_for_admin_user(self):
         """Test that admin tools are kept when user is admin."""
-        config = self._make_mock_config(tool_filtering_enabled=True)
+        config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
 
         swagger_spec = {
@@ -263,7 +271,7 @@ class TestToolFiltering:
     @pytest.mark.asyncio
     async def test_filtering_disabled_when_config_false(self):
         """Test that admin tools are kept when filtering is disabled."""
-        config = self._make_mock_config(tool_filtering_enabled=False)
+        config = self._make_config(tool_filtering_enabled=False)
         gitea_client = GiteaClient(config)
 
         swagger_spec = {
@@ -302,7 +310,7 @@ class TestToolFiltering:
     @pytest.mark.asyncio
     async def test_filtering_keeps_all_tools_on_user_fetch_error(self):
         """Test that all tools are kept if fetching user info fails."""
-        config = self._make_mock_config(tool_filtering_enabled=True)
+        config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
 
         swagger_spec = {
@@ -335,4 +343,3 @@ class TestToolFiltering:
             tool_names = extract_tool_names(tools)
 
             assert len(tool_names) > 0
-

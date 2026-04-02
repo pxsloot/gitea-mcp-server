@@ -184,8 +184,6 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
         # Fallback to loading local spec file (for testing)
         logger.info("Loading OpenAPI spec from local swagger.v1.json")
         try:
-            import json
-
             spec_path = Path("swagger.v1.json")
             if not spec_path.exists():
                 raise SpecError("Local swagger.v1.json file not found")
@@ -205,10 +203,7 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
             raise SpecError(f"Failed to load local swagger.v1.json: {e}") from e
 
     # Construct URL: base_url without /api/v1 + /swagger.v1.json
-    base_url = gitea_client._config.url.rstrip("/")
-    if base_url.endswith("/api/v1"):
-        base_url = base_url[:-7]  # Remove "/api/v1"
-    spec_url = f"{base_url}/swagger.v1.json"
+    spec_url = f"{gitea_client._config.url}/swagger.v1.json"
 
     logger.info("Loading OpenAPI spec from %s", spec_url)
 

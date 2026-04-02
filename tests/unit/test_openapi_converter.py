@@ -9,6 +9,7 @@ import jsonschema
 
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import (
+    _add_nullable_for_optional_refs,
     camel_to_snake,
     convert_definitions,
     convert_parameters,
@@ -254,9 +255,10 @@ class TestConvertPaths:
         assert schema["required"] == ["name"]
 
     def test_mixed_parameters(self):
+        """Test POST with both query parameters and body parameters."""
         paths = {
             "/search": {
-                "get": {
+                "post": {
                     "parameters": [
                         {"name": "q", "in": "query", "type": "string"},
                         {"name": "body", "in": "body", "schema": {"type": "object"}},
@@ -266,9 +268,10 @@ class TestConvertPaths:
             }
         }
         result = convert_paths(paths)
-        op = result["/search"]["get"]
-        # Should have both query parameter and requestBody
+        op = result["/search"]["post"]
+        # Should have query parameter
         assert any(p["name"] == "q" for p in op["parameters"])
+        # Should have requestBody from the body parameter
         assert "requestBody" in op
 
 
@@ -481,3 +484,112 @@ class TestOperationIdNormalization:
         }
         result = convert_paths(paths)
         assert result["/test"]["get"]["operationId"] == "already_snake_case"
+
+
+class TestEmailFormatHandling:
+    """Tests for email format preservation with empty string and null support."""
+
+    def test_email_field_with_format_becomes_anyof(self):
+        """Test that format:email fields are converted to anyOf preserving format."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string", "format": "email", "description": "User email address"}
+            },
+        }
+        result = _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        # The schema is mutated in place
+        email_schema = schema["properties"]["email"]
+        assert "anyOf" in email_schema
+        any_of = email_schema["anyOf"]
+        # Should have at least the email branch and empty string branch
+        assert len(any_of) >= 2
+        # Find email branch
+        email_branch = next((b for b in any_of if b.get("format") == "email"), None)
+        assert email_branch is not None
+        assert email_branch["type"] == "string"
+        assert email_branch["format"] == "email"
+        # Find empty string branch
+        empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
+        assert empty_branch is not None
+        assert empty_branch["type"] == "string"
+        # Description should be preserved at the top level
+        assert email_schema.get("description") == "User email address"
+
+    def test_required_email_field_excludes_null(self):
+        """Test that required email fields do not include null branch."""
+        schema = {
+            "type": "object",
+            "required": ["email"],
+            "properties": {"email": {"type": "string", "format": "email"}},
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        email_schema = schema["properties"]["email"]
+        assert "anyOf" in email_schema
+        # Should have email branch and empty string branch, but NOT null
+        assert len(email_schema["anyOf"]) == 2
+        null_branch = next((b for b in email_schema["anyOf"] if b.get("type") == "null"), None)
+        assert null_branch is None
+
+    def test_optional_email_field_includes_null(self):
+        """Test that optional email fields include null branch."""
+        schema = {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        email_schema = schema["properties"]["email"]
+        assert "anyOf" in email_schema
+        # Should have email, empty string, and null branches
+        assert len(email_schema["anyOf"]) == 3
+        null_branch = next((b for b in email_schema["anyOf"] if b.get("type") == "null"), None)
+        assert null_branch is not None
+
+    def test_email_preserves_other_constraints(self):
+        """Test that other string constraints (minLength, pattern) are preserved on email branch."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email",
+                    "minLength": 5,
+                    "maxLength": 254,
+                    "pattern": "^[^@]+@[^@]+\\.[^@]+$",
+                }
+            },
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        email_schema = schema["properties"]["email"]
+        email_branch = next((b for b in email_schema["anyOf"] if b.get("format") == "email"), None)
+        assert email_branch is not None
+        assert email_branch.get("minLength") == 5
+        assert email_branch.get("maxLength") == 254
+        assert email_branch.get("pattern") == "^[^@]+@[^@]+\\.[^@]+$"
+
+    def test_email_format_still_valid_openapi_3_1(self):
+        """Test that converted spec with email anyOf is valid OpenAPI 3.1."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "definitions": {
+                "User": {
+                    "type": "object",
+                    "properties": {"email": {"type": "string", "format": "email"}},
+                }
+            },
+            "paths": {
+                "/user": {"get": {"responses": {"200": {"schema": {"$ref": "#/definitions/User"}}}}}
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        # Should produce valid OpenAPI 3.1
+        assert result["openapi"] == "3.1.1"
+        user_schema = result["components"]["schemas"]["User"]
+        email_schema = user_schema["properties"]["email"]
+        assert "anyOf" in email_schema
+        # Verify all branches
+        any_of = email_schema["anyOf"]
+        assert len(any_of) >= 2
+        # Email branch with format
+        assert any(b.get("format") == "email" for b in any_of)
+        # Empty string branch
+        assert any(b.get("type") == "string" and b.get("maxLength") == 0 for b in any_of)

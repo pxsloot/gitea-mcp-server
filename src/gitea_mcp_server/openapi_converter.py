@@ -534,25 +534,31 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:  # no
 
 
 def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
-    """Mutate spec to allow null for optional reference and simple type properties.
+    """Mutate spec to allow null for optional reference and simple type properties,
+    and handle special format cases that require additional valid values.
 
     Many Gitea API models include fields that are pointers or can be null, but the
     Swagger spec does not mark these as nullable, causing strict validators to reject
-    responses where such fields are present with null value. This function walks through
-    all schemas and for any property that is optional (not in required), it makes the
-    property schema nullable:
-      - If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
-      - If it's a simple type (string, number, integer, boolean, array, object),
-        add 'null' to the type array.
+    responses where such fields are present with null value.
+
+    Additionally, some string formats (like 'email') are not accepted when the field
+    contains an empty string, even though Gitea returns "" for hidden/redacted data.
+    For such formats, we preserve the format hint but use anyOf to also allow the
+    empty string (and optionally null).
+
+    This function walks through all schemas and:
+      - For optional properties (not in required):
+        * If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
+        * If it's a simple type, add 'null' to the type array.
+      - For string properties with special formats (e.g., 'email'):
+        * Replace with anyOf: [{type: 'string', format: <fmt>}, {type: 'string', maxLength: 0}]
+        * If the property is optional, also add {type: 'null'}
+        * This preserves the semantic format while allowing empty strings.
     """
 
     def _process_schema(schema: dict[str, Any]) -> None:
         if not isinstance(schema, dict):
             return
-
-        # Remove email format to allow empty strings (Gitea returns empty string for hidden emails)
-        if schema.get("type") == "string" and schema.get("format") == "email":
-            schema.pop("format", None)
 
         # Process properties if present
         props = schema.get("properties")
@@ -561,10 +567,48 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
             for prop_name, prop_schema in props.items():
                 if not isinstance(prop_schema, dict):
                     continue
-                # Remove email format to allow empty strings (before any type mutation)
-                if prop_schema.get("type") == "string" and prop_schema.get("format") == "email":
-                    prop_schema.pop("format", None)
-                # Only modify if property is optional
+
+                # --- Handle special string formats that need to allow empty strings ---
+                # Currently: 'email' fields need to accept "" because Gitea returns empty string for hidden emails
+                FORMATS_NEEDING_EMPTY = {"email"}  # Extendable set
+                if (
+                    prop_schema.get("type") == "string"
+                    and prop_schema.get("format") in FORMATS_NEEDING_EMPTY
+                ):
+                    fmt = prop_schema["format"]
+
+                    # Build the email (or other format) branch, preserving other string constraints
+                    format_branch = {"type": "string", "format": fmt}
+                    for k in ["pattern", "minLength", "maxLength", "enum", "default"]:
+                        if k in prop_schema:
+                            format_branch[k] = prop_schema[k]
+
+                    # Start anyOf with format branch and empty string branch
+                    any_of = [format_branch, {"type": "string", "maxLength": 0}]
+
+                    # If property is optional, also allow null
+                    if prop_name not in required:
+                        any_of.append({"type": "null"})
+
+                    # Build new schema preserving metadata
+                    new_schema = {"anyOf": any_of}
+                    for k in [
+                        "description",
+                        "title",
+                        "example",
+                        "readOnly",
+                        "writeOnly",
+                        "deprecated",
+                    ]:
+                        if k in prop_schema:
+                            new_schema[k] = prop_schema[k]
+
+                    # Replace the property schema and skip further processing
+                    props[prop_name] = new_schema
+                    # No need to _process_schema(new_schema) - branches are simple
+                    continue
+
+                # --- Only modify if property is optional (nullable handling for other types) ---
                 if prop_name not in required:
                     # Case 1: $ref -> wrap with anyOf
                     if (

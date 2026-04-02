@@ -12,20 +12,26 @@ from fastmcp import Client
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server, load_swagger_spec
 
+# Load swagger spec for mocking
+SWAGGER_SPEC_PATH = Path(__file__).parents[2] / "swagger.v1.json"
+SWAGGER_SPEC = json.loads(SWAGGER_SPEC_PATH.read_text())
+
 
 class TestServerIntegration:
     """Integration tests for the server setup."""
 
-    def test_load_swagger_spec(self):
+    @pytest.mark.asyncio
+    async def test_load_swagger_spec(self):
         """Test loading the swagger spec file."""
-        spec = load_swagger_spec()
+        spec = await load_swagger_spec()
         assert isinstance(spec, dict)
         assert "swagger" in spec
         assert spec["swagger"] == "2.0"
         assert "paths" in spec
         assert len(spec["paths"]) > 0
 
-    def test_load_swagger_spec_missing_file(self):
+    @pytest.mark.asyncio
+    async def test_load_swagger_spec_missing_file(self):
         """Test error when spec file is missing."""
         # Temporarily rename the swagger file
         spec_path = Path("swagger.v1.json")
@@ -34,7 +40,7 @@ class TestServerIntegration:
             spec_path.rename(backup)
             try:
                 with pytest.raises(Exception, match="not found"):
-                    load_swagger_spec()
+                    await load_swagger_spec()
             finally:
                 backup.rename(spec_path)
 
@@ -45,6 +51,7 @@ class TestServerIntegration:
             "MockConfig",
             (),
             {
+                "url": "https://git.example.com",
                 "base_url": "https://git.example.com/api/v1",
                 "token": "test_token",
                 "verify_ssl": False,
@@ -56,13 +63,15 @@ class TestServerIntegration:
         )()
         gitea_client = GiteaClient(mock_config)
 
-        # This should not raise
-        try:
-            mcp = await create_mcp_server(gitea_client)
-            assert mcp is not None
-            assert mcp.name == "Gitea MCP Server"
-        except Exception as e:
-            pytest.fail(f"Server creation failed: {e}")
+        with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
+            # This should not raise
+            try:
+                mcp = await create_mcp_server(gitea_client)
+                assert mcp is not None
+                assert mcp.name == "Gitea MCP Server"
+            except Exception as e:
+                pytest.fail(f"Server creation failed: {e}")
 
     @pytest.mark.asyncio
     async def test_server_tools_discovery(self):
@@ -71,6 +80,7 @@ class TestServerIntegration:
             "MockConfig",
             (),
             {
+                "url": "https://git.example.com",
                 "base_url": "https://git.example.com/api/v1",
                 "token": "test_token",
                 "verify_ssl": False,
@@ -87,25 +97,27 @@ class TestServerIntegration:
 
         logging.getLogger("fastmcp").setLevel(logging.WARNING)
 
-        mcp = await create_mcp_server(gitea_client)
-        tools = await mcp.get_tools()
+        with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
+            mcp = await create_mcp_server(gitea_client)
+            tools = await mcp.get_tools()
 
-        # Determine tool names whether tools is a dict or list
-        if isinstance(tools, dict):
-            tool_names = list(tools.keys())
-        else:
-            if tools and hasattr(tools[0], "name"):
-                tool_names = [t.name for t in tools]
+            # Determine tool names whether tools is a dict or list
+            if isinstance(tools, dict):
+                tool_names = list(tools.keys())
             else:
-                tool_names = tools
+                if tools and hasattr(tools[0], "name"):
+                    tool_names = [t.name for t in tools]
+                else:
+                    tool_names = tools
 
-        # Verify we have tools
-        assert len(tools) > 0
+            # Verify we have tools
+            assert len(tools) > 0
 
-        # Check for expected Gitea endpoints (use snake_case naming)
-        assert any("activitypub" in name for name in tool_names), (
-            f"Expected activitypub tools, got: {tool_names[:10]}"
-        )
+            # Check for expected Gitea endpoints (use snake_case naming)
+            assert any("activitypub" in name for name in tool_names), (
+                f"Expected activitypub tools, got: {tool_names[:10]}"
+            )
 
     @pytest.mark.asyncio
     async def test_tool_call_with_mock_client(self):
@@ -114,6 +126,7 @@ class TestServerIntegration:
             "MockConfig",
             (),
             {
+                "url": "https://git.example.com",
                 "base_url": "https://git.example.com/api/v1",
                 "token": "test_token",
                 "verify_ssl": False,
@@ -125,43 +138,46 @@ class TestServerIntegration:
         )()
         gitea_client = GiteaClient(mock_config)
 
-        mcp = await create_mcp_server(gitea_client)
-        tools = await mcp.get_tools()
+        with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
+            mcp = await create_mcp_server(gitea_client)
+            tools = await mcp.get_tools()
 
-        # Determine tool list structure
-        if isinstance(tools, dict):
-            tool_list = list(tools.values())
-            tool_names = list(tools.keys())
-        else:
-            tool_list = tools
-            if tools and hasattr(tools[0], "name"):
-                tool_names = [t.name for t in tools]
+            # Determine tool list structure
+            if isinstance(tools, dict):
+                tool_list = list(tools.values())
+                tool_names = list(tools.keys())
             else:
-                tool_names = tools
-
-            # Find a simple GET tool
-            get_tools = [t for t in tool_list if "get" in str(t).lower()]
-            if get_tools:
-                # If objects, check attributes
-                if hasattr(get_tools[0], "name"):
-                    tool = get_tools[0]
-                    assert tool.name
-                    assert tool.description
-                    # FastMCP may use either inputSchema or parameters schema
-                    assert (
-                        hasattr(tool, "inputSchema")
-                        or hasattr(tool, "output_schema")
-                        or hasattr(tool, "parameters")
-                    )
-                # If strings, just ensure we have names
+                tool_list = tools
+                if tools and hasattr(tools[0], "name"):
+                    tool_names = [t.name for t in tools]
                 else:
-                    assert get_tools[0]
+                    tool_names = tools
 
-    def test_openapi_conversion_idempotent(self):
+                # Find a simple GET tool
+                get_tools = [t for t in tool_list if "get" in str(t).lower()]
+                if get_tools:
+                    # If objects, check attributes
+                    if hasattr(get_tools[0], "name"):
+                        tool = get_tools[0]
+                        assert tool.name
+                        assert tool.description
+                        # FastMCP may use either inputSchema or parameters schema
+                        assert (
+                            hasattr(tool, "inputSchema")
+                            or hasattr(tool, "output_schema")
+                            or hasattr(tool, "parameters")
+                        )
+                    # If strings, just ensure we have names
+                    else:
+                        assert get_tools[0]
+
+    @pytest.mark.asyncio
+    async def test_openapi_conversion_idempotent(self):
         """Test that conversion produces valid OpenAPI 3.1 spec."""
         from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 
-        spec = load_swagger_spec()
+        spec = await load_swagger_spec()
         openapi_spec = convert_swagger_to_openapi_v3(spec)
 
         # Verify required OpenAPI 3.1 fields
@@ -186,6 +202,7 @@ class TestToolFiltering:
     def _make_mock_config(self, **overrides):
         """Create a mock config object with required attributes."""
         defaults = {
+            "url": "https://git.example.com",
             "base_url": "https://git.example.com/api/v1",
             "token": "test_token",
             "verify_ssl": False,
@@ -226,6 +243,7 @@ class TestToolFiltering:
         gitea_client = GiteaClient(config)
 
         with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
             mock.get("/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.get_tools()
@@ -244,6 +262,7 @@ class TestToolFiltering:
         gitea_client = GiteaClient(config)
 
         with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
             mock.get("/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.get_tools()
@@ -261,16 +280,18 @@ class TestToolFiltering:
         config = self._make_mock_config(tool_filtering_enabled=False)
         gitea_client = GiteaClient(config)
 
-        # No need to mock /user endpoint since filtering is disabled; no HTTP call
-        mcp = await create_mcp_server(gitea_client)
-        tools = await mcp.get_tools()
-        tool_names = self._extract_tool_names(tools)
+        with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
+            # No need to mock /user endpoint since filtering is disabled; no HTTP call to /user
+            mcp = await create_mcp_server(gitea_client)
+            tools = await mcp.get_tools()
+            tool_names = self._extract_tool_names(tools)
 
-        # Verify that admin tools exist even for non-admin when filtering is disabled
-        admin_tools = [name for name in tool_names if name.startswith("admin")]
-        assert len(admin_tools) > 0, (
-            f"Expected admin tools when filtering is disabled, but none found"
-        )
+            # Verify that admin tools exist even for non-admin when filtering is disabled
+            admin_tools = [name for name in tool_names if name.startswith("admin")]
+            assert len(admin_tools) > 0, (
+                f"Expected admin tools when filtering is disabled, but none found"
+            )
 
     @pytest.mark.asyncio
     async def test_filtering_keeps_all_tools_on_user_fetch_error(self):
@@ -279,6 +300,7 @@ class TestToolFiltering:
         gitea_client = GiteaClient(config)
 
         with respx.mock() as mock:
+            mock.get("/swagger.v1.json").respond(200, json=SWAGGER_SPEC)
             # Simulate user endpoint failure (500)
             mock.get("/api/v1/user").respond(500, json={"message": "Error"})
             mcp = await create_mcp_server(gitea_client)

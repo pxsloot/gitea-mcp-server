@@ -314,7 +314,9 @@ def register_auto_generated_resources(
 
                 # Register with FastMCP
                 try:
-                    mcp.resource(uri_template)(resource_func)
+                    mcp.resource(
+                        uri_template, mime_type="application/json", tags={"api", "raw", "auto"}
+                    )(resource_func)
                     count += 1
                     logger.debug("Registered auto-generated resource: %s", uri_template)
                 except ValueError as e:
@@ -529,19 +531,54 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
         return wrapper
 
     # Custom-formatted resources with better UX
-    custom_resources: list[tuple[str, Callable[..., Awaitable[str]]]] = [
-        ("gitea://repos/{owner}/{repo}", get_repository),
-        ("gitea://repos/{owner}/{repo}/readme", get_readme),
-        ("gitea://repos/{owner}/{repo}/issues", list_repo_issues),
-        ("gitea://repos/{owner}/{repo}/issues/open", list_repo_issues_open),
-        ("gitea://repos/{owner}/{repo}/issues/closed", list_repo_issues_closed),
-        ("gitea://repos/{owner}/{repo}/pulls", list_repo_pulls),
-        ("gitea://repos/{owner}/{repo}/pulls/open", list_repo_pulls_open),
-        ("gitea://repos/{owner}/{repo}/files/{path}", get_file),
-        ("gitea://repos/{owner}/{repo}/releases", list_repo_releases),
-        ("gitea://users/{username}", get_user),
-        ("gitea://orgs/{orgname}", get_org),
+    custom_resources: list[tuple[str, Callable[..., Awaitable[str]], str, set[str]]] = [
+        (
+            "gitea://repos/{owner}/{repo}",
+            get_repository,
+            "text/markdown",
+            {"wrapper", "repository"},
+        ),
+        ("gitea://repos/{owner}/{repo}/readme", get_readme, "text/plain", {"wrapper", "readme"}),
+        (
+            "gitea://repos/{owner}/{repo}/issues",
+            list_repo_issues,
+            "text/markdown",
+            {"wrapper", "issues"},
+        ),
+        (
+            "gitea://repos/{owner}/{repo}/issues/open",
+            list_repo_issues_open,
+            "text/markdown",
+            {"wrapper", "issues"},
+        ),
+        (
+            "gitea://repos/{owner}/{repo}/issues/closed",
+            list_repo_issues_closed,
+            "text/markdown",
+            {"wrapper", "issues"},
+        ),
+        (
+            "gitea://repos/{owner}/{repo}/pulls",
+            list_repo_pulls,
+            "text/markdown",
+            {"wrapper", "pull_requests"},
+        ),
+        (
+            "gitea://repos/{owner}/{repo}/pulls/open",
+            list_repo_pulls_open,
+            "text/markdown",
+            {"wrapper", "pull_requests"},
+        ),
+        ("gitea://repos/{owner}/{repo}/files/{path}", get_file, "text/plain", {"wrapper", "files"}),
+        (
+            "gitea://repos/{owner}/{repo}/releases",
+            list_repo_releases,
+            "text/markdown",
+            {"wrapper", "releases"},
+        ),
+        ("gitea://users/{username}", get_user, "text/markdown", {"wrapper", "user"}),
+        ("gitea://orgs/{orgname}", get_org, "text/markdown", {"wrapper", "organization"}),
     ]
 
-    for uri_template, func in custom_resources:
-        mcp.resource(uri_template)(make_resource(func))
+    for uri_template, func, mime_type, tags in custom_resources:
+        mcp.resource(uri_template, mime_type=mime_type, tags=tags)(make_resource(func))

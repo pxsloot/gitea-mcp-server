@@ -45,6 +45,9 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                     "description": resource.description or "",
                     "mimeType": resource.mime_type or "text/plain",
                     "type": "resource",
+                    "tags": list(resource.tags)
+                    if hasattr(resource, "tags") and resource.tags
+                    else [],
                 }
             )
 
@@ -57,6 +60,9 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                     "description": template.description or "",
                     "mimeType": template.mime_type or "text/plain",
                     "type": "template",
+                    "tags": list(template.tags)
+                    if hasattr(template, "tags") and template.tags
+                    else [],
                 }
             )
     except Exception as e:

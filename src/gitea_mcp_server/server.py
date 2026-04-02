@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware.caching import (
+    CallToolSettings,
+    GetPromptSettings,
+    ListResourcesSettings,
+    ReadResourceSettings,
+    ResponseCachingMiddleware,
+)
 from fastmcp.server.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -284,6 +291,19 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         client=gitea_client.client,
         name="Gitea MCP Server",
         mcp_component_fn=_customize_component,
+    )
+
+    # Add response caching middleware
+    logger.info("Adding response caching middleware...")
+    mcp.add_middleware(
+        ResponseCachingMiddleware(
+            cache_storage=None,  # In-memory cache
+            read_resource_settings=ReadResourceSettings(enabled=True, ttl=30.0),
+            list_resources_settings=ListResourcesSettings(enabled=True, ttl=300.0),
+            call_tool_settings=CallToolSettings(enabled=False),
+            get_prompt_settings=GetPromptSettings(enabled=False),
+            max_item_size=100_000_000,  # 100MB
+        )
     )
 
     # Register resources

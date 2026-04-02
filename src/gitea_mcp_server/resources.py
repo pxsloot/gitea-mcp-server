@@ -531,54 +531,90 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
         return wrapper
 
     # Custom-formatted resources with better UX
-    custom_resources: list[tuple[str, Callable[..., Awaitable[str]], str, set[str]]] = [
+    custom_resources: list[
+        tuple[str, Callable[..., Awaitable[str]], str, set[str], dict[str, Any] | None]
+    ] = [
         (
             "gitea://repos/{owner}/{repo}",
             get_repository,
             "text/markdown",
             {"wrapper", "repository"},
+            {"cache_ttl": 300.0},  # 5 minutes - repo info rarely changes
         ),
-        ("gitea://repos/{owner}/{repo}/readme", get_readme, "text/plain", {"wrapper", "readme"}),
+        (
+            "gitea://repos/{owner}/{repo}/readme",
+            get_readme,
+            "text/plain",
+            {"wrapper", "readme"},
+            {"cache_ttl": 600.0},
+        ),  # 10 minutes
         (
             "gitea://repos/{owner}/{repo}/issues",
             list_repo_issues,
             "text/markdown",
             {"wrapper", "issues"},
+            None,  # Use default TTL (30s) - issues change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/open",
             list_repo_issues_open,
             "text/markdown",
             {"wrapper", "issues"},
+            None,
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/closed",
             list_repo_issues_closed,
             "text/markdown",
             {"wrapper", "issues"},
+            None,
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls",
             list_repo_pulls,
             "text/markdown",
             {"wrapper", "pull_requests"},
+            None,  # Use default TTL (30s) - PRs change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls/open",
             list_repo_pulls_open,
             "text/markdown",
             {"wrapper", "pull_requests"},
+            None,
         ),
-        ("gitea://repos/{owner}/{repo}/files/{path}", get_file, "text/plain", {"wrapper", "files"}),
+        (
+            "gitea://repos/{owner}/{repo}/files/{path}",
+            get_file,
+            "text/plain",
+            {"wrapper", "files"},
+            None,
+        ),  # Default TTL
         (
             "gitea://repos/{owner}/{repo}/releases",
             list_repo_releases,
             "text/markdown",
             {"wrapper", "releases"},
+            {"cache_ttl": 600.0},  # 10 minutes - releases are infrequent
         ),
-        ("gitea://users/{username}", get_user, "text/markdown", {"wrapper", "user"}),
-        ("gitea://orgs/{orgname}", get_org, "text/markdown", {"wrapper", "organization"}),
+        (
+            "gitea://users/{username}",
+            get_user,
+            "text/markdown",
+            {"wrapper", "user"},
+            {"cache_ttl": 300.0},
+        ),  # 5 minutes
+        (
+            "gitea://orgs/{orgname}",
+            get_org,
+            "text/markdown",
+            {"wrapper", "organization"},
+            {"cache_ttl": 300.0},
+        ),  # 5 minutes
     ]
 
-    for uri_template, func, mime_type, tags in custom_resources:
-        mcp.resource(uri_template, mime_type=mime_type, tags=tags)(make_resource(func))
+    for uri_template, func, mime_type, tags, meta in custom_resources:
+        kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
+        if meta is not None:
+            kwargs["meta"] = meta
+        mcp.resource(uri_template, **kwargs)(make_resource(func))

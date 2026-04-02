@@ -51,8 +51,10 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
 
     # Fetch current user info to check admin status
     try:
-        user_response = await gitea_client.request("GET", "/user")
-        user_data = user_response.json()
+        user_data = await gitea_client.request("GET", "/user")
+        # gitea_client.request returns parsed JSON directly (dict)
+        if not isinstance(user_data, dict):
+            raise ValueError(f"Unexpected user data type: {type(user_data)}")
         is_admin = user_data.get("admin", False)
         username = user_data.get("login", "unknown")
         logger.info(

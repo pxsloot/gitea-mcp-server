@@ -196,18 +196,38 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 
 
 def register_auto_generated_resources(
-    mcp: FastMCP, gitea_client: GiteaClient, openapi_spec: dict[str, Any]
+    mcp: FastMCP,
+    gitea_client: GiteaClient,
+    openapi_spec: dict[str, Any],
+    skip_uris: set[str] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec.
 
     Creates resources for all GET operations, returning raw JSON.
     These can be overridden by custom resources with the same URI.
+    Skip URIs that are already covered by custom resources to avoid duplicates.
 
     Args:
         mcp: FastMCP server instance
         gitea_client: GiteaClient for API calls
         openapi_spec: OpenAPI 3.1 specification dictionary
+        skip_uris: Set of URI templates to skip. If None, uses default custom URIs.
     """
+    if skip_uris is None:
+        # Default set: URIs that will be provided by custom resources
+        skip_uris = {
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/readme",
+            "gitea://repos/{owner}/{repo}/issues",
+            "gitea://repos/{owner}/{repo}/issues/open",
+            "gitea://repos/{owner}/{repo}/issues/closed",
+            "gitea://repos/{owner}/{repo}/pulls",
+            "gitea://repos/{owner}/{repo}/pulls/open",
+            "gitea://repos/{owner}/{repo}/files/{path}",
+            "gitea://repos/{owner}/{repo}/releases",
+            "gitea://users/{username}",
+            "gitea://orgs/{orgname}",
+        }
 
     def make_resource_func(path: str, method: str, operation: dict[str, Any]) -> Callable:
         """Create a resource function for a given OpenAPI operation."""
@@ -268,17 +288,11 @@ def register_auto_generated_resources(
             if method in path_item:
                 operation = path_item[method]
 
-                # Extract parameters from path
-                path_params = []
-                if "parameters" in operation:
-                    for param in operation["parameters"]:
-                        if param["in"] == "path":
-                            path_params.append(param["name"])
-
-                # Skip if there are no path parameters (FastMCP requires at least one)
-                if not path_params:
+                # Skip if the path template has no parameters (FastMCP requires at least one)
+                # FastMCP checks for {var} or {var*} patterns in the URI template
+                if "{" not in path:
                     logger.debug(
-                        "Skipping auto-generated resource for %s: no path parameters (FastMCP requires at least one)",
+                        "Skipping auto-generated resource for %s: no path parameters in template",
                         path,
                     )
                     continue
@@ -287,13 +301,29 @@ def register_auto_generated_resources(
                 # e.g., /repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
                 uri_template = "gitea://" + path.lstrip("/")
 
+                # Skip if this URI will be covered by a custom resource
+                if uri_template in skip_uris:
+                    logger.debug(
+                        "Skipping auto-generated resource %s: will be provided by custom resource",
+                        uri_template,
+                    )
+                    continue
+
                 # Create the resource function
                 resource_func = make_resource_func(path, method.upper(), operation)
 
                 # Register with FastMCP
-                mcp.resource(uri_template)(resource_func)
-                count += 1
-                logger.debug("Registered auto-generated resource: %s", uri_template)
+                try:
+                    mcp.resource(uri_template)(resource_func)
+                    count += 1
+                    logger.debug("Registered auto-generated resource: %s", uri_template)
+                except ValueError as e:
+                    logger.warning(
+                        "Skipping auto-generated resource %s: %s",
+                        uri_template,
+                        e,
+                    )
+                    continue
 
     logger.info("Auto-generated %d resources from OpenAPI spec", count)
 

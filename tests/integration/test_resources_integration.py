@@ -120,7 +120,7 @@ class TestResourcesIntegration:
             }
         }
 
-        resources.register_auto_generated_resources(mcp, mock_client, spec)
+        resources.register_auto_generated_resources(mcp, mock_client, spec, skip_uris=set())
 
         # Check that resource was registered with gitea:// URI
         mcp.resource.assert_called()

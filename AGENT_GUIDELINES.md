@@ -4,6 +4,12 @@
 
 This guide provides best practices for agent developers using the Gitea MCP server's resource system. Resources provide efficient, discoverable, and cacheable access to Gitea data.
 
+**Important**: The Gitea MCP server provides two ways to access data:
+- **Resources** (`mcp_read_resource`) - Preferred for read operations
+- **Tools** (e.g., `gitea_get_repo`, `gitea_list_issues`) - Primarily for write operations or complex cases
+
+This document explains why resources are preferred and how to use them effectively.
+
 ## Core Principle: Prefer Resources for Reads
 
 **Recommendation**: Use `mcp_read_resource()` for fetching data. Use tools only for operations that modify state (create, update, delete) or require complex parameterization.

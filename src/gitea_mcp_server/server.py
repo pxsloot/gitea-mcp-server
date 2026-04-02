@@ -176,6 +176,18 @@ def _customize_component(route: Any, component: Any) -> None:
         component.tags = set()  # type: ignore[unreachable]
     component.tags.add(category)
 
+    # For read-only tools, add a note encouraging use of resources
+    if component.annotations and component.annotations.readOnlyHint:
+        resource_note = (
+            "\n\nNote: For read-only operations, consider using mcp_read_resource() "
+            "instead, which provides a unified interface with better formatting and caching. "
+            "See AGENT_GUIDELINES.md for details."
+        )
+        existing_doc = component.__doc__ or ""
+        # Avoid adding the note twice
+        if resource_note not in existing_doc:
+            component.__doc__ = existing_doc + resource_note
+
 
 async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
     """Load Swagger spec from Gitea instance or local file.

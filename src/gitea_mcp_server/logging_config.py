@@ -3,7 +3,7 @@
 import json
 import logging
 import sys
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 # Sensitive keys that should be redacted in logs
 SENSITIVE_KEYS = {

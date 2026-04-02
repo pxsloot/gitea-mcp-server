@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from typing import Any
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,6 +21,8 @@ class Config(BaseSettings):
     Loads settings from environment variables and .env file.
     Supports both prefixed (GITEA_*) and standard environment variable names.
     """
+
+    _instance: "Config | None" = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -56,9 +59,11 @@ class Config(BaseSettings):
     def validate_url(cls, v: str) -> str:
         """Validate URL format."""
         if not v:
-            raise ConfigError("GITEA_URL cannot be empty")
+            msg = "GITEA_URL cannot be empty"
+            raise ConfigError(msg)
         if not v.startswith(("http://", "https://")):
-            raise ConfigError(f"Invalid GITEA_URL: {v} must start with http:// or https://")
+            msg = f"Invalid GITEA_URL: {v} must start with http:// or https://"
+            raise ConfigError(msg)
         return v.rstrip("/")
 
     @field_validator("token")
@@ -66,7 +71,8 @@ class Config(BaseSettings):
     def validate_token(cls, v: str) -> str:
         """Validate token is not empty."""
         if not v or not v.strip():
-            raise ConfigError("GITEA_TOKEN is required and cannot be empty")
+            msg = "GITEA_TOKEN is required and cannot be empty"
+            raise ConfigError(msg)
         return v.strip()
 
     @field_validator("log_level")
@@ -76,7 +82,8 @@ class Config(BaseSettings):
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         normalized = v.upper()
         if normalized not in valid_levels:
-            raise ConfigError(f"Invalid LOG_LEVEL: {v}. Must be one of {valid_levels}")
+            msg = f"Invalid LOG_LEVEL: {v}. Must be one of {valid_levels}"
+            raise ConfigError(msg)
         return normalized
 
     @property
@@ -91,15 +98,15 @@ class Config(BaseSettings):
     def get(cls) -> "Config":
         """Get the singleton Config instance (thread-safe)."""
         with _config_lock:
-            if not hasattr(cls, "_instance"):
+            if cls._instance is None:
                 try:
                     cls._instance = cls()
-                except Exception as e:
-                    logger.error(f"Failed to initialize configuration: {e}")
+                except Exception:
+                    logger.exception("Failed to initialize configuration")
                     raise
             return cls._instance
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize configuration with validation."""
         try:
             super().__init__(**data)
@@ -113,8 +120,10 @@ class Config(BaseSettings):
                 error_messages.append(f"{field}: {msg}")
             raise ConfigError("Configuration errors: " + " | ".join(error_messages)) from e
         except Exception as e:
-            raise ConfigError(f"Configuration error: {e}") from e
+            msg = f"Configuration error: {e}"
+            raise ConfigError(msg) from e
 
         # Additional validation after initialization
         if not self.token:
-            raise ConfigError("GITEA_TOKEN is required - set in .env file or environment")
+            msg = "GITEA_TOKEN is required - set in .env file or environment"
+            raise ConfigError(msg)

@@ -1,10 +1,11 @@
 """Gitea MCP Server implementation."""
 
 import asyncio
+import contextlib
+import json
 import logging
 import sys
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import FastMCP
 from fastmcp.server.openapi import OpenAPITool
@@ -19,8 +20,11 @@ from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 
 logger = logging.getLogger(__name__)
 
+# Constants for title truncation
+_TITLE_TRUNCATE_LIMIT = 50
 
-def _categorize_tool(path: str) -> str:
+
+def _categorize_tool(path: str) -> str:  # noqa: PLR0911
     """Categorize a tool based on its OpenAPI path.
 
     Args:
@@ -34,11 +38,11 @@ def _categorize_tool(path: str) -> str:
         return "admin"
 
     # Organization paths
-    if path.startswith("/orgs") or path.startswith("/org/"):
+    if path.startswith(("/orgs", "/org/")):
         return "organization"
 
     # User paths
-    if path.startswith("/user") or path.startswith("/users/"):
+    if path.startswith(("/user", "/users/")):
         return "user"
 
     # Issue paths
@@ -69,19 +73,21 @@ def _generate_tool_title(route: Any) -> str:
     summary = getattr(route, "summary", None)
     operation_id = getattr(route, "operation_id", None)
 
+    title: str
+
     # Prefer summary if available and non-empty
     if summary and summary.strip():
-        title = summary.strip()
+        title = str(summary).strip()
     elif operation_id:
         # Convert snake_case to Title Case
-        words = operation_id.replace("_", " ").title()
+        words = str(operation_id).replace("_", " ").title()
         title = words
     else:
         return "Unnamed Tool"
 
-    # Truncate to 50 characters
-    if len(title) > 50:
-        title = title[:47] + "..."
+    # Truncate to _TITLE_TRUNCATE_LIMIT characters
+    if len(title) > _TITLE_TRUNCATE_LIMIT:
+        title = title[: _TITLE_TRUNCATE_LIMIT - 3] + "..."
 
     return title
 
@@ -144,9 +150,9 @@ def _customize_component(route: Any, component: Any) -> None:
     # Create or update annotations
     if component.annotations is None:
         component.annotations = ToolAnnotations()
-    elif isinstance(component.annotations, dict):
+    elif isinstance(component.annotations, dict):  # type: ignore
         # Convert dict to ToolAnnotations while preserving existing fields
-        existing = component.annotations
+        existing = component.annotations  # type: ignore
         component.annotations = ToolAnnotations(**existing)
 
     # Set title
@@ -157,7 +163,7 @@ def _customize_component(route: Any, component: Any) -> None:
 
     # Add category to tags (used for grouping in MCP clients)
     if component.tags is None:
-        component.tags = set()
+        component.tags = set()  # type: ignore[unreachable]
     component.tags.add(category)
 
 
@@ -179,11 +185,9 @@ async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         base_url = base_url[:-7]  # Remove "/api/v1"
     spec_url = f"{base_url}/swagger.v1.json"
 
-    logger.info(f"Loading OpenAPI spec from {spec_url}")
+    logger.info("Loading OpenAPI spec from %s", spec_url)
 
     try:
-        import json
-
         response = await gitea_client.request("GET", spec_url)
         spec = response.json()
         logger.info(
@@ -193,11 +197,13 @@ async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
                 "paths_count": len(spec.get("paths", {})),
             },
         )
-        return spec
+        return cast("dict[str, Any]", spec)
     except json.JSONDecodeError as e:
-        raise SpecError(f"Invalid JSON in spec from {spec_url}: {e}") from e
+        msg = f"Invalid JSON in spec from {spec_url}: {e}"
+        raise SpecError(msg) from e
     except Exception as e:
-        raise SpecError(f"Failed to fetch spec from {spec_url}: {e}") from e
+        msg = f"Failed to fetch spec from {spec_url}: {e}"
+        raise SpecError(msg) from e
 
 
 async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
@@ -224,7 +230,8 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     except SpecError:
         raise
     except Exception as e:
-        raise SpecError(f"Failed to load OpenAPI spec: {e}") from e
+        msg = f"Failed to load OpenAPI spec: {e}"
+        raise SpecError(msg) from e
 
     logger.info("Converting OpenAPI v2 to v3...")
     try:
@@ -237,7 +244,8 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
             },
         )
     except Exception as e:
-        raise SpecError(f"Failed to convert OpenAPI spec: {e}") from e
+        msg = f"Failed to convert OpenAPI spec: {e}"
+        raise SpecError(msg) from e
 
     logger.info("Creating FastMCP server...")
     mcp = FastMCP.from_openapi(
@@ -269,7 +277,7 @@ async def main_async() -> None:
     try:
         config = Config.get()
         setup_logging(level=config.log_level, log_format=config.log_format)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Configuration error: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -277,8 +285,8 @@ async def main_async() -> None:
 
     try:
         mcp = await create_mcp_server(gitea_client)
-    except Exception as e:
-        logger.error(f"Failed to initialize server: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Failed to initialize server")
         await gitea_client.close()
         sys.exit(1)
 
@@ -289,14 +297,12 @@ async def main_async() -> None:
         logger.info("Server shutdown by user")
         # Exit normally, finally will close resources
     except Exception:
-        logger.error("Server crashed", exc_info=True)
+        logger.exception("Server crashed")
         sys.exit(1)
     finally:
         # Always close client first
-        try:
+        with contextlib.suppress(Exception):
             await gitea_client.close()
-        except Exception:
-            pass  # Ignore close errors during shutdown
         # Then shutdown logging to avoid writing to closed streams
         logging.shutdown()
         logging.shutdown()

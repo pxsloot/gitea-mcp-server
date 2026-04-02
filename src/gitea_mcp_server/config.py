@@ -57,14 +57,18 @@ class Config(BaseSettings):
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
-        """Validate URL format."""
+        """Validate URL format and ensure it doesn't contain /api/v1."""
         if not v:
             msg = "GITEA_URL cannot be empty"
             raise ConfigError(msg)
         if not v.startswith(("http://", "https://")):
             msg = f"Invalid GITEA_URL: {v} must start with http:// or https://"
             raise ConfigError(msg)
-        return v.rstrip("/")
+        v = v.rstrip("/")
+        if v.endswith("/api/v1"):
+            msg = f"GITEA_URL must not include '/api/v1' - provide the base URL only (e.g., 'https://git.example.com')"
+            raise ConfigError(msg)
+        return v
 
     @field_validator("token")
     @classmethod
@@ -89,10 +93,7 @@ class Config(BaseSettings):
     @property
     def base_url(self) -> str:
         """Get the API base URL."""
-        base = self.url.rstrip("/")
-        if base.endswith("/api/v1"):
-            return base
-        return f"{base}/api/v1"
+        return f"{self.url}/api/v1"
 
     @classmethod
     def get(cls) -> "Config":

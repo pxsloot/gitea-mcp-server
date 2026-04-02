@@ -71,6 +71,15 @@ class TestConfig:
         with pytest.raises(ConfigError, match="must start with http:// or https://"):
             Config.get()
 
+    def test_url_cannot_contain_api_v1(self, monkeypatch):
+        """Test error when URL includes /api/v1."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com/api/v1")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="must not include '/api/v1'"):
+            Config.get()
+
     def test_invalid_log_level(self, monkeypatch):
         """Test error when log level is invalid."""
         monkeypatch.setenv("GITEA_URL", "https://git.example.com")

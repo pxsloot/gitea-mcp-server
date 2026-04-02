@@ -32,17 +32,36 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
     """
     resources_list = []
 
-    # Get all resources via Context
-    mcp_resources = await ctx.list_resources()
+    try:
+        # Access the resource manager directly to get both resources and templates
+        resource_manager = ctx.fastmcp._resource_manager
 
-    for resource in mcp_resources:
-        resource_info = {
-            "uri": str(resource.uri),
-            "name": resource.name,
-            "description": resource.description or "",
-            "mimeType": resource.mime_type,
-        }
-        resources_list.append(resource_info)
+        # Get concrete resources
+        for uri, resource in resource_manager._resources.items():
+            resources_list.append(
+                {
+                    "uri": uri,
+                    "name": resource.name or resource.func.__name__,
+                    "description": resource.description or "",
+                    "mimeType": resource.mime_type or "text/plain",
+                    "type": "resource",
+                }
+            )
+
+        # Get resource templates (parameterized URIs)
+        for uri_template, template in resource_manager._templates.items():
+            resources_list.append(
+                {
+                    "uri": uri_template,
+                    "name": template.name or template.func.__name__,
+                    "description": template.description or "",
+                    "mimeType": template.mime_type or "text/plain",
+                    "type": "template",
+                }
+            )
+    except Exception as e:
+        logger.error("Error listing resources: %s", e)
+        return {"resources": [], "count": 0}
 
     return {"resources": resources_list, "count": len(resources_list)}
 

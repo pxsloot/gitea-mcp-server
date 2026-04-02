@@ -17,15 +17,21 @@ class TestMcpListResourcesImpl:
 
     @pytest.mark.asyncio
     async def test_returns_resources_and_count(self):
-        """Should return dict with resources list and count."""
-        # Create mock Context with list_resources method
+        """Should return dict with resources list and count from resource manager."""
+        # Create mock Context with fastmcp._resource_manager._resources
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
         resource_mock.uri = "gitea://test"
         resource_mock.name = "Test Resource"
         resource_mock.description = "Test description"
         resource_mock.mime_type = "text/plain"
-        ctx.list_resources = AsyncMock(return_value=[resource_mock])
+
+        # Mock resource manager with _resources dict
+        resource_manager = MagicMock()
+        resource_manager._resources = {"gitea://test": resource_mock}
+        resource_manager._templates = {}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
 
         result = await _mcp_list_resources_impl(ctx)
 
@@ -38,11 +44,15 @@ class TestMcpListResourcesImpl:
         """Should include URI, name, description, mimeType."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
-        resource_mock.uri = "gitea://repo"
         resource_mock.name = "Repo Info"
         resource_mock.description = "Repository information"
         resource_mock.mime_type = "text/markdown"
-        ctx.list_resources = AsyncMock(return_value=[resource_mock])
+
+        resource_manager = MagicMock()
+        resource_manager._resources = {"gitea://repo": resource_mock}
+        resource_manager._templates = {}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
 
         result = await _mcp_list_resources_impl(ctx)
 
@@ -53,37 +63,70 @@ class TestMcpListResourcesImpl:
         assert resource["mimeType"] == "text/markdown"
 
     @pytest.mark.asyncio
-    async def test_includes_multiple_resources(self):
-        """Should handle multiple resources."""
+    async def test_includes_templates(self):
+        """Should include resource templates (parameterized URIs)."""
         ctx = MagicMock(spec=Context)
-        resources = [
-            MagicMock(
-                uri="gitea://repos/{owner}/{repo}",
-                name="Repository",
-                description="Repository metadata",
-                mime_type="text/markdown",
-            ),
-            MagicMock(
-                uri="gitea://repos/{owner}/{repo}/readme",
-                name="README",
-                description="Repository README",
-                mime_type="text/plain",
-            ),
-        ]
-        ctx.list_resources = AsyncMock(return_value=resources)
+        template_mock = MagicMock()
+        template_mock.name = "Repository"
+        template_mock.description = "Repository metadata"
+        template_mock.mime_type = "text/markdown"
+        template_mock.func = MagicMock(__name__="get_repository")
+
+        resource_manager = MagicMock()
+        resource_manager._resources = {}
+        resource_manager._templates = {"gitea://repos/{owner}/{repo}": template_mock}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
+
+        result = await _mcp_list_resources_impl(ctx)
+
+        assert result["count"] == 1
+        resource = result["resources"][0]
+        assert resource["uri"] == "gitea://repos/{owner}/{repo}"
+        assert resource["name"] == "Repository"
+        assert resource["type"] == "template"
+
+    @pytest.mark.asyncio
+    async def test_includes_both_resources_and_templates(self):
+        """Should include both concrete resources and templates."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.name = "Static Resource"
+        resource_mock.description = "A concrete resource"
+        resource_mock.mime_type = "text/plain"
+
+        template_mock = MagicMock()
+        template_mock.name = "Dynamic Template"
+        template_mock.description = "A parameterized template"
+        template_mock.mime_type = "text/markdown"
+        template_mock.func = MagicMock(__name__="get_dynamic")
+
+        resource_manager = MagicMock()
+        resource_manager._resources = {"gitea://static": resource_mock}
+        resource_manager._templates = {"gitea://dynamic/{id}": template_mock}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
 
         result = await _mcp_list_resources_impl(ctx)
 
         assert result["count"] == 2
         uris = [r["uri"] for r in result["resources"]]
-        assert "gitea://repos/{owner}/{repo}" in uris
-        assert "gitea://repos/{owner}/{repo}/readme" in uris
+        assert "gitea://static" in uris
+        assert "gitea://dynamic/{id}" in uris
+        # Check types
+        types = {r["type"] for r in result["resources"]}
+        assert "resource" in types
+        assert "template" in types
 
     @pytest.mark.asyncio
     async def test_handles_empty_list(self):
         """Should handle empty resource list."""
         ctx = MagicMock(spec=Context)
-        ctx.list_resources = AsyncMock(return_value=[])
+        resource_manager = MagicMock()
+        resource_manager._resources = {}
+        resource_manager._templates = {}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
 
         result = await _mcp_list_resources_impl(ctx)
 
@@ -95,16 +138,42 @@ class TestMcpListResourcesImpl:
         """Should handle resources with None description."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
-        resource_mock.uri = "gitea://test"
         resource_mock.name = "Test"
         resource_mock.description = None
         resource_mock.mime_type = "text/plain"
-        ctx.list_resources = AsyncMock(return_value=[resource_mock])
+
+        resource_manager = MagicMock()
+        resource_manager._resources = {"gitea://test": resource_mock}
+        resource_manager._templates = {}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
 
         result = await _mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["description"] == ""
+
+    @pytest.mark.asyncio
+    async def test_handles_missing_name_and_mime_type(self):
+        """Should fall back to function name and default mime type."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.name = None
+        resource_mock.description = "Test resource"
+        resource_mock.mime_type = None
+        resource_mock.func = MagicMock(__name__="my_resource_func")
+
+        resource_manager = MagicMock()
+        resource_manager._resources = {"gitea://test": resource_mock}
+        resource_manager._templates = {}
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp._resource_manager = resource_manager
+
+        result = await _mcp_list_resources_impl(ctx)
+
+        resource = result["resources"][0]
+        assert resource["name"] == "my_resource_func"
+        assert resource["mimeType"] == "text/plain"
 
 
 class TestMcpReadResourceImpl:

@@ -17,6 +17,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.logging_config import setup_logging
+from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 
@@ -286,6 +287,10 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec)
     # Register custom-formatted resources (Markdown) and overrides
     resources.register_custom_resources(mcp, gitea_client)
+
+    # Register MCP resource access tools (for agents to read resources)
+    logger.info("Registering MCP resource access tools...")
+    register_mcp_resource_tools(mcp)
 
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:

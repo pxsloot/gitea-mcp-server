@@ -102,7 +102,7 @@ class GiteaClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         **kwargs: Any,
-    ) -> httpx.Response:
+    ) -> Any:
         """Make an HTTP request with retry logic.
 
         Args:
@@ -114,7 +114,7 @@ class GiteaClient:
             **kwargs: Additional httpx arguments
 
         Returns:
-            HTTP response
+            Parsed JSON response as dict/list, or text内容 if not JSON
 
         Raises:
             GiteaAPIError: On API errors after retries exhausted
@@ -131,7 +131,12 @@ class GiteaClient:
 
             # Raise for HTTP errors (including 429, which retry decorator will handle)
             response.raise_for_status()
-            return response  # noqa: TRY300
+
+            # Return JSON if content type indicates JSON, otherwise text
+            content_type = response.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                return response.json()
+            return response.text
         except httpx.HTTPStatusError as e:
             error_msg = f"API request failed: {e!s}"
             try:

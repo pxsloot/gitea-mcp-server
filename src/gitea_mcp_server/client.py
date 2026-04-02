@@ -114,7 +114,7 @@ class GiteaClient:
             **kwargs: Additional httpx arguments
 
         Returns:
-            Parsed JSON response as dict/list, or text内容 if not JSON
+            Parsed JSON response as dict/list, or text content if not JSON
 
         Raises:
             GiteaAPIError: On API errors after retries exhausted

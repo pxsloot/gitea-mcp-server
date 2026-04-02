@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,7 +22,7 @@ class Config(BaseSettings):
     Supports both prefixed (GITEA_*) and standard environment variable names.
     """
 
-    _instance: "Config | None" = None
+    _instance: ClassVar["Config | None"] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

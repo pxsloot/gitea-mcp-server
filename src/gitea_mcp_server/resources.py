@@ -37,6 +37,7 @@ from datetime import datetime
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
 
@@ -266,9 +267,22 @@ def register_auto_generated_resources(
             """Auto-generated resource from OpenAPI spec."""
             # Build path with kwargs
             formatted_path = path
+            missing_params = []
             for param in path_params:
                 if param not in kwargs:
-                    return f"Error: Missing required path parameter '{param}'"
+                    missing_params.append(param)
+            if missing_params:
+                raise ResourceError(
+                    {
+                        "code": "VALIDATION_ERROR",
+                        "message": f"Missing required path parameter(s): {', '.join(missing_params)}",
+                        "detail": "The resource requires path parameters that were not provided.",
+                        "resource_type": "api",
+                        "resource_id": formatted_path,
+                    }
+                )
+            # Now replace placeholders
+            for param in path_params:
                 formatted_path = formatted_path.replace(f"{{{param}}}", str(kwargs[param]))
 
             # Build query params
@@ -284,7 +298,37 @@ def register_auto_generated_resources(
                 # Return JSON for auto-generated resources
                 return json.dumps(response, indent=2)
             except Exception as e:  # noqa: BLE001
-                return f"Error fetching resource: {type(e).__name__}: {e}"
+                status = getattr(e, "status_code", None)
+                if status == 404:
+                    raise ResourceError(
+                        {
+                            "code": "NOT_FOUND",
+                            "message": f"Resource not found: {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
+                elif status:
+                    raise ResourceError(
+                        {
+                            "code": "API_ERROR",
+                            "message": f"API error {status} for {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
+                else:
+                    raise ResourceError(
+                        {
+                            "code": "INTERNAL_ERROR",
+                            "message": f"Unexpected error fetching resource: {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
 
         # Set docstring from operation
         summary = operation.get("summary", "")
@@ -365,7 +409,15 @@ async def get_repository(owner: str, repo: str, gitea_client: GiteaClient) -> Re
         return _format_repo_markdown(data)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nRepository not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found.",
+                    "detail": str(e),
+                    "resource_type": "repository",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
 
@@ -377,13 +429,23 @@ async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> Resour
             return response
         # If response is dict (from JSON), it might have content/base64
         if isinstance(response, dict):
-            content_bytes = base64.b64decode(response["content"])
-            return content_bytes.decode("utf-8")
+            encoding = response.get("encoding")
+            content = response.get("content", "")
+            if encoding == "base64":
+                return base64.b64decode(content).decode("utf-8")
+            return content if isinstance(content, str) else str(content)
         return str(response)
     except Exception as e:
-        # Check for 404 on the exception (GiteaAPIError has status_code)
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo README found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"README not found for repository '{owner}/{repo}'.",
+                    "detail": str(e),
+                    "resource_type": "readme",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
 
@@ -394,7 +456,15 @@ async def list_repo_issues(
     params = {}
     if state:
         if state not in ("open", "closed"):
-            return f"Error: Invalid state '{state}'. Must be 'open' or 'closed'."
+            raise ResourceError(
+                {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
+                    "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
+                    "resource_type": "issues",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            )
         params["state"] = state
 
     try:
@@ -403,7 +473,15 @@ async def list_repo_issues(
             return issues
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo issues found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no issues.",
+                    "detail": str(e),
+                    "resource_type": "issues",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     title = f"Issues ({state})" if state else "All Issues"
@@ -417,7 +495,15 @@ async def list_repo_pulls(
     params = {}
     if state:
         if state not in ("open", "closed"):
-            return f"Error: Invalid state '{state}'. Must be 'open' or 'closed'."
+            raise ResourceError(
+                {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
+                    "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
+                    "resource_type": "pulls",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            )
         params["state"] = state
 
     try:
@@ -426,7 +512,15 @@ async def list_repo_pulls(
             return pulls
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo pull requests found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no pull requests.",
+                    "detail": str(e),
+                    "resource_type": "pulls",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     title = f"Pull Requests ({state})" if state else "All Pull Requests"
@@ -460,7 +554,15 @@ async def get_file(
         return content
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"Error: File '{path}' not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"File '{path}' not found in repository '{owner}/{repo}'.",
+                    "detail": str(e),
+                    "resource_type": "file",
+                    "resource_id": f"{owner}/{repo}/{path}",
+                }
+            ) from e
         raise
 
 
@@ -472,7 +574,15 @@ async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -
             return releases
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# Releases for {owner}/{repo}\n\nNo releases found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no releases.",
+                    "detail": str(e),
+                    "resource_type": "releases",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     if not releases:
@@ -497,7 +607,15 @@ async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:
         return _format_user_markdown(user)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {username}\n\nUser not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"User '{username}' not found.",
+                    "detail": str(e),
+                    "resource_type": "user",
+                    "resource_id": username,
+                }
+            ) from e
         raise
 
 
@@ -510,7 +628,15 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
         return _format_user_markdown(org)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {orgname}\n\nOrganization not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Organization '{orgname}' not found.",
+                    "detail": str(e),
+                    "resource_type": "organization",
+                    "resource_id": orgname,
+                }
+            ) from e
         raise
 
 

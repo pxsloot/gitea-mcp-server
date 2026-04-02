@@ -37,6 +37,9 @@ def normalize_schema(schema: dict[str, Any]) -> dict[str, Any]:
     if schema.get("type") == "file":
         schema["type"] = "string"
         schema["format"] = "binary"
+    # Convert non-standard uint64 to standard int64
+    if schema.get("format") == "uint64":
+        schema["format"] = "int64"
     return schema
 
 

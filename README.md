@@ -5,6 +5,7 @@ MCP (Model Context Protocol) server for interacting with Gitea/Forgejo instances
 ## Features
 
 - **Auto-generated tools** from Gitea's OpenAPI spec (converted from Swagger 2.0)
+- **Rich tool annotations**: Automatically generated metadata (read-only, destructive, idempotent hints) for better discovery and safety
 - **Permission-aware**: Tools are filtered based on token capabilities
 - **Robust HTTP client** with retry logic and timeout handling
 - **Structured logging** (JSON or text format)
@@ -190,6 +191,22 @@ Tools will be filtered based on token permissions:
 - Hide admin tools if token lacks admin rights
 - Disable wiki tools if instance has wiki disabled
 - Implement via FastMCP tool callbacks
+
+### Tool Annotations
+
+All tools are automatically annotated with descriptive metadata:
+
+- **Title**: Human-readable name generated from OpenAPI summary or operationId
+- **Category tags**: `repository`, `issue`, `pull_request`, `user`, `organization`, `admin`, `misc`
+- **Safety hints**:
+  - `readOnlyHint` - Tool only reads data (GET, HEAD, OPTIONS)
+  - `destructiveHint` - Tool can delete data (DELETE methods)
+  - `idempotentHint` - Safe to retry (GET, PUT, DELETE, HEAD, OPTIONS)
+  - `openWorldHint` - Interacts with external Gitea server (always true)
+
+These annotations help MCP clients provide better UX (filtering, warnings, retry logic) and enable agents to make safer tool selections.
+
+See [docs/TOOL_ANNOTATIONS.md](./docs/TOOL_ANNOTATIONS.md) for complete details.
 
 ## Error Handling
 

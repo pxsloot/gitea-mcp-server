@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.server.openapi import OpenAPITool
+from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
@@ -16,6 +18,147 @@ from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 
 logger = logging.getLogger(__name__)
+
+
+def _categorize_tool(path: str) -> str:
+    """Categorize a tool based on its OpenAPI path.
+
+    Args:
+        path: The OpenAPI path pattern (e.g., "/repos/{owner}/{repo}/issues")
+
+    Returns:
+        Category string: "repository", "issue", "pull_request", "user", "organization", "admin", or "misc"
+    """
+    # Admin paths
+    if path.startswith("/admin"):
+        return "admin"
+
+    # Organization paths
+    if path.startswith("/orgs") or path.startswith("/org/"):
+        return "organization"
+
+    # User paths
+    if path.startswith("/user") or path.startswith("/users/"):
+        return "user"
+
+    # Issue paths
+    if "/issues" in path or path.startswith("/issues"):
+        return "issue"
+
+    # Pull request paths
+    if "/pulls" in path or path.startswith("/pulls"):
+        return "pull_request"
+
+    # Repository paths (most common)
+    if path.startswith("/repos"):
+        return "repository"
+
+    # Everything else
+    return "misc"
+
+
+def _generate_tool_title(route: Any) -> str:
+    """Generate a human-readable title for a tool from its OpenAPI route metadata.
+
+    Args:
+        route: FastMCP route object with summary and operation_id attributes
+
+    Returns:
+        Title string (max 50 chars, truncated with "..." if needed)
+    """
+    summary = getattr(route, "summary", None)
+    operation_id = getattr(route, "operation_id", None)
+
+    # Prefer summary if available and non-empty
+    if summary and summary.strip():
+        title = summary.strip()
+    elif operation_id:
+        # Convert snake_case to Title Case
+        words = operation_id.replace("_", " ").title()
+        title = words
+    else:
+        return "Unnamed Tool"
+
+    # Truncate to 50 characters
+    if len(title) > 50:
+        title = title[:47] + "..."
+
+    return title
+
+
+def _add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
+    """Infer and add annotation hints from HTTP route properties.
+
+    Hints are based on HTTP method semantics:
+    - readOnlyHint: True for safe methods (GET, HEAD, OPTIONS)
+    - destructiveHint: True for DELETE (and any method that destroys data)
+    - idempotentHint: True for idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
+    - openWorldHint: Always True for Gitea tools (they interact with external server)
+
+    Existing annotation values are preserved; only None values are set.
+
+    Args:
+        route: HTTPRoute object with method attribute
+        annotations: ToolAnnotations instance to update
+    """
+    method = getattr(route, "method", None)
+
+    # Define method sets based on HTTP semantics
+    safe_methods = {"GET", "HEAD", "OPTIONS"}
+    destructive_methods = {"DELETE"}
+    idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
+
+    # Only add hints if they are currently None (preserve existing manual settings)
+    if annotations.readOnlyHint is None:
+        annotations.readOnlyHint = method in safe_methods
+
+    if annotations.destructiveHint is None:
+        annotations.destructiveHint = method in destructive_methods
+
+    if annotations.idempotentHint is None:
+        annotations.idempotentHint = method in idempotent_methods
+
+    if annotations.openWorldHint is None:
+        # All Gitea MCP tools interact with external Gitea server
+        annotations.openWorldHint = True
+
+
+def _customize_component(route: Any, component: Any) -> None:
+    """Customize FastMCP components with tool annotations.
+
+    This function is called by FastMCP's from_openapi for each generated component.
+    It adds title and category annotations to tools and tags for categorization.
+
+    Args:
+        route: The OpenAPI route object
+        component: The generated FastMCP component (tool, resource, etc.)
+    """
+    # Only customize OpenAPITool instances
+    if not isinstance(component, OpenAPITool):
+        return
+
+    # Generate and set title annotation
+    title = _generate_tool_title(route)
+    category = _categorize_tool(route.path)
+
+    # Create or update annotations
+    if component.annotations is None:
+        component.annotations = ToolAnnotations()
+    elif isinstance(component.annotations, dict):
+        # Convert dict to ToolAnnotations while preserving existing fields
+        existing = component.annotations
+        component.annotations = ToolAnnotations(**existing)
+
+    # Set title
+    component.annotations.title = title
+
+    # Add inferred annotation hints based on HTTP method
+    _add_inferred_hints(route, component.annotations)
+
+    # Add category to tags (used for grouping in MCP clients)
+    if component.tags is None:
+        component.tags = set()
+    component.tags.add(category)
 
 
 async def load_swagger_spec(gitea_client: GiteaClient) -> dict[str, Any]:
@@ -101,6 +244,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         openapi_spec=openapi_spec,
         client=gitea_client.client,
         name="Gitea MCP Server",
+        mcp_component_fn=_customize_component,
     )
 
     # Apply tool filtering based on user permissions if enabled

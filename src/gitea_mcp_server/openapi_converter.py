@@ -541,19 +541,23 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
     Swagger spec does not mark these as nullable, causing strict validators to reject
     responses where such fields are present with null value.
 
-    Additionally, some string formats (like 'email') are not accepted when the field
-    contains an empty string, even though Gitea returns "" for hidden/redacted data.
-    For such formats, we preserve the format hint but use anyOf to also allow the
-    empty string (and optionally null).
+     Additionally, some string formats (like 'email') are not accepted when the field
+     contains an empty string, even though Gitea returns "" for hidden/redacted data.
+     For such formats, we preserve the format hint but use anyOf to also allow the
+     empty string (and optionally null).
 
-    This function walks through all schemas and:
-      - For optional properties (not in required):
-        * If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
-        * If it's a simple type, add 'null' to the type array.
-      - For string properties with special formats (e.g., 'email'):
-        * Replace with anyOf: [{type: 'string', format: <fmt>}, {type: 'string', maxLength: 0}]
-        * If the property is optional, also add {type: 'null'}
-        * This preserves the semantic format while allowing empty strings.
+     Note: Date/date-time fields do NOT need this special handling; Gitea returns
+     null for missing dates, not empty strings. Only 'email' is currently known
+     to require empty string support.
+
+     This function walks through all schemas and:
+       - For optional properties (not in required):
+         * If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
+         * If it's a simple type, add 'null' to the type array.
+       - For string properties with special formats (e.g., 'email'):
+         * Replace with anyOf: [{type: 'string', format: <fmt>}, {type: 'string', maxLength: 0}]
+         * If the property is optional, also add {type: 'null'}
+         * This preserves the semantic format while allowing empty strings.
     """
 
     def _process_schema(schema: dict[str, Any]) -> None:
@@ -569,9 +573,11 @@ def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
                     continue
 
                 # --- Handle special string formats that need to allow empty strings ---
-                # Currently: 'email' fields need to accept "" because Gitea returns empty string for hidden emails
+                # Only 'email' is currently known to require this, as Gitea returns ""
+                # for hidden/redacted emails. Date/date-time fields use null for missing
+                # values and do NOT need empty string branches.
                 # BUT: only for optional fields. Required fields should NOT accept empty strings.
-                FORMATS_NEEDING_EMPTY = {"email"}  # Extendable set
+                FORMATS_NEEDING_EMPTY = {"email"}  # Extendable set; date/date-time not needed
                 if (
                     prop_schema.get("type") == "string"
                     and prop_schema.get("format") in FORMATS_NEEDING_EMPTY

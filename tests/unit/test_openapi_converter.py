@@ -605,3 +605,102 @@ class TestEmailFormatHandling:
         assert any(b.get("format") == "email" for b in any_of)
         # Empty string branch
         assert any(b.get("type") == "string" and b.get("maxLength") == 0 for b in any_of)
+
+
+class TestDateFormatHandling:
+    """Tests that date/date-time formats do NOT get empty string handling.
+
+    Gitea returns null for missing date values, not empty strings.
+    Optional date fields should be nullable (type includes null) but should NOT
+    use anyOf with an empty string branch.
+    """
+
+    def test_optional_date_field_gets_nullable_type_no_anyof(self):
+        """Test that optional format:date fields become nullable without anyOf."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "date_field": {"type": "string", "format": "date", "description": "Some date"}
+            },
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        date_schema = schema["properties"]["date_field"]
+        # Should NOT have anyOf
+        assert "anyOf" not in date_schema
+        # Should have type including null
+        assert date_schema.get("type") == ["string", "null"] or date_schema.get("type") == [
+            "null",
+            "string",
+        ]
+        # Format should be preserved
+        assert date_schema.get("format") == "date"
+        # Description should be preserved
+        assert date_schema.get("description") == "Some date"
+
+    def test_required_date_field_stays_simple(self):
+        """Required date field remains simple string with format, no null addition."""
+        schema = {
+            "type": "object",
+            "required": ["date_field"],
+            "properties": {"date_field": {"type": "string", "format": "date"}},
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        date_schema = schema["properties"]["date_field"]
+        # Should NOT have anyOf
+        assert "anyOf" not in date_schema
+        # Should remain simple string with format
+        assert date_schema.get("type") == "string"
+        assert date_schema.get("format") == "date"
+
+    def test_optional_datetime_field_gets_nullable_type_no_anyof(self):
+        """Test that optional format:date-time fields become nullable without anyOf."""
+        schema = {
+            "type": "object",
+            "properties": {"datetime_field": {"type": "string", "format": "date-time"}},
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        dt_schema = schema["properties"]["datetime_field"]
+        assert "anyOf" not in dt_schema
+        assert dt_schema.get("type") == ["string", "null"] or dt_schema.get("type") == [
+            "null",
+            "string",
+        ]
+        assert dt_schema.get("format") == "date-time"
+
+    def test_date_time_integration_validates_openapi_3_1(self):
+        """Test that a spec with date fields converts to valid OpenAPI 3.1."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "definitions": {
+                "Event": {
+                    "type": "object",
+                    "properties": {
+                        "start_time": {"type": "string", "format": "date-time"},
+                        "end_time": {"type": "string", "format": "date-time"},
+                        "event_date": {"type": "string", "format": "date"},
+                    },
+                }
+            },
+            "paths": {
+                "/events": {
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Event"}}}}
+                }
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+        event_schema = result["components"]["schemas"]["Event"]
+        # Check each date field: optional, should be nullable, no anyOf
+        for field_name in ["start_time", "end_time", "event_date"]:
+            field_schema = event_schema["properties"][field_name]
+            assert "anyOf" not in field_schema, f"{field_name} should not have anyOf"
+            assert field_schema.get("type") == ["string", "null"] or field_schema.get("type") == [
+                "null",
+                "string",
+            ], f"{field_name} should be nullable"
+            if field_name.startswith("event_"):
+                assert field_schema.get("format") == "date"
+            else:
+                assert field_schema.get("format") == "date-time"

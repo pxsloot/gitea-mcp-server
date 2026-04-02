@@ -5,12 +5,14 @@ import contextlib
 import json
 import logging
 import sys
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
+from gitea_mcp_server import resources
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
@@ -186,21 +188,24 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
         try:
             spec_path = Path("swagger.v1.json")
             if not spec_path.exists():
-                raise SpecError("Local swagger.v1.json file not found")
+                msg = "Local swagger.v1.json file not found"
+                raise SpecError(msg)
             with open(spec_path) as f:
-                spec = json.load(f)
+                local_spec: dict[str, Any] = json.load(f)
             logger.info(
                 "Spec loaded",
                 extra={
-                    "spec_version": spec.get("swagger"),
-                    "paths_count": len(spec.get("paths", {})),
+                    "spec_version": local_spec.get("swagger"),
+                    "paths_count": len(local_spec.get("paths", {})),
                 },
             )
-            return spec
+            return local_spec
         except json.JSONDecodeError as e:
-            raise SpecError(f"Invalid JSON in local swagger.v1.json: {e}") from e
+            msg = f"Invalid JSON in local swagger.v1.json: {e}"
+            raise SpecError(msg) from e
         except Exception as e:
-            raise SpecError(f"Failed to load local swagger.v1.json: {e}") from e
+            msg = f"Failed to load local swagger.v1.json: {e}"
+            raise SpecError(msg) from e
 
     # Construct URL: base_url without /api/v1 + /swagger.v1.json
     spec_url = f"{gitea_client._config.url}/swagger.v1.json"
@@ -209,15 +214,15 @@ async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str
 
     try:
         response = await gitea_client.request("GET", spec_url)
-        spec = response.json()
+        remote_spec: dict[str, Any] = response.json()
         logger.info(
             "Spec loaded",
             extra={
-                "spec_version": spec.get("swagger"),
-                "paths_count": len(spec.get("paths", {})),
+                "spec_version": remote_spec.get("swagger"),
+                "paths_count": len(remote_spec.get("paths", {})),
             },
         )
-        return cast("dict[str, Any]", spec)
+        return remote_spec
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
         raise SpecError(msg) from e
@@ -274,6 +279,13 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         name="Gitea MCP Server",
         mcp_component_fn=_customize_component,
     )
+
+    # Register resources
+    logger.info("Registering MCP resources...")
+    # Auto-generate resources for all GET endpoints (raw JSON)
+    resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec)
+    # Register custom-formatted resources (Markdown) and overrides
+    resources.register_custom_resources(mcp, gitea_client)
 
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:

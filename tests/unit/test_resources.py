@@ -1,6 +1,7 @@
 """Tests for the resources module."""
 
 import json
+import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from gitea_mcp_server.resources import (
     register_custom_resources,
     _format_datetime,
     _format_repo_markdown,
+    get_readme,
 )
 
 
@@ -328,3 +330,105 @@ class TestResourceFormatters:
 
         assert "# myorg" in result
         assert "| Type | Organization |" in result
+
+
+class TestGetReadme:
+    """Tests for get_readme function."""
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        """Create a mock GiteaClient."""
+        client = AsyncMock()
+        return client
+
+    async def test_base64_content(self, mock_gitea_client):
+        """Test README with base64 encoded content."""
+        # Prepare base64 encoded content
+        readme_content = "# Test README\n\nThis is a test."
+        encoded_content = base64.b64encode(readme_content.encode("utf-8")).decode("utf-8")
+
+        mock_gitea_client.request = AsyncMock(
+            return_value={"content": encoded_content, "encoding": "base64"}
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+        mock_gitea_client.request.assert_called_once_with("GET", "/repos/owner/repo/readme")
+
+    async def test_plain_text_content(self, mock_gitea_client):
+        """Test README with plain text content (no base64 encoding)."""
+        readme_content = "# Plain README\n\nNo encoding."
+
+        mock_gitea_client.request = AsyncMock(
+            return_value={
+                "content": readme_content,
+                "encoding": "text",  # or any non-base64 encoding
+            }
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+
+    async def test_missing_content_field(self, mock_gitea_client):
+        """Test README response with missing content field."""
+        mock_gitea_client.request = AsyncMock(
+            return_value={
+                "encoding": "base64"
+                # content field is missing
+            }
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        # Should return empty string when content is missing
+        assert result == ""
+
+    async def test_string_response(self, mock_gitea_client):
+        """Test README when API returns a string directly."""
+        readme_content = "# Direct string README"
+
+        mock_gitea_client.request = AsyncMock(return_value=readme_content)
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+
+    async def test_404_error(self, mock_gitea_client):
+        """Test README returns friendly message on 404."""
+
+        # Create an exception with status_code attribute
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(404))
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == "# owner/repo\n\nNo README found."
+
+    async def test_other_errors_raised(self, mock_gitea_client):
+        """Test that non-404 errors are raised."""
+
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(500))
+
+        with pytest.raises(GiteaAPIError) as exc_info:
+            await get_readme("owner", "repo", mock_gitea_client)
+
+        assert exc_info.value.status_code == 500
+
+    async def test_non_dict_non_string_response(self, mock_gitea_client):
+        """Test handling of unexpected response types."""
+        mock_gitea_client.request = AsyncMock(return_value=12345)
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == "12345"

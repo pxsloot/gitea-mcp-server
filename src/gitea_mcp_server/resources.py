@@ -357,8 +357,11 @@ async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> Resour
             return response
         # If response is dict (from JSON), it might have content/base64
         if isinstance(response, dict):
-            content_bytes = base64.b64decode(response["content"])
-            return content_bytes.decode("utf-8")
+            encoding = response.get("encoding")
+            content = response.get("content", "")
+            if encoding == "base64":
+                return base64.b64decode(content).decode("utf-8")
+            return content if isinstance(content, str) else str(content)
         return str(response)
     except Exception as e:
         # Check for 404 on the exception (GiteaAPIError has status_code)

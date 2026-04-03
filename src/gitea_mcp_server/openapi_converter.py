@@ -10,6 +10,30 @@ from gitea_mcp_server.exceptions import SpecError
 
 logger = logging.getLogger(__name__)
 
+SCHEMA_FIELDS = frozenset(
+    {
+        "type",
+        "format",
+        "pattern",
+        "minLength",
+        "maxLength",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "maxItems",
+        "minItems",
+        "uniqueItems",
+        "enum",
+        "multipleOf",
+        "maxProperties",
+        "minProperties",
+        "items",
+        "$ref",
+        "default",
+    }
+)
+
 
 def camel_to_snake(name: str) -> str:
     """Convert camelCase or PascalCase to snake_case.
@@ -138,30 +162,6 @@ def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]
     """
     new_params = []
 
-    # Fields that belong inside schema in OAS 3.1 (type, format, etc.)
-    # Note: 'required' stays at parameter level, NOT inside schema
-    schema_fields = {
-        "type",
-        "format",
-        "pattern",
-        "minLength",
-        "maxLength",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "maxItems",
-        "minItems",
-        "uniqueItems",
-        "enum",
-        "multipleOf",
-        "maxProperties",
-        "minProperties",
-        "items",
-        "$ref",
-        "default",
-    }
-
     for param in parameters:
         param_in = param.get("in")
         # Skip body and formData - they become requestBody
@@ -174,9 +174,8 @@ def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]
         if "schema" in param_copy:
             param_copy["schema"] = normalize_schema(param_copy["schema"])
         else:
-            # Move type-related fields from top-level into schema
             schema_dict = {}
-            for field in list(schema_fields):
+            for field in SCHEMA_FIELDS:
                 if field in param_copy:
                     schema_dict[field] = param_copy.pop(field)
             if schema_dict:
@@ -214,27 +213,7 @@ def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
                     hdr = dict(hdr_def)
                     if "schema" not in hdr:
                         schema_dict = {}
-                        for field in [
-                            "type",
-                            "format",
-                            "pattern",
-                            "minLength",
-                            "maxLength",
-                            "minimum",
-                            "maximum",
-                            "exclusiveMinimum",
-                            "exclusiveMaximum",
-                            "maxItems",
-                            "minItems",
-                            "uniqueItems",
-                            "enum",
-                            "multipleOf",
-                            "maxProperties",
-                            "minProperties",
-                            "items",
-                            "$ref",
-                            "default",
-                        ]:
+                        for field in SCHEMA_FIELDS:
                             if field in hdr:
                                 schema_dict[field] = hdr.pop(field)
                         if schema_dict:

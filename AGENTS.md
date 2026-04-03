@@ -2,6 +2,12 @@
 
 **READ THIS BEFORE ANY WORK.** These are mandatory requirements.
 
+## Work Efficiently
+
+Keep the context clean an focused. Use subagents for research work and edits.
+Delegate these side quests to subagents.  Be concise in the prompt, add enough
+hints so subagents dont' have to do the same discoveries over and over again.
+
 ## Core Principle
 
 All changes must follow: **Issue → Branch → PR → Review → Merge**

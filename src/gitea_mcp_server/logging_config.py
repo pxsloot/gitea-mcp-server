@@ -86,7 +86,7 @@ def setup_logging(level: str = "INFO", log_format: str = "json") -> None:
         root_logger.removeHandler(handler)
 
     # Create console handler
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
     handler.setLevel(getattr(logging, level.upper()))
 
     formatter: logging.Formatter

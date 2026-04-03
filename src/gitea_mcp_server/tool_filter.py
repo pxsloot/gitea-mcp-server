@@ -1,7 +1,6 @@
 """Tool permission filtering for Gitea MCP Server."""
 
 import logging
-from typing import Any
 
 from fastmcp import FastMCP
 
@@ -10,38 +9,12 @@ from gitea_mcp_server.client import GiteaClient
 logger = logging.getLogger(__name__)
 
 
-def _extract_tool_names(tools: Any) -> list[str]:
-    """Extract tool names from mcp.get_tools() return value.
-
-    Args:
-        tools: The result from mcp.get_tools(), can be dict or list
-
-    Returns:
-        List of tool names as strings
-    """
-    if isinstance(tools, dict):
-        return list(tools.keys())
-
-    if isinstance(tools, list):
-        tool_names = []
-        for tool in tools:
-            if hasattr(tool, "name"):
-                tool_names.append(tool.name)
-            elif isinstance(tool, str):
-                tool_names.append(tool)
-            elif isinstance(tool, dict):
-                name = tool.get("name")
-                if name:
-                    tool_names.append(name)
-        return tool_names
-
-    return []
-
-
 async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
     """Filter tools based on the current user's permissions.
 
     Removes tools that the user does not have permission to use.
+    This function should be called before any list_tools request to avoid
+    caching of unfiltered tools.
 
     Args:
         mcp: The FastMCP server instance
@@ -69,58 +42,77 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
         )
         return
 
-    # Get all tools
-    tools = await mcp.get_tools()
-    tool_names = _extract_tool_names(tools)
+    # Gather tools directly from each provider without going through the server's
+    # list_tools (which may be cached or include middleware). This ensures we
+    # modify the original tool objects before any caching occurs.
+    all_tools = []
+    for provider in getattr(mcp, "providers", []):
+        try:
+            # Use provider's list_tools to get the tools (returns actual tool objects)
+            provider_tools = await provider.list_tools()
+            all_tools.extend(provider_tools)
+        except Exception as e:
+            logger.warning(
+                "Failed to list tools from provider, skipping",
+                extra={"provider": type(provider).__name__, "error": str(e)},
+            )
 
-    if not tool_names:
-        logger.warning("No tools found to filter")
+    if not all_tools:
+        logger.warning("No tools found in providers to filter")
         return
 
     logger.debug(
         "Tools before filtering",
-        extra={"total_tools": len(tool_names), "tools": tool_names[:20]},
+        extra={"total_tools": len(all_tools), "tools": [t.name for t in all_tools][:20]},
     )
 
-    # Identify tools to remove based on permission requirements
-    tools_to_remove = []
+    # Identify tools to disable based on permission requirements
+    tools_to_disable = []
 
-    for tool_name in tool_names:
+    for tool in all_tools:
         # Check if tool requires admin privileges (admin* operationIds)
-        if tool_name.startswith("admin") and not is_admin:
-            tools_to_remove.append(tool_name)
+        if tool.name.startswith("admin") and not is_admin:
+            tools_to_disable.append(tool)
             logger.debug(
-                "Marking admin tool for removal",
-                extra={"tool": tool_name, "reason": "non_admin_user"},
+                "Marking admin tool for disabling",
+                extra={"tool": tool.name, "reason": "non_admin_user", "key": tool.key},
             )
 
         # (Optional) Wiki tools - check if wiki feature is available
         # For now, we don't filter wiki tools; can be extended later
-        # elif tool_name.startswith("wiki_"):
+        # elif tool.name.startswith("wiki_"):
         #     if not await _is_wiki_available(gitea_client):
-        #         tools_to_remove.append(tool_name)
+        #         tools_to_disable.append(tool)
 
-    # Remove filtered tools
-    removed_count = 0
-    for tool_name in tools_to_remove:
+    # Directly mark tools as disabled by setting metadata
+    # This ensures that when tools are later listed, they appear disabled
+    disabled_count = 0
+    for tool in tools_to_disable:
         try:
-            mcp.remove_tool(tool_name)
-            removed_count += 1
+            # Ensure tool metadata has visibility=False
+            if tool.meta is None:
+                tool.meta = {}
+            if "fastmcp" not in tool.meta:
+                tool.meta["fastmcp"] = {}
+            if "_internal" not in tool.meta["fastmcp"]:
+                tool.meta["fastmcp"]["_internal"] = {}
+            tool.meta["fastmcp"]["_internal"]["visibility"] = False
+            disabled_count += 1
             logger.info(
-                "Removed tool due to insufficient permissions",
-                extra={"tool": tool_name},
+                "Disabled tool due to insufficient permissions",
+                extra={"tool": tool.name, "key": tool.key},
             )
         except Exception as e:
             logger.exception(
-                "Failed to remove tool",
-                extra={"tool": tool_name, "error": str(e)},
+                "Failed to disable tool",
+                extra={"tool": tool.name, "key": tool.key, "error": str(e)},
             )
 
     logger.info(
         "Tool filtering completed",
         extra={
-            "total_tools": len(tool_names),
-            "removed_tools": removed_count,
-            "remaining_tools": len(tool_names) - removed_count,
+            "total_tools": len(all_tools),
+            "disabled_tools": disabled_count,
+            "remaining_tools": len(all_tools) - disabled_count,
         },
     )

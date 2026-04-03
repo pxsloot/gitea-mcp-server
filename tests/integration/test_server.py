@@ -23,6 +23,7 @@ class SimpleConfig:
         log_level="ERROR",
         log_format="text",
         tool_filtering_enabled=True,
+        enable_lazy_loading=False,
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -31,6 +32,7 @@ class SimpleConfig:
         self.log_level = log_level
         self.log_format = log_format
         self.tool_filtering_enabled = tool_filtering_enabled
+        self.enable_lazy_loading = enable_lazy_loading
 
     @property
     def base_url(self) -> str:
@@ -76,6 +78,7 @@ class TestServerIntegration:
             log_level="ERROR",
             log_format="text",
             tool_filtering_enabled=False,
+            enable_lazy_loading=False,
         )
         gitea_client = GiteaClient(config)
 
@@ -139,12 +142,9 @@ class TestServerIntegration:
         with respx.mock() as mock_http:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
-
-            if isinstance(tools, dict):
-                tool_names = list(tools.keys())
-            else:
-                tool_names = [t.name for t in tools]
+            # FastMCP 3.x: list_tools returns a list of tool objects
+            tools = await mcp.list_tools()
+            tool_names = [t.name for t in tools]
 
             assert len(tools) > 0
             assert any("issue" in name for name in tool_names), (
@@ -180,31 +180,14 @@ class TestServerIntegration:
         with respx.mock() as mock_http:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
 
-            tool_list = list(tools.values()) if isinstance(tools, dict) else tools
-
-            get_tools = [t for t in tool_list if "get" in str(t).lower()]
+            get_tools = [t for t in tools if "get" in str(t).lower()]
             if get_tools:
-                if hasattr(get_tools[0], "name"):
-                    tool = get_tools[0]
-                    assert tool.name
-                    assert tool.description
-                    assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
-                mcp = await create_mcp_server(gitea_client)
-                tools = await mcp.get_tools()
-
-                tool_list = list(tools.values()) if isinstance(tools, dict) else tools
-
-                get_tools = [t for t in tool_list if "get" in str(t).lower()]
-                if get_tools:
-                    if hasattr(get_tools[0], "name"):
-                        tool = get_tools[0]
-                        assert tool.name
-                        assert tool.description
-                        assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
-                else:
-                    assert get_tools[0]
+                tool = get_tools[0]
+                assert tool.name
+                assert tool.description
+                assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
 
 
 class TestToolFiltering:
@@ -254,7 +237,7 @@ class TestToolFiltering:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
             admin_tools = [name for name in tool_names if name.startswith("admin")]
@@ -294,7 +277,7 @@ class TestToolFiltering:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
             admin_tools = [name for name in tool_names if name.startswith("admin")]
@@ -333,7 +316,7 @@ class TestToolFiltering:
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
             admin_tools = [name for name in tool_names if name.startswith("admin")]
@@ -373,7 +356,7 @@ class TestToolFiltering:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("/api/v1/user").respond(500, json={"message": "Error"})
             mcp = await create_mcp_server(gitea_client)
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
             assert len(tool_names) > 0

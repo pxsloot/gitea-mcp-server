@@ -33,14 +33,15 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
     resources_list = []
 
     try:
-        # Access the resource manager directly to get both resources and templates
-        resource_manager = ctx.fastmcp._resource_manager
+        # Use public FastMCP API to list resources and templates
+        resources = await ctx.fastmcp.list_resources()
+        templates = await ctx.fastmcp.list_resource_templates()
 
-        # Get concrete resources
-        for uri, resource in resource_manager._resources.items():
+        # Process concrete resources
+        for resource in resources:
             resources_list.append(
                 {
-                    "uri": uri,
+                    "uri": str(resource.uri),
                     "name": resource.name or resource.func.__name__,
                     "description": resource.description or "",
                     "mimeType": resource.mime_type or "text/plain",
@@ -51,12 +52,12 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                 }
             )
 
-        # Get resource templates (parameterized URIs)
-        for uri_template, template in resource_manager._templates.items():
+        # Process resource templates
+        for template in templates:
             resources_list.append(
                 {
-                    "uri": uri_template,
-                    "name": template.name or template.func.__name__,
+                    "uri": str(template.uri_template),
+                    "name": template.name or template.fn.__name__,
                     "description": template.description or "",
                     "mimeType": template.mime_type or "text/plain",
                     "type": "template",
@@ -86,15 +87,21 @@ async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
         ValueError: If the resource is not found or cannot be read
     """
     try:
-        # ctx.read_resource returns a list of ReadResourceContents objects
-        contents = await ctx.read_resource(uri)
+        # ctx.read_resource returns a ResourceResult (FastMCP 3.x)
+        result = await ctx.read_resource(uri)
 
-        if not contents:
+        if not result.contents:
             msg = f"Resource '{uri}' returned no content"
             raise ValueError(msg)
 
-        # Return the first content part's text (most resources have single part)
-        return contents[0].content
+        # Get first content item
+        content = result.contents[0].content
+
+        # Handle bytes if needed (convert to string)
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+
+        return content
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"

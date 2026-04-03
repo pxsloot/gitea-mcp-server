@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from fastmcp.server.openapi import OpenAPITool
+from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.server import (
@@ -241,7 +241,7 @@ class TestCustomizeComponent:
     """Tests for the _customize_component function."""
 
     def test_only_tools_are_customized(self):
-        from fastmcp.server.openapi import OpenAPIResource
+        from fastmcp.server.providers.openapi import OpenAPIResource
 
         # Mock a non-tool component with spec to pass isinstance check
         route = MagicMock(path="/test", summary="Test", operation_id="test_route")

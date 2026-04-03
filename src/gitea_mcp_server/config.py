@@ -53,6 +53,11 @@ class Config(BaseSettings):
         description="Enable tool filtering based on user permissions",
         alias="TOOL_FILTERING_ENABLED",
     )
+    enable_lazy_loading: bool = Field(
+        default=True,
+        description="Enable lazy loading of tools via search transform (requires FastMCP 3.x)",
+        alias="ENABLE_LAZY_LOADING",
+    )
 
     @field_validator("url")
     @classmethod

@@ -6,9 +6,10 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from fastmcp.server.context import Context
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
     GetPromptSettings,
@@ -16,8 +17,13 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from fastmcp.server.openapi import OpenAPITool
+from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.transforms.search import BM25SearchTransform
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
+
+# Import from new location (FastMCP 3.x)
+from fastmcp.server.providers.openapi import OpenAPITool
 
 from gitea_mcp_server import resources
 from gitea_mcp_server.client import GiteaClient
@@ -32,6 +38,54 @@ logger = logging.getLogger(__name__)
 
 # Constants for title truncation
 _TITLE_TRUNCATE_LIMIT = 50
+
+
+# Custom BM25SearchTransform that tolerates string arguments from OpenCode wrapper
+class TolerantBM25SearchTransform(BM25SearchTransform):
+    """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
+
+    Override the synthetic call_tool to accept any arguments (including JSON strings).
+    Also ensure internal catalog fetch bypasses middleware (like caching) to avoid stale results.
+    """
+
+    async def get_tool_catalog(
+        self, ctx: Context, *, run_middleware: bool = True
+    ) -> Sequence[Tool]:
+        """Override to always bypass middleware when fetching the tool catalog."""
+        # Force run_middleware=False to avoid cached synthetic results
+        return await super().get_tool_catalog(ctx, run_middleware=False)
+
+    def _make_call_tool(self) -> Tool:
+        """Create the call_tool proxy that executes discovered tools."""
+        transform = self
+
+        async def call_tool(
+            name: Annotated[str, "The name of the tool to call"],
+            arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> ToolResult:
+            """Call a tool by name with the given arguments.
+
+            Use this to execute tools discovered via search_tools.
+            """
+            if name in {transform._call_tool_name, transform._search_tool_name}:
+                raise ValueError(
+                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
+                )
+            # If arguments is a string, attempt to parse as JSON
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in arguments: {e}") from e
+            # Ensure arguments is a dict (or None)
+            if arguments is not None and not isinstance(arguments, dict):
+                raise ValueError(
+                    f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
+                )
+            return await ctx.fastmcp.call_tool(name, arguments)
+
+        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
 
 
 def _categorize_tool(path: str) -> str:  # noqa: PLR0911
@@ -298,11 +352,141 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         raise SpecError(msg) from e
 
     logger.info("Creating FastMCP server...")
-    mcp = FastMCP.from_openapi(
+    # Create OpenAPI provider (FastMCP 3.x pattern)
+    provider = OpenAPIProvider(
         openapi_spec=openapi_spec,
         client=gitea_client.client,
-        name="Gitea MCP Server",
         mcp_component_fn=_customize_component,
+    )
+    mcp = FastMCP(
+        name="Gitea MCP Server",
+        providers=[provider],
+        instructions="""
+# Gitea MCP Server
+
+This server provides tools and resources to interact with Gitea (self-hosted Git service).
+
+## CRITICAL: Lazy Loading
+**This server uses lazy loading.** The full tool catalog is NOT available via `list_tools()`. You will see only:
+- `search_tools` (synthetic) - to discover tools
+- `call_tool` (synthetic) - to execute tools
+- `mcp_list_resources`, `mcp_read_resource` (pinned internal tools)
+
+**You MUST use a two-step pattern:**
+1. **DISCOVER**: `await call_tool("search_tools", {"query": "keyword"})` returns a list of real tool definitions with their exact `name` and `description`.
+2. **EXECUTE**: `await call_tool("call_tool", {"name": "<exact_name_from_search>", "arguments": {...}})` to run the tool.
+
+You cannot call a tool by its presumed name without searching first (unless you already know it from a previous search).
+
+## Quick Start Example
+```python
+# Get current user
+tools = await call_tool("search_tools", {"query": "current user"})
+# tools might include: {"name": "user_get_current", "description": "Get the current user", ...}
+result = await call_tool("call_tool", {"name": "user_get_current"})
+
+# List your repositories
+tools = await call_tool("search_tools", {"query": "list repos"})
+# Look for a tool like "user_current_list_repos" or "user_repos_list"
+repos = await call_tool("call_tool", {
+    "name": "user_current_list_repos",
+    "arguments": {"page": 1, "limit": 50}
+})
+```
+
+## Authentication
+Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `user_get_current` (discover via search as shown above).
+
+## Tool Discovery Tips
+- **Start with broad keywords**: "issue", "repo", "user", "pull", "org", "topic", "release", "admin", "milestone", "label", "comment", "webhook", "key", "branch", "tag", "team", "permission".
+- **If no results**: Simplify the query to one word. Search is case-insensitive and matches on tool name, description, and tags.
+- **Tool naming**: Tools use snake_case (underscores). They are derived from Gitea API operationIds (camelCase → snake_case).
+- **Common patterns**:
+  - `{domain}_{action}_{resource?}` e.g., `issue_create_repo_issue`, `repo_delete`, `user_get`
+  - `{domain}_list_{resource}` e.g., `user_list_orgs`, `org_list_repos`
+  - `{domain}_search_{resource}` e.g., `repo_search`, `issue_search_repo_issues`
+- **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
+- **Save a tool name** for reuse: Once you find a tool name (e.g., `user_get_current`), you can use it directly in subsequent `call_tool` calls without searching again (unless you need other tools).
+
+## Resources
+Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern.
+
+**List resources**: `mcp_list_resources()` (always available)
+**Read resource**: `mcp_read_resource(uri)` where `uri` is like:
+- `gitea://repos/{owner}/{repo}` → repository summary (Markdown)
+- `gitea://repos/{owner}/{repo}/issues` → all issues (Markdown)
+- `gitea://repos/{owner}/{repo}/readme` → README (plain text)
+- `gitea://users/{username}` → user profile (Markdown)
+- `gitea://version` → server version
+
+To get your own repos via resource: first get your username (`user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
+
+## Workflows
+
+### 1. Get current user and list their repositories
+```python
+# Discover and call user_get_current
+u = await call_tool("search_tools", {"query": "current user"})
+user = await call_tool("call_tool", {"name": "user_get_current"})
+username = user["login"]
+
+# Discover and call a tool to list repos
+# Search for "list repos user" → likely "user_current_list_repos" or "user_repos_list"
+repos = await call_tool("call_tool", {
+    "name": "user_repos_list",
+    "arguments": {"page": 1, "limit": 50}
+})
+```
+
+### 2. Search and create an issue
+```python
+# Find tools related to issues
+t = await call_tool("search_tools", {"query": "issue"})
+# Create an issue (look for a tool like "issue_create_repo_issue")
+create = await call_tool("call_tool", {
+    "name": "issue_create_repo_issue",
+    "arguments": {
+        "owner": "myorg", "repo": "myrepo",
+        "title": "Bug report", "body": "details", "labels": ["bug"]
+    }
+})
+```
+
+### 3. Manage repository topics
+```python
+# Discover topic management tools
+t = await call_tool("search_tools", {"query": "topic"})
+# Add a topic
+await call_tool("call_tool", {
+    "name": "repo_add_topic",
+    "arguments": {"owner": "org", "repo": "repo", "topic": "gitea"}
+})
+# Delete a topic
+await call_tool("call_tool", {
+    "name": "repo_delete_topic",
+    "arguments": {"owner": "org", "repo": "repo", "topic": "old"}
+})
+```
+
+## Troubleshooting
+- **"Unknown tool"**: You likely tried to call a tool without using `call_tool` as the proxy, or the tool name is wrong. Remember: you must use `call_tool(name="call_tool", arguments={"name": "<real_tool>", ...})`.
+- **No search results**: Try a single keyword. If still none, the tool may not exist or you lack permission.
+- **Empty resource**: Resources reflect permissions (e.g., `users/{username}/repos` returns public repos only). Use authenticated tools (`user_*`) to see private/accessible repos.
+- **Need to see all tools**: There is no way to list all tools directly due to lazy loading. Use broad search queries like "repo" to surface most repository-related tools.
+- **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin. Search for them will yield no results.
+
+## Tool Prefixes (for search)
+`issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `mcp_`, `topic_`, `search_`
+
+## Pagination
+Most list operations accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary (often 30-50). Always paginate to avoid overwhelming responses.
+
+## Resources vs Tools
+- **Tools**: Execute API calls, may modify state, typically return structured data. Use `search_tools` to discover.
+- **Resources**: Cached, efficient reads of formatted data (Markdown, JSON). Use `mcp_list_resources` to see all available URIs.
+
+Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.
+""",
     )
 
     # Add response caching middleware
@@ -317,6 +501,23 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
             max_item_size=100_000_000,  # 100MB
         )
     )
+
+    # Add search transform for lazy loading of tools (FastMCP 3.x)
+    # Can be disabled via ENABLE_LAZY_LOADING=false (useful for tests)
+    if getattr(config, "enable_lazy_loading", True):
+        logger.info("Adding search transform for lazy loading...")
+        mcp.add_transform(
+            TolerantBM25SearchTransform(
+                max_results=10,
+                always_visible=[
+                    # Pin essential MCP resource tools that agents need
+                    "mcp_read_resource",
+                    "mcp_list_resources",
+                ],
+            )
+        )
+    else:
+        logger.info("Lazy loading disabled via config; all tools will be listed directly")
 
     # Register resources
     logger.info("Registering MCP resources...")

@@ -40,13 +40,53 @@ logger = logging.getLogger(__name__)
 _TITLE_TRUNCATE_LIMIT = 50
 
 
+def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+    """Return minimal tool info for search results to avoid massive payloads.
+
+    Only includes name, description, and a simplified parameters schema.
+    """
+    result = []
+    for tool in tools:
+        # Simplify parameters: keep property names and basic types, drop detailed descriptions
+        params = tool.parameters or {}
+        if "properties" in params:
+            simple_props = {}
+            for name, info in params["properties"].items():
+                if isinstance(info, dict):
+                    simple_props[name] = {"type": info.get("type", "any")}
+                else:
+                    simple_props[name] = {"type": "any"}
+            simple_params = {
+                "properties": simple_props,
+                "required": params.get("required", []),
+            }
+        else:
+            simple_params = params
+
+        result.append(
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": simple_params,
+            }
+        )
+    return result
+
+
 # Custom BM25SearchTransform that tolerates string arguments from OpenCode wrapper
 class TolerantBM25SearchTransform(BM25SearchTransform):
     """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
 
     Override the synthetic call_tool to accept any arguments (including JSON strings).
     Also ensure internal catalog fetch bypasses middleware (like caching) to avoid stale results.
+    Uses a compact result serializer to avoid massive payloads.
     """
+
+    def __init__(self, **kwargs):
+        # Force our compact serializer if not provided
+        if "search_result_serializer" not in kwargs:
+            kwargs["search_result_serializer"] = _compact_search_serializer
+        super().__init__(**kwargs)
 
     async def get_tool_catalog(
         self, ctx: Context, *, run_middleware: bool = True

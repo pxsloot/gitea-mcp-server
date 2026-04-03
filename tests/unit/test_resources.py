@@ -1,16 +1,22 @@
 """Tests for the resources module."""
 
 import json
+import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.server.fastmcp import FastMCP
+from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.resources import (
     register_auto_generated_resources,
     register_custom_resources,
     _format_datetime,
     _format_repo_markdown,
+    get_readme,
+    get_repository,
+    list_repo_issues,
+    get_file,
 )
 
 
@@ -328,3 +334,244 @@ class TestResourceFormatters:
 
         assert "# myorg" in result
         assert "| Type | Organization |" in result
+
+
+class TestGetReadme:
+    """Tests for get_readme function."""
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        """Create a mock GiteaClient."""
+        client = AsyncMock()
+        return client
+
+    async def test_base64_content(self, mock_gitea_client):
+        """Test README with base64 encoded content."""
+        # Prepare base64 encoded content
+        readme_content = "# Test README\n\nThis is a test."
+        encoded_content = base64.b64encode(readme_content.encode("utf-8")).decode("utf-8")
+
+        mock_gitea_client.request = AsyncMock(
+            return_value={"content": encoded_content, "encoding": "base64"}
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+        mock_gitea_client.request.assert_called_once_with(
+            "GET", "/repos/owner/repo/contents/README.md"
+        )
+
+    async def test_plain_text_content(self, mock_gitea_client):
+        """Test README with plain text content (no base64 encoding)."""
+        readme_content = "# Plain README\n\nNo encoding."
+
+        mock_gitea_client.request = AsyncMock(
+            return_value={
+                "content": readme_content,
+                "encoding": "text",  # or any non-base64 encoding
+            }
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+
+    async def test_missing_content_field(self, mock_gitea_client):
+        """Test README response with missing content field."""
+        mock_gitea_client.request = AsyncMock(
+            return_value={
+                "encoding": "base64"
+                # content field is missing
+            }
+        )
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        # Should return empty string when content is missing
+        assert result == ""
+
+    async def test_string_response(self, mock_gitea_client):
+        """Test README when API returns a string directly."""
+        readme_content = "# Direct string README"
+
+        mock_gitea_client.request = AsyncMock(return_value=readme_content)
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == readme_content
+
+    async def test_404_error(self, mock_gitea_client):
+        """Test README raises ResourceError with NOT_FOUND on 404."""
+
+        # Create an exception with status_code attribute
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(404))
+
+        with pytest.raises(ResourceError) as exc_info:
+            await get_readme("owner", "repo", mock_gitea_client)
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "NOT_FOUND"
+        assert "README not found" in error_data["message"]
+        assert error_data["resource_type"] == "readme"
+        assert error_data["resource_id"] == "owner/repo"
+
+    async def test_other_errors_raised(self, mock_gitea_client):
+        """Test that non-404 errors are raised."""
+
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(500))
+
+        with pytest.raises(GiteaAPIError) as exc_info:
+            await get_readme("owner", "repo", mock_gitea_client)
+
+        assert exc_info.value.status_code == 500
+
+    async def test_non_dict_non_string_response(self, mock_gitea_client):
+        """Test handling of unexpected response types."""
+        mock_gitea_client.request = AsyncMock(return_value=12345)
+
+        result = await get_readme("owner", "repo", mock_gitea_client)
+
+        assert result == "12345"
+
+
+class TestCustomResourceErrorHandling:
+    """Tests for custom resource error handling."""
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        """Create a mock GiteaClient."""
+        client = AsyncMock()
+        return client
+
+    async def test_get_repository_404_raises_resource_error(self, mock_gitea_client):
+        """Test get_repository raises ResourceError with NOT_FOUND on 404."""
+
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(404))
+
+        with pytest.raises(ResourceError) as exc_info:
+            await get_repository("owner", "repo", mock_gitea_client)
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "NOT_FOUND"
+        assert "Repository 'owner/repo' not found" in error_data["message"]
+        assert error_data["resource_type"] == "repository"
+        assert error_data["resource_id"] == "owner/repo"
+
+    async def test_get_file_404_raises_resource_error(self, mock_gitea_client):
+        """Test get_file raises ResourceError with NOT_FOUND on 404."""
+
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(404))
+
+        with pytest.raises(ResourceError) as exc_info:
+            await get_file("owner", "repo", "path/to/file", mock_gitea_client)
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "NOT_FOUND"
+        assert "File 'path/to/file' not found" in error_data["message"]
+        assert error_data["resource_type"] == "file"
+        assert error_data["resource_id"] == "owner/repo/path/to/file"
+
+    async def test_list_repo_issues_invalid_state_raises_validation_error(self, mock_gitea_client):
+        """Test list_repo_issues raises ResourceError with VALIDATION_ERROR for invalid state."""
+
+        with pytest.raises(ResourceError) as exc_info:
+            await list_repo_issues("owner", "repo", mock_gitea_client, state="invalid")
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "VALIDATION_ERROR"
+        assert "Invalid state parameter: 'invalid'" in error_data["message"]
+        assert error_data["resource_type"] == "issues"
+        assert error_data["resource_id"] == "owner/repo"
+
+
+class TestAutoGeneratedResourceErrors:
+    """Tests for auto-generated resource error handling."""
+
+    @pytest.fixture
+    def mock_mcp(self):
+        """Create a mock FastMCP instance."""
+        mcp = MagicMock(spec=FastMCP)
+        return mcp
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        """Create a mock GiteaClient."""
+        client = AsyncMock()
+        return client
+
+    async def test_404_raises_structured_error(self, mock_mcp, mock_gitea_client):
+        """Test auto-generated resource raises ResourceError with proper structure on 404."""
+        spec = {
+            "paths": {
+                "/test/{id}": {
+                    "get": {
+                        "summary": "Test endpoint",
+                        "operationId": "testEndpoint",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+
+        # Track registered functions
+        registered = []
+
+        def track_decorator(uri, **kwargs):
+            def decorator(func):
+                registered.append((uri, func))
+                return func
+
+            return decorator
+
+        mock_mcp.resource = MagicMock(side_effect=track_decorator)
+
+        register_auto_generated_resources(mock_mcp, mock_gitea_client, spec, skip_uris=set())
+
+        assert len(registered) == 1
+        uri, resource_func = registered[0]
+        assert uri == "gitea://test/{id}"
+
+        # Simulate 404 error from client
+        class GiteaAPIError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=GiteaAPIError(404))
+
+        with pytest.raises(ResourceError) as exc_info:
+            await resource_func(id="123")
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "NOT_FOUND"
+        assert "Resource not found: /test/123" in error_data["message"]
+        assert error_data["resource_type"] == "api"
+        assert error_data["resource_id"] == "/test/123"

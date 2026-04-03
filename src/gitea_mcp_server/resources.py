@@ -8,6 +8,17 @@ This module supports:
 - Manual resource overrides with custom formatting (Markdown, etc.)
 - Custom resources not in the OpenAPI spec
 
+Architecture:
+1. register_auto_generated_resources(): Creates resources for all GET endpoints in OpenAPI spec
+   - Returns raw JSON
+   - Skips URIs that will be covered by custom resources
+   - These provide comprehensive API coverage
+
+2. register_custom_resources(): Registers manually implemented resources
+   - Return formatted content (Markdown, plain text)
+   - Automatically override auto-generated resources with matching URIs
+   - Provide optimized, user-friendly output for common use cases
+
 Usage:
     from gitea_mcp_server import resources
 
@@ -26,6 +37,7 @@ from datetime import datetime
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
 
@@ -207,11 +219,18 @@ def register_auto_generated_resources(
     These can be overridden by custom resources with the same URI.
     Skip URIs that are already covered by custom resources to avoid duplicates.
 
+    This function implements the "comprehensive coverage" layer:
+    - Every GET endpoint becomes a resource
+    - URI pattern: gitea://<openapi-path> (e.g., /repos/{owner}/{repo} → gitea://repos/{owner}/{repo})
+    - Returns raw JSON for maximum flexibility
+    - Only endpoints with path parameters are registered (FastMCP requirement)
+
     Args:
         mcp: FastMCP server instance
         gitea_client: GiteaClient for API calls
         openapi_spec: OpenAPI 3.1 specification dictionary
         skip_uris: Set of URI templates to skip. If None, uses default custom URIs.
+                   These URIs will be provided by custom resources with better formatting.
     """
     if skip_uris is None:
         # Default set: URIs that will be provided by custom resources
@@ -248,9 +267,22 @@ def register_auto_generated_resources(
             """Auto-generated resource from OpenAPI spec."""
             # Build path with kwargs
             formatted_path = path
+            missing_params = []
             for param in path_params:
                 if param not in kwargs:
-                    return f"Error: Missing required path parameter '{param}'"
+                    missing_params.append(param)
+            if missing_params:
+                raise ResourceError(
+                    {
+                        "code": "VALIDATION_ERROR",
+                        "message": f"Missing required path parameter(s): {', '.join(missing_params)}",
+                        "detail": "The resource requires path parameters that were not provided.",
+                        "resource_type": "api",
+                        "resource_id": formatted_path,
+                    }
+                )
+            # Now replace placeholders
+            for param in path_params:
                 formatted_path = formatted_path.replace(f"{{{param}}}", str(kwargs[param]))
 
             # Build query params
@@ -266,7 +298,37 @@ def register_auto_generated_resources(
                 # Return JSON for auto-generated resources
                 return json.dumps(response, indent=2)
             except Exception as e:  # noqa: BLE001
-                return f"Error fetching resource: {type(e).__name__}: {e}"
+                status = getattr(e, "status_code", None)
+                if status == 404:
+                    raise ResourceError(
+                        {
+                            "code": "NOT_FOUND",
+                            "message": f"Resource not found: {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
+                elif status:
+                    raise ResourceError(
+                        {
+                            "code": "API_ERROR",
+                            "message": f"API error {status} for {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
+                else:
+                    raise ResourceError(
+                        {
+                            "code": "INTERNAL_ERROR",
+                            "message": f"Unexpected error fetching resource: {formatted_path}",
+                            "detail": str(e),
+                            "resource_type": "api",
+                            "resource_id": formatted_path,
+                        }
+                    ) from e
 
         # Set docstring from operation
         summary = operation.get("summary", "")
@@ -347,25 +409,43 @@ async def get_repository(owner: str, repo: str, gitea_client: GiteaClient) -> Re
         return _format_repo_markdown(data)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nRepository not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found.",
+                    "detail": str(e),
+                    "resource_type": "repository",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
 
 async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get repository README content."""
     try:
-        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/readme")
+        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
         if isinstance(response, str):
             return response
-        # If response is dict (from JSON), it might have content/base64
-        if isinstance(response, dict):
-            content_bytes = base64.b64decode(response["content"])
-            return content_bytes.decode("utf-8")
-        return str(response)
+        if not isinstance(response, dict):
+            return str(response)
+        # Handle encoding like get_file does
+        if response.get("encoding") == "base64":
+            content = base64.b64decode(response.get("content", "")).decode("utf-8")
+        else:
+            content = response.get("content", "")
+        return content
     except Exception as e:
-        # Check for 404 on the exception (GiteaAPIError has status_code)
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo README found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"README not found for repository '{owner}/{repo}'.",
+                    "detail": str(e),
+                    "resource_type": "readme",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
 
@@ -376,7 +456,15 @@ async def list_repo_issues(
     params = {}
     if state:
         if state not in ("open", "closed"):
-            return f"Error: Invalid state '{state}'. Must be 'open' or 'closed'."
+            raise ResourceError(
+                {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
+                    "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
+                    "resource_type": "issues",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            )
         params["state"] = state
 
     try:
@@ -385,7 +473,15 @@ async def list_repo_issues(
             return issues
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo issues found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no issues.",
+                    "detail": str(e),
+                    "resource_type": "issues",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     title = f"Issues ({state})" if state else "All Issues"
@@ -399,7 +495,15 @@ async def list_repo_pulls(
     params = {}
     if state:
         if state not in ("open", "closed"):
-            return f"Error: Invalid state '{state}'. Must be 'open' or 'closed'."
+            raise ResourceError(
+                {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
+                    "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
+                    "resource_type": "pulls",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            )
         params["state"] = state
 
     try:
@@ -408,7 +512,15 @@ async def list_repo_pulls(
             return pulls
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {owner}/{repo}\n\nNo pull requests found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no pull requests.",
+                    "detail": str(e),
+                    "resource_type": "pulls",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     title = f"Pull Requests ({state})" if state else "All Pull Requests"
@@ -442,7 +554,15 @@ async def get_file(
         return content
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"Error: File '{path}' not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"File '{path}' not found in repository '{owner}/{repo}'.",
+                    "detail": str(e),
+                    "resource_type": "file",
+                    "resource_id": f"{owner}/{repo}/{path}",
+                }
+            ) from e
         raise
 
 
@@ -454,7 +574,15 @@ async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -
             return releases
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# Releases for {owner}/{repo}\n\nNo releases found (repository may not exist)."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Repository '{owner}/{repo}' not found or has no releases.",
+                    "detail": str(e),
+                    "resource_type": "releases",
+                    "resource_id": f"{owner}/{repo}",
+                }
+            ) from e
         raise
 
     if not releases:
@@ -479,7 +607,15 @@ async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:
         return _format_user_markdown(user)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {username}\n\nUser not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"User '{username}' not found.",
+                    "detail": str(e),
+                    "resource_type": "user",
+                    "resource_id": username,
+                }
+            ) from e
         raise
 
 
@@ -492,7 +628,15 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
         return _format_user_markdown(org)
     except Exception as e:
         if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            return f"# {orgname}\n\nOrganization not found."
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": f"Organization '{orgname}' not found.",
+                    "detail": str(e),
+                    "resource_type": "organization",
+                    "resource_id": orgname,
+                }
+            ) from e
         raise
 
 
@@ -518,6 +662,22 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
     """Register custom-formatted and custom resources.
 
     These override any auto-generated resources with the same URI.
+
+    This function implements the "optimized UX" layer:
+    - Manually implemented resources with user-friendly formatting (Markdown)
+    - Convenience wrappers that combine data or filter by common criteria
+    - Strategically chosen to cover the most frequently accessed endpoints
+    - Registration order ensures these override auto-generated ones
+
+    Override mechanism:
+    - FastMCP registers resources in order; later registrations replace earlier ones
+    - Custom resources are registered AFTER auto-generated ones
+    - URIs match exactly, so gitea://repos/{owner}/{repo} custom replaces auto-generated
+
+    Tags semantic:
+    - "wrapper": Human-readable formatted output (Markdown/plain text)
+    - "repository", "issue", "pull_request", etc.: Entity type for filtering
+    - Cache TTLs are tuned per resource type (static data cached longer)
     """
 
     def make_resource(
@@ -531,54 +691,90 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
         return wrapper
 
     # Custom-formatted resources with better UX
-    custom_resources: list[tuple[str, Callable[..., Awaitable[str]], str, set[str]]] = [
+    custom_resources: list[
+        tuple[str, Callable[..., Awaitable[str]], str, set[str], dict[str, Any] | None]
+    ] = [
         (
             "gitea://repos/{owner}/{repo}",
             get_repository,
             "text/markdown",
             {"wrapper", "repository"},
+            {"cache_ttl": 300.0},  # 5 minutes - repo info rarely changes
         ),
-        ("gitea://repos/{owner}/{repo}/readme", get_readme, "text/plain", {"wrapper", "readme"}),
+        (
+            "gitea://repos/{owner}/{repo}/readme",
+            get_readme,
+            "text/plain",
+            {"wrapper", "readme"},
+            {"cache_ttl": 600.0},
+        ),  # 10 minutes
         (
             "gitea://repos/{owner}/{repo}/issues",
             list_repo_issues,
             "text/markdown",
             {"wrapper", "issues"},
+            None,  # Use default TTL (30s) - issues change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/open",
             list_repo_issues_open,
             "text/markdown",
             {"wrapper", "issues"},
+            None,
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/closed",
             list_repo_issues_closed,
             "text/markdown",
             {"wrapper", "issues"},
+            None,
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls",
             list_repo_pulls,
             "text/markdown",
             {"wrapper", "pull_requests"},
+            None,  # Use default TTL (30s) - PRs change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls/open",
             list_repo_pulls_open,
             "text/markdown",
             {"wrapper", "pull_requests"},
+            None,
         ),
-        ("gitea://repos/{owner}/{repo}/files/{path}", get_file, "text/plain", {"wrapper", "files"}),
+        (
+            "gitea://repos/{owner}/{repo}/files/{path}",
+            get_file,
+            "text/plain",
+            {"wrapper", "files"},
+            None,
+        ),  # Default TTL
         (
             "gitea://repos/{owner}/{repo}/releases",
             list_repo_releases,
             "text/markdown",
             {"wrapper", "releases"},
+            {"cache_ttl": 600.0},  # 10 minutes - releases are infrequent
         ),
-        ("gitea://users/{username}", get_user, "text/markdown", {"wrapper", "user"}),
-        ("gitea://orgs/{orgname}", get_org, "text/markdown", {"wrapper", "organization"}),
+        (
+            "gitea://users/{username}",
+            get_user,
+            "text/markdown",
+            {"wrapper", "user"},
+            {"cache_ttl": 300.0},
+        ),  # 5 minutes
+        (
+            "gitea://orgs/{orgname}",
+            get_org,
+            "text/markdown",
+            {"wrapper", "organization"},
+            {"cache_ttl": 300.0},
+        ),  # 5 minutes
     ]
 
-    for uri_template, func, mime_type, tags in custom_resources:
-        mcp.resource(uri_template, mime_type=mime_type, tags=tags)(make_resource(func))
+    for uri_template, func, mime_type, tags, meta in custom_resources:
+        kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
+        if meta is not None:
+            kwargs["meta"] = meta
+        mcp.resource(uri_template, **kwargs)(make_resource(func))

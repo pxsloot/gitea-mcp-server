@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware.caching import (
+    CallToolSettings,
+    GetPromptSettings,
+    ListResourcesSettings,
+    ReadResourceSettings,
+    ResponseCachingMiddleware,
+)
 from fastmcp.server.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -169,6 +176,18 @@ def _customize_component(route: Any, component: Any) -> None:
         component.tags = set()  # type: ignore[unreachable]
     component.tags.add(category)
 
+    # For read-only tools, add a note encouraging use of resources
+    if component.annotations and component.annotations.readOnlyHint:
+        resource_note = (
+            "\n\nNote: For read-only operations, consider using mcp_read_resource() "
+            "instead, which provides a unified interface with better formatting and caching. "
+            "See AGENT_GUIDELINES.md for details."
+        )
+        existing_doc = component.__doc__ or ""
+        # Avoid adding the note twice
+        if resource_note not in existing_doc:
+            component.__doc__ = existing_doc + resource_note
+
 
 async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
     """Load Swagger spec from Gitea instance or local file.
@@ -284,6 +303,19 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         client=gitea_client.client,
         name="Gitea MCP Server",
         mcp_component_fn=_customize_component,
+    )
+
+    # Add response caching middleware
+    logger.info("Adding response caching middleware...")
+    mcp.add_middleware(
+        ResponseCachingMiddleware(
+            cache_storage=None,  # In-memory cache
+            read_resource_settings=ReadResourceSettings(enabled=True, ttl=30.0),
+            list_resources_settings=ListResourcesSettings(enabled=True, ttl=300.0),
+            call_tool_settings=CallToolSettings(enabled=False),
+            get_prompt_settings=GetPromptSettings(enabled=False),
+            max_item_size=100_000_000,  # 100MB
+        )
     )
 
     # Register resources

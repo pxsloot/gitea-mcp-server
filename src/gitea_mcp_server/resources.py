@@ -50,6 +50,32 @@ HTTP_NOT_FOUND = 404
 ResourceResult = str
 
 
+def _handle_not_found(
+    e: Exception, resource_type: str, resource_id: str, custom_message: str | None = None
+) -> None:
+    """Convert a 404 exception to ResourceError.
+
+    Helper to reduce boilerplate for repeated 404 error handling.
+
+    Args:
+        e: The caught exception
+        resource_type: Type of resource (e.g., "repository", "issues")
+        resource_id: Identifier for the resource
+        custom_message: Optional custom message (defaults to standard message)
+    """
+    if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
+        message = custom_message or f"Resource not found: {resource_id}"
+        raise ResourceError(
+            {
+                "code": "NOT_FOUND",
+                "message": message,
+                "detail": str(e),
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+            }
+        ) from e
+
+
 def _format_datetime(dt: str | None) -> str:
     """Format datetime string to human-readable format."""
     if not dt:
@@ -404,20 +430,12 @@ async def get_repository(owner: str, repo: str, gitea_client: GiteaClient) -> Re
     try:
         data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
         if isinstance(data, str):
-            # If we got text instead of JSON, return as-is
             return data
         return _format_repo_markdown(data)
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"Repository '{owner}/{repo}' not found.",
-                    "detail": str(e),
-                    "resource_type": "repository",
-                    "resource_id": f"{owner}/{repo}",
-                }
-            ) from e
+        _handle_not_found(
+            e, "repository", f"{owner}/{repo}", f"Repository '{owner}/{repo}' not found."
+        )
         raise
 
 
@@ -436,16 +454,9 @@ async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> Resour
             content = response.get("content", "")
         return content
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"README not found for repository '{owner}/{repo}'.",
-                    "detail": str(e),
-                    "resource_type": "readme",
-                    "resource_id": f"{owner}/{repo}",
-                }
-            ) from e
+        _handle_not_found(
+            e, "readme", f"{owner}/{repo}", f"README not found for repository '{owner}/{repo}'."
+        )
         raise
 
 
@@ -472,16 +483,12 @@ async def list_repo_issues(
         if isinstance(issues, str):
             return issues
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"Repository '{owner}/{repo}' not found or has no issues.",
-                    "detail": str(e),
-                    "resource_type": "issues",
-                    "resource_id": f"{owner}/{repo}",
-                }
-            ) from e
+        _handle_not_found(
+            e,
+            "issues",
+            f"{owner}/{repo}",
+            f"Repository '{owner}/{repo}' not found or has no issues.",
+        )
         raise
 
     title = f"Issues ({state})" if state else "All Issues"
@@ -511,16 +518,12 @@ async def list_repo_pulls(
         if isinstance(pulls, str):
             return pulls
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"Repository '{owner}/{repo}' not found or has no pull requests.",
-                    "detail": str(e),
-                    "resource_type": "pulls",
-                    "resource_id": f"{owner}/{repo}",
-                }
-            ) from e
+        _handle_not_found(
+            e,
+            "pulls",
+            f"{owner}/{repo}",
+            f"Repository '{owner}/{repo}' not found or has no pull requests.",
+        )
         raise
 
     title = f"Pull Requests ({state})" if state else "All Pull Requests"
@@ -553,16 +556,12 @@ async def get_file(
 
         return content
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"File '{path}' not found in repository '{owner}/{repo}'.",
-                    "detail": str(e),
-                    "resource_type": "file",
-                    "resource_id": f"{owner}/{repo}/{path}",
-                }
-            ) from e
+        _handle_not_found(
+            e,
+            "file",
+            f"{owner}/{repo}/{path}",
+            f"File '{path}' not found in repository '{owner}/{repo}'.",
+        )
         raise
 
 
@@ -573,16 +572,12 @@ async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -
         if isinstance(releases, str):
             return releases
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"Repository '{owner}/{repo}' not found or has no releases.",
-                    "detail": str(e),
-                    "resource_type": "releases",
-                    "resource_id": f"{owner}/{repo}",
-                }
-            ) from e
+        _handle_not_found(
+            e,
+            "releases",
+            f"{owner}/{repo}",
+            f"Repository '{owner}/{repo}' not found or has no releases.",
+        )
         raise
 
     if not releases:
@@ -606,16 +601,7 @@ async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:
             return user
         return _format_user_markdown(user)
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"User '{username}' not found.",
-                    "detail": str(e),
-                    "resource_type": "user",
-                    "resource_id": username,
-                }
-            ) from e
+        _handle_not_found(e, "user", username, f"User '{username}' not found.")
         raise
 
 
@@ -627,16 +613,7 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
             return org
         return _format_user_markdown(org)
     except Exception as e:
-        if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
-            raise ResourceError(
-                {
-                    "code": "NOT_FOUND",
-                    "message": f"Organization '{orgname}' not found.",
-                    "detail": str(e),
-                    "resource_type": "organization",
-                    "resource_id": orgname,
-                }
-            ) from e
+        _handle_not_found(e, "organization", orgname, f"Organization '{orgname}' not found.")
         raise
 
 

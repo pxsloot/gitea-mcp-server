@@ -145,6 +145,29 @@ Resources offer advantages for read operations:
 
 See `AGENT_GUIDELINES.md` for detailed best practices.
 
+## Server Instructions & Agent Context
+
+When an MCP client connects, the server provides comprehensive instructions to help agents understand how to use the Gitea MCP Server effectively. These instructions include:
+
+- **Purpose**: What the server does and how it connects to Gitea
+- **Authentication**: Setup requirements and environment variables
+- **Common Workflows**: Step-by-step patterns for frequent tasks (search issues, create PRs, list repos)
+- **Tool Naming Conventions**: Explanation of prefixes (`issue_*`, `repo_*`, `pr_*`, `user_*`, `org_*`)
+- **Resource Discovery**: Guidance on using `*_list` tools before acting
+- **Lazy Loading Notice**: Information about upcoming performance improvements
+
+Agents can access these instructions during the MCP `initialize` handshake, ensuring they have context before discovering tools.
+
+### Current Limitations & Future Improvements
+
+The server currently exposes all 400+ tools directly, which can impact token usage and selection accuracy. We are planning to implement **lazy loading** using FastMCP search transforms (requires FastMCP 3.x):
+
+- `list_tools()` will return only a synthetic search interface (`search_tools`, `call_tool`) plus a few essential tools
+- Agents will first search for relevant tools by keyword or natural language
+- Only matching tools will be loaded with full schemas, reducing initial overhead by ~99%
+
+See issue #47 for details and progress.
+
 ## Prerequisites
 
 - Python 3.11+

@@ -68,6 +68,40 @@ class TestServerIntegration:
             assert mcp.name == "Gitea MCP Server"
 
     @pytest.mark.asyncio
+    async def test_server_instructions_present(self):
+        """Test that server instructions are properly set."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            log_format="text",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                json={
+                    "swagger": "2.0",
+                    "info": {"title": "Gitea API", "version": "1.0"},
+                    "paths": {},
+                    "definitions": {},
+                },
+            )
+            mcp = await create_mcp_server(gitea_client)
+            # FastMCP stores instructions in the `_instructions` attribute
+            # or it's accessible via the server's initialization info
+            assert mcp is not None
+            # Check that instructions exist and contain key phrases
+            instructions = getattr(mcp, "_instructions", None) or getattr(mcp, "instructions", None)
+            assert instructions is not None, "Server should have instructions set"
+            assert isinstance(instructions, str)
+            assert "Gitea MCP Server" in instructions
+            assert "Authentication" in instructions
+            assert "lazy loading" in instructions.lower() or "search" in instructions.lower()
+
+    @pytest.mark.asyncio
     async def test_server_tools_discovery(self):
         """Test that tools are discovered from OpenAPI spec."""
         config = SimpleConfig(

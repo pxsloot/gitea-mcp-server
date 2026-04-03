@@ -303,6 +303,42 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         client=gitea_client.client,
         name="Gitea MCP Server",
         mcp_component_fn=_customize_component,
+        instructions="""
+# Gitea MCP Server
+
+This server provides tools and resources to interact with Gitea (self-hosted Git service).
+
+## Authentication
+The mcp server is started with GITEA_TOKEN and GITEA_URL already set. Use
+user_get_current for details.
+
+## Common Workflows
+- Search issues: `issue_search(q="bug")` → `issue_get(index)`
+- Create a PR: `repo_get()` → `pull_request_create(base="main", head="feature")`
+- List repositories: `repo_list()` or `org_list_repos(org="team")`
+- Manage issues: `issue_list()` → `issue_edit()` or `issue_close()`
+
+## Tool Naming Conventions
+Tools use consistent prefixes by domain:
+- `issue_*` - Issue operations (list, get, create, edit, close, etc.)
+- `repo_*` - Repository operations (get, list, edit, delete, etc.)
+- `pull_request_*` - Pull request operations
+- `user_*` - User management and profile operations
+- `org_*` - Organization operations
+- `mcp_*` - Built-in resource access tools
+
+## Lazy Loading
+Tools are lazy-loaded via search. Use `search_tools(query="keyword")` to discover
+relevant tools instead of calling `list_tools()` directly. Only the search interface
+and a few pinned tools appear in the full catalog.
+
+## Tips
+- Use `*_list` tools first to discover resources (repos, issues, PRs) before acting
+- Many tools accept `owner` and `repo` parameters (defaults to current context)
+- For read-only operations, consider using `mcp_read_resource()` for better caching
+- Check the agent guidelines in AGENT_GUIDELINES.md for detailed patterns
+
+""",
     )
 
     # Add response caching middleware

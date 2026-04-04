@@ -1,12 +1,25 @@
 """Tool permission filtering for Gitea MCP Server."""
 
 import logging
+from typing import Any
 
 from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 
 logger = logging.getLogger(__name__)
+
+
+def _is_admin_tool(tool: Any) -> bool:
+    """Check if a tool requires admin privileges.
+
+    Args:
+        tool: Tool object (expected to have 'tags' attribute)
+
+    Returns:
+        True if tool has 'admin' tag, False otherwise
+    """
+    return bool(hasattr(tool, "tags") and tool.tags and "admin" in tool.tags)
 
 
 async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
@@ -70,8 +83,8 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
     tools_to_disable = []
 
     for tool in all_tools:
-        # Check if tool requires admin privileges (admin* operationIds)
-        if tool.name.startswith("admin") and not is_admin:
+        # Check if tool requires admin privileges via tags (set by _categorize_tool)
+        if _is_admin_tool(tool) and not is_admin:
             tools_to_disable.append(tool)
             logger.debug(
                 "Marking admin tool for disabling",

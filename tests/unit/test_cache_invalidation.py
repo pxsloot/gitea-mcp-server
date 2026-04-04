@@ -11,7 +11,9 @@ from gitea_mcp_server.cache_invalidation import (
     _compute_cache_key,
     _substitute_template,
 )
-from gitea_mcp_server.server import _compute_tool_invalidation_patterns
+from gitea_mcp_server.server_setup.tool_annotator import (
+    compute_invalidation_patterns as _compute_tool_invalidation_patterns,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -234,7 +236,9 @@ class TestCacheInvalidationMiddleware:
 class TestComputeToolInvalidationPatterns:
     """Tests for _compute_tool_invalidation_patterns from server module."""
 
-    from gitea_mcp_server.server import _compute_tool_invalidation_patterns
+    from gitea_mcp_server.server_setup.tool_annotator import (
+        compute_invalidation_patterns as _compute_tool_invalidation_patterns,
+    )
 
     def test_issue_paths_invalidate_issues(self):
         """Paths under /issues trigger invalidations for issues resources."""

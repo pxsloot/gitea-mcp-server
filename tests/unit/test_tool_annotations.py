@@ -6,14 +6,18 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import TITLE_TRUNCATE_LIMIT
-from gitea_mcp_server.server import (
+from gitea_mcp_server.server_setup.label_manager import LabelManager
+from gitea_mcp_server.server_setup.tool_annotator import (
     TolerantBM25SearchTransform,
-    _add_inferred_hints,
-    _categorize_tool,
-    _customize_component,
-    _generate_tool_title,
-    _inject_label_validation_wrapper,
+    add_inferred_hints as _add_inferred_hints,
+    categorize_tool as _categorize_tool,
+    customize_component as _customize_component,
+    generate_tool_title as _generate_tool_title,
+    inject_label_validation_wrapper as _inject_label_validation_wrapper,
 )
+
+# Create a label manager for tests that need it
+_label_manager = LabelManager()
 
 
 class TestCategorizeTool:
@@ -230,7 +234,7 @@ class TestInferredHints:
         tool.annotations = ToolAnnotations()  # All fields None
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         # All hints should be set based on method
         assert tool.annotations.readOnlyHint is False
@@ -250,7 +254,7 @@ class TestCustomizeComponent:
         route = MagicMock(path="/test", summary="Test", operation_id="test_route")
         resource = MagicMock(spec=OpenAPIResource)
 
-        _customize_component(route, resource)
+        _customize_component(route, resource, _label_manager)
 
         # Should return early without modifying
         assert True  # No exception means pass
@@ -263,7 +267,7 @@ class TestCustomizeComponent:
         tool.annotations = None
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         assert tool.annotations is not None
         assert isinstance(tool.annotations, ToolAnnotations)
@@ -280,7 +284,7 @@ class TestCustomizeComponent:
         tool.annotations = {"title": "Old Title"}  # dict that can be unpacked to ToolAnnotations
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         assert isinstance(tool.annotations, ToolAnnotations)
         assert tool.annotations.title == "List issues"  # Our title overrides dict
@@ -298,7 +302,7 @@ class TestCustomizeComponent:
         tool.annotations = existing
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         assert isinstance(tool.annotations, ToolAnnotations)
         assert tool.annotations.title == "Get pull request"  # Updated
@@ -323,7 +327,7 @@ class TestCustomizeComponent:
             tool.annotations = None
             tool.tags = set()
 
-            _customize_component(route, tool)
+            _customize_component(route, tool, _label_manager)
 
             assert tool.annotations is not None
             assert expected_category in tool.tags, (
@@ -338,7 +342,7 @@ class TestCustomizeComponent:
         tool.annotations = None
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         assert tool.annotations.title == "Get User By Id"
 
@@ -352,7 +356,7 @@ class TestCustomizeComponent:
         tool.annotations = None
         tool.tags = set()
 
-        _customize_component(route, tool)
+        _customize_component(route, tool, _label_manager)
 
         assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
         assert tool.annotations.title.endswith("...")

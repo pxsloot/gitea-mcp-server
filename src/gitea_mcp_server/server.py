@@ -2,15 +2,11 @@
 
 import asyncio
 import contextlib
-import json
 import logging
 import sys
-from datetime import datetime
-from pathlib import Path
-from typing import Annotated, Any, Sequence
+from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.server.context import Context
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
     GetPromptSettings,
@@ -18,644 +14,30 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
+from fastmcp.server.providers.openapi import OpenAPIProvider
 
-# Import from new location (FastMCP 3.x)
-from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
-from fastmcp.server.transforms.search import BM25SearchTransform
-from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
-
-from gitea_mcp_server import resources
-from gitea_mcp_server.cache_invalidation import (
-    CacheInvalidationMiddleware,
-    register_tool_invalidation,
-)
+from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.constants import (
     CACHE_MAX_ITEM_SIZE,
     CACHE_TTL_DEFAULT,
     CACHE_TTL_RESOURCE_LIST,
-    HTTP_METHODS_DESTRUCTIVE,
-    HTTP_METHODS_IDEMPOTENT,
-    HTTP_METHODS_SAFE,
-    LABEL_CACHE_TTL,
-    LABEL_GUIDANCE,
-    PATTERN_FILES,
-    PATTERN_ISSUES_CLOSED,
-    PATTERN_ISSUES_LIST,
-    PATTERN_ISSUES_OPEN,
-    PATTERN_PULLS_CLOSED,
-    PATTERN_PULLS_LIST,
-    PATTERN_PULLS_OPEN,
-    PATTERN_REPO,
-    RESOURCE_NOTE,
     SEARCH_ALWAYS_VISIBLE_TOOLS,
     SEARCH_MAX_RESULTS,
-    TITLE_TRUNCATE_LIMIT,
 )
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.logging_config import setup_logging
-from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
-from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
-from gitea_mcp_server.tool_filter import filter_tools_by_permissions
+from gitea_mcp_server.server_setup.label_manager import LabelManager
+from gitea_mcp_server.server_setup.logging import setup_logging
+from gitea_mcp_server.server_setup.permissions import filter_tools_by_permissions
+from gitea_mcp_server.server_setup.resource_registry import register_all_resources
+from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
+from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
+from gitea_mcp_server.server_setup.tool_annotator import TolerantBM25SearchTransform
 
 logger = logging.getLogger(__name__)
 
-# Module-level cache TTL (can be overridden for testing)
-_LABEL_CACHE_TTL = LABEL_CACHE_TTL
-
-# Label cache for validation (maps (owner, repo) -> {"map": dict, "timestamp": datetime})
-_label_cache: dict[tuple[str, str], dict[str, Any]] = {}
-
-
-async def _get_repository_label_map(
-    owner: str, repo: str, client: GiteaClient
-) -> dict[str, dict[str, Any]]:
-    """Fetch and cache repository label map (name.lower() -> label_info).
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        client: GiteaClient for API calls
-
-    Returns:
-        Dict mapping lowercase label names to label info dicts (id, name)
-    """
-    cache_key = (owner, repo)
-    now = datetime.now()
-
-    # Check cache
-    if cache_key in _label_cache:
-        entry = _label_cache[cache_key]
-        if (now - entry["timestamp"]).total_seconds() < _LABEL_CACHE_TTL:
-            return entry["map"]
-
-    # Fetch labels from API
-    labels = await client.request("GET", f"/repos/{owner}/{repo}/labels")
-    # Response is a list of label objects: {id, name, color, description, ...}
-    label_map = {}
-    for label in labels:
-        name = label.get("name", "")
-        if name:
-            label_map[name.lower()] = {"id": label["id"], "name": label["name"]}
-
-    # Update cache
-    _label_cache[cache_key] = {"map": label_map, "timestamp": now}
-    return label_map
-
-
-def _inject_label_validation_wrapper(tool: OpenAPITool) -> Any:
-    """Wrap a tool's run method to validate and convert label names to IDs.
-
-    Creates a wrapper that intercepts calls to convert string labels to integer IDs
-    based on the repository's label list. Replaces tool.run with the wrapper.
-
-    Args:
-        tool: OpenAPITool to wrap (must have labels parameter if wrapping needed)
-
-    Returns:
-        The wrapped async run function (callable)
-    """
-    original_run = tool.run
-
-    async def wrapped_run(arguments: dict[str, Any]) -> Any:
-        # Only process if 'labels' parameter exists and contains strings
-        labels = arguments.get("labels", [])
-        if not labels or all(isinstance(label, int) for label in labels):
-            return await original_run(arguments)
-
-        # Extract owner and repo from arguments (required for label lookup)
-        # These parameter names match the OpenAPI spec
-        owner = arguments.get("owner") or arguments.get("org")
-        repo = arguments.get("repo")
-        if not owner or not repo:
-            # Can't validate without repo context; pass through
-            return await original_run(arguments)
-
-        # Get label map from cache or fetch
-        # We need access to client; it's stored in tool._client for OpenAPITool
-        client = getattr(tool, "_client", None)
-        if client is None:
-            # No client available; pass through (shouldn't happen in practice)
-            return await original_run(arguments)
-
-        label_map = await _get_repository_label_map(owner, repo, client)
-
-        # Convert labels: strings -> IDs, integers pass through
-        converted = []
-        unknown = []
-        for label in labels:
-            if isinstance(label, str):
-                label_lower = label.lower()
-                if label_lower in label_map:
-                    converted.append(label_map[label_lower]["id"])
-                else:
-                    unknown.append(label)
-            else:
-                converted.append(label)
-
-        if unknown:
-            available = sorted(label_map.keys())
-            raise ValueError(
-                f"Unknown label(s): {unknown}. "
-                f"Available labels: {', '.join(available)}. "
-                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
-            )
-
-        # Call original with converted labels
-        modified_args = dict(arguments)
-        modified_args["labels"] = converted
-        return await original_run(modified_args)
-
-    tool.run = wrapped_run
-    return wrapped_run
-
-
-def _maybe_wrap_labels(component: OpenAPITool) -> None:
-    """Apply label validation/conversion and description guidance if tool has 'labels' param.
-
-    Args:
-        component: OpenAPITool to potentially wrap
-    """
-    # Check if tool has a 'labels' parameter in its schema
-    params = getattr(component, "parameters", None)
-    if not params:
-        return
-
-    props = params.get("properties", {})
-    if "labels" not in props:
-        return
-
-    # Ensure labels is an array type (some tools might have it as something else)
-    labels_schema = props["labels"]
-    if labels_schema.get("type") != "array":
-        return
-
-    # Apply the validation/conversion wrapper
-    _inject_label_validation_wrapper(component)
-
-    # Enhance description with guidance
-    existing_doc = component.__doc__ or ""
-    if LABEL_GUIDANCE not in existing_doc:
-        component.__doc__ = existing_doc + LABEL_GUIDANCE
-
-
-def _update_labels_schema(component: OpenAPITool) -> None:
-    """Update the tool's schema to show that labels accept both string and integer types.
-
-    The OpenAPI spec defines labels as array of integers, but the runtime accepts strings
-    (with auto-conversion). This function updates the JSON schema to reflect the actual
-    accepted types: ["string", "integer"].
-
-    Args:
-        component: OpenAPITool to update
-    """
-    params = getattr(component, "parameters", None)
-    if not params:
-        return
-
-    props = params.get("properties", {})
-    if "labels" not in props:
-        return
-
-    labels_schema = props["labels"]
-    if labels_schema.get("type") != "array":
-        return
-
-    # Get or create items schema
-    items_schema = labels_schema.get("items", {})
-
-    # Update items.type to accept both string and integer
-    current_type = items_schema.get("type")
-    if current_type == "integer":
-        # Change from "integer" to ["string", "integer"]
-        items_schema["type"] = ["string", "integer"]
-    elif current_type == "string":
-        # Already accepts string; might as well add integer for completeness
-        items_schema["type"] = ["string", "integer"]
-    # If already a list, don't modify (could be already set)
-
-
-def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
-    """Return minimal tool info for search results to avoid massive payloads.
-
-    Only includes name, description, and a simplified parameters schema.
-    """
-    result = []
-    for tool in tools:
-        # Simplify parameters: keep property names and basic types, drop detailed descriptions
-        params = tool.parameters or {}
-        if "properties" in params:
-            simple_props = {}
-            for name, info in params["properties"].items():
-                if isinstance(info, dict):
-                    simple_props[name] = {"type": info.get("type", "any")}
-                else:
-                    simple_props[name] = {"type": "any"}
-            simple_params = {
-                "properties": simple_props,
-                "required": params.get("required", []),
-            }
-        else:
-            simple_params = params
-
-        result.append(
-            {
-                "name": tool.name,
-                "description": tool.description or "",
-                "parameters": simple_params,
-            }
-        )
-    return result
-
-
-# Custom BM25SearchTransform that tolerates string arguments from OpenCode wrapper
-class TolerantBM25SearchTransform(BM25SearchTransform):
-    """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
-
-    Override the synthetic call_tool to accept any arguments (including JSON strings).
-    Also ensure internal catalog fetch bypasses middleware (like caching) to avoid stale results.
-    Uses a compact result serializer to avoid massive payloads.
-    """
-
-    def __init__(self, **kwargs):
-        # Force our compact serializer if not provided
-        if "search_result_serializer" not in kwargs:
-            kwargs["search_result_serializer"] = _compact_search_serializer
-        super().__init__(**kwargs)
-
-    async def get_tool_catalog(
-        self, ctx: Context, *, run_middleware: bool = True
-    ) -> Sequence[Tool]:
-        """Override to always bypass middleware when fetching the tool catalog."""
-        # Force run_middleware=False to avoid cached synthetic results
-        return await super().get_tool_catalog(ctx, run_middleware=False)
-
-    def _make_call_tool(self) -> Tool:
-        """Create the call_tool proxy that executes discovered tools."""
-        transform = self
-
-        async def call_tool(
-            name: Annotated[str, "The name of the tool to call"],
-            arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-            ctx: Context = None,  # type: ignore[assignment]
-        ) -> ToolResult:
-            """Call a tool by name with the given arguments.
-
-            Use this to execute tools discovered via search_tools.
-            """
-            if name in {transform._call_tool_name, transform._search_tool_name}:
-                raise ValueError(
-                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
-                )
-            # If arguments is a string, attempt to parse as JSON
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in arguments: {e}") from e
-            # Ensure arguments is a dict (or None)
-            if arguments is not None and not isinstance(arguments, dict):
-                raise ValueError(
-                    f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
-                )
-            return await ctx.fastmcp.call_tool(name, arguments)
-
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
-
-
-def _categorize_tool(path: str) -> str:  # noqa: PLR0911
-    """Categorize a tool based on its OpenAPI path.
-
-    Args:
-        path: The OpenAPI path pattern (e.g., "/repos/{owner}/{repo}/issues")
-
-    Returns:
-        Category string: "repository", "issue", "pull_request", "user", "organization", "admin", or "misc"
-    """
-    # Admin paths
-    if path.startswith("/admin"):
-        return "admin"
-
-    # Organization paths
-    if path.startswith(("/orgs", "/org/")):
-        return "organization"
-
-    # User paths
-    if path.startswith(("/user", "/users/")):
-        return "user"
-
-    # Issue paths
-    if "/issues" in path or path.startswith("/issues"):
-        return "issue"
-
-    # Pull request paths
-    if "/pulls" in path or path.startswith("/pulls"):
-        return "pull_request"
-
-    # Repository paths (most common)
-    if path.startswith("/repos"):
-        return "repository"
-
-    # Everything else
-    return "misc"
-
-
-def _generate_tool_title(route: Any) -> str:
-    """Generate a human-readable title for a tool from its OpenAPI route metadata.
-
-    Args:
-        route: FastMCP route object with summary and operation_id attributes
-
-    Returns:
-        Title string (max 50 chars, truncated with "..." if needed)
-    """
-    summary = getattr(route, "summary", None)
-    operation_id = getattr(route, "operation_id", None)
-
-    title: str
-
-    # Prefer summary if available and non-empty
-    if summary and summary.strip():
-        title = str(summary).strip()
-    elif operation_id:
-        # Convert snake_case to Title Case
-        words = str(operation_id).replace("_", " ").title()
-        title = words
-    else:
-        return "Unnamed Tool"
-
-    # Truncate to TITLE_TRUNCATE_LIMIT characters
-    if len(title) > TITLE_TRUNCATE_LIMIT:
-        title = title[: TITLE_TRUNCATE_LIMIT - 3] + "..."
-
-    return title
-
-
-def _add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
-    """Infer and add annotation hints from HTTP route properties.
-
-    Hints are based on HTTP method semantics:
-    - readOnlyHint: True for safe methods (GET, HEAD, OPTIONS)
-    - destructiveHint: True for DELETE (and any method that destroys data)
-    - idempotentHint: True for idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
-    - openWorldHint: Always True for Gitea tools (they interact with external server)
-
-    Existing annotation values are preserved; only None values are set.
-
-    Args:
-        route: HTTPRoute object with method attribute
-        annotations: ToolAnnotations instance to update
-    """
-    method = getattr(route, "method", None)
-
-    # Only add hints if they are currently None (preserve existing manual settings)
-    if annotations.readOnlyHint is None:
-        annotations.readOnlyHint = method in HTTP_METHODS_SAFE
-
-    if annotations.destructiveHint is None:
-        annotations.destructiveHint = method in HTTP_METHODS_DESTRUCTIVE
-
-    if annotations.idempotentHint is None:
-        annotations.idempotentHint = method in HTTP_METHODS_IDEMPOTENT
-
-    if annotations.openWorldHint is None:
-        # All Gitea MCP tools interact with external Gitea server
-        annotations.openWorldHint = True
-
-
-def _compute_tool_invalidation_patterns(path: str, method: str) -> list[str]:
-    """Compute resource invalidation patterns for a tool based on its path and method.
-
-    This function analyzes the OpenAPI path and HTTP method to determine which
-    MCP resource patterns should be invalidated when this tool is called.
-
-    Args:
-        path: OpenAPI path pattern (e.g., "/repos/{owner}/{repo}/issues")
-        method: HTTP method (GET, POST, PUT, DELETE, PATCH)
-
-    Returns:
-        List of pattern names (keys in RESOURCE_URI_PATTERNS) to invalidate.
-        Empty list if no invalidation needed.
-    """
-    # Only consider write methods (safe methods don't need invalidation)
-    if method.upper() in ("GET", "HEAD", "OPTIONS"):
-        return []
-
-    # Issue operations: any path that starts with /repos/{owner}/{repo}/issues
-    if path.startswith("/repos/{owner}/{repo}/issues"):
-        return [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED]
-
-    # Pull request operations: starts with /repos/{owner}/{repo}/pulls
-    if path.startswith("/repos/{owner}/{repo}/pulls"):
-        return [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED]
-
-    # Repository direct edit: exactly /repos/{owner}/{repo} (e.g., repo_edit)
-    if path == "/repos/{owner}/{repo}":
-        return [PATTERN_REPO]
-
-    # File contents: /repos/{owner}/{repo}/contents[...] (create, update, delete files)
-    if path.startswith("/repos/{owner}/{repo}/contents"):
-        return [PATTERN_FILES]
-
-    # Label operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/labels"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Milestone operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/milestones"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Release operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/releases"):
-        return [PATTERN_REPO]
-
-    # Topic operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/topics"):
-        return [PATTERN_REPO]
-
-    # Add more as needed...
-    return []
-
-
-def _customize_component(route: Any, component: Any) -> None:
-    """Customize FastMCP components with tool annotations.
-
-    This function is called by FastMCP's from_openapi for each generated component.
-    It adds title and category annotations to tools and tags for categorization.
-
-    Args:
-        route: The OpenAPI route object
-        component: The generated FastMCP component (tool, resource, etc.)
-    """
-    # Only customize OpenAPITool instances
-    if not isinstance(component, OpenAPITool):
-        return
-
-    # Generate and set title annotation
-    title = _generate_tool_title(route)
-    category = _categorize_tool(route.path)
-
-    # Create or update annotations
-    if component.annotations is None:
-        component.annotations = ToolAnnotations()
-    elif isinstance(component.annotations, dict):  # type: ignore
-        # Convert dict to ToolAnnotations while preserving existing fields
-        existing = component.annotations  # type: ignore
-        component.annotations = ToolAnnotations(**existing)
-
-    # Set title
-    component.annotations.title = title
-
-    # Add inferred annotation hints based on HTTP method
-    _add_inferred_hints(route, component.annotations)
-
-    # Register cache invalidation patterns for write tools
-    method = getattr(route, "method", None)
-    if method:
-        patterns = _compute_tool_invalidation_patterns(route.path, method)
-        if patterns:
-            register_tool_invalidation(component.name, patterns)
-
-    # Add category to tags (used for grouping in MCP clients)
-    if component.tags is None:
-        component.tags = set()  # type: ignore[unreachable]
-    component.tags.add(category)
-
-    # For read-only tools, add a note encouraging use of resources
-    if component.annotations and component.annotations.readOnlyHint:
-        existing_doc = component.__doc__ or ""
-        # Avoid adding the note twice
-        if RESOURCE_NOTE not in existing_doc:
-            component.__doc__ = existing_doc + RESOURCE_NOTE
-
-    # Apply label validation/conversion to tools that have a 'labels' parameter
-    _maybe_wrap_labels(component)
-
-    # Also update the tool's parameter schema to reflect that string labels are accepted
-    _update_labels_schema(component)
-
-
-async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
-    """Load Swagger spec from Gitea instance or local file.
-
-    Args:
-        gitea_client: Optional client to use for fetching the spec. If not provided,
-                     loads from local swagger.v1.json file.
-
-    Returns:
-        Swagger spec as dictionary
-
-    Raises:
-        SpecError: If spec cannot be loaded or parsed
-    """
-    if gitea_client is None:
-        # Fallback to loading local spec file (for testing)
-        logger.info("Loading OpenAPI spec from local swagger.v1.json")
-        try:
-            spec_path = Path("swagger.v1.json")
-            if not spec_path.exists():
-                msg = "Local swagger.v1.json file not found"
-                raise SpecError(msg)
-            with open(spec_path) as f:
-                local_spec: dict[str, Any] = json.load(f)
-            logger.info(
-                "Spec loaded",
-                extra={
-                    "spec_version": local_spec.get("swagger"),
-                    "paths_count": len(local_spec.get("paths", {})),
-                },
-            )
-            return local_spec
-        except json.JSONDecodeError as e:
-            msg = f"Invalid JSON in local swagger.v1.json: {e}"
-            raise SpecError(msg) from e
-        except Exception as e:
-            msg = f"Failed to load local swagger.v1.json: {e}"
-            raise SpecError(msg) from e
-
-    # Construct URL: base_url without /api/v1 + /swagger.v1.json
-    spec_url = f"{gitea_client._config.url}/swagger.v1.json"
-
-    logger.info("Loading OpenAPI spec from %s", spec_url)
-
-    try:
-        remote_spec = await gitea_client.request("GET", spec_url)
-        # If request returned a string (unlikely for JSON), parse it
-        if isinstance(remote_spec, str):
-            remote_spec = json.loads(remote_spec)
-        logger.info(
-            "Spec loaded",
-            extra={
-                "spec_version": remote_spec.get("swagger"),
-                "paths_count": len(remote_spec.get("paths", {})),
-            },
-        )
-        return remote_spec
-    except json.JSONDecodeError as e:
-        msg = f"Invalid JSON in spec from {spec_url}: {e}"
-        raise SpecError(msg) from e
-    except Exception as e:
-        msg = f"Failed to fetch or parse spec from {spec_url}: {e}"
-        raise SpecError(msg) from e
-    except Exception as e:
-        msg = f"Failed to fetch spec from {spec_url}: {e}"
-        raise SpecError(msg) from e
-
-
-async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
-    """Create the Gitea MCP server from OpenAPI spec.
-
-    Args:
-        gitea_client: Initialized GiteaClient to use for API calls
-
-    Returns:
-        Configured FastMCP server instance
-
-    Raises:
-        SpecError: If spec loading or conversion fails
-    """
-    config = gitea_client._config  # Access config for logging
-
-    # Setup logging as early as possible
-    setup_logging(level=config.log_level, log_format=config.log_format)
-
-    logger.info("Starting Gitea MCP Server initialization")
-
-    try:
-        spec = await load_swagger_spec(gitea_client)
-    except SpecError:
-        raise
-    except Exception as e:
-        msg = f"Failed to load OpenAPI spec: {e}"
-        raise SpecError(msg) from e
-
-    logger.info("Converting OpenAPI v2 to v3...")
-    try:
-        openapi_spec = convert_swagger_to_openapi_v3(spec)
-        logger.info(
-            "Conversion completed",
-            extra={
-                "openapi_version": openapi_spec.get("openapi"),
-                "paths": len(openapi_spec.get("paths", {})),
-            },
-        )
-    except Exception as e:
-        msg = f"Failed to convert OpenAPI spec: {e}"
-        raise SpecError(msg) from e
-
-    logger.info("Creating FastMCP server...")
-    # Create OpenAPI provider (FastMCP 3.x pattern)
-    provider = OpenAPIProvider(
-        openapi_spec=openapi_spec,
-        client=gitea_client.client,
-        mcp_component_fn=_customize_component,
-    )
-    mcp = FastMCP(
-        name="Gitea MCP Server",
-        providers=[provider],
-        instructions="""
+INSTRUCTIONS = """
 # Gitea MCP Server
 
 This server provides tools and resources to interact with Gitea (self-hosted Git service).
@@ -819,7 +201,52 @@ Most list operations accept `page` (1-based) and `limit` (page size). Use these 
 - **Resources**: Cached, efficient reads of formatted data (Markdown, JSON). Use `mcp_list_resources` to see all available URIs.
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.
-""",
+"""
+
+
+async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
+    """Create the Gitea MCP server from OpenAPI spec.
+
+    Args:
+        gitea_client: Initialized GiteaClient to use for API calls
+
+    Returns:
+        Configured FastMCP server instance
+
+    Raises:
+        SpecError: If spec loading or conversion fails
+    """
+    config = gitea_client._config
+
+    # Setup logging as early as possible
+    setup_logging(level=config.log_level, log_format=config.log_format)
+
+    logger.info("Starting Gitea MCP Server initialization")
+
+    # Load and convert OpenAPI spec
+    try:
+        openapi_spec = await load_and_convert_spec(gitea_client)
+    except SpecError:
+        raise
+    except Exception as e:
+        msg = f"Failed to load or convert OpenAPI spec: {e}"
+        raise SpecError(msg) from e
+
+    # Initialize label manager
+    label_manager = LabelManager()
+
+    # Create OpenAPI provider
+    provider = create_openapi_provider(
+        openapi_spec=openapi_spec,
+        client=gitea_client.client,
+        label_manager=label_manager,
+    )
+
+    # Create FastMCP server
+    mcp = FastMCP(
+        name="Gitea MCP Server",
+        providers=[provider],
+        instructions=INSTRUCTIONS,
     )
 
     # Add response caching middleware
@@ -835,13 +262,11 @@ Combine both: use tools to find identifiers, then resources to read detailed cac
     mcp.add_middleware(caching_middleware)
 
     # Add cache invalidation middleware (must come after caching middleware)
-    # This ensures write operations clear affected resources from cache
     logger.info("Adding cache invalidation middleware...")
     invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
     mcp.add_middleware(invalidation_middleware)
 
-    # Add search transform for lazy loading of tools (FastMCP 3.x)
-    # Can be disabled via ENABLE_LAZY_LOADING=false (useful for tests)
+    # Add search transform for lazy loading (FastMCP 3.x)
     if getattr(config, "enable_lazy_loading", True):
         logger.info("Adding search transform for lazy loading...")
         mcp.add_transform(
@@ -855,13 +280,12 @@ Combine both: use tools to find identifiers, then resources to read detailed cac
 
     # Register resources
     logger.info("Registering MCP resources...")
-    # Auto-generate resources for all GET endpoints (raw JSON)
-    resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec)
-    # Register custom-formatted resources (Markdown) and overrides
-    resources.register_custom_resources(mcp, gitea_client)
+    register_all_resources(mcp, gitea_client, openapi_spec)
 
     # Register MCP resource access tools (for agents to read resources)
     logger.info("Registering MCP resource access tools...")
+    from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
+
     register_mcp_resource_tools(mcp)
 
     # Apply tool filtering based on user permissions if enabled
@@ -904,15 +328,12 @@ async def main_async() -> None:
         await mcp.run_stdio_async()
     except KeyboardInterrupt:
         logger.info("Server shutdown by user")
-        # Exit normally, finally will close resources
     except Exception:
         logger.exception("Server crashed")
         sys.exit(1)
     finally:
-        # Always close client first
         with contextlib.suppress(Exception):
             await gitea_client.close()
-        # Then shutdown logging to avoid writing to closed streams
         logging.shutdown()
         logging.shutdown()
 

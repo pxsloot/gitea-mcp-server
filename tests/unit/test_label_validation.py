@@ -1,17 +1,47 @@
 """Unit tests for label validation and auto-conversion functionality."""
 
 import asyncio
-from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gitea_mcp_server.server import (
-    _get_repository_label_map,
-    _inject_label_validation_wrapper,
-    _maybe_wrap_labels,
-    _update_labels_schema,
+from gitea_mcp_server.constants import LABEL_GUIDANCE
+from gitea_mcp_server.server_setup.label_manager import LabelManager
+from gitea_mcp_server.server_setup.tool_annotator import (
+    customize_component as _customize_component_impl,
+    inject_label_validation_wrapper as _inject_label_validation_wrapper_impl,
+    maybe_wrap_labels as _maybe_wrap_labels_impl,
+    update_labels_schema as _update_labels_schema_impl,
 )
+
+# Create a dedicated label manager for these tests
+_label_manager = LabelManager()
+
+
+# Compatibility wrappers matching old signatures
+async def _get_repository_label_map(owner, repo, client):
+    """Fetch label map using the test label manager."""
+    return await _label_manager.get_label_map(owner, repo, client)
+
+
+def _inject_label_validation_wrapper(tool):
+    """Inject label validation wrapper into a tool."""
+    return _inject_label_validation_wrapper_impl(_label_manager, tool)
+
+
+def _maybe_wrap_labels(component):
+    """Maybe wrap labels parameter with validation."""
+    return _maybe_wrap_labels_impl(_label_manager, component)
+
+
+def _update_labels_schema(component):
+    """Update labels schema."""
+    return _update_labels_schema_impl(component)
+
+
+def _customize_component(route, component):
+    """Customize component with annotations."""
+    return _customize_component_impl(route, component, _label_manager)
 
 
 class TestLabelCache:
@@ -19,19 +49,13 @@ class TestLabelCache:
 
     @pytest.fixture(autouse=True)
     def clear_cache(self):
-        """Clear the module-level cache before each test."""
-        # Import the module to access the cache
-        from gitea_mcp_server import server as srv
-
-        srv._label_cache.clear()
+        """Clear the label manager cache before each test."""
+        _label_manager.clear_cache()
         yield
-        srv._label_cache.clear()
+        _label_manager.clear_cache()
 
     def test_cache_miss_fetches_and_caches(self):
         """Cache miss should fetch labels and populate cache."""
-        from gitea_mcp_server import server as srv
-
-        # Mock client
         client = MagicMock()
         client.request = AsyncMock(
             return_value=[
@@ -47,15 +71,13 @@ class TestLabelCache:
             "bug": {"id": 1, "name": "bug"},
             "enhancement": {"id": 2, "name": "enhancement"},
         }
-        assert ("owner", "repo") in srv._label_cache
+        assert ("owner", "repo") in _label_manager._label_cache
 
         # Verify client was called correctly
         client.request.assert_called_once_with("GET", "/repos/owner/repo/labels")
 
     def test_cache_hit_returns_cached(self):
         """Second call with same repo should hit cache."""
-        from gitea_mcp_server import server as srv
-
         client = MagicMock()
         client.request = AsyncMock(
             return_value=[
@@ -73,8 +95,6 @@ class TestLabelCache:
 
     def test_different_repos_separate_cache_entries(self):
         """Different (owner, repo) pairs should have separate cache entries."""
-        from gitea_mcp_server import server as srv
-
         client = MagicMock()
         client.request = AsyncMock(
             side_effect=[
@@ -90,11 +110,9 @@ class TestLabelCache:
 
     def test_cache_ttl_expires(self):
         """Cache entries should expire after TTL."""
-        from gitea_mcp_server import server as srv
-
-        # Set short TTL for test
-        original_ttl = srv._LABEL_CACHE_TTL
-        srv._LABEL_CACHE_TTL = 0.1  # 100ms
+        # Save original TTL
+        original_ttl = _label_manager._cache_ttl
+        _label_manager._cache_ttl = 0.1  # 100ms
 
         client = MagicMock()
         client.request = AsyncMock(
@@ -113,12 +131,10 @@ class TestLabelCache:
         assert client.request.call_count == 2
 
         # Restore TTL
-        srv._LABEL_CACHE_TTL = original_ttl
+        _label_manager._cache_ttl = original_ttl
 
     def test_case_insensitive_matching(self):
         """Label name lookup should be case-insensitive."""
-        from gitea_mcp_server import server as srv
-
         client = MagicMock()
         client.request = AsyncMock(
             return_value=[
@@ -128,11 +144,10 @@ class TestLabelCache:
         )
 
         asyncio.run(_get_repository_label_map("owner", "repo", client))
-        cache = srv._label_cache[("owner", "repo")]["map"]
+        cache = _label_manager._label_cache[("owner", "repo")]["map"]
 
         assert "bug" in cache
-        assert " enhancement" not in cache
-        assert " enhancement".strip() in cache
+        assert "enhancement" in cache
         assert cache["bug"]["id"] == 1
         assert cache["enhancement"]["id"] == 2
 
@@ -154,6 +169,7 @@ class TestLabelValidationWrapper:
             "required": ["owner", "repo", "title"],
         }
         tool.run = AsyncMock(return_value={"success": True})
+        tool._client = MagicMock()  # needed for label lookup
         return tool
 
     @pytest.fixture
@@ -167,11 +183,8 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_with_ids_only(self, mock_tool):
         """If all labels are IDs, wrapper should pass through unchanged."""
-        from gitea_mcp_server import server as srv
-
-        # Save original run before injection
         original_run = mock_tool.run
-        wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        wrapped = _inject_label_validation_wrapper(mock_tool)
 
         arguments = {"owner": "o", "repo": "r", "labels": [1, 2, 3], "title": "Test"}
         result = await wrapped(arguments)
@@ -181,13 +194,10 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_converts_string_names_to_ids(self, mock_tool, label_map):
         """String labels should be converted to IDs."""
-        from gitea_mcp_server import server as srv
-
-        # Save original run before injection
         original_run = mock_tool.run
-        # Patch the cache to return our label map
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map):
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        # Patch the label manager's get_label_map to return our label map
+        with patch.object(_label_manager, "get_label_map", return_value=label_map):
+            wrapped = _inject_label_validation_wrapper(mock_tool)
 
             arguments = {"owner": "o", "repo": "r", "labels": ["bug", "security"], "title": "Test"}
             result = await wrapped(arguments)
@@ -199,11 +209,9 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_mixed_ids_and_names(self, mock_tool, label_map):
         """Mixed integer IDs and string names should work."""
-        from gitea_mcp_server import server as srv
-
         original_run = mock_tool.run
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map):
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        with patch.object(_label_manager, "get_label_map", return_value=label_map):
+            wrapped = _inject_label_validation_wrapper(mock_tool)
 
             arguments = {
                 "owner": "o",
@@ -219,10 +227,8 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_rejects_unknown_label_with_helpful_error(self, mock_tool, label_map):
         """Unknown label names should produce clear error with suggestions."""
-        from gitea_mcp_server import server as srv
-
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map):
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        with patch.object(_label_manager, "get_label_map", return_value=label_map):
+            wrapped = _inject_label_validation_wrapper(mock_tool)
 
             arguments = {"owner": "o", "repo": "r", "labels": ["unknown", "bug"], "title": "Test"}
 
@@ -236,11 +242,9 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_case_insensitive_matching(self, mock_tool, label_map):
         """Label name matching should be case-insensitive."""
-        from gitea_mcp_server import server as srv
-
         original_run = mock_tool.run
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map):
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        with patch.object(_label_manager, "get_label_map", return_value=label_map):
+            wrapped = _inject_label_validation_wrapper(mock_tool)
 
             arguments = {
                 "owner": "o",
@@ -256,10 +260,8 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_no_labels_parameter(self, mock_tool):
         """If no labels provided, should pass through unchanged."""
-        from gitea_mcp_server import server as srv
-
         original_run = mock_tool.run
-        wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        wrapped = _inject_label_validation_wrapper(mock_tool)
 
         arguments = {"owner": "o", "repo": "r", "title": "Test"}
         result = await wrapped(arguments)
@@ -269,11 +271,9 @@ class TestLabelValidationWrapper:
 
     async def test_wrapper_empty_labels_list(self, mock_tool, label_map):
         """Empty labels list should pass through."""
-        from gitea_mcp_server import server as srv
-
         original_run = mock_tool.run
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map):
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        with patch.object(_label_manager, "get_label_map", return_value=label_map):
+            wrapped = _inject_label_validation_wrapper(mock_tool)
 
             arguments = {"owner": "o", "repo": "r", "labels": [], "title": "Test"}
             result = await wrapped(arguments)
@@ -282,11 +282,9 @@ class TestLabelValidationWrapper:
             assert result == {"success": True}
 
     async def test_wrapper_fetches_labels_on_demand(self, mock_tool, label_map):
-        """Should call _get_repository_label_map to fetch labels."""
-        from gitea_mcp_server import server as srv
-
-        with patch.object(srv, "_get_repository_label_map", return_value=label_map) as mock_get:
-            wrapped = srv._inject_label_validation_wrapper(mock_tool)
+        """Should call label manager to fetch labels."""
+        with patch.object(_label_manager, "get_label_map", return_value=label_map) as mock_get:
+            wrapped = _inject_label_validation_wrapper(mock_tool)
             await wrapped({"owner": "o", "repo": "r", "labels": ["bug"], "title": "Test"})
 
             mock_get.assert_called_once_with("o", "r", mock_tool._client)
@@ -297,8 +295,6 @@ class TestMaybeWrapLabels:
 
     def test_wraps_tool_with_labels_param(self):
         """Tool with 'labels' array parameter should be wrapped."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock(spec=["parameters", "run", "__doc__"])
         tool.parameters = {
             "properties": {
@@ -311,15 +307,13 @@ class TestMaybeWrapLabels:
         tool.run = MagicMock()
         tool.__doc__ = "Create issue"
 
-        srv._maybe_wrap_labels(tool)
+        _maybe_wrap_labels(tool)
 
         # After wrapping, tool.run should be a coroutine function (the wrapper)
         assert asyncio.iscoroutinefunction(tool.run)
 
     def test_does_not_wrap_without_labels(self):
         """Tool without 'labels' parameter should remain unchanged."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock(spec=["parameters", "run"])
         tool.parameters = {
             "properties": {
@@ -330,15 +324,13 @@ class TestMaybeWrapLabels:
         }
         original_run = tool.run
 
-        srv._maybe_wrap_labels(tool)
+        _maybe_wrap_labels(tool)
 
         # Should not be changed
         assert tool.run is original_run
 
     def test_does_not_wrap_if_labels_not_array(self):
         """Tool with 'labels' parameter that is not array type should not be wrapped."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock(spec=["parameters", "run"])
         tool.parameters = {
             "properties": {
@@ -347,14 +339,12 @@ class TestMaybeWrapLabels:
         }
         original_run = tool.run
 
-        srv._maybe_wrap_labels(tool)
+        _maybe_wrap_labels(tool)
 
         assert tool.run is original_run
 
     def test_enhances_description_with_guidance(self):
         """Tool with labels should have guidance appended to docstring."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock(spec=["parameters", "run", "__doc__"])
         tool.parameters = {
             "properties": {
@@ -364,15 +354,12 @@ class TestMaybeWrapLabels:
         tool.run = MagicMock()
         tool.__doc__ = "Create a release."
 
-        srv._maybe_wrap_labels(tool)
+        _maybe_wrap_labels(tool)
 
-        assert "**Labels**:" in tool.__doc__
-        assert "You may provide existing label names" in tool.__doc__
+        assert LABEL_GUIDANCE.strip() in tool.__doc__
 
     def test_does_not_duplicate_guidance(self):
         """Guidance should not be added twice."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock(spec=["parameters", "run", "__doc__"])
         tool.parameters = {
             "properties": {
@@ -381,12 +368,12 @@ class TestMaybeWrapLabels:
         }
         tool.run = MagicMock()
         # Pre-populate with the exact guidance we would add
-        tool.__doc__ = "Create issue.\n\n**Labels**: You may provide existing label names (strings) or IDs (integers). Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels` to see available labels. Unknown label names will produce an error."
+        tool.__doc__ = f"Create issue.{LABEL_GUIDANCE}"
 
-        srv._maybe_wrap_labels(tool)
+        _maybe_wrap_labels(tool)
 
         # Should not append again
-        assert tool.__doc__.count("**Labels**:") == 1
+        assert tool.__doc__.count(LABEL_GUIDANCE) == 1
 
 
 class TestUpdateLabelsSchema:
@@ -394,8 +381,6 @@ class TestUpdateLabelsSchema:
 
     def test_updates_integer_type_to_union(self):
         """Schema with integer items.type should become [string, integer]."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = {
             "properties": {
@@ -406,15 +391,13 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
     def test_updates_string_type_to_union(self):
         """Schema with string items.type should become [string, integer]."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = {
             "properties": {
@@ -425,15 +408,13 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
     def test_preserves_existing_union(self):
         """Schema already with union type should not be modified."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = {
             "properties": {
@@ -444,15 +425,13 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
     def test_skips_non_array_labels(self):
         """If labels is not array type, schema should not be modified."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = {
             "properties": {
@@ -460,15 +439,13 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
         # Should remain unchanged
         assert tool.parameters["properties"]["labels"]["type"] == "string"
 
     def test_skips_no_labels_property(self):
         """Tool without labels property should not be modified."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = {
             "properties": {
@@ -477,35 +454,30 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
         # Should remain unchanged
         assert "labels" not in tool.parameters["properties"]
 
     def test_skips_no_parameters(self):
         """Tool without parameters attribute should not crash."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         # No parameters attribute
         del tool.parameters
 
         # Should not raise
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
     def test_skips_empty_parameters(self):
         """Tool with None parameters should not crash."""
-        from gitea_mcp_server import server as srv
-
         tool = MagicMock()
         tool.parameters = None
 
         # Should not raise
-        srv._update_labels_schema(tool)
+        _update_labels_schema(tool)
 
     def test_updates_schema_during_customize(self):
         """_customize_component should trigger schema update for tools with labels."""
-        from gitea_mcp_server import server as srv
         from fastmcp.server.providers.openapi import OpenAPITool
 
         route = MagicMock(
@@ -526,7 +498,7 @@ class TestUpdateLabelsSchema:
             }
         }
 
-        srv._customize_component(route, tool)
+        _customize_component(route, tool)
 
         # Verify schema was updated
         labels_schema = tool.parameters["properties"]["labels"]

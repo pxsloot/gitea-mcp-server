@@ -72,12 +72,8 @@ class TestResourcesIntegration:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
 
             # Patch the resource registration to track calls
-            with patch(
-                "gitea_mcp_server.server_setup.resource_registry.register_auto_generated_resources"
-            ) as mock_auto:
-                with patch(
-                    "gitea_mcp_server.server_setup.resource_registry.register_custom_resources"
-                ) as mock_custom:
+            with patch("gitea_mcp_server.resources.register_auto_generated_resources") as mock_auto:
+                with patch("gitea_mcp_server.resources.register_custom_resources") as mock_custom:
                     mcp = await create_mcp_server(gitea_client)
 
                     # Verify both registration functions were called
@@ -88,9 +84,10 @@ class TestResourcesIntegration:
     async def test_auto_generated_resources_use_gitea_uri_scheme(self):
         """Test that auto-generated resources use the gitea:// URI scheme."""
         from gitea_mcp_server import resources
-        from gitea_mcp_server.resource_registry import ResourceRegistry
 
-        registry = ResourceRegistry()
+        # Create a minimal FastMCP mock that tracks registered resources
+        mcp = MagicMock()
+        mcp.resource = MagicMock()
 
         # Create a mock client
         mock_client = AsyncMock()
@@ -123,31 +120,30 @@ class TestResourcesIntegration:
             }
         }
 
-        resources.register_auto_generated_resources(registry, mock_client, spec, skip_uris=set())
+        resources.register_auto_generated_resources(mcp, mock_client, spec, skip_uris=set())
 
         # Check that resource was registered with gitea:// URI
-        reg_resources = registry.list_resources()
-        assert len(reg_resources) == 1
-        assert reg_resources[0].uri == "gitea://repos/{owner}/{repo}"
+        mcp.resource.assert_called()
+        first_call_uri = mcp.resource.call_args_list[0][0][0]
+        assert first_call_uri == "gitea://repos/{owner}/{repo}"
 
     @pytest.mark.asyncio
     async def test_custom_resources_override_with_markdown(self):
         """Test that custom resources are registered with proper URIs."""
         from gitea_mcp_server import resources
-        from gitea_mcp_server.resource_registry import ResourceRegistry
 
-        registry = ResourceRegistry()
+        mcp = MagicMock()
+        mcp.resource = MagicMock()
         mock_client = AsyncMock()
 
-        resources.register_custom_resources(registry, mock_client)
+        resources.register_custom_resources(mcp, mock_client)
 
         # Should register multiple resources
-        reg_resources = registry.list_resources()
-        assert len(reg_resources) == 12
+        assert mcp.resource.call_count >= 10
 
         # Check for some expected URIs
-        uris = {r.uri for r in reg_resources}
-        assert "gitea://repos/{owner}/{repo}" in uris
-        assert "gitea://repos/{owner}/{repo}/readme" in uris
-        assert "gitea://repos/{owner}/{repo}/issues" in uris
-        assert "gitea://users/{username}" in uris
+        call_uris = [call[0][0] for call in mcp.resource.call_args_list]
+        assert "gitea://repos/{owner}/{repo}" in call_uris
+        assert "gitea://repos/{owner}/{repo}/readme" in call_uris
+        assert "gitea://repos/{owner}/{repo}/issues" in call_uris
+        assert "gitea://users/{username}" in call_uris

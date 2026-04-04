@@ -5,8 +5,9 @@ import contextlib
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Sequence
 
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
@@ -17,13 +18,12 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from fastmcp.server.providers.openapi import OpenAPIProvider
+
+# Import from new location (FastMCP 3.x)
+from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
-
-# Import from new location (FastMCP 3.x)
-from fastmcp.server.providers.openapi import OpenAPITool
 
 from gitea_mcp_server import resources
 from gitea_mcp_server.client import GiteaClient
@@ -38,6 +38,147 @@ logger = logging.getLogger(__name__)
 
 # Constants for title truncation
 _TITLE_TRUNCATE_LIMIT = 50
+
+# Label cache for validation (maps (owner, repo) -> {"map": dict, "timestamp": datetime})
+_label_cache: dict[tuple[str, str], dict[str, Any]] = {}
+_LABEL_CACHE_TTL = 300  # seconds (5 minutes)
+
+
+async def _get_repository_label_map(
+    owner: str, repo: str, client: GiteaClient
+) -> dict[str, dict[str, Any]]:
+    """Fetch and cache repository label map (name.lower() -> label_info).
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        client: GiteaClient for API calls
+
+    Returns:
+        Dict mapping lowercase label names to label info dicts (id, name)
+    """
+    cache_key = (owner, repo)
+    now = datetime.now()
+
+    # Check cache
+    if cache_key in _label_cache:
+        entry = _label_cache[cache_key]
+        if (now - entry["timestamp"]).total_seconds() < _LABEL_CACHE_TTL:
+            return entry["map"]
+
+    # Fetch labels from API
+    labels = await client.request("GET", f"/repos/{owner}/{repo}/labels")
+    # Response is a list of label objects: {id, name, color, description, ...}
+    label_map = {}
+    for label in labels:
+        name = label.get("name", "")
+        if name:
+            label_map[name.lower()] = {"id": label["id"], "name": label["name"]}
+
+    # Update cache
+    _label_cache[cache_key] = {"map": label_map, "timestamp": now}
+    return label_map
+
+
+def _inject_label_validation_wrapper(tool: OpenAPITool) -> Any:
+    """Wrap a tool's run method to validate and convert label names to IDs.
+
+    Creates a wrapper that intercepts calls to convert string labels to integer IDs
+    based on the repository's label list. Replaces tool.run with the wrapper.
+
+    Args:
+        tool: OpenAPITool to wrap (must have labels parameter if wrapping needed)
+
+    Returns:
+        The wrapped async run function (callable)
+    """
+    original_run = tool.run
+
+    async def wrapped_run(arguments: dict[str, Any]) -> Any:
+        # Only process if 'labels' parameter exists and contains strings
+        labels = arguments.get("labels", [])
+        if not labels or all(isinstance(label, int) for label in labels):
+            return await original_run(arguments)
+
+        # Extract owner and repo from arguments (required for label lookup)
+        # These parameter names match the OpenAPI spec
+        owner = arguments.get("owner") or arguments.get("org")
+        repo = arguments.get("repo")
+        if not owner or not repo:
+            # Can't validate without repo context; pass through
+            return await original_run(arguments)
+
+        # Get label map from cache or fetch
+        # We need access to client; it's stored in tool._client for OpenAPITool
+        client = getattr(tool, "_client", None)
+        if client is None:
+            # No client available; pass through (shouldn't happen in practice)
+            return await original_run(arguments)
+
+        label_map = await _get_repository_label_map(owner, repo, client)
+
+        # Convert labels: strings -> IDs, integers pass through
+        converted = []
+        unknown = []
+        for label in labels:
+            if isinstance(label, str):
+                label_lower = label.lower()
+                if label_lower in label_map:
+                    converted.append(label_map[label_lower]["id"])
+                else:
+                    unknown.append(label)
+            else:
+                converted.append(label)
+
+        if unknown:
+            available = sorted(label_map.keys())
+            raise ValueError(
+                f"Unknown label(s): {unknown}. "
+                f"Available labels: {', '.join(available)}. "
+                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
+            )
+
+        # Call original with converted labels
+        modified_args = dict(arguments)
+        modified_args["labels"] = converted
+        return await original_run(modified_args)
+
+    tool.run = wrapped_run
+    return wrapped_run
+
+
+def _maybe_wrap_labels(component: OpenAPITool) -> None:
+    """Apply label validation/conversion and description guidance if tool has 'labels' param.
+
+    Args:
+        component: OpenAPITool to potentially wrap
+    """
+    # Check if tool has a 'labels' parameter in its schema
+    params = getattr(component, "parameters", None)
+    if not params:
+        return
+
+    props = params.get("properties", {})
+    if "labels" not in props:
+        return
+
+    # Ensure labels is an array type (some tools might have it as something else)
+    labels_schema = props["labels"]
+    if labels_schema.get("type") != "array":
+        return
+
+    # Apply the validation/conversion wrapper
+    _inject_label_validation_wrapper(component)
+
+    # Enhance description with guidance
+    label_guidance = (
+        "\n\n**Labels**: You may provide existing label names (strings) or IDs (integers). "
+        "Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels` "
+        "to see available labels. Unknown label names will produce an error."
+    )
+    existing_doc = component.__doc__ or ""
+    if label_guidance not in existing_doc:
+        component.__doc__ = existing_doc + label_guidance
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
@@ -282,6 +423,9 @@ def _customize_component(route: Any, component: Any) -> None:
         if resource_note not in existing_doc:
             component.__doc__ = existing_doc + resource_note
 
+    # Apply label validation/conversion to tools that have a 'labels' parameter
+    _maybe_wrap_labels(component)
+
 
 async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
     """Load Swagger spec from Gitea instance or local file.
@@ -460,6 +604,45 @@ Resources provide cached, read-only access. Use them for efficient data retrieva
 - `gitea://version` → server version
 
 To get your own repos via resource: first get your username (`user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
+
+## Labels
+
+When creating or editing issues or pull requests, you can specify labels using either:
+- **Names** (strings): e.g., `"bug"`, `"Kind/Feature"`, `"Priority/High"`
+- **IDs** (integers): e.g., `1`, `42`, `184`
+
+⚠️ **Important**: Only existing repository labels are allowed. If you use a name that doesn't exist, you'll get an error with the list of available labels.
+
+### Best Practice: Discover labels first
+
+Before creating an issue/PR with labels, it's a good idea to fetch the available labels:
+
+```python
+# Option 1: Use the list_labels tool (discover via search)
+tools = await call_tool("search_tools", {"query": "list labels"})
+labels = await call_tool("call_tool", {"name": "list_labels", "arguments": {"owner": "org", "repo": "repo"}})
+
+# Option 2: Read the labels resource (faster, cached)
+labels_md = await mcp_read_resource("gitea://repos/org/repo/labels")
+```
+
+### Example: Create an issue with label names
+
+```python
+# Discover the create issue tool
+tools = await call_tool("search_tools", {"query": "create issue"})
+# Use label names (automatically converted to IDs)
+result = await call_tool("call_tool", {
+    "name": "issue_create_repo_issue",
+    "arguments": {
+        "owner": "myorg",
+        "repo": "myrepo",
+        "title": "Bug: Something is broken",
+        "body": "Details...",
+        "labels": ["Kind/Bug", "Priority/High"]  # Use names, not IDs
+    }
+})
+```
 
 ## Workflows
 

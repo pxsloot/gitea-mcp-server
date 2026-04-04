@@ -10,6 +10,7 @@ from gitea_mcp_server.server import (
     _get_repository_label_map,
     _inject_label_validation_wrapper,
     _maybe_wrap_labels,
+    _update_labels_schema,
 )
 
 
@@ -386,3 +387,147 @@ class TestMaybeWrapLabels:
 
         # Should not append again
         assert tool.__doc__.count("**Labels**:") == 1
+
+
+class TestUpdateLabelsSchema:
+    """Tests for the _update_labels_schema function."""
+
+    def test_updates_integer_type_to_union(self):
+        """Schema with integer items.type should become [string, integer]."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                }
+            }
+        }
+
+        srv._update_labels_schema(tool)
+
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
+
+    def test_updates_string_type_to_union(self):
+        """Schema with string items.type should become [string, integer]."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                }
+            }
+        }
+
+        srv._update_labels_schema(tool)
+
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
+
+    def test_preserves_existing_union(self):
+        """Schema already with union type should not be modified."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": ["string", "integer"]},
+                }
+            }
+        }
+
+        srv._update_labels_schema(tool)
+
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
+
+    def test_skips_non_array_labels(self):
+        """If labels is not array type, schema should not be modified."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {"type": "string"},
+            }
+        }
+
+        srv._update_labels_schema(tool)
+
+        # Should remain unchanged
+        assert tool.parameters["properties"]["labels"]["type"] == "string"
+
+    def test_skips_no_labels_property(self):
+        """Tool without labels property should not be modified."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+            }
+        }
+
+        srv._update_labels_schema(tool)
+
+        # Should remain unchanged
+        assert "labels" not in tool.parameters["properties"]
+
+    def test_skips_no_parameters(self):
+        """Tool without parameters attribute should not crash."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        # No parameters attribute
+        del tool.parameters
+
+        # Should not raise
+        srv._update_labels_schema(tool)
+
+    def test_skips_empty_parameters(self):
+        """Tool with None parameters should not crash."""
+        from gitea_mcp_server import server as srv
+
+        tool = MagicMock()
+        tool.parameters = None
+
+        # Should not raise
+        srv._update_labels_schema(tool)
+
+    def test_updates_schema_during_customize(self):
+        """_customize_component should trigger schema update for tools with labels."""
+        from gitea_mcp_server import server as srv
+        from fastmcp.server.providers.openapi import OpenAPITool
+
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="Create issue",
+            operation_id="issue_create_repo_issue",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_repo_issue"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "labels": {"type": "array", "items": {"type": "integer"}},
+                "title": {"type": "string"},
+            }
+        }
+
+        srv._customize_component(route, tool)
+
+        # Verify schema was updated
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]

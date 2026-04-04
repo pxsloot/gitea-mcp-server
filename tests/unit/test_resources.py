@@ -241,8 +241,8 @@ class TestRegisterCustomResources:
         """Test that all expected custom resources are registered."""
         register_custom_resources(mock_mcp, mock_gitea_client)
 
-        # Should register 11 custom resources
-        assert mock_mcp.resource.call_count == 11
+        # Should register 12 custom resources
+        assert mock_mcp.resource.call_count == 12
 
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
 
@@ -257,6 +257,7 @@ class TestRegisterCustomResources:
             "gitea://repos/{owner}/{repo}/files/{path}",
             "gitea://repos/{owner}/{repo}/releases",
             "gitea://users/{username}",
+            "gitea://user",
             "gitea://orgs/{orgname}",
         ]
         for template in expected:

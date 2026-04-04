@@ -30,10 +30,12 @@ Usage:
 """
 
 import base64
+import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from functools import wraps
 from typing import Any
 
 from fastmcp import FastMCP
@@ -200,7 +202,7 @@ def _format_user_markdown(user: dict[str, Any]) -> ResourceResult:
         f"| Public Repos | {user.get('public_repos', 0)} |",
         f"| Followers | {user.get('followers_count', 0)} |",
         f"| Following | {user.get('following_count', 0)} |",
-        f"| Created | {_format_datetime(user.get('created_at'))} |",
+        f"| Created | {_format_datetime(user.get('created_at') or user.get('created'))} |",
         "",
         f"**Bio**: {user.get('bio', 'No bio') if user.get('bio') else 'No bio'}",
         "",
@@ -605,6 +607,18 @@ async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:
         raise
 
 
+async def get_current_user(gitea_client: GiteaClient) -> ResourceResult:
+    """Get current authenticated user profile information."""
+    try:
+        user = await gitea_client.request("GET", "/user")
+        if isinstance(user, str):
+            return user
+        return _format_user_markdown(user)
+    except Exception as e:
+        _handle_not_found(e, "user", "current user", "Current user not found or not authenticated.")
+        raise
+
+
 async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get organization profile information."""
     try:
@@ -660,12 +674,51 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
     def make_resource(
         func: Callable[..., Awaitable[str]],
     ) -> Callable[..., Awaitable[str]]:
-        """Wrap a resource function to inject gitea_client."""
+        """Wrap a resource function to inject gitea_client.
 
-        async def wrapper(**kwargs: Any) -> str:
-            return await func(gitea_client=gitea_client, **kwargs)
+        Creates a wrapper that:
+        - For functions with parameters: wrapper has explicit parameters matching
+          the original (minus gitea_client). This ensures FastMCP can correctly detect URI template parameters.
+        - For functions with no parameters (e.g., gitea://user): wrapper has zero parameters.
+          This triggers Resource (fixed URI) instead of ResourceTemplate.
+        """
 
-        return wrapper
+        sig = inspect.signature(func)
+        params: list[inspect.Parameter] = []
+
+        # Collect all parameters except 'gitea_client'
+        for param in sig.parameters.values():
+            if param.name == "gitea_client":
+                continue
+            # Only support keyword-only or positional-or-keyword parameters
+            if param.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.VAR_POSITIONAL,
+            ):
+                msg = f"Resource function {func.__name__} does not support positional-only or *args parameters"
+                raise ValueError(msg)
+            params.append(param)
+
+        if params:
+            # Function has parameters -> wrapper with explicit parameters
+            wrapper_sig = inspect.Signature(params, return_annotation=str)
+
+            @wraps(func)
+            async def wrapper_with_params(**kwargs: Any) -> str:
+                kwargs["gitea_client"] = gitea_client
+                return await func(**kwargs)
+
+            wrapper_with_params.__signature__ = wrapper_sig  # type: ignore[attr-defined]
+            return wrapper_with_params
+
+        # No-parameter case: wrapper with zero parameters
+        @wraps(func)
+        async def wrapper_no_params() -> str:
+            return await func(gitea_client=gitea_client)
+
+        # Override signature to have zero parameters (avoid inheriting original's gitea_client)
+        wrapper_no_params.__signature__ = inspect.Signature(return_annotation=str)  # type: ignore[attr-defined]
+        return wrapper_no_params
 
     # Custom-formatted resources with better UX
     custom_resources: list[
@@ -737,6 +790,13 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
         (
             "gitea://users/{username}",
             get_user,
+            "text/markdown",
+            {"wrapper", "user"},
+            {"cache_ttl": 300.0},
+        ),  # 5 minutes
+        (
+            "gitea://user",
+            get_current_user,
             "text/markdown",
             {"wrapper", "user"},
             {"cache_ttl": 300.0},

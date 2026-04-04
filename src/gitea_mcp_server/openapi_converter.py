@@ -4,7 +4,7 @@
 
 import logging
 import re
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from gitea_mcp_server.exceptions import SpecError
 
@@ -35,17 +35,14 @@ SCHEMA_FIELDS = frozenset(
 )
 
 
-def camel_to_snake(name: str) -> str:
-    """Convert camelCase or PascalCase to snake_case.
+# ============================================================================
+# Utilities
+# ============================================================================
 
-    Handles consecutive uppercase letters properly:
-    - "GetURL" -> "get_url"
-    - "repoGet" -> "repo_get"
-    - "issueCreateIssue" -> "issue_create_issue"
-    """
-    # Insert underscore before uppercase letters followed by lowercase
+
+def camel_to_snake(name: str) -> str:
+    """Convert camelCase or PascalCase to snake_case."""
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    # Insert underscore before uppercase letters that follow lowercase or digits
     s2 = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1)
     return s2.lower()
 
@@ -56,134 +53,540 @@ def remove_swagger_fields(obj: dict[str, Any], fields: list[str]) -> None:
         obj.pop(field, None)
 
 
-def normalize_schema(schema: dict[str, Any]) -> dict[str, Any]:
+# ============================================================================
+# Protocols
+# ============================================================================
+
+
+class SchemaCallback(Protocol):
+    """Protocol for schema walker callbacks."""
+
+    def __call__(
+        self, schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+    ) -> None: ...
+
+
+# ============================================================================
+# Component Transformers
+# ============================================================================
+
+
+class SchemaNormalizer:
     """Normalize Swagger 2.0 schema types to OpenAPI 3.1 compatible types."""
-    schema = dict(schema)
-    # Convert file type to binary string (for file uploads/downloads)
-    if schema.get("type") == "file":
-        schema["type"] = "string"
-        schema["format"] = "binary"
-    # Convert non-standard uint64 to standard int64
-    if schema.get("format") == "uint64":
-        schema["format"] = "int64"
-    return schema
+
+    def normalize(self, schema: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a single schema."""
+        schema = dict(schema)
+        if schema.get("type") == "file":
+            schema["type"] = "string"
+            schema["format"] = "binary"
+        if schema.get("format") == "uint64":
+            schema["format"] = "int64"
+        return schema
 
 
-def fix_references(spec: dict[str, Any]) -> dict[str, Any]:
-    """Fix $ref references from Swagger 2.0 to OpenAPI 3.x format.
+class PropertyRequiredCollector:
+    """Collect required fields from property-level and move to parent."""
 
-    Handles:
-    - #/definitions/ -> #/components/schemas/
-    - #/responses/ -> #/components/responses/
-    - #/parameters/ -> #/components/parameters/
-    - #/securityDefinitions/ -> #/components/securitySchemes/
-    """
+    def collect_required(self, properties: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Process properties, collecting property-level required flags.
 
-    def fix_value(obj: Any) -> Any:
-        if isinstance(obj, dict):
-            # Check if this is a $ref that needs fixing
-            if "$ref" in obj and isinstance(obj["$ref"], str):
-                ref = obj["$ref"]
-                # Handle all standard Swagger 2.0 reference patterns
-                replacements = [
-                    ("#/definitions/", "#/components/schemas/"),
-                    ("#/responses/", "#/components/responses/"),
-                    ("#/parameters/", "#/components/parameters/"),
-                    ("#/securityDefinitions/", "#/components/securitySchemes/"),
-                    ("#/definitions", "#/components/schemas"),
-                    ("#/responses", "#/components/responses"),
-                    ("#/parameters", "#/components/parameters"),
-                    ("#/securityDefinitions", "#/components/securitySchemes"),
-                ]
-                for old, new in replacements:
-                    if ref.startswith(old):
-                        obj["$ref"] = ref.replace(old, new, 1)
-                        break
-            # Recursively fix all dict values
-            return {k: fix_value(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [fix_value(item) for item in obj]
-        return obj
-
-    return cast("dict[str, Any]", fix_value(spec))
-
-
-def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Convert a Swagger 2.0 schema to OpenAPI 3.1 format."""
-    schema = dict(schema)
-    schema = normalize_schema(schema)
-
-    # Remove Swagger-specific fields
-    schema.pop("readOnly", None)
-    schema.pop("xml", None)
-
-    # Handle nested properties and collect required fields from property-level
-    if "properties" in schema:
+        Returns:
+            (new_properties, required_fields)
+        """
         new_properties = {}
         required_fields = []
 
-        for prop_name, prop_schema in schema["properties"].items():
+        for prop_name, prop_schema in properties.items():
             if isinstance(prop_schema, dict):
-                # Check for property-level required: true (Swagger 2.0 style)
                 if prop_schema.get("required") is True:
                     required_fields.append(prop_name)
-                    # Create copy and remove required from property
                     new_prop_schema = dict(prop_schema)
                     new_prop_schema.pop("required", None)
-                    new_properties[prop_name] = convert_schema(new_prop_schema)
+                    new_properties[prop_name] = new_prop_schema
                 else:
-                    new_properties[prop_name] = convert_schema(prop_schema)
+                    new_properties[prop_name] = dict(prop_schema)
             else:
                 new_properties[prop_name] = prop_schema
 
-        schema["properties"] = new_properties
+        return new_properties, required_fields
 
-        # Only add required if there are fields (avoid empty or null)
+
+class ReferenceFixer:
+    """Fix $ref references from Swagger 2.0 to OpenAPI 3.x format."""
+
+    def fix(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Fix all $ref references in the spec."""
+
+        def fix_value(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref = obj["$ref"]
+                    replacements = [
+                        ("#/definitions/", "#/components/schemas/"),
+                        ("#/responses/", "#/components/responses/"),
+                        ("#/parameters/", "#/components/parameters/"),
+                        ("#/securityDefinitions/", "#/components/securitySchemes/"),
+                        ("#/definitions", "#/components/schemas"),
+                        ("#/responses", "#/components/responses"),
+                        ("#/parameters", "#/components/parameters"),
+                        ("#/securityDefinitions", "#/components/securitySchemes"),
+                    ]
+                    for old, new in replacements:
+                        if ref.startswith(old):
+                            obj["$ref"] = ref.replace(old, new, 1)
+                            break
+                return {k: fix_value(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [fix_value(item) for item in obj]
+            return obj
+
+        return cast("dict[str, Any]", fix_value(spec))
+
+
+# Backward compatibility
+def fix_references(spec: dict[str, Any]) -> dict[str, Any]:
+    """Legacy wrapper for ReferenceFixer.fix()."""
+    return ReferenceFixer().fix(spec)
+
+
+class SpecVersionUpdater:
+    """Update spec version from Swagger 2.0 to OpenAPI 3.1."""
+
+    def update(self, spec: dict[str, Any]) -> None:
+        """Upgrade to OpenAPI 3.1.1 and remove swagger field."""
+        spec["openapi"] = "3.1.1"
+        spec.pop("swagger", None)
+
+
+class BasePathToServerConverter:
+    """Convert basePath, host, schemes to servers array."""
+
+    def convert(self, spec: dict[str, Any]) -> None:
+        """Convert basePath to servers entry."""
+        if "basePath" not in spec:
+            return
+
+        base_path = spec.pop("basePath")
+        host = spec.pop("host", None)
+        schemes = spec.pop("schemes", ["http"])
+
+        server_url = ""
+        if schemes and host:
+            server_url = f"{schemes[0]}://{host}{base_path}"
+        elif base_path:
+            server_url = base_path
+
+        if server_url:
+            spec["servers"] = [{"url": server_url}]
+
+
+class OperationIdFormatter:
+    """Format and generate operation IDs."""
+
+    def generate(self, method: str, path: str) -> str:
+        """Generate an operationId from method and path."""
+        op_id = f"{method}{path.replace('/', '_')}"
+        return self.normalize(op_id)
+
+    def normalize(self, op_id: str) -> str:
+        """Normalize operationId to snake_case."""
+        return camel_to_snake(op_id)
+
+
+class RequestBodyBuilder:
+    """Build requestBody objects from formData or body parameters."""
+
+    def build_from_form_data(self, form_params: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Build multipart/form-data and x-www-form-urlencoded requestBody."""
+        if not form_params:
+            return None
+
+        schema_props = {}
+        required_fields = []
+
+        for param in form_params:
+            name = param.get("name", "unnamed")
+            if "schema" in param:
+                prop_schema = SchemaNormalizer().normalize(param["schema"])
+            else:
+                prop_schema = {"type": param.get("type", "string")}
+                if "description" in param:
+                    prop_schema["description"] = param["description"]
+                prop_schema = SchemaNormalizer().normalize(prop_schema)
+
+            schema_props[name] = prop_schema
+            if param.get("required", False):
+                required_fields.append(name)
+
+        if not schema_props:
+            return None
+
+        form_schema = {"type": "object", "properties": schema_props}
         if required_fields:
-            schema["required"] = required_fields
+            form_schema["required"] = required_fields
 
-    # Handle array items
-    if "type" in schema and schema["type"] == "array" and "items" in schema:
-        schema["items"] = convert_schema(schema["items"])
+        return {
+            "content": {
+                "multipart/form-data": {"schema": form_schema},
+                "application/x-www-form-urlencoded": {"schema": form_schema},
+            },
+            "required": True,
+        }
 
-    # Handle allOf, anyOf, oneOf
-    for combo in ["allOf", "anyOf", "oneOf"]:
-        if combo in schema:
-            schema[combo] = [convert_schema(s) for s in schema[combo]]
+    def build_from_body_params(self, body_params: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Build application/json requestBody."""
+        if not body_params:
+            return None
 
-    return schema
+        body_param = body_params[0]
+        if "schema" in body_param:
+            body_schema = convert_schema(body_param["schema"])
+            return {
+                "content": {"application/json": {"schema": body_schema}},
+                "required": body_param.get("required", True),
+            }
+        return None
+
+
+class SecuritySchemeConverter:
+    """Convert Swagger 2.0 securityDefinitions to OpenAPI 3.x securitySchemes."""
+
+    def convert(self, sec_defs: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Convert security definitions dictionary."""
+        security_schemes: dict[str, dict[str, Any]] = {}
+
+        for name, details in sec_defs.items():
+            if not isinstance(details, dict):
+                continue
+
+            sec_type = details.get("type", "apiKey").lower()
+
+            if sec_type == "basic":
+                scheme = {"type": "http", "scheme": "basic"}
+            elif sec_type == "oauth2":
+                scheme = {"type": "oauth2"}
+                if "flow" in details:
+                    scheme["flows"] = self._convert_flow(details)
+            else:
+                scheme = {"type": details.get("type", "apiKey")}
+                if "name" in details:
+                    scheme["name"] = details["name"]
+                if "in" in details:
+                    scheme["in"] = details["in"]
+
+            security_schemes[name] = scheme
+
+        return security_schemes
+
+    def _convert_flow(self, details: dict[str, Any]) -> dict[str, Any]:
+        """Convert OAuth2 flow configuration."""
+        flow = details["flow"]
+        flows: dict[str, Any] = {}
+
+        if flow == "implicit":
+            flows["implicit"] = {
+                "authorizationUrl": details.get("authorizationUrl"),
+                "scopes": details.get("scopes", {}),
+            }
+        elif flow == "password":
+            flows["password"] = {
+                "tokenUrl": details.get("tokenUrl"),
+                "scopes": details.get("scopes", {}),
+            }
+        elif flow == "clientCredentials":
+            flows["clientCredentials"] = {
+                "tokenUrl": details.get("tokenUrl"),
+                "scopes": details.get("scopes", {}),
+            }
+        elif flow == "authorizationCode":
+            flows["authorizationCode"] = {
+                "authorizationUrl": details.get("authorizationUrl"),
+                "tokenUrl": details.get("tokenUrl"),
+                "scopes": details.get("scopes", {}),
+            }
+
+        return flows
+
+
+class OperationTransformer:
+    """Transform an operation object to OpenAPI 3.x format."""
+
+    def __init__(
+        self, request_body_builder: RequestBodyBuilder, op_id_formatter: OperationIdFormatter
+    ):
+        self.request_body_builder = request_body_builder
+        self.op_id_formatter = op_id_formatter
+
+    def transform(
+        self, operation: dict[str, Any], path: str, method: str, raw_params: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Transform a single operation."""
+        op_copy = dict(operation)
+
+        # Convert parameters (filters out body/formData)
+        op_copy["parameters"] = convert_parameters(raw_params)
+
+        # Only add requestBody for methods that typically have bodies
+        if method in ("post", "put", "patch"):
+            # Handle formData parameters -> requestBody
+            form_params = [
+                p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
+            ]
+            form_body = self.request_body_builder.build_from_form_data(form_params)
+            if form_body:
+                op_copy["requestBody"] = form_body
+
+            # Handle body parameters -> requestBody
+            body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
+            body_req = self.request_body_builder.build_from_body_params(body_params)
+            if body_req:
+                op_copy["requestBody"] = body_req
+
+        # Convert responses
+        if "responses" in op_copy:
+            op_copy["responses"] = convert_responses(op_copy["responses"])
+
+        # Ensure operationId exists and is normalized
+        if "operationId" not in op_copy:
+            op_copy["operationId"] = self.op_id_formatter.generate(method, path)
+        else:
+            op_copy["operationId"] = self.op_id_formatter.normalize(op_copy["operationId"])
+
+        # Remove Swagger-specific fields from operation
+        remove_swagger_fields(op_copy, ["produces", "consumes"])
+
+        return op_copy
+
+
+class PathsConverter:
+    """Convert paths object to OpenAPI 3.x format."""
+
+    def __init__(self, operation_transformer: OperationTransformer):
+        self.operation_transformer = operation_transformer
+
+    def convert(self, paths: dict[str, Any]) -> dict[str, Any]:
+        """Convert all paths and their operations."""
+        new_paths = {}
+        allowed_methods = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
+
+        for path, path_item in paths.items():
+            if not isinstance(path_item, dict):
+                new_paths[path] = path_item
+                continue
+
+            path_item_copy = dict(path_item)
+
+            # Convert path-level parameters
+            if "parameters" in path_item_copy:
+                path_item_copy["parameters"] = convert_parameters(path_item_copy["parameters"])
+
+            # Process each HTTP method
+            for method in list(path_item_copy.keys()):
+                if method not in allowed_methods:
+                    continue
+
+                operation = path_item_copy[method]
+                if not isinstance(operation, dict):
+                    continue
+
+                raw_params = operation.get("parameters", [])
+                op_copy = self.operation_transformer.transform(operation, path, method, raw_params)
+                path_item_copy[method] = op_copy
+
+            # Remove Swagger-specific fields from path item
+            remove_swagger_fields(path_item_copy, ["produces", "consumes"])
+
+            new_paths[path] = path_item_copy
+
+        return new_paths
+
+
+# ============================================================================
+# Schema Walker and Callbacks
+# ============================================================================
+
+
+class SchemaWalker:
+    """Iterative schema walker for applying transformations."""
+
+    def __init__(self, callback: SchemaCallback):
+        self.callback = callback
+
+    def walk(self, schema: dict[str, Any]) -> None:
+        """Walk the schema tree iteratively and apply callback to each schema node."""
+        stack: list[tuple[dict[str, Any], dict[str, Any] | None, str | None]] = [
+            (schema, None, None)
+        ]
+
+        while stack:
+            current_schema, parent, key = stack.pop()
+            if not isinstance(current_schema, dict):
+                continue
+
+            # Apply callback to current schema
+            self.callback(current_schema, parent, key)
+
+            # Process properties - push each property with parent=current_schema
+            props = current_schema.get("properties")
+            if isinstance(props, dict):
+                for prop_name, prop_schema in props.items():
+                    if isinstance(prop_schema, dict):
+                        stack.append((prop_schema, current_schema, prop_name))
+
+            # Process combinator schemas (allOf, anyOf, oneOf) - push with parent=current_schema
+            for combo_key in ("allOf", "anyOf", "oneOf"):
+                items = current_schema.get(combo_key)
+                if isinstance(items, list):
+                    for idx, item in enumerate(items):
+                        if isinstance(item, dict):
+                            stack.append((item, current_schema, combo_key))
+
+            # Process items (array)
+            items_schema = current_schema.get("items")
+            if isinstance(items_schema, dict):
+                stack.append((items_schema, current_schema, "items"))
+
+            # Process additionalProperties
+            add_props = current_schema.get("additionalProperties")
+            if isinstance(add_props, dict):
+                stack.append((add_props, current_schema, "additionalProperties"))
+
+            # Process patternProperties
+            pattern_props = current_schema.get("patternProperties")
+            if isinstance(pattern_props, dict):
+                for pat_key, pat_schema in pattern_props.items():
+                    if isinstance(pat_schema, dict):
+                        stack.append((pat_schema, current_schema, pat_key))
+
+
+class OptionalPropertyTransformer:
+    """Add null to optional properties and handle special format cases (e.g., email)."""
+
+    FORMATS_NEEDING_EMPTY = {"email"}
+
+    def __call__(
+        self, schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+    ) -> None:
+        if parent is None or key is None:
+            return
+        if not isinstance(parent, dict):
+            return
+
+        # Determine if this schema is a property-like schema
+        is_property = False
+        if "properties" in parent and key in parent["properties"]:
+            is_property = True
+        elif "patternProperties" in parent and key in parent["patternProperties"]:
+            is_property = True
+        elif key == "additionalProperties" and "additionalProperties" in parent:
+            is_property = True
+
+        if not is_property:
+            return
+
+        # Determine if this property is optional
+        optional = True
+        if "properties" in parent and key in parent["properties"]:
+            required = parent.get("required", [])
+            if key in required:
+                optional = False
+
+        # Handle special formats (e.g., email) - always transform to anyOf
+        if schema.get("type") == "string" and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
+            fmt = schema.get("format", "email")
+            format_branch = {"type": "string", "format": fmt}
+            for k in ["pattern", "minLength", "maxLength", "enum", "default"]:
+                if k in schema:
+                    format_branch[k] = schema[k]
+
+            any_of = [format_branch]
+            if optional:
+                any_of.append({"type": "string", "maxLength": 0})
+                any_of.append({"type": "null"})
+
+            new_schema = {"anyOf": any_of}
+            for k in ["description", "title", "example", "readOnly", "writeOnly", "deprecated"]:
+                if k in schema:
+                    new_schema[k] = schema[k]
+
+            schema.clear()
+            schema.update(new_schema)
+            return
+
+        # For other optional properties, add nullable
+        if optional:
+            if "$ref" in schema and "anyOf" not in schema and "oneOf" not in schema:
+                ref = schema["$ref"]
+                schema.clear()
+                schema["anyOf"] = [{"$ref": ref}, {"type": "null"}]
+                return
+
+            if "type" in schema and "anyOf" not in schema and "oneOf" not in schema:
+                t = schema["type"]
+                if isinstance(t, str):
+                    if t != "null":
+                        schema["type"] = [t, "null"]
+                elif isinstance(t, list) and "null" not in t:
+                    t.append("null")
+
+
+# The following transformers are no-ops because recursion is handled by walker
+class CombinatorSchemaTransformer: ...
+
+
+class ArrayItemsTransformer: ...
+
+
+class AdditionalPropertiesTransformer: ...
+
+
+class PatternPropertiesTransformer: ...
+
+
+def _add_nullable_for_optional_refs_impl(spec: dict[str, Any]) -> None:
+    """Apply nullable transformations to all component schemas."""
+    components = spec.get("components", {})
+    schemas = components.get("schemas", {})
+    walker = SchemaWalker(OptionalPropertyTransformer())
+    for schema in schemas.values():
+        if isinstance(schema, dict):
+            walker.walk(schema)
+
+
+# Backward compatibility
+def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
+    """Legacy wrapper."""
+    _add_nullable_for_optional_refs_impl(spec)
+
+
+# ============================================================================
+# Core Conversion Functions
+# ============================================================================
 
 
 def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Swagger 2.0 parameters to OpenAPI 3.1 format.
-
-    Excludes body and formData parameters (handled separately as requestBody).
-    Ensures schema information is properly nested under 'schema' key.
-    """
+    """Convert Swagger 2.0 parameters to OpenAPI 3.1 format."""
     new_params = []
 
     for param in parameters:
         param_in = param.get("in")
-        # Skip body and formData - they become requestBody
         if param_in in ("body", "formData"):
             continue
 
         param_copy = dict(param)
 
-        # If schema already exists, normalize it
         if "schema" in param_copy:
-            param_copy["schema"] = normalize_schema(param_copy["schema"])
+            param_copy["schema"] = SchemaNormalizer().normalize(param_copy["schema"])
         else:
             schema_dict = {}
             for field in SCHEMA_FIELDS:
                 if field in param_copy:
                     schema_dict[field] = param_copy.pop(field)
             if schema_dict:
-                param_copy["schema"] = normalize_schema(schema_dict)
+                param_copy["schema"] = SchemaNormalizer().normalize(schema_dict)
 
-        # Remove Swagger-specific fields not allowed in OAS 3.1 parameters
         param_copy.pop("collectionFormat", None)
-
         new_params.append(param_copy)
 
     return new_params
@@ -204,7 +607,6 @@ def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
             schema = response_copy.pop("schema")
             response_copy["content"] = {"application/json": {"schema": convert_schema(schema)}}
 
-        # Convert headers: type fields must be under schema
         if "headers" in response_copy and isinstance(response_copy["headers"], dict):
             headers = response_copy["headers"]
             converted_headers = {}
@@ -217,7 +619,7 @@ def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
                             if field in hdr:
                                 schema_dict[field] = hdr.pop(field)
                         if schema_dict:
-                            hdr["schema"] = normalize_schema(schema_dict)
+                            hdr["schema"] = SchemaNormalizer().normalize(schema_dict)
                     converted_headers[hdr_name] = hdr
                 else:
                     converted_headers[hdr_name] = hdr_def
@@ -228,125 +630,55 @@ def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
     return new_responses
 
 
+def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Swagger 2.0 schema to OpenAPI 3.1 format."""
+    schema = dict(schema)
+    schema = SchemaNormalizer().normalize(schema)
+
+    schema.pop("readOnly", None)
+    schema.pop("xml", None)
+
+    if "properties" in schema:
+        props = schema.get("properties", {})
+        if isinstance(props, dict):
+            new_properties, required_fields = PropertyRequiredCollector().collect_required(props)
+            schema["properties"] = new_properties
+            if required_fields:
+                schema["required"] = required_fields
+
+    if "type" in schema and schema["type"] == "array" and "items" in schema:
+        schema["items"] = convert_schema(schema["items"])
+
+    for combo in ["allOf", "anyOf", "oneOf"]:
+        if combo in schema:
+            schema[combo] = [convert_schema(s) for s in schema[combo]]
+
+    return schema
+
+
 def convert_definitions(definitions: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 definitions to OpenAPI 3.1 schemas."""
     converted = {}
     for name, schema in definitions.items():
         converted[name] = convert_schema(schema)
 
-    # Fix internal $ref references
     result = {"definitions": converted}
-    fixed = fix_references(result)
+    fixed = ReferenceFixer().fix(result)
     return cast("dict[str, Any]", fixed["definitions"])
 
 
 def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 paths to OpenAPI 3.1 format."""
-    new_paths = {}
-    allowed_methods = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
+    request_body_builder = RequestBodyBuilder()
+    op_id_formatter = OperationIdFormatter()
+    operation_transformer = OperationTransformer(request_body_builder, op_id_formatter)
+    paths_converter = PathsConverter(operation_transformer)
+    return paths_converter.convert(paths)
 
-    for path, path_item in paths.items():
-        if not isinstance(path_item, dict):
-            new_paths[path] = path_item
-            continue
 
-        path_item_copy = dict(path_item)
-
-        # Convert path-level parameters
-        if "parameters" in path_item_copy:
-            path_item_copy["parameters"] = convert_parameters(path_item_copy["parameters"])
-
-        # Process each HTTP method
-        for method in list(path_item_copy.keys()):
-            if method not in allowed_methods:
-                continue
-
-            operation = path_item_copy[method]
-            if not isinstance(operation, dict):
-                continue
-
-            op_copy = dict(operation)
-
-            # Keep original parameters list for later processing
-            raw_params = op_copy.get("parameters", [])
-            # Convert parameters (filters out body/formData)
-            op_copy["parameters"] = convert_parameters(raw_params)
-
-            # Only add requestBody for methods that typically have bodies
-            if method in ("post", "put", "patch"):
-                # Handle formData parameters -> requestBody (multipart/form-data + x-www-form-urlencoded)
-                form_params = [
-                    p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
-                ]
-                if form_params:
-                    schema_props = {}
-                    required_fields = []
-
-                    for param in form_params:
-                        name = param.get("name", "unnamed")
-                        if "schema" in param:
-                            prop_schema = normalize_schema(param["schema"])
-                        else:
-                            # Build simple schema from type fields
-                            prop_schema = {
-                                "type": param.get("type", "string"),
-                            }
-                            if "description" in param:
-                                prop_schema["description"] = param["description"]
-                            prop_schema = normalize_schema(prop_schema)
-
-                        schema_props[name] = prop_schema
-                        if param.get("required", False):
-                            required_fields.append(name)
-
-                    if schema_props:
-                        form_schema = {"type": "object", "properties": schema_props}
-                        if required_fields:
-                            form_schema["required"] = required_fields
-
-                        op_copy["requestBody"] = {
-                            "content": {
-                                "multipart/form-data": {"schema": form_schema},
-                                "application/x-www-form-urlencoded": {"schema": form_schema},
-                            },
-                            "required": True,
-                        }
-
-                # Handle body parameters -> requestBody (application/json)
-                body_params = [
-                    p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"
-                ]
-                if body_params:
-                    body_param = body_params[0]
-                    if "schema" in body_param:
-                        body_schema = convert_schema(body_param["schema"])
-                        op_copy["requestBody"] = {
-                            "content": {"application/json": {"schema": body_schema}},
-                            "required": body_param.get("required", True),
-                        }
-
-            # Convert responses
-            if "responses" in op_copy:
-                op_copy["responses"] = convert_responses(op_copy["responses"])
-
-            # Ensure operationId exists
-            if "operationId" not in op_copy:
-                op_copy["operationId"] = f"{method}{path.replace('/', '_')}"
-
-            # Normalize operationId to snake_case for MCP compliance
-            op_copy["operationId"] = camel_to_snake(op_copy["operationId"])
-
-            # Remove Swagger-specific fields from operation
-            remove_swagger_fields(op_copy, ["produces", "consumes"])
-
-            path_item_copy[method] = op_copy
-
-        # Remove Swagger-specific fields from path item
-        remove_swagger_fields(path_item_copy, ["produces", "consumes"])
-
-        new_paths[path] = path_item_copy
-
-    return new_paths
+# ============================================================================
+# Main Entry Point
+# ============================================================================
 
 
 def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
@@ -375,56 +707,40 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
 
     logger.info("Starting OpenAPI conversion", extra={"swagger_version": swagger_version})
 
-    # Upgrade to OpenAPI 3.1.1
-    spec["openapi"] = "3.1.1"
-    spec.pop("swagger", None)
+    # Step 1: Update spec version
+    SpecVersionUpdater().update(spec)
 
-    # Update info: keep version but optionally append to description
+    # Step 2: Update info (preserve version in description)
     if "info" in spec and isinstance(spec["info"], dict):
         info = dict(spec["info"])
         if "version" in info:
-            version = info["version"]  # Don't remove it!
+            version = info["version"]
             desc = info.get("description", "")
-            # Optionally prepend/append version info to description (kept from original logic)
             if desc:
                 info["description"] = f"{desc}\n\nAPI Version: {version}"
         spec["info"] = info
 
-    # Convert basePath to servers
-    if "basePath" in spec:
-        base_path = spec.pop("basePath")
-        host = spec.pop("host", None)
-        schemes = spec.pop("schemes", ["http"])
+    # Step 3: Convert basePath to servers
+    BasePathToServerConverter().convert(spec)
 
-        # Build server URL: schemes://host + basePath
-        server_url = ""
-        if schemes and host:
-            server_url = f"{schemes[0]}://{host}{base_path}"
-        elif base_path:
-            server_url = base_path
-
-        if server_url:
-            spec["servers"] = [{"url": server_url}]
-
-    # Initialize components dict
+    # Step 4: Initialize components
     components: dict[str, Any] = {}
 
-    # Convert definitions -> components/schemas
+    # Step 5: Convert definitions -> components/schemas
     if "definitions" in spec:
         definitions = spec.pop("definitions")
         if isinstance(definitions, dict):
             components["schemas"] = convert_definitions(definitions)
 
-    # Convert responses -> components/responses
+    # Step 6: Convert responses -> components/responses
     if "responses" in spec:
         responses = spec.pop("responses")
         if isinstance(responses, dict):
             components["responses"] = convert_responses(responses)
 
-    # Convert parameters -> components/parameters
+    # Step 7: Convert parameters -> components/parameters
     if "parameters" in spec:
         params = spec.pop("parameters")
-        param_list: list[dict[str, Any]]
         if isinstance(params, dict):
             param_list = list(params.values())
         elif isinstance(params, list):
@@ -433,229 +749,33 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
             param_list = []
         if param_list:
             converted_params = convert_parameters(param_list)
-            # Build a dictionary keyed by parameter name for OpenAPI components
             param_dict = {p["name"]: p for p in converted_params if "name" in p}
             components["parameters"] = param_dict
 
-    # Convert securityDefinitions -> components/securitySchemes
+    # Step 8: Convert securityDefinitions -> components/securitySchemes
     if "securityDefinitions" in spec:
         sec_defs = spec.pop("securityDefinitions")
         if isinstance(sec_defs, dict):
-            security_schemes: dict[str, dict[str, Any]] = {}
-
-            for name, details in sec_defs.items():
-                if not isinstance(details, dict):
-                    continue
-
-                sec_type = details.get("type", "apiKey").lower()
-
-                if sec_type == "basic":
-                    # Basic auth -> type: http, scheme: basic
-                    scheme = cast("dict[str, Any]", {"type": "http", "scheme": "basic"})
-                elif sec_type == "oauth2":
-                    # OAuth2 requires flows object
-                    scheme = cast("dict[str, Any]", {"type": "oauth2"})
-                    if "flow" in details:
-                        flow = details["flow"]
-                        # Initialize flows dict explicitly
-                        flows: dict[str, Any] = {}
-                        scheme["flows"] = flows
-                        if flow == "implicit":
-                            flows["implicit"] = {
-                                "authorizationUrl": details.get("authorizationUrl"),
-                                "scopes": details.get("scopes", {}),
-                            }
-                        elif flow == "password":
-                            flows["password"] = {
-                                "tokenUrl": details.get("tokenUrl"),
-                                "scopes": details.get("scopes", {}),
-                            }
-                        elif flow == "clientCredentials":
-                            flows["clientCredentials"] = {
-                                "tokenUrl": details.get("tokenUrl"),
-                                "scopes": details.get("scopes", {}),
-                            }
-                        elif flow == "authorizationCode":
-                            flows["authorizationCode"] = {
-                                "authorizationUrl": details.get("authorizationUrl"),
-                                "tokenUrl": details.get("tokenUrl"),
-                                "scopes": details.get("scopes", {}),
-                            }
-                else:
-                    # apiKey, application, etc.
-                    scheme = cast("dict[str, Any]", {"type": details.get("type", "apiKey")})
-                    if "name" in details:
-                        scheme["name"] = details["name"]
-                    if "in" in details:
-                        scheme["in"] = details["in"]
-
-                security_schemes[name] = scheme
-
+            security_schemes = SecuritySchemeConverter().convert(sec_defs)
             if security_schemes:
                 components["securitySchemes"] = security_schemes
 
+    # Step 9: Attach components if non-empty
     if components:
         spec["components"] = components
 
-    # Convert paths (most complex)
+    # Step 10: Convert paths
     if "paths" in spec:
         spec["paths"] = convert_paths(spec["paths"])
 
-    # Remove deprecated/swagger-specific fields at root level
+    # Step 11: Remove Swagger-specific root fields
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
 
-    # Fix remaining $ref references throughout the entire spec
-    spec = fix_references(spec)
+    # Step 12: Fix $ref references
+    spec = ReferenceFixer().fix(spec)
 
-    # Add nullable for optional reference fields to match actual API behavior
-    _add_nullable_for_optional_refs(spec)
+    # Step 13: Add nullable for optional reference fields
+    _add_nullable_for_optional_refs_impl(spec)
 
     logger.info("OpenAPI conversion completed successfully")
     return spec
-
-
-def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
-    """Mutate spec to allow null for optional reference and simple type properties,
-    and handle special format cases that require additional valid values.
-
-    Many Gitea API models include fields that are pointers or can be null, but the
-    Swagger spec does not mark these as nullable, causing strict validators to reject
-    responses where such fields are present with null value.
-
-     Additionally, some string formats (like 'email') are not accepted when the field
-     contains an empty string, even though Gitea returns "" for hidden/redacted data.
-     For such formats, we preserve the format hint but use anyOf to also allow the
-     empty string (and optionally null).
-
-     Note: Date/date-time fields do NOT need this special handling; Gitea returns
-     null for missing dates, not empty strings. Only 'email' is currently known
-     to require empty string support.
-
-     This function walks through all schemas and:
-       - For optional properties (not in required):
-         * If it's a $ref, wrap with anyOf: [{$ref}, {type: 'null'}]
-         * If it's a simple type, add 'null' to the type array.
-       - For string properties with special formats (e.g., 'email'):
-         * Replace with anyOf: [{type: 'string', format: <fmt>}, {type: 'string', maxLength: 0}]
-         * If the property is optional, also add {type: 'null'}
-         * This preserves the semantic format while allowing empty strings.
-    """
-
-    def _process_schema(schema: dict[str, Any]) -> None:
-        if not isinstance(schema, dict):
-            return  # type: ignore[unreachable]
-
-        # Process properties if present
-        props = schema.get("properties")
-        if isinstance(props, dict):
-            required = set(schema.get("required", []))
-            for prop_name, prop_schema in props.items():
-                if not isinstance(prop_schema, dict):
-                    continue
-
-                # --- Handle special string formats that need to allow empty strings ---
-                # Only 'email' is currently known to require this, as Gitea returns ""
-                # for hidden/redacted emails. Date/date-time fields use null for missing
-                # values and do NOT need empty string branches.
-                # BUT: only for optional fields. Required fields should NOT accept empty strings.
-                FORMATS_NEEDING_EMPTY = {"email"}  # Extendable set; date/date-time not needed
-                if (
-                    prop_schema.get("type") == "string"
-                    and prop_schema.get("format") in FORMATS_NEEDING_EMPTY
-                ):
-                    fmt = prop_schema["format"]
-
-                    # Build the email (or other format) branch, preserving other string constraints
-                    format_branch = {"type": "string", "format": fmt}
-                    for k in ["pattern", "minLength", "maxLength", "enum", "default"]:
-                        if k in prop_schema:
-                            format_branch[k] = prop_schema[k]
-
-                    # Start anyOf with the format branch
-                    any_of = [format_branch]
-
-                    # Only add empty string branch for optional properties (where hidden email "" may appear)
-                    if prop_name not in required:
-                        any_of.append({"type": "string", "maxLength": 0})
-                        any_of.append({"type": "null"})
-                    # For required properties, we do NOT add empty string branch - they must be valid emails
-
-                    # Build new schema preserving metadata
-                    new_schema = {"anyOf": any_of}
-                    for k in [
-                        "description",
-                        "title",
-                        "example",
-                        "readOnly",
-                        "writeOnly",
-                        "deprecated",
-                    ]:
-                        if k in prop_schema:
-                            new_schema[k] = prop_schema[k]
-
-                    # Replace the property schema and skip further processing
-                    props[prop_name] = new_schema
-                    # No need to _process_schema(new_schema) - branches are simple
-                    continue
-
-                # --- Only modify if property is optional (nullable handling for other types) ---
-                if prop_name not in required:
-                    # Case 1: $ref -> wrap with anyOf
-                    if (
-                        "$ref" in prop_schema
-                        and "anyOf" not in prop_schema
-                        and "oneOf" not in prop_schema
-                    ):
-                        ref = prop_schema["$ref"]
-                        props[prop_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
-                        # No need to recurse into the new anyOf; the referenced schema will be processed separately
-                        continue  # skip further recursion on this prop
-                    # Case 2: simple type -> add null
-                    if (
-                        "type" in prop_schema
-                        and "anyOf" not in prop_schema
-                        and "oneOf" not in prop_schema
-                    ):
-                        t = prop_schema["type"]
-                        if isinstance(t, str):
-                            if t != "null":
-                                prop_schema["type"] = [t, "null"]
-                        elif isinstance(t, list) and "null" not in t:
-                            t.append("null")
-                        # Continue to recurse into nested structures (e.g., if it's an object with properties)
-                # Recurse into the property schema to handle nested objects/arrays
-                _process_schema(prop_schema)
-
-        # Process nested schemas inside allOf/anyOf/oneOf
-        for combo_key in ("allOf", "anyOf", "oneOf"):
-            items = schema.get(combo_key)
-            if isinstance(items, list):
-                for item in items:
-                    if isinstance(item, dict):
-                        _process_schema(item)
-
-        # Process items if this is an array schema
-        items_schema = schema.get("items")
-        if isinstance(items_schema, dict):
-            _process_schema(items_schema)
-
-        # Process additionalProperties if it is a schema dict
-        add_props = schema.get("additionalProperties")
-        if isinstance(add_props, dict):
-            _process_schema(add_props)
-
-        # Process patternProperties
-        for key, value in schema.items():
-            if key == "patternProperties" and isinstance(value, dict):
-                for pat_schema in value.values():
-                    if isinstance(pat_schema, dict):
-                        _process_schema(pat_schema)
-
-    # Apply to all component schemas
-    components = spec.get("components", {})
-    schemas = components.get("schemas", {})
-    for schema in schemas.values():
-        if isinstance(schema, dict):
-            _process_schema(schema)
-
-    # Also process top-level schema if any? Usually not needed.

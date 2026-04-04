@@ -201,6 +201,42 @@ def _maybe_wrap_labels(component: OpenAPITool) -> None:
         component.__doc__ = existing_doc + LABEL_GUIDANCE
 
 
+def _update_labels_schema(component: OpenAPITool) -> None:
+    """Update the tool's schema to show that labels accept both string and integer types.
+
+    The OpenAPI spec defines labels as array of integers, but the runtime accepts strings
+    (with auto-conversion). This function updates the JSON schema to reflect the actual
+    accepted types: ["string", "integer"].
+
+    Args:
+        component: OpenAPITool to update
+    """
+    params = getattr(component, "parameters", None)
+    if not params:
+        return
+
+    props = params.get("properties", {})
+    if "labels" not in props:
+        return
+
+    labels_schema = props["labels"]
+    if labels_schema.get("type") != "array":
+        return
+
+    # Get or create items schema
+    items_schema = labels_schema.get("items", {})
+
+    # Update items.type to accept both string and integer
+    current_type = items_schema.get("type")
+    if current_type == "integer":
+        # Change from "integer" to ["string", "integer"]
+        items_schema["type"] = ["string", "integer"]
+    elif current_type == "string":
+        # Already accepts string; might as well add integer for completeness
+        items_schema["type"] = ["string", "integer"]
+    # If already a list, don't modify (could be already set)
+
+
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     """Return minimal tool info for search results to avoid massive payloads.
 
@@ -496,6 +532,9 @@ def _customize_component(route: Any, component: Any) -> None:
 
     # Apply label validation/conversion to tools that have a 'labels' parameter
     _maybe_wrap_labels(component)
+
+    # Also update the tool's parameter schema to reflect that string labels are accepted
+    _update_labels_schema(component)
 
 
 async def load_swagger_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:

@@ -5,11 +5,14 @@ from unittest.mock import MagicMock
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
+from gitea_mcp_server.constants import TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.server import (
+    TolerantBM25SearchTransform,
     _add_inferred_hints,
     _categorize_tool,
     _customize_component,
     _generate_tool_title,
+    _inject_label_validation_wrapper,
 )
 
 
@@ -77,7 +80,7 @@ class TestGenerateToolTitle:
             operation_id="someOp",
         )
         title = _generate_tool_title(route)
-        assert len(title) <= 53  # 50 + "..."
+        assert len(title) <= TITLE_TRUNCATE_LIMIT
         assert title.endswith("...")
 
     def test_uses_operation_id_when_no_summary(self):
@@ -351,5 +354,5 @@ class TestCustomizeComponent:
 
         _customize_component(route, tool)
 
-        assert len(tool.annotations.title) <= 53  # 50 + "..."
+        assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
         assert tool.annotations.title.endswith("...")

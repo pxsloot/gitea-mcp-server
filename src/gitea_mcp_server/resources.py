@@ -202,7 +202,7 @@ def _format_user_markdown(user: dict[str, Any]) -> ResourceResult:
         f"| Public Repos | {user.get('public_repos', 0)} |",
         f"| Followers | {user.get('followers_count', 0)} |",
         f"| Following | {user.get('following_count', 0)} |",
-        f"| Created | {_format_datetime(user.get('created_at'))} |",
+        f"| Created | {_format_datetime(user.get('created_at') or user.get('created'))} |",
         "",
         f"**Bio**: {user.get('bio', 'No bio') if user.get('bio') else 'No bio'}",
         "",

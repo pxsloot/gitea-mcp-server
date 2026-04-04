@@ -38,7 +38,7 @@ from datetime import datetime
 from functools import wraps
 from typing import Any
 
-from fastmcp import FastMCP
+from gitea_mcp_server.resource_registry import ResourceRegistry
 from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
@@ -257,7 +257,7 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 
 
 def register_auto_generated_resources(
-    mcp: FastMCP,
+    registry: ResourceRegistry,
     gitea_client: GiteaClient,
     openapi_spec: dict[str, Any],
     skip_uris: set[str] | None = None,
@@ -275,7 +275,7 @@ def register_auto_generated_resources(
     - Only endpoints with path parameters are registered (FastMCP requirement)
 
     Args:
-        mcp: FastMCP server instance
+        registry: ResourceRegistry
         gitea_client: GiteaClient for API calls
         openapi_spec: OpenAPI 3.1 specification dictionary
         skip_uris: Set of URI templates to skip. If None, uses default custom URIs.
@@ -413,9 +413,13 @@ def register_auto_generated_resources(
 
                 # Register with FastMCP
                 try:
-                    mcp.resource(
-                        uri_template, mime_type="application/json", tags={"api", "raw", "auto"}
-                    )(resource_func)
+                    registry.register(
+                        uri_template,
+                        resource_func,
+                        "application/json",
+                        {"api", "raw", "auto"},
+                        allow_override=False,
+                    )
                     count += 1
                     logger.debug("Registered auto-generated resource: %s", uri_template)
                 except ValueError as e:
@@ -658,7 +662,7 @@ async def list_repo_pulls_open(owner: str, repo: str, gitea_client: GiteaClient)
     return await list_repo_pulls(owner=owner, repo=repo, state="open", gitea_client=gitea_client)
 
 
-def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
+def register_custom_resources(registry: ResourceRegistry, gitea_client: GiteaClient) -> None:
     """Register custom-formatted and custom resources.
 
     These override any auto-generated resources with the same URI.
@@ -820,7 +824,12 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
     ]
 
     for uri_template, func, mime_type, tags, meta in custom_resources:
-        kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
-        if meta is not None:
-            kwargs["meta"] = meta
-        mcp.resource(uri_template, **kwargs)(make_resource(func))
+        wrapped = make_resource(func)
+        registry.register(
+            uri_template,
+            wrapped,
+            mime_type,
+            tags,
+            meta=meta,
+            allow_override=True,
+        )

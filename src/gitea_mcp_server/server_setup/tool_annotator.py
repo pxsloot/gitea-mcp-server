@@ -294,7 +294,7 @@ def inject_label_validation_wrapper(label_manager: LabelManager, tool: OpenAPITo
         modified_args["labels"] = converted
         return await original_run(modified_args)
 
-    tool.run = wrapped_run
+    object.__setattr__(tool, "run", wrapped_run)
     return wrapped_run
 
 
@@ -325,7 +325,7 @@ def maybe_wrap_labels(label_manager: LabelManager, component: OpenAPITool) -> No
     # Enhance description with guidance
     existing_doc = component.__doc__ or ""
     if LABEL_GUIDANCE not in existing_doc:
-        component.__doc__ = existing_doc + LABEL_GUIDANCE
+        object.__setattr__(component, "__doc__", existing_doc + LABEL_GUIDANCE)
 
 
 def customize_component(route: Any, component: Any, label_manager: LabelManager) -> None:
@@ -378,7 +378,7 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
         existing_doc = component.__doc__ or ""
         # Avoid adding the note twice
         if RESOURCE_NOTE not in existing_doc:
-            component.__doc__ = existing_doc + RESOURCE_NOTE
+            object.__setattr__(component, "__doc__", existing_doc + RESOURCE_NOTE)
 
     # Apply label validation/conversion to tools that have a 'labels' parameter
     maybe_wrap_labels(label_manager, component)

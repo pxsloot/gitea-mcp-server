@@ -58,13 +58,17 @@ def _should_retry(exception: Exception) -> bool:
     return bool(isinstance(exception, httpx.HTTPError))  # Ensure bool return
 
 
-class GiteaClient:
-    """HTTP client wrapper for Gitea API with proper lifecycle management."""
+class HTTPTransport:
+    """HTTP transport layer handling low-level client creation and retry logic."""
 
     def __init__(self, config: Config):
+        """Initialize transport with configuration.
+
+        Args:
+            config: Application configuration
+        """
         self._config = config
         self._client: httpx.AsyncClient | None = None
-        self._lock = asyncio.Lock()
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -115,21 +119,14 @@ class GiteaClient:
         self,
         method: str,
         url: str,
-        *,
-        json: Any = None,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Make an HTTP request with retry logic.
 
         Args:
             method: HTTP method
-            url: URL (relative to base_url or absolute)
-            json: JSON body
-            params: Query parameters
-            headers: Additional headers
-            **kwargs: Additional httpx arguments
+            url: Absolute URL (must be full URL, not relative)
+            **kwargs: Additional httpx arguments (json, params, headers, etc.)
 
         Returns:
             Parsed JSON response as dict/list, or text content if not JSON
@@ -141,9 +138,6 @@ class GiteaClient:
             response = await self.client.request(
                 method=method,
                 url=url,
-                json=json,
-                params=params,
-                headers=headers,
                 **kwargs,
             )
 
@@ -203,6 +197,128 @@ class GiteaClient:
                 logger.warning("Error closing HTTP client", exc_info=True)
             finally:
                 self._client = None
+
+
+class GiteaAPI:
+    """API layer handling URL construction and request routing."""
+
+    def __init__(self, transport: HTTPTransport, base_url: str):
+        """Initialize API client with transport and base URL.
+
+        Args:
+            transport: HTTP transport layer
+            base_url: Base URL for the API (will have trailing slashes removed)
+        """
+        self.transport = transport
+        self.base_url = base_url.rstrip("/")
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Make an API request with proper URL construction.
+
+        Args:
+            method: HTTP method
+            path: API path (relative to base_url, e.g., "/user" or "/repos")
+            json: JSON body
+            params: Query parameters
+            headers: Additional headers
+            **kwargs: Additional arguments
+
+        Returns:
+            Parsed response from the API
+
+        Raises:
+            GiteaAPIError: On API errors
+        """
+        # Handle absolute URLs (pass through unchanged)
+        if path.startswith("http://") or path.startswith("https://"):
+            full_url = path
+        else:
+            full_url = f"{self.base_url}{path}"
+        return await self.transport.request(
+            method, full_url, json=json, params=params, headers=headers, **kwargs
+        )
+
+
+class GiteaClient:
+    """HTTP client wrapper for Gitea API with proper lifecycle management."""
+
+    def __init__(self, config: Config):
+        self._config = config
+        self.transport = HTTPTransport(config)
+        self.api = GiteaAPI(self.transport, config.base_url)
+        self._client: httpx.AsyncClient | None = None
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Get or create the HTTP client (lazy initialization)."""
+        if self._client is None:
+            self._client = self.transport.client
+        return self._client
+
+    @retry(  # type: ignore[untyped-decorator]
+        retry=retry_if_exception(_should_retry),
+        stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+        wait=wait_exponential(
+            multiplier=RETRY_WAIT_MULTIPLIER,
+            min=RETRY_WAIT_MIN,
+            max=RETRY_WAIT_MAX,
+        ),
+        reraise=True,
+    )
+    async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Make an HTTP request with retry logic.
+
+        Args:
+            method: HTTP method
+            url: URL (relative to base_url or absolute)
+            json: JSON body
+            params: Query parameters
+            headers: Additional headers
+            **kwargs: Additional httpx arguments
+
+        Returns:
+            Parsed JSON response as dict/list, or text content if not JSON
+
+        Raises:
+            GiteaAPIError: On API errors after retries exhausted
+        """
+        # Ensure client is initialized for backward compatibility
+        if self._client is None:
+            self._client = self.transport.client
+
+        # Determine if URL is absolute or relative
+        if url.startswith("http://") or url.startswith("https://"):
+            full_url = url
+        else:
+            full_url = f"{self._config.base_url.rstrip('/')}{url}"
+
+        return await self.transport.request(
+            method, full_url, json=json, params=params, headers=headers, **kwargs
+        )
+
+    async def close(self) -> None:
+        """Close the HTTP client and cleanup resources."""
+        if self._client is not None:
+            await self.transport.close()
+            self._client = None
 
     async def __aenter__(self) -> "GiteaClient":
         """Async context manager entry."""

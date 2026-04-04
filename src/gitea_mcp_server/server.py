@@ -26,6 +26,10 @@ from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server import resources
+from gitea_mcp_server.cache_invalidation import (
+    CacheInvalidationMiddleware,
+    register_tool_invalidation,
+)
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
@@ -374,6 +378,60 @@ def _add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
         annotations.openWorldHint = True
 
 
+def _compute_tool_invalidation_patterns(path: str, method: str) -> list[str]:
+    """Compute resource invalidation patterns for a tool based on its path and method.
+
+    This function analyzes the OpenAPI path and HTTP method to determine which
+    MCP resource patterns should be invalidated when this tool is called.
+
+    Args:
+        path: OpenAPI path pattern (e.g., "/repos/{owner}/{repo}/issues")
+        method: HTTP method (GET, POST, PUT, DELETE, PATCH)
+
+    Returns:
+        List of pattern names (keys in RESOURCE_URI_PATTERNS) to invalidate.
+        Empty list if no invalidation needed.
+    """
+    # Only consider write methods (safe methods don't need invalidation)
+    if method.upper() in ("GET", "HEAD", "OPTIONS"):
+        return []
+
+    # Issue operations: any path that starts with /repos/{owner}/{repo}/issues
+    if path.startswith("/repos/{owner}/{repo}/issues"):
+        return ["issues_list", "issues_open", "issues_closed"]
+
+    # Pull request operations: starts with /repos/{owner}/{repo}/pulls
+    if path.startswith("/repos/{owner}/{repo}/pulls"):
+        return ["pulls_list", "pulls_open", "pulls_closed"]
+
+    # Repository direct edit: exactly /repos/{owner}/{repo} (e.g., repo_edit)
+    if path == "/repos/{owner}/{repo}":
+        return ["repo"]
+
+    # File contents: /repos/{owner}/{repo}/contents[...] (create, update, delete files)
+    if path.startswith("/repos/{owner}/{repo}/contents"):
+        return ["files"]
+
+    # Label operations: affect both issues and PRs
+    if path.startswith("/repos/{owner}/{repo}/labels"):
+        return ["issues_list", "pulls_list"]
+
+    # Milestone operations: affect both issues and PRs
+    if path.startswith("/repos/{owner}/{repo}/milestones"):
+        return ["issues_list", "pulls_list"]
+
+    # Release operations: affect repository
+    if path.startswith("/repos/{owner}/{repo}/releases"):
+        return ["repo"]
+
+    # Topic operations: affect repository
+    if path.startswith("/repos/{owner}/{repo}/topics"):
+        return ["repo"]
+
+    # Add more as needed...
+    return []
+
+
 def _customize_component(route: Any, component: Any) -> None:
     """Customize FastMCP components with tool annotations.
 
@@ -405,6 +463,13 @@ def _customize_component(route: Any, component: Any) -> None:
 
     # Add inferred annotation hints based on HTTP method
     _add_inferred_hints(route, component.annotations)
+
+    # Register cache invalidation patterns for write tools
+    method = getattr(route, "method", None)
+    if method:
+        patterns = _compute_tool_invalidation_patterns(route.path, method)
+        if patterns:
+            register_tool_invalidation(component.name, patterns)
 
     # Add category to tags (used for grouping in MCP clients)
     if component.tags is None:
@@ -714,16 +779,21 @@ Combine both: use tools to find identifiers, then resources to read detailed cac
 
     # Add response caching middleware
     logger.info("Adding response caching middleware...")
-    mcp.add_middleware(
-        ResponseCachingMiddleware(
-            cache_storage=None,  # In-memory cache
-            read_resource_settings=ReadResourceSettings(enabled=True, ttl=30.0),
-            list_resources_settings=ListResourcesSettings(enabled=True, ttl=300.0),
-            call_tool_settings=CallToolSettings(enabled=False),
-            get_prompt_settings=GetPromptSettings(enabled=False),
-            max_item_size=100_000_000,  # 100MB
-        )
+    caching_middleware = ResponseCachingMiddleware(
+        cache_storage=None,  # In-memory cache
+        read_resource_settings=ReadResourceSettings(enabled=True, ttl=30.0),
+        list_resources_settings=ListResourcesSettings(enabled=True, ttl=300.0),
+        call_tool_settings=CallToolSettings(enabled=False),
+        get_prompt_settings=GetPromptSettings(enabled=False),
+        max_item_size=100_000_000,  # 100MB
     )
+    mcp.add_middleware(caching_middleware)
+
+    # Add cache invalidation middleware (must come after caching middleware)
+    # This ensures write operations clear affected resources from cache
+    logger.info("Adding cache invalidation middleware...")
+    invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
+    mcp.add_middleware(invalidation_middleware)
 
     # Add search transform for lazy loading of tools (FastMCP 3.x)
     # Can be disabled via ENABLE_LAZY_LOADING=false (useful for tests)

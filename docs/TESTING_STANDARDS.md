@@ -196,6 +196,17 @@ assert result["id"] == 42, "Expected ID to be 42 after creation"
 assert len(items) == 3, f"Expected 3 items but got {len(items)}"
 ```
 
+### Validation Testing
+
+When testing validation logic (e.g., in `validation.py`):
+
+- **Test each validator** with both valid and invalid inputs. Use `pytest.mark.parametrize` to cover many cases.
+- **Test schema augmentation**: verify that the tool's JSON schema gets the expected constraints (`minLength`, `maxLength`, `pattern`, `enum`, etc.).
+- **Test runtime wrapper**: wrap a mock tool, call with invalid arguments, and assert `ValidationError` is raised *before* the tool's `run` method executes. Use `AsyncMock` for the original run.
+- **Coverage**: Aim for >90% coverage of validation modules.
+
+```
+
 ## Integration Testing
 
 Integration tests are placed in `tests/integration/` and test real interactions between components.

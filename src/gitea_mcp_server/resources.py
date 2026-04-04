@@ -89,6 +89,21 @@ def _format_datetime(dt: str | None) -> str:
         return dt
 
 
+def _build_markdown(lines: list[str]) -> ResourceResult:
+    """Join lines into markdown content.
+
+    Centralized helper for building markdown from line lists to ensure
+    consistent formatting and easy future modifications.
+
+    Args:
+        lines: List of markdown lines (with appropriate newlines already handled)
+
+    Returns:
+        Joined markdown content
+    """
+    return "\n".join(lines)
+
+
 def _format_repo_markdown(repo: dict[str, Any]) -> ResourceResult:
     """Format repository data as Markdown."""
     lines = [
@@ -112,7 +127,7 @@ def _format_repo_markdown(repo: dict[str, Any]) -> ResourceResult:
         "",
         f"**License**: {repo.get('license', {}).get('name', 'None') if repo.get('license') else 'None'}",
     ]
-    return "\n".join(lines)
+    return _build_markdown(lines)
 
 
 def _format_issues_markdown(
@@ -129,7 +144,7 @@ def _format_issues_markdown(
 
     if not issues:
         lines.append("No issues found.")
-        return "\n".join(lines)
+        return _build_markdown(lines)
 
     for issue in issues:
         number = issue["number"]
@@ -163,7 +178,7 @@ def _format_pulls_markdown(
 
     if not pulls:
         lines.append("No pull requests found.")
-        return "\n".join(lines)
+        return _build_markdown(lines)
 
     for pr in pulls:
         number = pr["number"]
@@ -209,7 +224,7 @@ def _format_user_markdown(user: dict[str, Any]) -> ResourceResult:
         f"**Location**: {user.get('location', 'Not set') if user.get('location') else 'Not set'}",
         f"**Website**: {user.get('website', 'Not set') if user.get('website') else 'Not set'}",
     ]
-    return "\n".join(lines)
+    return _build_markdown(lines)
 
 
 def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
@@ -227,7 +242,7 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
         "",
         release.get("body", "No description provided."),
     ]
-    return "\n".join(lines)
+    return _build_markdown(lines)
 
 
 # ============================================================================
@@ -592,7 +607,7 @@ async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -
         lines.append("---")
         lines.append("")
 
-    return "\n".join(lines)
+    return _build_markdown(lines)
 
 
 async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:

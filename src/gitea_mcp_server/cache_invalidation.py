@@ -30,24 +30,43 @@ from fastmcp.server.middleware.middleware import (
 )
 from fastmcp.tools.tool import ToolResult
 
+from gitea_mcp_server.constants import (
+    PATTERN_FILES,
+    PATTERN_ISSUES_CLOSED,
+    PATTERN_ISSUES_LIST,
+    PATTERN_ISSUES_OPEN,
+    PATTERN_PULLS_CLOSED,
+    PATTERN_PULLS_LIST,
+    PATTERN_PULLS_OPEN,
+    PATTERN_REPO,
+    RESOURCE_PATTERN_FILES,
+    RESOURCE_PATTERN_ISSUES_CLOSED,
+    RESOURCE_PATTERN_ISSUES_LIST,
+    RESOURCE_PATTERN_ISSUES_OPEN,
+    RESOURCE_PATTERN_PULLS_CLOSED,
+    RESOURCE_PATTERN_PULLS_LIST,
+    RESOURCE_PATTERN_PULLS_OPEN,
+    RESOURCE_PATTERN_REPO,
+)
+
 logger = logging.getLogger(__name__)
 
 # Resource URI templates used to construct concrete URIs for invalidation.
-# Keys are pattern names (arbitrary labels), values are URI templates with
-# placeholders that match the tool argument names.
+# These are imported from constants to ensure consistency across the codebase.
+# The dictionary keys are pattern names (used by server to reference patterns).
 RESOURCE_URI_PATTERNS: dict[str, str] = {
     # Issues
-    "issues_list": "gitea://repos/{owner}/{repo}/issues",
-    "issues_open": "gitea://repos/{owner}/{repo}/issues/open",
-    "issues_closed": "gitea://repos/{owner}/{repo}/issues/closed",
+    PATTERN_ISSUES_LIST: RESOURCE_PATTERN_ISSUES_LIST,
+    PATTERN_ISSUES_OPEN: RESOURCE_PATTERN_ISSUES_OPEN,
+    PATTERN_ISSUES_CLOSED: RESOURCE_PATTERN_ISSUES_CLOSED,
     # Pull requests
-    "pulls_list": "gitea://repos/{owner}/{repo}/pulls",
-    "pulls_open": "gitea://repos/{owner}/{repo}/pulls/open",
-    "pulls_closed": "gitea://repos/{owner}/{repo}/pulls/closed",
+    PATTERN_PULLS_LIST: RESOURCE_PATTERN_PULLS_LIST,
+    PATTERN_PULLS_OPEN: RESOURCE_PATTERN_PULLS_OPEN,
+    PATTERN_PULLS_CLOSED: RESOURCE_PATTERN_PULLS_CLOSED,
     # Repository
-    "repo": "gitea://repos/{owner}/{repo}",
+    PATTERN_REPO: RESOURCE_PATTERN_REPO,
     # File contents (using filepath as parameter name to match Gitea API)
-    "files": "gitea://repos/{owner}/{repo}/files/{filepath}",
+    PATTERN_FILES: RESOURCE_PATTERN_FILES,
 }
 
 # Global invalidation map populated at server startup.

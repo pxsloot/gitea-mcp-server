@@ -14,12 +14,23 @@ from tenacity import (
 )
 
 from gitea_mcp_server.config import Config
+from gitea_mcp_server.constants import (
+    HTTP_MAX_CONNECTIONS,
+    HTTP_MAX_KEEPALIVE_CONNECTIONS,
+    HTTP_TIMEOUT_CONNECT,
+    HTTP_TIMEOUT_POOL,
+    HTTP_TIMEOUT_READ,
+    HTTP_TIMEOUT_WRITE,
+    HTTP_STATUS_RETRYABLE,
+    RESPONSE_PREVIEW_LIMIT,
+    RETRY_MAX_ATTEMPTS,
+    RETRY_WAIT_MAX,
+    RETRY_WAIT_MIN,
+    RETRY_WAIT_MULTIPLIER,
+)
 from gitea_mcp_server.exceptions import GiteaAPIError
 
 logger = logging.getLogger(__name__)
-
-# Constant for response preview length to avoid magic number
-_RESPONSE_PREVIEW_LIMIT = 100
 
 
 def _should_retry(exception: Exception) -> bool:
@@ -32,7 +43,7 @@ def _should_retry(exception: Exception) -> bool:
     """
     # Check if exception is our custom GiteaAPIError
     if isinstance(exception, GiteaAPIError):
-        if exception.status_code in {429, 408, 500, 502, 503, 504}:
+        if exception.status_code in HTTP_STATUS_RETRYABLE:
             return True
         # Retry if caused by httpx.HTTPError but not HTTPStatusError
         if exception.__cause__:
@@ -43,7 +54,7 @@ def _should_retry(exception: Exception) -> bool:
 
     # Direct httpx exceptions (should be rare if we always wrap, but handle anyway)
     if isinstance(exception, httpx.HTTPStatusError):
-        return exception.response.status_code in {429, 408, 500, 502, 503, 504}
+        return exception.response.status_code in HTTP_STATUS_RETRYABLE
     return bool(isinstance(exception, httpx.HTTPError))  # Ensure bool return
 
 
@@ -77,20 +88,27 @@ class GiteaClient:
                 },
                 verify=verify,
                 timeout=httpx.Timeout(
-                    connect=10.0,
-                    read=30.0,
-                    write=30.0,
-                    pool=5.0,
+                    connect=HTTP_TIMEOUT_CONNECT,
+                    read=HTTP_TIMEOUT_READ,
+                    write=HTTP_TIMEOUT_WRITE,
+                    pool=HTTP_TIMEOUT_POOL,
                 ),
-                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                limits=httpx.Limits(
+                    max_keepalive_connections=HTTP_MAX_KEEPALIVE_CONNECTIONS,
+                    max_connections=HTTP_MAX_CONNECTIONS,
+                ),
                 follow_redirects=True,
             )
         return self._client
 
     @retry(  # type: ignore[untyped-decorator]
         retry=retry_if_exception(_should_retry),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+        wait=wait_exponential(
+            multiplier=RETRY_WAIT_MULTIPLIER,
+            min=RETRY_WAIT_MIN,
+            max=RETRY_WAIT_MAX,
+        ),
         reraise=True,
     )
     async def request(
@@ -145,7 +163,7 @@ class GiteaClient:
                 error_msg += f": {error_detail}"
             except Exception:  # noqa: BLE001
                 # Limit response text to avoid log bloat and potential sensitive data
-                preview = e.response.text[:200] if e.response.text else ""
+                preview = e.response.text[:RESPONSE_PREVIEW_LIMIT] if e.response.text else ""
                 error_msg += f": {preview}"
 
             logger.exception(
@@ -156,8 +174,8 @@ class GiteaClient:
                     "status_code": e.response.status_code,
                     "error": str(e),
                     "response_preview": (
-                        e.response.text[:_RESPONSE_PREVIEW_LIMIT] + "..."
-                        if e.response.text and len(e.response.text) > _RESPONSE_PREVIEW_LIMIT
+                        e.response.text[:RESPONSE_PREVIEW_LIMIT] + "..."
+                        if e.response.text and len(e.response.text) > RESPONSE_PREVIEW_LIMIT
                         else e.response.text
                     ),
                 },

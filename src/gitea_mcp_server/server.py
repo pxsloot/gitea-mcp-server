@@ -32,6 +32,28 @@ from gitea_mcp_server.cache_invalidation import (
 )
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
+from gitea_mcp_server.constants import (
+    CACHE_MAX_ITEM_SIZE,
+    CACHE_TTL_DEFAULT,
+    CACHE_TTL_RESOURCE_LIST,
+    HTTP_METHODS_DESTRUCTIVE,
+    HTTP_METHODS_IDEMPOTENT,
+    HTTP_METHODS_SAFE,
+    LABEL_CACHE_TTL,
+    LABEL_GUIDANCE,
+    PATTERN_FILES,
+    PATTERN_ISSUES_CLOSED,
+    PATTERN_ISSUES_LIST,
+    PATTERN_ISSUES_OPEN,
+    PATTERN_PULLS_CLOSED,
+    PATTERN_PULLS_LIST,
+    PATTERN_PULLS_OPEN,
+    PATTERN_REPO,
+    RESOURCE_NOTE,
+    SEARCH_ALWAYS_VISIBLE_TOOLS,
+    SEARCH_MAX_RESULTS,
+    TITLE_TRUNCATE_LIMIT,
+)
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
@@ -40,12 +62,11 @@ from gitea_mcp_server.tool_filter import filter_tools_by_permissions
 
 logger = logging.getLogger(__name__)
 
-# Constants for title truncation
-_TITLE_TRUNCATE_LIMIT = 50
+# Module-level cache TTL (can be overridden for testing)
+_LABEL_CACHE_TTL = LABEL_CACHE_TTL
 
 # Label cache for validation (maps (owner, repo) -> {"map": dict, "timestamp": datetime})
 _label_cache: dict[tuple[str, str], dict[str, Any]] = {}
-_LABEL_CACHE_TTL = 300  # seconds (5 minutes)
 
 
 async def _get_repository_label_map(
@@ -175,14 +196,9 @@ def _maybe_wrap_labels(component: OpenAPITool) -> None:
     _inject_label_validation_wrapper(component)
 
     # Enhance description with guidance
-    label_guidance = (
-        "\n\n**Labels**: You may provide existing label names (strings) or IDs (integers). "
-        "Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels` "
-        "to see available labels. Unknown label names will produce an error."
-    )
     existing_doc = component.__doc__ or ""
-    if label_guidance not in existing_doc:
-        component.__doc__ = existing_doc + label_guidance
+    if LABEL_GUIDANCE not in existing_doc:
+        component.__doc__ = existing_doc + LABEL_GUIDANCE
 
 
 def _update_labels_schema(component: OpenAPITool) -> None:
@@ -370,9 +386,9 @@ def _generate_tool_title(route: Any) -> str:
     else:
         return "Unnamed Tool"
 
-    # Truncate to _TITLE_TRUNCATE_LIMIT characters
-    if len(title) > _TITLE_TRUNCATE_LIMIT:
-        title = title[: _TITLE_TRUNCATE_LIMIT - 3] + "..."
+    # Truncate to TITLE_TRUNCATE_LIMIT characters
+    if len(title) > TITLE_TRUNCATE_LIMIT:
+        title = title[: TITLE_TRUNCATE_LIMIT - 3] + "..."
 
     return title
 
@@ -394,20 +410,15 @@ def _add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
     """
     method = getattr(route, "method", None)
 
-    # Define method sets based on HTTP semantics
-    safe_methods = {"GET", "HEAD", "OPTIONS"}
-    destructive_methods = {"DELETE"}
-    idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
-
     # Only add hints if they are currently None (preserve existing manual settings)
     if annotations.readOnlyHint is None:
-        annotations.readOnlyHint = method in safe_methods
+        annotations.readOnlyHint = method in HTTP_METHODS_SAFE
 
     if annotations.destructiveHint is None:
-        annotations.destructiveHint = method in destructive_methods
+        annotations.destructiveHint = method in HTTP_METHODS_DESTRUCTIVE
 
     if annotations.idempotentHint is None:
-        annotations.idempotentHint = method in idempotent_methods
+        annotations.idempotentHint = method in HTTP_METHODS_IDEMPOTENT
 
     if annotations.openWorldHint is None:
         # All Gitea MCP tools interact with external Gitea server
@@ -434,35 +445,35 @@ def _compute_tool_invalidation_patterns(path: str, method: str) -> list[str]:
 
     # Issue operations: any path that starts with /repos/{owner}/{repo}/issues
     if path.startswith("/repos/{owner}/{repo}/issues"):
-        return ["issues_list", "issues_open", "issues_closed"]
+        return [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED]
 
     # Pull request operations: starts with /repos/{owner}/{repo}/pulls
     if path.startswith("/repos/{owner}/{repo}/pulls"):
-        return ["pulls_list", "pulls_open", "pulls_closed"]
+        return [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED]
 
     # Repository direct edit: exactly /repos/{owner}/{repo} (e.g., repo_edit)
     if path == "/repos/{owner}/{repo}":
-        return ["repo"]
+        return [PATTERN_REPO]
 
     # File contents: /repos/{owner}/{repo}/contents[...] (create, update, delete files)
     if path.startswith("/repos/{owner}/{repo}/contents"):
-        return ["files"]
+        return [PATTERN_FILES]
 
     # Label operations: affect both issues and PRs
     if path.startswith("/repos/{owner}/{repo}/labels"):
-        return ["issues_list", "pulls_list"]
+        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
 
     # Milestone operations: affect both issues and PRs
     if path.startswith("/repos/{owner}/{repo}/milestones"):
-        return ["issues_list", "pulls_list"]
+        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
 
     # Release operations: affect repository
     if path.startswith("/repos/{owner}/{repo}/releases"):
-        return ["repo"]
+        return [PATTERN_REPO]
 
     # Topic operations: affect repository
     if path.startswith("/repos/{owner}/{repo}/topics"):
-        return ["repo"]
+        return [PATTERN_REPO]
 
     # Add more as needed...
     return []
@@ -514,15 +525,10 @@ def _customize_component(route: Any, component: Any) -> None:
 
     # For read-only tools, add a note encouraging use of resources
     if component.annotations and component.annotations.readOnlyHint:
-        resource_note = (
-            "\n\nNote: For read-only operations, consider using mcp_read_resource() "
-            "instead, which provides a unified interface with better formatting and caching. "
-            "See AGENT_GUIDELINES.md for details."
-        )
         existing_doc = component.__doc__ or ""
         # Avoid adding the note twice
-        if resource_note not in existing_doc:
-            component.__doc__ = existing_doc + resource_note
+        if RESOURCE_NOTE not in existing_doc:
+            component.__doc__ = existing_doc + RESOURCE_NOTE
 
     # Apply label validation/conversion to tools that have a 'labels' parameter
     _maybe_wrap_labels(component)
@@ -820,11 +826,11 @@ Combine both: use tools to find identifiers, then resources to read detailed cac
     logger.info("Adding response caching middleware...")
     caching_middleware = ResponseCachingMiddleware(
         cache_storage=None,  # In-memory cache
-        read_resource_settings=ReadResourceSettings(enabled=True, ttl=30.0),
-        list_resources_settings=ListResourcesSettings(enabled=True, ttl=300.0),
+        read_resource_settings=ReadResourceSettings(enabled=True, ttl=CACHE_TTL_DEFAULT),
+        list_resources_settings=ListResourcesSettings(enabled=True, ttl=CACHE_TTL_RESOURCE_LIST),
         call_tool_settings=CallToolSettings(enabled=False),
         get_prompt_settings=GetPromptSettings(enabled=False),
-        max_item_size=100_000_000,  # 100MB
+        max_item_size=CACHE_MAX_ITEM_SIZE,
     )
     mcp.add_middleware(caching_middleware)
 
@@ -840,12 +846,8 @@ Combine both: use tools to find identifiers, then resources to read detailed cac
         logger.info("Adding search transform for lazy loading...")
         mcp.add_transform(
             TolerantBM25SearchTransform(
-                max_results=10,
-                always_visible=[
-                    # Pin essential MCP resource tools that agents need
-                    "mcp_read_resource",
-                    "mcp_list_resources",
-                ],
+                max_results=SEARCH_MAX_RESULTS,
+                always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
             )
         )
     else:

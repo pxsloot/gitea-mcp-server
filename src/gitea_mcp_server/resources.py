@@ -42,11 +42,17 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.constants import (
+    AUTO_GENERATED_RESOURCE_SKIP_URIS,
+    CACHE_TTL_DEFAULT,
+    CACHE_TTL_README,
+    CACHE_TTL_REPOSITORY,
+    CACHE_TTL_RELEASES,
+    CACHE_TTL_USERS,
+    HTTP_STATUS_NOT_FOUND,
+)
 
 logger = logging.getLogger(__name__)
-
-# Constants
-HTTP_NOT_FOUND = 404
 
 # Type alias for resource return values
 ResourceResult = str
@@ -65,7 +71,7 @@ def _handle_not_found(
         resource_id: Identifier for the resource
         custom_message: Optional custom message (defaults to standard message)
     """
-    if getattr(e, "status_code", None) == HTTP_NOT_FOUND:
+    if getattr(e, "status_code", None) == HTTP_STATUS_NOT_FOUND:
         message = custom_message or f"Resource not found: {resource_id}"
         raise ResourceError(
             {
@@ -277,19 +283,7 @@ def register_auto_generated_resources(
     """
     if skip_uris is None:
         # Default set: URIs that will be provided by custom resources
-        skip_uris = {
-            "gitea://repos/{owner}/{repo}",
-            "gitea://repos/{owner}/{repo}/readme",
-            "gitea://repos/{owner}/{repo}/issues",
-            "gitea://repos/{owner}/{repo}/issues/open",
-            "gitea://repos/{owner}/{repo}/issues/closed",
-            "gitea://repos/{owner}/{repo}/pulls",
-            "gitea://repos/{owner}/{repo}/pulls/open",
-            "gitea://repos/{owner}/{repo}/files/{path}",
-            "gitea://repos/{owner}/{repo}/releases",
-            "gitea://users/{username}",
-            "gitea://orgs/{orgname}",
-        }
+        skip_uris = AUTO_GENERATED_RESOURCE_SKIP_URIS
 
     def make_resource_func(path: str, method: str, operation: dict[str, Any]) -> Callable:
         """Create a resource function for a given OpenAPI operation."""
@@ -342,7 +336,7 @@ def register_auto_generated_resources(
                 return json.dumps(response, indent=2)
             except Exception as e:  # noqa: BLE001
                 status = getattr(e, "status_code", None)
-                if status == 404:
+                if status == HTTP_STATUS_NOT_FOUND:
                     raise ResourceError(
                         {
                             "code": "NOT_FOUND",
@@ -744,15 +738,15 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
             get_repository,
             "text/markdown",
             {"wrapper", "repository"},
-            {"cache_ttl": 300.0},  # 5 minutes - repo info rarely changes
+            {"cache_ttl": CACHE_TTL_REPOSITORY},
         ),
         (
             "gitea://repos/{owner}/{repo}/readme",
             get_readme,
             "text/plain",
             {"wrapper", "readme"},
-            {"cache_ttl": 600.0},
-        ),  # 10 minutes
+            {"cache_ttl": CACHE_TTL_README},
+        ),
         (
             "gitea://repos/{owner}/{repo}/issues",
             list_repo_issues,
@@ -800,29 +794,29 @@ def register_custom_resources(mcp: FastMCP, gitea_client: GiteaClient) -> None:
             list_repo_releases,
             "text/markdown",
             {"wrapper", "releases"},
-            {"cache_ttl": 600.0},  # 10 minutes - releases are infrequent
+            {"cache_ttl": CACHE_TTL_RELEASES},
         ),
         (
             "gitea://users/{username}",
             get_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": 300.0},
-        ),  # 5 minutes
+            {"cache_ttl": CACHE_TTL_USERS},
+        ),
         (
             "gitea://user",
             get_current_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": 300.0},
-        ),  # 5 minutes
+            {"cache_ttl": CACHE_TTL_USERS},
+        ),
         (
             "gitea://orgs/{orgname}",
             get_org,
             "text/markdown",
             {"wrapper", "organization"},
-            {"cache_ttl": 300.0},
-        ),  # 5 minutes
+            {"cache_ttl": CACHE_TTL_USERS},
+        ),
     ]
 
     for uri_template, func, mime_type, tags, meta in custom_resources:

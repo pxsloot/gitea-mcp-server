@@ -24,6 +24,7 @@ from gitea_mcp_server.constants import (
     TITLE_TRUNCATE_LIMIT,
 )
 from gitea_mcp_server.server_setup.label_manager import LabelManager
+from gitea_mcp_server.validation import augment_schema_with_validation, inject_validation_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +385,12 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
 
     # Also update the tool's parameter schema to reflect that string labels are accepted
     update_labels_schema(component)
+
+    # Add comprehensive input validation: schema augmentation for agent visibility
+    augment_schema_with_validation(component)
+
+    # Inject runtime validation wrapper (runs before label conversion and API calls)
+    inject_validation_wrapper(component)
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:

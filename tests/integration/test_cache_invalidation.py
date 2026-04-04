@@ -15,7 +15,9 @@ from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
     compute_uris_to_invalidate,
 )
-from gitea_mcp_server.server import _compute_tool_invalidation_patterns
+from gitea_mcp_server.server_setup.tool_annotator import (
+    compute_invalidation_patterns as _compute_tool_invalidation_patterns,
+)
 
 
 class TestCacheInvalidationIntegration:

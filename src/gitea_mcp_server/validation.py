@@ -344,4 +344,4 @@ def inject_validation_wrapper(component: OpenAPITool) -> None:
 
         return await original_run(arguments)
 
-    component.run = validated_run
+    object.__setattr__(component, "run", validated_run)

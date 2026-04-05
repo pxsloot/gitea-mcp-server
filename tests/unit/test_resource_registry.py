@@ -1,102 +1,158 @@
-"""Tests for ResourceRegistry."""
+"""Tests for the resource_registry module."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
-
-from fastmcp import FastMCP
 
 from gitea_mcp_server.resource_registry import ResourceDef, ResourceRegistry
-
-
-class TestResourceDef:
-    """Tests for ResourceDef dataclass."""
-
-    def test_create(self):
-        """Test creating a ResourceDef."""
-
-        def dummy_func():
-            pass
-
-        meta = {"cache_ttl": 60}
-        rd = ResourceDef(
-            uri="gitea://test",
-            func=dummy_func,
-            mime_type="text/plain",
-            tags={"test"},
-            meta=meta,
-        )
-        assert rd.uri == "gitea://test"
-        assert rd.func is dummy_func
-        assert rd.mime_type == "text/plain"
-        assert rd.tags == {"test"}
-        assert rd.meta == meta
 
 
 class TestResourceRegistry:
     """Tests for ResourceRegistry class."""
 
-    def test_init(self):
-        """Test registry starts empty."""
+    def test_init_creates_empty_registry(self):
+        """Test that a new registry is empty."""
         registry = ResourceRegistry()
         assert registry.list_resources() == []
 
-    def test_register(self):
-        """Test registering a resource."""
+    def test_record_adds_resource(self):
+        """Test that record() adds a resource to the registry."""
         registry = ResourceRegistry()
 
-        def func():
+        def dummy_func():
             return "test"
 
-        registry.register("gitea://test", func, "text/plain", {"tag"})
+        registry.record(
+            uri="gitea://test/{id}",
+            func=dummy_func,
+            mime_type="text/plain",
+            tags={"test", "example"},
+            meta={"cache_ttl": 60},
+        )
+
         resources = registry.list_resources()
         assert len(resources) == 1
-        assert resources[0].uri == "gitea://test"
-        assert resources[0].func is func
+        assert resources[0].uri == "gitea://test/{id}"
+        assert resources[0].func is dummy_func
         assert resources[0].mime_type == "text/plain"
-        assert resources[0].tags == {"tag"}
+        assert resources[0].tags == {"test", "example"}
+        assert resources[0].meta == {"cache_ttl": 60}
 
-    def test_register_duplicate_without_allow_override_raises(self):
-        """Test duplicate registration raises error by default."""
-        registry = ResourceRegistry()
-
-        def func():
-            return "test"
-
-        registry.register("gitea://test", func, "text/plain", {"tag"})
-        with pytest.raises(ValueError, match="already registered"):
-            registry.register("gitea://test", func, "text/plain", {"tag"})
-
-    def test_register_allow_override(self):
-        """Test allow_override replaces existing resource."""
+    def test_record_overwrites_existing(self):
+        """Test that record() with same URI replaces previous entry."""
         registry = ResourceRegistry()
 
         def func1():
-            return "first"
+            return "old"
 
         def func2():
-            return "second"
+            return "new"
 
-        registry.register("gitea://test", func1, "text/plain", {"tag"})
-        registry.register("gitea://test", func2, "text/plain", {"tag"}, allow_override=True)
+        registry.record(
+            uri="gitea://same",
+            func=func1,
+            mime_type="text/plain",
+            tags={"old"},
+        )
+
+        assert len(registry.list_resources()) == 1
+
+        registry.record(
+            uri="gitea://same",
+            func=func2,
+            mime_type="application/json",
+            tags={"new"},
+        )
+
         resources = registry.list_resources()
         assert len(resources) == 1
         assert resources[0].func is func2
+        assert resources[0].mime_type == "application/json"
+        assert resources[0].tags == {"new"}
 
-    def test_get(self):
-        """Test getting a resource by URI."""
+    def test_get_by_uri_returns_correct_resource(self):
+        """Test get_by_uri() retrieves resource by URI."""
+        registry = ResourceRegistry()
+
+        def sample_func():
+            return "sample"
+
+        registry.record(
+            uri="gitea://find/me",
+            func=sample_func,
+            mime_type="text/plain",
+            tags=set(),
+        )
+
+        resource = registry.get_by_uri("gitea://find/me")
+        assert resource is not None
+        assert resource.uri == "gitea://find/me"
+        assert resource.func is sample_func
+
+    def test_get_by_uri_returns_none_for_missing(self):
+        """Test get_by_uri() returns None when URI not found."""
+        registry = ResourceRegistry()
+        resource = registry.get_by_uri("gitea://missing")
+        assert resource is None
+
+    def test_get_by_tag_returns_matching_resources(self):
+        """Test get_by_tag() returns only resources with the specified tag."""
+        registry = ResourceRegistry()
+
+        def func_a():
+            return "a"
+
+        def func_b():
+            return "b"
+
+        def func_c():
+            return "c"
+
+        registry.record(
+            uri="gitea://resource/a",
+            func=func_a,
+            mime_type="text/plain",
+            tags={"wrapper", "repository"},
+        )
+        registry.record(
+            uri="gitea://resource/b",
+            func=func_b,
+            mime_type="text/plain",
+            tags={"wrapper", "issues"},
+        )
+        registry.record(
+            uri="gitea://resource/c",
+            func=func_c,
+            mime_type="application/json",
+            tags={"api", "raw"},
+        )
+
+        wrapper_resources = registry.get_by_tag("wrapper")
+        assert len(wrapper_resources) == 2
+        uris = {r.uri for r in wrapper_resources}
+        assert uris == {"gitea://resource/a", "gitea://resource/b"}
+
+        api_resources = registry.get_by_tag("api")
+        assert len(api_resources) == 1
+        assert api_resources[0].uri == "gitea://resource/c"
+
+    def test_get_by_tag_returns_empty_list_when_no_match(self):
+        """Test get_by_tag() returns empty list if no resources have the tag."""
         registry = ResourceRegistry()
 
         def func():
             return "test"
 
-        registry.register("gitea://test", func, "text/plain", {"tag"})
-        found = registry.get("gitea://test")
-        assert found is not None
-        assert found.uri == "gitea://test"
-        assert registry.get("gitea://nonexistent") is None
+        registry.record(
+            uri="gitea://test",
+            func=func,
+            mime_type="text/plain",
+            tags={"other"},
+        )
 
-    def test_list_resources(self):
-        """Test listing all resources."""
+        results = registry.get_by_tag("nonexistent")
+        assert results == []
+
+    def test_list_resources_returns_all_resources(self):
+        """Test list_resources() returns all registered resources."""
         registry = ResourceRegistry()
 
         def func1():
@@ -105,82 +161,40 @@ class TestResourceRegistry:
         def func2():
             return "2"
 
-        registry.register("gitea://one", func1, "text/plain", {"tag1"})
-        registry.register("gitea://two", func2, "text/plain", {"tag2"})
+        registry.record(
+            uri="gitea://first",
+            func=func1,
+            mime_type="text/plain",
+            tags={"tag1"},
+        )
+        registry.record(
+            uri="gitea://second",
+            func=func2,
+            mime_type="application/json",
+            tags={"tag2"},
+            meta={"cache_ttl": 120},
+        )
+
         resources = registry.list_resources()
         assert len(resources) == 2
         uris = {r.uri for r in resources}
-        assert uris == {"gitea://one", "gitea://two"}
+        assert uris == {"gitea://first", "gitea://second"}
 
-    def test_list_templates(self):
-        """Test listing template URIs (containing '{')."""
+    def test_record_without_meta(self):
+        """Test that record() works correctly when meta is None."""
         registry = ResourceRegistry()
 
-        def func():
+        def dummy_func():
             return "test"
 
-        registry.register("gitea://repos/{owner}/{repo}", func, "application/json", {"api"})
-        registry.register("gitea://version", func, "text/plain", {"misc"})
-        templates = registry.list_templates()
-        assert len(templates) == 1
-        assert templates[0].uri == "gitea://repos/{owner}/{repo}"
+        registry.record(
+            uri="gitea://test",
+            func=dummy_func,
+            mime_type="application/json",
+            tags={"test"},
+            meta=None,
+        )
 
-    def test_get_by_tag(self):
-        """Test filtering resources by tag."""
-        registry = ResourceRegistry()
-
-        def func1():
-            return "1"
-
-        def func2():
-            return "2"
-
-        registry.register("gitea://one", func1, "text/plain", {"api", "auto"})
-        registry.register("gitea://two", func2, "text/plain", {"wrapper", "repository"})
-        api_resources = registry.get_by_tag("api")
-        assert len(api_resources) == 1
-        assert api_resources[0].uri == "gitea://one"
-        wrapper_resources = registry.get_by_tag("wrapper")
-        assert len(wrapper_resources) == 1
-        assert wrapper_resources[0].uri == "gitea://two"
-
-    def test_apply_to(self):
-        """Test applying registry to FastMCP registers all resources."""
-        registry = ResourceRegistry()
-        results = []
-
-        def make_tracker(uri, **kwargs):
-            def decorator(func):
-                results.append((uri, func))
-                return func
-
-            return decorator
-
-        # Create a mock FastMCP with a resource method that acts as decorator
-        mcp = MagicMock(spec=FastMCP)
-        mcp.resource = MagicMock(side_effect=make_tracker)
-
-        def func1():
-            return "test1"
-
-        def func2():
-            return "test2"
-
-        registry.register("gitea://one", func1, "text/plain", {"tag1"}, meta={"cache_ttl": 30})
-        registry.register("gitea://two", func2, "application/json", {"tag2"})
-
-        registry.apply_to(mcp)
-
-        assert mcp.resource.call_count == 2
-        # Check that calls were made with correct arguments
-        call_args_list = mcp.resource.call_args_list
-        # First call
-        args, kwargs = call_args_list[0]
-        assert args[0] == "gitea://one"
-        assert kwargs["mime_type"] == "text/plain"
-        assert kwargs["tags"] == {"tag1"}
-        # meta should be passed as a dict
-        assert kwargs["meta"] == {"cache_ttl": 30}
-        # The decorator returns the function unchanged; we can verify the passed function is func1
-        assert results[0][1] is func1
-        assert results[1][1] is func2
+        resource = registry.get_by_uri("gitea://test")
+        assert resource is not None
+        assert resource.meta is None

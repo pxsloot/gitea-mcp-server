@@ -136,7 +136,8 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
 
     # Register resources
     logger.info("Registering MCP resources...")
-    register_all_resources(mcp, gitea_client, openapi_spec)
+    registry = register_all_resources(mcp, gitea_client, openapi_spec)
+    # registry is available for potential future use (e.g., documentation generation)
 
     # Register MCP resource access tools (for agents to read resources)
     logger.info("Registering MCP resource access tools...")

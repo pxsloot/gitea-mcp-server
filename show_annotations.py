@@ -2,6 +2,7 @@
 """Connect to running MCP server and display tool annotations."""
 
 import asyncio
+
 from fastmcp import Client
 
 

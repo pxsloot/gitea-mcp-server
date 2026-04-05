@@ -1,8 +1,7 @@
 """Tests for the resource_registry module."""
 
-import pytest
 
-from gitea_mcp_server.resource_registry import ResourceDef, ResourceRegistry
+from gitea_mcp_server.resource_registry import ResourceRegistry
 
 
 class TestResourceRegistry:

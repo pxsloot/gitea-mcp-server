@@ -1,29 +1,26 @@
 """Unit tests for input validation functionality."""
 
-import asyncio
 import re
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.validation import (
-    OWNER_REPO_PATTERN,
     FILEPATH_PATTERN,
+    OWNER_REPO_PATTERN,
     REF_PATTERN,
-    USERNAME_PATTERN,
     SHA_PATTERN,
-    validate_owner_repo,
-    validate_filepath,
-    validate_ref,
-    validate_username,
-    validate_sha,
-    validate_labels,
-    validate_pagination,
-    validate_state,
+    USERNAME_PATTERN,
     augment_schema_with_validation,
-    SINGLE_VALIDATORS,
-    SCHEMA_CONSTRAINTS,
+    validate_filepath,
+    validate_labels,
+    validate_owner_repo,
+    validate_pagination,
+    validate_ref,
+    validate_sha,
+    validate_state,
+    validate_username,
 )
 
 

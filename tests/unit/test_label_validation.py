@@ -1,14 +1,15 @@
 """Unit tests for label validation and auto-conversion functionality."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import (
     customize_component as _customize_component_impl,
+)
+from gitea_mcp_server.server_setup.tool_annotator import (
     update_labels_schema as _update_labels_schema_impl,
 )
 

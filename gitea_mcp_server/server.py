@@ -5,8 +5,8 @@ import contextlib
 import importlib.resources as pkg_resources
 import logging
 import sys
-from typing import Any
 
+import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
@@ -15,7 +15,10 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from fastmcp.server.providers.openapi import OpenAPIProvider
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
@@ -30,9 +33,9 @@ from gitea_mcp_server.constants import (
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.logging import setup_logging
+from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.permissions import filter_tools_by_permissions
 from gitea_mcp_server.server_setup.resource_registry import register_all_resources
-from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.server_setup.tool_annotator import TolerantBM25SearchTransform
 
@@ -109,8 +112,10 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     logger.info("Adding response caching middleware...")
     caching_middleware = ResponseCachingMiddleware(
         cache_storage=None,  # In-memory cache
-        read_resource_settings=ReadResourceSettings(enabled=True, ttl=CACHE_TTL_DEFAULT),
-        list_resources_settings=ListResourcesSettings(enabled=True, ttl=CACHE_TTL_RESOURCE_LIST),
+        read_resource_settings=ReadResourceSettings(enabled=True, ttl=int(CACHE_TTL_DEFAULT)),
+        list_resources_settings=ListResourcesSettings(
+            enabled=True, ttl=int(CACHE_TTL_RESOURCE_LIST)
+        ),
         call_tool_settings=CallToolSettings(enabled=False),
         get_prompt_settings=GetPromptSettings(enabled=False),
         max_item_size=CACHE_MAX_ITEM_SIZE,
@@ -136,8 +141,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
 
     # Register resources
     logger.info("Registering MCP resources...")
-    registry = register_all_resources(mcp, gitea_client, openapi_spec)
-    # registry is available for potential future use (e.g., documentation generation)
+    register_all_resources(mcp, gitea_client, openapi_spec)
 
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:
@@ -175,8 +179,62 @@ async def main_async() -> None:
         sys.exit(1)
 
     try:
-        logger.info("Starting MCP server (stdio transport)")
-        await mcp.run_stdio_async()
+        if config.transport_type == "http":
+            # Configure CORS middleware if origins specified
+            cors_origins = config.http_cors or []
+            middleware = []
+            if cors_origins:
+                middleware = [
+                    Middleware(
+                        CORSMiddleware,
+                        allow_origins=cors_origins,
+                        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                        allow_headers=[
+                            "mcp-protocol-version",
+                            "mcp-session-id",
+                            "Authorization",
+                            "Content-Type",
+                        ],
+                        expose_headers=["mcp-session-id"],
+                    )
+                ]
+
+            # Create health check endpoint function
+            async def health_check(_: object) -> JSONResponse:
+                """Health check endpoint for container orchestration."""
+                return JSONResponse({"status": "ok"})
+
+            # Create HTTP app with middleware and custom path
+            app = mcp.http_app(
+                path=config.http_path,
+                middleware=middleware,
+            )
+            # Add health route to the app's routes (workaround for FastMCP custom_route issue)
+            app.routes.insert(0, Route("/health", endpoint=health_check, methods=["GET"]))
+
+            logger.info(
+                "Starting MCP server (HTTP transport) on http://%s:%s with MCP path %s",
+                config.http_host,
+                config.http_port,
+                config.http_path,
+            )
+            logger.info(
+                "Health check available at http://%s:%s/health",
+                config.http_host,
+                config.http_port,
+            )
+
+            # Run with uvicorn
+            uvicorn_config = uvicorn.Config(
+                app=app,
+                host=config.http_host,
+                port=config.http_port,
+            )
+            server = uvicorn.Server(uvicorn_config)
+            await server.serve()
+        else:
+            logger.info("Starting MCP server (stdio transport)")
+            await mcp.run_stdio_async()
     except KeyboardInterrupt:
         logger.info("Server shutdown by user")
     except Exception:

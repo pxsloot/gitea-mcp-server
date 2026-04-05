@@ -1,15 +1,16 @@
 """Unit tests for cache invalidation functionality."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from gitea_mcp_server.cache_invalidation import (
-    CacheInvalidationMiddleware,
     TOOL_INVALIDATION_MAP,
-    compute_uris_to_invalidate,
-    register_tool_invalidation,
+    CacheInvalidationMiddleware,
     _compute_cache_key,
     _substitute_template,
+    compute_uris_to_invalidate,
+    register_tool_invalidation,
 )
 from gitea_mcp_server.server_setup.tool_annotator import (
     compute_invalidation_patterns as _compute_tool_invalidation_patterns,

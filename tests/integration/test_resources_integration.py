@@ -1,6 +1,5 @@
 """Integration tests for the MCP server with resources."""
 
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +7,6 @@ import respx
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
-from tests.conftest import extract_tool_names
 
 
 class SimpleConfig:

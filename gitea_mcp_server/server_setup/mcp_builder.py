@@ -7,15 +7,8 @@ including OpenAPI provider creation with customized component handling.
 import logging
 from typing import Any
 
-from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import OpenAPIProvider
 
-from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.constants import (
-    CACHE_MAX_ITEM_SIZE,
-    CACHE_TTL_DEFAULT,
-    CACHE_TTL_RESOURCE_LIST,
-)
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import customize_component
 

@@ -212,6 +212,33 @@ uv sync  # or: pip install -e ".[dev]"
 - `admin`: Administrative operations (if needed)
 - `write:issue`, `read:user`, etc. depending on use case
 
+### HTTP Transport (Server Mode)
+
+By default, the server runs in stdio mode (for MCP clients like Claude Desktop). To run as an HTTP server:
+
+```env
+# Optional: HTTP transport settings (default: stdio transport)
+TRANSPORT_TYPE=http           # Default: stdio
+HTTP_HOST=0.0.0.0            # Default: 0.0.0.0
+HTTP_PORT=8080               # Default: 8080
+HTTP_PATH=/mcp              # Default: /mcp
+HTTP_CORS=                  # Optional: comma-separated origins; defaults to GITEA_URL origin
+```
+
+- `TRANSPORT_TYPE=http` enables HTTP server mode
+- `HTTP_CORS` defaults to the origin derived from `GITEA_URL` (e.g., `https://git.example.com`). Set to `*` to allow all origins (development only).
+- The server exposes:
+  - `HTTP_PATH` (default `/mcp`) for MCP requests
+  - `/health` for health checks (returns `{"status": "ok"}`)
+
+Example usage with `curl`:
+
+```bash
+curl -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}' \
+     http://localhost:8080/mcp
+```
+
 ## Usage
 
 ### Development (stdio transport)

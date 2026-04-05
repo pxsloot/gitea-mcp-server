@@ -475,11 +475,7 @@ class OptionalPropertyTransformer:
 
         # Determine if this schema is a property-like schema
         is_property = False
-        if "properties" in parent and key in parent["properties"]:
-            is_property = True
-        elif "patternProperties" in parent and key in parent["patternProperties"]:
-            is_property = True
-        elif key == "additionalProperties" and "additionalProperties" in parent:
+        if ("properties" in parent and key in parent["properties"]) or ("patternProperties" in parent and key in parent["patternProperties"]) or (key == "additionalProperties" and "additionalProperties" in parent):
             is_property = True
 
         if not is_property:

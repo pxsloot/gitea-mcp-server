@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.constants import LABEL_CACHE_TTL
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 
@@ -105,4 +104,4 @@ async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         raise SpecError(msg) from e
 
 
-__all__ = ["load_openapi_spec", "load_and_convert_spec", "convert_swagger_to_openapi_v3"]
+__all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

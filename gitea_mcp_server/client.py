@@ -1,6 +1,5 @@
 """HTTP client wrapper for Gitea API with retry and error handling."""
 
-import asyncio
 import logging
 import ssl
 from typing import Any
@@ -17,11 +16,11 @@ from gitea_mcp_server.config import Config
 from gitea_mcp_server.constants import (
     HTTP_MAX_CONNECTIONS,
     HTTP_MAX_KEEPALIVE_CONNECTIONS,
+    HTTP_STATUS_RETRYABLE,
     HTTP_TIMEOUT_CONNECT,
     HTTP_TIMEOUT_POOL,
     HTTP_TIMEOUT_READ,
     HTTP_TIMEOUT_WRITE,
-    HTTP_STATUS_RETRYABLE,
     RESPONSE_PREVIEW_LIMIT,
     RETRY_MAX_ATTEMPTS,
     RETRY_WAIT_MAX,

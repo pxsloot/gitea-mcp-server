@@ -160,19 +160,19 @@ def validate_labels(value: Any, *, field: str) -> None:
     for label in value:
         # Reject booleans explicitly (bool is subclass of int)
         if isinstance(label, bool):
-            raise ValidationError(f"Label must be a string or integer, not bool", field=field)
+            raise ValidationError("Label must be a string or integer, not bool", field=field)
         if isinstance(label, int):
             if label < 1:
-                raise ValidationError(f"Label ID must be positive", field=field)
+                raise ValidationError("Label ID must be positive", field=field)
         elif isinstance(label, str):
             if not label:
-                raise ValidationError(f"Empty label string is not allowed", field=field)
+                raise ValidationError("Empty label string is not allowed", field=field)
             # Disallow whitespace-only labels
             if not label.strip():
-                raise ValidationError(f"Label cannot be whitespace only", field=field)
+                raise ValidationError("Label cannot be whitespace only", field=field)
             # Limit length
             if len(label) > 100:
-                raise ValidationError(f"Label name exceeds maximum length (100)", field=field)
+                raise ValidationError("Label name exceeds maximum length (100)", field=field)
         else:
             raise ValidationError(
                 f"Label must be a string or integer, got {type(label).__name__}", field=field

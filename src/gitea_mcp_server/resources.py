@@ -21,12 +21,15 @@ Architecture:
 
 Usage:
     from gitea_mcp_server import resources
+    from gitea_mcp_server.resource_registry import ResourceRegistry
 
     # In your server setup:
-    resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec)
-    resources.register_custom_resources(mcp, gitea_client)
+    registry = ResourceRegistry()
+    resources.register_auto_generated_resources(mcp, gitea_client, openapi_spec, registry)
+    resources.register_custom_resources(mcp, gitea_client, registry)
 
     # Custom resources override auto-generated ones with the same URI.
+    # Access registry for documentation/querying: registry.list_resources(), etc.
 """
 
 import base64
@@ -38,7 +41,7 @@ from datetime import datetime
 from functools import wraps
 from typing import Any
 
-from gitea_mcp_server.resource_registry import ResourceRegistry
+from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
@@ -257,9 +260,10 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 
 
 def register_auto_generated_resources(
-    registry: ResourceRegistry,
+    mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: dict[str, Any],
+    registry: Any,  # ResourceRegistry - using Any to avoid circular import
     skip_uris: set[str] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec.
@@ -275,9 +279,10 @@ def register_auto_generated_resources(
     - Only endpoints with path parameters are registered (FastMCP requirement)
 
     Args:
-        registry: ResourceRegistry
+        mcp: FastMCP server instance
         gitea_client: GiteaClient for API calls
         openapi_spec: OpenAPI 3.1 specification dictionary
+        registry: ResourceRegistry to record registered resources
         skip_uris: Set of URI templates to skip. If None, uses default custom URIs.
                    These URIs will be provided by custom resources with better formatting.
     """
@@ -413,12 +418,16 @@ def register_auto_generated_resources(
 
                 # Register with FastMCP
                 try:
-                    registry.register(
-                        uri_template,
-                        resource_func,
-                        "application/json",
-                        {"api", "raw", "auto"},
-                        allow_override=False,
+                    mcp.resource(
+                        uri_template, mime_type="application/json", tags={"api", "raw", "auto"}
+                    )(resource_func)
+                    # Record in registry catalog
+                    registry.record(
+                        uri=uri_template,
+                        func=resource_func,
+                        mime_type="application/json",
+                        tags={"api", "raw", "auto"},
+                        meta=None,
                     )
                     count += 1
                     logger.debug("Registered auto-generated resource: %s", uri_template)
@@ -662,7 +671,11 @@ async def list_repo_pulls_open(owner: str, repo: str, gitea_client: GiteaClient)
     return await list_repo_pulls(owner=owner, repo=repo, state="open", gitea_client=gitea_client)
 
 
-def register_custom_resources(registry: ResourceRegistry, gitea_client: GiteaClient) -> None:
+def register_custom_resources(
+    mcp: FastMCP,
+    gitea_client: GiteaClient,
+    registry: Any,  # ResourceRegistry - using Any to avoid circular import
+) -> None:
     """Register custom-formatted and custom resources.
 
     These override any auto-generated resources with the same URI.
@@ -682,6 +695,11 @@ def register_custom_resources(registry: ResourceRegistry, gitea_client: GiteaCli
     - "wrapper": Human-readable formatted output (Markdown/plain text)
     - "repository", "issue", "pull_request", etc.: Entity type for filtering
     - Cache TTLs are tuned per resource type (static data cached longer)
+
+    Args:
+        mcp: FastMCP server instance
+        gitea_client: GiteaClient for API calls
+        registry: ResourceRegistry to record registered resources
     """
 
     def make_resource(
@@ -824,12 +842,16 @@ def register_custom_resources(registry: ResourceRegistry, gitea_client: GiteaCli
     ]
 
     for uri_template, func, mime_type, tags, meta in custom_resources:
-        wrapped = make_resource(func)
-        registry.register(
-            uri_template,
-            wrapped,
-            mime_type,
-            tags,
+        kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
+        if meta is not None:
+            kwargs["meta"] = meta
+        wrapped_func = make_resource(func)
+        mcp.resource(uri_template, **kwargs)(wrapped_func)
+        # Record in registry catalog (custom resources override auto-generated)
+        registry.record(
+            uri=uri_template,
+            func=wrapped_func,
+            mime_type=mime_type,
+            tags=tags,
             meta=meta,
-            allow_override=True,
         )

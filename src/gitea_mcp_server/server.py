@@ -180,7 +180,7 @@ async def main_async() -> None:
         if config.transport_type != "stdio":
 
             @mcp.custom_route("/health", methods=["GET"])
-            async def health_check(request: Request) -> PlainTextResponse:
+            async def health_check(_request: Request) -> PlainTextResponse:
                 return PlainTextResponse("OK")
 
         logger.info("Starting MCP server with transport: %s", config.transport_type)

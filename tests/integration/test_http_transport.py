@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 import respx
-from starlette.testclient import TestClient
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config
@@ -15,7 +14,7 @@ from gitea_mcp_server.server import create_mcp_server
 class SimpleHTTPConfig:
     """Simple config stub for HTTP transport tests."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         url="https://git.example.com",
         token="test_token",

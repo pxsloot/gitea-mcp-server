@@ -311,37 +311,3 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
             for key, value in constraints.items():
                 if key not in existing_schema:
                     existing_schema[key] = value
-
-
-def inject_validation_wrapper(component: OpenAPITool) -> None:
-    """Wrap the component's run method with runtime argument validation.
-
-    The wrapper executes before the original run method and validates
-    arguments using the appropriate validator functions. Validation
-    occurs before label conversion and before API calls.
-
-    Args:
-        component: The OpenAPITool to wrap.
-    """
-    original_run = getattr(component, "run", None)
-    if original_run is None:
-        return
-
-    async def validated_run(arguments: dict[str, Any]) -> Any:
-        # Single-argument validators
-        for name, value in arguments.items():
-            if name in SINGLE_VALIDATORS:
-                try:
-                    SINGLE_VALIDATORS[name](value, field=name)
-                except ValidationError:
-                    raise
-                except Exception as e:
-                    raise ValidationError(f"Validation error for {name}: {e}", field=name) from e
-
-        # Combined validators
-        if "page" in arguments or "per_page" in arguments:
-            validate_pagination(arguments.get("page"), arguments.get("per_page"))
-
-        return await original_run(arguments)
-
-    object.__setattr__(component, "run", validated_run)

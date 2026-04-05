@@ -13,7 +13,6 @@ from gitea_mcp_server.server_setup.tool_annotator import (
     categorize_tool as _categorize_tool,
     customize_component as _customize_component,
     generate_tool_title as _generate_tool_title,
-    inject_label_validation_wrapper as _inject_label_validation_wrapper,
 )
 
 # Create a label manager for tests that need it
@@ -231,17 +230,26 @@ class TestInferredHints:
     def test_all_hints_added_when_annotations_empty(self):
         route = MagicMock(path="/test", method="POST", summary="Test POST")
         tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test_post"
         tool.annotations = ToolAnnotations()  # All fields None
         tool.tags = set()
+        tool.parameters = {"properties": {}}  # Provide minimal parameters
+        tool.output_schema = None
+        tool.description = "Test POST"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
         # All hints should be set based on method
-        assert tool.annotations.readOnlyHint is False
-        assert tool.annotations.destructiveHint is False
-        assert tool.annotations.idempotentHint is False
-        assert tool.annotations.openWorldHint is True
-        assert tool.annotations.title == "Test POST"  # Title uses summary as-is
+        assert new_tool is not None
+        assert new_tool.annotations.readOnlyHint is False
+        assert new_tool.annotations.destructiveHint is False
+        assert new_tool.annotations.idempotentHint is False
+        assert new_tool.annotations.openWorldHint is True
+        assert new_tool.annotations.title == "Test POST"  # Title uses summary as-is
 
 
 class TestCustomizeComponent:
@@ -266,14 +274,21 @@ class TestCustomizeComponent:
         tool.name = "list_issues"
         tool.annotations = None
         tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "List issues"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
-        assert tool.annotations is not None
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "List issues"
-        assert "issue" in tool.tags
-        assert "issue" in tool.tags
+        assert new_tool is not None
+        assert new_tool.annotations is not None
+        assert isinstance(new_tool.annotations, ToolAnnotations)
+        assert new_tool.annotations.title == "List issues"
+        assert "issue" in new_tool.tags
 
     def test_adds_annotations_to_tool_with_dict(self):
         route = MagicMock(
@@ -283,12 +298,20 @@ class TestCustomizeComponent:
         tool.name = "list_issues"
         tool.annotations = {"title": "Old Title"}  # dict that can be unpacked to ToolAnnotations
         tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "List issues"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "List issues"  # Our title overrides dict
-        assert "issue" in tool.tags
+        assert new_tool is not None
+        assert isinstance(new_tool.annotations, ToolAnnotations)
+        assert new_tool.annotations.title == "List issues"  # Our title overrides dict
+        assert "issue" in new_tool.tags
 
     def test_converts_existing_toolannotations_properly(self):
         route = MagicMock(
@@ -301,13 +324,21 @@ class TestCustomizeComponent:
         tool.name = "get_pull"
         tool.annotations = existing
         tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get pull request"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "Get pull request"  # Updated
-        assert tool.annotations.readOnlyHint is True  # Preserved
-        assert "pull_request" in tool.tags
+        assert new_tool is not None
+        assert isinstance(new_tool.annotations, ToolAnnotations)
+        assert new_tool.annotations.title == "Get pull request"  # Updated
+        assert new_tool.annotations.readOnlyHint is True  # Preserved
+        assert "pull_request" in new_tool.tags
 
     def test_category_detection_various_paths(self):
         test_cases = [
@@ -326,14 +357,21 @@ class TestCustomizeComponent:
             tool.name = "test"
             tool.annotations = None
             tool.tags = set()
+            tool.parameters = {"properties": {}}
+            tool.output_schema = None
+            tool.description = "Test"
+            tool.version = "1"
+            tool.auth = None
+            tool.serializer = None
+            tool.meta = {}
 
-            _customize_component(route, tool, _label_manager)
+            new_tool = _customize_component(route, tool, _label_manager)
 
-            assert tool.annotations is not None
-            assert expected_category in tool.tags, (
+            assert new_tool is not None
+            assert new_tool.annotations is not None
+            assert expected_category in new_tool.tags, (
                 f"Failed for {path}: category {expected_category} not in tags"
             )
-            assert expected_category in tool.tags
 
     def test_title_generation_from_operation_id(self):
         route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id")
@@ -341,10 +379,18 @@ class TestCustomizeComponent:
         tool.name = "get_user_by_id"
         tool.annotations = None
         tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get user by ID"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
-        assert tool.annotations.title == "Get User By Id"
+        assert new_tool is not None
+        assert new_tool.annotations.title == "Get User By Id"
 
     def test_long_operation_id_truncated(self):
         long_op_id = (
@@ -355,8 +401,16 @@ class TestCustomizeComponent:
         tool.name = "test"
         tool.annotations = None
         tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test operation"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
 
-        _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, _label_manager)
 
-        assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
-        assert tool.annotations.title.endswith("...")
+        assert new_tool is not None
+        assert len(new_tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
+        assert new_tool.annotations.title.endswith("...")

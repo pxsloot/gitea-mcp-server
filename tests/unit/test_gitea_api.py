@@ -1,10 +1,10 @@
 """Unit tests for GiteaAPI class."""
 
-import asyncio
+from unittest.mock import AsyncMock
+
 import pytest
 import respx
 from pytest_mock import MockerFixture
-from unittest.mock import AsyncMock
 
 from gitea_mcp_server.client import GiteaAPI, HTTPTransport
 from gitea_mcp_server.config import Config

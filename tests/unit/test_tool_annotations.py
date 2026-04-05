@@ -8,10 +8,15 @@ from fastmcp.tools.tool import ToolAnnotations
 from gitea_mcp_server.constants import TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import (
-    TolerantBM25SearchTransform,
     add_inferred_hints as _add_inferred_hints,
+)
+from gitea_mcp_server.server_setup.tool_annotator import (
     categorize_tool as _categorize_tool,
+)
+from gitea_mcp_server.server_setup.tool_annotator import (
     customize_component as _customize_component,
+)
+from gitea_mcp_server.server_setup.tool_annotator import (
     generate_tool_title as _generate_tool_title,
 )
 

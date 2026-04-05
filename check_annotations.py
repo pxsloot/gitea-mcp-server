@@ -2,10 +2,8 @@
 """Test that tool annotations are visible in the running MCP server."""
 
 import asyncio
-from fastmcp import Client
-from gitea_mcp_server.client import GiteaClient
+
 from gitea_mcp_server.config import Config
-import json
 
 
 async def check_tool_annotations():
@@ -18,8 +16,8 @@ async def check_tool_annotations():
 
     # First, let's check if we can import and create a client directly
     try:
-        from gitea_mcp_server.server import create_mcp_server
         from gitea_mcp_server.client import GiteaClient
+        from gitea_mcp_server.server import create_mcp_server
 
         # Create a config (will use env vars)
         config = Config.get()

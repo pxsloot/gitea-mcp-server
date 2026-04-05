@@ -6,7 +6,8 @@ cache invalidation pattern computation.
 """
 
 import logging
-from typing import Annotated, Any, Sequence
+from collections.abc import Sequence
+from typing import Annotated, Any
 
 from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -451,11 +452,11 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
 
 
 __all__ = [
-    "generate_tool_title",
-    "categorize_tool",
-    "add_inferred_hints",
-    "compute_invalidation_patterns",
-    "update_labels_schema",
-    "customize_component",
     "TolerantBM25SearchTransform",
+    "add_inferred_hints",
+    "categorize_tool",
+    "compute_invalidation_patterns",
+    "customize_component",
+    "generate_tool_title",
+    "update_labels_schema",
 ]

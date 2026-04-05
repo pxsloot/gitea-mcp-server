@@ -47,10 +47,9 @@ from fastmcp.exceptions import ResourceError
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import (
     AUTO_GENERATED_RESOURCE_SKIP_URIS,
-    CACHE_TTL_DEFAULT,
     CACHE_TTL_README,
-    CACHE_TTL_REPOSITORY,
     CACHE_TTL_RELEASES,
+    CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
     HTTP_STATUS_NOT_FOUND,
 )
@@ -339,7 +338,7 @@ def register_auto_generated_resources(
                 )
                 # Return JSON for auto-generated resources
                 return json.dumps(response, indent=2)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 status = getattr(e, "status_code", None)
                 if status == HTTP_STATUS_NOT_FOUND:
                     raise ResourceError(
@@ -351,7 +350,7 @@ def register_auto_generated_resources(
                             "resource_id": formatted_path,
                         }
                     ) from e
-                elif status:
+                if status:
                     raise ResourceError(
                         {
                             "code": "API_ERROR",
@@ -361,16 +360,15 @@ def register_auto_generated_resources(
                             "resource_id": formatted_path,
                         }
                     ) from e
-                else:
-                    raise ResourceError(
-                        {
-                            "code": "INTERNAL_ERROR",
-                            "message": f"Unexpected error fetching resource: {formatted_path}",
-                            "detail": str(e),
-                            "resource_type": "api",
-                            "resource_id": formatted_path,
-                        }
-                    ) from e
+                raise ResourceError(
+                    {
+                        "code": "INTERNAL_ERROR",
+                        "message": f"Unexpected error fetching resource: {formatted_path}",
+                        "detail": str(e),
+                        "resource_type": "api",
+                        "resource_id": formatted_path,
+                    }
+                ) from e
 
         # Set docstring from operation
         summary = operation.get("summary", "")

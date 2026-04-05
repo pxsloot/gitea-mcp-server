@@ -22,11 +22,11 @@ def register_all_resources(
         ResourceRegistry containing metadata about all registered resources
     """
     # Import here to allow mocking
+    from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
     from gitea_mcp_server.resources import (
         register_auto_generated_resources,
         register_custom_resources,
     )
-    from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 
     # Create registry catalog
     registry = ResourceRegistry()

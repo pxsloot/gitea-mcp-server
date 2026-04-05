@@ -1,8 +1,8 @@
 """Tests for MCP resource tools."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastmcp.server.context import Context
 
 from gitea_mcp_server.mcp_tools import (

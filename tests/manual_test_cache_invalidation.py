@@ -13,12 +13,11 @@ Run: python -m tests.manual_test_cache_invalidation
 """
 
 import hashlib
+
 from gitea_mcp_server.cache_invalidation import (
     RESOURCE_URI_PATTERNS,
     TOOL_INVALIDATION_MAP,
     compute_uris_to_invalidate,
-    _compute_cache_key,
-    _substitute_template,
     register_tool_invalidation,
 )
 
@@ -136,7 +135,7 @@ def main():
 
     print(f"\n➕ Registered custom tool: {custom_tool}")
     uris = compute_uris_to_invalidate(custom_tool, test_repo)
-    print(f"   Invalidates:")
+    print("   Invalidates:")
     for uri in uris:
         print(f"    - {uri}")
 

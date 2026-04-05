@@ -3,13 +3,17 @@
 import logging
 import threading
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from gitea_mcp_server.exceptions import ConfigError
 
 logger = logging.getLogger(__name__)
+
+# Constants for HTTP transport validation
+HTTP_PORT_MAX = 65535
 
 # Module-level lock for thread-safe singleton
 _config_lock = threading.Lock()
@@ -58,6 +62,32 @@ class Config(BaseSettings):
         description="Enable lazy loading of tools via search transform (requires FastMCP 3.x)",
         alias="ENABLE_LAZY_LOADING",
     )
+    # Transport settings
+    transport_type: str = Field(
+        default="stdio",
+        description="Transport type: 'stdio' or 'http'",
+        alias="TRANSPORT_TYPE",
+    )
+    http_host: str = Field(
+        default="0.0.0.0",
+        description="HTTP bind host",
+        alias="HTTP_HOST",
+    )
+    http_port: int = Field(
+        default=8080,
+        description="HTTP bind port",
+        alias="HTTP_PORT",
+    )
+    http_path: str = Field(
+        default="/mcp",
+        description="MCP endpoint path (e.g., /mcp, /api/mcp)",
+        alias="HTTP_PATH",
+    )
+    http_cors: list[str] | None = Field(
+        default=None,
+        description="CORS allowed origins (comma-separated list)",
+        alias="HTTP_CORS",
+    )
 
     @field_validator("url")
     @classmethod
@@ -71,7 +101,7 @@ class Config(BaseSettings):
             raise ConfigError(msg)
         v = v.rstrip("/")
         if v.endswith("/api/v1"):
-            msg = f"GITEA_URL must not include '/api/v1' - provide the base URL only (e.g., 'https://git.example.com')"
+            msg = "GITEA_URL must not include '/api/v1' - provide the base URL only (e.g., 'https://git.example.com')"
             raise ConfigError(msg)
         return v
 
@@ -94,6 +124,47 @@ class Config(BaseSettings):
             msg = f"Invalid LOG_LEVEL: {v}. Must be one of {valid_levels}"
             raise ConfigError(msg)
         return normalized
+
+    @field_validator("transport_type")
+    @classmethod
+    def validate_transport_type(cls, v: str) -> str:
+        """Validate transport type."""
+        valid_types = {"stdio", "http"}
+        normalized = v.lower()
+        if normalized not in valid_types:
+            msg = f"TRANSPORT_TYPE must be 'stdio' or 'http', got '{v}'"
+            raise ConfigError(msg)
+        return normalized
+
+    @field_validator("http_port")
+    @classmethod
+    def validate_http_port(cls, v: int) -> int:
+        """Validate HTTP port is in valid range."""
+        if not (1 <= v <= HTTP_PORT_MAX):
+            msg = f"HTTP_PORT must be between 1 and {HTTP_PORT_MAX}, got {v}"
+            raise ConfigError(msg)
+        return v
+
+    @field_validator("http_path")
+    @classmethod
+    def validate_http_path(cls, v: str) -> str:
+        """Validate HTTP path starts with /."""
+        if not v.startswith("/"):
+            msg = f"HTTP_PATH must start with '/', got '{v}'"
+            raise ConfigError(msg)
+        return v
+
+    @field_validator("http_cors", mode="before")
+    @classmethod
+    def parse_http_cors(cls, v: str | list[str] | None) -> list[str] | None:
+        """Parse comma-separated CORS origins string into list."""
+        if v is None or isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Split by comma and strip whitespace
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            return origins if origins else None
+        return None
 
     @property
     def base_url(self) -> str:
@@ -133,3 +204,12 @@ class Config(BaseSettings):
         if not self.token:
             msg = "GITEA_TOKEN is required - set in .env file or environment"
             raise ConfigError(msg)
+
+    @model_validator(mode="after")
+    def set_default_cors(self) -> "Config":
+        """Set default CORS from GITEA_URL if not explicitly provided."""
+        if self.http_cors is None and self.transport_type == "http":
+            parsed = urlparse(self.url)
+            cors_origin = f"{parsed.scheme}://{parsed.netloc}"
+            self.http_cors = [cors_origin]
+        return self

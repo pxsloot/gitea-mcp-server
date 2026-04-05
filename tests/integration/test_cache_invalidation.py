@@ -5,13 +5,10 @@ by using respx to mock the Gitea API and observing cache behavior.
 """
 
 import hashlib
+
 import pytest
-import respx
-from fastmcp import FastMCP
-from httpx import Response
 
 from gitea_mcp_server.cache_invalidation import (
-    CacheInvalidationMiddleware,
     TOOL_INVALIDATION_MAP,
     compute_uris_to_invalidate,
 )
@@ -58,7 +55,6 @@ class TestCacheInvalidationIntegration:
     @pytest.mark.asyncio
     async def test_issue_edit_invalidation_mapping(self, simple_config):
         """Test that issue_edit_issue is mapped to invalidate issues resources."""
-        from gitea_mcp_server.cache_invalidation import compute_uris_to_invalidate
 
         # Manually register for this test (server does this automatically on startup)
         from gitea_mcp_server.cache_invalidation import register_tool_invalidation
@@ -81,7 +77,6 @@ class TestCacheInvalidationIntegration:
     async def test_pr_create_invalidation_mapping(self, simple_config):
         """Test that PR creation invalidates pulls resources."""
         from gitea_mcp_server.cache_invalidation import (
-            compute_uris_to_invalidate,
             register_tool_invalidation,
         )
 
@@ -100,7 +95,6 @@ class TestCacheInvalidationIntegration:
     async def test_repo_edit_invalidation_mapping(self, simple_config):
         """Test that repo edit invalidates repo resource."""
         from gitea_mcp_server.cache_invalidation import (
-            compute_uris_to_invalidate,
             register_tool_invalidation,
         )
 
@@ -114,7 +108,6 @@ class TestCacheInvalidationIntegration:
     async def test_file_content_invalidation_mapping(self, simple_config):
         """Test file content operations use filepath parameter correctly."""
         from gitea_mcp_server.cache_invalidation import (
-            compute_uris_to_invalidate,
             register_tool_invalidation,
         )
 

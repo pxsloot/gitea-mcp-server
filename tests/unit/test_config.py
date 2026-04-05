@@ -123,3 +123,169 @@ class TestConfig:
         Config._instance = None
         config = Config.get()
         assert config.ssl_cert_file == "/path/to/cert.pem"
+
+    def test_transport_type_default_stdio(self):
+        """Test default transport_type is stdio."""
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.transport_type == "stdio"
+
+    def test_transport_type_http(self, monkeypatch):
+        """Test setting transport_type to http."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("TRANSPORT_TYPE", "http")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.transport_type == "http"
+
+    def test_transport_type_invalid(self, monkeypatch):
+        """Test error when transport_type is invalid."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("TRANSPORT_TYPE", "invalid")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match=r"TRANSPORT_TYPE must be 'stdio' or 'http'"):
+            Config.get()
+
+    def test_http_host_default(self):
+        """Test default http_host is 0.0.0.0."""
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.http_host == "0.0.0.0"
+
+    def test_http_host_custom(self, monkeypatch):
+        """Test custom http_host."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_HOST", "127.0.0.1")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.http_host == "127.0.0.1"
+
+    def test_http_port_default(self):
+        """Test default http_port is 8080."""
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.http_port == 8080
+
+    def test_http_port_custom(self, monkeypatch):
+        """Test custom http_port."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_PORT", "9000")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.http_port == 9000
+
+    def test_http_path_default(self):
+        """Test default http_path is /mcp."""
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.http_path == "/mcp"
+
+    def test_http_path_custom(self, monkeypatch):
+        """Test custom http_path."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_PATH", "/api/mcp")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.http_path == "/api/mcp"
+
+    def test_http_cors_default_uses_gitea_url_when_http(self):
+        """Test http_cors defaults to GITEA_URL origin when transport_type is http."""
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.transport_type == "stdio"  # default stdio
+            assert config.http_cors is None  # no default for stdio
+
+        # When transport_type is http, CORS should default to GITEA_URL origin
+        with patch.dict(
+            os.environ,
+            {
+                "GITEA_URL": "https://git.example.com",
+                "GITEA_TOKEN": "test",
+                "TRANSPORT_TYPE": "http",
+            },
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.transport_type == "http"
+            assert config.http_cors == ["https://git.example.com"]
+
+        # With trailing slash in URL
+        with patch.dict(
+            os.environ,
+            {
+                "GITEA_URL": "https://git.example.com/",
+                "GITEA_TOKEN": "test",
+                "TRANSPORT_TYPE": "http",
+            },
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.http_cors == ["https://git.example.com"]
+
+        # With port in URL
+        with patch.dict(
+            os.environ,
+            {"GITEA_URL": "http://localhost:3000", "GITEA_TOKEN": "test", "TRANSPORT_TYPE": "http"},
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            assert config.http_cors == ["http://localhost:3000"]
+
+    def test_http_cors_explicit_overrides_default(self, monkeypatch):
+        """Test explicit HTTP_CORS overrides GITEA_URL default."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("TRANSPORT_TYPE", "http")
+        monkeypatch.setenv("HTTP_CORS", "https://custom.com,http://localhost:8080")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.http_cors == ["https://custom.com", "http://localhost:8080"]
+
+    def test_http_cors_parsed_from_string(self, monkeypatch):
+        """Test http_cors parsed from comma-separated string."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_CORS", "https://origin1.com,https://origin2.com")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.http_cors == ["https://origin1.com", "https://origin2.com"]

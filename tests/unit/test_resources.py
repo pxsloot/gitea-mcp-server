@@ -1,25 +1,24 @@
 """Tests for the resources module."""
 
-import json
 import base64
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.server.fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
+from mcp.server.fastmcp import FastMCP
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
+from gitea_mcp_server.resource_registry import ResourceRegistry
 from gitea_mcp_server.resources import (
-    register_auto_generated_resources,
-    register_custom_resources,
     _format_datetime,
     _format_repo_markdown,
+    get_file,
     get_readme,
     get_repository,
     list_repo_issues,
-    get_file,
+    register_auto_generated_resources,
+    register_custom_resources,
 )
-from gitea_mcp_server.resource_registry import ResourceRegistry
 
 
 class TestFormatDateTime:

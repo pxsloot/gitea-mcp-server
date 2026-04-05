@@ -12,14 +12,14 @@ and prevent regressions.
 
 ## external resources
 
-- fastmcp2.0: https://gofastmcp.com/llms.txt
+- fastmcp3.2.0: https://gofastmcp.com/llms.txt
 - gitea swagger: https://git.home.lan/swagger.v1.json
 - openapi schema: https://spec.openapis.org/oas/3.1/schema/2025-11-23
 
 ## to be used
 
 - python3
-- fastmcp2.0
+- fastmcp3.2.0
 - httpx
 - pydantic
 

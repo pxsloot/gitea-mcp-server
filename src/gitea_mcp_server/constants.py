@@ -59,22 +59,22 @@ RETRY_WAIT_MAX = 10
 # Cache Configuration (ResponseCachingMiddleware)
 # ============================================================================
 
-CACHE_TTL_DEFAULT = 30.0
+CACHE_TTL_DEFAULT = 30
 """Default cache TTL for resources (seconds)."""
 
-CACHE_TTL_RESOURCE_LIST = 300.0
+CACHE_TTL_RESOURCE_LIST = 300
 """Cache TTL for resource list operations (seconds, 5 minutes)."""
 
-CACHE_TTL_REPOSITORY = 300.0
+CACHE_TTL_REPOSITORY = 300
 """Cache TTL for repository metadata (seconds, 5 minutes)."""
 
-CACHE_TTL_README = 600.0
+CACHE_TTL_README = 600
 """Cache TTL for README files (seconds, 10 minutes)."""
 
-CACHE_TTL_RELEASES = 600.0
+CACHE_TTL_RELEASES = 600
 """Cache TTL for release data (seconds, 10 minutes)."""
 
-CACHE_TTL_USERS = 300.0
+CACHE_TTL_USERS = 300
 """Cache TTL for user/organization profiles (seconds, 5 minutes)."""
 
 CACHE_MAX_ITEM_SIZE = 100_000_000

@@ -226,6 +226,58 @@ python -m gitea_mcp_server.server
 
 The server runs on stdio and communicates via MCP protocol.
 
+### HTTP Transport (Streamable)
+
+The server can also run as an HTTP server using the Streamable HTTP transport. This is useful when you need to connect via HTTP (e.g., when the MCP client runs in a separate process or container).
+
+#### Enable HTTP Transport
+
+Set the `TRANSPORT_TYPE` environment variable:
+
+```bash
+export TRANSPORT_TYPE=streamable-http
+export PORT=8080  # Optional, defaults to 8080
+uv run gitea-mcp
+```
+
+The server will start on `http://127.0.0.1:8080/mcp` (default path `/mcp`).
+
+#### Configuration Options
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRANSPORT_TYPE` | `stdio` | Transport type: `stdio` or `streamable-http` |
+| `HOST` | `127.0.0.1` | Host to bind HTTP server to |
+| `PORT` | `8080` | Port to bind HTTP server to |
+| `HTTP_PATH` | `/mcp` | Path for the MCP endpoint |
+| `STATELESS_HTTP` | `false` | Use stateless mode (new session per request) |
+| `JSON_RESPONSE` | `null` | Force JSON response format (`true`/`false`/`null` for auto) |
+| `CORS_ORIGINS` | (auto) | Comma-separated allowed origins. If not set, automatically derived from `GITEA_URL`. |
+
+#### CORS Auto-Configuration
+
+CORS origins are automatically set based on your `GITEA_URL`. For example, if `GITEA_URL=https://gitea.example.com`, the CORS origin `https://gitea.example.com` is automatically allowed. Override with `CORS_ORIGINS` if needed.
+
+#### Health Check
+
+A health check endpoint is available at `/health`:
+
+```bash
+curl http://127.0.0.1:8080/health
+# Returns "OK"
+```
+
+This is useful for container health checks and monitoring.
+
+#### With Docker
+
+```bash
+# Run with HTTP transport
+export TRANSPORT_TYPE=streamable-http
+export PORT=8080
+docker run -p 8080:8080 -e GITEA_URL -e GITEA_TOKEN gitea-mcp-server
+```
+
 ### With Docker Compose
 
 ```bash

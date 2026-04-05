@@ -3,6 +3,7 @@
 import logging
 import threading
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,6 +60,88 @@ class Config(BaseSettings):
         alias="ENABLE_LAZY_LOADING",
     )
 
+    # Transport configuration
+    transport_type: str = Field(
+        default="stdio",
+        description="Transport type: stdio or streamable-http",
+        alias="TRANSPORT_TYPE",
+    )
+    host: str = Field(
+        default="127.0.0.1",
+        description="Host to bind HTTP server to (for streamable-http transport)",
+        alias="HOST",
+    )
+    port: int = Field(
+        default=8080,
+        description="Port to bind HTTP server to (for streamable-http transport)",
+        alias="PORT",
+    )
+    http_path: str = Field(
+        default="/mcp",
+        description="Path for MCP endpoint (for streamable-http transport)",
+        alias="HTTP_PATH",
+    )
+    stateless_http: bool = Field(
+        default=False,
+        description="Use stateless HTTP mode (each request creates new session)",
+        alias="STATELESS_HTTP",
+    )
+    json_response: bool | None = Field(
+        default=None,
+        description="Force JSON response format (None = auto, true = JSON only, false = SSE)",
+        alias="JSON_RESPONSE",
+    )
+    cors_origins: list[str] = Field(
+        default_factory=list,
+        alias="CORS_ORIGINS",
+        json_schema_extra={"env_parse_json": False},
+    )
+
+    @field_validator("transport_type")
+    @classmethod
+    def validate_transport_type(cls, v: str) -> str:
+        """Validate transport type."""
+        valid_types = {"stdio", "streamable-http"}
+        normalized = v.lower()
+        if normalized not in valid_types:
+            msg = f"Invalid TRANSPORT_TYPE: {v}. Must be one of {valid_types}"
+            raise ConfigError(msg)
+        return normalized
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """Validate port range."""
+        if not 1 <= v <= 65535:  # noqa: PLR2004
+            msg = f"PORT must be between 1 and 65535, got {v}"
+            raise ConfigError(msg)
+        return v
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def validate_cors_origins(cls, v: Any, info: Any) -> list[str]:
+        """Parse CORS_ORIGINS env var (comma-separated) and fallback to auto-derivation from GITEA_URL."""
+        # If already a list (default_factory or previous processing), use it
+        if isinstance(v, list):
+            # If empty list, attempt auto-derivation
+            if not v:
+                gitea_url = info.data.get("url")
+                if gitea_url:
+                    parsed = urlparse(gitea_url)
+                    origin = f"{parsed.scheme}://{parsed.netloc}"
+                    return [origin]
+            return v
+        # If string, split by comma
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        # For None or other, return empty list (or auto-derive)
+        gitea_url = info.data.get("url")
+        if gitea_url:
+            parsed = urlparse(gitea_url)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            return [origin]
+        return []
+
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
@@ -71,7 +154,7 @@ class Config(BaseSettings):
             raise ConfigError(msg)
         v = v.rstrip("/")
         if v.endswith("/api/v1"):
-            msg = f"GITEA_URL must not include '/api/v1' - provide the base URL only (e.g., 'https://git.example.com')"
+            msg = "GITEA_URL must not include '/api/v1' - provide the base URL only (e.g., 'https://git.example.com')"
             raise ConfigError(msg)
         return v
 

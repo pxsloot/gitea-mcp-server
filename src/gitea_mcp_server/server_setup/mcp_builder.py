@@ -22,22 +22,6 @@ from gitea_mcp_server.server_setup.tool_annotator import customize_component
 logger = logging.getLogger(__name__)
 
 
-def make_customize_fn(label_manager: LabelManager):
-    """Create a component customization function that captures the label_manager.
-
-    Args:
-        label_manager: LabelManager instance for label validation
-
-    Returns:
-        A function with signature (route, component) suitable for OpenAPIProvider's mcp_component_fn.
-    """
-
-    def customize(route: Any, component: Any) -> None:
-        return customize_component(route, component, label_manager)
-
-    return customize
-
-
 def create_openapi_provider(
     openapi_spec: dict[str, Any],
     client,
@@ -53,15 +37,24 @@ def create_openapi_provider(
     Returns:
         Configured OpenAPIProvider
     """
-    customize_fn = make_customize_fn(label_manager)
-    return OpenAPIProvider(
+    # Create provider without component customization function
+    provider = OpenAPIProvider(
         openapi_spec=openapi_spec,
         client=client,
-        mcp_component_fn=customize_fn,
     )
+
+    # Post-process tools: apply customizations to each OpenAPITool
+    for name, tool in list(provider._tools.items()):
+        # Each tool is an OpenAPITool with _route attribute containing the HTTPRoute
+        route = getattr(tool, "_route", None)
+        if route is not None:
+            new_tool = customize_component(route, tool, label_manager)
+            if new_tool is not None:
+                provider._tools[name] = new_tool
+
+    return provider
 
 
 __all__ = [
-    "make_customize_fn",
     "create_openapi_provider",
 ]

@@ -24,7 +24,12 @@ from gitea_mcp_server.constants import (
     TITLE_TRUNCATE_LIMIT,
 )
 from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.validation import augment_schema_with_validation, inject_validation_wrapper
+from gitea_mcp_server.validation import (
+    SINGLE_VALIDATORS,
+    ValidationError,
+    augment_schema_with_validation,
+    validate_pagination,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,105 +235,7 @@ def update_labels_schema(component: OpenAPITool) -> None:
     # If already a list, don't modify (could be already set)
 
 
-def inject_label_validation_wrapper(label_manager: LabelManager, tool: OpenAPITool) -> Any:
-    """Wrap a tool's run method to validate and convert label names to IDs.
-
-    Creates a wrapper that intercepts calls to convert string labels to integer IDs
-    based on the repository's label list. Replaces tool.run with the wrapper.
-
-    Args:
-        label_manager: LabelManager instance for fetching label maps
-        tool: OpenAPITool to wrap (must have labels parameter if wrapping needed)
-
-    Returns:
-        The wrapped async run function (callable)
-    """
-    original_run = tool.run
-
-    async def wrapped_run(arguments: dict[str, Any]) -> Any:
-        # Only process if 'labels' parameter exists and contains strings
-        labels = arguments.get("labels", [])
-        if not labels or all(isinstance(label, int) for label in labels):
-            return await original_run(arguments)
-
-        # Extract owner and repo from arguments (required for label lookup)
-        # These parameter names match the OpenAPI spec
-        owner = arguments.get("owner") or arguments.get("org")
-        repo = arguments.get("repo")
-        if not owner or not repo:
-            # Can't validate without repo context; pass through
-            return await original_run(arguments)
-
-        # Get label map from cache or fetch using label_manager
-        # We need access to client; it's stored in tool._client for OpenAPITool
-        client = getattr(tool, "_client", None)
-        if client is None:
-            # No client available; pass through (shouldn't happen in practice)
-            return await original_run(arguments)
-
-        label_map = await label_manager.get_label_map(owner, repo, client)
-
-        # Convert labels: strings -> IDs, integers pass through
-        converted = []
-        unknown = []
-        for label in labels:
-            if isinstance(label, str):
-                label_lower = label.lower()
-                if label_lower in label_map:
-                    converted.append(label_map[label_lower]["id"])
-                else:
-                    unknown.append(label)
-            else:
-                converted.append(label)
-
-        if unknown:
-            available = sorted(label_map.keys())
-            raise ValueError(
-                f"Unknown label(s): {unknown}. "
-                f"Available labels: {', '.join(available)}. "
-                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
-            )
-
-        # Call original with converted labels
-        modified_args = dict(arguments)
-        modified_args["labels"] = converted
-        return await original_run(modified_args)
-
-    object.__setattr__(tool, "run", wrapped_run)
-    return wrapped_run
-
-
-def maybe_wrap_labels(label_manager: LabelManager, component: OpenAPITool) -> None:
-    """Apply label validation/conversion and description guidance if tool has 'labels' param.
-
-    Args:
-        label_manager: LabelManager instance for label lookups
-        component: OpenAPITool to potentially wrap
-    """
-    # Check if tool has a 'labels' parameter in its schema
-    params = getattr(component, "parameters", None)
-    if not params:
-        return
-
-    props = params.get("properties", {})
-    if "labels" not in props:
-        return
-
-    # Ensure labels is an array type (some tools might have it as something else)
-    labels_schema = props["labels"]
-    if labels_schema.get("type") != "array":
-        return
-
-    # Apply the validation/conversion wrapper
-    inject_label_validation_wrapper(label_manager, component)
-
-    # Enhance description with guidance
-    existing_doc = component.__doc__ or ""
-    if LABEL_GUIDANCE not in existing_doc:
-        object.__setattr__(component, "__doc__", existing_doc + LABEL_GUIDANCE)
-
-
-def customize_component(route: Any, component: Any, label_manager: LabelManager) -> None:
+def customize_component(route: Any, component: Any, label_manager: LabelManager) -> Tool | None:
     """Customize FastMCP components with tool annotations.
 
     This function is called by FastMCP's from_openapi for each generated component.
@@ -338,28 +245,37 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
         route: The OpenAPI route object
         component: The generated FastMCP component (tool, resource, etc.)
         label_manager: LabelManager instance for label validation
+
+    Returns:
+        A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
     """
     # Only customize OpenAPITool instances
     if not isinstance(component, OpenAPITool):
-        return
+        return None
 
-    # Generate and set title annotation
+    # Generate title and category
     title = generate_tool_title(route)
     category = categorize_tool(route.path)
 
-    # Create or update annotations
+    # Prepare tags: original tags + category
+    original_tags = set(component.tags) if component.tags else set()
+    new_tags = original_tags | {category}
+
+    # Prepare annotations: copy existing or create new
     if component.annotations is None:
-        component.annotations = ToolAnnotations()
-    elif isinstance(component.annotations, dict):  # type: ignore
-        # Convert dict to ToolAnnotations while preserving existing fields
-        existing = component.annotations  # type: ignore
-        component.annotations = ToolAnnotations(**existing)
+        new_annotations = ToolAnnotations()
+    elif isinstance(component.annotations, ToolAnnotations):
+        new_annotations = component.annotations.model_copy()
+    elif isinstance(component.annotations, dict):
+        new_annotations = ToolAnnotations(**component.annotations)
+    else:
+        new_annotations = ToolAnnotations()
 
-    # Set title
-    component.annotations.title = title
+    # Set title in annotations
+    new_annotations.title = title
 
-    # Add inferred annotation hints based on HTTP method
-    add_inferred_hints(route, component.annotations)
+    # Add inferred hints based on HTTP method
+    add_inferred_hints(route, new_annotations)
 
     # Register cache invalidation patterns for write tools
     method = getattr(route, "method", None)
@@ -368,29 +284,81 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
         if patterns:
             register_tool_invalidation(component.name, patterns)
 
-    # Add category to tags (used for grouping in MCP clients)
-    if component.tags is None:
-        component.tags = set()  # type: ignore[unreachable]
-    component.tags.add(category)
+    # Prepare description
+    description = component.__doc__ or ""
+    # Add resource note for read-only tools
+    if new_annotations.readOnlyHint and RESOURCE_NOTE not in description:
+        description += RESOURCE_NOTE
 
-    # For read-only tools, add a note encouraging use of resources
-    if component.annotations and component.annotations.readOnlyHint:
-        existing_doc = component.__doc__ or ""
-        # Avoid adding the note twice
-        if RESOURCE_NOTE not in existing_doc:
-            object.__setattr__(component, "__doc__", existing_doc + RESOURCE_NOTE)
+    # Check if tool has labels parameter
+    params = getattr(component, "parameters", None) or {}
+    props = params.get("properties", {})
+    has_labels = "labels" in props and props["labels"].get("type") == "array"
+    if has_labels and LABEL_GUIDANCE.strip() not in description:
+        description += LABEL_GUIDANCE
 
-    # Apply label validation/conversion to tools that have a 'labels' parameter
-    maybe_wrap_labels(label_manager, component)
-
-    # Also update the tool's parameter schema to reflect that string labels are accepted
-    update_labels_schema(component)
-
-    # Add comprehensive input validation: schema augmentation for agent visibility
+    # Mutate the component's parameters to augment schema and update labels schema.
+    # This mutation is acceptable because the component will be wrapped and not used directly.
     augment_schema_with_validation(component)
+    if has_labels:
+        update_labels_schema(component)
 
-    # Inject runtime validation wrapper (runs before label conversion and API calls)
-    inject_validation_wrapper(component)
+    # Build transform function that combines validation and label conversion
+    async def transform_fn(**kwargs) -> Any:
+        # Runtime validation
+        for name, value in kwargs.items():
+            if name in SINGLE_VALIDATORS:
+                try:
+                    SINGLE_VALIDATORS[name](value, field=name)
+                except ValidationError:
+                    raise
+                except Exception as e:
+                    raise ValidationError(f"Validation error for {name}: {e}", field=name) from e
+        if "page" in kwargs or "per_page" in kwargs:
+            validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
+
+        # Label conversion
+        if has_labels:
+            labels = kwargs.get("labels", [])
+            if labels and not all(isinstance(label, int) for label in labels):
+                owner = kwargs.get("owner") or kwargs.get("org")
+                repo = kwargs.get("repo")
+                if owner and repo:
+                    client = getattr(component, "_client", None)
+                    if client is not None:
+                        label_map = await label_manager.get_label_map(owner, repo, client)
+                        converted = []
+                        unknown = []
+                        for label in labels:
+                            if isinstance(label, str):
+                                label_lower = label.lower()
+                                if label_lower in label_map:
+                                    converted.append(label_map[label_lower]["id"])
+                                else:
+                                    unknown.append(label)
+                            else:
+                                converted.append(label)
+                        if unknown:
+                            available = sorted(label_map.keys())
+                            raise ValueError(
+                                f"Unknown label(s): {unknown}. "
+                                f"Available labels: {', '.join(available)}. "
+                                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
+                            )
+                        kwargs = dict(kwargs)
+                        kwargs["labels"] = converted
+        return await component.run(kwargs)
+
+    # Create transformed tool
+    new_tool = Tool.from_tool(
+        component,
+        title=title,
+        tags=new_tags,
+        annotations=new_annotations,
+        description=description,
+        transform_fn=transform_fn,
+    )
+    return new_tool
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
@@ -488,8 +456,6 @@ __all__ = [
     "add_inferred_hints",
     "compute_invalidation_patterns",
     "update_labels_schema",
-    "inject_label_validation_wrapper",
-    "maybe_wrap_labels",
     "customize_component",
     "TolerantBM25SearchTransform",
 ]

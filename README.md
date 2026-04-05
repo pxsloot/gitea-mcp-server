@@ -12,6 +12,58 @@ MCP (Model Context Protocol) server for interacting with Gitea/Forgejo instances
 - **Structured logging** (JSON or text format)
 - **Comprehensive test suite** with unit and integration tests
 - **Containerized development**: Includes docker-compose for local Gitea instance
+- **Tool Customization via Extensions**: Override tool titles, descriptions, and parameter hints using a local `mcp_extensions.yaml` file (no code changes needed)
+
+## MCP Extensions
+
+Sometimes auto-generated tool metadata needs enhancement for clarity. MCP Extensions let you customize tool titles, descriptions, and parameter details **without modifying code**.
+
+### Creating an Extensions File
+
+Create `mcp_extensions.yaml` in your project root:
+
+```yaml
+operation_ids:
+  create_issue:
+    title: "Create Issue with Best Practices"
+    description: |
+      Create a new issue in a Gitea repository.
+      
+      ## Guidelines
+      - Use a clear, descriptive title (max 255 chars)
+      - Provide a detailed body explaining the problem or feature
+      - Assign appropriate labels and milestones
+    parameters:
+      - name: title
+        description: "Issue title (must be capitalized, max 255 characters)"
+        examples:
+          - "Bug: Application crashes on startup"
+          - "Feature: Add dark mode support"
+```
+
+### How It Works
+
+1. On startup, the server loads `mcp_extensions.yaml` (if present)
+2. Extensions are applied by matching tool `operationId` values
+3. Customizations override auto-generated metadata:
+   - `title` → updates tool's summary/title
+   - `description` → replaces tool description
+   - `parameters[].description` → updates parameter descriptions
+   - `parameters[].examples` → adds usage examples
+4. Extensions are removed after application (clean spec)
+
+### Finding Tool Operation IDs
+
+To determine which operationId to use for a tool:
+- Check tool names (they're based on operationId)
+- Or inspect the OpenAPI spec (`swagger.v1.json`)
+
+### Tips
+
+- Extensions are optional; omit any field you don't want to change
+- Use multi-line YAML strings (`|`) for rich descriptions
+- All changes are backward compatible and toggleable via config file presence
+- Invalid extensions are logged but don't crash the server
 
 ## Using MCP Resources
 

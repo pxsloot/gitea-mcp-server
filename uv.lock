@@ -481,6 +481,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "starlette" },
     { name = "tenacity" },
 ]
 
@@ -509,7 +510,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = ">=3.1.0,<4" },
+    { name = "fastmcp", specifier = ">=3.2.0,<4" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
@@ -522,6 +523,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
+    { name = "starlette", specifier = ">=0.46.0" },
     { name = "tenacity", specifier = ">=8.0.0" },
 ]
 provides-extras = ["dev"]

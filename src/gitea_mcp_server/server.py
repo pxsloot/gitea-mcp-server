@@ -5,7 +5,6 @@ import contextlib
 import importlib.resources as pkg_resources
 import logging
 import sys
-from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
@@ -15,7 +14,10 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from fastmcp.server.providers.openapi import OpenAPIProvider
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
@@ -30,9 +32,9 @@ from gitea_mcp_server.constants import (
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.logging import setup_logging
+from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.permissions import filter_tools_by_permissions
 from gitea_mcp_server.server_setup.resource_registry import register_all_resources
-from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.server_setup.tool_annotator import TolerantBM25SearchTransform
 
@@ -136,8 +138,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
 
     # Register resources
     logger.info("Registering MCP resources...")
-    registry = register_all_resources(mcp, gitea_client, openapi_spec)
-    # registry is available for potential future use (e.g., documentation generation)
+    register_all_resources(mcp, gitea_client, openapi_spec)
 
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:
@@ -175,8 +176,36 @@ async def main_async() -> None:
         sys.exit(1)
 
     try:
-        logger.info("Starting MCP server (stdio transport)")
-        await mcp.run_stdio_async()
+        # Add health check endpoint for HTTP transport
+        if config.transport_type != "stdio":
+
+            @mcp.custom_route("/health", methods=["GET"])
+            async def health_check(request: Request) -> PlainTextResponse:
+                return PlainTextResponse("OK")
+
+        logger.info("Starting MCP server with transport: %s", config.transport_type)
+        if config.transport_type == "stdio":
+            await mcp.run_stdio_async()
+        else:  # streamable-http
+            # Configure CORS middleware if origins are specified
+            middleware = None
+            if config.cors_origins:
+                cors_middleware = Middleware(
+                    CORSMiddleware,
+                    allow_origins=config.cors_origins,
+                    allow_methods=["*"],
+                    allow_headers=["*"],
+                )
+                middleware = [cors_middleware]
+
+            await mcp.run_http_async(
+                host=config.host,
+                port=config.port,
+                path=config.http_path,
+                middleware=middleware,
+                stateless_http=config.stateless_http,
+                json_response=config.json_response,
+            )
     except KeyboardInterrupt:
         logger.info("Server shutdown by user")
     except Exception:

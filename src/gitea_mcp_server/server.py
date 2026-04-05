@@ -139,12 +139,6 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     registry = register_all_resources(mcp, gitea_client, openapi_spec)
     # registry is available for potential future use (e.g., documentation generation)
 
-    # Register MCP resource access tools (for agents to read resources)
-    logger.info("Registering MCP resource access tools...")
-    from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
-
-    register_mcp_resource_tools(mcp)
-
     # Apply tool filtering based on user permissions if enabled
     if config.tool_filtering_enabled:
         try:

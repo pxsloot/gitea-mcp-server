@@ -8,6 +8,11 @@ Keep the context clean an focused. Use subagents for research work and edits.
 Delegate these side quests to subagents.  Be concise in the prompt, add enough
 hints so subagents dont' have to do the same discoveries over and over again.
 
+## Important: fastmcp has changed since your training
+
+Always use https://gofastmcp.com/llms.txt for up-to-date documentation.
+Dont use old style fastmcp from memory: it will impact code quality negatively.
+
 ## Core Principle
 
 All changes must follow: **Issue → Branch → PR → Review → Merge**

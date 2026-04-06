@@ -23,7 +23,7 @@ Sometimes auto-generated tool metadata needs enhancement for clarity. MCP Extens
 Create `mcp_extensions.yaml` in your project root:
 
 ```yaml
-operation_ids:
+tool_names:
   create_issue:
     title: "Create Issue with Best Practices"
     description: |
@@ -44,7 +44,7 @@ operation_ids:
 ### How It Works
 
 1. On startup, the server loads `mcp_extensions.yaml` (if present)
-2. Extensions are applied by matching tool `operationId` values
+2. Extensions are applied by matching tool names (snake_case)
 3. Customizations override auto-generated metadata:
    - `title` → updates tool's summary/title
    - `description` → replaces tool description
@@ -52,11 +52,11 @@ operation_ids:
    - `parameters[].examples` → adds usage examples
 4. Extensions are removed after application (clean spec)
 
-### Finding Tool Operation IDs
+### Finding Tool Names
 
-To determine which operationId to use for a tool:
-- Check tool names (they're based on operationId)
-- Or inspect the OpenAPI spec (`swagger.v1.json`)
+To determine which tool name to use:
+- Tool names are snake_case versions of operation IDs (e.g., `create_issue`)
+- List available tools with `search_tools()` or inspect the running server
 
 ### Tips
 

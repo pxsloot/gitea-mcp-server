@@ -4,11 +4,11 @@
 # Place it in the project root directory (same as pyproject.toml).
 #
 # Usage:
-# - Use tool operation IDs to identify which tools to customize
+# - Use tool names (snake_case) to identify which tools to customize
 # - Provide custom title, description, and/or parameter enhancements
 # - Extensions are applied on server startup
 
-operation_ids:
+tool_names:
   # Example: Customize the create_issue tool
   create_issue:
     title: "Create Issue with Best Practices"

@@ -188,9 +188,7 @@ class HTTPTransport:
 
             # Return JSON if content type indicates JSON, otherwise text
             content_type = response.headers.get("Content-Type", "")
-            if "application/json" in content_type:
-                return response.json()
-            return response.text
+            return response.json() if "application/json" in content_type else response.text
         except httpx.HTTPStatusError as e:
             error_msg = f"API request failed: {e!s}"
             try:
@@ -285,10 +283,7 @@ class GiteaAPI:
             GiteaAPIError: On API errors
         """
         # Handle absolute URLs (pass through unchanged)
-        if path.startswith("http://") or path.startswith("https://"):
-            full_url = path
-        else:
-            full_url = f"{self.base_url}{path}"
+        full_url = path if path.startswith(("http://", "https://")) else f"{self.base_url}{path}"
         return await self.transport.request(
             method, full_url, json=json, params=params, headers=headers, **kwargs
         )
@@ -310,12 +305,6 @@ class GiteaClient:
             self._client = self.transport.client
         return self._client
 
-    @retry(
-        retry=retry_if_exception(_should_retry),
-        stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
-        wait=_wait_retry,
-        reraise=True,
-    )
     async def request(
         self,
         method: str,
@@ -347,10 +336,11 @@ class GiteaClient:
             self._client = self.transport.client
 
         # Determine if URL is absolute or relative
-        if url.startswith("http://") or url.startswith("https://"):
-            full_url = url
-        else:
-            full_url = f"{self._config.base_url.rstrip('/')}{url}"
+        full_url = (
+            url
+            if url.startswith(("http://", "https://"))
+            else f"{self._config.base_url.rstrip('/')}{url}"
+        )
 
         return await self.transport.request(
             method, full_url, json=json, params=params, headers=headers, **kwargs

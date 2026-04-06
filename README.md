@@ -96,6 +96,10 @@ for resource in resources:
 version = await mcp_read_resource("gitea://version")
 print(f"Server version: {version}")
 
+# Server metadata (API version, server type, description)
+info = await mcp_read_resource("gitea://server/info")
+print(info)  # Markdown-formatted server info
+
 # Parameterized template (substitute values)
 repo_uri = "gitea://repos/mcp-server/gitea-mcp-server"
 readme = await mcp_read_resource(repo_uri + "/readme")

@@ -33,7 +33,7 @@ def register_all_resources(
 
     # Register resources and record them in the catalog
     register_auto_generated_resources(mcp, gitea_client, openapi_spec, registry)
-    register_custom_resources(mcp, gitea_client, registry)
+    register_custom_resources(mcp, gitea_client, registry, openapi_spec)
     register_mcp_resource_tools(mcp)
 
     return registry

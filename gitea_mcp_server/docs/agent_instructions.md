@@ -53,7 +53,8 @@ Resources provide cached, read-only access. Use them for efficient data retrieva
 - `gitea://repos/{owner}/{repo}/issues` → all issues (Markdown)
 - `gitea://repos/{owner}/{repo}/readme` → README (plain text)
 - `gitea://users/{username}` → user profile (Markdown)
-- `gitea://version` → server version
+- `gitea://version` → server version (plain text)
+- `gitea://server/info` → server metadata: type (Gitea/Forgejo), API version, description (Markdown)
 
 To get your own repos via resource: first get your username (`user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
 

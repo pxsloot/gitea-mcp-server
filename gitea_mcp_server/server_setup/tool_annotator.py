@@ -264,8 +264,30 @@ def _lookup_response_description(
             return f"HTTP error {status_code}"
         responses = operation.get("responses", {})
         response_def = responses.get(str(status_code))
-        if response_def and isinstance(response_def, dict):
-            return response_def.get("description", f"HTTP error {status_code}")
+
+        if not response_def or not isinstance(response_def, dict):
+            return f"HTTP error {status_code}"
+
+        # Direct description takes precedence
+        if "description" in response_def:
+            return response_def["description"]
+
+        # Handle $ref to components/responses
+        if "$ref" in response_def:
+            ref_path = response_def["$ref"]
+            # Expected format: "#/components/responses/ResponseName"
+            parts = ref_path.lstrip("#/").split("/")
+            current = openapi_spec
+            for part in parts:
+                if isinstance(current, dict):
+                    current = current.get(part)
+                else:
+                    current = None
+                if current is None:
+                    break
+            if isinstance(current, dict):
+                return current.get("description", f"HTTP error {status_code}")
+
         return f"HTTP error {status_code}"
     except Exception:
         return f"HTTP error {status_code}"

@@ -107,7 +107,10 @@ SEARCH_ALWAYS_VISIBLE_TOOLS = ["mcp_read_resource", "mcp_list_resources"]
 HTTP_STATUS_NOT_FOUND = 404
 """HTTP 404 Not Found status code."""
 
-HTTP_STATUS_RETRYABLE = {429, 408, 500, 502, 503, 504}
+HTTP_STATUS_RATE_LIMIT = 429
+"""HTTP 429 Too Many Requests status code (rate limiting)."""
+
+HTTP_STATUS_RETRYABLE = {HTTP_STATUS_RATE_LIMIT, 408, 500, 502, 503, 504}
 """HTTP status codes that should trigger a retry."""
 
 

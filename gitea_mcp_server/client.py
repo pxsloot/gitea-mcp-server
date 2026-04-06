@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception,
     stop_after_attempt,
@@ -16,6 +17,7 @@ from gitea_mcp_server.config import Config
 from gitea_mcp_server.constants import (
     HTTP_MAX_CONNECTIONS,
     HTTP_MAX_KEEPALIVE_CONNECTIONS,
+    HTTP_STATUS_RATE_LIMIT,
     HTTP_STATUS_RETRYABLE,
     HTTP_TIMEOUT_CONNECT,
     HTTP_TIMEOUT_POOL,
@@ -32,7 +34,35 @@ from gitea_mcp_server.exceptions import GiteaAPIError
 logger = logging.getLogger(__name__)
 
 
-def _should_retry(exception: Exception) -> bool:
+def _wait_retry(retry_state: RetryCallState) -> float:
+    """Custom wait function that respects Retry-After header when available.
+
+    If the exception has a `retry_after` attribute (set by _should_retry)
+    that is not None, use that specific wait time. Otherwise fall back to
+    exponential backoff.
+
+    Args:
+        retry_state: Tenacity retry state object
+
+    Returns:
+        Wait time in seconds
+    """
+    outcome = retry_state.outcome
+    if outcome is not None:
+        exception = outcome.exception()
+        if exception is not None:
+            retry_after = getattr(exception, "retry_after", None)
+            if retry_after is not None:
+                return float(retry_after)
+    # Fall back to exponential backoff
+    return wait_exponential(
+        multiplier=RETRY_WAIT_MULTIPLIER,
+        min=RETRY_WAIT_MIN,
+        max=RETRY_WAIT_MAX,
+    )(retry_state)
+
+
+def _should_retry(exception: BaseException) -> bool:
     """Determine if an exception should trigger a retry.
 
     Retry on:
@@ -42,6 +72,23 @@ def _should_retry(exception: Exception) -> bool:
     """
     # Check if exception is our custom GiteaAPIError
     if isinstance(exception, GiteaAPIError):
+        if exception.status_code == HTTP_STATUS_RATE_LIMIT:
+            # Check for Retry-After header and store it for wait function
+            retry_after = exception.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    exception.retry_after = int(retry_after)
+                    logger.warning(
+                        "Rate limited (429), Retry-After: %s seconds",
+                        retry_after,
+                    )
+                except (ValueError, TypeError):
+                    # Invalid Retry-After value, ignore and use exponential
+                    logger.warning(
+                        "Rate limited (429) with invalid Retry-After header: %s",
+                        retry_after,
+                    )
+            return True
         if exception.status_code in HTTP_STATUS_RETRYABLE:
             return True
         # Retry if caused by httpx.HTTPError but not HTTPStatusError
@@ -104,14 +151,10 @@ class HTTPTransport:
             )
         return self._client
 
-    @retry(  # type: ignore[untyped-decorator]
+    @retry(
         retry=retry_if_exception(_should_retry),
         stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
-        wait=wait_exponential(
-            multiplier=RETRY_WAIT_MULTIPLIER,
-            min=RETRY_WAIT_MIN,
-            max=RETRY_WAIT_MAX,
-        ),
+        wait=_wait_retry,
         reraise=True,
     )
     async def request(
@@ -173,7 +216,11 @@ class HTTPTransport:
                     ),
                 },
             )
-            raise GiteaAPIError(error_msg, status_code=e.response.status_code) from e
+            # Capture response headers for rate limiting info
+            headers = dict(e.response.headers)
+            raise GiteaAPIError(
+                error_msg, status_code=e.response.status_code, headers=headers
+            ) from e
         except httpx.RequestError as e:
             error_msg = f"Request failed for {method} {url}: {e!s}"
             logger.exception(
@@ -263,14 +310,10 @@ class GiteaClient:
             self._client = self.transport.client
         return self._client
 
-    @retry(  # type: ignore[untyped-decorator]
+    @retry(
         retry=retry_if_exception(_should_retry),
         stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
-        wait=wait_exponential(
-            multiplier=RETRY_WAIT_MULTIPLIER,
-            min=RETRY_WAIT_MIN,
-            max=RETRY_WAIT_MAX,
-        ),
+        wait=_wait_retry,
         reraise=True,
     )
     async def request(

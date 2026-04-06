@@ -12,9 +12,18 @@ class ConfigError(GiteaMCPError):
 class GiteaAPIError(GiteaMCPError):
     """Errors when communicating with Gitea API."""
 
-    def __init__(self, message: str, status_code: int | None = None, response: str | None = None):
+    retry_after: int | None = None
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        response: str | None = None,
+        headers: dict[str, str] | None = None,
+    ):
         self.status_code = status_code
         self.response = response
+        self.headers = headers or {}
         super().__init__(message)
 
 

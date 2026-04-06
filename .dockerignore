@@ -1,0 +1,60 @@
+# Git metadata
+.git
+.gitignore
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# IDE and editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Testing artifacts
+.pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
+
+# Linting and type checking caches
+.mypy_cache/
+.ruff_cache/
+
+# Logs and local configs
+*.log
+server.log
+.env
+.env.dev.local
+!.env.example
+
+# Large API specs (not needed at runtime)
+swagger.v1.json
+swagger.v3.json
+
+# Documentation build outputs
+docs/_build/
+site/
+
+# Misc
+.mise.toml
+check_annotations.py
+show_annotations.py

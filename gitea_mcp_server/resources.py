@@ -639,6 +639,19 @@ async def get_current_user(gitea_client: GiteaClient) -> ResourceResult:
         raise
 
 
+async def get_version(gitea_client: GiteaClient) -> ResourceResult:
+    """Get server application version."""
+    try:
+        data = await gitea_client.request("GET", "/version")
+        if isinstance(data, str):
+            return data
+        # Return version string as plain text
+        return str(data.get("version", "Unknown"))
+    except Exception as e:
+        _handle_not_found(e, "version", "server", "Version information not available.")
+        raise
+
+
 async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get organization profile information."""
     try:
@@ -673,6 +686,7 @@ def register_custom_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     registry: Any,  # ResourceRegistry - using Any to avoid circular import
+    openapi_spec: dict[str, Any] | None = None,
 ) -> None:
     """Register custom-formatted and custom resources.
 
@@ -698,6 +712,7 @@ def register_custom_resources(
         mcp: FastMCP server instance
         gitea_client: GiteaClient for API calls
         registry: ResourceRegistry to record registered resources
+        openapi_spec: Optional OpenAPI spec dictionary for accessing server metadata
     """
 
     def make_resource(
@@ -748,6 +763,33 @@ def register_custom_resources(
         # Override signature to have zero parameters (avoid inheriting original's gitea_client)
         wrapper_no_params.__signature__ = inspect.Signature(return_annotation=str)  # type: ignore[attr-defined]
         return wrapper_no_params
+
+    # Define server info resource using OpenAPI spec metadata
+    if openapi_spec is None:
+        # If no spec provided, we cannot create server info; skip registration later
+        get_server_info = None
+    else:
+
+        async def get_server_info(gitea_client: GiteaClient) -> ResourceResult:
+            """Get server metadata from OpenAPI info block."""
+            info = openapi_spec.get("info", {})
+            title = info.get("title", "Unknown")
+            version = info.get("version", "Unknown")
+            description = info.get("description", "")
+            # Format as Markdown
+            lines = [
+                "# Server Information",
+                "",
+                f"**Server Type**: {title}",
+                f"**API Version**: {version}",
+                "",
+            ]
+            if description:
+                lines.append("## Description")
+                lines.append("")
+                lines.append(description)
+                lines.append("")
+            return _build_markdown(lines)
 
     # Custom-formatted resources with better UX
     custom_resources: list[
@@ -837,7 +879,27 @@ def register_custom_resources(
             {"wrapper", "organization"},
             {"cache_ttl": CACHE_TTL_USERS},
         ),
+        # Server version (application version from /version endpoint)
+        (
+            "gitea://version",
+            get_version,
+            "text/plain",
+            {"wrapper", "server"},
+            None,
+        ),
     ]
+
+    # Add server info resource if OpenAPI spec is available
+    if get_server_info is not None:
+        custom_resources.append(
+            (
+                "gitea://server/info",
+                get_server_info,
+                "text/markdown",
+                {"wrapper", "server"},
+                None,
+            )
+        )
 
     for uri_template, func, mime_type, tags, meta in custom_resources:
         kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}

@@ -441,6 +441,7 @@ See `src/gitea_mcp_server/resources.py` for the complete list.
 | `gitea://users/{username}` | text/markdown | wrapper, user | Formatted user profile |
 | `gitea://orgs/{orgname}` | text/markdown | wrapper, organization | Formatted org profile |
 | `gitea://repos/{owner}/{repo}/stats/contributors` | application/json | raw, stats | Contributor statistics (JSON) |
-| `gitea://version` | text/plain | raw, version | Server version |
+| `gitea://version` | text/plain | wrapper, server | Server application version |
+| `gitea://server/info` | text/markdown | wrapper, server | Server metadata (type, API version, description) |
 
 *Note: This table shows common resources; always check `mcp_list_resources()` for the complete list.*

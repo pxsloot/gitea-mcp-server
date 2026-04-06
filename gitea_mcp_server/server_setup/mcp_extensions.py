@@ -85,7 +85,7 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
                 "Loaded MCP extensions",
                 extra={
                     "path": str(config_path),
-                    "operations": len(extensions.get("operation_ids", {})),
+                    "tools": len(extensions.get("tool_names", {})),
                 },
             )
             return extensions
@@ -109,14 +109,14 @@ def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any
         openapi_spec: The OpenAPI specification dictionary (will be modified in-place)
         extensions: Extensions configuration dictionary from load_mcp_extensions()
     """
-    operation_ids = extensions.get("operation_ids", {})
-    if not operation_ids:
+    tool_names = extensions.get("tool_names", {})
+    if not tool_names:
         logger.debug("No operation ID extensions to apply")
         return
 
     logger.info(
         "Applying MCP extensions",
-        extra={"operations_count": len(operation_ids)},
+        extra={"tools_count": len(tool_names)},
     )
 
     # Walk through all paths and methods
@@ -135,10 +135,10 @@ def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any
             if not op_id:
                 continue
 
-            if op_id not in operation_ids:
+            if op_id not in tool_names:
                 continue
 
-            ext = operation_ids[op_id]
+            ext = tool_names[op_id]
             logger.debug(
                 "Applying extensions for operation",
                 extra={"operation_id": op_id, "path": path, "method": method},

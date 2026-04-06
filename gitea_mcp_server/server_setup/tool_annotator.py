@@ -286,7 +286,7 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
             register_tool_invalidation(component.name, patterns)
 
     # Prepare description
-    description = component.__doc__ or ""
+    description = getattr(component, "description", "") or ""
     # Add resource note for read-only tools
     if new_annotations.readOnlyHint and RESOURCE_NOTE not in description:
         description += RESOURCE_NOTE

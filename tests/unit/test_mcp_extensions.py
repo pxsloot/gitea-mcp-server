@@ -25,7 +25,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {
                     "title": "Custom Create Issue Title",
                     "description": "Custom description",
@@ -59,7 +59,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {
                     "parameters": [
                         {
@@ -94,7 +94,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {
                     "parameters": [
                         {"name": "title", "description": "Custom title desc"},
@@ -110,7 +110,7 @@ class TestApplyMcpExtensions:
         assert params[0]["description"] == "Custom title desc"
         assert params[1]["description"] == "Custom body desc"
 
-    def test_skips_unknown_operation_ids(self):
+    def test_skips_unknown_tool_names(self):
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -122,7 +122,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "unknown_operation": {
                     "title": "Should not apply",
                 }
@@ -146,7 +146,7 @@ class TestApplyMcpExtensions:
                 }
             }
         }
-        extensions = {"operation_ids": {"create_issue": {"title": "Custom"}}}
+        extensions = {"tool_names": {"create_issue": {"title": "Custom"}}}
 
         apply_mcp_extensions(spec, extensions)
 
@@ -163,7 +163,7 @@ class TestApplyMcpExtensions:
                 }
             }
         }
-        extensions = {"operation_ids": {"some_op": {"title": "Custom"}}}
+        extensions = {"tool_names": {"some_op": {"title": "Custom"}}}
 
         # Should not crash, just skip
         apply_mcp_extensions(spec, extensions)
@@ -183,7 +183,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {
                     "title": "New title",
                     # description not provided, should not change
@@ -208,7 +208,7 @@ class TestApplyMcpExtensions:
                 }
             }
         }
-        extensions = {"operation_ids": {}}
+        extensions = {"tool_names": {}}
 
         apply_mcp_extensions(spec, extensions)
 
@@ -233,7 +233,7 @@ class TestApplyMcpExtensions:
             }
         }
         extensions = {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {"title": "Custom create"},
                 "edit_issue": {"title": "Custom edit"},
             }
@@ -252,7 +252,7 @@ class TestLoadMcpExtensions:
 
     def test_loads_yaml_file(self):
         yaml_content = """
-operation_ids:
+tool_names:
   create_issue:
     title: "Custom Title"
     description: "Custom description"
@@ -262,7 +262,7 @@ operation_ids:
                 result = load_mcp_extensions()
 
         assert result == {
-            "operation_ids": {
+            "tool_names": {
                 "create_issue": {"title": "Custom Title", "description": "Custom description"}
             }
         }

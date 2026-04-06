@@ -5,6 +5,7 @@ from a local YAML configuration file to the OpenAPI spec before tool generation.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +17,38 @@ logger = logging.getLogger(__name__)
 EXTENSIONS_FILE = "mcp_extensions.yaml"
 
 
+def _find_project_root() -> Path:
+    """Find the project root directory (containing pyproject.toml).
+
+    Starts from this file's location and walks up the directory tree.
+
+    Returns:
+        Path to project root directory
+
+    Raises:
+        RuntimeError: If project root cannot be determined
+    """
+    # Start from this file's directory and walk up
+    current = Path(__file__).resolve()
+    for parent in [current] + list(current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+
+    raise RuntimeError(
+        "Could not find project root (directory containing pyproject.toml). "
+        "Set MCP_EXTENSIONS_PATH environment variable to override."
+    )
+
+
 def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
     """Load MCP extensions configuration from YAML file.
 
     Args:
         config_path: Optional explicit path to extensions file.
-                    If None, looks for mcp_extensions.yaml in current working directory.
+                    If None, the config file is located using this order:
+                    1. MCP_EXTENSIONS_PATH environment variable (if set)
+                    2. mcp_extensions.yaml in project root (directory with pyproject.toml)
+                    3. mcp_extensions.yaml in current working directory (fallback)
 
     Returns:
         Dictionary with extension configuration, or empty dict if no file exists.
@@ -31,7 +58,18 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
         OSError: If the file exists but cannot be read
     """
     if config_path is None:
-        config_path = Path.cwd() / EXTENSIONS_FILE
+        # 1. Check environment variable
+        env_path = os.getenv("MCP_EXTENSIONS_PATH")
+        if env_path:
+            config_path = Path(env_path)
+        else:
+            # 2. Try project root (where pyproject.toml lives)
+            try:
+                project_root = _find_project_root()
+                config_path = project_root / EXTENSIONS_FILE
+            except RuntimeError:
+                # 3. Fallback to cwd
+                config_path = Path.cwd() / EXTENSIONS_FILE
 
     if not config_path.exists():
         logger.debug("MCP extensions file not found: %s", config_path)

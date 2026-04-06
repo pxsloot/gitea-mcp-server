@@ -78,3 +78,17 @@ tool_names:
       To see available labels:
       - Call `list_labels(owner, repo)`
       - Read `gitea://repos/{owner}/{repo}/labels`
+
+  repo_update_pull_request:
+    description: |
+      Merge PR's baseBranch into headBranch
+      Update a pull request's head branch by merging or rebasing it onto the base branch.
+
+      **This tool only updates the PR's branch** — it cannot modify PR metadata.
+
+      **Don't use this** for editing labels, assignees, title, body, milestone, or state.
+      Use `repo_edit_pull_request` instead for general PR modifications.
+
+      Parameters:
+      - `style`: "merge" (create merge commit) or "rebase" (rebase commits)
+

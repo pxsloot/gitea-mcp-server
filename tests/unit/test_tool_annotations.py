@@ -1,7 +1,7 @@
 """Unit tests for tool annotation functionality."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
@@ -614,3 +614,104 @@ class TestErrorHandlingEnhancement:
             await new_tool.run({})
 
         assert str(exc_info.value) == "Some unrelated validation error"
+
+    @pytest.mark.asyncio
+    async def test_formats_network_error_cleanly(self):
+        """httpx.NetworkError (without response) should be formatted as a network issue."""
+        import httpx
+        from unittest.mock import AsyncMock
+
+        openapi_spec = {"paths": {}}
+
+        route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        # Simulate a network error (no response attribute)
+        network_error = httpx.NetworkError("Connection failed")
+        tool.run = AsyncMock(side_effect=network_error)
+
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run({})
+
+        error_msg = str(exc_info.value)
+        assert "Network error" in error_msg or "Could not connect" in error_msg
+        assert "Connection failed" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_formats_timeout_error_cleanly(self):
+        """httpx.TimeoutException should be formatted as a timeout issue."""
+        import httpx
+        from unittest.mock import AsyncMock
+
+        openapi_spec = {"paths": {}}
+
+        route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        timeout_error = httpx.TimeoutException("Request timed out")
+        tool.run = AsyncMock(side_effect=timeout_error)
+
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run({})
+
+        error_msg = str(exc_info.value)
+        assert "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_formats_unexpected_exception_cleanly(self):
+        """Unexpected exceptions (RuntimeError, etc.) should be caught and formatted."""
+        from unittest.mock import AsyncMock
+
+        openapi_spec = {"paths": {}}
+
+        route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        # Simulate an unexpected error
+        unexpected_error = RuntimeError("Something unexpected happened")
+        tool.run = AsyncMock(side_effect=unexpected_error)
+
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run({})
+
+        error_msg = str(exc_info.value)
+        # Should be user-friendly, not expose raw exception type by default
+        assert "unexpected" in error_msg.lower()
+        # Should not show full Python traceback to user
+        assert "RuntimeError" not in error_msg

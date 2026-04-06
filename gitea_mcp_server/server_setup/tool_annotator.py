@@ -439,6 +439,16 @@ def customize_component(
                 raise ValueError(formatted) from e
             # Not an HTTP error or no spec provided - re-raise unchanged
             raise
+        except httpx.HTTPError as e:
+            # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
+            formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {str(e)}"
+            raise ValueError(formatted) from e
+        except Exception as e:
+            # Unexpected errors - log full traceback for debugging, but give user a clean message
+            logger.error("Unexpected error during tool execution", exc_info=True)
+            raise ValueError(
+                "An unexpected error occurred. Please check the server logs for details."
+            ) from e
 
     # Create transformed tool
     new_tool = Tool.from_tool(

@@ -1,5 +1,6 @@
 """Unit tests for tool annotation functionality."""
 
+import pytest
 from unittest.mock import MagicMock
 
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -488,3 +489,128 @@ class TestCustomizeComponent:
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() not in new_tool.description
+
+
+class TestErrorHandlingEnhancement:
+    """Tests for enhanced error handling using OpenAPI response schemas."""
+
+    @pytest.mark.asyncio
+    async def test_formats_404_error_using_openapi_spec(self):
+        """When component.run raises a 404, transform_fn should format a clean message using the OpenAPI spec's response description."""
+        import httpx
+        from unittest.mock import AsyncMock
+
+        # Minimal OpenAPI spec with a 404 response definition for the endpoint
+        openapi_spec = {
+            "paths": {
+                "/repos/{owner}/{repo}/pulls": {
+                    "post": {
+                        "responses": {
+                            "404": {
+                                "description": "APINotFound: The specified repository or resource does not exist."
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        # Create a mock route for the PR creation endpoint
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/pulls",
+            method="POST",
+            summary="Create a pull request",
+            operation_id="repo_create_pull_request",
+        )
+
+        # Create a mock OpenAPITool with necessary attributes
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_create_pull_request"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "head": {"type": "string"},
+                "base": {"type": "string"},
+            }
+        }
+        tool.output_schema = None
+        tool.description = "Create a pull request"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        # Simulate HTTP 404 error with a realistic response body
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.reason_phrase = "Not Found"
+        error_body = {
+            "message": "The target couldn't be found.",
+            "errors": [
+                "could not find 'feature/74-retry-after-header' to be a commit, branch or tag in the head repository mcp-server/gitea-mcp-server"
+            ],
+            "url": "https://git.home.lan/api/v1/repos/mcp-server/gitea-mcp-server/pulls",
+        }
+        mock_response.json.return_value = error_body
+
+        http_error = httpx.HTTPStatusError("404 Not Found", request=None, response=mock_response)
+        value_error = ValueError(f"HTTP error 404: {mock_response.reason_phrase} - {error_body}")
+        value_error.__cause__ = http_error
+
+        tool.run = AsyncMock(side_effect=value_error)
+
+        # Call customize_component with openapi_spec
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        # Call the transformed tool with necessary arguments
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run(
+                {
+                    "owner": "mcp-server",
+                    "repo": "gitea-mcp-server",
+                    "head": "feature/test",
+                    "base": "main",
+                }
+            )
+
+        error_msg = str(exc_info.value)
+        # Should include description from OpenAPI spec
+        assert "APINotFound" in error_msg
+        # Should include message from response body
+        assert "The target couldn't be found." in error_msg
+        # Should not contain raw "HTTP error 404" format
+        assert "HTTP error 404" not in error_msg
+
+    @pytest.mark.asyncio
+    async def test_non_http_errors_unchanged(self):
+        """Non-HTTP ValueErrors should be re-raised without modification."""
+        from unittest.mock import AsyncMock
+
+        openapi_spec = {"paths": {}}
+
+        route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        # Raise a ValueError that is NOT from an HTTPStatusError
+        value_error = ValueError("Some unrelated validation error")
+        tool.run = AsyncMock(side_effect=value_error)
+
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run({})
+
+        assert str(exc_info.value) == "Some unrelated validation error"

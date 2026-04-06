@@ -41,7 +41,7 @@ def create_openapi_provider(
         # Each tool is an OpenAPITool with _route attribute containing the HTTPRoute
         route = getattr(tool, "_route", None)
         if route is not None:
-            new_tool = customize_component(route, tool, label_manager)
+            new_tool = customize_component(route, tool, label_manager, openapi_spec)
             if new_tool is not None:
                 provider._tools[name] = new_tool
 

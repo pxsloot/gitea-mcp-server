@@ -328,11 +328,40 @@ docker-compose up -d gitea
 uv run gitea-mcp
 ```
 
+### With Docker
+
+Build a minimal production image:
+
+```bash
+# Build the image (uses BuildKit caching)
+docker build --progress=plain -t gitea-mcp-server:latest .
+
+# Run with environment variables (stdio mode, no port exposed)
+docker run --rm -e GITEA_URL=https://git.example.com \
+           -e GITEA_TOKEN=your_token_here \
+           -e GITEA_VERIFY_SSL=true \
+           gitea-mcp-server:latest
+
+# Or run as HTTP server (exposes port 8080)
+docker run -d -p 8080:8080 --name gitea-mcp \
+           -e GITEA_URL=https://git.example.com \
+           -e GITEA_TOKEN=your_token_here \
+           -e GITEA_VERIFY_SSL=true \
+           -e TRANSPORT_TYPE=http \
+           -e HTTP_HOST=0.0.0.0 \
+           -e HTTP_PORT=8080 \
+           gitea-mcp-server:latest
+```
+
+**Note:** The Dockerfile exposes port 8080, which is the default HTTP port. You can change it with `HTTP_PORT` environment variable and map accordingly: `-p 3000:3000 -e HTTP_PORT=3000`.
+
+Image size: ~246MB (builder stage uses cache for faster rebuilds).
+
 ## Project Structure
 
 ```
 gitea-mcp-server/
-├── src/gitea_mcp_server/
+├── gitea_mcp_server/
 │   ├── __init__.py
 │   ├── config.py          # Configuration management
 │   ├── client.py          # HTTP client with retry logic
@@ -354,8 +383,10 @@ gitea-mcp-server/
 ├── docs/
 │   └── THOUGHTS.md        # Architecture and design notes
 ├── .env.example
+├── Dockerfile             # Multi-stage production build
+├── .dockerignore          # Excludes dev/test artifacts from image
 ├── pyproject.toml
-├── docker-compose.yml
+├── docker-compose.gitea.yml
 ├── run.sh                 # Development helper script
 ├── swagger.v1.json        # Gitea API spec (downloaded from /swagger.v1.json)
 └── README.md
@@ -383,13 +414,13 @@ uv run pytest --cov=gitea_mcp_server
 
 ```bash
 # Ruff linting
-uv run ruff check src/
+uv run ruff check gitea_mcp_server/
 
 # Auto-fix
-uv run ruff check --fix src/
+uv run ruff check --fix gitea_mcp_server/
 
 # MyPy type checking
-uv run mypy src/
+uv run mypy gitea_mcp_server/
 ```
 
 ### Updating the Swagger Spec
@@ -431,7 +462,7 @@ This hybrid approach ensures:
 - Optimized, readable output for common use cases via custom resources
 - Easy customization and extension beyond the OpenAPI spec
 
-See `src/gitea_mcp_server/resources.py` for implementation details.
+See `gitea_mcp_server/resources.py` for implementation details.
 
 ### HTTP Client
 

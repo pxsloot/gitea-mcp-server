@@ -8,6 +8,7 @@ from typing import Any
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +99,21 @@ async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
 
     try:
         openapi_spec = convert_swagger_to_openapi_v3(spec)
-        return openapi_spec
     except Exception as e:
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
+
+    try:
+        extensions = load_mcp_extensions()
+        if extensions:
+            apply_mcp_extensions(openapi_spec, extensions)
+    except Exception as e:
+        logger.warning(
+            "Failed to apply MCP extensions, proceeding without customizations",
+            extra={"error": str(e)},
+        )
+
+    return openapi_spec
 
 
 __all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

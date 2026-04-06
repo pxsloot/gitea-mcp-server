@@ -1,0 +1,35 @@
+# MCP Extensions Configuration
+#
+# This file allows customizing auto-generated tools from the OpenAPI spec.
+# Place it in the project root directory (same as pyproject.toml).
+#
+# Usage:
+# - Use tool operation IDs to identify which tools to customize
+# - Provide custom title, description, and/or parameter enhancements
+# - Extensions are applied on server startup
+
+operation_ids:
+  # Example: Customize the create_issue tool
+  create_issue:
+    title: "Create Issue with Best Practices"
+    description: |
+      Create a new issue in a Gitea repository.
+      
+      ## Guidelines
+      - Use a clear, descriptive title (max 255 chars)
+      - Provide a detailed body explaining the problem or feature
+      - Assign appropriate labels and milestones
+    parameters:
+      - name: title
+        description: "Issue title (must be capitalized, max 255 characters)"
+        examples:
+          - "Bug: Application crashes on startup"
+          - "Feature: Add dark mode support"
+          - "Docs: Update installation guide"
+      - name: labels
+        description: "Labels to apply (use label names, not IDs; IDs will be auto-converted)"
+
+  # Example: Customize the edit_issue tool
+  edit_issue:
+    title: "Edit Issue Details"
+    description: "Update an existing issue's title, body, labels, or other metadata."

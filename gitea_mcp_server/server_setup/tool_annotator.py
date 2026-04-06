@@ -9,6 +9,8 @@ import logging
 from collections.abc import Sequence
 from typing import Annotated, Any
 
+import httpx
+
 from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
@@ -236,18 +238,81 @@ def update_labels_schema(component: OpenAPITool) -> None:
     # If already a list, don't modify (could be already set)
 
 
-def customize_component(route: Any, component: Any, label_manager: LabelManager) -> Tool | None:
+def _lookup_response_description(
+    openapi_spec: dict[str, Any],
+    route: Any,
+    status_code: int,
+) -> str:
+    """Look up the response description for a given route and HTTP status code.
+
+    Args:
+        openapi_spec: The OpenAPI specification dictionary
+        route: The OpenAPI route object (with path and method attributes)
+        status_code: HTTP status code (e.g., 404, 422)
+
+    Returns:
+        The response description string, or a generic fallback if not found.
+    """
+    try:
+        paths = openapi_spec.get("paths", {})
+        path_item = paths.get(route.path)
+        if not path_item:
+            return f"HTTP error {status_code}"
+        method = getattr(route, "method", "").lower()
+        operation = path_item.get(method) if method else None
+        if not operation:
+            return f"HTTP error {status_code}"
+        responses = operation.get("responses", {})
+        response_def = responses.get(str(status_code))
+
+        if not response_def or not isinstance(response_def, dict):
+            return f"HTTP error {status_code}"
+
+        # Direct description takes precedence
+        if "description" in response_def:
+            return response_def["description"]
+
+        # Handle $ref to components/responses
+        if "$ref" in response_def:
+            ref_path = response_def["$ref"]
+            # Expected format: "#/components/responses/ResponseName"
+            parts = ref_path.lstrip("#/").split("/")
+            current = openapi_spec
+            for part in parts:
+                if isinstance(current, dict):
+                    current = current.get(part)
+                else:
+                    current = None
+                if current is None:
+                    break
+            if isinstance(current, dict):
+                return current.get("description", f"HTTP error {status_code}")
+
+        return f"HTTP error {status_code}"
+    except Exception:
+        return f"HTTP error {status_code}"
+
+
+def customize_component(
+    route: Any,
+    component: Any,
+    label_manager: LabelManager,
+    openapi_spec: dict[str, Any] | None = None,
+) -> Tool | None:
     """Customize FastMCP components with tool annotations.
 
     This function is called by FastMCP's from_openapi for each generated component.
     It adds title, category, hints, invalidation patterns, and label handling.
 
-    Args:
-        route: The OpenAPI route object
-        component: The generated FastMCP component (tool, resource, etc.)
-        label_manager: LabelManager instance for label validation
+     Args:
+         route: The OpenAPI route object
+         component: The generated FastMCP component (tool, resource, etc.)
+         label_manager: LabelManager instance for label validation
+         openapi_spec: Optional OpenAPI spec dictionary for enhanced error handling.
+                      If provided, HTTP errors from component.run will be formatted
+                      using the spec's response descriptions.
 
-    Returns:
+     Returns:
         A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
     """
     # Only customize OpenAPITool instances
@@ -348,7 +413,32 @@ def customize_component(route: Any, component: Any, label_manager: LabelManager)
                             )
                         kwargs = dict(kwargs)
                         kwargs["labels"] = converted
-        return await component.run(kwargs)
+        # Enhanced error handling: format HTTP errors using OpenAPI response descriptions
+        try:
+            return await component.run(kwargs)
+        except ValueError as e:
+            # Check if this is an HTTP error from FastMCP's OpenAPITool
+            cause = e.__cause__
+            if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
+                status_code = cause.response.status_code
+                # Look up response description from OpenAPI spec
+                description = _lookup_response_description(openapi_spec, route, status_code)
+                # Extract message from response body if available
+                try:
+                    error_body = cause.response.json()
+                    message = error_body.get("message", "")
+                    if message:
+                        formatted = f"{description}\n\nDetails: {message}"
+                    else:
+                        formatted = description
+                except Exception:
+                    # Fallback to text response
+                    formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
+
+                # Raise a new ValueError with formatted message, preserving the cause chain
+                raise ValueError(formatted) from e
+            # Not an HTTP error or no spec provided - re-raise unchanged
+            raise
 
     # Create transformed tool
     new_tool = Tool.from_tool(

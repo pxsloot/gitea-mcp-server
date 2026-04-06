@@ -18,35 +18,63 @@ tool_names:
       This endpoint works for both - use the 'index' parameter with either
       an issue number or a PR number.
 
-  # Add guidance for label parameters: they accept both strings (names) and integers (IDs)
+  # Labels: provide existing names or IDs; warn about using existing labels only
   issue_create_issue:
     description: |
       Create a new issue in a Gitea repository.
       
-      **Labels**: You may provide existing label names (strings) or IDs (integers).
-      Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels`
-      to see available labels. Unknown label names will produce an error.
+      **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
+      
+      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+      Using a non-existent label name will cause an API error.
+      
+      **Best practice**: Use integer label IDs for reliability.
+      
+      To see available labels:
+      - Call `list_labels(owner, repo)`
+      - Read `gitea://repos/{owner}/{repo}/labels`
 
   issue_add_label:
     description: |
       Add labels to an issue or pull request.
       
-      **Labels**: You may provide existing label names (strings) or IDs (integers).
-      Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels`
-      to see available labels. Unknown label names will produce an error.
+      **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
+      
+      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+      Using a non-existent label name will cause an API error.
+      
+      **Best practice**: Use integer label IDs for reliability.
+      
+      To see available labels:
+      - Call `list_labels(owner, repo)`
+      - Read `gitea://repos/{owner}/{repo}/labels`
 
   issue_replace_labels:
     description: |
       Replace all labels on an issue or pull request.
       
-      **Labels**: You may provide existing label names (strings) or IDs (integers).
-      Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels`
-      to see available labels. Unknown label names will produce an error.
+      **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
+      
+      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+      Using a non-existent label name will cause an API error.
+      
+      **Best practice**: Use integer label IDs for reliability.
+      
+      To see available labels:
+      - Call `list_labels(owner, repo)`
+      - Read `gitea://repos/{owner}/{repo}/labels`
 
   repo_create_pull_request:
     description: |
       Create a new pull request from a branch.
       
-      **Labels**: You may provide existing label names (strings) or IDs (integers).
-      Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels`
-      to see available labels. Unknown label names will produce an error.
+      **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
+      
+      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+      Using a non-existent label name will cause an API error.
+      
+      **Best practice**: Use integer label IDs for reliability.
+      
+      To see available labels:
+      - Call `list_labels(owner, repo)`
+      - Read `gitea://repos/{owner}/{repo}/labels`

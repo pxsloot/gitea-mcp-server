@@ -68,7 +68,7 @@ async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str
                 "paths_count": len(remote_spec.get("paths", {})),
             },
         )
-        return remote_spec
+        return remote_spec  # type: ignore[no-any-return]
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
         raise SpecError(msg) from e

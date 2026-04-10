@@ -164,7 +164,7 @@ class Config(BaseSettings):
             # Split by comma and strip whitespace
             origins = [origin.strip() for origin in v.split(",") if origin.strip()]
             return origins if origins else None
-        return None
+        return None  # type: ignore[unreachable]
 
     @property
     def base_url(self) -> str:

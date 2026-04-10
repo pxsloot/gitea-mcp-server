@@ -263,7 +263,7 @@ class SecuritySchemeConverter:
             sec_type = details.get("type", "apiKey").lower()
 
             if sec_type == "basic":
-                scheme = {"type": "http", "scheme": "basic"}
+                scheme: dict[str, Any] = {"type": "http", "scheme": "basic"}
             elif sec_type == "oauth2":
                 scheme = {"type": "oauth2"}
                 if "flow" in details:
@@ -422,7 +422,7 @@ class SchemaWalker:
         while stack:
             current_schema, parent, key = stack.pop()
             if not isinstance(current_schema, dict):
-                continue
+                continue  # type: ignore[unreachable]
 
             # Apply callback to current schema
             self.callback(current_schema, parent, key)
@@ -471,11 +471,15 @@ class OptionalPropertyTransformer:
         if parent is None or key is None:
             return
         if not isinstance(parent, dict):
-            return
+            return  # type: ignore[unreachable]
 
         # Determine if this schema is a property-like schema
         is_property = False
-        if ("properties" in parent and key in parent["properties"]) or ("patternProperties" in parent and key in parent["patternProperties"]) or (key == "additionalProperties" and "additionalProperties" in parent):
+        if (
+            ("properties" in parent and key in parent["properties"])
+            or ("patternProperties" in parent and key in parent["patternProperties"])
+            or (key == "additionalProperties" and "additionalProperties" in parent)
+        ):
             is_property = True
 
         if not is_property:

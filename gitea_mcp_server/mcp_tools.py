@@ -38,11 +38,14 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         templates = await ctx.fastmcp.list_resource_templates()
 
         # Process concrete resources
+        # FastMCP auto-populates name from function name when not explicitly set:
+        # @mcp.resource("uri://foo")  -> name="foo" (function name)
+        # @mcp.resource("uri://bar", name="custom") -> name="custom"
         for resource in resources:
             resources_list.append(
                 {
                     "uri": str(resource.uri),
-                    "name": resource.name or resource.func.__name__,
+                    "name": resource.name,
                     "description": resource.description or "",
                     "mimeType": resource.mime_type or "text/plain",
                     "type": "resource",
@@ -57,7 +60,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
             resources_list.append(
                 {
                     "uri": str(template.uri_template),
-                    "name": template.name or template.fn.__name__,
+                    "name": template.name,
                     "description": template.description or "",
                     "mimeType": template.mime_type or "text/plain",
                     "type": "template",

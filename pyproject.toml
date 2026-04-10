@@ -28,6 +28,7 @@ dev = [
     "respx>=0.21.0",
     "ruff>=0.4.0",
     "mypy>=1.8.0",
+    "types-PyYAML>=6.0.0.2024097",
     "jsonschema>=4.0.0",
 ]
 
@@ -82,6 +83,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tenacity"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
 ignore_missing_imports = true
 
 [dependency-groups]

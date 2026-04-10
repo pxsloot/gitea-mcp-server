@@ -219,8 +219,9 @@ def validate_state(value: Any, *, field: str) -> None:
         raise ValidationError(f"{field} must be one of: open, closed, all", field=field)
 
 
-# Mapping from parameter name to single-argument validator function
-SINGLE_VALIDATORS: dict[str, Callable[[Any, str], None]] = {
+# Mapping from parameter name to validator function
+# Uses broader Callable to accommodate keyword-only arguments (*, field: str)
+SINGLE_VALIDATORS: dict[str, Callable[..., None]] = {
     "owner": validate_owner_repo,
     "repo": validate_owner_repo,
     "org": validate_owner_repo,  # alias for organization

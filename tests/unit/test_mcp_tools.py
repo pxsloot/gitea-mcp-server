@@ -157,10 +157,9 @@ class TestMcpListResourcesImpl:
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
         resource_mock.uri = "gitea://test"
-        resource_mock.name = None
+        resource_mock.name = "my_resource_func"
         resource_mock.description = "Test resource"
         resource_mock.mime_type = None
-        resource_mock.func = MagicMock(__name__="my_resource_func")
         resource_mock.tags = set()
 
         ctx.fastmcp = MagicMock()

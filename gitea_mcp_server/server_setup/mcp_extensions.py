@@ -88,7 +88,7 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
                     "tools": len(extensions.get("tool_names", {})),
                 },
             )
-            return extensions
+            return extensions  # type: ignore[no-any-return]
     except yaml.YAMLError as e:
         logger.error("Invalid YAML in MCP extensions file %s: %s", config_path, e)
         raise

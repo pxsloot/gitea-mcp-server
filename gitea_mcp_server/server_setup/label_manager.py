@@ -24,7 +24,7 @@ class LabelManager:
             cache_ttl: Cache TTL in seconds (default from constants)
         """
         self._cache_ttl = cache_ttl
-        self._label_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._label_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
 
     async def get_label_map(
         self, owner: str, repo: str, client: GiteaClient
@@ -40,12 +40,14 @@ class LabelManager:
             Dict mapping lowercase label names to label info (id, name)
         """
         cache_key = (owner, repo)
-        now = datetime.now()
+        now: datetime = datetime.now()
 
         # Check cache
         if cache_key in self._label_cache:
             entry = self._label_cache[cache_key]
-            if (now - entry["timestamp"]).total_seconds() < self._cache_ttl:
+            timestamp = entry["timestamp"]
+            age = now - timestamp  # type: ignore[operator]
+            if age.total_seconds() < self._cache_ttl:
                 return entry["map"]
 
         # Fetch labels from API
@@ -58,7 +60,7 @@ class LabelManager:
                 label_map[name.lower()] = {"id": label["id"], "name": label["name"]}
 
         # Update cache
-        self._label_cache[cache_key] = {"map": label_map, "timestamp": now}
+        self._label_cache[cache_key] = {"map": label_map, "timestamp": now}  # type: ignore[dict-item]
         return label_map
 
     def clear_cache(self) -> None:

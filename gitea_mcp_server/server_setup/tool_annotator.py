@@ -270,14 +270,13 @@ def _lookup_response_description(
 
         # Direct description takes precedence
         if "description" in response_def:
-            return response_def["description"]
+            return str(response_def["description"])
 
         # Handle $ref to components/responses
         if "$ref" in response_def:
             ref_path = response_def["$ref"]
-            # Expected format: "#/components/responses/ResponseName"
             parts = ref_path.lstrip("#/").split("/")
-            current = openapi_spec
+            current: Any = openapi_spec
             for part in parts:
                 if isinstance(current, dict):
                     current = current.get(part)
@@ -286,7 +285,8 @@ def _lookup_response_description(
                 if current is None:
                     break
             if isinstance(current, dict):
-                return current.get("description", f"HTTP error {status_code}")
+                desc = current.get("description")
+                return str(desc) if desc else f"HTTP error {status_code}"
 
         return f"HTTP error {status_code}"
     except Exception:
@@ -332,10 +332,12 @@ def customize_component(
         new_annotations = ToolAnnotations()
     elif isinstance(component.annotations, ToolAnnotations):
         new_annotations = component.annotations.model_copy()
-    elif isinstance(component.annotations, dict):
-        new_annotations = ToolAnnotations(**component.annotations)
     else:
-        new_annotations = ToolAnnotations()
+        # Handle dict case - either it's a dict (unlikely) or unexpected type
+        try:
+            new_annotations = ToolAnnotations(**component.annotations)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            new_annotations = ToolAnnotations()
 
     # Set title in annotations
     new_annotations.title = title
@@ -370,7 +372,7 @@ def customize_component(
         update_labels_schema(component)
 
     # Build transform function that combines validation and label conversion
-    async def transform_fn(**kwargs) -> Any:
+    async def transform_fn(**kwargs: Any) -> Any:
         # Runtime validation
         for name, value in kwargs.items():
             if name in SINGLE_VALIDATORS:
@@ -503,7 +505,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
     Uses a compact result serializer to avoid massive payloads.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         # Force our compact serializer if not provided
         if "search_result_serializer" not in kwargs:
             kwargs["search_result_serializer"] = _compact_search_serializer

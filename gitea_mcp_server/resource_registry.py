@@ -28,8 +28,8 @@ class ResourceDef:
 class ResourceRegistry:
     """A catalog of registered resources for querying and documentation."""
 
-    def __init__(self):
-        self._defs: dict[str, ResourceDef] = {}  # key by uri
+    def __init__(self) -> None:
+        self._defs: dict[str, ResourceDef] = {}
 
     def record(
         self,

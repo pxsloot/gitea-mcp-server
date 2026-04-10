@@ -22,15 +22,6 @@ RUN python -m pip install --upgrade pip build && \
 # Stage 2: install runtime dependencies and package
 FROM python:3.11-slim AS runner
 
-# Install system dependencies: build tools for potential C extensions
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    curl http://www.home.lan/home_root.crt > /usr/local/share/ca-certificates/home_root.crt \
-    curl http://www.home.lan/home_intm.crt > /usr/local/share/ca-certificates/home_intm.crt \
-    update-ca-certificates
-
 # Create non-privileged user
 RUN useradd --create-home --shell /bin/bash app
 WORKDIR /app

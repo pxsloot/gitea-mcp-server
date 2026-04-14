@@ -30,6 +30,7 @@ dev = [
     "mypy>=1.8.0",
     "types-PyYAML>=6.0.0.2024097",
     "jsonschema>=4.0.0",
+    "hatch>=1.13.0",
 ]
 
 [project.scripts]
@@ -98,6 +99,7 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.15.8",
     "jsonschema>=4.23.0",
+    "hatch>=1.16.5",
 ]
 
 [tool.coverage.run]

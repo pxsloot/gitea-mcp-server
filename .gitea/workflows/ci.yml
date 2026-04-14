@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Check out repository code
+        run: |
+          git clone ${{ github.server_url }}/${{ github.repository }} work
+          cd work
+          git switch ${FORGEJO_HEAD_REF}
+      - name: build app image
+        run: |
+          cd work
+          make docker-build-ci
+
+  lint:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Lint
+        run: |
+          cd /app
+          ruff check gitea_mcp_server
+
+  typecheck:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Type check
+        run: |
+          cd /app
+          mypy gitea_mcp_server
+
+  test:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Test
+        run: |
+          cd /app
+          pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing

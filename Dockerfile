@@ -2,15 +2,17 @@
 
 ARG PYTHON_IMAGE=registry.home.lan/local/python-slim:3.14
 
+################################################################################
 # Stage 1: builder - builds the wheel
+################################################################################
 FROM ${PYTHON_IMAGE} AS builder
 
 # Install system dependencies: build tools for potential C extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
-    ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -21,7 +23,9 @@ COPY . .
 RUN python -m pip install --root-user-action ignore --upgrade pip build && \
     python -m build --wheel
 
+################################################################################
 # Stage 2: install runtime dependencies and package
+################################################################################
 FROM ${PYTHON_IMAGE} AS runner
 
 # Create non-privileged user
@@ -35,7 +39,7 @@ COPY --from=builder /app/dist/*.whl /tmp/
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/venv/bin/pip install --no-cache-dir /tmp/*.whl && \
-    /opt/venv/bin/pip uninstall -y build
+    rm -rf /tmp/*.whl
 
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV SSL_CERT_DIR=/etc/ssl/certs
@@ -54,11 +58,12 @@ EXPOSE 8080
 #ENTRYPOINT ["gitea-mcp"]
 CMD ["gitea-mcp"]
 
+################################################################################
 # Stage 3: CI image - adds dev dependencies for lint/test/typecheck
+################################################################################
 FROM runner AS ci
 
 COPY --from=builder /app /app
 USER root
 WORKDIR /app
-RUN /opt/venv/bin/pip install --no-cache-dir ".[dev]" && \
-    rm -rf /tmp/*.whl
+RUN /opt/venv/bin/pip install --no-cache-dir ".[dev]"

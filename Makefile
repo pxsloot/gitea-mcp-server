@@ -9,10 +9,20 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-docker-build: ## Build the Docker image locally
-	docker build --progress=plain -t gitea-mcp-server:latest .
+test:
+	ruff check gitea_mcp_server
+	mypy gitea_mcp_server
+	pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 
-docker-build-ci: ## Build the CI image with dev dependencies
+docker-test:
+	docker run --rm localhost/gitea-mcp-server:ci ruff check gitea_mcp_server
+	docker run --rm localhost/gitea-mcp-server:ci mypy gitea_mcp_server
+	docker run --rm localhost/gitea-mcp-server:ci pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
+
+docker-build: ## Build the Docker image locally
+	docker build --progress=plain --target runner -t gitea-mcp-server:latest .
+
+docker-build-ci: docker-build ## Build the CI image with dev dependencies
 	docker build --progress=plain --target ci -t gitea-mcp-server:ci .
 
 docker-push: ## Push image to registry.home.lan
@@ -42,7 +52,7 @@ docker-run-http: ## Run as HTTP server on port 8080
 		-e HTTP_PORT=8080 \
 		gitea-mcp-server:latest
 
-docker-test: ## Test the container by checking version
+docker-version: ## Test the container by checking version
 	docker run --rm gitea-mcp-server:latest --version
 
 docker-shell: ## Open a shell in the container for debugging

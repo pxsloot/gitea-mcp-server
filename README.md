@@ -423,7 +423,30 @@ uv run ruff check --fix gitea_mcp_server/
 uv run mypy gitea_mcp_server/
 ```
 
-### Updating the Swagger Spec
+### Build Verification
+
+```bash
+uv run hatch build
+```
+
+### Continuous Integration
+
+This project uses Gitea Actions for CI. The pipeline runs on every push and pull request to `main`.
+
+#### Quality Gates
+
+| Job | Command | Fail Condition |
+|-----|---------|----------------|
+| Lint | `ruff check gitea_mcp_server/` | Errors |
+| Type Check | `mypy gitea_mcp_server/` | Errors |
+| Tests | `pytest --cov=gitea_mcp_server` | Coverage < 70% |
+| Build | `hatch build` | Build failure |
+
+All jobs must pass for a PR to be mergeable.
+
+#### Workflow File
+
+The CI configuration is defined in `.gitea/workflows/ci.yml`.
 
 The `swagger.v1.json` file is included in the repo. To update it:
 

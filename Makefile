@@ -1,7 +1,7 @@
 # Default to false for local dev with self-signed certs (can override via env)
 GITEA_VERIFY_SSL ?= false
 
-.PHONY: help docker-build docker-push docker-run docker-run-http docker-test docker-shell clean
+.PHONY: help docker-build docker-build-ci docker-push docker-run docker-run-http docker-test docker-shell clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -12,9 +12,16 @@ help: ## Show this help message
 docker-build: ## Build the Docker image locally
 	docker build --progress=plain -t gitea-mcp-server:latest .
 
+docker-build-ci: ## Build the CI image with dev dependencies
+	docker build --progress=plain --target ci -t gitea-mcp-server:ci .
+
 docker-push: ## Push image to registry.home.lan
 	docker tag gitea-mcp-server:latest registry.home.lan/mcp-server/gitea-mcp-server:latest
 	docker push registry.home.lan/mcp-server/gitea-mcp-server:latest
+
+docker-push-ci: ## Push CI image to registry.home.lan
+	docker tag gitea-mcp-server:ci registry.home.lan/mcp-server/gitea-mcp-server:ci
+	docker push registry.home.lan/mcp-server/gitea-mcp-server:ci
 
 docker-run: ## Run the container in stdio mode (requires GITEA_URL and GITEA_TOKEN)
 	docker run --rm \

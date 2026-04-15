@@ -30,8 +30,16 @@ USERNAME_PATTERN = OWNER_REPO_PATTERN
 # SHA1 (full): exactly 40 hexadecimal characters
 SHA_PATTERN = r"^[a-fA-F0-9]{40}$"
 
+LABEL_MAX_LENGTH = 100
+PAGE_SIZE_MAX = 100
+
 
 # Validator functions
+
+
+def _raise_validation_error(message: str, field: str) -> None:
+    """Raise ValidationError with pre-computed message."""
+    raise ValidationError(message, field=field)
 
 
 def validate_owner_repo(value: Any, *, field: str) -> None:
@@ -45,13 +53,13 @@ def validate_owner_repo(value: Any, *, field: str) -> None:
         ValidationError: If validation fails.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
+        _raise_validation_error(f"{field} cannot be empty", field)
     if not re.fullmatch(OWNER_REPO_PATTERN, value):
-        raise ValidationError(
+        _raise_validation_error(
             f"{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
-            field=field,
+            field,
         )
 
 
@@ -66,23 +74,20 @@ def validate_filepath(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        msg = f"{field} must be a string"
+        raise ValidationError(msg, field=field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
-    # Disallow absolute paths
+        msg = f"{field} cannot be empty"
+        raise ValidationError(msg, field=field)
     if value.startswith("/"):
-        raise ValidationError(
-            f"{field} must be a relative path (cannot start with '/')", field=field
-        )
-    # Disallow parent directory traversal
+        msg = f"{field} must be a relative path (cannot start with '/')"
+        raise ValidationError(msg, field=field)
     if ".." in value.split("/"):
-        raise ValidationError(f"{field} cannot contain '..' components", field=field)
-    # Check allowed characters and basic structure
+        msg = f"{field} cannot contain '..' components"
+        raise ValidationError(msg, field=field)
     if not re.fullmatch(FILEPATH_PATTERN, value):
-        raise ValidationError(
-            f"{field} contains invalid characters (allowed: letters, digits, spaces, slashes, underscores, hyphens, dots)",
-            field=field,
-        )
+        msg = f"{field} contains invalid characters (allowed: letters, digits, spaces, slashes, underscores, hyphens, dots)"
+        raise ValidationError(msg, field=field)
 
 
 def validate_ref(value: Any, *, field: str) -> None:
@@ -96,14 +101,11 @@ def validate_ref(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
+        _raise_validation_error(f"{field} cannot be empty", field)
     if not re.fullmatch(REF_PATTERN, value):
-        raise ValidationError(
-            f"{field} contains invalid characters for a git reference",
-            field=field,
-        )
+        _raise_validation_error(f"{field} contains invalid characters for a git reference", field)
 
 
 def validate_username(value: Any, *, field: str) -> None:
@@ -117,13 +119,13 @@ def validate_username(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
+        _raise_validation_error(f"{field} cannot be empty", field)
     if not re.fullmatch(USERNAME_PATTERN, value):
-        raise ValidationError(
+        _raise_validation_error(
             f"{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
-            field=field,
+            field,
         )
 
 
@@ -138,11 +140,11 @@ def validate_sha(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
+        _raise_validation_error(f"{field} cannot be empty", field)
     if not re.fullmatch(SHA_PATTERN, value):
-        raise ValidationError(f"{field} must be a 40-character hexadecimal SHA", field=field)
+        _raise_validation_error(f"{field} must be a 40-character hexadecimal SHA", field)
 
 
 def validate_labels(value: Any, *, field: str) -> None:
@@ -156,26 +158,25 @@ def validate_labels(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, list):
-        raise ValidationError(f"{field} must be a list", field=field)
+        _raise_validation_error(f"{field} must be a list", field)
     for label in value:
-        # Reject booleans explicitly (bool is subclass of int)
         if isinstance(label, bool):
-            raise ValidationError("Label must be a string or integer, not bool", field=field)
+            _raise_validation_error("Label must be a string or integer, not bool", field)
         if isinstance(label, int):
             if label < 1:
-                raise ValidationError("Label ID must be positive", field=field)
+                _raise_validation_error("Label ID must be positive", field)
         elif isinstance(label, str):
             if not label:
-                raise ValidationError("Empty label string is not allowed", field=field)
-            # Disallow whitespace-only labels
+                _raise_validation_error("Empty label string is not allowed", field)
             if not label.strip():
-                raise ValidationError("Label cannot be whitespace only", field=field)
-            # Limit length
-            if len(label) > 100:
-                raise ValidationError("Label name exceeds maximum length (100)", field=field)
+                _raise_validation_error("Label cannot be whitespace only", field)
+            if len(label) > LABEL_MAX_LENGTH:
+                _raise_validation_error(
+                    f"Label name exceeds maximum length ({LABEL_MAX_LENGTH})", field
+                )
         else:
-            raise ValidationError(
-                f"Label must be a string or integer, got {type(label).__name__}", field=field
+            _raise_validation_error(
+                f"Label must be a string or integer, got {type(label).__name__}", field
             )
 
 
@@ -191,16 +192,17 @@ def validate_pagination(page: Any = None, per_page: Any = None) -> None:
     """
     if page is not None:
         if not isinstance(page, int):
-            raise ValidationError("page must be an integer", field="page")
+            _raise_validation_error("page must be an integer", "page")
         if page < 1:
-            raise ValidationError("page must be >= 1", field="page")
+            _raise_validation_error("page must be >= 1", "page")
     if per_page is not None:
         if not isinstance(per_page, int):
-            raise ValidationError("per_page must be an integer", field="per_page")
+            _raise_validation_error("per_page must be an integer", "per_page")
         if per_page < 1:
-            raise ValidationError("per_page must be >= 1", field="per_page")
-        if per_page > 100:
-            raise ValidationError("per_page must be <= 100", field="per_page")
+            _raise_validation_error("per_page must be >= 1", "per_page")
+        if per_page > PAGE_SIZE_MAX:
+            msg = f"per_page must be <= {PAGE_SIZE_MAX}"
+            _raise_validation_error(msg, "per_page")
 
 
 def validate_state(value: Any, *, field: str) -> None:
@@ -214,9 +216,9 @@ def validate_state(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if value not in ("open", "closed", "all"):
-        raise ValidationError(f"{field} must be one of: open, closed, all", field=field)
+        _raise_validation_error(f"{field} must be one of: open, closed, all", field)
 
 
 # Mapping from parameter name to validator function

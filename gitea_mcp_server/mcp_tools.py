@@ -19,6 +19,17 @@ from fastmcp.server.context import Context
 logger = logging.getLogger(__name__)
 
 
+def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
+    """Extract and convert content from resource result."""
+    if not contents:
+        msg = f"Resource '{uri}' returned no content"
+        raise LookupError(msg) from None
+    content = contents[0].content
+    if isinstance(content, bytes):
+        return content.decode("utf-8")
+    return content
+
+
 async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
     """Implementation of mcp_list_resources.
 
@@ -69,8 +80,8 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                     else [],
                 }
             )
-    except Exception as e:
-        logger.error("Error listing resources: %s", e)
+    except (AttributeError, TypeError):
+        logger.exception("Error listing resources")
         return {"resources": [], "count": 0}
 
     return {"resources": resources_list, "count": len(resources_list)}
@@ -92,19 +103,8 @@ async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
     try:
         # ctx.read_resource returns a ResourceResult (FastMCP 3.x)
         result = await ctx.read_resource(uri)
-
-        if not result.contents:
-            msg = f"Resource '{uri}' returned no content"
-            raise ValueError(msg)
-
-        # Get first content item
-        content = result.contents[0].content
-
-        # Handle bytes if needed (convert to string)
-        if isinstance(content, bytes):
-            content = content.decode("utf-8")
-
-        return content
+        contents = result.contents
+        return _extract_resource_content(contents, uri)
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"

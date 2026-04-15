@@ -13,6 +13,11 @@ from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, l
 logger = logging.getLogger(__name__)
 
 
+def _raise_spec_error(message: str) -> None:
+    """Raise SpecError with pre-computed message."""
+    raise SpecError(message) from None
+
+
 async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
     """Load OpenAPI spec from Gitea instance or local file.
 
@@ -32,8 +37,7 @@ async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str
         try:
             spec_path = Path("swagger.v1.json")
             if not spec_path.exists():
-                msg = "Local swagger.v1.json file not found"
-                raise SpecError(msg)
+                _raise_spec_error("Local swagger.v1.json file not found")
             with open(spec_path) as f:
                 local_spec: dict[str, Any] = json.load(f)
             logger.info(
@@ -107,7 +111,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         extensions = load_mcp_extensions()
         if extensions:
             apply_mcp_extensions(openapi_spec, extensions)
-    except Exception as e:
+    except (OSError, KeyError, ValueError, RuntimeError) as e:
         logger.warning(
             "Failed to apply MCP extensions, proceeding without customizations",
             extra={"error": str(e)},

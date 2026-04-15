@@ -19,16 +19,18 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import mcp
-from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+if TYPE_CHECKING:
+    import mcp
+    from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+    from fastmcp.tools.tool import ToolResult
+
 from fastmcp.server.middleware.middleware import (
     CallNext,
     Middleware,
     MiddlewareContext,
 )
-from fastmcp.tools.tool import ToolResult
 
 from gitea_mcp_server.constants import (
     PATTERN_FILES,
@@ -126,7 +128,8 @@ def _substitute_template(template: str, params: dict[str, Any]) -> str:
     # Check for missing required parameters
     missing = [p for p in param_names if p not in params]
     if missing:
-        raise ValueError(f"Missing parameters for URI template: {missing}")
+        msg = f"Missing parameters for URI template: {missing}"
+        raise ValueError(msg)
 
     # Replace each parameter
     result = template
@@ -214,7 +217,7 @@ async def invalidate_cached_resources(
                     cache_key[:16],
                     tool_name,
                 )
-        except Exception as e:
+        except (KeyError, ValueError) as e:
             logger.warning(
                 "Failed to invalidate cache for URI %s: %s",
                 uri,

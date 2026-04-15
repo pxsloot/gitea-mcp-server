@@ -30,14 +30,13 @@ def _find_project_root() -> Path:
     """
     # Start from this file's directory and walk up
     current = Path(__file__).resolve()
-    for parent in [current] + list(current.parents):
+    for parent in [current, *list(current.parents)]:
         if (parent / "pyproject.toml").exists():
             return parent
 
-    raise RuntimeError(
-        "Could not find project root (directory containing pyproject.toml). "
-        "Set MCP_EXTENSIONS_PATH environment variable to override."
-    )
+    msg = "Could not find project root (directory containing pyproject.toml). "
+    msg += "Set MCP_EXTENSIONS_PATH environment variable to override."
+    raise RuntimeError(msg) from None
 
 
 def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
@@ -76,7 +75,7 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
         return {}
 
     try:
-        with open(config_path) as f:
+        with config_path.open() as f:
             extensions = yaml.safe_load(f)
             if extensions is None:
                 logger.info("MCP extensions file is empty: %s", config_path)
@@ -89,11 +88,11 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
                 },
             )
             return extensions  # type: ignore[no-any-return]
-    except yaml.YAMLError as e:
-        logger.error("Invalid YAML in MCP extensions file %s: %s", config_path, e)
+    except yaml.YAMLError:
+        logger.exception("Invalid YAML in MCP extensions file %s", config_path)
         raise
-    except OSError as e:
-        logger.error("Cannot read MCP extensions file %s: %s", config_path, e)
+    except OSError:
+        logger.exception("Cannot read MCP extensions file %s", config_path)
         raise
 
 

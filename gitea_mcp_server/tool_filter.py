@@ -10,6 +10,13 @@ from gitea_mcp_server.client import GiteaClient
 logger = logging.getLogger(__name__)
 
 
+def _validate_user_data(data: Any) -> None:
+    """Validate user data is a dict."""
+    if not isinstance(data, dict):
+        msg = f"Unexpected user data type: {type(data)}"
+        raise TypeError(msg) from None
+
+
 def _is_admin_tool(tool: Any) -> bool:
     """Check if a tool requires admin privileges.
 
@@ -38,9 +45,9 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
     # Fetch current user info to check admin status
     try:
         user_data = await gitea_client.request("GET", "/user")
+
         # gitea_client.request returns parsed JSON directly (dict)
-        if not isinstance(user_data, dict):
-            raise ValueError(f"Unexpected user data type: {type(user_data)}")
+        _validate_user_data(user_data)
         is_admin = user_data.get("admin", False)
         username = user_data.get("login", "unknown")
         logger.info(
@@ -64,7 +71,7 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
             # Use provider's list_tools to get the tools (returns actual tool objects)
             provider_tools = await provider.list_tools()
             all_tools.extend(provider_tools)
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             logger.warning(
                 "Failed to list tools from provider, skipping",
                 extra={"provider": type(provider).__name__, "error": str(e)},

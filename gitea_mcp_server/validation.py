@@ -30,8 +30,15 @@ USERNAME_PATTERN = OWNER_REPO_PATTERN
 # SHA1 (full): exactly 40 hexadecimal characters
 SHA_PATTERN = r"^[a-fA-F0-9]{40}$"
 
+LABEL_MAX_LENGTH = 100
+
 
 # Validator functions
+
+
+def _raise_validation_error(message: str, field: str) -> None:
+    """Raise ValidationError with pre-computed message."""
+    raise ValidationError(message, field=field)
 
 
 def validate_owner_repo(value: Any, *, field: str) -> None:
@@ -45,13 +52,13 @@ def validate_owner_repo(value: Any, *, field: str) -> None:
         ValidationError: If validation fails.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        _raise_validation_error(f"{field} must be a string", field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
+        _raise_validation_error(f"{field} cannot be empty", field)
     if not re.fullmatch(OWNER_REPO_PATTERN, value):
-        raise ValidationError(
+        _raise_validation_error(
             f"{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
-            field=field,
+            field,
         )
 
 
@@ -66,23 +73,20 @@ def validate_filepath(value: Any, *, field: str) -> None:
         ValidationError: If invalid.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"{field} must be a string", field=field)
+        msg = f"{field} must be a string"
+        raise ValidationError(msg, field=field)
     if not value:
-        raise ValidationError(f"{field} cannot be empty", field=field)
-    # Disallow absolute paths
+        msg = f"{field} cannot be empty"
+        raise ValidationError(msg, field=field)
     if value.startswith("/"):
-        raise ValidationError(
-            f"{field} must be a relative path (cannot start with '/')", field=field
-        )
-    # Disallow parent directory traversal
+        msg = f"{field} must be a relative path (cannot start with '/')"
+        raise ValidationError(msg, field=field)
     if ".." in value.split("/"):
-        raise ValidationError(f"{field} cannot contain '..' components", field=field)
-    # Check allowed characters and basic structure
+        msg = f"{field} cannot contain '..' components"
+        raise ValidationError(msg, field=field)
     if not re.fullmatch(FILEPATH_PATTERN, value):
-        raise ValidationError(
-            f"{field} contains invalid characters (allowed: letters, digits, spaces, slashes, underscores, hyphens, dots)",
-            field=field,
-        )
+        msg = f"{field} contains invalid characters (allowed: letters, digits, spaces, slashes, underscores, hyphens, dots)"
+        raise ValidationError(msg, field=field)
 
 
 def validate_ref(value: Any, *, field: str) -> None:

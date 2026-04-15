@@ -36,6 +36,21 @@ from gitea_mcp_server.validation import (
 logger = logging.getLogger(__name__)
 
 
+def _raise_value_error(message: str) -> None:
+    """Raise ValueError with pre-computed message."""
+    raise ValueError(message) from None
+
+
+def _raise_value_error_from(message: str, cause: Exception) -> None:
+    """Raise ValueError with message and cause."""
+    raise ValueError(message) from cause
+
+
+def _raise_validation_error(message: str, field: str, cause: Exception) -> None:
+    """Raise ValidationError with pre-computed message."""
+    raise ValidationError(message, field=field) from cause
+
+
 def generate_tool_title(route: Any) -> str:
     """Generate a human-readable title for a tool from its OpenAPI route metadata.
 
@@ -288,7 +303,7 @@ def _lookup_response_description(
                 return str(desc) if desc else f"HTTP error {status_code}"
 
         return f"HTTP error {status_code}"
-    except Exception:
+    except (KeyError, TypeError, AttributeError, ValueError):
         return f"HTTP error {status_code}"
 
 
@@ -379,8 +394,9 @@ def customize_component(
                     SINGLE_VALIDATORS[name](value, field=name)
                 except ValidationError:
                     raise
-                except Exception as e:
-                    raise ValidationError(f"Validation error for {name}: {e}", field=name) from e
+                except (TypeError, ValueError, KeyError) as e:
+                    msg = f"Validation error for {name}: {e}"
+                    _raise_validation_error(msg, name, e)
         if "page" in kwargs or "per_page" in kwargs:
             validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
 
@@ -407,11 +423,12 @@ def customize_component(
                                 converted.append(label)
                         if unknown:
                             available = sorted(label_map.keys())
-                            raise ValueError(
+                            msg = (
                                 f"Unknown label(s): {unknown}. "
                                 f"Available labels: {', '.join(available)}. "
                                 f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
                             )
+                            _raise_value_error(msg)
                         kwargs = dict(kwargs)
                         kwargs["labels"] = converted
         # Enhanced error handling: format HTTP errors using OpenAPI response descriptions
@@ -432,7 +449,7 @@ def customize_component(
                         formatted = f"{description}\n\nDetails: {message}"
                     else:
                         formatted = description
-                except Exception:
+                except (ValueError, AttributeError):
                     # Fallback to text response
                     formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
 
@@ -443,13 +460,13 @@ def customize_component(
         except httpx.HTTPError as e:
             # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
             formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
-            raise ValueError(formatted) from e
-        except Exception as e:
+            _raise_value_error_from(formatted, e)
+        except (KeyError, TypeError, AttributeError):
             # Unexpected errors - log full traceback for debugging, but give user a clean message
-            logger.error("Unexpected error during tool execution", exc_info=True)
-            raise ValueError(
+            logger.exception("Unexpected error during tool execution")
+            _raise_value_error(
                 "An unexpected error occurred. Please check the server logs for details."
-            ) from e
+            )
 
     # Create transformed tool
     new_tool = Tool.from_tool(
@@ -531,9 +548,8 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             Use this to execute tools discovered via search_tools.
             """
             if name in {transform._call_tool_name, transform._search_tool_name}:
-                raise ValueError(
-                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
-                )
+                msg = f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
+                _raise_value_error(msg)
             # If arguments is a string, attempt to parse as JSON
             if isinstance(arguments, str):
                 try:
@@ -541,12 +557,12 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
 
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in arguments: {e}") from e
+                    msg = f"Invalid JSON in arguments: {e}"
+                    _raise_value_error_from(msg, e)
             # Ensure arguments is a dict (or None)
             if arguments is not None and not isinstance(arguments, dict):
-                raise ValueError(
-                    f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
-                )
+                msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
+                _raise_value_error(msg)
             return await ctx.fastmcp.call_tool(name, arguments)
 
         return Tool.from_function(fn=call_tool, name=self._call_tool_name)

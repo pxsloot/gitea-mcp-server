@@ -111,7 +111,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         extensions = load_mcp_extensions()
         if extensions:
             apply_mcp_extensions(openapi_spec, extensions)
-    except (OSError, KeyError, ValueError) as e:
+    except (OSError, KeyError, ValueError, RuntimeError) as e:
         logger.warning(
             "Failed to apply MCP extensions, proceeding without customizations",
             extra={"error": str(e)},

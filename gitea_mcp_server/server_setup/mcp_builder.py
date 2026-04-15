@@ -5,9 +5,7 @@ including OpenAPI provider creation with customized component handling.
 """
 
 import logging
-from typing import Any
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import OpenAPIProvider
 

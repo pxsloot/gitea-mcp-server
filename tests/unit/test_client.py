@@ -1,15 +1,12 @@
 """Unit tests for GiteaClient."""
 
-import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import respx
-from tenacity import RetryCallState
 
 from gitea_mcp_server.client import (
     GiteaClient,
-    HTTPTransport,
     _should_retry,
     _wait_retry,
 )

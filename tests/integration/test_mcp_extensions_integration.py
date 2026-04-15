@@ -1,13 +1,9 @@
 """Integration tests for MCP extensions end-to-end."""
 
-import json
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 

@@ -1,7 +1,8 @@
 """Unit tests for MCP extensions processing."""
 
-import pytest
 from unittest.mock import mock_open, patch
+
+import pytest
 
 from gitea_mcp_server.server_setup.mcp_extensions import (
     apply_mcp_extensions,

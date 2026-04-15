@@ -1,8 +1,8 @@
 """Unit tests for tool annotation functionality."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -498,7 +498,6 @@ class TestErrorHandlingEnhancement:
     async def test_formats_404_error_using_openapi_spec(self):
         """When component.run raises a 404, transform_fn should format a clean message using the OpenAPI spec's response description."""
         import httpx
-        from unittest.mock import AsyncMock
 
         # Minimal OpenAPI spec with a 404 response definition for the endpoint
         openapi_spec = {
@@ -587,7 +586,6 @@ class TestErrorHandlingEnhancement:
     @pytest.mark.asyncio
     async def test_non_http_errors_unchanged(self):
         """Non-HTTP ValueErrors should be re-raised without modification."""
-        from unittest.mock import AsyncMock
 
         openapi_spec = {"paths": {}}
 
@@ -619,7 +617,6 @@ class TestErrorHandlingEnhancement:
     async def test_formats_network_error_cleanly(self):
         """httpx.NetworkError (without response) should be formatted as a network issue."""
         import httpx
-        from unittest.mock import AsyncMock
 
         openapi_spec = {"paths": {}}
 
@@ -653,7 +650,6 @@ class TestErrorHandlingEnhancement:
     async def test_formats_timeout_error_cleanly(self):
         """httpx.TimeoutException should be formatted as a timeout issue."""
         import httpx
-        from unittest.mock import AsyncMock
 
         openapi_spec = {"paths": {}}
 
@@ -684,7 +680,6 @@ class TestErrorHandlingEnhancement:
     @pytest.mark.asyncio
     async def test_formats_unexpected_exception_cleanly(self):
         """Unexpected exceptions (RuntimeError, etc.) should be caught and formatted."""
-        from unittest.mock import AsyncMock
 
         openapi_spec = {"paths": {}}
 

@@ -10,7 +10,6 @@ from collections.abc import Sequence
 from typing import Annotated, Any
 
 import httpx
-
 from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
@@ -443,7 +442,7 @@ def customize_component(
             raise
         except httpx.HTTPError as e:
             # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
-            formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {str(e)}"
+            formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
             raise ValueError(formatted) from e
         except Exception as e:
             # Unexpected errors - log full traceback for debugging, but give user a clean message

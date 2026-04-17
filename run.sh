@@ -45,7 +45,5 @@ if ! python -c "import fastmcp" 2>/dev/null; then
     uv sync --dev
 fi
 
-export TRANSPORT_TYPE=stdio
-
 log_info "Starting Gitea MCP Server..."
 python -m gitea_mcp_server.server

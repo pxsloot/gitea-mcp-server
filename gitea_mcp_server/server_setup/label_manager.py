@@ -1,7 +1,7 @@
 """Label management and caching utilities."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from gitea_mcp_server.client import GiteaClient
@@ -40,7 +40,7 @@ class LabelManager:
             Dict mapping lowercase label names to label info (id, name)
         """
         cache_key = (owner, repo)
-        now: datetime = datetime.now(UTC)
+        now: datetime = datetime.now()
 
         # Check cache
         if cache_key in self._label_cache:

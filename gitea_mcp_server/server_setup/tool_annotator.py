@@ -5,7 +5,6 @@ including title generation, categorization, hint inference, label handling, and
 cache invalidation pattern computation.
 """
 
-import json
 import logging
 from collections.abc import Sequence
 from typing import Annotated, Any
@@ -23,14 +22,6 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_IDEMPOTENT,
     HTTP_METHODS_SAFE,
     LABEL_GUIDANCE,
-    PATTERN_FILES,
-    PATTERN_ISSUES_CLOSED,
-    PATTERN_ISSUES_LIST,
-    PATTERN_ISSUES_OPEN,
-    PATTERN_PULLS_CLOSED,
-    PATTERN_PULLS_LIST,
-    PATTERN_PULLS_OPEN,
-    PATTERN_REPO,
     RESOURCE_NOTE,
     TITLE_TRUNCATE_LIMIT,
 )
@@ -91,7 +82,7 @@ def generate_tool_title(route: Any) -> str:
     return title
 
 
-def categorize_tool(path: str) -> str:  # noqa PLR0911
+def categorize_tool(path: str) -> str:
     """Categorize a tool based on its OpenAPI path.
 
     Args:
@@ -160,7 +151,7 @@ def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
         annotations.openWorldHint = True
 
 
-def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa PLR0911
+def compute_invalidation_patterns(path: str, method: str) -> list[str]:
     """Compute resource invalidation patterns for a tool based on its path and method.
 
     This function analyzes the OpenAPI path and HTTP method to determine which
@@ -174,6 +165,17 @@ def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa 
         List of pattern names (keys in RESOURCE_PATTERNS) to invalidate.
         Empty list if no invalidation needed.
     """
+    from gitea_mcp_server.constants import (
+        PATTERN_FILES,
+        PATTERN_ISSUES_CLOSED,
+        PATTERN_ISSUES_LIST,
+        PATTERN_ISSUES_OPEN,
+        PATTERN_PULLS_CLOSED,
+        PATTERN_PULLS_LIST,
+        PATTERN_PULLS_OPEN,
+        PATTERN_REPO,
+    )
+
     # Only consider write methods (safe methods don't need invalidation)
     if method.upper() in ("GET", "HEAD", "OPTIONS"):
         return []
@@ -250,7 +252,7 @@ def update_labels_schema(component: OpenAPITool) -> None:
     # If already a list, don't modify (could be already set)
 
 
-def _lookup_response_description(  # noqa PLR0911
+def _lookup_response_description(
     openapi_spec: dict[str, Any],
     route: Any,
     status_code: int,
@@ -290,19 +292,22 @@ def _lookup_response_description(  # noqa PLR0911
             parts = ref_path.lstrip("#/").split("/")
             current: Any = openapi_spec
             for part in parts:
-                current = current.get(part) if isinstance(current, dict) else None
+                if isinstance(current, dict):
+                    current = current.get(part)
+                else:
+                    current = None
                 if current is None:
                     break
             if isinstance(current, dict):
                 desc = current.get("description")
                 return str(desc) if desc else f"HTTP error {status_code}"
 
-        return f"HTTP error {status_code}"  # noqa TRY300
+        return f"HTTP error {status_code}"
     except (KeyError, TypeError, AttributeError, ValueError):
         return f"HTTP error {status_code}"
 
 
-def customize_component(  # noqa PLR0915
+def customize_component(
     route: Any,
     component: Any,
     label_manager: LabelManager,
@@ -381,7 +386,7 @@ def customize_component(  # noqa PLR0915
         update_labels_schema(component)
 
     # Build transform function that combines validation and label conversion
-    async def transform_fn(**kwargs: Any) -> Any:  # noqa PLR0912
+    async def transform_fn(**kwargs: Any) -> Any:
         # Runtime validation
         for name, value in kwargs.items():
             if name in SINGLE_VALIDATORS:
@@ -440,7 +445,10 @@ def customize_component(  # noqa PLR0915
                 try:
                     error_body = cause.response.json()
                     message = error_body.get("message", "")
-                    formatted = f"{description}\n\nDetails: {message}" if message else description
+                    if message:
+                        formatted = f"{description}\n\nDetails: {message}"
+                    else:
+                        formatted = description
                 except (ValueError, AttributeError):
                     # Fallback to text response
                     formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
@@ -461,7 +469,7 @@ def customize_component(  # noqa PLR0915
             )
 
     # Create transformed tool
-    return Tool.from_tool(
+    new_tool = Tool.from_tool(
         component,
         title=title,
         tags=new_tags,
@@ -469,6 +477,7 @@ def customize_component(  # noqa PLR0915
         description=description,
         transform_fn=transform_fn,
     )
+    return new_tool
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
@@ -519,7 +528,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         super().__init__(**kwargs)
 
     async def get_tool_catalog(
-        self, ctx: Context, *, run_middleware: bool = True  # noqa ARG002
+        self, ctx: Context, *, run_middleware: bool = True
     ) -> Sequence[Tool]:
         """Override to always bypass middleware when fetching the tool catalog."""
         # Force run_middleware=False to avoid cached synthetic results
@@ -544,6 +553,8 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             # If arguments is a string, attempt to parse as JSON
             if isinstance(arguments, str):
                 try:
+                    import json
+
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError as e:
                     msg = f"Invalid JSON in arguments: {e}"

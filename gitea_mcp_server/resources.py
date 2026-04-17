@@ -258,7 +258,7 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 # ============================================================================
 
 
-def register_auto_generated_resources(  # noqa PLR0915
+def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: dict[str, Any],
@@ -474,7 +474,7 @@ async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> Resour
             content = base64.b64decode(response.get("content", "")).decode("utf-8")
         else:
             content = response.get("content", "")
-        return content  # noqa: TRY300
+        return content
     except Exception as e:
         _handle_not_found(
             e, "readme", f"{owner}/{repo}", f"README not found for repository '{owner}/{repo}'."
@@ -576,7 +576,7 @@ async def get_file(
         else:
             content = response.get("content", "")
 
-        return content  # noqa: TRY300
+        return content
     except Exception as e:
         _handle_not_found(
             e,
@@ -770,7 +770,7 @@ def register_custom_resources(
         get_server_info = None
     else:
 
-        async def get_server_info(gitea_client: GiteaClient) -> ResourceResult:  # noqa ARG001
+        async def get_server_info(gitea_client: GiteaClient) -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
             info = openapi_spec.get("info", {})
             title = info.get("title", "Unknown")

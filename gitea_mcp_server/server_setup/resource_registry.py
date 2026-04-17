@@ -5,12 +5,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 from gitea_mcp_server.resource_registry import ResourceRegistry
-from gitea_mcp_server.resources import (
-    register_auto_generated_resources,
-    register_custom_resources,
-)
 
 
 def register_all_resources(
@@ -26,6 +21,12 @@ def register_all_resources(
     Returns:
         ResourceRegistry containing metadata about all registered resources
     """
+    # Import here to allow mocking
+    from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
+    from gitea_mcp_server.resources import (
+        register_auto_generated_resources,
+        register_custom_resources,
+    )
 
     # Create registry catalog
     registry = ResourceRegistry()

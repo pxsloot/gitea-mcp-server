@@ -29,6 +29,7 @@ if [[ ! -f .env ]]; then
 fi
 
 source .env
+export TRANSPORT_TYPE=stdio
 
 # Check if virtual environment exists
 if [[ ! -d .venv ]]; then

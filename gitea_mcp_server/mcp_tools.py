@@ -27,7 +27,9 @@ def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
     content = contents[0].content
     if isinstance(content, bytes):
         return content.decode("utf-8")
-    return content
+    if isinstance(content, str):
+        return content
+    return str(content)
 
 
 async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:

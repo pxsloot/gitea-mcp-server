@@ -2,7 +2,6 @@
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from gitea_mcp_server.client import GiteaClient
@@ -18,12 +17,11 @@ def _raise_spec_error(message: str) -> None:
     raise SpecError(message) from None
 
 
-async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str, Any]:
-    """Load OpenAPI spec from Gitea instance or local file.
+async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
+    """Load OpenAPI spec from Gitea instance.
 
     Args:
-        gitea_client: Optional client to use for fetching the spec. If not provided,
-                     loads from local swagger.v1.json file.
+        gitea_client: Client to use for fetching the spec
 
     Returns:
         OpenAPI spec (Swagger 2.0 format) as dictionary
@@ -31,30 +29,6 @@ async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str
     Raises:
         SpecError: If spec cannot be loaded or parsed
     """
-    if gitea_client is None:
-        # Fallback to loading local spec file (for testing)
-        logger.info("Loading OpenAPI spec from local swagger.v1.json")
-        try:
-            spec_path = Path("swagger.v1.json")
-            if not spec_path.exists():
-                _raise_spec_error("Local swagger.v1.json file not found")
-            with open(spec_path) as f:
-                local_spec: dict[str, Any] = json.load(f)
-            logger.info(
-                "Spec loaded",
-                extra={
-                    "spec_version": local_spec.get("swagger"),
-                    "paths_count": len(local_spec.get("paths", {})),
-                },
-            )
-            return local_spec
-        except json.JSONDecodeError as e:
-            msg = f"Invalid JSON in local swagger.v1.json: {e}"
-            raise SpecError(msg) from e
-        except Exception as e:
-            msg = f"Failed to load local swagger.v1.json: {e}"
-            raise SpecError(msg) from e
-
     # Construct URL: base_url without /api/v1 + /swagger.v1.json
     spec_url = f"{gitea_client._config.url}/swagger.v1.json"
 
@@ -72,7 +46,7 @@ async def load_openapi_spec(gitea_client: GiteaClient | None = None) -> dict[str
                 "paths_count": len(remote_spec.get("paths", {})),
             },
         )
-        return remote_spec  # type: ignore[no-any-return]
+        return remote_spec  # type: ignore[no-any-return] # noqa: TRY300
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
         raise SpecError(msg) from e

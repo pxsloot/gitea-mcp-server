@@ -258,11 +258,95 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 # ============================================================================
 
 
-def register_auto_generated_resources(  # noqa PLR0915
+def _make_resource_func(
+    path: str, method: str, operation: dict[str, Any], gitea_client: GiteaClient
+) -> Callable:
+    """Create a resource function for a given OpenAPI operation."""
+    path_params = []
+    if "parameters" in operation:
+        for param in operation["parameters"]:
+            if param["in"] == "path":
+                path_params.append(param["name"])
+
+    query_params = []
+    if "parameters" in operation:
+        for param in operation["parameters"]:
+            if param["in"] == "query":
+                query_params.append(param["name"])
+
+    async def resource_func(**kwargs: Any) -> ResourceResult:
+        """Auto-generated resource from OpenAPI spec."""
+        formatted_path = path
+        missing_params = [p for p in path_params if p not in kwargs]
+        if missing_params:
+            raise ResourceError(
+                {
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Missing required path parameter(s): {', '.join(missing_params)}",
+                    "detail": "The resource requires path parameters that were not provided.",
+                    "resource_type": "api",
+                    "resource_id": formatted_path,
+                }
+            )
+        for param in path_params:
+            formatted_path = formatted_path.replace(f"{{{param}}}", str(kwargs[param]))
+
+        query = {p: kwargs[p] for p in query_params if p in kwargs}
+
+        try:
+            response = await gitea_client.request(
+                method, formatted_path, params=query if query else None
+            )
+            return json.dumps(response, indent=2)
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            if status == HTTP_STATUS_NOT_FOUND:
+                raise ResourceError(
+                    {
+                        "code": "NOT_FOUND",
+                        "message": f"Resource not found: {formatted_path}",
+                        "detail": str(e),
+                        "resource_type": "api",
+                        "resource_id": formatted_path,
+                    }
+                ) from e
+            if status:
+                raise ResourceError(
+                    {
+                        "code": "API_ERROR",
+                        "message": f"API error {status} for {formatted_path}",
+                        "detail": str(e),
+                        "resource_type": "api",
+                        "resource_id": formatted_path,
+                    }
+                ) from e
+            raise ResourceError(
+                {
+                    "code": "INTERNAL_ERROR",
+                    "message": f"Unexpected error fetching resource: {formatted_path}",
+                    "detail": str(e),
+                    "resource_type": "api",
+                    "resource_id": formatted_path,
+                }
+            ) from e
+
+    summary = operation.get("summary", "")
+    description = operation.get("description", "")
+    docstring = summary
+    if description:
+        docstring += "\n\n" + description
+    if not docstring:
+        docstring = f"Resource for {method.upper()} {path}"
+    resource_func.__doc__ = docstring
+
+    return resource_func
+
+
+def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: dict[str, Any],
-    registry: Any,  # ResourceRegistry - using Any to avoid circular import
+    registry: Any,
     skip_uris: set[str] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec.
@@ -286,101 +370,7 @@ def register_auto_generated_resources(  # noqa PLR0915
                    These URIs will be provided by custom resources with better formatting.
     """
     if skip_uris is None:
-        # Default set: URIs that will be provided by custom resources
         skip_uris = AUTO_GENERATED_RESOURCE_SKIP_URIS
-
-    def make_resource_func(path: str, method: str, operation: dict[str, Any]) -> Callable:
-        """Create a resource function for a given OpenAPI operation."""
-        # Extract parameters from path
-        path_params = []
-        if "parameters" in operation:
-            for param in operation["parameters"]:
-                if param["in"] == "path":
-                    path_params.append(param["name"])
-
-        query_params = []
-        if "parameters" in operation:
-            for param in operation["parameters"]:
-                if param["in"] == "query":
-                    query_params.append(param["name"])
-
-        async def resource_func(**kwargs: Any) -> ResourceResult:
-            """Auto-generated resource from OpenAPI spec."""
-            # Build path with kwargs
-            formatted_path = path
-            missing_params = []
-            for param in path_params:
-                if param not in kwargs:
-                    missing_params.append(param)
-            if missing_params:
-                raise ResourceError(
-                    {
-                        "code": "VALIDATION_ERROR",
-                        "message": f"Missing required path parameter(s): {', '.join(missing_params)}",
-                        "detail": "The resource requires path parameters that were not provided.",
-                        "resource_type": "api",
-                        "resource_id": formatted_path,
-                    }
-                )
-            # Now replace placeholders
-            for param in path_params:
-                formatted_path = formatted_path.replace(f"{{{param}}}", str(kwargs[param]))
-
-            # Build query params
-            query = {}
-            for param in query_params:
-                if param in kwargs:
-                    query[param] = kwargs[param]
-
-            try:
-                response = await gitea_client.request(
-                    method, formatted_path, params=query if query else None
-                )
-                # Return JSON for auto-generated resources
-                return json.dumps(response, indent=2)
-            except Exception as e:
-                status = getattr(e, "status_code", None)
-                if status == HTTP_STATUS_NOT_FOUND:
-                    raise ResourceError(
-                        {
-                            "code": "NOT_FOUND",
-                            "message": f"Resource not found: {formatted_path}",
-                            "detail": str(e),
-                            "resource_type": "api",
-                            "resource_id": formatted_path,
-                        }
-                    ) from e
-                if status:
-                    raise ResourceError(
-                        {
-                            "code": "API_ERROR",
-                            "message": f"API error {status} for {formatted_path}",
-                            "detail": str(e),
-                            "resource_type": "api",
-                            "resource_id": formatted_path,
-                        }
-                    ) from e
-                raise ResourceError(
-                    {
-                        "code": "INTERNAL_ERROR",
-                        "message": f"Unexpected error fetching resource: {formatted_path}",
-                        "detail": str(e),
-                        "resource_type": "api",
-                        "resource_id": formatted_path,
-                    }
-                ) from e
-
-        # Set docstring from operation
-        summary = operation.get("summary", "")
-        description = operation.get("description", "")
-        docstring = summary
-        if description:
-            docstring += "\n\n" + description
-        if not docstring:
-            docstring = f"Resource for {method.upper()} {path}"
-        resource_func.__doc__ = docstring
-
-        return resource_func
 
     # Iterate over all GET operations
     paths = openapi_spec.get("paths", {})
@@ -412,7 +402,7 @@ def register_auto_generated_resources(  # noqa PLR0915
                     continue
 
                 # Create the resource function
-                resource_func = make_resource_func(path, method.upper(), operation)
+                resource_func = _make_resource_func(path, method.upper(), operation, gitea_client)
 
                 # Register with FastMCP
                 try:
@@ -474,7 +464,7 @@ async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> Resour
             content = base64.b64decode(response.get("content", "")).decode("utf-8")
         else:
             content = response.get("content", "")
-        return content # noqa: TRY300
+        return content  # noqa: TRY300
     except Exception as e:
         _handle_not_found(
             e, "readme", f"{owner}/{repo}", f"README not found for repository '{owner}/{repo}'."
@@ -576,7 +566,7 @@ async def get_file(
         else:
             content = response.get("content", "")
 
-        return content # noqa: TRY300
+        return content  # noqa: TRY300
     except Exception as e:
         _handle_not_found(
             e,

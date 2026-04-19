@@ -54,9 +54,8 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
             "User info retrieved",
             extra={"username": username, "is_admin": is_admin},
         )
-    except Exception as e:  # noqa: BLE001
-        # On error, log and keep all tools (optimistic)
-        logger.warning(
+    except Exception as e:
+        logger.exception(
             "Failed to fetch user info for filtering, keeping all tools",
             extra={"error": str(e)},
         )

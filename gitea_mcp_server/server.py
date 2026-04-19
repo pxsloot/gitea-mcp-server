@@ -165,7 +165,8 @@ async def main_async() -> None:
     try:
         config = Config.get()
         setup_logging(level=config.log_level, log_format=config.log_format)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
+        logger.exception("Failed to initialize config")
         print(f"Configuration error: {e}", file=sys.stderr)
         sys.exit(1)
 

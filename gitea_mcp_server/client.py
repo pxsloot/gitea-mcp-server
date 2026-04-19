@@ -195,7 +195,8 @@ class HTTPTransport:
                 error_data = e.response.json()
                 error_detail = error_data.get("message", str(error_data))
                 error_msg += f": {error_detail}"
-            except Exception:  # noqa: BLE001
+            except Exception:
+                logger.exception("Could not parse error response, using text preview")
                 # Limit response text to avoid log bloat and potential sensitive data
                 preview = e.response.text[:RESPONSE_PREVIEW_LIMIT] if e.response.text else ""
                 error_msg += f": {preview}"
@@ -237,8 +238,8 @@ class HTTPTransport:
             try:
                 await self._client.aclose()
                 logger.debug("HTTP client closed")
-            except Exception:  # noqa: BLE001
-                logger.warning("Error closing HTTP client", exc_info=True)
+            except Exception:
+                logger.exception("Error closing HTTP client")
             finally:
                 self._client = None
 

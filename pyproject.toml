@@ -52,7 +52,8 @@ target-version = "py311"
 lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC", "ICN", "G", "INP", "PIE", "PT", "Q", "RSE", "RET", "SIM", "TCH", "ARG", "PTH", "PD", "PL", "TRY", "NPY", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["PLR2004", "PLC0415", "F841", "RUF043"]
+"tests/**/*" = ["PLR2004", "PLC0415", "F841", "RUF043", "BLE001"]
+"check_annotations.py" = ["BLE001"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

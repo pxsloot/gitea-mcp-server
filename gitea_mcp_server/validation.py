@@ -281,7 +281,7 @@ SCHEMA_CONSTRAINTS: dict[str, dict[str, Any]] = {
     },
     "per_page": {
         "minimum": 1,
-        "maximum": 100,
+        "maximum": PAGE_SIZE_MAX,
         "type": "integer",
     },
 }

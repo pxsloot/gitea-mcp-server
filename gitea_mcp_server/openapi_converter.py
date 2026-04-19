@@ -4,7 +4,7 @@
 
 import logging
 import re
-from typing import Any, Protocol, cast
+from typing import Any, ClassVar, Protocol, cast
 
 from gitea_mcp_server.exceptions import SpecError
 
@@ -463,7 +463,7 @@ class SchemaWalker:
 class OptionalPropertyTransformer:
     """Add null to optional properties and handle special format cases (e.g., email)."""
 
-    FORMATS_NEEDING_EMPTY: frozenset[str] = frozenset({"email"})
+    FORMATS_NEEDING_EMPTY: ClassVar[frozenset[str]] = frozenset({"email"})
 
     def __call__(
         self, schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None

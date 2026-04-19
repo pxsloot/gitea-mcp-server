@@ -453,7 +453,7 @@ def customize_component(  # noqa PLR0915
             # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
             formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
             _raise_value_error_from(formatted, e)
-        except (KeyError, TypeError, AttributeError):
+        except (KeyError, TypeError, AttributeError, RuntimeError):
             # Unexpected errors - log full traceback for debugging, but give user a clean message
             logger.exception("Unexpected error during tool execution")
             _raise_value_error(
@@ -519,7 +519,10 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         super().__init__(**kwargs)
 
     async def get_tool_catalog(
-        self, ctx: Context, *, run_middleware: bool = True  # noqa ARG002
+        self,
+        ctx: Context,
+        *,
+        run_middleware: bool = True,  # noqa ARG002
     ) -> Sequence[Tool]:
         """Override to always bypass middleware when fetching the tool catalog."""
         # Force run_middleware=False to avoid cached synthetic results

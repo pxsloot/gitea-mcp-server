@@ -70,8 +70,12 @@ class TestResourcesIntegration:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
 
             # Patch the resource registration to track calls
-            with patch("gitea_mcp_server.server_setup.resource_registry.register_auto_generated_resources") as mock_auto:
-                with patch("gitea_mcp_server.resources.register_custom_resources") as mock_custom:
+            with patch(
+                "gitea_mcp_server.server_setup.resource_registry.register_auto_generated_resources"
+            ) as mock_auto:
+                with patch(
+                    "gitea_mcp_server.server_setup.resource_registry.register_custom_resources"
+                ) as mock_custom:
                     mcp = await create_mcp_server(gitea_client)
 
                     # Verify both registration functions were called

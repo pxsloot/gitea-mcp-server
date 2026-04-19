@@ -1,6 +1,6 @@
 """Unit tests for MCP extensions processing."""
 
-from unittest.mock import mock_open, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -251,16 +251,18 @@ class TestApplyMcpExtensions:
 class TestLoadMcpExtensions:
     """Tests for the load_mcp_extensions function."""
 
-    def test_loads_yaml_file(self):
+    def test_loads_yaml_file(self, tmp_path):
         yaml_content = """
 tool_names:
   create_issue:
     title: "Custom Title"
     description: "Custom description"
-    """
-        with patch("builtins.open", mock_open(read_data=yaml_content)):
-            with patch("pathlib.Path.exists", return_value=True):
-                result = load_mcp_extensions()
+"""
+        yaml_file = tmp_path / "mcp_extensions.yaml"
+        yaml_file.write_text(yaml_content)
+
+        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
+            result = load_mcp_extensions()
 
         assert result == {
             "tool_names": {
@@ -268,23 +270,27 @@ tool_names:
             }
         }
 
-    def test_returns_empty_when_file_missing(self):
-        with patch("pathlib.Path.exists", return_value=False):
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        nonexistent = tmp_path / "nonexistent.yaml"
+
+        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(nonexistent)}):
             result = load_mcp_extensions()
 
         assert result == {}
 
-    def test_returns_empty_when_file_empty(self):
-        yaml_content = ""
-        with patch("builtins.open", mock_open(read_data=yaml_content)):
-            with patch("pathlib.Path.exists", return_value=True):
-                result = load_mcp_extensions()
+    def test_returns_empty_when_file_empty(self, tmp_path):
+        yaml_file = tmp_path / "mcp_extensions.yaml"
+        yaml_file.write_text("")
+
+        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
+            result = load_mcp_extensions()
 
         assert result == {}
 
-    def test_handles_invalid_yaml(self):
-        yaml_content = "invalid: yaml: content:"
-        with patch("builtins.open", mock_open(read_data=yaml_content)):
-            with patch("pathlib.Path.exists", return_value=True):
-                with pytest.raises(Exception):  # Should raise YAMLError
-                    load_mcp_extensions()
+    def test_handles_invalid_yaml(self, tmp_path):
+        yaml_file = tmp_path / "mcp_extensions.yaml"
+        yaml_file.write_text("invalid: yaml: content:")
+
+        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
+            with pytest.raises(Exception):
+                load_mcp_extensions()

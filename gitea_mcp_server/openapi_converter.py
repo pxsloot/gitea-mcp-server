@@ -463,7 +463,7 @@ class SchemaWalker:
 class OptionalPropertyTransformer:
     """Add null to optional properties and handle special format cases (e.g., email)."""
 
-    FORMATS_NEEDING_EMPTY = {"email"}
+    FORMATS_NEEDING_EMPTY: frozenset[str] = frozenset({"email"})
 
     def __call__(
         self, schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None

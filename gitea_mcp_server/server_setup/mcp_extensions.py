@@ -96,7 +96,7 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
         raise
 
 
-def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any]) -> None:
+def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any]) -> None:  # noqa PLR0912
     """Apply MCP customizations from extensions to the OpenAPI spec.
 
     This function mutates the openapi_spec in-place by:

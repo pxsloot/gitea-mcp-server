@@ -35,7 +35,7 @@ def extract_tool_names(tools):
                         name = tool.get("name")
                         if name:
                             tool_names.append(name)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
         return tool_names
     return []

@@ -91,7 +91,21 @@ def generate_tool_title(route: Any) -> str:
     return title
 
 
-def categorize_tool(path: str) -> str:  # noqa PLR0911
+_CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
+    ("/admin", "admin", False),
+    ("/orgs", "organization", False),
+    ("/org/", "organization", False),
+    ("/user", "user", False),
+    ("/users/", "user", False),
+    ("/repos/{owner}/{repo}/issues", "issue", False),
+    ("/repos/{owner}/{repo}/pulls", "pull_request", False),
+    ("/issues", "issue", True),
+    ("/pulls", "pull_request", True),
+    ("/repos", "repository", False),
+]
+
+
+def categorize_tool(path: str) -> str:
     """Categorize a tool based on its OpenAPI path.
 
     Args:
@@ -100,31 +114,12 @@ def categorize_tool(path: str) -> str:  # noqa PLR0911
     Returns:
         Category string: "repository", "issue", "pull_request", "user", "organization", "admin", or "misc"
     """
-    # Admin paths
-    if path.startswith("/admin"):
-        return "admin"
-
-    # Organization paths
-    if path.startswith(("/orgs", "/org/")):
-        return "organization"
-
-    # User paths
-    if path.startswith(("/user", "/users/")):
-        return "user"
-
-    # Issue paths
-    if "/issues" in path or path.startswith("/issues"):
-        return "issue"
-
-    # Pull request paths
-    if "/pulls" in path or path.startswith("/pulls"):
-        return "pull_request"
-
-    # Repository paths (most common)
-    if path.startswith("/repos"):
-        return "repository"
-
-    # Everything else
+    for prefix, category, contains in _CATEGORY_PREFIXES:
+        if contains:
+            if prefix in path:
+                return category
+        elif path.startswith(prefix):
+            return category
     return "misc"
 
 
@@ -160,7 +155,27 @@ def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
         annotations.openWorldHint = True
 
 
-def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa PLR0911
+_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
+    (
+        "/repos/{owner}/{repo}/issues",
+        None,
+        [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED],
+    ),
+    (
+        "/repos/{owner}/{repo}/pulls",
+        None,
+        [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED],
+    ),
+    ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),
+    ("/repos/{owner}/{repo}/labels", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/milestones", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
+]
+
+
+def compute_invalidation_patterns(path: str, method: str) -> list[str]:
     """Compute resource invalidation patterns for a tool based on its path and method.
 
     This function analyzes the OpenAPI path and HTTP method to determine which
@@ -174,43 +189,15 @@ def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa 
         List of pattern names (keys in RESOURCE_PATTERNS) to invalidate.
         Empty list if no invalidation needed.
     """
-    # Only consider write methods (safe methods don't need invalidation)
     if method.upper() in ("GET", "HEAD", "OPTIONS"):
         return []
 
-    # Issue operations: any path that starts with /repos/{owner}/{repo}/issues
-    if path.startswith("/repos/{owner}/{repo}/issues"):
-        return [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED]
-
-    # Pull request operations: starts with /repos/{owner}/{repo}/pulls
-    if path.startswith("/repos/{owner}/{repo}/pulls"):
-        return [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED]
-
-    # Repository direct edit: exactly /repos/{owner}/{repo} (e.g., repo_edit)
-    if path == "/repos/{owner}/{repo}":
-        return [PATTERN_REPO]
-
-    # File contents: /repos/{owner}/{repo}/contents[...] (create, update, delete files)
-    if path.startswith("/repos/{owner}/{repo}/contents"):
-        return [PATTERN_FILES]
-
-    # Label operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/labels"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Milestone operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/milestones"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Release operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/releases"):
-        return [PATTERN_REPO]
-
-    # Topic operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/topics"):
-        return [PATTERN_REPO]
-
-    # Add more as needed...
+    for prefix, match_type, patterns in _INVALIDATION_PATTERNS:
+        if match_type == "exact":
+            if path == prefix:
+                return patterns
+        elif path.startswith(prefix):
+            return patterns
     return []
 
 
@@ -250,7 +237,26 @@ def update_labels_schema(component: OpenAPITool) -> None:
     # If already a list, don't modify (could be already set)
 
 
-def _lookup_response_description(  # noqa PLR0911
+def _resolve_ref(openapi_spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+    """Resolve a $ref pointer in an OpenAPI spec.
+
+    Args:
+        openapi_spec: The OpenAPI specification dictionary
+        ref: The $ref path (e.g., "#/components/responses/NotFound")
+
+    Returns:
+        The resolved component, or None if not found.
+    """
+    parts = ref.lstrip("#/").split("/")
+    current: dict[str, Any] | None = openapi_spec
+    for part in parts:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _lookup_response_description(
     openapi_spec: dict[str, Any],
     route: Any,
     status_code: int,
@@ -265,44 +271,159 @@ def _lookup_response_description(  # noqa PLR0911
     Returns:
         The response description string, or a generic fallback if not found.
     """
+    fallback = f"HTTP error {status_code}"
+    result = fallback
     try:
         paths = openapi_spec.get("paths", {})
         path_item = paths.get(route.path)
         if not path_item:
-            return f"HTTP error {status_code}"
-        method = getattr(route, "method", "").lower()
-        operation = path_item.get(method) if method else None
-        if not operation:
-            return f"HTTP error {status_code}"
-        responses = operation.get("responses", {})
-        response_def = responses.get(str(status_code))
-
-        if not response_def or not isinstance(response_def, dict):
-            return f"HTTP error {status_code}"
-
-        # Direct description takes precedence
-        if "description" in response_def:
-            return str(response_def["description"])
-
-        # Handle $ref to components/responses
-        if "$ref" in response_def:
-            ref_path = response_def["$ref"]
-            parts = ref_path.lstrip("#/").split("/")
-            current: Any = openapi_spec
-            for part in parts:
-                current = current.get(part) if isinstance(current, dict) else None
-                if current is None:
-                    break
-            if isinstance(current, dict):
-                desc = current.get("description")
-                return str(desc) if desc else f"HTTP error {status_code}"
-
-        return f"HTTP error {status_code}"  # noqa TRY300
+            result = fallback
+        else:
+            method = getattr(route, "method", "").lower()
+            operation = path_item.get(method) if method else None
+            if not operation:
+                result = fallback
+            else:
+                responses = operation.get("responses", {})
+                response_def = responses.get(str(status_code))
+                if not response_def or not isinstance(response_def, dict):
+                    result = fallback
+                elif "description" in response_def:
+                    result = str(response_def["description"])
+                elif "$ref" in response_def:
+                    resolved = _resolve_ref(openapi_spec, response_def["$ref"])
+                    if isinstance(resolved, dict):
+                        desc = resolved.get("description")
+                        result = str(desc) if desc else fallback
     except (KeyError, TypeError, AttributeError, ValueError):
-        return f"HTTP error {status_code}"
+        result = fallback
+    return result
 
 
-def customize_component(  # noqa PLR0915
+def _run_validation(kwargs: dict[str, Any]) -> None:
+    """Run runtime validation on tool arguments."""
+    for name, value in kwargs.items():
+        if name in SINGLE_VALIDATORS:
+            try:
+                SINGLE_VALIDATORS[name](value, field=name)
+            except ValidationError:
+                raise
+            except (TypeError, ValueError, KeyError) as e:
+                msg = f"Validation error for {name}: {e}"
+                _raise_validation_error(msg, name, e)
+    if "page" in kwargs or "per_page" in kwargs:
+        validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
+
+
+async def _convert_labels(
+    kwargs: dict[str, Any],
+    has_labels: bool,
+    component: Any,
+    label_manager: LabelManager,
+) -> None:
+    """Convert label names to IDs if needed."""
+    if not has_labels:
+        return
+    labels = kwargs.get("labels", [])
+    if not labels or all(isinstance(label, int) for label in labels):
+        return
+
+    owner = kwargs.get("owner") or kwargs.get("org")
+    repo = kwargs.get("repo")
+    if not owner or not repo:
+        return
+
+    client = getattr(component, "_client", None)
+    if client is None:
+        return
+
+    label_map = await label_manager.get_label_map(owner, repo, client)
+    converted = []
+    unknown = []
+    for label in labels:
+        if isinstance(label, str):
+            label_lower = label.lower()
+            if label_lower in label_map:
+                converted.append(label_map[label_lower]["id"])
+            else:
+                unknown.append(label)
+        else:
+            converted.append(label)
+
+    if unknown:
+        available = sorted(label_map.keys())
+        msg = (
+            f"Unknown label(s): {unknown}. "
+            f"Available labels: {', '.join(available)}. "
+            f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
+        )
+        _raise_value_error(msg)
+
+    kwargs["labels"] = converted
+
+
+async def _run_with_error_handling(
+    kwargs: dict[str, Any],
+    component: Any,
+    route: Any,
+    openapi_spec: dict[str, Any] | None,
+) -> Any:
+    """Run the component with enhanced error handling."""
+    try:
+        return await component.run(kwargs)
+    except ValueError as e:
+        cause = e.__cause__
+        if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
+            status_code = cause.response.status_code
+            description = _lookup_response_description(openapi_spec, route, status_code)
+            try:
+                error_body = cause.response.json()
+                message = error_body.get("message", "")
+                formatted = f"{description}\n\nDetails: {message}" if message else description
+            except (ValueError, AttributeError):
+                formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
+            raise ValueError(formatted) from e
+        raise
+    except httpx.HTTPError as e:
+        formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
+        _raise_value_error_from(formatted, e)
+    except (KeyError, TypeError, AttributeError, RuntimeError):
+        logger.exception("Unexpected error during tool execution")
+        _raise_value_error(
+            "An unexpected error occurred. Please check the server logs for details."
+        )
+
+
+def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
+    """Prepare tool annotations from component."""
+    if component.annotations is None:
+        new_annotations = ToolAnnotations()
+    elif isinstance(component.annotations, ToolAnnotations):
+        new_annotations = component.annotations.model_copy()
+    else:
+        try:
+            new_annotations = ToolAnnotations(**component.annotations)
+        except (TypeError, ValueError):
+            new_annotations = ToolAnnotations()
+    new_annotations.title = title
+    return new_annotations
+
+
+def _prepare_description(annotations: ToolAnnotations, component: Any) -> tuple[str, bool]:
+    """Prepare tool description and return has_labels flag."""
+    description = getattr(component, "description", "") or ""
+    if annotations.readOnlyHint and RESOURCE_NOTE not in description:
+        description += RESOURCE_NOTE
+
+    params = getattr(component, "parameters", None) or {}
+    props = params.get("properties", {})
+    has_labels = "labels" in props and props["labels"].get("type") == "array"
+    if has_labels and LABEL_GUIDANCE.strip() not in description:
+        description += LABEL_GUIDANCE
+    return description, has_labels
+
+
+def customize_component(
     route: Any,
     component: Any,
     label_manager: LabelManager,
@@ -322,150 +443,41 @@ def customize_component(  # noqa PLR0915
                       using the spec's response descriptions.
 
      Returns:
-        A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
+         A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
     """
-    # Only customize OpenAPITool instances
     if not isinstance(component, OpenAPITool):
         return None
 
-    # Generate title and category
     title = generate_tool_title(route)
     category = categorize_tool(route.path)
 
-    # Prepare tags: original tags + category
-    original_tags = set(component.tags) if component.tags else set()
-    new_tags = original_tags | {category}
+    tags = set(component.tags) if component.tags else set() | {category}
 
-    # Prepare annotations: copy existing or create new
-    if component.annotations is None:
-        new_annotations = ToolAnnotations()
-    elif isinstance(component.annotations, ToolAnnotations):
-        new_annotations = component.annotations.model_copy()
-    else:
-        # Handle dict case - either it's a dict (unlikely) or unexpected type
-        try:
-            new_annotations = ToolAnnotations(**component.annotations)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            new_annotations = ToolAnnotations()
+    annotations = _prepare_annotations(component, title)
+    add_inferred_hints(route, annotations)
 
-    # Set title in annotations
-    new_annotations.title = title
-
-    # Add inferred hints based on HTTP method
-    add_inferred_hints(route, new_annotations)
-
-    # Register cache invalidation patterns for write tools
     method = getattr(route, "method", None)
     if method:
         patterns = compute_invalidation_patterns(route.path, method)
         if patterns:
             register_tool_invalidation(component.name, patterns)
 
-    # Prepare description
-    description = getattr(component, "description", "") or ""
-    # Add resource note for read-only tools
-    if new_annotations.readOnlyHint and RESOURCE_NOTE not in description:
-        description += RESOURCE_NOTE
+    description, has_labels = _prepare_description(annotations, component)
 
-    # Check if tool has labels parameter
-    params = getattr(component, "parameters", None) or {}
-    props = params.get("properties", {})
-    has_labels = "labels" in props and props["labels"].get("type") == "array"
-    if has_labels and LABEL_GUIDANCE.strip() not in description:
-        description += LABEL_GUIDANCE
-
-    # Mutate the component's parameters to augment schema and update labels schema.
-    # This mutation is acceptable because the component will be wrapped and not used directly.
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
 
-    # Build transform function that combines validation and label conversion
-    async def transform_fn(**kwargs: Any) -> Any:  # noqa PLR0912
-        # Runtime validation
-        for name, value in kwargs.items():
-            if name in SINGLE_VALIDATORS:
-                try:
-                    SINGLE_VALIDATORS[name](value, field=name)
-                except ValidationError:
-                    raise
-                except (TypeError, ValueError, KeyError) as e:
-                    msg = f"Validation error for {name}: {e}"
-                    _raise_validation_error(msg, name, e)
-        if "page" in kwargs or "per_page" in kwargs:
-            validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
+    async def transform_fn(**kwargs: Any) -> Any:
+        _run_validation(kwargs)
+        await _convert_labels(kwargs, has_labels, component, label_manager)
+        return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
-        # Label conversion
-        if has_labels:
-            labels = kwargs.get("labels", [])
-            if labels and not all(isinstance(label, int) for label in labels):
-                owner = kwargs.get("owner") or kwargs.get("org")
-                repo = kwargs.get("repo")
-                if owner and repo:
-                    client = getattr(component, "_client", None)
-                    if client is not None:
-                        label_map = await label_manager.get_label_map(owner, repo, client)
-                        converted = []
-                        unknown = []
-                        for label in labels:
-                            if isinstance(label, str):
-                                label_lower = label.lower()
-                                if label_lower in label_map:
-                                    converted.append(label_map[label_lower]["id"])
-                                else:
-                                    unknown.append(label)
-                            else:
-                                converted.append(label)
-                        if unknown:
-                            available = sorted(label_map.keys())
-                            msg = (
-                                f"Unknown label(s): {unknown}. "
-                                f"Available labels: {', '.join(available)}. "
-                                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
-                            )
-                            _raise_value_error(msg)
-                        kwargs = dict(kwargs)
-                        kwargs["labels"] = converted
-        # Enhanced error handling: format HTTP errors using OpenAPI response descriptions
-        try:
-            return await component.run(kwargs)
-        except ValueError as e:
-            # Check if this is an HTTP error from FastMCP's OpenAPITool
-            cause = e.__cause__
-            if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
-                status_code = cause.response.status_code
-                # Look up response description from OpenAPI spec
-                description = _lookup_response_description(openapi_spec, route, status_code)
-                # Extract message from response body if available
-                try:
-                    error_body = cause.response.json()
-                    message = error_body.get("message", "")
-                    formatted = f"{description}\n\nDetails: {message}" if message else description
-                except (ValueError, AttributeError):
-                    # Fallback to text response
-                    formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
-
-                # Raise a new ValueError with formatted message, preserving the cause chain
-                raise ValueError(formatted) from e
-            # Not an HTTP error or no spec provided - re-raise unchanged
-            raise
-        except httpx.HTTPError as e:
-            # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
-            formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
-            _raise_value_error_from(formatted, e)
-        except (KeyError, TypeError, AttributeError, RuntimeError):
-            # Unexpected errors - log full traceback for debugging, but give user a clean message
-            logger.exception("Unexpected error during tool execution")
-            _raise_value_error(
-                "An unexpected error occurred. Please check the server logs for details."
-            )
-
-    # Create transformed tool
     return Tool.from_tool(
         component,
         title=title,
-        tags=new_tags,
-        annotations=new_annotations,
+        tags=tags,
+        annotations=annotations,
         description=description,
         transform_fn=transform_fn,
     )

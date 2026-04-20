@@ -232,7 +232,26 @@ def update_labels_schema(component: OpenAPITool) -> None:
     # If already a list, don't modify (could be already set)
 
 
-def _lookup_response_description(  # noqa PLR0911
+def _resolve_ref(openapi_spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+    """Resolve a $ref pointer in an OpenAPI spec.
+
+    Args:
+        openapi_spec: The OpenAPI specification dictionary
+        ref: The $ref path (e.g., "#/components/responses/NotFound")
+
+    Returns:
+        The resolved component, or None if not found.
+    """
+    parts = ref.lstrip("#/").split("/")
+    current: Any = openapi_spec
+    for part in parts:
+        current = current.get(part) if isinstance(current, dict) else None
+        if current is None:
+            return None
+    return current
+
+
+def _lookup_response_description(
     openapi_spec: dict[str, Any],
     route: Any,
     status_code: int,
@@ -247,41 +266,33 @@ def _lookup_response_description(  # noqa PLR0911
     Returns:
         The response description string, or a generic fallback if not found.
     """
+    fallback = f"HTTP error {status_code}"
+    result = fallback
     try:
         paths = openapi_spec.get("paths", {})
         path_item = paths.get(route.path)
         if not path_item:
-            return f"HTTP error {status_code}"
-        method = getattr(route, "method", "").lower()
-        operation = path_item.get(method) if method else None
-        if not operation:
-            return f"HTTP error {status_code}"
-        responses = operation.get("responses", {})
-        response_def = responses.get(str(status_code))
-
-        if not response_def or not isinstance(response_def, dict):
-            return f"HTTP error {status_code}"
-
-        # Direct description takes precedence
-        if "description" in response_def:
-            return str(response_def["description"])
-
-        # Handle $ref to components/responses
-        if "$ref" in response_def:
-            ref_path = response_def["$ref"]
-            parts = ref_path.lstrip("#/").split("/")
-            current: Any = openapi_spec
-            for part in parts:
-                current = current.get(part) if isinstance(current, dict) else None
-                if current is None:
-                    break
-            if isinstance(current, dict):
-                desc = current.get("description")
-                return str(desc) if desc else f"HTTP error {status_code}"
-
-        return f"HTTP error {status_code}"  # noqa TRY300
+            result = fallback
+        else:
+            method = getattr(route, "method", "").lower()
+            operation = path_item.get(method) if method else None
+            if not operation:
+                result = fallback
+            else:
+                responses = operation.get("responses", {})
+                response_def = responses.get(str(status_code))
+                if not response_def or not isinstance(response_def, dict):
+                    result = fallback
+                elif "description" in response_def:
+                    result = str(response_def["description"])
+                elif "$ref" in response_def:
+                    resolved = _resolve_ref(openapi_spec, response_def["$ref"])
+                    if isinstance(resolved, dict):
+                        desc = resolved.get("description")
+                        result = str(desc) if desc else fallback
     except (KeyError, TypeError, AttributeError, ValueError):
-        return f"HTTP error {status_code}"
+        result = fallback
+    return result
 
 
 def customize_component(  # noqa PLR0915

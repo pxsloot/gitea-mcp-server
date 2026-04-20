@@ -18,31 +18,32 @@ You cannot call a tool by its presumed name without searching first (unless you 
 ```python
 # Get current user
 tools = await call_tool("search_tools", {"query": "current user"})
-# tools might include: {"name": "user_get_current", "description": "Get the current user", ...}
-result = await call_tool("call_tool", {"name": "user_get_current"})
+# tools might include: {"name": "gitea_user_get_current", "description": "Get the current user", ...}
+result = await call_tool("call_tool", {"name": "gitea_user_get_current"})
 
 # List your repositories
 tools = await call_tool("search_tools", {"query": "list repos"})
 # Look for a tool like "user_current_list_repos" or "user_repos_list"
 repos = await call_tool("call_tool", {
-    "name": "user_current_list_repos",
+    "name": "gitea_user_current_list_repos",
     "arguments": {"page": 1, "limit": 50}
 })
 ```
 
 ## Authentication
-Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `user_get_current` (discover via search as shown above).
+Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `gitea_user_get_current` (discover via search as shown above).
 
 ## Tool Discovery Tips
 - **Start with broad keywords**: "issue", "repo", "user", "pull", "org", "topic", "release", "admin", "milestone", "label", "comment", "webhook", "key", "branch", "tag", "team", "permission".
 - **If no results**: Simplify the query to one word. Search is case-insensitive and matches on tool name, description, and tags.
 - **Tool naming**: Tools use snake_case (underscores). They are derived from Gitea API operationIds (camelCase → snake_case).
+- **Tool prefix**: All tools are prefixed with `gitea_` for MCP best practices (e.g., `gitea_issue_create_repo_issue`, `gitea_gitea_user_get_current`). Search results will include this prefix.
 - **Common patterns**:
   - `{domain}_{action}_{resource?}` e.g., `issue_create_repo_issue`, `repo_delete`, `user_get`
   - `{domain}_list_{resource}` e.g., `user_list_orgs`, `org_list_repos`
   - `{domain}_search_{resource}` e.g., `repo_search`, `issue_search_repo_issues`
 - **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
-- **Save a tool name** for reuse: Once you find a tool name (e.g., `user_get_current`), you can use it directly in subsequent `call_tool` calls without searching again (unless you need other tools).
+- **Save a tool name** for reuse: Once you find a tool name (e.g., `gitea_user_get_current`), you can use it directly in subsequent `call_tool` calls without searching again (unless you need other tools).
 
 ## Resources
 Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern.
@@ -56,7 +57,7 @@ Resources provide cached, read-only access. Use them for efficient data retrieva
 - `gitea://version` → server version (plain text)
 - `gitea://server/info` → server metadata: type (Gitea/Forgejo), API version, description (Markdown)
 
-To get your own repos via resource: first get your username (`user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
+To get your own repos via resource: first get your username (`gitea_user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
 
 ## Labels
 
@@ -73,7 +74,7 @@ Before creating an issue/PR with labels, it's a good idea to fetch the available
 ```python
 # Option 1: Use the list_labels tool (discover via search)
 tools = await call_tool("search_tools", {"query": "list labels"})
-labels = await call_tool("call_tool", {"name": "list_labels", "arguments": {"owner": "org", "repo": "repo"}})
+labels = await call_tool("call_tool", {"name": "gitea_list_labels", "arguments": {"owner": "org", "repo": "repo"}})
 
 # Option 2: Read the labels resource (faster, cached)
 labels_md = await mcp_read_resource("gitea://repos/org/repo/labels")
@@ -86,7 +87,7 @@ labels_md = await mcp_read_resource("gitea://repos/org/repo/labels")
 tools = await call_tool("search_tools", {"query": "create issue"})
 # Use label names (automatically converted to IDs)
 result = await call_tool("call_tool", {
-    "name": "issue_create_repo_issue",
+    "name": "gitea_issue_create_repo_issue",
     "arguments": {
         "owner": "myorg",
         "repo": "myrepo",
@@ -101,15 +102,15 @@ result = await call_tool("call_tool", {
 
 ### 1. Get current user and list their repositories
 ```python
-# Discover and call user_get_current
+# Discover and call gitea_user_get_current
 u = await call_tool("search_tools", {"query": "current user"})
-user = await call_tool("call_tool", {"name": "user_get_current"})
+user = await call_tool("call_tool", {"name": "gitea_user_get_current"})
 username = user["login"]
 
 # Discover and call a tool to list repos
 # Search for "list repos user" → likely "user_current_list_repos" or "user_repos_list"
 repos = await call_tool("call_tool", {
-    "name": "user_repos_list",
+    "name": "gitea_user_repos_list",
     "arguments": {"page": 1, "limit": 50}
 })
 ```
@@ -120,7 +121,7 @@ repos = await call_tool("call_tool", {
 t = await call_tool("search_tools", {"query": "issue"})
 # Create an issue (look for a tool like "issue_create_repo_issue")
 create = await call_tool("call_tool", {
-    "name": "issue_create_repo_issue",
+    "name": "gitea_issue_create_repo_issue",
     "arguments": {
         "owner": "myorg", "repo": "myrepo",
         "title": "Bug report", "body": "details", "labels": ["bug"]
@@ -134,12 +135,12 @@ create = await call_tool("call_tool", {
 t = await call_tool("search_tools", {"query": "topic"})
 # Add a topic
 await call_tool("call_tool", {
-    "name": "repo_add_topic",
+    "name": "gitea_repo_add_topic",
     "arguments": {"owner": "org", "repo": "repo", "topic": "gitea"}
 })
 # Delete a topic
 await call_tool("call_tool", {
-    "name": "repo_delete_topic",
+    "name": "gitea_repo_delete_topic",
     "arguments": {"owner": "org", "repo": "repo", "topic": "old"}
 })
 ```

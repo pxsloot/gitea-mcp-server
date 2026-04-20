@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import OpenAPIProvider
 
+from gitea_mcp_server.config import Config
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import customize_component
 
@@ -33,6 +34,9 @@ def create_openapi_provider(
     Returns:
         Configured OpenAPIProvider
     """
+    config = Config.get()
+    tool_prefix = config.tool_prefix
+
     # Create provider without component customization function
     provider = OpenAPIProvider(
         openapi_spec=openapi_spec,
@@ -54,6 +58,11 @@ def create_openapi_provider(
             new_tool = customize_component(route, tool, label_manager, openapi_spec)
             if new_tool is not None:
                 provider._tools[name] = new_tool  # type: ignore[assignment]
+
+        # Apply tool prefix for MCP best practices
+        if tool_prefix and not name.startswith(tool_prefix):
+            prefixed_name = f"{tool_prefix}{name}"
+            provider._tools[prefixed_name] = provider._tools.pop(name)
 
     return provider
 

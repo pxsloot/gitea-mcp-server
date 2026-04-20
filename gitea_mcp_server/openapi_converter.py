@@ -1,7 +1,5 @@
 """Convert Swagger 2.0 spec to OpenAPI 3.1 format."""
 
-# ruff: noqa: PLR0912,PLR0915
-
 import logging
 import re
 from typing import Any, ClassVar, Protocol, cast
@@ -410,8 +408,59 @@ class PathsConverter:
 class SchemaWalker:
     """Iterative schema walker for applying transformations."""
 
+    COMBINATOR_KEYS = ("allOf", "anyOf", "oneOf")
+
     def __init__(self, callback: SchemaCallback):
         self.callback = callback
+
+    def _push_properties(
+        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None, _key: str | None
+    ) -> None:
+        """Push property schemas to stack."""
+        props = current_schema.get("properties")
+        if not isinstance(props, dict):
+            return
+        for prop_name, prop_schema in props.items():
+            if isinstance(prop_schema, dict):
+                stack.append((prop_schema, current_schema, prop_name))
+
+    def _push_combinators(
+        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
+    ) -> None:
+        """Push combinator schemas to stack."""
+        for combo_key in self.COMBINATOR_KEYS:
+            items = current_schema.get(combo_key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        stack.append((item, current_schema, combo_key))
+
+    def _push_array_items(
+        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
+    ) -> None:
+        """Push array items schema to stack."""
+        items_schema = current_schema.get("items")
+        if isinstance(items_schema, dict):
+            stack.append((items_schema, current_schema, "items"))
+
+    def _push_additional_props(
+        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
+    ) -> None:
+        """Push additionalProperties schema to stack."""
+        add_props = current_schema.get("additionalProperties")
+        if isinstance(add_props, dict):
+            stack.append((add_props, current_schema, "additionalProperties"))
+
+    def _push_pattern_props(
+        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
+    ) -> None:
+        """Push patternProperties schemas to stack."""
+        pattern_props = current_schema.get("patternProperties")
+        if not isinstance(pattern_props, dict):
+            return
+        for pat_key, pat_schema in pattern_props.items():
+            if isinstance(pat_schema, dict):
+                stack.append((pat_schema, current_schema, pat_key))
 
     def walk(self, schema: dict[str, Any]) -> None:
         """Walk the schema tree iteratively and apply callback to each schema node."""
@@ -424,46 +473,73 @@ class SchemaWalker:
             if not isinstance(current_schema, dict):
                 continue  # type: ignore[unreachable]
 
-            # Apply callback to current schema
             self.callback(current_schema, parent, key)
 
-            # Process properties - push each property with parent=current_schema
-            props = current_schema.get("properties")
-            if isinstance(props, dict):
-                for prop_name, prop_schema in props.items():
-                    if isinstance(prop_schema, dict):
-                        stack.append((prop_schema, current_schema, prop_name))
-
-            # Process combinator schemas (allOf, anyOf, oneOf) - push with parent=current_schema
-            for combo_key in ("allOf", "anyOf", "oneOf"):
-                items = current_schema.get(combo_key)
-                if isinstance(items, list):
-                    for idx, item in enumerate(items):
-                        if isinstance(item, dict):
-                            stack.append((item, current_schema, combo_key))
-
-            # Process items (array)
-            items_schema = current_schema.get("items")
-            if isinstance(items_schema, dict):
-                stack.append((items_schema, current_schema, "items"))
-
-            # Process additionalProperties
-            add_props = current_schema.get("additionalProperties")
-            if isinstance(add_props, dict):
-                stack.append((add_props, current_schema, "additionalProperties"))
-
-            # Process patternProperties
-            pattern_props = current_schema.get("patternProperties")
-            if isinstance(pattern_props, dict):
-                for pat_key, pat_schema in pattern_props.items():
-                    if isinstance(pat_schema, dict):
-                        stack.append((pat_schema, current_schema, pat_key))
+            self._push_properties(stack, current_schema, parent, key)
+            self._push_combinators(stack, current_schema, parent)
+            self._push_array_items(stack, current_schema, parent)
+            self._push_additional_props(stack, current_schema, parent)
+            self._push_pattern_props(stack, current_schema, parent)
 
 
 class OptionalPropertyTransformer:
     """Add null to optional properties and handle special format cases (e.g., email)."""
 
     FORMATS_NEEDING_EMPTY: ClassVar[frozenset[str]] = frozenset({"email"})
+
+    def _is_property_schema(self, parent: dict[str, Any], key: str) -> bool:
+        """Check if this schema represents a property-like schema."""
+        return (
+            ("properties" in parent and key in parent["properties"])
+            or ("patternProperties" in parent and key in parent["patternProperties"])
+            or (key == "additionalProperties" and "additionalProperties" in parent)
+        )
+
+    def _is_optional_property(self, parent: dict[str, Any], key: str) -> bool:
+        """Check if this property is optional (not in required list)."""
+        if "properties" not in parent or key not in parent["properties"]:
+            return True
+        required = parent.get("required", [])
+        return key not in required
+
+    def _transform_special_format(
+        self, schema: dict[str, Any], optional: bool
+    ) -> None:
+        """Handle special formats (e.g., email) - transform to anyOf."""
+        fmt = schema.get("format", "email")
+        format_branch = {"type": "string", "format": fmt}
+        for k in ("pattern", "minLength", "maxLength", "enum", "default"):
+            if k in schema:
+                format_branch[k] = schema[k]
+
+        any_of = [format_branch]
+        if optional:
+            any_of.append({"type": "string", "maxLength": 0})
+            any_of.append({"type": "null"})
+
+        new_schema = {"anyOf": any_of}
+        for k in ("description", "title", "example", "readOnly", "writeOnly", "deprecated"):
+            if k in schema:
+                new_schema[k] = schema[k]
+
+        schema.clear()
+        schema.update(new_schema)
+
+    def _add_nullable(self, schema: dict[str, Any]) -> None:
+        """Add nullable type to schema for optional properties."""
+        if "$ref" in schema and "anyOf" not in schema and "oneOf" not in schema:
+            ref = schema["$ref"]
+            schema.clear()
+            schema["anyOf"] = [{"$ref": ref}, {"type": "null"}]
+            return
+
+        if "type" in schema and "anyOf" not in schema and "oneOf" not in schema:
+            t = schema["type"]
+            if isinstance(t, str):
+                if t != "null":
+                    schema["type"] = [t, "null"]
+            elif isinstance(t, list) and "null" not in t:
+                t.append("null")
 
     def __call__(
         self, schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
@@ -473,62 +549,17 @@ class OptionalPropertyTransformer:
         if not isinstance(parent, dict):
             return  # type: ignore[unreachable]
 
-        # Determine if this schema is a property-like schema
-        is_property = False
-        if (
-            ("properties" in parent and key in parent["properties"])
-            or ("patternProperties" in parent and key in parent["patternProperties"])
-            or (key == "additionalProperties" and "additionalProperties" in parent)
-        ):
-            is_property = True
-
-        if not is_property:
+        if not self._is_property_schema(parent, key):
             return
 
-        # Determine if this property is optional
-        optional = True
-        if "properties" in parent and key in parent["properties"]:
-            required = parent.get("required", [])
-            if key in required:
-                optional = False
+        optional = self._is_optional_property(parent, key)
 
-        # Handle special formats (e.g., email) - always transform to anyOf
         if schema.get("type") == "string" and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
-            fmt = schema.get("format", "email")
-            format_branch = {"type": "string", "format": fmt}
-            for k in ["pattern", "minLength", "maxLength", "enum", "default"]:
-                if k in schema:
-                    format_branch[k] = schema[k]
-
-            any_of = [format_branch]
-            if optional:
-                any_of.append({"type": "string", "maxLength": 0})
-                any_of.append({"type": "null"})
-
-            new_schema = {"anyOf": any_of}
-            for k in ["description", "title", "example", "readOnly", "writeOnly", "deprecated"]:
-                if k in schema:
-                    new_schema[k] = schema[k]
-
-            schema.clear()
-            schema.update(new_schema)
+            self._transform_special_format(schema, optional)
             return
 
-        # For other optional properties, add nullable
         if optional:
-            if "$ref" in schema and "anyOf" not in schema and "oneOf" not in schema:
-                ref = schema["$ref"]
-                schema.clear()
-                schema["anyOf"] = [{"$ref": ref}, {"type": "null"}]
-                return
-
-            if "type" in schema and "anyOf" not in schema and "oneOf" not in schema:
-                t = schema["type"]
-                if isinstance(t, str):
-                    if t != "null":
-                        schema["type"] = [t, "null"]
-                elif isinstance(t, list) and "null" not in t:
-                    t.append("null")
+            self._add_nullable(schema)
 
 
 # The following transformers are no-ops because recursion is handled by walker
@@ -677,8 +708,69 @@ def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:
 
 
 # ============================================================================
-# Main Entry Point
+# Main Entry Point - Conversion Steps
 # ============================================================================
+
+
+def _validate_spec(spec: dict[str, Any]) -> None:
+    """Validate the input spec is a valid Swagger 2.0 dictionary."""
+    if not isinstance(spec, dict):
+        msg = "Invalid spec: must be a dictionary"  # type: ignore[unreachable]
+        raise SpecError(msg)
+    swagger_version = spec.get("swagger")
+    if swagger_version != "2.0":
+        msg = f"Expected Swagger 2.0, got {swagger_version}"
+        raise SpecError(msg)
+
+
+def _update_info_version(spec: dict[str, Any]) -> None:
+    """Update info - preserve version in description."""
+    if "info" not in spec or not isinstance(spec["info"], dict):
+        return
+    info = dict(spec["info"])
+    if "version" in info:
+        version = info["version"]
+        desc = info.get("description", "")
+        if desc:
+            info["description"] = f"{desc}\n\nAPI Version: {version}"
+    spec["info"] = info
+
+
+def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
+    """Convert definition/response/parameter/securityDefinition to components."""
+    components: dict[str, Any] = {}
+
+    if "definitions" in spec:
+        definitions = spec.pop("definitions")
+        if isinstance(definitions, dict):
+            components["schemas"] = convert_definitions(definitions)
+
+    if "responses" in spec:
+        responses = spec.pop("responses")
+        if isinstance(responses, dict):
+            components["responses"] = convert_responses(responses)
+
+    if "parameters" in spec:
+        params = spec.pop("parameters")
+        if isinstance(params, dict):
+            param_list = list(params.values())
+        elif isinstance(params, list):
+            param_list = params
+        else:
+            param_list = []
+        if param_list:
+            converted_params = convert_parameters(param_list)
+            param_dict = {p["name"]: p for p in converted_params if "name" in p}
+            components["parameters"] = param_dict
+
+    if "securityDefinitions" in spec:
+        sec_defs = spec.pop("securityDefinitions")
+        if isinstance(sec_defs, dict):
+            security_schemes = SecuritySchemeConverter().convert(sec_defs)
+            if security_schemes:
+                components["securitySchemes"] = security_schemes
+
+    return components
 
 
 def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
@@ -693,88 +785,25 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     Raises:
         SpecError: If conversion fails due to invalid input
     """
-    if not isinstance(spec, dict):
-        msg = "Invalid spec: must be a dictionary"  # type: ignore[unreachable]
-        raise SpecError(msg)
-
+    _validate_spec(spec)
     spec = dict(spec)
 
-    # Validate Swagger version
     swagger_version = spec.get("swagger")
-    if swagger_version != "2.0":
-        msg = f"Expected Swagger 2.0, got {swagger_version}"
-        raise SpecError(msg)
-
     logger.info("Starting OpenAPI conversion", extra={"swagger_version": swagger_version})
 
-    # Step 1: Update spec version
     SpecVersionUpdater().update(spec)
-
-    # Step 2: Update info (preserve version in description)
-    if "info" in spec and isinstance(spec["info"], dict):
-        info = dict(spec["info"])
-        if "version" in info:
-            version = info["version"]
-            desc = info.get("description", "")
-            if desc:
-                info["description"] = f"{desc}\n\nAPI Version: {version}"
-        spec["info"] = info
-
-    # Step 3: Convert basePath to servers
+    _update_info_version(spec)
     BasePathToServerConverter().convert(spec)
 
-    # Step 4: Initialize components
-    components: dict[str, Any] = {}
-
-    # Step 5: Convert definitions -> components/schemas
-    if "definitions" in spec:
-        definitions = spec.pop("definitions")
-        if isinstance(definitions, dict):
-            components["schemas"] = convert_definitions(definitions)
-
-    # Step 6: Convert responses -> components/responses
-    if "responses" in spec:
-        responses = spec.pop("responses")
-        if isinstance(responses, dict):
-            components["responses"] = convert_responses(responses)
-
-    # Step 7: Convert parameters -> components/parameters
-    if "parameters" in spec:
-        params = spec.pop("parameters")
-        if isinstance(params, dict):
-            param_list = list(params.values())
-        elif isinstance(params, list):
-            param_list = params
-        else:
-            param_list = []
-        if param_list:
-            converted_params = convert_parameters(param_list)
-            param_dict = {p["name"]: p for p in converted_params if "name" in p}
-            components["parameters"] = param_dict
-
-    # Step 8: Convert securityDefinitions -> components/securitySchemes
-    if "securityDefinitions" in spec:
-        sec_defs = spec.pop("securityDefinitions")
-        if isinstance(sec_defs, dict):
-            security_schemes = SecuritySchemeConverter().convert(sec_defs)
-            if security_schemes:
-                components["securitySchemes"] = security_schemes
-
-    # Step 9: Attach components if non-empty
+    components = _convert_components(spec)
     if components:
         spec["components"] = components
 
-    # Step 10: Convert paths
     if "paths" in spec:
         spec["paths"] = convert_paths(spec["paths"])
 
-    # Step 11: Remove Swagger-specific root fields
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
-
-    # Step 12: Fix $ref references
     spec = ReferenceFixer().fix(spec)
-
-    # Step 13: Add nullable for optional reference fields
     _add_nullable_for_optional_refs_impl(spec)
 
     logger.info("OpenAPI conversion completed successfully")

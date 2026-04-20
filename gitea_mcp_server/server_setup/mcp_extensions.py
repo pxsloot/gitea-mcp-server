@@ -96,7 +96,45 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
         raise
 
 
-def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any]) -> None:  # noqa PLR0912
+def _apply_parameter_extensions(operation: dict[str, Any], param_extensions: list[Any]) -> None:
+    """Apply parameter customizations to an operation."""
+    param_map = {p["name"]: p for p in operation.get("parameters", []) if isinstance(p, dict)}
+    for param_ext in param_extensions:
+        param_name = param_ext.get("name")
+        if not param_name or param_name not in param_map:
+            continue
+        param = param_map[param_name]
+        if "description" in param_ext:
+            param["description"] = param_ext["description"]
+        if "examples" in param_ext:
+            param["examples"] = param_ext["examples"]
+
+
+def _apply_operation_extension(
+    operation: dict[str, Any], path: str, method: str, extensions: dict[str, Any]
+) -> None:
+    """Apply extensions to a single operation."""
+    op_id = operation.get("operationId")
+    if not op_id or op_id not in extensions:
+        return
+
+    ext = extensions[op_id]
+    logger.debug(
+        "Applying extensions for operation",
+        extra={"operation_id": op_id, "path": path, "method": method},
+    )
+
+    if "title" in ext:
+        operation["summary"] = ext["title"]
+    if "description" in ext:
+        operation["description"] = ext["description"]
+    if "parameters" in ext and isinstance(ext["parameters"], list):
+        _apply_parameter_extensions(operation, ext["parameters"])
+
+    operation.pop("x-mcp", None)
+
+
+def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any]) -> None:
     """Apply MCP customizations from extensions to the OpenAPI spec.
 
     This function mutates the openapi_spec in-place by:
@@ -118,59 +156,14 @@ def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any
         extra={"tools_count": len(tool_names)},
     )
 
-    # Walk through all paths and methods
+    valid_methods = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
     for path, path_item in openapi_spec.get("paths", {}).items():
         if not isinstance(path_item, dict):
             continue
-
         for method, operation in path_item.items():
-            if method not in ("get", "post", "put", "delete", "patch", "options", "head", "trace"):
+            if method not in valid_methods or not isinstance(operation, dict):
                 continue
-
-            if not isinstance(operation, dict):
-                continue
-
-            op_id = operation.get("operationId")
-            if not op_id:
-                continue
-
-            if op_id not in tool_names:
-                continue
-
-            ext = tool_names[op_id]
-            logger.debug(
-                "Applying extensions for operation",
-                extra={"operation_id": op_id, "path": path, "method": method},
-            )
-
-            # Apply title (overrides summary)
-            if "title" in ext:
-                operation["summary"] = ext["title"]
-
-            # Apply description (overrides existing)
-            if "description" in ext:
-                operation["description"] = ext["description"]
-
-            # Apply parameter customizations
-            if "parameters" in ext and isinstance(ext["parameters"], list):
-                param_map = {
-                    p["name"]: p for p in operation.get("parameters", []) if isinstance(p, dict)
-                }
-                for param_ext in ext["parameters"]:
-                    param_name = param_ext.get("name")
-                    if not param_name:
-                        continue
-                    if param_name in param_map:
-                        param = param_map[param_name]
-                        # Update description if provided
-                        if "description" in param_ext:
-                            param["description"] = param_ext["description"]
-                        # Update/Add examples if provided
-                        if "examples" in param_ext:
-                            param["examples"] = param_ext["examples"]
-
-            # Remove x-mcp if present (should not be in final spec)
-            operation.pop("x-mcp", None)
+            _apply_operation_extension(operation, path, method, tool_names)
 
     logger.info("MCP extensions applied successfully")
 

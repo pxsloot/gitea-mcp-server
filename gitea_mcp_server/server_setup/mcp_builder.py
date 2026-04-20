@@ -40,8 +40,15 @@ def create_openapi_provider(
     )
 
     # Post-process tools: apply customizations to each OpenAPITool
+    #
+    # NOTE: FastMCP does not expose a public API to customize tools after provider creation.
+    # We must access provider._tools directly. This is fragile as FastMCP may change
+    # internal structure between versions. Monitor gofastmcp.com for official
+    # customization hooks. Alternative: file feature request with FastMCP.
     for name, tool in list(provider._tools.items()):
         # Each tool is an OpenAPITool with _route attribute containing the HTTPRoute
+        # NOTE: FastMCP does not expose route information through a public property.
+        # We access _route directly. This may break if FastMCP changes internals.
         route = getattr(tool, "_route", None)
         if route is not None:
             new_tool = customize_component(route, tool, label_manager, openapi_spec)

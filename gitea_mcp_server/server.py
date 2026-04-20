@@ -245,7 +245,6 @@ async def main_async() -> None:
         with contextlib.suppress(Exception):
             await gitea_client.close()
         logging.shutdown()
-        logging.shutdown()
 
 
 def main() -> None:

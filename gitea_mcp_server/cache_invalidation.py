@@ -200,6 +200,10 @@ async def invalidate_cached_resources(
     if not uris:
         return
 
+    # NOTE: FastMCP does not expose a public API for cache invalidation.
+    # We access _read_resource_cache directly. This is fragile as FastMCP
+    # may change internal structure. Consider filing a feature request with
+    # FastMCP for official cache invalidation support.
     cache_adapter = caching_middleware._read_resource_cache
     deleted_count = 0
 

@@ -243,11 +243,11 @@ def _resolve_ref(openapi_spec: dict[str, Any], ref: str) -> dict[str, Any] | Non
         The resolved component, or None if not found.
     """
     parts = ref.lstrip("#/").split("/")
-    current: Any = openapi_spec
+    current: dict[str, Any] | None = openapi_spec
     for part in parts:
-        current = current.get(part) if isinstance(current, dict) else None
-        if current is None:
+        if not isinstance(current, dict):
             return None
+        current = current.get(part)
     return current
 
 
@@ -397,7 +397,7 @@ def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
         new_annotations = component.annotations.model_copy()
     else:
         try:
-            new_annotations = ToolAnnotations(**component.annotations)  # type: ignore[arg-type]
+            new_annotations = ToolAnnotations(**component.annotations)
         except (TypeError, ValueError):
             new_annotations = ToolAnnotations()
     new_annotations.title = title

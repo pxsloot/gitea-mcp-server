@@ -282,3 +282,144 @@ class TestLazyLoading:
             # Should NOT return synthetic tools
             assert "search_tools" not in repo_names
             assert "call_tool" not in repo_names
+
+    @pytest.mark.asyncio
+    async def test_search_discovers_pull_request_tools_with_various_queries(self):
+        """Test that pull request tools are discoverable with various query patterns."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/repos/{owner}/{repo}/pulls": {
+                    "get": {
+                        "operationId": "list_repo_pulls",
+                        "summary": "List a repository's pull requests",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "create_pull_request",
+                        "summary": "Create a pull request",
+                        "description": "Create a new pull request from a branch.",
+                        "responses": {"201": {"description": "Success"}},
+                    },
+                },
+                "/repos/{owner}/{repo}/pulls/{index}": {
+                    "get": {
+                        "operationId": "get_pull_request",
+                        "summary": "Get a pull request",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            # Test 1: Query "pr" should find pull request tools
+            search_pr = await mcp.call_tool("search_tools", {"query": "pr"})
+            pr_tools = search_pr.structured_content.get("result", [])
+            pr_names = [t["name"] for t in pr_tools if isinstance(t, dict)]
+
+            assert "create_pull_request" in pr_names, (
+                f"Query 'pr' should find create_pull_request, got: {pr_names}"
+            )
+            assert "list_repo_pulls" in pr_names, (
+                f"Query 'pr' should find list_repo_pulls, got: {pr_names}"
+            )
+
+            # Test 2: Query "pull request" should find pull request tools
+            search_pull = await mcp.call_tool("search_tools", {"query": "pull request"})
+            pull_tools = search_pull.structured_content.get("result", [])
+            pull_names = [t["name"] for t in pull_tools if isinstance(t, dict)]
+
+            assert "create_pull_request" in pull_names, (
+                f"Query 'pull request' should find create_pull_request, got: {pull_names}"
+            )
+
+            # Test 3: Query "create pr" should find repo_create_pull_request
+            search_create_pr = await mcp.call_tool("search_tools", {"query": "create pr"})
+            create_pr_tools = search_create_pr.structured_content.get("result", [])
+            create_pr_names = [t["name"] for t in create_pr_tools if isinstance(t, dict)]
+
+            assert "create_pull_request" in create_pr_names, (
+                f"Query 'create pr' should find create_pull_request, got: {create_pr_names}"
+            )
+
+            # Test 4: Query "pull request create" should find the tool
+            search_pr_create = await mcp.call_tool("search_tools", {"query": "pull request create"})
+            pr_create_tools = search_pr_create.structured_content.get("result", [])
+            pr_create_names = [t["name"] for t in pr_create_tools if isinstance(t, dict)]
+
+            assert "create_pull_request" in pr_create_names, (
+                f"Query 'pull request create' should find create_pull_request, got: {pr_create_names}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_search_discovers_issue_tools_with_various_queries(self):
+        """Test that issue tools are discoverable with various query patterns."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "operationId": "list_repo_issues",
+                        "summary": "List repository issues",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "create_issue",
+                        "summary": "Create an issue",
+                        "description": "Create a new issue in a repository.",
+                        "responses": {"201": {"description": "Success"}},
+                    },
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            # Test 1: Query "issue" should find issue tools
+            search_issue = await mcp.call_tool("search_tools", {"query": "issue"})
+            issue_tools = search_issue.structured_content.get("result", [])
+            issue_names = [t["name"] for t in issue_tools if isinstance(t, dict)]
+
+            assert "create_issue" in issue_names, (
+                f"Query 'issue' should find create_issue, got: {issue_names}"
+            )
+            assert "list_repo_issues" in issue_names, (
+                f"Query 'issue' should find list_repo_issues, got: {issue_names}"
+            )
+
+            # Test 2: Query "create issue" should find create_issue
+            search_create = await mcp.call_tool("search_tools", {"query": "create issue"})
+            create_tools = search_create.structured_content.get("result", [])
+            create_names = [t["name"] for t in create_tools if isinstance(t, dict)]
+
+            assert "create_issue" in create_names, (
+                f"Query 'create issue' should find create_issue, got: {create_names}"
+            )

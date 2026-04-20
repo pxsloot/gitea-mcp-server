@@ -7,6 +7,7 @@ cache invalidation pattern computation.
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from typing import Annotated, Any
 
@@ -14,6 +15,8 @@ import httpx
 from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
+from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
+from fastmcp.server.transforms.search.bm25 import _catalog_hash
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -451,7 +454,7 @@ def customize_component(
     title = generate_tool_title(route)
     category = categorize_tool(route.path)
 
-    tags = set(component.tags) if component.tags else set() | {category}
+    tags = (set(component.tags) if component.tags else set()) | {category}
 
     annotations = _prepare_annotations(component, title)
     add_inferred_hints(route, annotations)
@@ -516,12 +519,92 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     return result
 
 
+MIN_TOKEN_LENGTH = 2
+
+
+def _tokenize_len2(text: str) -> list[str]:
+    """Tokenize with support for 2-character tokens like 'pr'."""
+    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) >= MIN_TOKEN_LENGTH]
+
+
+class _BM25IndexLen2(_BaseBM25Index):
+    """BM25 index that supports 2-character tokens."""
+
+    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
+        super().__init__(k1, b)
+
+    def build(self, documents: list[str]) -> None:
+        self._doc_tokens = [_tokenize_len2(doc) for doc in documents]
+        self._doc_lengths = [len(tokens) for tokens in self._doc_tokens]
+        self._n = len(documents)
+        self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
+
+        self._df = {}
+        self._tf = []
+        for tokens in self._doc_tokens:
+            tf: dict[str, int] = {}
+            seen: set[str] = set()
+            for token in tokens:
+                tf[token] = tf.get(token, 0) + 1
+                if token not in seen:
+                    self._df[token] = self._df.get(token, 0) + 1
+                    seen.add(token)
+            self._tf.append(tf)
+
+
+CATEGORY_SEARCH_ALIASES = {
+    "pull_request": "pull request pr",
+    "issue": "issue issues bug",
+    "repository": "repo repository repos",
+    "organization": "org organization team",
+    "user": "user users account",
+}
+
+
+def _extract_searchable_text_enhanced(tool: Tool) -> str:
+    """Enhanced searchable text extraction for better tool discoverability.
+
+    Includes:
+    - Tool name
+    - Description
+    - Parameter names and descriptions
+    - Tags with expanded aliases (e.g., "pull_request" -> "pull request pr")
+    - Title
+    """
+    parts = [tool.name]
+
+    if tool.annotations and tool.annotations.title:
+        parts.append(tool.annotations.title)
+
+    if tool.description:
+        parts.append(tool.description)
+
+    schema = tool.parameters
+    if schema:
+        properties = schema.get("properties", {})
+        for param_name, param_info in properties.items():
+            parts.append(param_name)
+            if isinstance(param_info, dict):
+                desc = param_info.get("description", "")
+                if desc:
+                    parts.append(desc)
+
+    if tool.tags:
+        for tag in tool.tags:
+            parts.append(tag)
+            if tag in CATEGORY_SEARCH_ALIASES:
+                parts.append(CATEGORY_SEARCH_ALIASES[tag])
+
+    return " ".join(parts)
+
+
 class TolerantBM25SearchTransform(BM25SearchTransform):
     """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
 
     Override the synthetic call_tool to accept any arguments (including JSON strings).
     Also ensure internal catalog fetch bypasses middleware (like caching) to avoid stale results.
     Uses a compact result serializer to avoid massive payloads.
+    Enhanced searchable text extraction for better Pr/issue discoverability.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -539,6 +622,22 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         """Override to always bypass middleware when fetching the tool catalog."""
         # Force run_middleware=False to avoid cached synthetic results
         return await super().get_tool_catalog(ctx, run_middleware=False)
+
+    async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
+        """Override to use enhanced searchable text extraction."""
+        current_hash = _catalog_hash(tools)
+        if current_hash != self._last_hash:
+            documents = [_extract_searchable_text_enhanced(t) for t in tools]
+            new_index = _BM25IndexLen2(self._index.k1, self._index.b)
+            new_index.build(documents)
+            self._index, self._indexed_tools, self._last_hash = (
+                new_index,
+                tools,
+                current_hash,
+            )
+
+        indices = self._index.query(query, self._max_results)
+        return [self._indexed_tools[i] for i in indices]
 
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""

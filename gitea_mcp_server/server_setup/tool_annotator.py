@@ -91,7 +91,19 @@ def generate_tool_title(route: Any) -> str:
     return title
 
 
-def categorize_tool(path: str) -> str:  # noqa PLR0911
+_CATEGORY_PREFIXES: list[tuple[str, str]] = [
+    ("/admin", "admin"),
+    ("/orgs", "organization"),
+    ("/org/", "organization"),
+    ("/user", "user"),
+    ("/users/", "user"),
+    ("/issues", "issue"),
+    ("/pulls", "pull_request"),
+    ("/repos", "repository"),
+]
+
+
+def categorize_tool(path: str) -> str:
     """Categorize a tool based on its OpenAPI path.
 
     Args:
@@ -100,31 +112,9 @@ def categorize_tool(path: str) -> str:  # noqa PLR0911
     Returns:
         Category string: "repository", "issue", "pull_request", "user", "organization", "admin", or "misc"
     """
-    # Admin paths
-    if path.startswith("/admin"):
-        return "admin"
-
-    # Organization paths
-    if path.startswith(("/orgs", "/org/")):
-        return "organization"
-
-    # User paths
-    if path.startswith(("/user", "/users/")):
-        return "user"
-
-    # Issue paths
-    if "/issues" in path or path.startswith("/issues"):
-        return "issue"
-
-    # Pull request paths
-    if "/pulls" in path or path.startswith("/pulls"):
-        return "pull_request"
-
-    # Repository paths (most common)
-    if path.startswith("/repos"):
-        return "repository"
-
-    # Everything else
+    for prefix, category in _CATEGORY_PREFIXES:
+        if path.startswith(prefix):
+            return category
     return "misc"
 
 
@@ -160,7 +150,27 @@ def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
         annotations.openWorldHint = True
 
 
-def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa PLR0911
+_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
+    (
+        "/repos/{owner}/{repo}/issues",
+        None,
+        [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED],
+    ),
+    (
+        "/repos/{owner}/{repo}/pulls",
+        None,
+        [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED],
+    ),
+    ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),
+    ("/repos/{owner}/{repo}/labels", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/milestones", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
+]
+
+
+def compute_invalidation_patterns(path: str, method: str) -> list[str]:
     """Compute resource invalidation patterns for a tool based on its path and method.
 
     This function analyzes the OpenAPI path and HTTP method to determine which
@@ -174,43 +184,15 @@ def compute_invalidation_patterns(path: str, method: str) -> list[str]:  # noqa 
         List of pattern names (keys in RESOURCE_PATTERNS) to invalidate.
         Empty list if no invalidation needed.
     """
-    # Only consider write methods (safe methods don't need invalidation)
     if method.upper() in ("GET", "HEAD", "OPTIONS"):
         return []
 
-    # Issue operations: any path that starts with /repos/{owner}/{repo}/issues
-    if path.startswith("/repos/{owner}/{repo}/issues"):
-        return [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED]
-
-    # Pull request operations: starts with /repos/{owner}/{repo}/pulls
-    if path.startswith("/repos/{owner}/{repo}/pulls"):
-        return [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED]
-
-    # Repository direct edit: exactly /repos/{owner}/{repo} (e.g., repo_edit)
-    if path == "/repos/{owner}/{repo}":
-        return [PATTERN_REPO]
-
-    # File contents: /repos/{owner}/{repo}/contents[...] (create, update, delete files)
-    if path.startswith("/repos/{owner}/{repo}/contents"):
-        return [PATTERN_FILES]
-
-    # Label operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/labels"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Milestone operations: affect both issues and PRs
-    if path.startswith("/repos/{owner}/{repo}/milestones"):
-        return [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]
-
-    # Release operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/releases"):
-        return [PATTERN_REPO]
-
-    # Topic operations: affect repository
-    if path.startswith("/repos/{owner}/{repo}/topics"):
-        return [PATTERN_REPO]
-
-    # Add more as needed...
+    for prefix, match_type, patterns in _INVALIDATION_PATTERNS:
+        if match_type == "exact":
+            if path == prefix:
+                return patterns
+        elif path.startswith(prefix):
+            return patterns
     return []
 
 

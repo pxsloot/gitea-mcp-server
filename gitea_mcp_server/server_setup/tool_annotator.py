@@ -295,6 +295,100 @@ def _lookup_response_description(
     return result
 
 
+def _run_validation(kwargs: dict[str, Any]) -> None:
+    """Run runtime validation on tool arguments."""
+    for name, value in kwargs.items():
+        if name in SINGLE_VALIDATORS:
+            try:
+                SINGLE_VALIDATORS[name](value, field=name)
+            except ValidationError:
+                raise
+            except (TypeError, ValueError, KeyError) as e:
+                msg = f"Validation error for {name}: {e}"
+                _raise_validation_error(msg, name, e)
+    if "page" in kwargs or "per_page" in kwargs:
+        validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
+
+
+async def _convert_labels(
+    kwargs: dict[str, Any],
+    has_labels: bool,
+    component: Any,
+    label_manager: LabelManager,
+) -> None:
+    """Convert label names to IDs if needed."""
+    if not has_labels:
+        return
+    labels = kwargs.get("labels", [])
+    if not labels or all(isinstance(label, int) for label in labels):
+        return
+
+    owner = kwargs.get("owner") or kwargs.get("org")
+    repo = kwargs.get("repo")
+    if not owner or not repo:
+        return
+
+    client = getattr(component, "_client", None)
+    if client is None:
+        return
+
+    label_map = await label_manager.get_label_map(owner, repo, client)
+    converted = []
+    unknown = []
+    for label in labels:
+        if isinstance(label, str):
+            label_lower = label.lower()
+            if label_lower in label_map:
+                converted.append(label_map[label_lower]["id"])
+            else:
+                unknown.append(label)
+        else:
+            converted.append(label)
+
+    if unknown:
+        available = sorted(label_map.keys())
+        msg = (
+            f"Unknown label(s): {unknown}. "
+            f"Available labels: {', '.join(available)}. "
+            f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
+        )
+        _raise_value_error(msg)
+
+    kwargs["labels"] = converted
+
+
+async def _run_with_error_handling(
+    kwargs: dict[str, Any],
+    component: Any,
+    route: Any,
+    openapi_spec: dict[str, Any] | None,
+) -> Any:
+    """Run the component with enhanced error handling."""
+    try:
+        return await component.run(kwargs)
+    except ValueError as e:
+        cause = e.__cause__
+        if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
+            status_code = cause.response.status_code
+            description = _lookup_response_description(openapi_spec, route, status_code)
+            try:
+                error_body = cause.response.json()
+                message = error_body.get("message", "")
+                formatted = f"{description}\n\nDetails: {message}" if message else description
+            except (ValueError, AttributeError):
+                formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
+            raise ValueError(formatted) from e
+        raise
+    except httpx.HTTPError as e:
+        formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
+        _raise_value_error_from(formatted, e)
+    except (KeyError, TypeError, AttributeError, RuntimeError):
+        logger.exception("Unexpected error during tool execution")
+        _raise_value_error(
+            "An unexpected error occurred. Please check the server logs for details."
+        )
+
+
 def customize_component(  # noqa PLR0915
     route: Any,
     component: Any,
@@ -374,84 +468,10 @@ def customize_component(  # noqa PLR0915
         update_labels_schema(component)
 
     # Build transform function that combines validation and label conversion
-    async def transform_fn(**kwargs: Any) -> Any:  # noqa PLR0912
-        # Runtime validation
-        for name, value in kwargs.items():
-            if name in SINGLE_VALIDATORS:
-                try:
-                    SINGLE_VALIDATORS[name](value, field=name)
-                except ValidationError:
-                    raise
-                except (TypeError, ValueError, KeyError) as e:
-                    msg = f"Validation error for {name}: {e}"
-                    _raise_validation_error(msg, name, e)
-        if "page" in kwargs or "per_page" in kwargs:
-            validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
-
-        # Label conversion
-        if has_labels:
-            labels = kwargs.get("labels", [])
-            if labels and not all(isinstance(label, int) for label in labels):
-                owner = kwargs.get("owner") or kwargs.get("org")
-                repo = kwargs.get("repo")
-                if owner and repo:
-                    client = getattr(component, "_client", None)
-                    if client is not None:
-                        label_map = await label_manager.get_label_map(owner, repo, client)
-                        converted = []
-                        unknown = []
-                        for label in labels:
-                            if isinstance(label, str):
-                                label_lower = label.lower()
-                                if label_lower in label_map:
-                                    converted.append(label_map[label_lower]["id"])
-                                else:
-                                    unknown.append(label)
-                            else:
-                                converted.append(label)
-                        if unknown:
-                            available = sorted(label_map.keys())
-                            msg = (
-                                f"Unknown label(s): {unknown}. "
-                                f"Available labels: {', '.join(available)}. "
-                                f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
-                            )
-                            _raise_value_error(msg)
-                        kwargs = dict(kwargs)
-                        kwargs["labels"] = converted
-        # Enhanced error handling: format HTTP errors using OpenAPI response descriptions
-        try:
-            return await component.run(kwargs)
-        except ValueError as e:
-            # Check if this is an HTTP error from FastMCP's OpenAPITool
-            cause = e.__cause__
-            if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
-                status_code = cause.response.status_code
-                # Look up response description from OpenAPI spec
-                description = _lookup_response_description(openapi_spec, route, status_code)
-                # Extract message from response body if available
-                try:
-                    error_body = cause.response.json()
-                    message = error_body.get("message", "")
-                    formatted = f"{description}\n\nDetails: {message}" if message else description
-                except (ValueError, AttributeError):
-                    # Fallback to text response
-                    formatted = f"{description}\n\nDetails: {cause.response.text[:200]}"
-
-                # Raise a new ValueError with formatted message, preserving the cause chain
-                raise ValueError(formatted) from e
-            # Not an HTTP error or no spec provided - re-raise unchanged
-            raise
-        except httpx.HTTPError as e:
-            # Network errors, timeouts - these are NOT wrapped in ValueError by FastMCP
-            formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
-            _raise_value_error_from(formatted, e)
-        except (KeyError, TypeError, AttributeError, RuntimeError):
-            # Unexpected errors - log full traceback for debugging, but give user a clean message
-            logger.exception("Unexpected error during tool execution")
-            _raise_value_error(
-                "An unexpected error occurred. Please check the server logs for details."
-            )
+    async def transform_fn(**kwargs: Any) -> Any:
+        _run_validation(kwargs)
+        await _convert_labels(kwargs, has_labels, component, label_manager)
+        return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
     # Create transformed tool
     return Tool.from_tool(

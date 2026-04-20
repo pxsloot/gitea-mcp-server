@@ -389,7 +389,36 @@ async def _run_with_error_handling(
         )
 
 
-def customize_component(  # noqa PLR0915
+def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
+    """Prepare tool annotations from component."""
+    if component.annotations is None:
+        new_annotations = ToolAnnotations()
+    elif isinstance(component.annotations, ToolAnnotations):
+        new_annotations = component.annotations.model_copy()
+    else:
+        try:
+            new_annotations = ToolAnnotations(**component.annotations)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            new_annotations = ToolAnnotations()
+    new_annotations.title = title
+    return new_annotations
+
+
+def _prepare_description(annotations: ToolAnnotations, component: Any) -> tuple[str, bool]:
+    """Prepare tool description and return has_labels flag."""
+    description = getattr(component, "description", "") or ""
+    if annotations.readOnlyHint and RESOURCE_NOTE not in description:
+        description += RESOURCE_NOTE
+
+    params = getattr(component, "parameters", None) or {}
+    props = params.get("properties", {})
+    has_labels = "labels" in props and props["labels"].get("type") == "array"
+    if has_labels and LABEL_GUIDANCE.strip() not in description:
+        description += LABEL_GUIDANCE
+    return description, has_labels
+
+
+def customize_component(
     route: Any,
     component: Any,
     label_manager: LabelManager,
@@ -409,76 +438,41 @@ def customize_component(  # noqa PLR0915
                       using the spec's response descriptions.
 
      Returns:
-        A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
+         A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
     """
-    # Only customize OpenAPITool instances
     if not isinstance(component, OpenAPITool):
         return None
 
-    # Generate title and category
     title = generate_tool_title(route)
     category = categorize_tool(route.path)
 
-    # Prepare tags: original tags + category
-    original_tags = set(component.tags) if component.tags else set()
-    new_tags = original_tags | {category}
+    tags = set(component.tags) if component.tags else set() | {category}
 
-    # Prepare annotations: copy existing or create new
-    if component.annotations is None:
-        new_annotations = ToolAnnotations()
-    elif isinstance(component.annotations, ToolAnnotations):
-        new_annotations = component.annotations.model_copy()
-    else:
-        # Handle dict case - either it's a dict (unlikely) or unexpected type
-        try:
-            new_annotations = ToolAnnotations(**component.annotations)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            new_annotations = ToolAnnotations()
+    annotations = _prepare_annotations(component, title)
+    add_inferred_hints(route, annotations)
 
-    # Set title in annotations
-    new_annotations.title = title
-
-    # Add inferred hints based on HTTP method
-    add_inferred_hints(route, new_annotations)
-
-    # Register cache invalidation patterns for write tools
     method = getattr(route, "method", None)
     if method:
         patterns = compute_invalidation_patterns(route.path, method)
         if patterns:
             register_tool_invalidation(component.name, patterns)
 
-    # Prepare description
-    description = getattr(component, "description", "") or ""
-    # Add resource note for read-only tools
-    if new_annotations.readOnlyHint and RESOURCE_NOTE not in description:
-        description += RESOURCE_NOTE
+    description, has_labels = _prepare_description(annotations, component)
 
-    # Check if tool has labels parameter
-    params = getattr(component, "parameters", None) or {}
-    props = params.get("properties", {})
-    has_labels = "labels" in props and props["labels"].get("type") == "array"
-    if has_labels and LABEL_GUIDANCE.strip() not in description:
-        description += LABEL_GUIDANCE
-
-    # Mutate the component's parameters to augment schema and update labels schema.
-    # This mutation is acceptable because the component will be wrapped and not used directly.
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
 
-    # Build transform function that combines validation and label conversion
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs)
         await _convert_labels(kwargs, has_labels, component, label_manager)
         return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
-    # Create transformed tool
     return Tool.from_tool(
         component,
         title=title,
-        tags=new_tags,
-        annotations=new_annotations,
+        tags=tags,
+        annotations=annotations,
         description=description,
         transform_fn=transform_fn,
     )

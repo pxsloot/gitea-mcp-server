@@ -91,15 +91,17 @@ def generate_tool_title(route: Any) -> str:
     return title
 
 
-_CATEGORY_PREFIXES: list[tuple[str, str]] = [
-    ("/admin", "admin"),
-    ("/orgs", "organization"),
-    ("/org/", "organization"),
-    ("/user", "user"),
-    ("/users/", "user"),
-    ("/issues", "issue"),
-    ("/pulls", "pull_request"),
-    ("/repos", "repository"),
+_CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
+    ("/admin", "admin", False),
+    ("/orgs", "organization", False),
+    ("/org/", "organization", False),
+    ("/user", "user", False),
+    ("/users/", "user", False),
+    ("/repos/{owner}/{repo}/issues", "issue", False),
+    ("/repos/{owner}/{repo}/pulls", "pull_request", False),
+    ("/issues", "issue", True),
+    ("/pulls", "pull_request", True),
+    ("/repos", "repository", False),
 ]
 
 
@@ -112,8 +114,11 @@ def categorize_tool(path: str) -> str:
     Returns:
         Category string: "repository", "issue", "pull_request", "user", "organization", "admin", or "misc"
     """
-    for prefix, category in _CATEGORY_PREFIXES:
-        if path.startswith(prefix):
+    for prefix, category, contains in _CATEGORY_PREFIXES:
+        if contains:
+            if prefix in path:
+                return category
+        elif path.startswith(prefix):
             return category
     return "misc"
 

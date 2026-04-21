@@ -34,11 +34,12 @@ WORKDIR /app
 
 # Copy the built wheel from builder (only wheel, not build deps)
 COPY --from=builder /app/dist/*.whl /tmp/
+COPY --from=builder /app/pyproject.toml /app/uv.lock /app
 
 # Install runtime dependencies and the package into a venv
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir /tmp/*.whl && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip uv && \
+    /opt/venv/bin/uv pip install --system --no-cache-dir /tmp/*.whl && \
     rm -rf /tmp/*.whl
 
 ENV PATH="/opt/venv/bin:${PATH}"
@@ -66,4 +67,7 @@ FROM runner AS ci
 COPY --from=builder /app /app
 USER root
 WORKDIR /app
-RUN /opt/venv/bin/pip install --no-cache-dir ".[dev]"
+RUN /opt/venv/bin/uv pip install --system --no-cache-dir ".[dev]"
+
+ENV GITEA_TOKEN=test
+ENV GITEA_URL=https://test.example.com

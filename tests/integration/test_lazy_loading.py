@@ -22,6 +22,7 @@ class SimpleConfig:
         log_format="text",
         tool_filtering_enabled=False,
         enable_lazy_loading=True,
+        tool_prefix="gitea_",
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -31,6 +32,7 @@ class SimpleConfig:
         self.log_format = log_format
         self.tool_filtering_enabled = tool_filtering_enabled
         self.enable_lazy_loading = enable_lazy_loading
+        self.tool_prefix = tool_prefix
 
     @property
     def base_url(self) -> str:
@@ -80,13 +82,15 @@ class TestLazyLoading:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
+            prefix = config.tool_prefix or ""
+
             # Should have synthetic tools
-            assert "search_tools" in tool_names, f"Expected search_tools, got: {tool_names}"
-            assert "call_tool" in tool_names, f"Expected call_tool, got: {tool_names}"
+            assert f"{prefix}search_tools" in tool_names, f"Expected {prefix}search_tools, got: {tool_names}"
+            assert f"{prefix}call_tool" in tool_names, f"Expected {prefix}call_tool, got: {tool_names}"
 
             # Should have pinned MCP resource tools
-            assert "mcp_list_resources" in tool_names
-            assert "mcp_read_resource" in tool_names
+            assert f"{prefix}mcp_list_resources" in tool_names
+            assert f"{prefix}mcp_read_resource" in tool_names
 
             # Total should be small (pinned + synthetic)
             assert len(tool_names) <= 10, (
@@ -135,12 +139,14 @@ class TestLazyLoading:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
+            prefix = config.tool_prefix or ""
+
             # Should have synthetic tools
-            assert "search_tools" in tool_names
-            assert "call_tool" in tool_names
+            assert f"{prefix}search_tools" in tool_names
+            assert f"{prefix}call_tool" in tool_names
             # Should have pinned MCP resource tools
-            assert "mcp_list_resources" in tool_names
-            assert "mcp_read_resource" in tool_names
+            assert f"{prefix}mcp_list_resources" in tool_names
+            assert f"{prefix}mcp_read_resource" in tool_names
             # Admin tool should not appear
             assert "admin_settings" not in tool_names
             # Total should be small
@@ -196,27 +202,29 @@ class TestLazyLoading:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
 
+            prefix = config.tool_prefix or ""
+
             # NOTE: Not calling list_tools before search to avoid cache priming
 
             # Search for "repo" - all tools contain "repo"
-            search_repo = await mcp.call_tool("search_tools", {"query": "repo"})
+            search_repo = await mcp.call_tool(f"{prefix}search_tools", {"query": "repo"})
             repo_tools = search_repo.structured_content.get("result", [])
             repo_names = [t["name"] for t in repo_tools if isinstance(t, dict)]
 
             # Should find repo-related tools that contain the token "repo"
             # At minimum, the list operations should appear
-            assert "list_repo_issues" in repo_names, f"Expected list_repo_issues in {repo_names}"
-            assert "list_repo_pulls" in repo_names, f"Expected list_repo_pulls in {repo_names}"
+            assert f"{prefix}list_repo_issues" in repo_names, f"Expected {prefix}list_repo_issues in {repo_names}"
+            assert f"{prefix}list_repo_pulls" in repo_names, f"Expected {prefix}list_repo_pulls in {repo_names}"
 
             # Should NOT return synthetic tools
-            assert "search_tools" not in repo_names
-            assert "call_tool" not in repo_names
+            assert f"{prefix}search_tools" not in repo_names
+            assert f"{prefix}call_tool" not in repo_names
 
             # Additionally, search for "repos" should find list_user_repos
-            search_repos = await mcp.call_tool("search_tools", {"query": "repos"})
+            search_repos = await mcp.call_tool(f"{prefix}search_tools", {"query": "repos"})
             repos_tools = search_repos.structured_content.get("result", [])
             repos_names = [t["name"] for t in repos_tools if isinstance(t, dict)]
-            assert "list_user_repos" in repos_names, f"Expected list_user_repos in {repos_names}"
+            assert f"{prefix}list_user_repos" in repos_names, f"Expected {prefix}list_user_repos in {repos_names}"
 
     @pytest.mark.asyncio
     async def test_search_works_after_list_tools_cache_priming(self):
@@ -263,25 +271,27 @@ class TestLazyLoading:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
 
+            prefix = config.tool_prefix or ""
+
             # First, call list_tools to cache the synthetic catalog
             await mcp.list_tools()
 
             # Now search for "repo" - should still return real tool matches despite cache
-            search_repo = await mcp.call_tool("search_tools", {"query": "repo"})
+            search_repo = await mcp.call_tool(f"{prefix}search_tools", {"query": "repo"})
             repo_tools = search_repo.structured_content.get("result", [])
             repo_names = [t["name"] for t in repo_tools if isinstance(t, dict)]
 
             # Should find tools containing "repo" (the expected ones from spec)
-            assert "list_repo_issues" in repo_names, (
-                f"Cache poisoning: expected list_repo_issues in {repo_names}"
+            assert f"{prefix}list_repo_issues" in repo_names, (
+                f"Cache poisoning: expected {prefix}list_repo_issues in {repo_names}"
             )
-            assert "list_repo_pulls" in repo_names, (
-                f"Cache poisoning: expected list_repo_pulls in {repo_names}"
+            assert f"{prefix}list_repo_pulls" in repo_names, (
+                f"Cache poisoning: expected {prefix}list_repo_pulls in {repo_names}"
             )
 
             # Should NOT return synthetic tools
-            assert "search_tools" not in repo_names
-            assert "call_tool" not in repo_names
+            assert f"{prefix}search_tools" not in repo_names
+            assert f"{prefix}call_tool" not in repo_names
 
     @pytest.mark.asyncio
     async def test_search_discovers_pull_request_tools_with_various_queries(self):
@@ -327,43 +337,45 @@ class TestLazyLoading:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
 
+            prefix = config.tool_prefix or ""
+
             # Test 1: Query "pr" should find pull request tools
-            search_pr = await mcp.call_tool("search_tools", {"query": "pr"})
+            search_pr = await mcp.call_tool(f"{prefix}search_tools", {"query": "pr"})
             pr_tools = search_pr.structured_content.get("result", [])
             pr_names = [t["name"] for t in pr_tools if isinstance(t, dict)]
 
-            assert "create_pull_request" in pr_names, (
-                f"Query 'pr' should find create_pull_request, got: {pr_names}"
+            assert f"{prefix}create_pull_request" in pr_names, (
+                f"Query 'pr' should find {prefix}create_pull_request, got: {pr_names}"
             )
-            assert "list_repo_pulls" in pr_names, (
-                f"Query 'pr' should find list_repo_pulls, got: {pr_names}"
+            assert f"{prefix}list_repo_pulls" in pr_names, (
+                f"Query 'pr' should find {prefix}list_repo_pulls, got: {pr_names}"
             )
 
             # Test 2: Query "pull request" should find pull request tools
-            search_pull = await mcp.call_tool("search_tools", {"query": "pull request"})
+            search_pull = await mcp.call_tool(f"{prefix}search_tools", {"query": "pull request"})
             pull_tools = search_pull.structured_content.get("result", [])
             pull_names = [t["name"] for t in pull_tools if isinstance(t, dict)]
 
-            assert "create_pull_request" in pull_names, (
-                f"Query 'pull request' should find create_pull_request, got: {pull_names}"
+            assert f"{prefix}create_pull_request" in pull_names, (
+                f"Query 'pull request' should find {prefix}create_pull_request, got: {pull_names}"
             )
 
             # Test 3: Query "create pr" should find repo_create_pull_request
-            search_create_pr = await mcp.call_tool("search_tools", {"query": "create pr"})
+            search_create_pr = await mcp.call_tool(f"{prefix}search_tools", {"query": "create pr"})
             create_pr_tools = search_create_pr.structured_content.get("result", [])
             create_pr_names = [t["name"] for t in create_pr_tools if isinstance(t, dict)]
 
-            assert "create_pull_request" in create_pr_names, (
-                f"Query 'create pr' should find create_pull_request, got: {create_pr_names}"
+            assert f"{prefix}create_pull_request" in create_pr_names, (
+                f"Query 'create pr' should find {prefix}create_pull_request, got: {create_pr_names}"
             )
 
             # Test 4: Query "pull request create" should find the tool
-            search_pr_create = await mcp.call_tool("search_tools", {"query": "pull request create"})
+            search_pr_create = await mcp.call_tool(f"{prefix}search_tools", {"query": "pull request create"})
             pr_create_tools = search_pr_create.structured_content.get("result", [])
             pr_create_names = [t["name"] for t in pr_create_tools if isinstance(t, dict)]
 
-            assert "create_pull_request" in pr_create_names, (
-                f"Query 'pull request create' should find create_pull_request, got: {pr_create_names}"
+            assert f"{prefix}create_pull_request" in pr_create_names, (
+                f"Query 'pull request create' should find {prefix}create_pull_request, got: {pr_create_names}"
             )
 
     @pytest.mark.asyncio
@@ -403,23 +415,25 @@ class TestLazyLoading:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
 
+            prefix = config.tool_prefix or ""
+
             # Test 1: Query "issue" should find issue tools
-            search_issue = await mcp.call_tool("search_tools", {"query": "issue"})
+            search_issue = await mcp.call_tool(f"{prefix}search_tools", {"query": "issue"})
             issue_tools = search_issue.structured_content.get("result", [])
             issue_names = [t["name"] for t in issue_tools if isinstance(t, dict)]
 
-            assert "create_issue" in issue_names, (
-                f"Query 'issue' should find create_issue, got: {issue_names}"
+            assert f"{prefix}create_issue" in issue_names, (
+                f"Query 'issue' should find {prefix}create_issue, got: {issue_names}"
             )
-            assert "list_repo_issues" in issue_names, (
-                f"Query 'issue' should find list_repo_issues, got: {issue_names}"
+            assert f"{prefix}list_repo_issues" in issue_names, (
+                f"Query 'issue' should find {prefix}list_repo_issues, got: {issue_names}"
             )
 
             # Test 2: Query "create issue" should find create_issue
-            search_create = await mcp.call_tool("search_tools", {"query": "create issue"})
+            search_create = await mcp.call_tool(f"{prefix}search_tools", {"query": "create issue"})
             create_tools = search_create.structured_content.get("result", [])
             create_names = [t["name"] for t in create_tools if isinstance(t, dict)]
 
-            assert "create_issue" in create_names, (
-                f"Query 'create issue' should find create_issue, got: {create_names}"
+            assert f"{prefix}create_issue" in create_names, (
+                f"Query 'create issue' should find {prefix}create_issue, got: {create_names}"
             )

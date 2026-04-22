@@ -52,6 +52,11 @@ class Config(BaseSettings):
     log_format: str = Field(
         default="json", description="Log format: json or text", alias="LOG_FORMAT"
     )
+    tool_prefix: str = Field(
+        default="gitea_",
+        description="Prefix to add to all MCP tool names (e.g., 'gitea_issue_create_issue')",
+        alias="TOOL_PREFIX",
+    )
     tool_filtering_enabled: bool = Field(
         default=True,
         description="Enable tool filtering based on user permissions",

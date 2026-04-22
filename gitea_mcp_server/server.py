@@ -15,6 +15,7 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
+from fastmcp.server.transforms import Namespace
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -128,6 +129,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     mcp.add_middleware(invalidation_middleware)
 
     # Add search transform for lazy loading (FastMCP 3.x)
+    # Must add this BEFORE namespace transform so namespace can prefix the synthetic tools too
     if getattr(config, "enable_lazy_loading", True):
         logger.info("Adding search transform for lazy loading...")
         mcp.add_transform(
@@ -138,6 +140,12 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         )
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
+
+    # Add namespace transform for tool prefix (FastMCP 3.x built-in)
+    # Must be added AFTER search transform so it can prefix the synthetic tools
+    if config.tool_prefix:
+        logger.info("Adding namespace transform with prefix %s", config.tool_prefix)
+        mcp.add_transform(Namespace(config.tool_prefix.rstrip("_")))
 
     # Register resources
     logger.info("Registering MCP resources...")

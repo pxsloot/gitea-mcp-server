@@ -48,3 +48,15 @@ fi
 
 log_info "Starting Gitea MCP Server..."
 python -m gitea_mcp_server.server
+
+exit
+## 
+## docker kill gitea_mcp_server || true
+## 
+## docker run -d \
+##   --name gitea_mcp_server \
+##   -e $(grep '^GITEA_TOKEN=' .env) \
+##   -e $(grep '^GITEA_URL=' .env) \
+##   -e TRANSPORT_TYPE=http \
+##   -p 8080:8080 \
+##   localhost/gitea-mcp-server:latest

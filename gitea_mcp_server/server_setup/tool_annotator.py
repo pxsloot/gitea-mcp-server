@@ -557,6 +557,8 @@ CATEGORY_SEARCH_ALIASES = {
     "issue": "issue issues bug",
     "repository": "repo repository repos",
     "repo": "repo repository repos",
+    "organization": "org organization team",
+    "org": "org organization team",
     "user": "user users account",
 }
 
@@ -570,7 +572,6 @@ def _expand_word_aliases(text: str) -> str:
     alias_expansions = [
         ("repo", "repo repository repos"),
         ("pr", "pr pull request"),
-        ("cr", "cr create request"),
     ]
     text_lower = text.lower()
     parts = [text]
@@ -588,6 +589,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     - Description
     - Parameter names and descriptions
     - Tags with expanded aliases (e.g., "pull_request" -> "pull request pr")
+    - Title
     - Word aliases for singular/plural variations
     """
     parts = [tool.name]

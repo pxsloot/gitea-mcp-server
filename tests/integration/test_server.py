@@ -24,6 +24,7 @@ class SimpleConfig:
         log_format="text",
         tool_filtering_enabled=True,
         enable_lazy_loading=False,
+        tool_prefix="gitea_",
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -33,6 +34,7 @@ class SimpleConfig:
         self.log_format = log_format
         self.tool_filtering_enabled = tool_filtering_enabled
         self.enable_lazy_loading = enable_lazy_loading
+        self.tool_prefix = tool_prefix
 
     @property
     def base_url(self) -> str:
@@ -280,9 +282,10 @@ class TestToolFiltering:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
-            admin_tools = [name for name in tool_names if name.startswith("admin")]
+            prefix = config.tool_prefix or ""
+            admin_tools = [name for name in tool_names if name.startswith(f"{prefix}admin")]
             assert len(admin_tools) > 0, (
-                "Expected admin tools to be present for admin user, but none found"
+                f"Expected admin tools to be present for admin user, but none found in {tool_names}"
             )
 
     @pytest.mark.asyncio
@@ -319,9 +322,10 @@ class TestToolFiltering:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
-            admin_tools = [name for name in tool_names if name.startswith("admin")]
+            prefix = config.tool_prefix or ""
+            admin_tools = [name for name in tool_names if name.startswith(f"{prefix}admin")]
             assert len(admin_tools) > 0, (
-                "Expected admin tools when filtering is disabled, but none found"
+                f"Expected admin tools when filtering is disabled, but none found in {tool_names}"
             )
 
     @pytest.mark.asyncio

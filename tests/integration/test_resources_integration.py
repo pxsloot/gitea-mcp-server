@@ -22,6 +22,8 @@ class SimpleConfig:
         log_level="ERROR",
         log_format="text",
         tool_filtering_enabled=True,
+        enable_lazy_loading=False,
+        tool_prefix="gitea_",
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -30,6 +32,8 @@ class SimpleConfig:
         self.log_level = log_level
         self.log_format = log_format
         self.tool_filtering_enabled = tool_filtering_enabled
+        self.enable_lazy_loading = enable_lazy_loading
+        self.tool_prefix = tool_prefix
 
     @property
     def base_url(self) -> str:

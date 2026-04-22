@@ -29,6 +29,7 @@ class SimpleHTTPConfig:
         log_format="text",
         tool_filtering_enabled=False,
         enable_lazy_loading=False,
+        tool_prefix="gitea_",
         transport_type="http",
         http_host="127.0.0.1",
         http_port=0,
@@ -43,6 +44,7 @@ class SimpleHTTPConfig:
         self.log_format = log_format
         self.tool_filtering_enabled = tool_filtering_enabled
         self.enable_lazy_loading = enable_lazy_loading
+        self.tool_prefix = tool_prefix
         self.transport_type = transport_type
         self.http_host = http_host
         self.http_port = http_port

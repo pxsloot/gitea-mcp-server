@@ -556,9 +556,29 @@ CATEGORY_SEARCH_ALIASES = {
     "pull_request": "pull request pr",
     "issue": "issue issues bug",
     "repository": "repo repository repos",
+    "repo": "repo repository repos",
     "organization": "org organization team",
+    "org": "org organization team",
     "user": "user users account",
 }
+
+
+def _expand_word_aliases(text: str) -> str:
+    """Expand common abbreviations and fragments for better search matching.
+
+    BM25 uses whitespace tokenization, so singular/plural variations like
+    "repo"/"repos" don't match unless both forms are present.
+    """
+    alias_expansions = [
+        ("repo", "repo repository repos"),
+        ("pr", "pr pull request"),
+    ]
+    text_lower = text.lower()
+    parts = [text]
+    for word, expansion in alias_expansions:
+        if word in text_lower:
+            parts.append(expansion)
+    return " ".join(parts)
 
 
 def _extract_searchable_text_enhanced(tool: Tool) -> str:
@@ -570,6 +590,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     - Parameter names and descriptions
     - Tags with expanded aliases (e.g., "pull_request" -> "pull request pr")
     - Title
+    - Word aliases for singular/plural variations
     """
     parts = [tool.name]
 
@@ -595,7 +616,8 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
             if tag in CATEGORY_SEARCH_ALIASES:
                 parts.append(CATEGORY_SEARCH_ALIASES[tag])
 
-    return " ".join(parts)
+    result = " ".join(parts)
+    return _expand_word_aliases(result)
 
 
 class TolerantBM25SearchTransform(BM25SearchTransform):
@@ -637,7 +659,9 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             )
 
         indices = self._index.query(query, self._max_results)
-        return [self._indexed_tools[i] for i in indices]
+        results = [self._indexed_tools[i] for i in indices]
+        results.sort(key=lambda t: len(t.name))
+        return results
 
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""

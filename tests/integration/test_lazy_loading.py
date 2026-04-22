@@ -60,14 +60,14 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "get": {
-                        "operationId": "get_repo_issues",
+                        "operationId": "issueListIssues",
                         "summary": "List repository issues",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
                 "/repos/{owner}/{repo}/pulls": {
                     "get": {
-                        "operationId": "get_repo_pull_requests",
+                        "operationId": "repoListPullRequests",
                         "summary": "List pull requests",
                         "responses": {"200": {"description": "Success"}},
                     }
@@ -115,15 +115,15 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "get": {
-                        "operationId": "get_repo_issues",
+                        "operationId": "issueListIssues",
                         "summary": "List repository issues",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
-                "/admin/settings": {
+                "/admin/orgs": {
                     "get": {
-                        "operationId": "admin_settings",
-                        "summary": "Get admin settings",
+                        "operationId": "adminGetAllOrgs",
+                        "summary": "List all organizations",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
@@ -170,27 +170,27 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "get": {
-                        "operationId": "list_repo_issues",
+                        "operationId": "issueListIssues",
                         "summary": "List issues in a repository",
                         "responses": {"200": {"description": "Success"}},
                     },
                     "post": {
-                        "operationId": "create_repo_issue",
+                        "operationId": "issueCreateIssue",
                         "summary": "Create a new issue",
                         "responses": {"200": {"description": "Success"}},
                     },
                 },
                 "/repos/{owner}/{repo}/pulls": {
                     "get": {
-                        "operationId": "list_repo_pulls",
+                        "operationId": "repoListPullRequests",
                         "summary": "List pull requests",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
                 "/user/repos": {
                     "get": {
-                        "operationId": "list_user_repos",
-                        "summary": "List repositories for the authenticated user",
+                        "operationId": "userCurrentListRepos",
+                        "summary": "List the repos that the authenticated user owns",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
@@ -213,8 +213,8 @@ class TestLazyLoading:
 
             # Should find repo-related tools that contain the token "repo"
             # At minimum, the list operations should appear
-            assert f"{prefix}list_repo_issues" in repo_names, f"Expected {prefix}list_repo_issues in {repo_names}"
-            assert f"{prefix}list_repo_pulls" in repo_names, f"Expected {prefix}list_repo_pulls in {repo_names}"
+            assert f"{prefix}user_current_list_repos" in repo_names, f"Expected {prefix}user_current_list_repos in {repo_names}"
+            assert f"{prefix}repo_list_pull_requests" in repo_names, f"Expected {prefix}repo_list_pull_requests in {repo_names}"
 
             # Should NOT return synthetic tools
             assert f"{prefix}search_tools" not in repo_names
@@ -224,7 +224,7 @@ class TestLazyLoading:
             search_repos = await mcp.call_tool(f"{prefix}search_tools", {"query": "repos"})
             repos_tools = search_repos.structured_content.get("result", [])
             repos_names = [t["name"] for t in repos_tools if isinstance(t, dict)]
-            assert f"{prefix}list_user_repos" in repos_names, f"Expected {prefix}list_user_repos in {repos_names}"
+            assert f"{prefix}user_current_list_repos" in repos_names, f"Expected {prefix}user_current_list_repos in {repos_names}"
 
     @pytest.mark.asyncio
     async def test_search_works_after_list_tools_cache_priming(self):
@@ -244,21 +244,21 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "get": {
-                        "operationId": "list_repo_issues",
+                        "operationId": "issueListIssues",
                         "summary": "List issues in a repository",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
                 "/repos/{owner}/{repo}/pulls": {
                     "get": {
-                        "operationId": "list_repo_pulls",
+                        "operationId": "repoListPullRequests",
                         "summary": "List pull requests",
                         "responses": {"200": {"description": "Success"}},
                     }
                 },
                 "/user/repos": {
                     "get": {
-                        "operationId": "list_user_repos",
+                        "operationId": "userCurrentListRepos",
                         "summary": "List repositories for the authenticated user",
                         "responses": {"200": {"description": "Success"}},
                     }
@@ -282,11 +282,8 @@ class TestLazyLoading:
             repo_names = [t["name"] for t in repo_tools if isinstance(t, dict)]
 
             # Should find tools containing "repo" (the expected ones from spec)
-            assert f"{prefix}list_repo_issues" in repo_names, (
-                f"Cache poisoning: expected {prefix}list_repo_issues in {repo_names}"
-            )
-            assert f"{prefix}list_repo_pulls" in repo_names, (
-                f"Cache poisoning: expected {prefix}list_repo_pulls in {repo_names}"
+            assert f"{prefix}repo_list_pull_requests" in repo_names, (
+                f"Cache poisoning: expected {prefix}repo_list_pull_requests in {repo_names}"
             )
 
             # Should NOT return synthetic tools
@@ -311,12 +308,12 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/pulls": {
                     "get": {
-                        "operationId": "list_repo_pulls",
+                        "operationId": "repoListPullRequests",
                         "summary": "List a repository's pull requests",
                         "responses": {"200": {"description": "Success"}},
                     },
                     "post": {
-                        "operationId": "create_pull_request",
+                        "operationId": "repoCreatePullRequest",
                         "summary": "Create a pull request",
                         "description": "Create a new pull request from a branch.",
                         "responses": {"201": {"description": "Success"}},
@@ -324,7 +321,7 @@ class TestLazyLoading:
                 },
                 "/repos/{owner}/{repo}/pulls/{index}": {
                     "get": {
-                        "operationId": "get_pull_request",
+                        "operationId": "repoGetPullRequest",
                         "summary": "Get a pull request",
                         "responses": {"200": {"description": "Success"}},
                     },
@@ -344,11 +341,11 @@ class TestLazyLoading:
             pr_tools = search_pr.structured_content.get("result", [])
             pr_names = [t["name"] for t in pr_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_pull_request" in pr_names, (
-                f"Query 'pr' should find {prefix}create_pull_request, got: {pr_names}"
+            assert f"{prefix}repo_create_pull_request" in pr_names, (
+                f"Query 'pr' should find {prefix}repo_create_pull_request, got: {pr_names}"
             )
-            assert f"{prefix}list_repo_pulls" in pr_names, (
-                f"Query 'pr' should find {prefix}list_repo_pulls, got: {pr_names}"
+            assert f"{prefix}repo_list_pull_requests" in pr_names, (
+                f"Query 'pr' should find {prefix}repo_list_pull_requests, got: {pr_names}"
             )
 
             # Test 2: Query "pull request" should find pull request tools
@@ -356,8 +353,8 @@ class TestLazyLoading:
             pull_tools = search_pull.structured_content.get("result", [])
             pull_names = [t["name"] for t in pull_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_pull_request" in pull_names, (
-                f"Query 'pull request' should find {prefix}create_pull_request, got: {pull_names}"
+            assert f"{prefix}repo_create_pull_request" in pull_names, (
+                f"Query 'pull request' should find {prefix}repo_create_pull_request, got: {pull_names}"
             )
 
             # Test 3: Query "create pr" should find repo_create_pull_request
@@ -365,8 +362,8 @@ class TestLazyLoading:
             create_pr_tools = search_create_pr.structured_content.get("result", [])
             create_pr_names = [t["name"] for t in create_pr_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_pull_request" in create_pr_names, (
-                f"Query 'create pr' should find {prefix}create_pull_request, got: {create_pr_names}"
+            assert f"{prefix}repo_create_pull_request" in create_pr_names, (
+                f"Query 'create pr' should find {prefix}repo_create_pull_request, got: {create_pr_names}"
             )
 
             # Test 4: Query "pull request create" should find the tool
@@ -374,8 +371,8 @@ class TestLazyLoading:
             pr_create_tools = search_pr_create.structured_content.get("result", [])
             pr_create_names = [t["name"] for t in pr_create_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_pull_request" in pr_create_names, (
-                f"Query 'pull request create' should find {prefix}create_pull_request, got: {pr_create_names}"
+            assert f"{prefix}repo_create_pull_request" in pr_create_names, (
+                f"Query 'pull request create' should find {prefix}repo_create_pull_request, got: {pr_create_names}"
             )
 
     @pytest.mark.asyncio
@@ -396,12 +393,12 @@ class TestLazyLoading:
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "get": {
-                        "operationId": "list_repo_issues",
+                        "operationId": "issueListIssues",
                         "summary": "List repository issues",
                         "responses": {"200": {"description": "Success"}},
                     },
                     "post": {
-                        "operationId": "create_issue",
+                        "operationId": "issueCreateIssue",
                         "summary": "Create an issue",
                         "description": "Create a new issue in a repository.",
                         "responses": {"201": {"description": "Success"}},
@@ -422,11 +419,11 @@ class TestLazyLoading:
             issue_tools = search_issue.structured_content.get("result", [])
             issue_names = [t["name"] for t in issue_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_issue" in issue_names, (
-                f"Query 'issue' should find {prefix}create_issue, got: {issue_names}"
+            assert f"{prefix}issue_create_issue" in issue_names, (
+                f"Query 'issue' should find {prefix}issue_create_issue, got: {issue_names}"
             )
-            assert f"{prefix}list_repo_issues" in issue_names, (
-                f"Query 'issue' should find {prefix}list_repo_issues, got: {issue_names}"
+            assert f"{prefix}issue_list_issues" in issue_names, (
+                f"Query 'issue' should find {prefix}issue_list_issues, got: {issue_names}"
             )
 
             # Test 2: Query "create issue" should find create_issue
@@ -434,6 +431,6 @@ class TestLazyLoading:
             create_tools = search_create.structured_content.get("result", [])
             create_names = [t["name"] for t in create_tools if isinstance(t, dict)]
 
-            assert f"{prefix}create_issue" in create_names, (
-                f"Query 'create issue' should find {prefix}create_issue, got: {create_names}"
+            assert f"{prefix}issue_create_issue" in create_names, (
+                f"Query 'create issue' should find {prefix}issue_create_issue, got: {create_names}"
             )

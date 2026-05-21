@@ -12,6 +12,7 @@ from fastmcp.server.middleware.caching import (
     CallToolSettings,
     GetPromptSettings,
     ListResourcesSettings,
+    ListToolsSettings,
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
@@ -117,6 +118,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         list_resources_settings=ListResourcesSettings(
             enabled=True, ttl=int(CACHE_TTL_RESOURCE_LIST)
         ),
+        list_tools_settings=ListToolsSettings(enabled=False),
         call_tool_settings=CallToolSettings(enabled=False),
         get_prompt_settings=GetPromptSettings(enabled=False),
         max_item_size=CACHE_MAX_ITEM_SIZE,

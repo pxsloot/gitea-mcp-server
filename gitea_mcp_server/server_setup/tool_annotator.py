@@ -626,7 +626,6 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
     """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
 
     Override the synthetic call_tool to accept any arguments (including JSON strings).
-    Also ensure internal catalog fetch bypasses middleware (like caching) to avoid stale results.
     Uses a compact result serializer to avoid massive payloads.
     Enhanced searchable text extraction for better Pr/issue discoverability.
     """
@@ -636,16 +635,6 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         if "search_result_serializer" not in kwargs:
             kwargs["search_result_serializer"] = _compact_search_serializer
         super().__init__(**kwargs)
-
-    async def get_tool_catalog(
-        self,
-        ctx: Context,
-        *,
-        run_middleware: bool = True,  # noqa ARG002
-    ) -> Sequence[Tool]:
-        """Override to always bypass middleware when fetching the tool catalog."""
-        # Force run_middleware=False to avoid cached synthetic results
-        return await super().get_tool_catalog(ctx, run_middleware=False)
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         """Override to use enhanced searchable text extraction."""

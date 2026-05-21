@@ -552,6 +552,8 @@ class _BM25IndexLen2(_BaseBM25Index):
             self._tf.append(tf)
 
 
+NAME_BOOST = 3
+
 CATEGORY_SEARCH_ALIASES = {
     "pull_request": "pull request pr",
     "issue": "issue issues bug",
@@ -594,7 +596,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     - Title
     - Word aliases for singular/plural variations
     """
-    parts = [tool.name]
+    parts = [tool.name] * NAME_BOOST
 
     if tool.annotations and tool.annotations.title:
         parts.append(tool.annotations.title)

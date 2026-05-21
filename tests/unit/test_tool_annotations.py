@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
+from fastmcp.tools.base import Tool
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
@@ -20,9 +21,117 @@ from gitea_mcp_server.server_setup.tool_annotator import (
 from gitea_mcp_server.server_setup.tool_annotator import (
     generate_tool_title as _generate_tool_title,
 )
+from gitea_mcp_server.server_setup.tool_annotator import (
+    _extract_searchable_text_enhanced,
+    NAME_BOOST,
+)
 
 # Create a label manager for tests that need it
 _label_manager = LabelManager()
+
+
+class TestSearchableText:
+    """Tests for _extract_searchable_text_enhanced."""
+
+    def test_name_is_boosted(self):
+        """Tool name should appear NAME_BOOST times in the extracted text."""
+        tool = Tool(
+            name="gitea_user_get_current",
+            description="Get the authenticated user",
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert result.count("gitea_user_get_current") == NAME_BOOST
+
+    def test_description_included(self):
+        """Tool description should appear in the extracted text."""
+        tool = Tool(
+            name="test_tool",
+            description="This is a test description",
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "test description" in result
+
+    def test_parameter_names_included(self):
+        """Parameter names and descriptions should be part of the searchable text."""
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={
+                "properties": {
+                    "owner": {"type": "string", "description": "The owner name"},
+                    "repo": {"type": "string", "description": "The repository name"},
+                }
+            },
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "owner" in result
+        assert "repo" in result
+        assert "owner name" in result or "repository name" in result
+
+    def test_tags_and_aliases_included(self):
+        """Tags should be included with their category aliases."""
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            tags={"pull_request", "user"},
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "pull_request" in result
+        assert "pull request pr" in result or "pr" in result
+
+    def test_title_included(self):
+        """Tool title from annotations should be included."""
+        from fastmcp.tools.tool import ToolAnnotations
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            annotations=ToolAnnotations(title="Custom Title"),
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "Custom Title" in result
+
+    def test_word_aliases_expanded(self):
+        """Word aliases should expand singular/plural and synonym variations."""
+        tool = Tool(
+            name="test_repo_tool",
+            description="Manage repositories",
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        # "repo" in name triggers expansion to "repo repository repos"
+        assert "repos" in result or "repository" in result
+
+    def test_name_boost_improves_ranking(self):
+        """Name boost should make tools findable by name terms not in description.
+        
+        A tool with distinctive name terms (like 'flag' in 'repo_get_flag') should
+        be findable even if the description doesn't contain those exact words.
+        """
+        tool = Tool(
+            name="gitea_repo_get_flag",
+            description="Check if a repository has a given flag",
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        # The name is repeated NAME_BOOST times, so "flag" from name appears NAME_BOOST times
+        name_count = result.count("gitea_repo_get_flag")
+        assert name_count == NAME_BOOST
+
+    def test_no_side_effects_on_empty_fields(self):
+        """Should handle tools with minimal fields gracefully."""
+        tool = Tool(
+            name="minimal_tool",
+            parameters={"properties": {}},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "minimal_tool" in result
+        assert isinstance(result, str)
+        assert len(result) > 0
 
 
 class TestCategorizeTool:

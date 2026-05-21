@@ -572,6 +572,8 @@ def _expand_word_aliases(text: str) -> str:
     alias_expansions = [
         ("repo", "repo repository repos"),
         ("pr", "pr pull request"),
+        ("current", "current authenticated"),
+        ("user", "user users account"),
     ]
     text_lower = text.lower()
     parts = [text]
@@ -658,9 +660,9 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
                 current_hash,
             )
 
-        indices = self._index.query(query, self._max_results)
+        expanded_query = _expand_word_aliases(query)
+        indices = self._index.query(expanded_query, self._max_results)
         results = [self._indexed_tools[i] for i in indices]
-        results.sort(key=lambda t: len(t.name))
         return results
 
     def _make_call_tool(self) -> Tool:

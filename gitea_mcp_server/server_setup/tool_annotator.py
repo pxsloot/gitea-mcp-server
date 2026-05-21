@@ -662,8 +662,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
 
         expanded_query = _expand_word_aliases(query)
         indices = self._index.query(expanded_query, self._max_results)
-        results = [self._indexed_tools[i] for i in indices]
-        return results
+        return [self._indexed_tools[i] for i in indices]
 
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""

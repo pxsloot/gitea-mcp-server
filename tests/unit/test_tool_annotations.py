@@ -10,6 +10,10 @@ from fastmcp.tools.tool import ToolAnnotations
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import (
+    NAME_BOOST,
+    _extract_searchable_text_enhanced,
+)
+from gitea_mcp_server.server_setup.tool_annotator import (
     add_inferred_hints as _add_inferred_hints,
 )
 from gitea_mcp_server.server_setup.tool_annotator import (
@@ -19,11 +23,10 @@ from gitea_mcp_server.server_setup.tool_annotator import (
     customize_component as _customize_component,
 )
 from gitea_mcp_server.server_setup.tool_annotator import (
-    generate_tool_title as _generate_tool_title,
+    derive_required_scope as _derive_required_scope,
 )
 from gitea_mcp_server.server_setup.tool_annotator import (
-    _extract_searchable_text_enhanced,
-    NAME_BOOST,
+    generate_tool_title as _generate_tool_title,
 )
 
 # Create a label manager for tests that need it
@@ -182,6 +185,76 @@ class TestCategorizeTool:
         assert _categorize_tool("/activitypub/actor") == "misc"
         assert _categorize_tool("/licenses") == "misc"
         assert _categorize_tool("/topics/search") == "misc"
+
+
+class TestDeriveRequiredScope:
+    """Tests for the derive_required_scope function."""
+
+    def test_admin_tag_returns_sudo(self):
+        assert _derive_required_scope({"admin"}, "GET") == "sudo"
+        assert _derive_required_scope({"admin"}, "POST") == "sudo"
+
+    def test_repository_get_returns_read(self):
+        assert _derive_required_scope({"repository"}, "GET") == "read:repository"
+
+    def test_repository_post_returns_write(self):
+        assert _derive_required_scope({"repository"}, "POST") == "write:repository"
+
+    def test_issue_get_returns_read(self):
+        assert _derive_required_scope({"issue"}, "GET") == "read:issue"
+
+    def test_issue_post_returns_write(self):
+        assert _derive_required_scope({"issue"}, "POST") == "write:issue"
+
+    def test_organization_tag(self):
+        assert _derive_required_scope({"organization"}, "GET") == "read:organization"
+        assert _derive_required_scope({"organization"}, "PUT") == "write:organization"
+
+    def test_user_tag(self):
+        assert _derive_required_scope({"user"}, "GET") == "read:user"
+        assert _derive_required_scope({"user"}, "DELETE") == "write:user"
+
+    def test_notification_tag(self):
+        assert _derive_required_scope({"notification"}, "GET") == "read:notification"
+
+    def test_package_tag(self):
+        assert _derive_required_scope({"package"}, "POST") == "write:package"
+
+    def test_activitypub_tag(self):
+        assert _derive_required_scope({"activitypub"}, "GET") == "read:activitypub"
+
+    def test_miscellaneous_maps_to_misc(self):
+        assert _derive_required_scope({"miscellaneous"}, "GET") == "read:misc"
+
+    def test_settings_maps_to_repository(self):
+        assert _derive_required_scope({"settings"}, "GET") == "read:repository"
+
+    def test_pull_request_tag_not_in_scope_tags(self):
+        """pull_request is a category tag, not a Swagger tag."""
+        assert _derive_required_scope({"pull_request"}, "GET") is None
+
+    def test_head_and_options_are_read(self):
+        assert _derive_required_scope({"repository"}, "HEAD") == "read:repository"
+        assert _derive_required_scope({"repository"}, "OPTIONS") == "read:repository"
+
+    def test_put_delete_patch_are_write(self):
+        assert _derive_required_scope({"repository"}, "PUT") == "write:repository"
+        assert _derive_required_scope({"repository"}, "DELETE") == "write:repository"
+        assert _derive_required_scope({"repository"}, "PATCH") == "write:repository"
+
+    def test_none_tags_returns_none(self):
+        assert _derive_required_scope(None, "GET") is None
+
+    def test_empty_tags_returns_none(self):
+        assert _derive_required_scope(set(), "GET") is None
+
+    def test_missing_method_defaults_to_write(self):
+        assert _derive_required_scope({"repository"}, None) == "write:repository"
+
+    def test_first_known_tag_wins(self):
+        """First matching tag in iteration order is used."""
+        result = _derive_required_scope({"unknown", "repository", "user"}, "GET")
+        assert result in ("read:repository", "read:user")
 
 
 class TestGenerateToolTitle:

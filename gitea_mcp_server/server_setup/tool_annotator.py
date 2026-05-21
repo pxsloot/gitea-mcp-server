@@ -94,6 +94,52 @@ def generate_tool_title(route: Any) -> str:
     return title
 
 
+TAG_TO_SCOPE: dict[str, str] = {
+    "admin": "sudo",
+    "repository": "repository",
+    "issue": "issue",
+    "organization": "organization",
+    "user": "user",
+    "notification": "notification",
+    "package": "package",
+    "activitypub": "activitypub",
+    "miscellaneous": "misc",
+    "settings": "repository",
+}
+
+
+def derive_required_scope(swagger_tags: set[str] | None, method: str | None) -> str | None:
+    """Derive the required Gitea token scope from Swagger tags and HTTP method.
+
+    Args:
+        swagger_tags: Set of Swagger tag names from the OpenAPI spec
+        method: HTTP method (GET, POST, PUT, DELETE, etc.)
+
+    Returns:
+        Scope string like "read:repository" or "write:issue",
+        "sudo" for admin tools, or None if no scope is needed.
+    """
+    if not swagger_tags:
+        return None
+
+    scope_name = None
+    for tag in swagger_tags:
+        s = TAG_TO_SCOPE.get(tag)
+        if s is not None:
+            scope_name = s
+            break
+
+    if scope_name is None:
+        return None
+
+    if scope_name == "sudo":
+        return "sudo"
+
+    if method and method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        return f"read:{scope_name}"
+    return f"write:{scope_name}"
+
+
 _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/admin", "admin", False),
     ("/orgs", "organization", False),
@@ -465,6 +511,11 @@ def customize_component(
         if patterns:
             register_tool_invalidation(component.name, patterns)
 
+    required_scope = derive_required_scope(
+        set(component.tags) if component.tags else None,
+        method,
+    )
+
     description, has_labels = _prepare_description(annotations, component)
 
     augment_schema_with_validation(component)
@@ -476,6 +527,11 @@ def customize_component(
         await _convert_labels(kwargs, has_labels, component, label_manager)
         return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
+    component_meta = dict(component.meta) if component.meta else {}
+    component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+        "required_scope"
+    ] = required_scope
+
     return Tool.from_tool(
         component,
         title=title,
@@ -483,6 +539,7 @@ def customize_component(
         annotations=annotations,
         description=description,
         transform_fn=transform_fn,
+        meta=component_meta,
     )
 
 
@@ -688,11 +745,13 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
 
 
 __all__ = [
+    "TAG_TO_SCOPE",
     "TolerantBM25SearchTransform",
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",
     "customize_component",
+    "derive_required_scope",
     "generate_tool_title",
     "update_labels_schema",
 ]

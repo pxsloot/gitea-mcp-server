@@ -695,11 +695,41 @@ async def get_version(gitea_client: GiteaClient) -> ResourceResult:
         data = await gitea_client.request("GET", "/version")
         if isinstance(data, str):
             return data
-        # Return version string as plain text
         return str(data.get("version", "Unknown"))
     except Exception as e:
         _handle_not_found(e, "version", "server", "Version information not available.")
         raise
+
+
+async def get_active_token_scopes(gitea_client: GiteaClient) -> ResourceResult:
+    """Get the scopes of the active Gitea token.
+
+    Returns a JSON object with the active token's scopes.
+    Returns ``{"scopes": null}`` if the token cannot be identified.
+    """
+    try:
+        user_data = await gitea_client.request("GET", "/user")
+        if not isinstance(user_data, dict):
+            return json.dumps({"scopes": None})
+        username = user_data.get("login")
+        if not username:
+            return json.dumps({"scopes": None})
+
+        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
+        if not isinstance(tokens_data, list):
+            return json.dumps({"scopes": None})
+
+        raw_token = gitea_client._config.token
+        last_eight = raw_token[-8:]
+        for token in tokens_data:
+            if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
+                scopes = token.get("scopes")
+                if scopes and isinstance(scopes, list):
+                    return json.dumps({"scopes": sorted(scopes)})
+        return json.dumps({"scopes": None})
+    except Exception:
+        logger.exception("Failed to retrieve active token scopes")
+        return json.dumps({"scopes": None})
 
 
 async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
@@ -942,6 +972,14 @@ def register_custom_resources(
             "text/plain",
             {"wrapper", "server"},
             {"fastmcp": {"_internal": {"required_scope": None}}},
+        ),
+        # Active token scopes (for agent self-discovery)
+        (
+            "gitea://token/scopes",
+            get_active_token_scopes,
+            "application/json",
+            {"wrapper", "server"},
+            {"fastmcp": {"_internal": {"required_scope": "read:user"}}},
         ),
     ]
 

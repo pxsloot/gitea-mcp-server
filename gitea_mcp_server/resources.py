@@ -53,11 +53,49 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
     HTTP_STATUS_NOT_FOUND,
 )
+from gitea_mcp_server.server_setup.tool_annotator import derive_required_scope
 
 logger = logging.getLogger(__name__)
 
 # Type alias for resource return values
 ResourceResult = str
+
+
+def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
+    """Derive a meaningful resource name from an OpenAPI operation.
+
+    Uses the operationId if available (converting camelCase to snake_case).
+    Falls back to deriving from the URI path.
+
+    Args:
+        operation: OpenAPI operation dict
+        path: OpenAPI path string (e.g., "/repos/{owner}/{repo}/issues/{index}")
+
+    Returns:
+        A meaningful snake_case name string
+    """
+    operation_id = operation.get("operationId")
+    if operation_id and operation_id.strip():
+        name = operation_id.strip()
+        # Convert camelCase to snake_case
+        # Handles: "getRepo" -> "get_repo", "issueGetIssue" -> "issue_get_issue"
+        # Also handles leading uppercase: "RepoGet" -> "repo_get"
+        result = ""
+        for i, char in enumerate(name):
+            if char.isupper():
+                if i > 0 and (name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())):
+                    result += "_"
+                result += char.lower()
+            else:
+                result += char
+        return result
+
+    # Fallback: derive from path, stripping params
+    clean_path = path.strip("/")
+    segments = [s for s in clean_path.split("/") if not (s.startswith("{") and s.endswith("}"))]
+    if not segments:
+        segments = [s.strip("{}") for s in clean_path.split("/") if s]
+    return "_".join(segments) if segments else "resource"
 
 
 def _handle_not_found(
@@ -259,7 +297,8 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
 
 
 def _make_resource_func(
-    path: str, method: str, operation: dict[str, Any], gitea_client: GiteaClient
+    path: str, method: str, operation: dict[str, Any], gitea_client: GiteaClient,
+    resource_name: str | None = None,
 ) -> Callable:
     """Create a resource function for a given OpenAPI operation."""
     path_params = []
@@ -339,6 +378,9 @@ def _make_resource_func(
         docstring = f"Resource for {method.upper()} {path}"
     resource_func.__doc__ = docstring
 
+    if resource_name:
+        resource_func.__name__ = resource_name
+
     return resource_func
 
 
@@ -401,13 +443,29 @@ def register_auto_generated_resources(
                     )
                     continue
 
+                # Derive meaningful name from operation
+                resource_name = _derive_resource_name(operation, path)
+
+                # Derive required scope from operation tags
+                swagger_tags = set(operation.get("tags", [])) or None
+                required_scope = derive_required_scope(swagger_tags, "GET")
+
                 # Create the resource function
-                resource_func = _make_resource_func(path, method.upper(), operation, gitea_client)
+                resource_func = _make_resource_func(
+                    path, method.upper(), operation, gitea_client,
+                    resource_name=resource_name,
+                )
+
+                resource_meta: dict[str, Any] = {"required_scope": required_scope}
 
                 # Register with FastMCP
                 try:
                     mcp.resource(
-                        uri_template, mime_type="application/json", tags={"api", "raw", "auto"}
+                        uri_template,
+                        name=resource_name,
+                        mime_type="application/json",
+                        tags={"api", "raw", "auto"},
+                        meta=resource_meta,
                     )(resource_func)
                     # Record in registry catalog
                     registry.record(
@@ -415,7 +473,7 @@ def register_auto_generated_resources(
                         func=resource_func,
                         mime_type="application/json",
                         tags={"api", "raw", "auto"},
-                        meta=None,
+                        meta=resource_meta,
                     )
                     count += 1
                     logger.debug("Registered auto-generated resource: %s", uri_template)
@@ -790,84 +848,84 @@ def register_custom_resources(
             get_repository,
             "text/markdown",
             {"wrapper", "repository"},
-            {"cache_ttl": CACHE_TTL_REPOSITORY},
+            {"cache_ttl": CACHE_TTL_REPOSITORY, "required_scope": "read:repository"},
         ),
         (
             "gitea://repos/{owner}/{repo}/readme",
             get_readme,
             "text/plain",
             {"wrapper", "readme"},
-            {"cache_ttl": CACHE_TTL_README},
+            {"cache_ttl": CACHE_TTL_README, "required_scope": "read:repository"},
         ),
         (
             "gitea://repos/{owner}/{repo}/issues",
             list_repo_issues,
             "text/markdown",
             {"wrapper", "issues"},
-            None,  # Use default TTL (30s) - issues change frequently
+            {"required_scope": "read:repository"},  # Use default TTL (30s) - issues change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/open",
             list_repo_issues_open,
             "text/markdown",
             {"wrapper", "issues"},
-            None,
+            {"required_scope": "read:repository"},
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/closed",
             list_repo_issues_closed,
             "text/markdown",
             {"wrapper", "issues"},
-            None,
+            {"required_scope": "read:repository"},
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls",
             list_repo_pulls,
             "text/markdown",
             {"wrapper", "pull_requests"},
-            None,  # Use default TTL (30s) - PRs change frequently
+            {"required_scope": "read:repository"},  # Use default TTL (30s) - PRs change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls/open",
             list_repo_pulls_open,
             "text/markdown",
             {"wrapper", "pull_requests"},
-            None,
+            {"required_scope": "read:repository"},
         ),
         (
             "gitea://repos/{owner}/{repo}/files/{path}",
             get_file,
             "text/plain",
             {"wrapper", "files"},
-            None,
+            {"required_scope": "read:repository"},
         ),  # Default TTL
         (
             "gitea://repos/{owner}/{repo}/releases",
             list_repo_releases,
             "text/markdown",
             {"wrapper", "releases"},
-            {"cache_ttl": CACHE_TTL_RELEASES},
+            {"cache_ttl": CACHE_TTL_RELEASES, "required_scope": "read:repository"},
         ),
         (
             "gitea://users/{username}",
             get_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": CACHE_TTL_USERS},
+            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:user"},
         ),
         (
             "gitea://user",
             get_current_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": CACHE_TTL_USERS},
+            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:user"},
         ),
         (
             "gitea://orgs/{orgname}",
             get_org,
             "text/markdown",
             {"wrapper", "organization"},
-            {"cache_ttl": CACHE_TTL_USERS},
+            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:organization"},
         ),
         # Server version (application version from /version endpoint)
         (
@@ -875,7 +933,7 @@ def register_custom_resources(
             get_version,
             "text/plain",
             {"wrapper", "server"},
-            None,
+            {"required_scope": None},
         ),
     ]
 
@@ -887,7 +945,7 @@ def register_custom_resources(
                 get_server_info,
                 "text/markdown",
                 {"wrapper", "server"},
-                None,
+                {"required_scope": None},
             )
         )
 

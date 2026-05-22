@@ -677,8 +677,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
             if tag in CATEGORY_SEARCH_ALIASES:
                 parts.append(CATEGORY_SEARCH_ALIASES[tag])
 
-    result = " ".join(parts)
-    return _expand_word_aliases(result)
+    return " ".join(parts)
 
 
 class TolerantBM25SearchTransform(BM25SearchTransform):

@@ -99,15 +99,15 @@ class TestSearchableText:
         assert "Custom Title" in result
 
     def test_word_aliases_expanded(self):
-        """Word aliases should expand singular/plural and synonym variations."""
+        """Word aliases are only expanded on the query side, not in document text."""
         tool = Tool(
             name="test_repo_tool",
             description="Manage repositories",
             parameters={"properties": {}},
         )
         result = _extract_searchable_text_enhanced(tool)
-        # "repo" in name triggers expansion to "repo repository repos"
-        assert "repos" in result or "repository" in result
+        # "repos" comes from the description, not alias expansion
+        assert "repos" in result
 
     def test_name_boost_improves_ranking(self):
         """Name boost should make tools findable by name terms not in description.

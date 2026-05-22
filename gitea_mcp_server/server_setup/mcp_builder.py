@@ -43,7 +43,7 @@ def create_openapi_provider(
         if route is not None:
             new_tool = customize_component(route, tool, label_manager, openapi_spec)
             if new_tool is not None:
-                provider._tools[name] = new_tool  # type: ignore[assignment]
+                provider._tools[name] = new_tool
 
     return provider
 

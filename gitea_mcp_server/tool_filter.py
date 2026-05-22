@@ -1,7 +1,7 @@
 """Tool permission filtering for Gitea MCP Server."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import FastMCP
 
@@ -17,22 +17,107 @@ def _validate_user_data(data: Any) -> None:
         raise TypeError(msg) from None
 
 
-def _is_admin_tool(tool: Any) -> bool:
-    """Check if a tool requires admin privileges.
+def _get_required_scope(tool: Any) -> str | None:
+    """Get the required Gitea token scope from a tool's metadata.
 
     Args:
-        tool: Tool object (expected to have 'tags' attribute)
+        tool: Tool object with meta containing 'required_scope'.
 
     Returns:
-        True if tool has 'admin' tag, False otherwise
+        Scope string (e.g. "read:repository", "sudo"), or None if no scope needed.
     """
-    return bool(hasattr(tool, "tags") and tool.tags and "admin" in tool.tags)
+    try:
+        return cast("str | None", tool.meta["fastmcp"]["_internal"]["required_scope"])
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
+def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
+    """Check if available Gitea token scopes satisfy a required scope.
+
+    Rules:
+    - None required (no scope needed) always passes.
+    - ``sudo`` in available grants everything.
+    - Exact match passes.
+    - ``write:xxx`` implies ``read:xxx``.
+
+    Args:
+        required: Required scope string or None.
+        available: Set of scope strings the user's token possesses.
+
+    Returns:
+        True if the required scope is covered by available scopes.
+    """
+    if required is None:
+        return True
+    if "sudo" in available:
+        return True
+    if required in available:
+        return True
+    if required.startswith("read:"):
+        resource = required.split(":", 1)[1]
+        if f"write:{resource}" in available:
+            return True
+    return False
+
+
+def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | None:
+    """Match the active token and return its scopes.
+
+    Args:
+        tokens_data: List of token dicts from the API.
+        raw_token: The raw GITEA_TOKEN value from config.
+
+    Returns:
+        Set of scope strings for the matched token, or None if no match.
+    """
+    last_eight = raw_token[-8:]
+    for token in tokens_data:
+        logt = token.get("token_last_eight")
+        logger.info("testing token ", extra={"token": logt},)
+        if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
+            scopes = token.get("scopes")
+            if scopes and isinstance(scopes, list):
+                return set(scopes)
+    logger.warning(
+        "No token matched the active GITEA_TOKEN last 8 chars, keeping all tools",
+        extra={"token_last_eight": last_eight},
+    )
+    return None
+
+
+def _hide_tool(tool: Any) -> None:
+    """Set a tool's visibility to False."""
+    if tool.meta is None:
+        tool.meta = {}
+    if "fastmcp" not in tool.meta:
+        tool.meta["fastmcp"] = {}
+    if "_internal" not in tool.meta["fastmcp"]:
+        tool.meta["fastmcp"]["_internal"] = {}
+    tool.meta["fastmcp"]["_internal"]["visibility"] = False
+
+
+async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
+    """Gather all tools from all providers."""
+    all_tools = []
+    for provider in getattr(mcp, "providers", []):
+        try:
+            provider_tools = await provider.list_tools()
+            all_tools.extend(provider_tools)
+        except (AttributeError, TypeError) as e:
+            logger.warning(
+                "Failed to list tools from provider, skipping",
+                extra={"provider": type(provider).__name__, "error": str(e)},
+            )
+    return all_tools
 
 
 async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
-    """Filter tools based on the current user's permissions.
+    """Filter tools based on the current user's Gitea token scopes.
 
-    Removes tools that the user does not have permission to use.
+    Removes tools that require a scope not present in the active token.
+    The active token is identified by matching the last 8 chars of it
+    against Gitea's ``token_last_eight`` field.
     This function should be called before any list_tools request to avoid
     caching of unfiltered tools.
 
@@ -42,40 +127,37 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
     """
     logger.info("Starting tool permission filtering")
 
-    # Fetch current user info to check admin status
+    # Fetch current user info
     try:
         user_data = await gitea_client.request("GET", "/user")
-
-        # gitea_client.request returns parsed JSON directly (dict)
         _validate_user_data(user_data)
-        is_admin = user_data.get("admin", False)
         username = user_data.get("login", "unknown")
-        logger.info(
-            "User info retrieved",
-            extra={"username": username, "is_admin": is_admin},
-        )
-    except Exception as e:
-        logger.exception(
-            "Failed to fetch user info for filtering, keeping all tools",
-            extra={"error": str(e)},
-        )
+        logger.info("User info retrieved", extra={"username": username})
+    except Exception:
+        logger.exception("Failed to fetch user info for filtering, keeping all tools")
         return
 
-    # Gather tools directly from each provider without going through the server's
-    # list_tools (which may be cached or include middleware). This ensures we
-    # modify the original tool objects before any caching occurs.
-    all_tools = []
-    for provider in getattr(mcp, "providers", []):
-        try:
-            # Use provider's list_tools to get the tools (returns actual tool objects)
-            provider_tools = await provider.list_tools()
-            all_tools.extend(provider_tools)
-        except (AttributeError, TypeError) as e:
+    # Fetch user's token scopes
+    try:
+        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
+        if not isinstance(tokens_data, list):
             logger.warning(
-                "Failed to list tools from provider, skipping",
-                extra={"provider": type(provider).__name__, "error": str(e)},
+                "Unexpected tokens response type, keeping all tools",
+                extra={"type": type(tokens_data).__name__},
             )
+            return
+    except Exception:
+        logger.exception("Failed to fetch tokens for filtering, keeping all tools")
+        return
 
+    # Match the active token and get its scopes only
+    available_scopes = _match_active_token(tokens_data, gitea_client._config.token)
+    if available_scopes is None:
+        return
+
+    logger.info("Active token scopes retrieved", extra={"scopes": sorted(available_scopes)})
+
+    all_tools = await _collect_provider_tools(mcp)
     if not all_tools:
         logger.warning("No tools found in providers to filter")
         return
@@ -85,47 +167,16 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
         extra={"total_tools": len(all_tools), "tools": [t.name for t in all_tools][:20]},
     )
 
-    # Identify tools to disable based on permission requirements
-    tools_to_disable = []
-
-    for tool in all_tools:
-        # Check if tool requires admin privileges via tags (set by _categorize_tool)
-        if _is_admin_tool(tool) and not is_admin:
-            tools_to_disable.append(tool)
-            logger.debug(
-                "Marking admin tool for disabling",
-                extra={"tool": tool.name, "reason": "non_admin_user", "key": tool.key},
-            )
-
-        # (Optional) Wiki tools - check if wiki feature is available
-        # For now, we don't filter wiki tools; can be extended later
-        # elif tool.name.startswith("wiki_"):
-        #     if not await _is_wiki_available(gitea_client):
-        #         tools_to_disable.append(tool)
-
-    # Directly mark tools as disabled by setting metadata
-    # This ensures that when tools are later listed, they appear disabled
     disabled_count = 0
-    for tool in tools_to_disable:
-        try:
-            # Ensure tool metadata has visibility=False
-            if tool.meta is None:
-                tool.meta = {}
-            if "fastmcp" not in tool.meta:
-                tool.meta["fastmcp"] = {}
-            if "_internal" not in tool.meta["fastmcp"]:
-                tool.meta["fastmcp"]["_internal"] = {}
-            tool.meta["fastmcp"]["_internal"]["visibility"] = False
-            disabled_count += 1
-            logger.info(
-                "Disabled tool due to insufficient permissions",
-                extra={"tool": tool.name, "key": tool.key},
-            )
-        except Exception as e:
-            logger.exception(
-                "Failed to disable tool",
-                extra={"tool": tool.name, "key": tool.key, "error": str(e)},
-            )
+    for tool in all_tools:
+        required = _get_required_scope(tool)
+        if not _has_sufficient_scope(required, available_scopes):
+            try:
+                _hide_tool(tool)
+                disabled_count += 1
+                logger.info("Disabled tool due to insufficient scope", extra={"tool": tool.name, "key": tool.key})
+            except Exception as e:
+                logger.exception("Failed to disable tool", extra={"tool": tool.name, "key": tool.key, "error": str(e)})
 
     logger.info(
         "Tool filtering completed",

@@ -36,7 +36,10 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.logging import setup_logging
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
-from gitea_mcp_server.server_setup.permissions import filter_tools_by_permissions
+from gitea_mcp_server.server_setup.permissions import (
+    filter_resources_by_permissions,
+    filter_tools_by_permissions,
+)
 from gitea_mcp_server.server_setup.resource_registry import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.server_setup.tool_annotator import TolerantBM25SearchTransform
@@ -161,6 +164,14 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         except Exception as e:
             logger.exception(
                 "Tool filtering failed, proceeding without filtering",
+                extra={"error": str(e)},
+            )
+        try:
+            logger.info("Applying resource permission filtering")
+            await filter_resources_by_permissions(mcp, gitea_client)
+        except Exception as e:
+            logger.exception(
+                "Resource filtering failed, proceeding without filtering",
                 extra={"error": str(e)},
             )
     else:

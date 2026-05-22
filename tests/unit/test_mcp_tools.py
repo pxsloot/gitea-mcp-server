@@ -161,7 +161,7 @@ class TestMcpListResourcesImpl:
         template_mock.description = "Repository metadata"
         template_mock.mime_type = "text/markdown"
         template_mock.tags = set()
-        template_mock.meta = {"required_scope": "read:repository"}
+        template_mock.meta = {"fastmcp": {"_internal": {"required_scope": "read:repository"}}}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
@@ -182,7 +182,7 @@ class TestMcpListResourcesImpl:
         resource_mock.description = "Server version"
         resource_mock.mime_type = "text/plain"
         resource_mock.tags = set()
-        resource_mock.meta = {"required_scope": None}
+        resource_mock.meta = {"fastmcp": {"_internal": {"required_scope": None}}}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])

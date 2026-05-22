@@ -97,6 +97,17 @@ def _hide_tool(tool: Any) -> None:
     tool.meta["fastmcp"]["_internal"]["visibility"] = False
 
 
+def _hide_resource(resource: Any) -> None:
+    """Set a resource's or template's visibility to False."""
+    if resource.meta is None:
+        resource.meta = {}
+    if "fastmcp" not in resource.meta:
+        resource.meta["fastmcp"] = {}
+    if "_internal" not in resource.meta["fastmcp"]:
+        resource.meta["fastmcp"]["_internal"] = {}
+    resource.meta["fastmcp"]["_internal"]["visibility"] = False
+
+
 async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
     """Gather all tools from all providers."""
     all_tools = []
@@ -110,6 +121,29 @@ async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
                 extra={"provider": type(provider).__name__, "error": str(e)},
             )
     return all_tools
+
+
+async def _collect_provider_resources(mcp: FastMCP) -> list[Any]:
+    """Gather all resources and resource templates from all providers."""
+    all_components: list[Any] = []
+    for provider in getattr(mcp, "providers", []):
+        try:
+            provider_resources = await provider.list_resources()
+            all_components.extend(provider_resources)
+        except (AttributeError, TypeError) as e:
+            logger.warning(
+                "Failed to list resources from provider, skipping",
+                extra={"provider": type(provider).__name__, "error": str(e)},
+            )
+        try:
+            provider_templates = await provider.list_resource_templates()
+            all_components.extend(provider_templates)
+        except (AttributeError, TypeError) as e:
+            logger.warning(
+                "Failed to list resource templates from provider, skipping",
+                extra={"provider": type(provider).__name__, "error": str(e)},
+            )
+    return all_components
 
 
 async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
@@ -184,5 +218,86 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
             "total_tools": len(all_tools),
             "disabled_tools": disabled_count,
             "remaining_tools": len(all_tools) - disabled_count,
+        },
+    )
+
+
+async def filter_resources_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
+    """Filter resources based on the current user's Gitea token scopes.
+
+    Hides resources and resource templates that require a scope not present
+    in the active token. The active token is identified by matching the last
+    8 chars of it against Gitea's ``token_last_eight`` field.
+
+    Args:
+        mcp: The FastMCP server instance
+        gitea_client: GiteaClient for making API calls
+    """
+    logger.info("Starting resource permission filtering")
+
+    # Fetch current user info
+    try:
+        user_data = await gitea_client.request("GET", "/user")
+        _validate_user_data(user_data)
+        username = user_data.get("login", "unknown")
+        logger.info("User info retrieved", extra={"username": username})
+    except Exception:
+        logger.exception("Failed to fetch user info for filtering, keeping all resources")
+        return
+
+    # Fetch user's token scopes
+    try:
+        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
+        if not isinstance(tokens_data, list):
+            logger.warning(
+                "Unexpected tokens response type, keeping all resources",
+                extra={"type": type(tokens_data).__name__},
+            )
+            return
+    except Exception:
+        logger.exception("Failed to fetch tokens for filtering, keeping all resources")
+        return
+
+    # Match the active token and get its scopes only
+    available_scopes = _match_active_token(tokens_data, gitea_client._config.token)
+    if available_scopes is None:
+        return
+
+    logger.info("Active token scopes retrieved", extra={"scopes": sorted(available_scopes)})
+
+    all_components = await _collect_provider_resources(mcp)
+    if not all_components:
+        logger.warning("No resources found in providers to filter")
+        return
+
+    logger.debug(
+        "Resources before filtering",
+        extra={
+            "total_resources": len(all_components),
+            "resources": [getattr(c, "name", str(c)) for c in all_components][:20],
+        },
+    )
+
+    disabled_count = 0
+    for component in all_components:
+        required = _get_required_scope(component)
+        if not _has_sufficient_scope(required, available_scopes):
+            try:
+                _hide_resource(component)
+                disabled_count += 1
+                name = getattr(component, "name", str(component))
+                logger.info("Disabled resource due to insufficient scope", extra={"resource": name})
+            except Exception as e:
+                logger.exception(
+                    "Failed to disable resource",
+                    extra={"resource": name, "error": str(e)},
+                )
+
+    logger.info(
+        "Resource filtering completed",
+        extra={
+            "total_resources": len(all_components),
+            "disabled_resources": disabled_count,
+            "remaining_resources": len(all_components) - disabled_count,
         },
     )

@@ -456,7 +456,9 @@ def register_auto_generated_resources(
                     resource_name=resource_name,
                 )
 
-                resource_meta: dict[str, Any] = {"required_scope": required_scope}
+                resource_meta: dict[str, Any] = {
+                    "fastmcp": {"_internal": {"required_scope": required_scope}}
+                }
 
                 # Register with FastMCP
                 try:
@@ -848,84 +850,90 @@ def register_custom_resources(
             get_repository,
             "text/markdown",
             {"wrapper", "repository"},
-            {"cache_ttl": CACHE_TTL_REPOSITORY, "required_scope": "read:repository"},
+            {
+                "cache_ttl": CACHE_TTL_REPOSITORY,
+                "fastmcp": {"_internal": {"required_scope": "read:repository"}},
+            },
         ),
         (
             "gitea://repos/{owner}/{repo}/readme",
             get_readme,
             "text/plain",
             {"wrapper", "readme"},
-            {"cache_ttl": CACHE_TTL_README, "required_scope": "read:repository"},
+            {
+                "cache_ttl": CACHE_TTL_README,
+                "fastmcp": {"_internal": {"required_scope": "read:repository"}},
+            },
         ),
         (
             "gitea://repos/{owner}/{repo}/issues",
             list_repo_issues,
             "text/markdown",
             {"wrapper", "issues"},
-            {"required_scope": "read:repository"},  # Use default TTL (30s) - issues change frequently
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},  # Use default TTL (30s) - issues change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/open",
             list_repo_issues_open,
             "text/markdown",
             {"wrapper", "issues"},
-            {"required_scope": "read:repository"},
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),
         (
             "gitea://repos/{owner}/{repo}/issues/closed",
             list_repo_issues_closed,
             "text/markdown",
             {"wrapper", "issues"},
-            {"required_scope": "read:repository"},
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls",
             list_repo_pulls,
             "text/markdown",
             {"wrapper", "pull_requests"},
-            {"required_scope": "read:repository"},  # Use default TTL (30s) - PRs change frequently
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},  # Use default TTL (30s) - PRs change frequently
         ),
         (
             "gitea://repos/{owner}/{repo}/pulls/open",
             list_repo_pulls_open,
             "text/markdown",
             {"wrapper", "pull_requests"},
-            {"required_scope": "read:repository"},
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),
         (
             "gitea://repos/{owner}/{repo}/files/{path}",
             get_file,
             "text/plain",
             {"wrapper", "files"},
-            {"required_scope": "read:repository"},
+            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),  # Default TTL
         (
             "gitea://repos/{owner}/{repo}/releases",
             list_repo_releases,
             "text/markdown",
             {"wrapper", "releases"},
-            {"cache_ttl": CACHE_TTL_RELEASES, "required_scope": "read:repository"},
+            {"cache_ttl": CACHE_TTL_RELEASES, "fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),
         (
             "gitea://users/{username}",
             get_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:user"},
+            {"cache_ttl": CACHE_TTL_USERS, "fastmcp": {"_internal": {"required_scope": "read:user"}}},
         ),
         (
             "gitea://user",
             get_current_user,
             "text/markdown",
             {"wrapper", "user"},
-            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:user"},
+            {"cache_ttl": CACHE_TTL_USERS, "fastmcp": {"_internal": {"required_scope": "read:user"}}},
         ),
         (
             "gitea://orgs/{orgname}",
             get_org,
             "text/markdown",
             {"wrapper", "organization"},
-            {"cache_ttl": CACHE_TTL_USERS, "required_scope": "read:organization"},
+            {"cache_ttl": CACHE_TTL_USERS, "fastmcp": {"_internal": {"required_scope": "read:organization"}}},
         ),
         # Server version (application version from /version endpoint)
         (
@@ -933,7 +941,7 @@ def register_custom_resources(
             get_version,
             "text/plain",
             {"wrapper", "server"},
-            {"required_scope": None},
+            {"fastmcp": {"_internal": {"required_scope": None}}},
         ),
     ]
 
@@ -945,7 +953,7 @@ def register_custom_resources(
                 get_server_info,
                 "text/markdown",
                 {"wrapper", "server"},
-                {"required_scope": None},
+                {"fastmcp": {"_internal": {"required_scope": None}}},
             )
         )
 

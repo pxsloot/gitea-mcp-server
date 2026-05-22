@@ -7,7 +7,9 @@ import pytest
 from gitea_mcp_server.tool_filter import (
     _get_required_scope,
     _has_sufficient_scope,
+    _hide_resource,
     _match_active_token,
+    filter_resources_by_permissions,
     filter_tools_by_permissions,
 )
 
@@ -331,3 +333,251 @@ class TestFilterToolsByPermissions:
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
+
+
+class TestHideResource:
+    """Tests for the _hide_resource helper function."""
+
+    def test_sets_visibility_false(self):
+        resource = MagicMock()
+        resource.meta = {}
+        _hide_resource(resource)
+        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    def test_creates_nested_dicts_when_missing(self):
+        resource = MagicMock()
+        resource.meta = None
+        _hide_resource(resource)
+        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    def test_preserves_existing_meta(self):
+        resource = MagicMock()
+        resource.meta = {"existing": "value"}
+        _hide_resource(resource)
+        assert resource.meta["existing"] == "value"
+        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+
+
+class TestFilterResourcesByPermissions:
+    """Tests for the filter_resources_by_permissions function."""
+
+    @pytest.fixture
+    def mock_mcp(self):
+        mcp = MagicMock()
+        provider = AsyncMock()
+        mcp.providers = [provider]
+        return mcp
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        return MagicMock()
+
+    def create_resource(self, name: str, uri: str, required_scope: str | None = None):
+        resource = MagicMock()
+        resource.name = name
+        resource.uri = uri
+        resource.meta = {}
+        if required_scope is not None:
+            resource.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+                "required_scope"
+            ] = required_scope
+        return resource
+
+    def create_template(self, name: str, uri_template: str, required_scope: str | None = None):
+        template = MagicMock()
+        template.name = name
+        template.uri_template = uri_template
+        template.meta = {}
+        if required_scope is not None:
+            template.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+                "required_scope"
+            ] = required_scope
+        return template
+
+    def _make_token(self, name: str, scopes: list[str], token_val: str | None = None) -> dict:
+        token = {"id": 1, "name": name, "scopes": scopes}
+        if token_val:
+            token["token_last_eight"] = token_val[-8:]
+        else:
+            token["token_last_eight"] = "00000000"
+        return token
+
+    def _setup_mocks(self, mock_gitea_client, username: str = "dev2", token_val: str = "test-token"):
+        mock_gitea_client._config.token = token_val
+
+    async def test_user_with_sudo_sees_all_resources(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("admin-token", ["sudo"], "test-token")],
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        org_res = self.create_resource("org", "gitea://org", required_scope="read:organization")
+
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, org_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        for r in [repo_res, org_res]:
+            assert "visibility" not in r.meta.get("fastmcp", {}).get("_internal", {})
+
+    async def test_disables_resources_without_required_scope(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("test", ["read:repository"], "test-token")],
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        issue_res = self.create_resource("issue", "gitea://issue", required_scope="read:issue")
+
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, issue_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+        assert issue_res.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    async def test_disables_templates_without_required_scope(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("test", ["read:repository"], "test-token")],
+            ]
+        )
+
+        tpl = self.create_template("repo_tpl", "gitea://repos/{owner}/{repo}", required_scope="read:repository")
+        org_tpl = self.create_template("org_tpl", "gitea://orgs/{org}", required_scope="read:organization")
+
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[tpl, org_tpl])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in tpl.meta.get("fastmcp", {}).get("_internal", {})
+        assert org_tpl.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("test", ["write:repository"], "test-token")],
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+
+    async def test_resources_without_scope_requirement_always_visible(
+        self, mock_mcp, mock_gitea_client
+    ):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("test", [], "test-token")],
+            ]
+        )
+
+        version_res = self.create_resource("version", "gitea://version")
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[version_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in version_res.meta.get("fastmcp", {}).get("_internal", {})
+
+    async def test_token_fetch_failure_keeps_all_resources(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                Exception("Token API error"),
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+
+    async def test_user_fetch_failure_keeps_all_resources(self, mock_mcp, mock_gitea_client):
+        mock_gitea_client.request = AsyncMock(side_effect=Exception("API error"))
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+
+    async def test_empty_provider_resources(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("test", ["read:repository"], "test-token")],
+            ]
+        )
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+    async def test_both_resources_and_templates_filtered(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client, token_val="mixed-token")
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [
+                    self._make_token("mixed", ["read:repository", "read:user"], "mixed-token"),
+                ],
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repos/static", required_scope="read:repository")
+        org_tpl = self.create_template("org_tpl", "gitea://orgs/{org}", required_scope="read:organization")
+        user_res = self.create_resource("user", "gitea://user", required_scope="read:user")
+
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, user_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[org_tpl])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+        assert "visibility" not in user_res.meta.get("fastmcp", {}).get("_internal", {})
+        assert org_tpl.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    async def test_no_token_match_keeps_all_resources(self, mock_mcp, mock_gitea_client):
+        self._setup_mocks(mock_gitea_client, token_val="unknown-token")
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"admin": False, "login": "dev2"},
+                [self._make_token("t1", ["read:repo"], "other-token")],
+            ]
+        )
+
+        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
+        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
+        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+        assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})

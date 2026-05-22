@@ -50,12 +50,21 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         resources = await ctx.fastmcp.list_resources()
         templates = await ctx.fastmcp.list_resource_templates()
 
+        def _build_resource_entry(
+            base: dict[str, Any],
+            meta: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            """Add required_scope to a resource entry from its metadata."""
+            scope = (meta or {}).get("required_scope") if meta else None
+            base["required_scope"] = scope
+            return base
+
         # Process concrete resources
         # FastMCP auto-populates name from function name when not explicitly set:
         # @mcp.resource("uri://foo")  -> name="foo" (function name)
         # @mcp.resource("uri://bar", name="custom") -> name="custom"
         for resource in resources:
-            resources_list.append(
+            entry = _build_resource_entry(
                 {
                     "uri": str(resource.uri),
                     "name": resource.name,
@@ -65,12 +74,14 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                     "tags": list(resource.tags)
                     if hasattr(resource, "tags") and resource.tags
                     else [],
-                }
+                },
+                getattr(resource, "meta", None),
             )
+            resources_list.append(entry)
 
         # Process resource templates
         for template in templates:
-            resources_list.append(
+            entry = _build_resource_entry(
                 {
                     "uri": str(template.uri_template),
                     "name": template.name,
@@ -80,8 +91,10 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
                     "tags": list(template.tags)
                     if hasattr(template, "tags") and template.tags
                     else [],
-                }
+                },
+                getattr(template, "meta", None),
             )
+            resources_list.append(entry)
     except (AttributeError, TypeError):
         logger.exception("Error listing resources")
         return {"resources": [], "count": 0}
@@ -147,6 +160,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         - `mimeType`: MIME type of the content (e.g., "text/markdown", "application/json")
         - `type`: Either "resource" or "template"
         - `tags`: List of tags categorizing the resource (e.g., ["repository", "wrapper"])
+        - `required_scope`: Token scope required to access this resource (e.g., "read:repository"),
+          or `null` if no specific scope is required
 
         ## Usage Example
 
@@ -172,6 +187,10 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
           - `raw`: Raw JSON from API
           - `api`: Auto-generated from OpenAPI spec
         - The `mimeType` hints at the content format you'll receive
+        - The `required_scope` field tells you what Gitea token scope is needed:
+          - `"read:repository"` - needs read access to repositories
+          - `"read:issue"` - needs read access to issues
+          - `null` - requires no specific scope (public info)
 
         Returns:
             Dictionary with 'resources' key containing a list of resource info:
@@ -182,7 +201,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                     "description": "Get full repository metadata",
                     "mimeType": "text/markdown",
                     "type": "template",
-                    "tags": ["wrapper", "repository"]
+                    "tags": ["wrapper", "repository"],
+                    "required_scope": "read:repository"
                 },
                 ...
             ]

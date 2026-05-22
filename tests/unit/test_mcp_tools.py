@@ -152,6 +152,69 @@ class TestMcpListResourcesImpl:
         assert resource["description"] == ""
 
     @pytest.mark.asyncio
+    async def test_includes_required_scope_from_template_meta(self):
+        """Should include required_scope from template meta."""
+        ctx = MagicMock(spec=Context)
+        template_mock = MagicMock()
+        template_mock.uri_template = "gitea://repos/{owner}/{repo}"
+        template_mock.name = "Repository"
+        template_mock.description = "Repository metadata"
+        template_mock.mime_type = "text/markdown"
+        template_mock.tags = set()
+        template_mock.meta = {"required_scope": "read:repository"}
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[template_mock])
+
+        result = await _mcp_list_resources_impl(ctx)
+
+        resource = result["resources"][0]
+        assert resource["required_scope"] == "read:repository"
+
+    @pytest.mark.asyncio
+    async def test_includes_required_scope_from_resource_meta(self):
+        """Should include required_scope from concrete resource meta."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Version"
+        resource_mock.description = "Server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = set()
+        resource_mock.meta = {"required_scope": None}
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _mcp_list_resources_impl(ctx)
+
+        resource = result["resources"][0]
+        assert resource["required_scope"] is None
+
+    @pytest.mark.asyncio
+    async def test_required_scope_is_none_when_no_meta(self):
+        """Should return None for required_scope when meta is absent."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://test"
+        resource_mock.name = "Test"
+        resource_mock.description = "Test"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = set()
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _mcp_list_resources_impl(ctx)
+
+        resource = result["resources"][0]
+        assert resource["required_scope"] is None
+
+    @pytest.mark.asyncio
     async def test_handles_missing_name_and_mime_type(self):
         """Should fall back to function name and default mime type."""
         ctx = MagicMock(spec=Context)

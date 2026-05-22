@@ -5,9 +5,9 @@ including OpenAPI provider creation with customized component handling.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.tool_annotator import customize_component
@@ -43,7 +43,7 @@ def create_openapi_provider(
         if route is not None:
             new_tool = customize_component(route, tool, label_manager, openapi_spec)
             if new_tool is not None:
-                provider._tools[name] = new_tool
+                provider._tools[name] = cast("OpenAPITool", new_tool)
 
     return provider
 

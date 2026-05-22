@@ -7,15 +7,49 @@ import pytest
 from gitea_mcp_server.tool_filter import (
     _get_required_scope,
     _has_sufficient_scope,
+    _match_active_token,
     filter_tools_by_permissions,
 )
+
+
+class TestMatchActiveToken:
+    """Tests for the _match_active_token helper function."""
+
+    def test_matches_by_last_eight(self):
+        token_val = "my-secret-token"
+        last_eight = token_val[-8:]
+        tokens = [
+            {"id": 1, "name": "other", "token_last_eight": "00000000", "scopes": ["read:other"]},
+            {"id": 2, "name": "active", "token_last_eight": last_eight, "scopes": ["read:repo"]},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result == {"read:repo"}
+
+    def test_no_match_returns_none(self):
+        tokens = [
+            {"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["read:a"]},
+        ]
+        result = _match_active_token(tokens, "no-match-token")
+        assert result is None
+
+    def test_empty_tokens_list(self):
+        result = _match_active_token([], "some-token")
+        assert result is None
+
+    def test_token_without_scopes_field(self):
+        token_val = "no-scopes"
+        last_eight = token_val[-8:]
+        tokens = [
+            {"id": 1, "name": "t1", "token_last_eight": last_eight},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result is None
 
 
 class TestGetRequiredScope:
     """Tests for the _get_required_scope helper function."""
 
     def _make_tool_with_scope(self, required_scope: str | None):
-        """Helper to create a mock tool with required_scope in meta."""
         tool = MagicMock()
         tool.name = "test_tool"
         tool.key = "test_tool"
@@ -70,7 +104,6 @@ class TestHasSufficientScope:
         assert _has_sufficient_scope("write:issue", {"write:issue"}) is True
 
     def test_write_scope_grants_read(self):
-        """Having write:repository implies read:repository access."""
         assert _has_sufficient_scope("read:repository", {"write:repository"}) is True
 
     def test_read_scope_does_not_grant_write(self):
@@ -92,7 +125,6 @@ class TestFilterToolsByPermissions:
 
     @pytest.fixture
     def mock_mcp(self):
-        """Create a mock FastMCP server with providers."""
         mcp = MagicMock()
         provider = AsyncMock()
         mcp.providers = [provider]
@@ -100,11 +132,9 @@ class TestFilterToolsByPermissions:
 
     @pytest.fixture
     def mock_gitea_client(self):
-        """Create a mock GiteaClient."""
         return MagicMock()
 
     def create_tool(self, name: str, tags: set | None = None, required_scope: str | None = None):
-        """Helper to create a mock tool."""
         tool = MagicMock()
         tool.name = name
         tool.key = name
@@ -116,90 +146,91 @@ class TestFilterToolsByPermissions:
             ] = required_scope
         return tool
 
-    def _make_tokens_response(self, scopes: list[str]) -> list[dict]:
-        """Helper to create a mock tokens API response."""
-        return [{"id": 1, "name": "test", "scopes": scopes}]
+    def _make_token(self, name: str, scopes: list[str], token_val: str | None = None) -> dict:
+        """Create a token dict that matches the API format."""
+        token = {"id": 1, "name": name, "scopes": scopes}
+        if token_val:
+            token["token_last_eight"] = token_val[-8:]
+        else:
+            token["token_last_eight"] = "00000000"
+        return token
+
+    def _setup_mocks(self, mock_gitea_client, username: str = "dev2", token_val: str = "test-token"):
+        """Set up common mock attributes."""
+        mock_gitea_client._config.token = token_val
 
     async def test_user_with_sudo_sees_all_tools(self, mock_mcp, mock_gitea_client):
-        """User with sudo scope in token should have all tools visible."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
-                {"admin": False, "login": "dev2"},  # GET /user
-                self._make_tokens_response(["sudo"]),  # GET /users/dev2/tokens
+                {"admin": False, "login": "dev2"},
+                [self._make_token("admin-token", ["sudo"], "test-token")],
             ]
         )
 
-        repo_tool = self.create_tool("repo_list", tags={"repository"}, required_scope="read:repository")
-        admin_tool = self.create_tool("admin_users", tags={"admin"}, required_scope="sudo")
-        user_tool = self.create_tool("user_get", tags={"user"}, required_scope="read:user")
+        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
+        admin_tool = self.create_tool("admin_users", required_scope="sudo")
+        user_tool = self.create_tool("user_get", required_scope="read:user")
 
-        mock_mcp.providers[0].list_tools = AsyncMock(
-            return_value=[repo_tool, admin_tool, user_tool]
-        )
+        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, admin_tool, user_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
         for tool in [repo_tool, admin_tool, user_tool]:
             assert "visibility" not in tool.meta.get("fastmcp", {}).get("_internal", {})
 
-    async def test_non_admin_with_all_scopes_sees_all(self, mock_mcp, mock_gitea_client):
-        """Non-admin with all required scopes sees all tools."""
+    async def test_only_active_token_scopes_used(self, mock_mcp, mock_gitea_client):
+        """Only the active token's scopes are used, not union of all."""
+        self._setup_mocks(mock_gitea_client, token_val="active-token")
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response(
-                    ["read:repository", "read:issue", "read:user"]
-                ),
+                [
+                    self._make_token("limited", ["read:issue"], "active-token"),
+                    self._make_token("powerful", ["write:repository", "read:user"], "other-token"),
+                ],
             ]
         )
 
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
         issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-        user_tool = self.create_tool("user_get", required_scope="read:user")
+        repo_tool = self.create_tool("repo_create", required_scope="write:repository")
 
-        mock_mcp.providers[0].list_tools = AsyncMock(
-            return_value=[repo_tool, issue_tool, user_tool]
-        )
+        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[issue_tool, repo_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
-        for tool in [repo_tool, issue_tool, user_tool]:
-            assert "visibility" not in tool.meta.get("fastmcp", {}).get("_internal", {})
+        assert "visibility" not in issue_tool.meta.get("fastmcp", {}).get("_internal", {})
+        assert repo_tool.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_disables_tools_without_required_scope(self, mock_mcp, mock_gitea_client):
-        """Tools requiring scope not in token should be disabled."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response(["read:repository"]),
+                [self._make_token("test", ["read:repository"], "test-token")],
             ]
         )
 
         repo_tool = self.create_tool("repo_list", required_scope="read:repository")
         issue_tool = self.create_tool("issue_list", required_scope="read:issue")
 
-        mock_mcp.providers[0].list_tools = AsyncMock(
-            return_value=[repo_tool, issue_tool]
-        )
+        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, issue_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
-        # repo tool should be visible
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
-        # issue tool should be disabled
         assert issue_tool.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
-        """Having write:xxx should satisfy a read:xxx required scope."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response(["write:repository"]),
+                [self._make_token("test", ["write:repository"], "test-token")],
             ]
         )
 
         repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
@@ -209,17 +240,15 @@ class TestFilterToolsByPermissions:
     async def test_tools_without_scope_requirement_always_visible(
         self, mock_mcp, mock_gitea_client
     ):
-        """Tools with no required_scope (None) should be visible regardless."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response([]),
+                [self._make_token("test", [], "test-token")],
             ]
         )
 
-        # Tool with no required_scope (e.g., version, markdown)
         misc_tool = self.create_tool("get_version")
-
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[misc_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
@@ -227,7 +256,7 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in misc_tool.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_token_fetch_failure_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        """On token fetch error, all tools should remain visible."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -236,7 +265,6 @@ class TestFilterToolsByPermissions:
         )
 
         repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
@@ -244,9 +272,7 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_user_fetch_failure_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        """On user fetch error (existing behavior), all tools remain visible."""
         mock_gitea_client.request = AsyncMock(side_effect=Exception("API error"))
-
         tool = self.create_tool("repo_list", required_scope="read:repository")
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[tool])
 
@@ -255,11 +281,11 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in tool.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_empty_provider_tools(self, mock_mcp, mock_gitea_client):
-        """Empty provider tools list should be handled gracefully."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response(["read:repository"]),
+                [self._make_token("test", ["read:repository"], "test-token")],
             ]
         )
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[])
@@ -267,11 +293,11 @@ class TestFilterToolsByPermissions:
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
     async def test_multiple_providers(self, mock_mcp, mock_gitea_client):
-        """Filtering should aggregate tools from all providers."""
+        self._setup_mocks(mock_gitea_client)
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                self._make_tokens_response(["read:repository"]),
+                [self._make_token("test", ["read:repository"], "test-token")],
             ]
         )
 
@@ -289,47 +315,19 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
         assert issue_tool.meta["fastmcp"]["_internal"]["visibility"] is False
 
-    async def test_no_tokens_for_user(self, mock_mcp, mock_gitea_client):
-        """User with no tokens should see only unscoped tools."""
+    async def test_no_token_match_keeps_all_tools(self, mock_mcp, mock_gitea_client):
+        """When no token matches the active token hash, keep all tools."""
+        self._setup_mocks(mock_gitea_client, token_val="unknown-token")
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
-                [],  # No tokens
+                [self._make_token("t1", ["read:repo"], "other-token")],
             ]
         )
 
         repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        misc_tool = self.create_tool("get_version")  # No required scope
-
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, misc_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
-
-        assert repo_tool.meta["fastmcp"]["_internal"]["visibility"] is False
-        assert "visibility" not in misc_tool.meta.get("fastmcp", {}).get("_internal", {})
-
-    async def test_union_of_multiple_token_scopes(self, mock_mcp, mock_gitea_client):
-        """Scopes from multiple tokens should be unioned."""
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [
-                    {"id": 1, "name": "token1", "scopes": ["read:repository"]},
-                    {"id": 2, "name": "token2", "scopes": ["read:issue"]},
-                ],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-        user_tool = self.create_tool("user_get", required_scope="read:user")
-
-        mock_mcp.providers[0].list_tools = AsyncMock(
-            return_value=[repo_tool, issue_tool, user_tool]
-        )
+        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
 
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
-        assert "visibility" not in issue_tool.meta.get("fastmcp", {}).get("_internal", {})
-        assert user_tool.meta["fastmcp"]["_internal"]["visibility"] is False

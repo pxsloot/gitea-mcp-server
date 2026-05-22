@@ -596,7 +596,7 @@ class _BM25IndexLen2(_BaseBM25Index):
         self._n = len(documents)
         self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
 
-        self._df = {}
+        self._df: dict[str, int] = {}
         self._tf = []
         for tokens in self._doc_tokens:
             tf: dict[str, int] = {}
@@ -694,6 +694,8 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         if "search_result_serializer" not in kwargs:
             kwargs["search_result_serializer"] = _compact_search_serializer
         super().__init__(**kwargs)
+        self._last_hash: str = ""
+        self._index: _BM25IndexLen2 = _BM25IndexLen2()
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         """Override to use enhanced searchable text extraction."""
@@ -719,7 +721,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         async def call_tool(
             name: Annotated[str, "The name of the tool to call"],
             arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,
         ) -> ToolResult:
             """Call a tool by name with the given arguments.
 

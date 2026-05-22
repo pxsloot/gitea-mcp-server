@@ -122,7 +122,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         mcp: The FastMCP server instance
     """
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[untyped-decorator]
     async def mcp_list_resources(ctx: Context = CurrentContext()) -> dict[str, Any]:
         """List all available MCP resources.
 
@@ -189,7 +189,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """
         return await _mcp_list_resources_impl(ctx)
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[untyped-decorator]
     async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> str:
         """Read the content of an MCP resource by URI.
 

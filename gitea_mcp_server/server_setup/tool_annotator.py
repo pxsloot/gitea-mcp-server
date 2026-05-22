@@ -721,7 +721,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         async def call_tool(
             name: Annotated[str, "The name of the tool to call"],
             arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-            ctx: Context = None,
+            ctx: Context | None = None,
         ) -> ToolResult:
             """Call a tool by name with the given arguments.
 
@@ -741,6 +741,7 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             if arguments is not None and not isinstance(arguments, dict):
                 msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
                 _raise_value_error(msg)
+            assert ctx is not None
             return await ctx.fastmcp.call_tool(name, arguments)
 
         return Tool.from_function(fn=call_tool, name=self._call_tool_name)

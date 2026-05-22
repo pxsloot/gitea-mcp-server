@@ -3,9 +3,12 @@
 ARG PYTHON_IMAGE=registry.home.lan/local/python-slim:3.14
 
 ################################################################################
-# Stage 1: builder - builds the wheel
+# Stage 1: builder - installs deps + project into a venv
 ################################################################################
 FROM ${PYTHON_IMAGE} AS builder
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install system dependencies: build tools for potential C extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,33 +19,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy all source files (needed for building the package)
+# Copy dependency files first (for layer caching)
+COPY pyproject.toml uv.lock ./
+
+# Install production dependencies (cached layer unless deps change)
+RUN uv sync --locked --no-dev --no-install-project --no-editable
+
+# Copy the project source
 COPY . .
 
-# Build wheel (isolated from runtime image)
-RUN python -m pip install --root-user-action ignore --upgrade pip build && \
-    python -m build --wheel
+# Install the project (non-editable, so .venv can be copied independently)
+RUN uv sync --locked --no-dev --no-editable
 
 ################################################################################
-# Stage 2: install runtime dependencies and package
+# Stage 2: runner - minimal runtime image (no source code, no build deps)
 ################################################################################
 FROM ${PYTHON_IMAGE} AS runner
 
+# Install uv for any runtime uv operations
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Create non-privileged user
 RUN useradd --create-home --shell /bin/bash app
+
 WORKDIR /app
 
-# Copy the built wheel from builder (only wheel, not build deps)
-COPY --from=builder /app/dist/*.whl /tmp/
-COPY --from=builder /app/pyproject.toml /app/uv.lock /app
+# Copy the virtual environment, not the source code (minimal size)
+COPY --from=builder /app/.venv /app/.venv
 
-# Install runtime dependencies and the package into a venv
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip uv && \
-    /opt/venv/bin/uv pip install --system --no-cache-dir /tmp/*.whl && \
-    rm -rf /tmp/*.whl
-
-ENV PATH="/opt/venv/bin:${PATH}"
+ENV PATH="/app/.venv/bin:${PATH}"
 ENV SSL_CERT_DIR=/etc/ssl/certs
 ENV TRANSPORT_TYPE=http
 ENV HTTP_PATH=/
@@ -52,11 +57,8 @@ ENV HTTP_PORT=8080
 # Switch to non-root user for security
 USER app
 
-# Expose HTTP port when running in HTTP mode (default: 8080)
 EXPOSE 8080
 
-# Default entrypoint (reads GITEA_URL, GITEA_TOKEN from environment)
-#ENTRYPOINT ["gitea-mcp"]
 CMD ["gitea-mcp"]
 
 ################################################################################
@@ -64,10 +66,13 @@ CMD ["gitea-mcp"]
 ################################################################################
 FROM runner AS ci
 
-COPY --from=builder /app /app
 USER root
-WORKDIR /app
-RUN /opt/venv/bin/uv pip install --system --no-cache-dir ".[dev]"
+
+# Copy source code for linting/testing
+COPY --from=builder /app /app
+
+# Install dev dependencies using the lock file
+RUN uv sync --locked --no-editable
 
 ENV GITEA_TOKEN=test
 ENV GITEA_URL=https://test.example.com

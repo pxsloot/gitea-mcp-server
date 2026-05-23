@@ -305,6 +305,137 @@ def _resolve_ref(openapi_spec: dict[str, Any], ref: str) -> dict[str, Any] | Non
     return current
 
 
+def _deep_resolve_schema(
+    schema: Any,
+    openapi_spec: dict[str, Any],
+    _seen: set[str] | None = None,
+) -> dict[str, Any]:
+    """Recursively resolve all ``$ref`` pointers in a schema.
+
+    Walks the schema tree resolving ``$ref`` at every level:
+    - Top-level ``$ref``
+    - ``$ref`` inside ``properties`` values
+    - ``$ref`` in ``items`` (array types)
+    - ``$ref`` inside ``allOf``, ``oneOf``, ``anyOf`` entries
+    - ``$ref`` in ``additionalProperties``
+
+    Circular references are preserved as ``$ref`` strings to avoid
+    infinite recursion.
+
+    Args:
+        schema: The JSON schema to resolve (will be deep-copied)
+        openapi_spec: The full OpenAPI spec for lookups
+        _seen: Internal set of already-visited ``$ref`` paths (for cycle detection)
+
+    Returns:
+        A new schema dict with all ``$ref`` pointers resolved.
+    """
+    if not isinstance(schema, dict):
+        return {}
+    result: dict[str, Any] = {}
+    _seen = _seen or set()
+
+    for key, value in schema.items():
+        if key == "$ref" and isinstance(value, str):
+            if value in _seen:
+                result[key] = value
+                continue
+            _seen.add(value)
+            resolved = _resolve_ref(openapi_spec, value)
+            if isinstance(resolved, dict):
+                deep = _deep_resolve_schema(resolved, openapi_spec, _seen)
+                result.update(deep)
+            else:
+                result[key] = value
+        elif key in ("properties",):
+            result[key] = {
+                k: _deep_resolve_schema(v, openapi_spec, _seen) if isinstance(v, dict) else v
+                for k, v in value.items()
+            }
+        elif key in ("items", "additionalProperties"):
+            result[key] = _deep_resolve_schema(value, openapi_spec, _seen) if isinstance(value, dict) else value
+        elif key in ("allOf", "oneOf", "anyOf"):
+            result[key] = [
+                _deep_resolve_schema(item, openapi_spec, _seen) if isinstance(item, dict) else item
+                for item in value
+            ]
+        elif isinstance(value, dict):
+            result[key] = _deep_resolve_schema(value, openapi_spec, _seen)
+        else:
+            result[key] = value
+
+    return result
+
+
+def _get_success_schema(
+    openapi_spec: dict[str, Any],
+    path: str,
+    method: str,
+) -> dict[str, Any] | None:
+    """Extract the success response schema for a path/method from the OpenAPI spec.
+
+    Tries ``200`` then ``201`` status codes and resolves ``$ref`` chains.
+    """
+    paths = openapi_spec.get("paths", {})
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return None
+    operation = path_item.get(method)
+    if not isinstance(operation, dict):
+        return None
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return None
+
+    for code in ("200", "201"):
+        response = responses.get(code)
+        if not isinstance(response, dict):
+            continue
+
+        if "$ref" in response:
+            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            if not isinstance(resolved, dict):
+                continue
+            response = resolved
+
+        content = response.get("content", {})
+        if not isinstance(content, dict):
+            continue
+        json_content = content.get("application/json", {})
+        if not isinstance(json_content, dict):
+            continue
+        schema = json_content.get("schema")
+        if not isinstance(schema, dict):
+            continue
+
+        return _deep_resolve_schema(schema, openapi_spec)
+
+    return None
+
+
+def derive_output_schema(
+    route: Any,
+    openapi_spec: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Extract the output JSON Schema for a tool from the OpenAPI spec.
+
+    Looks up the success response (200 or 201) for the tool's route in the
+    OpenAPI spec and resolves ``$ref`` chains to produce a complete schema.
+
+    Args:
+        route: Route object with ``path`` and ``method`` attributes
+        openapi_spec: The OpenAPI v3 specification dictionary, or ``None``
+
+    Returns:
+        JSON Schema dict for the response body, or ``None`` if unavailable.
+    """
+    if openapi_spec is None:
+        return None
+
+    method = getattr(route, "method", "").lower()
+    return _get_success_schema(openapi_spec, route.path, method)
+
+
 def _lookup_response_description(
     openapi_spec: dict[str, Any],
     route: Any,
@@ -518,6 +649,8 @@ def customize_component(
 
     description, has_labels = _prepare_description(annotations, component)
 
+    output_schema = derive_output_schema(route, openapi_spec)
+
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
@@ -525,7 +658,8 @@ def customize_component(
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs)
         await _convert_labels(kwargs, has_labels, component, label_manager)
-        return await _run_with_error_handling(kwargs, component, route, openapi_spec)
+        result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
+        return {"result": result}
 
     component_meta = dict(component.meta) if component.meta else {}
     component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
@@ -539,6 +673,7 @@ def customize_component(
         annotations=annotations,
         description=description,
         transform_fn=transform_fn,
+        output_schema=output_schema,
         meta=component_meta,
     )
 
@@ -571,6 +706,7 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
                 "name": tool.name,
                 "description": tool.description or "",
                 "parameters": simple_params,
+                "output_schema": tool.output_schema,
             }
         )
     return result
@@ -743,7 +879,14 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             assert ctx is not None
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        return Tool.from_function(
+            fn=call_tool,
+            name=self._call_tool_name,
+            output_schema={
+                "type": "object",
+                "description": "Result of the tool call",
+            },
+        )
 
 
 __all__ = [
@@ -753,6 +896,7 @@ __all__ = [
     "categorize_tool",
     "compute_invalidation_patterns",
     "customize_component",
+    "derive_output_schema",
     "derive_required_scope",
     "generate_tool_title",
     "update_labels_schema",

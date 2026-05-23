@@ -773,6 +773,73 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
+def _wrap_response_schema(response: dict[str, Any]) -> None:
+    """Wrap a single response's schema in ``result`` if not already an object type.
+
+    FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
+    This wraps inline non-object schemas (arrays, primitives) in an object
+    container so generated tools produce dict results.
+
+    Remove this when FastMCP adds native non-object ``output_schema`` support.
+    """
+    content = response.get("content", {})
+    if not isinstance(content, dict):
+        return
+    json_content = content.get("application/json", {})
+    if not isinstance(json_content, dict):
+        return
+    schema = json_content.get("schema")
+    if not isinstance(schema, dict):
+        return
+    if "$ref" in schema:
+        return
+    if schema.get("type") == "object":
+        return
+    json_content["schema"] = {
+        "type": "object",
+        "properties": {
+            "result": schema,
+        },
+    }
+
+
+def enrich_response_schemas(spec: dict[str, Any]) -> None:
+    """Wrap non-object success response schemas in an object container.
+
+    FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
+    This transforms the spec so all 200/201 response schemas have
+    ``type: object`` by wrapping arrays and primitives in
+    ``{"type": "object", "properties": {"result": ...}}``.
+
+    Shared response components in ``components/responses`` are also wrapped
+    for consistency.
+
+    Remove this when FastMCP adds native non-object ``output_schema`` support.
+
+    Args:
+         spec: The OpenAPI 3.x specification (mutated in place).
+    """
+    paths = spec.get("paths", {})
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses", {})
+            for code in ("200", "201"):
+                response = responses.get(code)
+                if not isinstance(response, dict):
+                    continue
+                _wrap_response_schema(response)
+
+    components = spec.get("components", {})
+    for response in components.get("responses", {}).values():
+        if isinstance(response, dict):
+            _wrap_response_schema(response)
+
+
 def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 spec to OpenAPI 3.1.
 
@@ -805,6 +872,7 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
     spec = ReferenceFixer().fix(spec)
     _add_nullable_for_optional_refs_impl(spec)
+    enrich_response_schemas(spec)
 
     logger.info("OpenAPI conversion completed successfully")
     return spec

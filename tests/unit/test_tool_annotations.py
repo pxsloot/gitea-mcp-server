@@ -892,3 +892,610 @@ class TestErrorHandlingEnhancement:
         assert "unexpected" in error_msg.lower()
         # Should not show full Python traceback to user
         assert "RuntimeError" not in error_msg
+
+
+class TestDeriveOutputSchema:
+    """Tests for derive_output_schema function."""
+
+    MINIMAL_SPEC: dict = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/repos/{owner}/{repo}/issues/{index}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "Issue",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer", "description": "Issue ID"},
+                                            "title": {"type": "string"},
+                                            "body": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                },
+                "delete": {
+                    "responses": {
+                        "204": {"description": "No Content"},
+                    }
+                },
+            },
+            "/repos/{owner}/{repo}/issues": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "IssueList",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "Repository": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                }
+            },
+            "responses": {
+                "Repository": {
+                    "description": "Repository",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Repository"}
+                        }
+                    },
+                }
+            },
+        },
+    }
+
+    def _make_route(self, path: str, method: str = "GET") -> MagicMock:
+        """Helper to create a mock route."""
+        return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
+
+    def test_inline_schema_response(self):
+        """Should extract inline schema directly from response content."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+
+        assert schema is not None
+        assert schema["type"] == "object"
+        assert "id" in schema["properties"]
+        assert "title" in schema["properties"]
+
+    def test_array_response(self):
+        """Should handle array-type response schemas."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+
+        assert schema is not None
+        assert schema["type"] == "array"
+        assert schema["items"]["type"] == "object"
+
+    def test_ref_response_resolved(self):
+        """Should resolve $ref in response to get the schema."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec_with_ref: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/Repository"}
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Repository": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        },
+                    }
+                },
+                "responses": {
+                    "Repository": {
+                        "description": "Repository",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Repository"}
+                            }
+                        },
+                    }
+                },
+            },
+        }
+
+        route = self._make_route("/repos/{owner}/{repo}", "GET")
+        schema = derive_output_schema(route, spec_with_ref)
+
+        assert schema is not None
+        assert schema["type"] == "object"
+        assert "id" in schema["properties"]
+        assert "name" in schema["properties"]
+
+    def test_no_content_response_returns_none(self):
+        """204 No Content responses should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "DELETE")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_none_spec_returns_none(self):
+        """When spec is None, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/test", "GET")
+        schema = derive_output_schema(route, None)
+        assert schema is None
+
+    def test_missing_path_returns_none(self):
+        """When route path is not in spec, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/nonexistent/path", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_missing_method_returns_none(self):
+        """When route method is not in spec, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "PATCH")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_prefers_200_over_201(self):
+        """Should prefer 200 over 201 when both are present."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "post": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_200": {"type": "string"}}}
+                                    }
+                                },
+                            },
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_201": {"type": "string"}}}
+                                    }
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        }
+
+        route = self._make_route("/test", "POST")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert "from_200" in schema["properties"]
+        assert "from_201" not in schema["properties"]
+
+    def test_falls_back_to_201_when_no_200(self):
+        """Should fall back to 201 when no 200 response exists."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "post": {
+                        "responses": {
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        route = self._make_route("/test", "POST")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert "id" in schema["properties"]
+
+    def test_integration_via_customize_component(self):
+        """customize_component should set output_schema from openapi_spec."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get an issue"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        assert new_tool is not None
+        assert new_tool.output_schema is not None
+        assert new_tool.output_schema["type"] == "object"
+        assert "id" in new_tool.output_schema["properties"]
+        assert "title" in new_tool.output_schema["properties"]
+
+    def test_integration_no_output_schema_without_spec(self):
+        """customize_component should not set output_schema when spec is None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/test", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = customize_component(route, tool, _label_manager, None)
+
+        assert new_tool is not None
+        assert new_tool.output_schema is None
+
+    @pytest.mark.asyncio
+    async def test_transform_fn_wraps_result_in_result_key(self):
+        """transform_fn should wrap tool result in {'result': ...}."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=[{"id": 1}, {"id": 2}])
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+
+class TestDeepResolveSchema:
+    """Tests for _deep_resolve_schema function."""
+
+    SPEC: dict = {
+        "openapi": "3.1.0",
+        "components": {
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "login": {"type": "string"},
+                    },
+                },
+                "Repository": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "owner": {"$ref": "#/components/schemas/User"},
+                    },
+                },
+                "NestedRef": {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"$ref": "#/components/schemas/Repository"},
+                    },
+                },
+                "AllOfSchema": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/User"},
+                        {"type": "object", "properties": {"extra": {"type": "string"}}},
+                    ],
+                },
+                "ArraySchema": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/User"},
+                },
+            },
+        },
+    }
+
+    def test_resolves_nested_property_refs(self):
+        """Resolves $ref inside property values."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "user": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["properties"]["user"]["type"] == "object"
+        assert resolved["properties"]["user"]["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["user"]["properties"]["login"]["type"] == "string"
+
+    def test_resolves_items_ref(self):
+        """Resolves $ref in array items."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/User"},
+        }
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["items"]["type"] == "object"
+        assert "id" in resolved["items"]["properties"]
+
+    def test_resolves_chain_of_refs(self):
+        """Resolves $ref chains (Repo -> User -> no more refs)."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/NestedRef"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["repo"]["type"] == "object"
+        assert resolved["properties"]["repo"]["properties"]["owner"]["type"] == "object"
+        assert resolved["properties"]["repo"]["properties"]["owner"]["properties"]["login"]["type"] == "string"
+
+    def test_resolves_allOf_entries(self):
+        """Recursively resolves $ref inside allOf entries."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/AllOfSchema"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["allOf"][0]["type"] == "object"
+        assert resolved["allOf"][0]["properties"]["id"]["type"] == "integer"
+
+    def test_resolves_top_level_ref(self):
+        """Resolves a top-level $ref."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/User"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["login"]["type"] == "string"
+
+    def test_leaf_schema_unchanged(self):
+        """A schema with no refs should return a copy unchanged."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved == schema
+
+    def test_circular_ref_does_not_loop(self):
+        """Circular $ref should not cause infinite recursion."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        circular_spec = {
+            "components": {
+                "schemas": {
+                    "Node": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "child": {"$ref": "#/components/schemas/Node"},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {"$ref": "#/components/schemas/Node"}
+        resolved = _deep_resolve_schema(schema, circular_spec)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["child"]["$ref"] == "#/components/schemas/Node"
+
+    def test_deep_resolve_applied_in_derive_output_schema(self):
+        """derive_output_schema should deep-resolve nested refs."""
+        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "owner": {"$ref": "#/components/schemas/User"},
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+            },
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "login": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        route = MagicMock(path="/repos/{owner}/{repo}", method="GET")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert schema["properties"]["owner"]["type"] == "object"
+        assert schema["properties"]["owner"]["properties"]["login"]["type"] == "string"
+
+
+class TestCallToolOutputSchema:
+    """Tests for call_tool output_schema."""
+
+    def test_call_tool_has_output_schema(self):
+        """_make_call_tool should return a Tool with output_schema set."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        assert tool.output_schema is not None
+        assert tool.output_schema["type"] == "object"
+        assert "description" in tool.output_schema
+
+
+class TestCompactSearchSerializer:
+    """Tests for _compact_search_serializer function."""
+
+    def test_includes_output_schema_when_present(self):
+        """Should include output_schema in serialized result when tool has one."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {"id": {"type": "integer"}}},
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+            },
+        )
+        result = _compact_search_serializer([tool])
+        assert len(result) == 1
+        assert result[0]["output_schema"] == tool.output_schema
+
+    def test_omits_output_schema_when_null(self):
+        """Should include output_schema as None when tool has none."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {}},
+            output_schema=None,
+        )
+        result = _compact_search_serializer([tool])
+        assert result[0]["output_schema"] is None
+
+    def test_keeps_existing_fields(self):
+        """Should still include name, description, parameters."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="gitea_test",
+            description="Test function",
+            parameters={
+                "properties": {"owner": {"type": "string"}},
+                "required": ["owner"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+            },
+        )
+        result = _compact_search_serializer([tool])[0]
+        assert result["name"] == "gitea_test"
+        assert result["description"] == "Test function"
+        assert "owner" in result["parameters"]["properties"]
+        assert result["output_schema"]["properties"]["id"]["type"] == "integer"

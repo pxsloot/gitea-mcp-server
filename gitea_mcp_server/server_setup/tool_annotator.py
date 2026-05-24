@@ -480,8 +480,19 @@ def _lookup_response_description(
     return result
 
 
-def _run_validation(kwargs: dict[str, Any]) -> None:
-    """Run runtime validation on tool arguments."""
+def _run_validation(
+    kwargs: dict[str, Any],
+    required_params: list[str] | None = None,
+) -> None:
+    """Run runtime validation on tool arguments.
+
+    Checks both present arguments (format validation) and missing
+    required arguments (before they reach the Gitea API as a 404).
+    """
+    missing = [p for p in (required_params or []) if p not in kwargs]
+    if missing:
+        msg = f"Missing required parameter(s): {', '.join(missing)}"
+        _raise_validation_error(msg, missing[0], ValueError(msg))
     for name, value in kwargs.items():
         if name in SINGLE_VALIDATORS:
             try:
@@ -656,7 +667,7 @@ def customize_component(
         update_labels_schema(component)
 
     async def transform_fn(**kwargs: Any) -> Any:
-        _run_validation(kwargs)
+        _run_validation(kwargs, component.parameters.get("required"))
         await _convert_labels(kwargs, has_labels, component, label_manager)
         return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
@@ -709,14 +720,14 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
         else:
             simple_params = params
 
-        result.append(
-            {
-                "name": tool.name,
-                "description": tool.description or "",
-                "parameters": simple_params,
-                "output_schema": tool.output_schema,
-            }
-        )
+        item: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": simple_params,
+        }
+        if tool.output_schema is not None:
+            item["output_schema"] = tool.output_schema
+        result.append(item)
     return result
 
 
@@ -935,7 +946,6 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
                         "description": "Result of the tool call, wrapped in result for consistency",
                     },
                 },
-                "x-fastmcp-wrap-result": True,
             },
         )
 

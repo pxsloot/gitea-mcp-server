@@ -1505,7 +1505,232 @@ class TestCallToolOutputSchema:
         assert tool.output_schema is not None
         assert tool.output_schema["type"] == "object"
         assert "result" in tool.output_schema["properties"]
-        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+        # call_tool does NOT set x-fastmcp-wrap-result — it passes through
+        # the inner tool's already-wrapped ToolResult, so the flag would
+        # be a no-op (dead code).  Inner tools handle their own wrapping.
+        assert "x-fastmcp-wrap-result" not in tool.output_schema
+
+    def test_call_tool_result_property_accepts_any_type(self):
+        """The 'result' property must not have a 'type' constraint (accepts arrays, etc.)."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        result_schema = tool.output_schema["properties"]["result"]
+        # No "type" key means any JSON value is accepted (objects, arrays, strings, etc.)
+        assert "type" not in result_schema, (
+            f"Expected result to accept any type, got 'type': {result_schema.get('type')!r}"
+        )
+
+
+class TestCallToolRuntimeBehavior:
+    """Test runtime behavior of the call_tool function.
+
+    call_tool is a proxy that delegates to ctx.fastmcp.call_tool().
+    These tests verify it correctly passes ToolResult through without
+    double-wrapping, and properly handles argument validation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_toolresult_through(self):
+        """call_tool function should return the inner tool's ToolResult as-is."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": 1}, {"id": 2}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        result = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+
+        assert result is inner_result, "call_tool must return the exact ToolResult from inner tool"
+        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_call_tool_no_double_wrap_through_convert_result(self):
+        """convert_result must not double-wrap a ToolResult returned by call_tool."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {"items": [1, 2, 3], "count": 3}},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final is inner_result, "convert_result must pass ToolResult through unchanged"
+        assert final.structured_content == {"result": {"items": [1, 2, 3], "count": 3}}
+        inner = final.structured_content["result"]
+        assert "result" not in inner, (
+            f"Double-wrapped! structured_content={final.structured_content}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_preserves_user_meta_from_inner_tool(self):
+        """call_tool should preserve meta from the inner tool's ToolResult."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_meta = {"fastmcp": {"wrap_result": True}, "custom": "data"}
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {}},
+            meta=inner_meta,
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final.meta == inner_meta
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_self_call(self):
+        """call_tool should reject calling itself or search_tools."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="synthetic search tool"):
+            await tool.fn(transform._call_tool_name, {}, ctx=mock_ctx)
+
+        with pytest.raises(ValueError, match="synthetic search tool"):
+            await tool.fn(transform._search_tool_name, {}, ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_parses_json_string_arguments(self):
+        """String arguments should be parsed as JSON before forwarding."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": {}})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", '{"key": "val", "num": 42}', ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with(
+            "gitea_test_tool", {"key": "val", "num": 42}
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_non_dict_and_non_string_arguments(self):
+        """Arguments that are neither dict nor None nor a JSON string should be rejected."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await tool.fn("gitea_test_tool", [1, 2, 3], ctx=mock_ctx)
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await tool.fn("gitea_test_tool", 42, ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_invalid_json(self):
+        """Invalid JSON string arguments should be rejected."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            await tool.fn("gitea_test_tool", "{bad json}", ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_handles_none_arguments(self):
+        """None arguments should be forwarded as None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": []})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", None, ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_handles_missing_arguments(self):
+        """Omitting arguments should forward None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": []})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_routes_array_result_from_inner_tool(self):
+        """When inner tool returns an array wrapped in {"result": [...]}, pass through."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": "a"}, {"id": "b"}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_array_tool", ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final.structured_content == {"result": [{"id": "a"}, {"id": "b"}]}
 
 
 class TestFunctionToolResultWrapping:
@@ -1658,7 +1883,7 @@ class TestCompactSearchSerializer:
         assert result[0]["output_schema"] == tool.output_schema
 
     def test_omits_output_schema_when_null(self):
-        """Should include output_schema as None when tool has none."""
+        """Should omit output_schema entirely when tool has none (avoids jsonschema validation error)."""
         from gitea_mcp_server.server_setup.tool_annotator import (
             _compact_search_serializer,
         )
@@ -1670,7 +1895,30 @@ class TestCompactSearchSerializer:
             output_schema=None,
         )
         result = _compact_search_serializer([tool])
-        assert result[0]["output_schema"] is None
+        assert "output_schema" not in result[0]
+
+    def test_handles_mixed_null_and_present_output_schemas(self):
+        """Mix of None and non-None output_schema should only include present ones."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool_a = Tool(
+            name="tool_a",
+            description="Has output schema",
+            parameters={"properties": {}},
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        tool_b = Tool(
+            name="tool_b",
+            description="No output schema",
+            parameters={"properties": {}},
+            output_schema=None,
+        )
+        result = _compact_search_serializer([tool_a, tool_b])
+        assert len(result) == 2
+        assert "output_schema" in result[0]
+        assert "output_schema" not in result[1]
 
     def test_keeps_existing_fields(self):
         """Should still include name, description, parameters."""

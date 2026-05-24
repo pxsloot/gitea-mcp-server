@@ -15,6 +15,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from fastmcp.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +139,20 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         mcp: The FastMCP server instance
     """
 
-    @mcp.tool()
-    async def mcp_list_resources(ctx: Context = CurrentContext()) -> dict[str, Any]:
+    @mcp.tool(output_schema={
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {
+                    "resources": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+            },
+        },
+        "x-fastmcp-wrap-result": True,
+    })
+    async def mcp_list_resources(ctx: Context = CurrentContext()) -> ToolResult:
         """List all available MCP resources.
 
         This tool discovers all registered MCP resources and resource templates (parameterized URIs)
@@ -210,10 +223,20 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                 ...
             ]
         """
-        return await _mcp_list_resources_impl(ctx)
+        result = await _mcp_list_resources_impl(ctx)
+        return ToolResult(structured_content={"result": result})
 
-    @mcp.tool()
-    async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> str:
+    @mcp.tool(output_schema={
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "string",
+                "description": "The resource content as a string",
+            },
+        },
+        "x-fastmcp-wrap-result": True,
+    })
+    async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> ToolResult:
         """Read the content of an MCP resource by URI.
 
         Fetches the resource from the server's resource registry and returns its
@@ -296,6 +319,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If the resource is not found or cannot be read
         """
-        return await _mcp_read_resource_impl(ctx, uri)
+        result = await _mcp_read_resource_impl(ctx, uri)
+        return ToolResult(structured_content={"result": result})
 
     logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource")

@@ -658,8 +658,16 @@ def customize_component(
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs)
         await _convert_labels(kwargs, has_labels, component, label_manager)
-        result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
-        return {"result": result}
+        return await _run_with_error_handling(kwargs, component, route, openapi_spec)
+
+    # Set x-fastmcp-wrap-result on the inner OpenAPITool so its run()
+    # wraps all response types (not just non-dict) in {"result": ...}.
+    # The TransformedTool then passes through the ToolResult unchanged.
+    if component.output_schema is not None:
+        component.output_schema["x-fastmcp-wrap-result"] = True
+
+    if output_schema is not None:
+        output_schema["x-fastmcp-wrap-result"] = True
 
     component_meta = dict(component.meta) if component.meta else {}
     component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
@@ -849,6 +857,44 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
         indices = self._index.query(expanded_query, self._max_results)
         return [self._indexed_tools[i] for i in indices]
 
+    def _make_search_tool(self) -> Tool:
+        """Create the search_tool with consistent result wrapping."""
+        transform = self
+
+        async def search_tools(
+            query: Annotated[str, "Natural language query to search for tools"],
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> ToolResult:
+            assert ctx is not None
+            hidden = await transform._get_visible_tools(ctx)
+            results = await transform._search(hidden, query)
+            rendered = await transform._render_results(results)
+            return ToolResult(structured_content={"result": rendered})
+
+        return Tool.from_function(
+            fn=search_tools,
+            name=self._search_tool_name,
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "description": {"type": "string"},
+                                "parameters": {"type": "object"},
+                                "output_schema": {"type": "object"},
+                            },
+                        },
+                        "description": "Matching tool definitions ranked by relevance",
+                    },
+                },
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""
         transform = self
@@ -884,7 +930,12 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             name=self._call_tool_name,
             output_schema={
                 "type": "object",
-                "description": "Result of the tool call",
+                "properties": {
+                    "result": {
+                        "description": "Result of the tool call, wrapped in result for consistency",
+                    },
+                },
+                "x-fastmcp-wrap-result": True,
             },
         )
 

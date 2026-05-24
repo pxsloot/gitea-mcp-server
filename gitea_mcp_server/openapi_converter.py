@@ -2,6 +2,7 @@
 
 import logging
 import re
+from copy import deepcopy
 from typing import Any, ClassVar, Protocol, cast
 
 from gitea_mcp_server.exceptions import SpecError
@@ -773,15 +774,37 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
-def _wrap_response_schema(response: dict[str, Any]) -> None:
-    """Wrap a single response's schema in ``result`` if not already an object type.
+def _resolve_spec_ref(spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+    """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec."""
+    parts = ref.lstrip("#/").split("/")
+    current: Any = spec
+    try:
+        for part in parts:
+            current = current[part]
+    except (KeyError, TypeError):
+        return None
+    return current if isinstance(current, dict) else None
+
+
+def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> None:
+    """Wrap a response schema in ``result`` so output_schema matches runtime shape.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
-    This wraps inline non-object schemas (arrays, primitives) in an object
-    container so generated tools produce dict results.
+    The ``transform_fn`` in ``customize_component`` always wraps results in
+    ``{"result": result}``. This function ensures the schema in the OpenAPI
+    spec reflects that same wrapping.
+
+    ``$ref`` schemas are resolved so the wrapped schema is self-contained
+    at each response site. Response-level ``$ref`` (the entire response is
+    a ``$ref``) are left for the component-processing loop to handle.
 
     Remove this when FastMCP adds native non-object ``output_schema`` support.
     """
+    # Response-level $ref cannot be wrapped here — skip so the
+    # components/responses loop handles the referenced component instead.
+    if "$ref" in response:
+        return
+
     content = response.get("content", {})
     if not isinstance(content, dict):
         return
@@ -791,10 +814,14 @@ def _wrap_response_schema(response: dict[str, Any]) -> None:
     schema = json_content.get("schema")
     if not isinstance(schema, dict):
         return
+
+    # Resolve $ref schemas to get the actual schema before wrapping.
     if "$ref" in schema:
-        return
-    if schema.get("type") == "object":
-        return
+        resolved = _resolve_spec_ref(spec, schema["$ref"])
+        if not isinstance(resolved, dict):
+            return
+        schema = deepcopy(resolved)
+
     json_content["schema"] = {
         "type": "object",
         "properties": {
@@ -804,12 +831,13 @@ def _wrap_response_schema(response: dict[str, Any]) -> None:
 
 
 def enrich_response_schemas(spec: dict[str, Any]) -> None:
-    """Wrap non-object success response schemas in an object container.
+    """Wrap all success response schemas in a ``result`` object container.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
-    This transforms the spec so all 200/201 response schemas have
-    ``type: object`` by wrapping arrays and primitives in
-    ``{"type": "object", "properties": {"result": ...}}``.
+    The ``transform_fn`` in ``customize_component`` wraps all tool results
+    in ``{"result": result}``. This function transforms the spec so every
+    200/201 response schema reflects that same wrapping — regardless of
+    the original response type.
 
     Shared response components in ``components/responses`` are also wrapped
     for consistency.
@@ -832,12 +860,12 @@ def enrich_response_schemas(spec: dict[str, Any]) -> None:
                 response = responses.get(code)
                 if not isinstance(response, dict):
                     continue
-                _wrap_response_schema(response)
+                _wrap_response_schema(response, spec)
 
     components = spec.get("components", {})
     for response in components.get("responses", {}).values():
         if isinstance(response, dict):
-            _wrap_response_schema(response)
+            _wrap_response_schema(response, spec)
 
 
 def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:

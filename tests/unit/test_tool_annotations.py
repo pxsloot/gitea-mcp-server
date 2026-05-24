@@ -1,10 +1,11 @@
 """Unit tests for tool annotation functionality."""
 
+from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
@@ -1163,6 +1164,7 @@ class TestDeriveOutputSchema:
 
     def test_integration_via_customize_component(self):
         """customize_component should set output_schema from openapi_spec."""
+        from gitea_mcp_server.openapi_converter import enrich_response_schemas
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
@@ -1182,13 +1184,16 @@ class TestDeriveOutputSchema:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+        spec = deepcopy(self.MINIMAL_SPEC)
+        enrich_response_schemas(spec)
+        new_tool = customize_component(route, tool, _label_manager, spec)
 
         assert new_tool is not None
         assert new_tool.output_schema is not None
         assert new_tool.output_schema["type"] == "object"
-        assert "id" in new_tool.output_schema["properties"]
-        assert "title" in new_tool.output_schema["properties"]
+        assert "result" in new_tool.output_schema["properties"]
+        assert "id" in new_tool.output_schema["properties"]["result"]["properties"]
+        assert "title" in new_tool.output_schema["properties"]["result"]["properties"]
 
     def test_integration_no_output_schema_without_spec(self):
         """customize_component should not set output_schema when spec is None."""
@@ -1243,6 +1248,69 @@ class TestDeriveOutputSchema:
 
         actual = await new_tool.run({"owner": "test", "repo": "test"})
         assert actual.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_object_response_wrapped_by_openapi_tool_via_x_fastmcp(self):
+        """When component.output_schema has x-fastmcp-wrap-result, OpenAPITool.run()
+        wraps ALL responses in {'result': ...}. The ToolResult flows through
+        transform_fn → TransformedTool.run() unchanged."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        # Mimics enriched spec schema.
+        tool.output_schema = {"type": "object", "properties": {"result": {"type": "object", "properties": {"id": {"type": "integer"}}}}}
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        # After customize_component sets x-fastmcp-wrap-result on component,
+        # OpenAPITool.run() would wrap the response. Simulate that.
+        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": {"id": 1}}))
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": {"id": 1}}
+
+    @pytest.mark.asyncio
+    async def test_array_wrapped_by_openapi_tool_even_without_x_fastmcp(self):
+        """OpenAPITool.run() wraps arrays in {'result': [...]} even without
+        x-fastmcp-wrap-result (for MCP protocol compliance)."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = {"type": "object", "properties": {"result": {"type": "array"}}}
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        # OpenAPITool.run() wraps non-dict in {"result": ...}
+        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": [{"id": 1}]}))
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": [{"id": 1}]}
 
 
 class TestDeepResolveSchema:
@@ -1436,7 +1504,135 @@ class TestCallToolOutputSchema:
         tool = transform._make_call_tool()
         assert tool.output_schema is not None
         assert tool.output_schema["type"] == "object"
-        assert "description" in tool.output_schema
+        assert "result" in tool.output_schema["properties"]
+        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+
+class TestFunctionToolResultWrapping:
+    """Test that FunctionTool.convert_result() wraps when x-fastmcp-wrap-result is set.
+
+    This mirrors the exact pattern used by ``mcp_list_resources`` and
+    ``mcp_read_resource`` (``@mcp.tool(output_schema={..., "x-fastmcp-wrap-result": True})``).
+    """
+
+    MOCK_SCHEMA: dict = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {
+                    "resources": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+            },
+        },
+        "x-fastmcp-wrap-result": True,
+    }
+
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_dict_with_x_fastmcp(self):
+        """convert_result should wrap return value in {'result': ...}."""
+        from fastmcp.tools.base import Tool
+        from fastmcp.tools.function_parsing import ParsedFunction
+
+        tool = Tool(
+            name="test_list",
+            description="Test list",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [{"uri": "gitea://test"}], "count": 1}
+        result = tool.convert_result(raw)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": {"resources": [{"uri": "gitea://test"}], "count": 1}}
+
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_array_with_x_fastmcp(self):
+        """convert_result should wrap arrays too."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_array",
+            description="Test array",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = [{"id": 1}, {"id": 2}]
+        result = tool.convert_result(raw)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_convert_result_sets_meta_when_wrapping(self):
+        """When wrapping, meta should be set to bypass MCP SDK validation."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_meta",
+            description="Test meta",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
+
+    def test_convert_result_no_wrap_without_flag(self):
+        """Without x-fastmcp-wrap-result, structured_content should not be wrapped."""
+        from fastmcp.tools.base import Tool
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "resources": {"type": "array"},
+                        "count": {"type": "integer"},
+                    },
+                },
+            },
+        }
+
+        tool = Tool(
+            name="test_nowrap",
+            description="Test no wrap",
+            parameters={"properties": {}},
+            output_schema=schema,
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+
+        assert result.structured_content == {"resources": [], "count": 0}
+        assert result.meta is None
+
+    @pytest.mark.asyncio
+    async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self):
+        """When meta is set (wrapping active), to_mcp_result should return
+        CallToolResult directly to bypass MCP SDK output validation."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_calltool",
+            description="Test CallToolResult",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+        mcp_result = result.to_mcp_result()
+
+        from mcp.types import CallToolResult
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.structuredContent == {"result": {"resources": [], "count": 0}}
 
 
 class TestCompactSearchSerializer:

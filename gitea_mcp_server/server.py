@@ -16,7 +16,6 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from fastmcp.server.transforms import Namespace
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -36,6 +35,7 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.server_setup.logging import setup_logging
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
+from gitea_mcp_server.server_setup.namespace import GiteaNamespace
 from gitea_mcp_server.server_setup.permissions import (
     filter_resources_by_permissions,
     filter_tools_by_permissions,
@@ -150,7 +150,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     # Must be added AFTER search transform so it can prefix the synthetic tools
     if config.tool_prefix:
         logger.info("Adding namespace transform with prefix %s", config.tool_prefix)
-        mcp.add_transform(Namespace(config.tool_prefix.rstrip("_")))
+        mcp.add_transform(GiteaNamespace(config.tool_prefix.rstrip("_")))
 
     # Register resources
     logger.info("Registering MCP resources...")

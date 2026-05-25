@@ -431,9 +431,13 @@ def register_auto_generated_resources(
                     )
                     continue
 
-                # Convert OpenAPI path to resource URI
-                # e.g., /repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
-                uri_template = "gitea://" + path.lstrip("/")
+                # Convert OpenAPI path to a ``gitea://`` resource URI.
+                # All resources use the ``gitea://`` scheme for consistent
+                # namespacing.  The built-in Namespace transform is **not**
+                # applied to resources (see GiteaNamespace), so the URI
+                # is the final form clients see.
+                #   /repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
+                uri_template = f"gitea://{path.lstrip('/')}"
 
                 # Skip if this URI will be covered by a custom resource
                 if uri_template in skip_uris:

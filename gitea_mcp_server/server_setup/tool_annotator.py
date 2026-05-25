@@ -34,7 +34,6 @@ from gitea_mcp_server.constants import (
     PATTERN_PULLS_LIST,
     PATTERN_PULLS_OPEN,
     PATTERN_REPO,
-    RESOURCE_NOTE,
     TITLE_TRUNCATE_LIMIT,
 )
 from gitea_mcp_server.server_setup.label_manager import LabelManager
@@ -600,11 +599,9 @@ def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
     return new_annotations
 
 
-def _prepare_description(annotations: ToolAnnotations, component: Any) -> tuple[str, bool]:
+def _prepare_description(component: Any) -> tuple[str, bool]:
     """Prepare tool description and return has_labels flag."""
     description = getattr(component, "description", "") or ""
-    if annotations.readOnlyHint and RESOURCE_NOTE not in description:
-        description += RESOURCE_NOTE
 
     params = getattr(component, "parameters", None) or {}
     props = params.get("properties", {})
@@ -658,7 +655,7 @@ def customize_component(
         method,
     )
 
-    description, has_labels = _prepare_description(annotations, component)
+    description, has_labels = _prepare_description(component)
 
     output_schema = derive_output_schema(route, openapi_spec)
 

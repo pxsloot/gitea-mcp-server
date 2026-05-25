@@ -190,9 +190,4 @@ LABEL_GUIDANCE = (
 )
 """Guidance text added to tools that accept label parameters."""
 
-RESOURCE_NOTE = (
-    "\n\nNote: For read-only operations, consider using mcp_read_resource() "
-    "instead, which provides a unified interface with better formatting and caching. "
-    "See AGENT_GUIDELINES.md for details."
-)
-"""Note added to read-only tools encouraging resource usage."""
+

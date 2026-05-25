@@ -46,7 +46,7 @@ Auth is configured via environment variables at server startup. You cannot chang
 - **Save a tool name** for reuse: Once you find a tool name (e.g., `gitea_user_get_current`), you can use it directly in subsequent `call_tool` calls without searching again (unless you need other tools).
 
 ## Resources
-Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern.
+Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `mcp_read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
 
 **List resources**: `mcp_list_resources()` (always available)
 **Read resource**: `mcp_read_resource(uri)` where `uri` is like:

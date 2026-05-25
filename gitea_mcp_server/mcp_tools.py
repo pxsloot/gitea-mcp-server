@@ -7,8 +7,10 @@ toolset.
 Tool list:
 - mcp_list_resources: List all available MCP resources
 - mcp_read_resource: Read a resource by its URI
+- gitea://tool/{name}/schema: Resource for full tool schema by name
 """
 
+import json
 import logging
 from typing import Any
 
@@ -320,4 +322,40 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         result = await _mcp_read_resource_impl(ctx, uri)
         return ToolResult(structured_content={"result": result})
 
-    logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource")
+    @mcp.resource(
+        uri="gitea://tool/{name}/schema",
+        name="Tool Schema",
+        description="Get the full JSON schema for a registered tool by name.",
+        mime_type="application/json",
+    )
+    async def tool_schema_resource(name: str) -> str:
+        """Get the full JSON schema for a registered tool by name.
+
+        Args:
+            name: The tool name (including any namespace prefix)
+
+        Returns:
+            JSON string with the full tool schema (parameters, output_schema, annotations, etc.)
+
+        Raises:
+            ValueError: If the tool is not found
+        """
+        from fastmcp.server.context import CurrentContext
+        ctx = CurrentContext.get()
+        tool = ctx.fastmcp.get_tool(name)
+        if tool is None:
+            raise ValueError(f"Tool '{name}' not found")
+        data: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": tool.parameters,
+        }
+        if tool.output_schema is not None:
+            data["output_schema"] = tool.output_schema
+        if tool.tags:
+            data["tags"] = list(tool.tags)
+        if tool.version:
+            data["version"] = tool.version
+        return json.dumps(data, indent=2)
+
+    logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource, tool_schema_resource")

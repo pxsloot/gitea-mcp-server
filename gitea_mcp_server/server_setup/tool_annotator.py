@@ -7,7 +7,6 @@ cache invalidation pattern computation.
 
 import json
 import logging
-import re
 from collections.abc import Sequence
 from typing import Annotated, Any
 
@@ -15,8 +14,6 @@ import httpx
 from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
-from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
-from fastmcp.server.transforms.search.bm25 import _catalog_hash
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -36,6 +33,7 @@ from gitea_mcp_server.constants import (
     PATTERN_REPO,
     TITLE_TRUNCATE_LIMIT,
 )
+from gitea_mcp_server.server_setup.bm25_search import TolerantBM25Search
 from gitea_mcp_server.server_setup.label_manager import LabelManager
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
@@ -695,178 +693,80 @@ def customize_component(
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
-    """Return minimal tool info for search results to avoid massive payloads.
+    """Return minimal tool info for search results.
 
-    Only includes name, description, and a simplified parameters schema.
+    Only includes name and description. Full schemas are available
+    via the tool_info tool and the gitea://tool/{name}/schema resource.
     """
     result = []
     for tool in tools:
-        # Simplify parameters: keep property names and basic types, drop detailed descriptions
-        params = tool.parameters or {}
-        if "properties" in params:
-            simple_props = {}
-            for name, info in params["properties"].items():
-                if isinstance(info, dict):
-                    simple_props[name] = {"type": info.get("type", "any")}
-                else:
-                    simple_props[name] = {"type": "any"}
-            simple_params = {
-                "properties": simple_props,
-                "required": params.get("required", []),
-            }
-        else:
-            simple_params = params
-
         item: dict[str, Any] = {
             "name": tool.name,
             "description": tool.description or "",
-            "parameters": simple_params,
         }
-        if tool.output_schema is not None:
-            item["output_schema"] = tool.output_schema
         result.append(item)
     return result
 
 
-MIN_TOKEN_LENGTH = 2
-
-
-def _tokenize_len2(text: str) -> list[str]:
-    """Tokenize with support for 2-character tokens like 'pr'."""
-    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) >= MIN_TOKEN_LENGTH]
-
-
-class _BM25IndexLen2(_BaseBM25Index):
-    """BM25 index that supports 2-character tokens."""
-
-    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
-        super().__init__(k1, b)
-
-    def build(self, documents: list[str]) -> None:
-        self._doc_tokens = [_tokenize_len2(doc) for doc in documents]
-        self._doc_lengths = [len(tokens) for tokens in self._doc_tokens]
-        self._n = len(documents)
-        self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
-
-        self._df: dict[str, int] = {}
-        self._tf = []
-        for tokens in self._doc_tokens:
-            tf: dict[str, int] = {}
-            seen: set[str] = set()
-            for token in tokens:
-                tf[token] = tf.get(token, 0) + 1
-                if token not in seen:
-                    self._df[token] = self._df.get(token, 0) + 1
-                    seen.add(token)
-            self._tf.append(tf)
-
-
-NAME_BOOST = 3
-
-CATEGORY_SEARCH_ALIASES = {
-    "pull_request": "pull request pr",
-    "issue": "issue issues bug",
-    "repository": "repo repository repos",
-    "repo": "repo repository repos",
-    "organization": "org organization team",
-    "org": "org organization team",
-    "user": "user users account",
-}
-
-
-def _expand_word_aliases(text: str) -> str:
-    """Expand common abbreviations and fragments for better search matching.
-
-    BM25 uses whitespace tokenization, so singular/plural variations like
-    "repo"/"repos" don't match unless both forms are present.
-    """
-    alias_expansions = [
-        ("repo", "repo repository repos"),
-        ("pr", "pr pull request"),
-        ("current", "current authenticated"),
-        ("user", "user users account"),
-    ]
-    text_lower = text.lower()
-    parts = [text]
-    for word, expansion in alias_expansions:
-        if word in text_lower:
-            parts.append(expansion)
-    return " ".join(parts)
-
-
-def _extract_searchable_text_enhanced(tool: Tool) -> str:
-    """Enhanced searchable text extraction for better tool discoverability.
-
-    Includes:
-    - Tool name
-    - Description
-    - Parameter names and descriptions
-    - Tags with expanded aliases (e.g., "pull_request" -> "pull request pr")
-    - Title
-    - Word aliases for singular/plural variations
-    """
-    parts = [tool.name] * NAME_BOOST
-
-    if tool.annotations and tool.annotations.title:
-        parts.append(tool.annotations.title)
-
-    if tool.description:
-        parts.append(tool.description)
-
-    schema = tool.parameters
-    if schema:
-        properties = schema.get("properties", {})
-        for param_name, param_info in properties.items():
-            parts.append(param_name)
-            if isinstance(param_info, dict):
-                desc = param_info.get("description", "")
-                if desc:
-                    parts.append(desc)
-
+def _serialize_tool_schema(tool: Tool) -> dict[str, Any]:
+    """Serialize a tool's full schema for tool_info responses."""
+    data: dict[str, Any] = {
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": tool.parameters,
+    }
+    if tool.output_schema is not None:
+        data["output_schema"] = tool.output_schema
+    if tool.annotations:
+        ann = tool.annotations
+        data["annotations"] = {
+            k: getattr(ann, k)
+            for k in ("title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+            if getattr(ann, k, None) is not None
+        }
     if tool.tags:
-        for tag in tool.tags:
-            parts.append(tag)
-            if tag in CATEGORY_SEARCH_ALIASES:
-                parts.append(CATEGORY_SEARCH_ALIASES[tag])
-
-    return " ".join(parts)
+        data["tags"] = list(tool.tags)
+    if tool.version:
+        data["version"] = tool.version
+    return data
 
 
-class TolerantBM25SearchTransform(BM25SearchTransform):
-    """BM25SearchTransform with tolerant argument handling for OpenCode compatibility.
+class TolerantSearchTransform(BM25SearchTransform):
+    """Search transform with tolerant tool discovery, call_tool proxy, and tool_info.
 
-    Override the synthetic call_tool to accept any arguments (including JSON strings).
-    Uses a compact result serializer to avoid massive payloads.
-    Enhanced searchable text extraction for better Pr/issue discoverability.
+    Extends BM25SearchTransform with:
+    - Tolerant argument handling (JSON string parsing)
+    - Compact search results (name + description only)
+    - tool_info synthetic tool for retrieving full tool schemas
+    - Enhanced BM25 search with alias expansion and 2-char token support
     """
 
     def __init__(self, **kwargs: Any) -> None:
-        # Force our compact serializer if not provided
         if "search_result_serializer" not in kwargs:
             kwargs["search_result_serializer"] = _compact_search_serializer
+        self._tool_info_name = kwargs.pop("tool_info_name", "tool_info")
         super().__init__(**kwargs)
-        self._last_hash: str = ""
-        self._index: _BM25IndexLen2 = _BM25IndexLen2()
+        self._searcher = TolerantBM25Search()
+
+    async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        """Extend base transform to include tool_info synthetic tool."""
+        pinned = [t for t in tools if t.name in self._always_visible]
+        return [*pinned, self._make_search_tool(), self._make_call_tool(), self._make_tool_info_tool()]
+
+    async def get_tool(
+        self, name: str, call_next: Any, *, version: Any = None
+    ) -> Tool | None:
+        """Intercept tool_info name; delegate everything else."""
+        if name == self._tool_info_name:
+            return self._make_tool_info_tool()
+        return await super().get_tool(name, call_next, version=version)
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
-        """Override to use enhanced searchable text extraction."""
-        current_hash = _catalog_hash(tools)
-        if current_hash != self._last_hash:
-            documents = [_extract_searchable_text_enhanced(t) for t in tools]
-            new_index = _BM25IndexLen2(self._index.k1, self._index.b)
-            new_index.build(documents)
-            self._index, self._indexed_tools, self._last_hash = (
-                new_index,
-                tools,
-                current_hash,
-            )
-
-        expanded_query = _expand_word_aliases(query)
-        indices = self._index.query(expanded_query, self._max_results)
-        return [self._indexed_tools[i] for i in indices]
+        """Delegate search to TolerantBM25Search."""
+        return self._searcher.search(tools, query, self._max_results)
 
     def _make_search_tool(self) -> Tool:
-        """Create the search_tool with consistent result wrapping."""
+        """Create the search_tool with minimal results (name + description only)."""
         transform = self
 
         async def search_tools(
@@ -892,11 +792,9 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
                             "properties": {
                                 "name": {"type": "string"},
                                 "description": {"type": "string"},
-                                "parameters": {"type": "object"},
-                                "output_schema": {"type": "object"},
                             },
                         },
-                        "description": "Matching tool definitions ranked by relevance",
+                        "description": "Matching tool definitions (name + description only)",
                     },
                 },
             },
@@ -915,17 +813,15 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
 
             Use this to execute tools discovered via search_tools.
             """
-            if name in {transform._call_tool_name, transform._search_tool_name}:
+            if name in {transform._call_tool_name, transform._search_tool_name, transform._tool_info_name}:
                 msg = f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
                 _raise_value_error(msg)
-            # If arguments is a string, attempt to parse as JSON
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError as e:
                     msg = f"Invalid JSON in arguments: {e}"
                     _raise_value_error_from(msg, e)
-            # Ensure arguments is a dict (or None)
             if arguments is not None and not isinstance(arguments, dict):
                 msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
                 _raise_value_error(msg)
@@ -945,10 +841,55 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
             },
         )
 
+    def _make_tool_info_tool(self) -> Tool:
+        """Create the tool_info tool that returns full schema for a named tool."""
+        transform = self
+
+        async def tool_info(
+            name: Annotated[str, "The exact name of the tool to inspect"],
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> ToolResult:
+            """Get the full schema for a tool by name.
+
+            Returns the complete input parameters, output schema, annotations,
+            tags, and version for a specific tool. Use this after search_tools
+            when you need detailed parameter descriptions or output schema.
+            """
+            assert ctx is not None
+            tools = await transform.get_tool_catalog(ctx)
+            for tool in tools:
+                if tool.name == name:
+                    return ToolResult(structured_content={"result": _serialize_tool_schema(tool)})
+            msg = f"Tool '{name}' not found"
+            _raise_value_error(msg)
+
+        return Tool.from_function(
+            fn=tool_info,
+            name=self._tool_info_name,
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "parameters": {"type": "object"},
+                            "output_schema": {"type": "object"},
+                            "annotations": {"type": "object"},
+                            "tags": {"type": "array"},
+                            "version": {"type": "string"},
+                        },
+                        "description": "Full tool schema",
+                    },
+                },
+            },
+        )
+
 
 __all__ = [
     "TAG_TO_SCOPE",
-    "TolerantBM25SearchTransform",
+    "TolerantSearchTransform",
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",

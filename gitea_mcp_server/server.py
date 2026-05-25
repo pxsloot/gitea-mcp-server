@@ -42,7 +42,7 @@ from gitea_mcp_server.server_setup.permissions import (
 )
 from gitea_mcp_server.server_setup.resource_registry import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
-from gitea_mcp_server.server_setup.tool_annotator import TolerantBM25SearchTransform
+from gitea_mcp_server.server_setup.tool_annotator import TolerantSearchTransform
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     if getattr(config, "enable_lazy_loading", True):
         logger.info("Adding search transform for lazy loading...")
         mcp.add_transform(
-            TolerantBM25SearchTransform(
+            TolerantSearchTransform(
                 max_results=SEARCH_MAX_RESULTS,
                 always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
             )

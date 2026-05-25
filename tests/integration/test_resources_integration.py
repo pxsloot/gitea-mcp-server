@@ -88,7 +88,12 @@ class TestResourcesIntegration:
 
     @pytest.mark.asyncio
     async def test_auto_generated_resources_use_gitea_uri_scheme(self):
-        """Test that auto-generated resources use the gitea:// URI scheme."""
+        """Test that auto-generated resources strip the /gitea prefix from URIs.
+
+        The Gitea API paths start with /gitea/..., which would produce
+        redundant gitea://gitea/repos/... URIs. The transformation should
+        promote the first path segment to the scheme: gitea://repos/...
+        """
         from gitea_mcp_server import resources
         from gitea_mcp_server.resource_registry import ResourceRegistry
 
@@ -103,7 +108,7 @@ class TestResourcesIntegration:
 
         spec = {
             "paths": {
-                "/repos/{owner}/{repo}": {
+                "/gitea/repos/{owner}/{repo}": {
                     "get": {
                         "summary": "Get repo details",
                         "operationId": "getRepoDetails",
@@ -123,7 +128,7 @@ class TestResourcesIntegration:
                         ],
                         "responses": {"200": {"description": "Success"}},
                     }
-                }
+                },
             }
         }
 
@@ -132,10 +137,16 @@ class TestResourcesIntegration:
             mcp, mock_client, spec, registry, skip_uris=set()
         )
 
-        # Check that resource was registered with gitea:// URI
+        # Check that /gitea prefix is stripped — first path segment becomes scheme
         mcp.resource.assert_called()
-        first_call_uri = mcp.resource.call_args_list[0][0][0]
-        assert first_call_uri == "gitea://repos/{owner}/{repo}"
+        uris = [call[0][0] for call in mcp.resource.call_args_list]
+        assert "gitea://repos/{owner}/{repo}" in uris, (
+            f"Expected gitea://repos/... in {uris}"
+        )
+        # Ensure no double-gitea URIs remain
+        assert not any("gitea://gitea/" in uri for uri in uris), (
+            f"Unexpected double-gitea URIs: {uris}"
+        )
 
     @pytest.mark.asyncio
     async def test_custom_resources_override_with_markdown(self):

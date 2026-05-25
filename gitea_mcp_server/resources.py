@@ -36,6 +36,7 @@ import base64
 import inspect
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from functools import wraps
@@ -432,8 +433,10 @@ def register_auto_generated_resources(
                     continue
 
                 # Convert OpenAPI path to resource URI
-                # e.g., /repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
-                uri_template = "gitea://" + path.lstrip("/")
+                # First path segment becomes the URI scheme, e.g.:
+                #   /gitea/repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
+                #   /repos/{owner}/{repo}       -> repos://{owner}/{repo}
+                uri_template = re.sub(r"^/([^/]+)/", r"\1://", path)
 
                 # Skip if this URI will be covered by a custom resource
                 if uri_template in skip_uris:

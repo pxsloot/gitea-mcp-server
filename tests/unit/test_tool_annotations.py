@@ -1164,7 +1164,7 @@ class TestDeriveOutputSchema:
 
     def test_integration_via_customize_component(self):
         """customize_component should set output_schema from openapi_spec."""
-        from gitea_mcp_server.openapi_converter import enrich_response_schemas
+        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
@@ -1185,7 +1185,7 @@ class TestDeriveOutputSchema:
         tool.meta = {}
 
         spec = deepcopy(self.MINIMAL_SPEC)
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         new_tool = customize_component(route, tool, _label_manager, spec)
 
         assert new_tool is not None

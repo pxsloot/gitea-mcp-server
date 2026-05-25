@@ -794,17 +794,15 @@ def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> Non
     ``{"result": result}``. This function ensures the schema in the OpenAPI
     spec reflects that same wrapping.
 
-    ``$ref`` schemas are resolved so the wrapped schema is self-contained
-    at each response site. Response-level ``$ref`` (the entire response is
-    a ``$ref``) are left for the component-processing loop to handle.
+    ``$ref`` schemas (media-type level) are resolved so the wrapped schema
+    is self-contained at each response site.
+
+    Note: response-level ``$ref`` never appears here because the Swagger 2.0
+    to OpenAPI 3.x converter inlines all response references before this
+    function runs.
 
     Remove this when FastMCP adds native non-object ``output_schema`` support.
     """
-    # Response-level $ref cannot be wrapped here — skip so the
-    # components/responses loop handles the referenced component instead.
-    if "$ref" in response:
-        return
-
     content = response.get("content", {})
     if not isinstance(content, dict):
         return
@@ -830,7 +828,7 @@ def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> Non
     }
 
 
-def enrich_response_schemas(spec: dict[str, Any]) -> None:
+def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
     """Wrap all success response schemas in a ``result`` object container.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
@@ -900,7 +898,7 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
     spec = ReferenceFixer().fix(spec)
     _add_nullable_for_optional_refs_impl(spec)
-    enrich_response_schemas(spec)
+    _wrap_success_response_schemas(spec)
 
     logger.info("OpenAPI conversion completed successfully")
     return spec

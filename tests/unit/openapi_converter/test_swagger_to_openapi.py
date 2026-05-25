@@ -8,7 +8,7 @@ import jsonschema
 import pytest
 
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3, enrich_response_schemas
+from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3, _wrap_success_response_schemas
 
 # Load OpenAPI 3.1 schema once
 OAS_3_1_SCHEMA = None
@@ -162,7 +162,7 @@ class TestConvertSwaggerToOpenAPI:
 
 
 class TestEnrichResponseSchemas:
-    """Tests for enrich_response_schemas function."""
+    """Tests for _wrap_success_response_schemas function."""
 
     def test_wraps_array_schema(self):
         spec = {
@@ -182,7 +182,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -206,7 +206,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -231,7 +231,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert "$ref" in schema
 
@@ -262,7 +262,7 @@ class TestEnrichResponseSchemas:
                 }
             },
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -270,7 +270,12 @@ class TestEnrichResponseSchemas:
         assert "$ref" not in schema
 
     def test_wraps_response_ref(self):
-        """Response-level $ref is left intact; component schema gets wrapped."""
+        """Response-level $ref is left as-is; component schema gets wrapped.
+
+        Note: response-level $ref never appears in practice — the Swagger 2.0
+        to OpenAPI 3.x converter inlines all refs. This test just verifies
+        no crash when one is encountered.
+        """
         spec = {
             "paths": {
                 "/version": {
@@ -300,8 +305,8 @@ class TestEnrichResponseSchemas:
                 },
             },
         }
-        enrich_response_schemas(spec)
-        # Path-level $ref is left as-is.
+        _wrap_success_response_schemas(spec)
+        # Path-level $ref is left as-is (no content to wrap).
         path_response = spec["paths"]["/version"]["get"]["responses"]["200"]
         assert "$ref" in path_response
         # Component-level schema is wrapped.
@@ -328,7 +333,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -348,7 +353,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["components"]["responses"]["ItemList"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -373,7 +378,7 @@ class TestEnrichResponseSchemas:
                 },
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["components"]["responses"]["ItemDetail"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -391,13 +396,13 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         # Should not raise - 204 has no content schema
         assert True
 
     def test_handles_empty_spec_gracefully(self):
         spec: dict = {}
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         assert True
 
     def test_wraps_201_created_responses(self):
@@ -418,7 +423,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
@@ -452,7 +457,7 @@ class TestEnrichResponseSchemas:
                 }
             }
         }
-        enrich_response_schemas(spec)
+        _wrap_success_response_schemas(spec)
         get_schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert get_schema["type"] == "object"
         assert "result" in get_schema["properties"]

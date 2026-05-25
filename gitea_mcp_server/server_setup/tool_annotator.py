@@ -902,7 +902,6 @@ class TolerantBM25SearchTransform(BM25SearchTransform):
                         "description": "Matching tool definitions ranked by relevance",
                     },
                 },
-                "x-fastmcp-wrap-result": True,
             },
         )
 

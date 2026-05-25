@@ -150,7 +150,6 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                 },
             },
         },
-        "x-fastmcp-wrap-result": True,
     })
     async def mcp_list_resources(ctx: Context = CurrentContext()) -> ToolResult:
         """List all available MCP resources.
@@ -234,7 +233,6 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                 "description": "The resource content as a string",
             },
         },
-        "x-fastmcp-wrap-result": True,
     })
     async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> ToolResult:
         """Read the content of an MCP resource by URI.

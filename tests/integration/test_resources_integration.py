@@ -88,11 +88,11 @@ class TestResourcesIntegration:
 
     @pytest.mark.asyncio
     async def test_auto_generated_resources_use_gitea_uri_scheme(self):
-        """Test that auto-generated resources strip the /gitea prefix from URIs.
+        """Test that auto-generated resources use the gitea:// scheme.
 
-        The Gitea API paths start with /gitea/..., which would produce
-        redundant gitea://gitea/repos/... URIs. The transformation should
-        promote the first path segment to the scheme: gitea://repos/...
+        All auto-generated resource URIs start with gitea:// regardless
+        of the API path (e.g. /repos/{owner}/{repo} → gitea://repos/...).
+        No double-gitea URIs are produced.
         """
         from gitea_mcp_server import resources
         from gitea_mcp_server.resource_registry import ResourceRegistry
@@ -108,7 +108,7 @@ class TestResourcesIntegration:
 
         spec = {
             "paths": {
-                "/gitea/repos/{owner}/{repo}": {
+                "/repos/{owner}/{repo}": {
                     "get": {
                         "summary": "Get repo details",
                         "operationId": "getRepoDetails",
@@ -137,7 +137,7 @@ class TestResourcesIntegration:
             mcp, mock_client, spec, registry, skip_uris=set()
         )
 
-        # Check that /gitea prefix is stripped — first path segment becomes scheme
+        # Check that the URI is gitea:// — no double-gitea
         mcp.resource.assert_called()
         uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in uris, (

@@ -36,7 +36,6 @@ import base64
 import inspect
 import json
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from functools import wraps
@@ -432,11 +431,13 @@ def register_auto_generated_resources(
                     )
                     continue
 
-                # Convert OpenAPI path to resource URI
-                # First path segment becomes the URI scheme, e.g.:
-                #   /gitea/repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
-                #   /repos/{owner}/{repo}       -> repos://{owner}/{repo}
-                uri_template = re.sub(r"^/([^/]+)/", r"\1://", path)
+                # Convert OpenAPI path to a ``gitea://`` resource URI.
+                # All resources use the ``gitea://`` scheme for consistent
+                # namespacing.  The built-in Namespace transform is **not**
+                # applied to resources (see GiteaNamespace), so the URI
+                # is the final form clients see.
+                #   /repos/{owner}/{repo} -> gitea://repos/{owner}/{repo}
+                uri_template = f"gitea://{path.lstrip('/')}"
 
                 # Skip if this URI will be covered by a custom resource
                 if uri_template in skip_uris:

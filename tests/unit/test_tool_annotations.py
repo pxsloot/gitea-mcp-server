@@ -1,10 +1,11 @@
 """Unit tests for tool annotation functionality."""
 
+from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
@@ -892,3 +893,1053 @@ class TestErrorHandlingEnhancement:
         assert "unexpected" in error_msg.lower()
         # Should not show full Python traceback to user
         assert "RuntimeError" not in error_msg
+
+
+class TestDeriveOutputSchema:
+    """Tests for derive_output_schema function."""
+
+    MINIMAL_SPEC: dict = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/repos/{owner}/{repo}/issues/{index}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "Issue",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer", "description": "Issue ID"},
+                                            "title": {"type": "string"},
+                                            "body": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                },
+                "delete": {
+                    "responses": {
+                        "204": {"description": "No Content"},
+                    }
+                },
+            },
+            "/repos/{owner}/{repo}/issues": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "IssueList",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "Repository": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                }
+            },
+            "responses": {
+                "Repository": {
+                    "description": "Repository",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Repository"}
+                        }
+                    },
+                }
+            },
+        },
+    }
+
+    def _make_route(self, path: str, method: str = "GET") -> MagicMock:
+        """Helper to create a mock route."""
+        return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
+
+    def test_inline_schema_response(self):
+        """Should extract inline schema directly from response content."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+
+        assert schema is not None
+        assert schema["type"] == "object"
+        assert "id" in schema["properties"]
+        assert "title" in schema["properties"]
+
+    def test_array_response(self):
+        """Should handle array-type response schemas."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+
+        assert schema is not None
+        assert schema["type"] == "array"
+        assert schema["items"]["type"] == "object"
+
+    def test_ref_response_resolved(self):
+        """Should resolve $ref in response to get the schema."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec_with_ref: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/Repository"}
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Repository": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        },
+                    }
+                },
+                "responses": {
+                    "Repository": {
+                        "description": "Repository",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Repository"}
+                            }
+                        },
+                    }
+                },
+            },
+        }
+
+        route = self._make_route("/repos/{owner}/{repo}", "GET")
+        schema = derive_output_schema(route, spec_with_ref)
+
+        assert schema is not None
+        assert schema["type"] == "object"
+        assert "id" in schema["properties"]
+        assert "name" in schema["properties"]
+
+    def test_no_content_response_returns_none(self):
+        """204 No Content responses should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "DELETE")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_none_spec_returns_none(self):
+        """When spec is None, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/test", "GET")
+        schema = derive_output_schema(route, None)
+        assert schema is None
+
+    def test_missing_path_returns_none(self):
+        """When route path is not in spec, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/nonexistent/path", "GET")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_missing_method_returns_none(self):
+        """When route method is not in spec, should return None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "PATCH")
+        schema = derive_output_schema(route, self.MINIMAL_SPEC)
+        assert schema is None
+
+    def test_prefers_200_over_201(self):
+        """Should prefer 200 over 201 when both are present."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "post": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_200": {"type": "string"}}}
+                                    }
+                                },
+                            },
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_201": {"type": "string"}}}
+                                    }
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        }
+
+        route = self._make_route("/test", "POST")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert "from_200" in schema["properties"]
+        assert "from_201" not in schema["properties"]
+
+    def test_falls_back_to_201_when_no_200(self):
+        """Should fall back to 201 when no 200 response exists."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            derive_output_schema,
+        )
+
+        spec: dict = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "post": {
+                        "responses": {
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        route = self._make_route("/test", "POST")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert "id" in schema["properties"]
+
+    def test_integration_via_customize_component(self):
+        """customize_component should set output_schema from openapi_spec."""
+        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get an issue"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        spec = deepcopy(self.MINIMAL_SPEC)
+        _wrap_success_response_schemas(spec)
+        new_tool = customize_component(route, tool, _label_manager, spec)
+
+        assert new_tool is not None
+        assert new_tool.output_schema is not None
+        assert new_tool.output_schema["type"] == "object"
+        assert "result" in new_tool.output_schema["properties"]
+        assert "id" in new_tool.output_schema["properties"]["result"]["properties"]
+        assert "title" in new_tool.output_schema["properties"]["result"]["properties"]
+
+    def test_integration_no_output_schema_without_spec(self):
+        """customize_component should not set output_schema when spec is None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/test", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = customize_component(route, tool, _label_manager, None)
+
+        assert new_tool is not None
+        assert new_tool.output_schema is None
+
+    @pytest.mark.asyncio
+    async def test_transform_fn_wraps_result_in_result_key(self):
+        """transform_fn should wrap tool result in {'result': ...}."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=[{"id": 1}, {"id": 2}])
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_object_response_wrapped_by_openapi_tool_via_x_fastmcp(self):
+        """When component.output_schema has x-fastmcp-wrap-result, OpenAPITool.run()
+        wraps ALL responses in {'result': ...}. The ToolResult flows through
+        transform_fn → TransformedTool.run() unchanged."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        # Mimics enriched spec schema.
+        tool.output_schema = {"type": "object", "properties": {"result": {"type": "object", "properties": {"id": {"type": "integer"}}}}}
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        # After customize_component sets x-fastmcp-wrap-result on component,
+        # OpenAPITool.run() would wrap the response. Simulate that.
+        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": {"id": 1}}))
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": {"id": 1}}
+
+    @pytest.mark.asyncio
+    async def test_array_wrapped_by_openapi_tool_even_without_x_fastmcp(self):
+        """OpenAPITool.run() wraps arrays in {'result': [...]} even without
+        x-fastmcp-wrap-result (for MCP protocol compliance)."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            customize_component,
+        )
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = {"type": "object", "properties": {"result": {"type": "array"}}}
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        # OpenAPITool.run() wraps non-dict in {"result": ...}
+        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": [{"id": 1}]}))
+
+        new_tool = customize_component(route, tool, _label_manager, self.MINIMAL_SPEC)
+
+        actual = await new_tool.run({"owner": "test", "repo": "test"})
+        assert actual.structured_content == {"result": [{"id": 1}]}
+
+
+class TestDeepResolveSchema:
+    """Tests for _deep_resolve_schema function."""
+
+    SPEC: dict = {
+        "openapi": "3.1.0",
+        "components": {
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "login": {"type": "string"},
+                    },
+                },
+                "Repository": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "owner": {"$ref": "#/components/schemas/User"},
+                    },
+                },
+                "NestedRef": {
+                    "type": "object",
+                    "properties": {
+                        "repo": {"$ref": "#/components/schemas/Repository"},
+                    },
+                },
+                "AllOfSchema": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/User"},
+                        {"type": "object", "properties": {"extra": {"type": "string"}}},
+                    ],
+                },
+                "ArraySchema": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/User"},
+                },
+            },
+        },
+    }
+
+    def test_resolves_nested_property_refs(self):
+        """Resolves $ref inside property values."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "user": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["properties"]["user"]["type"] == "object"
+        assert resolved["properties"]["user"]["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["user"]["properties"]["login"]["type"] == "string"
+
+    def test_resolves_items_ref(self):
+        """Resolves $ref in array items."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/User"},
+        }
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["items"]["type"] == "object"
+        assert "id" in resolved["items"]["properties"]
+
+    def test_resolves_chain_of_refs(self):
+        """Resolves $ref chains (Repo -> User -> no more refs)."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/NestedRef"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["repo"]["type"] == "object"
+        assert resolved["properties"]["repo"]["properties"]["owner"]["type"] == "object"
+        assert resolved["properties"]["repo"]["properties"]["owner"]["properties"]["login"]["type"] == "string"
+
+    def test_resolves_allOf_entries(self):
+        """Recursively resolves $ref inside allOf entries."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/AllOfSchema"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["allOf"][0]["type"] == "object"
+        assert resolved["allOf"][0]["properties"]["id"]["type"] == "integer"
+
+    def test_resolves_top_level_ref(self):
+        """Resolves a top-level $ref."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"$ref": "#/components/schemas/User"}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["login"]["type"] == "string"
+
+    def test_leaf_schema_unchanged(self):
+        """A schema with no refs should return a copy unchanged."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
+        resolved = _deep_resolve_schema(schema, self.SPEC)
+        assert resolved == schema
+
+    def test_circular_ref_does_not_loop(self):
+        """Circular $ref should not cause infinite recursion."""
+        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+
+        circular_spec = {
+            "components": {
+                "schemas": {
+                    "Node": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "child": {"$ref": "#/components/schemas/Node"},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {"$ref": "#/components/schemas/Node"}
+        resolved = _deep_resolve_schema(schema, circular_spec)
+        assert resolved["type"] == "object"
+        assert resolved["properties"]["id"]["type"] == "integer"
+        assert resolved["properties"]["child"]["$ref"] == "#/components/schemas/Node"
+
+    def test_deep_resolve_applied_in_derive_output_schema(self):
+        """derive_output_schema should deep-resolve nested refs."""
+        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "owner": {"$ref": "#/components/schemas/User"},
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+            },
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "login": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        route = MagicMock(path="/repos/{owner}/{repo}", method="GET")
+        schema = derive_output_schema(route, spec)
+        assert schema is not None
+        assert schema["properties"]["owner"]["type"] == "object"
+        assert schema["properties"]["owner"]["properties"]["login"]["type"] == "string"
+
+
+class TestCallToolOutputSchema:
+    """Tests for call_tool output_schema."""
+
+    def test_call_tool_has_output_schema(self):
+        """_make_call_tool should return a Tool with output_schema set."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        assert tool.output_schema is not None
+        assert tool.output_schema["type"] == "object"
+        assert "result" in tool.output_schema["properties"]
+        # call_tool does NOT set x-fastmcp-wrap-result — it passes through
+        # the inner tool's already-wrapped ToolResult, so the flag would
+        # be a no-op (dead code).  Inner tools handle their own wrapping.
+        assert "x-fastmcp-wrap-result" not in tool.output_schema
+
+    def test_call_tool_result_property_accepts_any_type(self):
+        """The 'result' property must not have a 'type' constraint (accepts arrays, etc.)."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        result_schema = tool.output_schema["properties"]["result"]
+        # No "type" key means any JSON value is accepted (objects, arrays, strings, etc.)
+        assert "type" not in result_schema, (
+            f"Expected result to accept any type, got 'type': {result_schema.get('type')!r}"
+        )
+
+
+class TestCallToolRuntimeBehavior:
+    """Test runtime behavior of the call_tool function.
+
+    call_tool is a proxy that delegates to ctx.fastmcp.call_tool().
+    These tests verify it correctly passes ToolResult through without
+    double-wrapping, and properly handles argument validation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_toolresult_through(self):
+        """call_tool function should return the inner tool's ToolResult as-is."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": 1}, {"id": 2}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        result = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+
+        assert result is inner_result, "call_tool must return the exact ToolResult from inner tool"
+        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_call_tool_no_double_wrap_through_convert_result(self):
+        """convert_result must not double-wrap a ToolResult returned by call_tool."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {"items": [1, 2, 3], "count": 3}},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final is inner_result, "convert_result must pass ToolResult through unchanged"
+        assert final.structured_content == {"result": {"items": [1, 2, 3], "count": 3}}
+        inner = final.structured_content["result"]
+        assert "result" not in inner, (
+            f"Double-wrapped! structured_content={final.structured_content}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_preserves_user_meta_from_inner_tool(self):
+        """call_tool should preserve meta from the inner tool's ToolResult."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_meta = {"fastmcp": {"wrap_result": True}, "custom": "data"}
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {}},
+            meta=inner_meta,
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final.meta == inner_meta
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_self_call(self):
+        """call_tool should reject calling itself or search_tools."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="synthetic search tool"):
+            await tool.fn(transform._call_tool_name, {}, ctx=mock_ctx)
+
+        with pytest.raises(ValueError, match="synthetic search tool"):
+            await tool.fn(transform._search_tool_name, {}, ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_parses_json_string_arguments(self):
+        """String arguments should be parsed as JSON before forwarding."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": {}})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", '{"key": "val", "num": 42}', ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with(
+            "gitea_test_tool", {"key": "val", "num": 42}
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_non_dict_and_non_string_arguments(self):
+        """Arguments that are neither dict nor None nor a JSON string should be rejected."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await tool.fn("gitea_test_tool", [1, 2, 3], ctx=mock_ctx)
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await tool.fn("gitea_test_tool", 42, ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_invalid_json(self):
+        """Invalid JSON string arguments should be rejected."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            await tool.fn("gitea_test_tool", "{bad json}", ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_handles_none_arguments(self):
+        """None arguments should be forwarded as None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": []})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", None, ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_handles_missing_arguments(self):
+        """Omitting arguments should forward None."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(content=[], structured_content={"result": []})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        await tool.fn("gitea_test_tool", ctx=mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_routes_array_result_from_inner_tool(self):
+        """When inner tool returns an array wrapped in {"result": [...]}, pass through."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            TolerantBM25SearchTransform,
+        )
+
+        transform = TolerantBM25SearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": "a"}, {"id": "b"}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        raw = await tool.fn("gitea_array_tool", ctx=mock_ctx)
+        final = tool.convert_result(raw)
+
+        assert final.structured_content == {"result": [{"id": "a"}, {"id": "b"}]}
+
+
+class TestFunctionToolResultWrapping:
+    """Test that FunctionTool.convert_result() wraps when x-fastmcp-wrap-result is set.
+
+    This mirrors the exact pattern used by ``mcp_list_resources`` and
+    ``mcp_read_resource`` (``@mcp.tool(output_schema={..., "x-fastmcp-wrap-result": True})``).
+    """
+
+    MOCK_SCHEMA: dict = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {
+                    "resources": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+            },
+        },
+        "x-fastmcp-wrap-result": True,
+    }
+
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_dict_with_x_fastmcp(self):
+        """convert_result should wrap return value in {'result': ...}."""
+        from fastmcp.tools.base import Tool
+        from fastmcp.tools.function_parsing import ParsedFunction
+
+        tool = Tool(
+            name="test_list",
+            description="Test list",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [{"uri": "gitea://test"}], "count": 1}
+        result = tool.convert_result(raw)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": {"resources": [{"uri": "gitea://test"}], "count": 1}}
+
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_array_with_x_fastmcp(self):
+        """convert_result should wrap arrays too."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_array",
+            description="Test array",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = [{"id": 1}, {"id": 2}]
+        result = tool.convert_result(raw)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+
+    @pytest.mark.asyncio
+    async def test_convert_result_sets_meta_when_wrapping(self):
+        """When wrapping, meta should be set to bypass MCP SDK validation."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_meta",
+            description="Test meta",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
+
+    def test_convert_result_no_wrap_without_flag(self):
+        """Without x-fastmcp-wrap-result, structured_content should not be wrapped."""
+        from fastmcp.tools.base import Tool
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "resources": {"type": "array"},
+                        "count": {"type": "integer"},
+                    },
+                },
+            },
+        }
+
+        tool = Tool(
+            name="test_nowrap",
+            description="Test no wrap",
+            parameters={"properties": {}},
+            output_schema=schema,
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+
+        assert result.structured_content == {"resources": [], "count": 0}
+        assert result.meta is None
+
+    @pytest.mark.asyncio
+    async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self):
+        """When meta is set (wrapping active), to_mcp_result should return
+        CallToolResult directly to bypass MCP SDK output validation."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_calltool",
+            description="Test CallToolResult",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
+
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+        mcp_result = result.to_mcp_result()
+
+        from mcp.types import CallToolResult
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.structuredContent == {"result": {"resources": [], "count": 0}}
+
+
+class TestCompactSearchSerializer:
+    """Tests for _compact_search_serializer function."""
+
+    def test_includes_output_schema_when_present(self):
+        """Should include output_schema in serialized result when tool has one."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {"id": {"type": "integer"}}},
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+            },
+        )
+        result = _compact_search_serializer([tool])
+        assert len(result) == 1
+        assert result[0]["output_schema"] == tool.output_schema
+
+    def test_omits_output_schema_when_null(self):
+        """Should omit output_schema entirely when tool has none (avoids jsonschema validation error)."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {}},
+            output_schema=None,
+        )
+        result = _compact_search_serializer([tool])
+        assert "output_schema" not in result[0]
+
+    def test_handles_mixed_null_and_present_output_schemas(self):
+        """Mix of None and non-None output_schema should only include present ones."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool_a = Tool(
+            name="tool_a",
+            description="Has output schema",
+            parameters={"properties": {}},
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        tool_b = Tool(
+            name="tool_b",
+            description="No output schema",
+            parameters={"properties": {}},
+            output_schema=None,
+        )
+        result = _compact_search_serializer([tool_a, tool_b])
+        assert len(result) == 2
+        assert "output_schema" in result[0]
+        assert "output_schema" not in result[1]
+
+    def test_keeps_existing_fields(self):
+        """Should still include name, description, parameters."""
+        from gitea_mcp_server.server_setup.tool_annotator import (
+            _compact_search_serializer,
+        )
+
+        tool = Tool(
+            name="gitea_test",
+            description="Test function",
+            parameters={
+                "properties": {"owner": {"type": "string"}},
+                "required": ["owner"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+            },
+        )
+        result = _compact_search_serializer([tool])[0]
+        assert result["name"] == "gitea_test"
+        assert result["description"] == "Test function"
+        assert "owner" in result["parameters"]["properties"]
+        assert result["output_schema"]["properties"]["id"]["type"] == "integer"

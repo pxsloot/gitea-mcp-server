@@ -8,7 +8,7 @@ import jsonschema
 import pytest
 
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3, _wrap_success_response_schemas
 
 # Load OpenAPI 3.1 schema once
 OAS_3_1_SCHEMA = None
@@ -102,3 +102,366 @@ class TestConvertSwaggerToOpenAPI:
             jsonschema.validate(instance=result, schema=OAS_3_1_SCHEMA)
         except jsonschema.ValidationError as e:
             pytest.fail(f"OpenAPI spec validation failed: {e.message}")
+
+    def test_conversion_enriches_array_responses(self):
+        """Converted spec should have array response schemas wrapped in result."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "paths": {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        schema = result["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert schema["properties"]["result"]["type"] == "array"
+
+    def test_conversion_wraps_object_responses(self):
+        """Object-type response schemas should also be wrapped in result."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "paths": {
+                "/item": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}, "name": {"type": "string"}},
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        schema = result["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert schema["properties"]["result"]["type"] == "object"
+        assert "id" in schema["properties"]["result"]["properties"]
+
+
+class TestEnrichResponseSchemas:
+    """Tests for _wrap_success_response_schemas function."""
+
+    def test_wraps_array_schema(self):
+        spec = {
+            "paths": {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert schema["properties"]["result"]["type"] == "array"
+
+    def test_wraps_object_schema(self):
+        spec = {
+            "paths": {
+                "/item": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert "id" in schema["properties"]["result"]["properties"]
+
+    def test_stays_unwrapped_when_ref_cannot_be_resolved(self):
+        """$ref schemas with unresolvable targets should remain unchanged."""
+        spec = {
+            "paths": {
+                "/item": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/Item"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert "$ref" in schema
+
+    def test_wraps_ref_schema(self):
+        """$ref response schemas should be resolved and wrapped in result."""
+        spec = {
+            "paths": {
+                "/item": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/Item"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Item": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    }
+                }
+            },
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert "id" in schema["properties"]["result"]["properties"]
+        assert "$ref" not in schema
+
+    def test_wraps_response_ref(self):
+        """Response-level $ref is left as-is; component schema gets wrapped.
+
+        Note: response-level $ref never appears in practice — the Swagger 2.0
+        to OpenAPI 3.x converter inlines all refs. This test just verifies
+        no crash when one is encountered.
+        """
+        spec = {
+            "paths": {
+                "/version": {
+                    "get": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/ServerVersion"},
+                        }
+                    }
+                }
+            },
+            "components": {
+                "responses": {
+                    "ServerVersion": {
+                        "description": "ServerVersion",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ServerVersion"},
+                            }
+                        },
+                    }
+                },
+                "schemas": {
+                    "ServerVersion": {
+                        "type": "object",
+                        "properties": {"version": {"type": "string"}},
+                    }
+                },
+            },
+        }
+        _wrap_success_response_schemas(spec)
+        # Path-level $ref is left as-is (no content to wrap).
+        path_response = spec["paths"]["/version"]["get"]["responses"]["200"]
+        assert "$ref" in path_response
+        # Component-level schema is wrapped.
+        schema = spec["components"]["responses"]["ServerVersion"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert "version" in schema["properties"]["result"]["properties"]
+
+    def test_wraps_primitive_schema(self):
+        spec = {
+            "paths": {
+                "/health": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert schema["properties"]["result"]["type"] == "string"
+
+    def test_wraps_component_responses_inline(self):
+        spec = {
+            "components": {
+                "responses": {
+                    "ItemList": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["components"]["responses"]["ItemList"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+
+    def test_wraps_component_responses_ref(self):
+        spec = {
+            "components": {
+                "responses": {
+                    "ItemDetail": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Item"}
+                            }
+                        }
+                    }
+                },
+                "schemas": {
+                    "Item": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    }
+                },
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["components"]["responses"]["ItemDetail"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+        assert "id" in schema["properties"]["result"]["properties"]
+
+    def test_skips_204_no_content(self):
+        spec = {
+            "paths": {
+                "/item/{id}": {
+                    "delete": {
+                        "responses": {
+                            "204": {"description": "No Content"}
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        # Should not raise - 204 has no content schema
+        assert True
+
+    def test_handles_empty_spec_gracefully(self):
+        spec: dict = {}
+        _wrap_success_response_schemas(spec)
+        assert True
+
+    def test_wraps_201_created_responses(self):
+        spec = {
+            "paths": {
+                "/items": {
+                    "post": {
+                        "responses": {
+                            "201": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
+        assert schema["type"] == "object"
+        assert "result" in schema["properties"]
+
+    def test_wraps_multiple_methods_on_same_path(self):
+        spec = {
+            "paths": {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "array", "items": {"type": "object"}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "responses": {
+                            "201": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        get_schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert get_schema["type"] == "object"
+        assert "result" in get_schema["properties"]
+        post_schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
+        assert post_schema["type"] == "object"
+        assert "result" in post_schema["properties"]
+        assert "id" in post_schema["properties"]["result"]["properties"]

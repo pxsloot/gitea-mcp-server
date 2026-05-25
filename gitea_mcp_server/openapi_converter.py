@@ -2,6 +2,7 @@
 
 import logging
 import re
+from copy import deepcopy
 from typing import Any, ClassVar, Protocol, cast
 
 from gitea_mcp_server.exceptions import SpecError
@@ -773,6 +774,98 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
+def _resolve_spec_ref(spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+    """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec."""
+    parts = ref.lstrip("#/").split("/")
+    current: Any = spec
+    try:
+        for part in parts:
+            current = current[part]
+    except (KeyError, TypeError):
+        return None
+    return current if isinstance(current, dict) else None
+
+
+def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> None:
+    """Wrap a response schema in ``result`` so output_schema matches runtime shape.
+
+    FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
+    The ``transform_fn`` in ``customize_component`` always wraps results in
+    ``{"result": result}``. This function ensures the schema in the OpenAPI
+    spec reflects that same wrapping.
+
+    ``$ref`` schemas (media-type level) are resolved so the wrapped schema
+    is self-contained at each response site.
+
+    Note: response-level ``$ref`` never appears here because the Swagger 2.0
+    to OpenAPI 3.x converter inlines all response references before this
+    function runs.
+
+    Remove this when FastMCP adds native non-object ``output_schema`` support.
+    """
+    content = response.get("content", {})
+    if not isinstance(content, dict):
+        return
+    json_content = content.get("application/json", {})
+    if not isinstance(json_content, dict):
+        return
+    schema = json_content.get("schema")
+    if not isinstance(schema, dict):
+        return
+
+    # Resolve $ref schemas to get the actual schema before wrapping.
+    if "$ref" in schema:
+        resolved = _resolve_spec_ref(spec, schema["$ref"])
+        if not isinstance(resolved, dict):
+            return
+        schema = deepcopy(resolved)
+
+    json_content["schema"] = {
+        "type": "object",
+        "properties": {
+            "result": schema,
+        },
+    }
+
+
+def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
+    """Wrap all success response schemas in a ``result`` object container.
+
+    FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
+    The ``transform_fn`` in ``customize_component`` wraps all tool results
+    in ``{"result": result}``. This function transforms the spec so every
+    200/201 response schema reflects that same wrapping — regardless of
+    the original response type.
+
+    Shared response components in ``components/responses`` are also wrapped
+    for consistency.
+
+    Remove this when FastMCP adds native non-object ``output_schema`` support.
+
+    Args:
+         spec: The OpenAPI 3.x specification (mutated in place).
+    """
+    paths = spec.get("paths", {})
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses", {})
+            for code in ("200", "201"):
+                response = responses.get(code)
+                if not isinstance(response, dict):
+                    continue
+                _wrap_response_schema(response, spec)
+
+    components = spec.get("components", {})
+    for response in components.get("responses", {}).values():
+        if isinstance(response, dict):
+            _wrap_response_schema(response, spec)
+
+
 def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 spec to OpenAPI 3.1.
 
@@ -805,6 +898,7 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
     spec = ReferenceFixer().fix(spec)
     _add_nullable_for_optional_refs_impl(spec)
+    _wrap_success_response_schemas(spec)
 
     logger.info("OpenAPI conversion completed successfully")
     return spec

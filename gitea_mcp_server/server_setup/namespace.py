@@ -18,7 +18,7 @@ from fastmcp.server.transforms.namespace import (
     GetResourceTemplateNext,
     Namespace,
 )
-from fastmcp.utilities.versioning import VersionSpec
+from fastmcp.utilities.versions import VersionSpec
 
 
 class GiteaNamespace(Namespace):

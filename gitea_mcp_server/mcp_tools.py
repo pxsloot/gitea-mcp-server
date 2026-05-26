@@ -329,11 +329,20 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     @mcp.resource(
         uri="gitea://tool/{name}/schema",
         name="Tool Schema",
-        description="Get the full JSON schema for a registered tool by name.",
+        description="Get the full JSON schema for a registered tool by name. "
+        "Use after search_tools to inspect parameter details and output structure.",
         mime_type="application/json",
     )
     async def tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
         """Get the full JSON schema for a registered tool by name.
+
+        Call this after search_tools when you need full parameter types,
+        output schema, annotations, or tags for a specific tool.
+
+        Typical workflow:
+        1. search_tools — discover available tools (name + description)
+        2. tool/{name}/schema — get full schema for a specific tool
+        3. call_tool — execute the tool with proper arguments
 
         Args:
             name: The tool name (including any namespace prefix)

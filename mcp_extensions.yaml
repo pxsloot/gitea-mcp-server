@@ -7,6 +7,22 @@
 # - Use tool names (snake_case) to identify which tools to customize
 # - Provide custom title, description, and/or parameter enhancements
 # - Extensions are applied on server startup
+#
+# ## Annotation Overrides
+#
+# Beyond descriptions, you can override any ToolAnnotations field:
+#
+#   tool_name:
+#     readOnlyHint: true       # Mark as read-only even if HTTP method suggests otherwise
+#     destructiveHint: false   # Suppress destructive warning
+#     idempotentHint: true     # Mark as idempotent for safe retry
+#     openWorldHint: false     # Mark as internal (rare, Gitea tools are all open-world)
+#     title: "Custom Title"    # Override the auto-generated title
+#     tags: ["custom", "tag"]  # Add extra tags for search/filtering
+#
+# **Important**: Annotation overrides in this file take precedence over
+# auto-inference. If you set a hint here, it will NOT be overwritten by
+# the HTTP-method-based inference in `add_inferred_hints`.
 
 tool_names:
   # Clarify that issue_create_comment works for both issues AND pull requests

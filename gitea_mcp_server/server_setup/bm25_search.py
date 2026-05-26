@@ -6,7 +6,6 @@ focused utility class with no transform concerns.
 
 import re
 from collections.abc import Sequence
-from typing import Any
 
 from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
 from fastmcp.server.transforms.search.bm25 import _catalog_hash
@@ -157,12 +156,12 @@ class TolerantBM25Search:
 
 
 __all__ = [
+    "CATEGORY_SEARCH_ALIASES",
+    "MIN_TOKEN_LENGTH",
+    "NAME_BOOST",
     "TolerantBM25Search",
     "_BM25IndexLen2",
     "_expand_word_aliases",
     "_extract_searchable_text_enhanced",
     "_tokenize_len2",
-    "CATEGORY_SEARCH_ALIASES",
-    "MIN_TOKEN_LENGTH",
-    "NAME_BOOST",
 ]

@@ -157,8 +157,12 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """List all available MCP resources.
 
         This tool discovers all registered MCP resources and resource templates (parameterized URIs)
-        available from the server. Agents should call this first to discover what data they can access
-        and the available URI patterns.
+        available from the server. Use this for data discovery — find what information is available
+        and how to access it.
+
+        For tool discovery (finding what actions you can perform), use search_tools instead.
+
+        Resources come in two types:
 
         Resources come in two types:
         - **resource**: Concrete resources with fixed URIs (e.g., `gitea://version`)
@@ -328,7 +332,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         description="Get the full JSON schema for a registered tool by name.",
         mime_type="application/json",
     )
-    async def tool_schema_resource(name: str) -> str:
+    async def tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
         """Get the full JSON schema for a registered tool by name.
 
         Args:
@@ -340,11 +344,10 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If the tool is not found
         """
-        from fastmcp.server.context import CurrentContext
-        ctx = CurrentContext.get()
-        tool = ctx.fastmcp.get_tool(name)
+        tool = await ctx.fastmcp.get_tool(name)
         if tool is None:
-            raise ValueError(f"Tool '{name}' not found")
+            msg = f"Tool '{name}' not found"
+            raise ValueError(msg)
         data: dict[str, Any] = {
             "name": tool.name,
             "description": tool.description or "",

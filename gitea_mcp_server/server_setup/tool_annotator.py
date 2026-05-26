@@ -8,7 +8,7 @@ cache invalidation pattern computation.
 import json
 import logging
 from collections.abc import Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import httpx
 from fastmcp.server.context import Context
@@ -45,12 +45,12 @@ from gitea_mcp_server.validation import (
 logger = logging.getLogger(__name__)
 
 
-def _raise_value_error(message: str) -> None:
+def _raise_value_error(message: str) -> NoReturn:
     """Raise ValueError with pre-computed message."""
     raise ValueError(message) from None
 
 
-def _raise_value_error_from(message: str, cause: Exception) -> None:
+def _raise_value_error_from(message: str, cause: Exception) -> NoReturn:
     """Raise ValueError with message and cause."""
     raise ValueError(message) from cause
 
@@ -773,6 +773,14 @@ class TolerantSearchTransform(BM25SearchTransform):
             query: Annotated[str, "Natural language query to search for tools"],
             ctx: Context = None,  # type: ignore[assignment]
         ) -> ToolResult:
+            """Search for tools by name or description.
+
+            Returns compact results (name + description only). Use this for
+            lightweight discovery — find what tools are available and what they do.
+
+            When you need full parameter details, output schemas, or annotations
+            for a specific tool, use tool_info with the exact tool name.
+            """
             assert ctx is not None
             hidden = await transform._get_visible_tools(ctx)
             results = await transform._search(hidden, query)
@@ -852,8 +860,12 @@ class TolerantSearchTransform(BM25SearchTransform):
             """Get the full schema for a tool by name.
 
             Returns the complete input parameters, output schema, annotations,
-            tags, and version for a specific tool. Use this after search_tools
-            when you need detailed parameter descriptions or output schema.
+            tags, and version for a specific tool.
+
+            Typical workflow:
+            1. search_tools — discover what tools are available (name + description)
+            2. tool_info — get full parameter and output schema for specific tools
+            3. call_tool — execute the tool with proper arguments
             """
             assert ctx is not None
             tools = await transform.get_tool_catalog(ctx)

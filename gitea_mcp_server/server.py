@@ -63,7 +63,7 @@ def load_instructions() -> str:
             "Auth is configured via environment variables. Verify identity with user_get_current.\n\n"
             "## Lazy Loading\n"
             "This server uses lazy loading. Use search_tools to discover available tools, "
-            "then call_tool to execute them.\n\n"
+            "tool_info to inspect full tool schemas, and call_tool to execute them.\n\n"
             "See full documentation for detailed usage."
         )
 

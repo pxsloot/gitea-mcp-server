@@ -708,6 +708,95 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     return result
 
 
+def _example_object(
+    schema: dict[str, Any],
+    depth: int,
+    max_depth: int,
+    max_properties: int,
+) -> dict[str, Any]:
+    """Generate an example for an object schema."""
+    if depth >= max_depth:
+        return {}
+    properties = schema.get("properties", {})
+    if not properties:
+        return {}
+    example: dict[str, Any] = {}
+    for prop_name in list(properties.keys())[:max_properties]:
+        prop_schema = properties[prop_name]
+        example[prop_name] = _schema_to_example(
+            prop_schema if isinstance(prop_schema, dict) else {},
+            depth + 1,
+            max_depth,
+            max_properties,
+        )
+    return example
+
+
+def _example_array(
+    schema: dict[str, Any],
+    depth: int,
+    max_depth: int,
+    max_properties: int,
+) -> list[Any]:
+    """Generate an example for an array schema."""
+    items = schema.get("items", {})
+    if isinstance(items, dict) and items:
+        return [_schema_to_example(items, depth, max_depth, max_properties)]
+    return []
+
+
+def _example_string(schema: dict[str, Any]) -> str:
+    """Generate an example for a string schema."""
+    fmt = schema.get("format")
+    if fmt == "date-time":
+        return "2024-01-01T00:00:00Z"
+    if fmt == "email":
+        return "user@example.com"
+    if fmt == "uri":
+        return "https://example.com"
+    enum_vals = schema.get("enum")
+    if isinstance(enum_vals, list) and enum_vals:
+        return str(enum_vals[0])
+    return "text"
+
+
+def _schema_to_example(  # noqa: PLR0911, PLR0912 -- type-dispatch inherently has many returns/branches
+    schema: dict[str, Any],
+    depth: int = 0,
+    max_depth: int = 3,
+    max_properties: int = 15,
+) -> Any:
+    """Generate a compact example value from a JSON Schema."""
+    for key in ("anyOf", "oneOf"):
+        options = schema.get(key)
+        if isinstance(options, list):
+            for opt in options:
+                if isinstance(opt, dict) and opt.get("type") != "null":
+                    return _schema_to_example(opt, depth, max_depth, max_properties)
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        for t in schema_type:
+            if t != "null":
+                schema_type = t
+                break
+        else:
+            schema_type = "null"
+
+    if "example" in schema:
+        return schema["example"]
+
+    if schema_type == "object":
+        return _example_object(schema, depth, max_depth, max_properties)
+    if schema_type == "array":
+        return _example_array(schema, depth, max_depth, max_properties)
+    if schema_type == "string":
+        return _example_string(schema)
+    if schema_type in ("integer", "number", "boolean", "null"):
+        return {"integer": 0, "number": 0.0, "boolean": True, "null": None}[schema_type]
+    return None
+
+
 def _serialize_tool_schema(tool: Tool) -> dict[str, Any]:
     """Serialize a tool's full schema for tool_info responses."""
     data: dict[str, Any] = {
@@ -716,7 +805,8 @@ def _serialize_tool_schema(tool: Tool) -> dict[str, Any]:
         "parameters": tool.parameters,
     }
     if tool.output_schema is not None:
-        data["output_schema"] = tool.output_schema
+        inner = tool.output_schema.get("properties", {}).get("result", {})
+        data["output_example"] = _schema_to_example(inner)
     if tool.annotations:
         ann = tool.annotations
         data["annotations"] = {
@@ -778,7 +868,7 @@ class TolerantSearchTransform(BM25SearchTransform):
             Returns compact results (name + description only). Use this for
             lightweight discovery — find what tools are available and what they do.
 
-            When you need full parameter details, output schemas, or annotations
+            When you need full parameter details, an output example, or annotations
             for a specific tool, use tool_info with the exact tool name.
             """
             assert ctx is not None
@@ -859,12 +949,12 @@ class TolerantSearchTransform(BM25SearchTransform):
         ) -> ToolResult:
             """Get the full schema for a tool by name.
 
-            Returns the complete input parameters, output schema, annotations,
+            Returns the complete input parameters, an output example, annotations,
             tags, and version for a specific tool.
 
             Typical workflow:
             1. search_tools — discover what tools are available (name + description)
-            2. tool_info — get full parameter and output schema for specific tools
+            2. tool_info — get full parameters and output example for specific tools
             3. call_tool — execute the tool with proper arguments
             """
             assert ctx is not None
@@ -887,7 +977,7 @@ class TolerantSearchTransform(BM25SearchTransform):
                             "name": {"type": "string"},
                             "description": {"type": "string"},
                             "parameters": {"type": "object"},
-                            "output_schema": {"type": "object"},
+                            "output_example": {"description": "Example return value (may be object, array, etc.)"},
                             "annotations": {"type": "object"},
                             "tags": {"type": "array"},
                             "version": {"type": "string"},

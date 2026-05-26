@@ -19,6 +19,8 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+
 logger = logging.getLogger(__name__)
 
 
@@ -329,15 +331,15 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     @mcp.resource(
         uri="gitea://tool/{name}/schema",
         name="Tool Schema",
-        description="Get the full JSON schema for a registered tool by name. "
-        "Use after search_tools to inspect parameter details and output structure.",
+        description="Get the full tool schema for a registered tool by name. "
+        "Use after search_tools to inspect parameter details and see an output example.",
         mime_type="application/json",
     )
     async def tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
-        """Get the full JSON schema for a registered tool by name.
+        """Get the full tool schema for a registered tool by name.
 
         Call this after search_tools when you need full parameter types,
-        output schema, annotations, or tags for a specific tool.
+        an output example, annotations, or tags for a specific tool.
 
         Typical workflow:
         1. search_tools — discover available tools (name + description)
@@ -348,7 +350,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             name: The tool name (including any namespace prefix)
 
         Returns:
-            JSON string with the full tool schema (parameters, output_schema, annotations, etc.)
+            JSON string with the full tool schema (parameters, output_example, annotations, etc.)
 
         Raises:
             ValueError: If the tool is not found
@@ -363,7 +365,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             "parameters": tool.parameters,
         }
         if tool.output_schema is not None:
-            data["output_schema"] = tool.output_schema
+            inner = tool.output_schema.get("properties", {}).get("result", {})
+            data["output_example"] = _schema_to_example(inner)
         if tool.tags:
             data["tags"] = list(tool.tags)
         if tool.version:

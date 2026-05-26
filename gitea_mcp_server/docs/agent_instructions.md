@@ -13,7 +13,7 @@ This server provides tools and resources to interact with Gitea (self-hosted Git
 1. **DISCOVER**: `await call_tool("search_tools", {"query": "keyword"})` returns a list of real tool definitions with their exact `name` and `description`.
 2. **EXECUTE**: `await call_tool("call_tool", {"name": "<exact_name_from_search>", "arguments": {...}})` to run the tool.
 
-You cannot call a tool by its presumed name without searching first (unless you already know it from a previous search).
+You cannot call a tool by its presumed name without searching first (unless you already know it from a previous search or from the "Commonly Used Tools" table below).
 
 ## Quick Start Example
 ```python
@@ -30,6 +30,27 @@ repos = await call_tool("call_tool", {
     "arguments": {"page": 1, "limit": 50}
 })
 ```
+
+## Commonly Used Tools (no search needed)
+
+These names are stable and can be used directly in `call_tool` without searching:
+
+| Tool | Description | Common args |
+|------|-------------|-------------|
+| `gitea_user_get_current` | Get authenticated user | (none) |
+| `gitea_user_current_list_repos` | List your repos | `page`, `limit` |
+| `gitea_repo_search` | Search repositories | `q`, `page`, `limit`, `owner`, `topic`, `private`, `template` |
+| `gitea_repo_get` | Get a repository | `owner`, `repo` |
+| `gitea_issue_list_issues` | List issues in a repo | `owner`, `repo`, `state` (open/closed/all), `page`, `limit` |
+| `gitea_issue_get_issue` | Get a single issue | `owner`, `repo`, `index` |
+| `gitea_issue_create_issue` | Create an issue | `owner`, `repo`, `title`, `body`, `labels`, `assignees`, `milestone` |
+| `gitea_issue_edit_issue` | Edit an issue | `owner`, `repo`, `index`, `title`, `body`, `state`, `labels` |
+| `gitea_repo_list_pull_requests` | List PRs in a repo | `owner`, `repo`, `state`, `page`, `limit` |
+| `gitea_repo_create_pull_request` | Create a PR | `owner`, `repo`, `title`, `body`, `head`, `base` |
+| `gitea_repo_list_branches` | List branches | `owner`, `repo`, `page`, `limit` |
+| `gitea_org_list_current_user_orgs` | List your organizations | (none) |
+
+For tools not listed here, use the `search_tools` → `tool_info` → `call_tool` discovery workflow.
 
 ## Authentication
 Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `gitea_user_get_current` (discover via search as shown above).

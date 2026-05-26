@@ -120,11 +120,7 @@ HTTP_STATUS_RETRYABLE = {HTTP_STATUS_RATE_LIMIT, 408, 500, 502, 503, 504}
 # These are the keys used to identify invalidation patterns. They map to URI templates.
 
 PATTERN_ISSUES_LIST = "issues_list"
-PATTERN_ISSUES_OPEN = "issues_open"
-PATTERN_ISSUES_CLOSED = "issues_closed"
 PATTERN_PULLS_LIST = "pulls_list"
-PATTERN_PULLS_OPEN = "pulls_open"
-PATTERN_PULLS_CLOSED = "pulls_closed"
 PATTERN_REPO = "repo"
 PATTERN_FILES = "files"
 
@@ -135,11 +131,7 @@ PATTERN_FILES = "files"
 # These are template strings with {placeholders} for path parameters.
 
 RESOURCE_PATTERN_ISSUES_LIST = "gitea://repos/{owner}/{repo}/issues"
-RESOURCE_PATTERN_ISSUES_OPEN = "gitea://repos/{owner}/{repo}/issues/open"
-RESOURCE_PATTERN_ISSUES_CLOSED = "gitea://repos/{owner}/{repo}/issues/closed"
 RESOURCE_PATTERN_PULLS_LIST = "gitea://repos/{owner}/{repo}/pulls"
-RESOURCE_PATTERN_PULLS_OPEN = "gitea://repos/{owner}/{repo}/pulls/open"
-RESOURCE_PATTERN_PULLS_CLOSED = "gitea://repos/{owner}/{repo}/pulls/closed"
 RESOURCE_PATTERN_REPO = "gitea://repos/{owner}/{repo}"
 RESOURCE_PATTERN_FILES = "gitea://repos/{owner}/{repo}/files/{filepath}"
 
@@ -168,10 +160,7 @@ AUTO_GENERATED_RESOURCE_SKIP_URIS = {
     "gitea://repos/{owner}/{repo}",
     "gitea://repos/{owner}/{repo}/readme",
     "gitea://repos/{owner}/{repo}/issues",
-    "gitea://repos/{owner}/{repo}/issues/open",
-    "gitea://repos/{owner}/{repo}/issues/closed",
     "gitea://repos/{owner}/{repo}/pulls",
-    "gitea://repos/{owner}/{repo}/pulls/open",
     "gitea://repos/{owner}/{repo}/files/{path}",
     "gitea://repos/{owner}/{repo}/releases",
     "gitea://users/{username}",

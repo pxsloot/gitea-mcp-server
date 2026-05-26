@@ -24,12 +24,8 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_SAFE,
     LABEL_GUIDANCE,
     PATTERN_FILES,
-    PATTERN_ISSUES_CLOSED,
     PATTERN_ISSUES_LIST,
-    PATTERN_ISSUES_OPEN,
-    PATTERN_PULLS_CLOSED,
     PATTERN_PULLS_LIST,
-    PATTERN_PULLS_OPEN,
     PATTERN_REPO,
     TITLE_TRUNCATE_LIMIT,
 )
@@ -205,12 +201,12 @@ _INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
     (
         "/repos/{owner}/{repo}/issues",
         None,
-        [PATTERN_ISSUES_LIST, PATTERN_ISSUES_OPEN, PATTERN_ISSUES_CLOSED],
+        [PATTERN_ISSUES_LIST],
     ),
     (
         "/repos/{owner}/{repo}/pulls",
         None,
-        [PATTERN_PULLS_LIST, PATTERN_PULLS_OPEN, PATTERN_PULLS_CLOSED],
+        [PATTERN_PULLS_LIST],
     ),
     ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
     ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),

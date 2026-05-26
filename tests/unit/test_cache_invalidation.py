@@ -87,39 +87,35 @@ class TestSubstituteTemplate:
 class TestComputeUrisToInvalidate:
     """Tests for compute_uris_to_invalidate function."""
 
-    def test_issue_edit_invalidates_multiple_patterns(self):
-        """issue_edit_issue invalidates issues list and state-specific lists."""
+    def test_issue_edit_invalidates_issues(self):
+        """issue_edit_issue invalidates issues list."""
         register_tool_invalidation(
-            "issue_edit_issue", ["issues_list", "issues_open", "issues_closed"]
+            "issue_edit_issue", ["issues_list"]
         )
         arguments = {"owner": "myorg", "repo": "myrepo", "index": 42}
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
         expected = [
             "gitea://repos/myorg/myrepo/issues",
-            "gitea://repos/myorg/myrepo/issues/open",
-            "gitea://repos/myorg/myrepo/issues/closed",
         ]
         assert set(uris) == set(expected)
 
-    def test_issue_create_invalidates_open_list(self):
-        """issue_create_repo_issue invalidates issues list and open list."""
-        register_tool_invalidation("issue_create_repo_issue", ["issues_list", "issues_open"])
+    def test_issue_create_invalidates_issues(self):
+        """issue_create_repo_issue invalidates issues list."""
+        register_tool_invalidation("issue_create_repo_issue", ["issues_list"])
         arguments = {"owner": "org", "repo": "repo", "title": "Bug"}
         uris = compute_uris_to_invalidate("issue_create_repo_issue", arguments)
         expected = [
             "gitea://repos/org/repo/issues",
-            "gitea://repos/org/repo/issues/open",
         ]
         assert set(uris) == set(expected)
 
     def test_pr_create_invalidates_pulls(self):
-        """pull_request_create invalidates pulls list and open list."""
-        register_tool_invalidation("pull_request_create", ["pulls_list", "pulls_open"])
+        """pull_request_create invalidates pulls list."""
+        register_tool_invalidation("pull_request_create", ["pulls_list"])
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
         uris = compute_uris_to_invalidate("pull_request_create", arguments)
         expected = [
             "gitea://repos/org/repo/pulls",
-            "gitea://repos/org/repo/pulls/open",
         ]
         assert set(uris) == set(expected)
 
@@ -152,7 +148,7 @@ class TestComputeUrisToInvalidate:
     def test_missing_parameters_skipped(self):
         """If required parameters are missing, pattern is skipped gracefully."""
         register_tool_invalidation(
-            "issue_edit_issue", ["issues_list", "issues_open", "issues_closed"]
+            "issue_edit_issue", ["issues_list"]
         )
         # issue_edit_issue needs owner, repo, index
         arguments = {"owner": "org"}  # missing repo and index
@@ -182,7 +178,7 @@ class TestCacheInvalidationMiddleware:
 
         # Register this tool for invalidation
         register_tool_invalidation(
-            "issue_edit_issue", ["issues_list", "issues_open", "issues_closed"]
+            "issue_edit_issue", ["issues_list"]
         )
 
         # Mock call_next to return successful result
@@ -245,36 +241,24 @@ class TestComputeToolInvalidationPatterns:
         """Paths under /issues trigger invalidations for issues resources."""
         assert self.compute("/repos/{owner}/{repo}/issues", "POST") == [
             "issues_list",
-            "issues_open",
-            "issues_closed",
         ]
         assert self.compute("/repos/{owner}/{repo}/issues/42", "DELETE") == [
             "issues_list",
-            "issues_open",
-            "issues_closed",
         ]
         assert self.compute("/repos/{owner}/{repo}/issues/42/labels", "PUT") == [
             "issues_list",
-            "issues_open",
-            "issues_closed",
         ]
 
     def test_pull_paths_invalidate_pulls(self):
         """Paths under /pulls trigger invalidations for pulls resources."""
         assert self.compute("/repos/{owner}/{repo}/pulls", "POST") == [
             "pulls_list",
-            "pulls_open",
-            "pulls_closed",
         ]
         assert self.compute("/repos/{owner}/{repo}/pulls/5", "DELETE") == [
             "pulls_list",
-            "pulls_open",
-            "pulls_closed",
         ]
         assert self.compute("/repos/{owner}/{repo}/pulls/5/merge", "POST") == [
             "pulls_list",
-            "pulls_open",
-            "pulls_closed",
         ]
 
     def test_repo_path_invalidates_repo(self):
@@ -352,7 +336,7 @@ class TestIntegration:
 
         # Register this tool
         register_tool_invalidation(
-            "issue_edit_issue", ["issues_list", "issues_open", "issues_closed"]
+            "issue_edit_issue", ["issues_list"]
         )
 
         middleware = CacheInvalidationMiddleware(mock_caching)
@@ -371,8 +355,8 @@ class TestIntegration:
 
         result = await middleware.on_call_tool(mock_context, mock_call_next)
 
-        # Should attempt to delete multiple cache entries
-        assert mock_cache_adapter.delete.call_count >= 2
+        # Should attempt to delete the cache entry
+        assert mock_cache_adapter.delete.call_count >= 1
         # Check that URIs contain expected patterns
         deleted_uris = [call[1]["key"] for call in mock_cache_adapter.delete.call_args_list]
-        assert len(deleted_uris) >= 2
+        assert len(deleted_uris) >= 1

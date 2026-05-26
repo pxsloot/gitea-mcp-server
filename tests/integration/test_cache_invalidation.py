@@ -60,7 +60,7 @@ class TestCacheInvalidationIntegration:
         from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 
         register_tool_invalidation(
-            "issue_edit_issue", ["issues_list", "issues_open", "issues_closed"]
+            "issue_edit_issue", ["issues_list"]
         )
 
         arguments = {"owner": "org", "repo": "repo", "index": 1}
@@ -68,8 +68,6 @@ class TestCacheInvalidationIntegration:
 
         expected = [
             "gitea://repos/org/repo/issues",
-            "gitea://repos/org/repo/issues/open",
-            "gitea://repos/org/repo/issues/closed",
         ]
         assert set(uris) == set(expected)
 
@@ -80,14 +78,13 @@ class TestCacheInvalidationIntegration:
             register_tool_invalidation,
         )
 
-        register_tool_invalidation("repoCreatePullRequest", ["pulls_list", "pulls_open"])
+        register_tool_invalidation("repoCreatePullRequest", ["pulls_list"])
 
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
         uris = compute_uris_to_invalidate("repoCreatePullRequest", arguments)
 
         expected = [
             "gitea://repos/org/repo/pulls",
-            "gitea://repos/org/repo/pulls/open",
         ]
         assert set(uris) == set(expected)
 
@@ -137,27 +134,21 @@ class TestCacheInvalidationIntegration:
         # Issues
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/issues", "POST") == [
             "issues_list",
-            "issues_open",
-            "issues_closed",
         ]
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/issues/42", "DELETE") == [
             "issues_list",
-            "issues_open",
-            "issues_closed",
         ]
         assert _compute_tool_invalidation_patterns(
             "/repos/{owner}/{repo}/issues/42/labels", "PUT"
-        ) == ["issues_list", "issues_open", "issues_closed"]
+        ) == ["issues_list"]
 
         # Pulls
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/pulls", "POST") == [
             "pulls_list",
-            "pulls_open",
-            "pulls_closed",
         ]
         assert _compute_tool_invalidation_patterns(
             "/repos/{owner}/{repo}/pulls/5/merge", "POST"
-        ) == ["pulls_list", "pulls_open", "pulls_closed"]
+        ) == ["pulls_list"]
 
         # Repo
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}", "PUT") == ["repo"]

@@ -748,24 +748,6 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
         raise
 
 
-# Wrapper functions for state-filtered endpoints
-async def list_repo_issues_open(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
-    """Open issues only."""
-    return await list_repo_issues(owner=owner, repo=repo, state="open", gitea_client=gitea_client)
-
-
-async def list_repo_issues_closed(
-    owner: str, repo: str, gitea_client: GiteaClient
-) -> ResourceResult:
-    """Closed issues only."""
-    return await list_repo_issues(owner=owner, repo=repo, state="closed", gitea_client=gitea_client)
-
-
-async def list_repo_pulls_open(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
-    """Open pull requests only."""
-    return await list_repo_pulls(owner=owner, repo=repo, state="open", gitea_client=gitea_client)
-
-
 def register_custom_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -900,39 +882,18 @@ def register_custom_resources(
             },
         ),
         (
-            "gitea://repos/{owner}/{repo}/issues",
+            "gitea://repos/{owner}/{repo}/issues{?state}",
             list_repo_issues,
             "text/markdown",
             {"wrapper", "issues"},
             {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},  # Use default TTL (30s) - issues change frequently
         ),
         (
-            "gitea://repos/{owner}/{repo}/issues/open",
-            list_repo_issues_open,
-            "text/markdown",
-            {"wrapper", "issues"},
-            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
-        ),
-        (
-            "gitea://repos/{owner}/{repo}/issues/closed",
-            list_repo_issues_closed,
-            "text/markdown",
-            {"wrapper", "issues"},
-            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
-        ),
-        (
-            "gitea://repos/{owner}/{repo}/pulls",
+            "gitea://repos/{owner}/{repo}/pulls{?state}",
             list_repo_pulls,
             "text/markdown",
             {"wrapper", "pull_requests"},
             {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},  # Use default TTL (30s) - PRs change frequently
-        ),
-        (
-            "gitea://repos/{owner}/{repo}/pulls/open",
-            list_repo_pulls_open,
-            "text/markdown",
-            {"wrapper", "pull_requests"},
-            {"fastmcp": {"_internal": {"required_scope": "read:repository"}}},
         ),
         (
             "gitea://repos/{owner}/{repo}/files/{path}",

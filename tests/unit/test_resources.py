@@ -399,19 +399,16 @@ class TestRegisterCustomResources:
         """Test that all expected custom resources are registered."""
         register_custom_resources(mock_mcp, mock_gitea_client, mock_registry)
 
-        # Should register 14 custom resources (12 original + gitea://version + gitea://token/scopes)
-        assert mock_mcp.resource.call_count == 14
+        # Should register 11 custom resources (9 original + gitea://version + gitea://token/scopes)
+        assert mock_mcp.resource.call_count == 11
 
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
 
         expected = [
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/readme",
-            "gitea://repos/{owner}/{repo}/issues",
-            "gitea://repos/{owner}/{repo}/issues/open",
-            "gitea://repos/{owner}/{repo}/issues/closed",
-            "gitea://repos/{owner}/{repo}/pulls",
-            "gitea://repos/{owner}/{repo}/pulls/open",
+            "gitea://repos/{owner}/{repo}/issues{?state}",
+            "gitea://repos/{owner}/{repo}/pulls{?state}",
             "gitea://repos/{owner}/{repo}/files/{path}",
             "gitea://repos/{owner}/{repo}/releases",
             "gitea://users/{username}",
@@ -424,7 +421,7 @@ class TestRegisterCustomResources:
             assert template in uri_templates
 
         # Verify registry.record called for each
-        assert mock_registry.record.call_count == 14
+        assert mock_registry.record.call_count == 11
 
         # Verify all custom resources carry required_scope in meta
         for call in mock_registry.record.call_args_list:

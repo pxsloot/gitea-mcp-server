@@ -168,13 +168,28 @@ def categorize_tool(path: str) -> str:
 def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
     """Infer and add annotation hints from HTTP route properties.
 
-    Hints are based on HTTP method semantics:
-    - readOnlyHint: True for safe methods (GET, HEAD, OPTIONS)
-    - destructiveHint: True for DELETE (and any method that destroys data)
-    - idempotentHint: True for idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
-    - openWorldHint: Always True for Gitea tools (they interact with external server)
+    Hints are based on HTTP method semantics. The mapping follows the
+    constants in ``gitea_mcp_server.constants``:
 
-    Existing annotation values are preserved; only None values are set.
+    +------------------+-----------------------------------+--------------------+
+    | Annotation       | True when method in               | Constants          |
+    +------------------+-----------------------------------+--------------------+
+    | readOnlyHint     | HTTP_METHODS_SAFE                 | GET, HEAD, OPTIONS |
+    | destructiveHint  | HTTP_METHODS_DESTRUCTIVE          | DELETE             |
+    | idempotentHint   | HTTP_METHODS_IDEMPOTENT           | GET, PUT, DELETE,  |
+    |                  |                                   | HEAD, OPTIONS      |
+    | openWorldHint    | Always True                       | —                  |
+    +------------------+-----------------------------------+--------------------+
+
+    - ``readOnlyHint`` — tool only reads data, no side effects.
+    - ``destructiveHint`` — tool can destroy or delete data.
+    - ``idempotentHint`` — calling the tool multiple times with the same
+      parameters has the same effect as calling it once.
+    - ``openWorldHint`` — tool interacts with an external Gitea server.
+
+    **Override behavior**: Existing annotation values (set via
+    ``mcp_extensions.yaml`` or manual ``ToolAnnotations``) are preserved.
+    Inference only sets a hint if its current value is ``None``.
 
     Args:
         route: HTTPRoute object with method attribute

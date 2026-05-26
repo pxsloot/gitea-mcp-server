@@ -50,6 +50,25 @@ info = tool_info("gitea_issue_get_issue")
 
 For other tools, use `search_tools` → `tool_info` → `call_tool`.
 
+## Tool Annotations
+
+Every tool carries four machine-readable annotations that help you make safer and more informed choices:
+
+| Annotation | Meaning | Use for |
+|------------|---------|---------|
+| `readOnlyHint` | Tool only reads data — no side effects | Discovery, preview, safe to call anytime |
+| `destructiveHint` | Tool can delete/destroy data | Warn before calling, require confirmation |
+| `idempotentHint` | Calling multiple times has same effect as once | Safe to retry on network failure |
+| `openWorldHint` | Tool interacts with external Gitea server | All tools are open-world |
+
+**Best practices**:
+- Prefer tools with `readOnlyHint: true` for non-destructive data retrieval (e.g., listing, searching, getting).
+- Display a warning before calling any tool where `destructiveHint: true`.
+- Retry on transient failures only when `idempotentHint: true` — POST and PATCH operations are NOT idempotent.
+- All Gitea tools have `openWorldHint: true` — they make HTTP calls to the Gitea API and reflect real server state.
+
+Inspect annotations via `tool_info("gitea_tool_name")` — the response includes an `annotations` object with all four hints.
+
 ## Authentication
 Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `call_tool("gitea_user_get_current")`.
 

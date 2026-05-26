@@ -7,6 +7,7 @@ This server provides tools and resources to interact with Gitea (self-hosted Git
 - `search_tools` (synthetic) - to discover tools
 - `call_tool` (synthetic) - to execute tools
 - `mcp_list_resources`, `mcp_read_resource` (pinned internal tools)
+- `tool_info` (synthetic) — to get full schema + metadata for any tool
 
 **You MUST use a two-step pattern:**
 1. **DISCOVER**: `await call_tool("search_tools", {"query": "keyword"})` returns a list of real tool definitions with their exact `name` and `description`.
@@ -56,6 +57,7 @@ Resources provide cached, read-only access. Use them for efficient data retrieva
 - `gitea://users/{username}` → user profile (Markdown)
 - `gitea://version` → server version (plain text)
 - `gitea://server/info` → server metadata: type (Gitea/Forgejo), API version, description (Markdown)
+- `gitea://tool/{name}/schema` → full tool schema (JSON)
 
 To get your own repos via resource: first get your username (`gitea_user_get_current`), then use `gitea://repos/{username}` as owner in the URI.
 
@@ -150,6 +152,7 @@ await call_tool("call_tool", {
 - **No search results**: Try a single keyword. If still none, the tool may not exist or you lack permission.
 - **Empty resource**: Resources reflect permissions (e.g., `users/{username}/repos` returns public repos only). Use authenticated tools (`user_*`) to see private/accessible repos.
 - **Need to see all tools**: There is no way to list all tools directly due to lazy loading. Use broad search queries like "repo" to surface most repository-related tools.
+- **Need full tool schema**: Use `tool_info(name)` via `call_tool` to get parameters, output_schema, annotations, and tags for any tool. Or read the `gitea://tool/{name}/schema` resource for the same data as JSON.
 - **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin. Search for them will yield no results.
 
 ## Tool Prefixes (for search)

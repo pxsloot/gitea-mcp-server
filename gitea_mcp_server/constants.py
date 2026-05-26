@@ -90,7 +90,7 @@ LABEL_CACHE_TTL = 300
 
 
 # ============================================================================
-# Search Configuration (TolerantBM25SearchTransform)
+# Search Configuration (TolerantSearchTransform)
 # ============================================================================
 
 SEARCH_MAX_RESULTS = 10

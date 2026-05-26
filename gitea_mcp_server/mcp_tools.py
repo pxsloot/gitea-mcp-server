@@ -7,8 +7,10 @@ toolset.
 Tool list:
 - mcp_list_resources: List all available MCP resources
 - mcp_read_resource: Read a resource by its URI
+- gitea://tool/{name}/schema: Resource for full tool schema by name
 """
 
+import json
 import logging
 from typing import Any
 
@@ -155,8 +157,12 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """List all available MCP resources.
 
         This tool discovers all registered MCP resources and resource templates (parameterized URIs)
-        available from the server. Agents should call this first to discover what data they can access
-        and the available URI patterns.
+        available from the server. Use this for data discovery — find what information is available
+        and how to access it.
+
+        For tool discovery (finding what actions you can perform), use search_tools instead.
+
+        Resources come in two types:
 
         Resources come in two types:
         - **resource**: Concrete resources with fixed URIs (e.g., `gitea://version`)
@@ -320,4 +326,48 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         result = await _mcp_read_resource_impl(ctx, uri)
         return ToolResult(structured_content={"result": result})
 
-    logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource")
+    @mcp.resource(
+        uri="gitea://tool/{name}/schema",
+        name="Tool Schema",
+        description="Get the full JSON schema for a registered tool by name. "
+        "Use after search_tools to inspect parameter details and output structure.",
+        mime_type="application/json",
+    )
+    async def tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
+        """Get the full JSON schema for a registered tool by name.
+
+        Call this after search_tools when you need full parameter types,
+        output schema, annotations, or tags for a specific tool.
+
+        Typical workflow:
+        1. search_tools — discover available tools (name + description)
+        2. tool/{name}/schema — get full schema for a specific tool
+        3. call_tool — execute the tool with proper arguments
+
+        Args:
+            name: The tool name (including any namespace prefix)
+
+        Returns:
+            JSON string with the full tool schema (parameters, output_schema, annotations, etc.)
+
+        Raises:
+            ValueError: If the tool is not found
+        """
+        tool = await ctx.fastmcp.get_tool(name)
+        if tool is None:
+            msg = f"Tool '{name}' not found"
+            raise ValueError(msg)
+        data: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": tool.parameters,
+        }
+        if tool.output_schema is not None:
+            data["output_schema"] = tool.output_schema
+        if tool.tags:
+            data["tags"] = list(tool.tags)
+        if tool.version:
+            data["version"] = tool.version
+        return json.dumps(data, indent=2)
+
+    logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource, tool_schema_resource")

@@ -8,7 +8,10 @@ cache invalidation pattern computation.
 import json
 import logging
 from collections.abc import Sequence
-from typing import Annotated, Any, NoReturn
+from typing import TYPE_CHECKING, Annotated, Any, NoReturn
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.client import GiteaClient
 
 import httpx
 from fastmcp.server.context import Context
@@ -277,7 +280,7 @@ def update_labels_schema(component: OpenAPITool) -> None:
         return
 
     labels_schema = props["labels"]
-    if labels_schema.get("type") != "array":
+    if not _schema_type_is_array(labels_schema):
         return
 
     # Get or create items schema
@@ -514,6 +517,20 @@ def _run_validation(
         validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
 
 
+def _schema_type_is_array(schema: dict[str, Any]) -> bool:
+    """Check if a schema type is 'array', handling both string and list forms.
+
+    OpenAPI 3.1 represents nullable types as lists (e.g. ``["array", "null"]``),
+    while non-nullable types are plain strings (e.g. ``"array"``).
+    """
+    t = schema.get("type")
+    if isinstance(t, str):
+        return t == "array"
+    if isinstance(t, list):
+        return "array" in t
+    return False
+
+
 def _format_available_labels(label_names: list[str]) -> str:
     """Group label names by prefix and format for readable agent display."""
     groups: dict[str, list[str]] = {}
@@ -531,13 +548,14 @@ def _format_available_labels(label_names: list[str]) -> str:
 async def _convert_labels(
     kwargs: dict[str, Any],
     has_labels: bool,
-    component: Any,
+    component: Any,  # noqa: ARG001 - kept for signature stability
     label_manager: LabelManager,
+    gitea_client: "GiteaClient | None" = None,
 ) -> None:
     """Convert label names to IDs if needed."""
     if not has_labels:
         return
-    labels = kwargs.get("labels", [])
+    labels = kwargs.get("labels")
     if not labels or all(isinstance(label, int) for label in labels):
         return
 
@@ -546,11 +564,10 @@ async def _convert_labels(
     if not owner or not repo:
         return
 
-    client = getattr(component, "_client", None)
-    if client is None:
+    if gitea_client is None:
         return
 
-    label_map = await label_manager.get_label_map(owner, repo, client)
+    label_map = await label_manager.get_label_map(owner, repo, gitea_client)
     converted = []
     unknown = []
     for label in labels:
@@ -631,7 +648,7 @@ def _prepare_description(component: Any) -> tuple[str, bool]:
 
     params = getattr(component, "parameters", None) or {}
     props = params.get("properties", {})
-    has_labels = "labels" in props and props["labels"].get("type") == "array"
+    has_labels = "labels" in props and _schema_type_is_array(props["labels"])
     if has_labels and LABEL_GUIDANCE.strip() not in description:
         description += LABEL_GUIDANCE
     return description, has_labels
@@ -642,6 +659,7 @@ def customize_component(
     component: Any,
     label_manager: LabelManager,
     openapi_spec: dict[str, Any] | None = None,
+    gitea_client: "GiteaClient | None" = None,
 ) -> Tool | None:
     """Customize FastMCP components with tool annotations.
 
@@ -655,6 +673,8 @@ def customize_component(
          openapi_spec: Optional OpenAPI spec dictionary for enhanced error handling.
                       If provided, HTTP errors from component.run will be formatted
                       using the spec's response descriptions.
+         gitea_client: Optional GiteaClient for label name resolution.
+                      Required for string-to-ID label conversion.
 
      Returns:
          A new Tool instance with customizations applied, or None if the component is not an OpenAPITool.
@@ -691,7 +711,7 @@ def customize_component(
 
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs, component.parameters.get("required"))
-        await _convert_labels(kwargs, has_labels, component, label_manager)
+        await _convert_labels(kwargs, has_labels, component, label_manager, gitea_client)
         return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
     # Set x-fastmcp-wrap-result on the inner OpenAPITool so its run()

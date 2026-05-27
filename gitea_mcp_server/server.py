@@ -104,6 +104,7 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         openapi_spec=openapi_spec,
         client=gitea_client.client,
         label_manager=label_manager,
+        gitea_client=gitea_client,
     )
 
     # Create FastMCP server

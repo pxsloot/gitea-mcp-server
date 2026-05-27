@@ -653,6 +653,30 @@ class TestCustomizeComponent:
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() in new_tool.description
 
+    def test_applies_label_guidance_with_nullable_array_type(self):
+        """Verify label guidance works with nullable array type ['array', 'null']."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_issue"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {
+            "properties": {"labels": {"type": ["array", "null"], "items": {"type": "integer"}}}
+        }
+        tool.output_schema = None
+        tool.description = "Create an issue"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = _customize_component(route, tool, _label_manager)
+
+        assert new_tool is not None
+        assert LABEL_GUIDANCE.strip() in new_tool.description
+
     def test_does_not_apply_label_guidance_without_labels(self):
         """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
         route = MagicMock(
@@ -674,6 +698,41 @@ class TestCustomizeComponent:
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() not in new_tool.description
+
+
+class TestSchemaTypeIsArray:
+    """Tests for _schema_type_is_array."""
+
+    def test_detects_string_type(self):
+        """Should return True for type 'array'."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": "array"}) is True
+
+    def test_detects_list_type(self):
+        """Should return True for type ['array', 'null']."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": ["array", "null"]}) is True
+
+    def test_rejects_non_array_string(self):
+        """Should return False for non-array string types."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": "string"}) is False
+        assert _schema_type_is_array({"type": "object"}) is False
+
+    def test_rejects_non_array_list(self):
+        """Should return False when 'array' not in type list."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": ["string", "null"]}) is False
+
+    def test_no_type_key(self):
+        """Should return False when no type key."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({}) is False
 
 
 class TestFormatAvailableLabels:
@@ -708,36 +767,36 @@ class TestFormatAvailableLabels:
 class TestConvertLabels:
     """Tests for _convert_labels."""
 
+    @pytest.fixture
+    def _gitea_client(self):
+        return AsyncMock()
+
     @pytest.mark.asyncio
-    async def test_converts_known_string_labels_to_ids(self):
+    async def test_converts_known_string_labels_to_ids(self, _gitea_client):
         """Known string label names should be converted to integer IDs."""
         label_manager = AsyncMock(spec=LabelManager)
         label_manager.get_label_map.return_value = {
             "type/bug": {"id": 1, "name": "type/bug"},
             "type/feature": {"id": 2, "name": "type/feature"},
         }
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", "type/feature"]}
-        await _convert_labels(kwargs, True, component, label_manager)
+        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
 
         assert kwargs["labels"] == [1, 2]
 
     @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_labels(self):
+    async def test_raises_validation_error_for_unknown_labels(self, _gitea_client):
         """Unknown label names should raise ValidationError with available labels."""
         label_manager = AsyncMock(spec=LabelManager)
         label_manager.get_label_map.return_value = {
             "type/bug": {"id": 1, "name": "type/bug"},
             "type/feature": {"id": 2, "name": "type/feature"},
         }
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/nonexistent"]}
         with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, component, label_manager)
+            await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
 
         msg = str(excinfo.value)
         assert "type/nonexistent" in msg
@@ -750,10 +809,9 @@ class TestConvertLabels:
     async def test_preserves_integer_labels(self):
         """Integer labels should be passed through unchanged."""
         label_manager = AsyncMock(spec=LabelManager)
-        component = MagicMock()
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [1, 2, 3]}
-        await _convert_labels(kwargs, True, component, label_manager)
+        await _convert_labels(kwargs, True, MagicMock(), label_manager)
 
         assert kwargs["labels"] == [1, 2, 3]
         label_manager.get_label_map.assert_not_called()
@@ -776,46 +834,50 @@ class TestConvertLabels:
     async def test_skips_when_owner_missing(self):
         """When owner is missing, no conversion should happen."""
         label_manager = AsyncMock(spec=LabelManager)
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, component, label_manager)
+        await _convert_labels(kwargs, True, MagicMock(), label_manager, AsyncMock())
         assert kwargs["labels"] == ["type/bug"]
         label_manager.get_label_map.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_handles_mixed_strings_and_integers(self):
+    async def test_skips_when_gitea_client_missing(self):
+        """When gitea_client is None, no conversion should happen."""
+        label_manager = AsyncMock(spec=LabelManager)
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
+        await _convert_labels(kwargs, True, MagicMock(), label_manager, gitea_client=None)
+        assert kwargs["labels"] == ["type/bug"]
+        label_manager.get_label_map.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handles_mixed_strings_and_integers(self, _gitea_client):
         """Mixed string and integer labels should all be converted/preserved."""
         label_manager = AsyncMock(spec=LabelManager)
         label_manager.get_label_map.return_value = {
             "type/bug": {"id": 1, "name": "type/bug"},
         }
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", 42]}
-        await _convert_labels(kwargs, True, component, label_manager)
+        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
 
         assert kwargs["labels"] == [1, 42]
 
     @pytest.mark.asyncio
-    async def test_case_insensitive_matching(self):
+    async def test_case_insensitive_matching(self, _gitea_client):
         """Label matching should be case-insensitive."""
         label_manager = AsyncMock(spec=LabelManager)
         label_manager.get_label_map.return_value = {
             "kind/enhancement": {"id": 5, "name": "Kind/Enhancement"},
         }
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["Kind/Enhancement"]}
-        await _convert_labels(kwargs, True, component, label_manager)
+        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
 
         assert kwargs["labels"] == [5]
 
     @pytest.mark.asyncio
-    async def test_formats_error_with_grouped_labels(self):
+    async def test_formats_error_with_grouped_labels(self, _gitea_client):
         """Error message should group available labels by prefix."""
         label_manager = AsyncMock(spec=LabelManager)
         label_manager.get_label_map.return_value = {
@@ -824,12 +886,10 @@ class TestConvertLabels:
             "priority/high": {"id": 3, "name": "priority/high"},
             "priority/low": {"id": 4, "name": "priority/low"},
         }
-        component = MagicMock()
-        component._client = MagicMock()
 
         kwargs = {"owner": "my-org", "repo": "my-repo", "labels": ["bad/label"]}
         with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, component, label_manager)
+            await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
 
         msg = str(excinfo.value)
         assert "my-org/my-repo" in msg

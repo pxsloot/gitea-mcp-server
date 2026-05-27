@@ -514,6 +514,20 @@ def _run_validation(
         validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
 
 
+def _format_available_labels(label_names: list[str]) -> str:
+    """Group label names by prefix and format for readable agent display."""
+    groups: dict[str, list[str]] = {}
+    for name in label_names:
+        prefix = name.split("/", 1)[0] if "/" in name else ""
+        groups.setdefault(prefix, []).append(name)
+
+    lines: list[str] = []
+    for prefix in sorted(groups, key=lambda p: (p == "", p)):
+        label_list = sorted(groups[prefix])
+        lines.append(f"  - {', '.join(label_list)}")
+    return "\n".join(lines)
+
+
 async def _convert_labels(
     kwargs: dict[str, Any],
     has_labels: bool,
@@ -550,13 +564,16 @@ async def _convert_labels(
             converted.append(label)
 
     if unknown:
-        available = sorted(label_map.keys())
+        available = sorted(v["name"] for v in label_map.values())
+        formatted = _format_available_labels(available)
         msg = (
-            f"Unknown label(s): {unknown}. "
-            f"Available labels: {', '.join(available)}. "
-            f"Use list_labels(owner, repo) or read gitea://repos/{owner}/{repo}/labels to see details."
+            f"Unknown label(s): {unknown}.\n\n"
+            f"Available labels for {owner}/{repo}:\n"
+            f"{formatted}\n\n"
+            f"Use list_labels({owner}, {repo}) or read "
+            f"gitea://repos/{owner}/{repo}/labels to see details."
         )
-        _raise_value_error(msg)
+        raise ValidationError(message=msg, field="labels")
 
     kwargs["labels"] = converted
 

@@ -108,3 +108,134 @@ tool_names:
       Parameters:
       - `style`: "merge" (create merge commit) or "rebase" (rebase commits)
 
+  # Repository search: supports full-text search with optional filters
+  repo_search:
+    description: |
+      Search for repositories by keyword, with optional filters for owner,
+      topic, visibility (private/public), and template status.
+
+      Use this to discover repositories across the entire Gitea instance.
+      Results are paginated with `page` and `limit` parameters.
+
+      For getting a single known repository by owner/name, use `repo_get` instead.
+
+  # Repository get: single repo lookup
+  repo_get:
+    description: |
+      Get a single repository by owner and repository name.
+
+      Returns full repository metadata including description, topics,
+      visibility, permissions, and owner information.
+
+      For searching across multiple repos, use `repo_search` with keyword filters.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}`
+      for a formatted Markdown version of this data.
+
+  # List pull requests: paginated PR listing with filters
+  repo_list_pull_requests:
+    description: |
+      List a repository's pull requests with optional state filter (open/closed/all).
+      Results are paginated with `page` and `limit` parameters.
+
+      Use `repo_get_pull_request` to fetch a single PR by index for full details.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}/pulls`
+      for a formatted overview of open pull requests.
+
+  # Edit pull request: modify PR metadata (not branch)
+  repo_edit_pull_request:
+    description: |
+      Update a pull request's metadata — title, body, state, labels, assignees,
+      milestone, or deadline.
+
+      **This does NOT update the PR's branch.** To update a PR's head branch
+      (merge/rebase), use `repo_update_pull_request`.
+
+  # Issue listing: paginated issue list with filters
+  issue_list_issues:
+    description: |
+      List a repository's issues with optional state filter (open/closed/all).
+      Results are paginated with `page` and `limit` parameters.
+
+      Issues include pull requests in Gitea. Use the `type` parameter to filter
+      by issue type if needed.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}/issues`
+      for a formatted overview of open issues.
+
+  # Edit issue: modify existing issue
+  issue_edit_issue:
+    description: |
+      Edit an existing issue's title, body, state, labels, assignees, milestone,
+      or deadline.
+
+      If using `due_date`, only the date part is used (time is ignored).
+      Set `unset_due_date` to true to remove an existing deadline.
+
+  # Current user identity lookup
+  user_get_current:
+    description: |
+      Get the currently authenticated user's profile.
+
+      Use this to verify your identity and get your username for subsequent
+      API calls that require `owner` parameters.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://users/{username}`
+      for a formatted Markdown profile of any user.
+
+  # User lookup by name
+  user_get:
+    description: |
+      Get a single user's public profile by username.
+
+      Returns profile details including full name, avatar URL, email,
+      and account creation date. Does not require authentication for public users.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://users/{username}`
+      for a formatted Markdown profile.
+
+  # User search across the instance
+  user_search:
+    description: |
+      Search for users across the Gitea instance by keyword.
+
+      Supports pagination with `page` and `limit`. Results include user
+      login names, full names, and avatar URLs.
+
+  # Organization get by name
+  org_get:
+    description: |
+      Get an organization's public profile by name.
+
+      Returns organization metadata including description, website,
+      location, and visibility. Use `org_list_repos` to list the
+      organization's repositories.
+
+      **Resource**: Use `mcp_read_resource` with `gitea://orgs/{orgname}`
+      for a formatted Markdown profile.
+
+  # List organization's repos
+  org_list_repos:
+    description: |
+      List all repositories owned by an organization.
+
+      Results are paginated with `page` and `limit` parameters.
+      Use `org_get` to retrieve the organization's profile first.
+
+  # Milestone creation
+  issue_create_milestone:
+    description: |
+      Create a new milestone in a repository.
+
+      Milestones group issues and pull requests by target version or
+      deadline. Set `due_on` for a target completion date.
+
+  # Label creation
+  issue_create_label:
+    description: |
+      Create a new label in a repository.
+
+      Labels are used to categorize issues and pull requests.
+      Provide a `color` in hex format (e.g., "00aabb") and a `name`.
+

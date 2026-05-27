@@ -1541,6 +1541,167 @@ class TestDeriveOutputSchema:
         assert actual.structured_content == {"result": [{"id": 1}]}
 
 
+class TestIsTextResponse:
+    """Tests for _is_text_response function."""
+
+    @pytest.fixture
+    def text_spec(self):
+        return {
+            "openapi": "3.1.1",
+            "paths": {
+                "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
+                    "get": {
+                        "x-original-content-types": ["text/plain"],
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "text/plain": {
+                                        "schema": {"type": "string"},
+                                    }
+                                }
+                            }
+                        },
+                    }
+                },
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "array", "items": {"type": "object"}},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "/no-content-types": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+        }
+
+    def test_text_plain_endpoint_detected(self, text_spec):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
+
+    def test_json_endpoint_not_text(self, text_spec):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
+
+    def test_no_content_types_not_text(self, text_spec):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        assert _is_text_response(text_spec, "/no-content-types", "get") is False
+
+    def test_missing_path_returns_false(self, text_spec):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        assert _is_text_response(text_spec, "/nonexistent", "get") is False
+
+    def test_missing_method_returns_false(self, text_spec):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
+
+
+class TestTextResponseOutputSchema:
+    """Tests that text/plain endpoints get no output_schema."""
+
+    TEXT_SPEC: dict = {
+        "openapi": "3.1.1",
+        "paths": {
+            "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
+                "get": {
+                    "x-original-content-types": ["text/plain"],
+                    "responses": {
+                        "200": {
+                            "description": "APIString is a string response",
+                            "content": {
+                                "text/plain": {
+                                    "schema": {"type": "string"},
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/repos/{owner}/{repo}/issues": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "IssueList",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+        },
+    }
+
+    def _make_route(self, path: str, method: str = "GET") -> MagicMock:
+        return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
+
+    def test_text_plain_derive_output_schema_none(self):
+        """text/plain endpoints should return None from derive_output_schema."""
+        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+
+        route = self._make_route("/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
+        schema = derive_output_schema(route, self.TEXT_SPEC)
+        assert schema is None
+
+    def test_json_still_gets_output_schema(self):
+        """JSON endpoints should still get output_schema."""
+        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+
+        route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
+        schema = derive_output_schema(route, self.TEXT_SPEC)
+        assert schema is not None
+        assert schema["type"] == "array"
+
+    def test_text_plain_customize_component_no_output_schema(self):
+        """customize_component should not set output_schema for text/plain tools."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        from gitea_mcp_server.server_setup.tool_annotator import customize_component
+
+        route = self._make_route("/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_download_pull_diff_or_patch"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"repository"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get a pull request diff or patch"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = customize_component(route, tool, _label_manager, self.TEXT_SPEC)
+        assert new_tool is not None
+        # output_schema should be None for text/plain endpoints
+        assert new_tool.output_schema is None, (
+            f"Expected None, got {new_tool.output_schema}"
+        )
+
+
 class TestDeepResolveSchema:
     """Tests for _deep_resolve_schema function."""
 

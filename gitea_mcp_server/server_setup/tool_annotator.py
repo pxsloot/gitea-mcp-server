@@ -19,6 +19,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.constants import (
@@ -378,6 +379,35 @@ def _deep_resolve_schema(
     return result
 
 
+def _is_text_response(openapi_spec: dict[str, Any], path: str, method: str) -> bool:
+    """Check if a path/method returns a non-JSON response (e.g. text/plain).
+
+    Examines the ``x-original-content-types`` extension set during spec conversion,
+    which preserves the Swagger ``produces`` info that is otherwise stripped.
+
+    Args:
+        openapi_spec: The OpenAPI v3 specification dictionary.
+        path: The API path.
+        method: The HTTP method (lowercase).
+
+    Returns:
+        ``True`` if the endpoint's original content types are non-JSON.
+    """
+    paths = openapi_spec.get("paths", {})
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return False
+    operation = path_item.get(method)
+    if not isinstance(operation, dict):
+        return False
+    content_types = operation.get("x-original-content-types")
+    if not isinstance(content_types, list):
+        return False
+    return any(
+        ct.lower().strip() != "application/json" for ct in content_types
+    )
+
+
 def _get_success_schema(
     openapi_spec: dict[str, Any],
     path: str,
@@ -386,7 +416,15 @@ def _get_success_schema(
     """Extract the success response schema for a path/method from the OpenAPI spec.
 
     Tries ``200`` then ``201`` status codes and resolves ``$ref`` chains.
+    For ``text/plain`` responses (detected via ``x-original-content-types``),
+    returns ``None`` so no ``output_schema`` is set — FastMCP's MCP server
+    rejects tools where ``outputSchema`` is defined but the response has no
+    structured content (which happens when ``OpenAPITool.run()`` falls through
+    the ``json.JSONDecodeError`` path for non-JSON responses).
     """
+    if _is_text_response(openapi_spec, path, method):
+        return None
+
     paths = openapi_spec.get("paths", {})
     path_item = paths.get(path)
     if not isinstance(path_item, dict):
@@ -708,10 +746,29 @@ def customize_component(
     if has_labels:
         update_labels_schema(component)
 
+    is_text_response = (
+        openapi_spec is not None
+        and _is_text_response(openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower())
+    )
+
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs, component.parameters.get("required"))
         await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
-        return await _run_with_error_handling(kwargs, component, route, openapi_spec)
+        result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
+        if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
+            # For text/plain responses (diff, patch), the inner OpenAPITool.run()
+            # falls through json.JSONDecodeError and returns ToolResult(content=text)
+            # with no structured_content. Wrap the text into structured content so
+            # clients receive both human-readable text and {"result": "..."}.
+            text = next(
+                (c.text for c in result.content if isinstance(c, TextContent)),
+                "",
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=text)],
+                structured_content={"result": text},
+            )
+        return result
 
     # Set x-fastmcp-wrap-result on the inner OpenAPITool so its run()
     # wraps all response types (not just non-dict) in {"result": ...}.

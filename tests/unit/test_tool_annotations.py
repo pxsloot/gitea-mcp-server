@@ -781,7 +781,7 @@ class TestConvertLabels:
         }
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", "type/feature"]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
 
         assert kwargs["labels"] == [1, 2]
 
@@ -796,7 +796,7 @@ class TestConvertLabels:
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/nonexistent"]}
         with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
+            await _convert_labels(kwargs, True, label_manager, _gitea_client)
 
         msg = str(excinfo.value)
         assert "type/nonexistent" in msg
@@ -811,7 +811,7 @@ class TestConvertLabels:
         label_manager = AsyncMock(spec=LabelManager)
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [1, 2, 3]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager)
+        await _convert_labels(kwargs, True, label_manager)
 
         assert kwargs["labels"] == [1, 2, 3]
         label_manager.get_label_map.assert_not_called()
@@ -820,14 +820,14 @@ class TestConvertLabels:
     async def test_skips_when_has_labels_is_false(self):
         """When has_labels is False, no conversion should happen."""
         kwargs = {"labels": ["type/bug"]}
-        await _convert_labels(kwargs, False, MagicMock(), MagicMock())
+        await _convert_labels(kwargs, False, MagicMock())
         assert kwargs["labels"] == ["type/bug"]
 
     @pytest.mark.asyncio
     async def test_skips_when_labels_not_in_kwargs(self):
         """When labels key is missing from kwargs, no conversion should happen."""
         kwargs = {"owner": "test-owner", "repo": "test-repo"}
-        await _convert_labels(kwargs, True, MagicMock(), MagicMock())
+        await _convert_labels(kwargs, True, MagicMock())
         assert "labels" not in kwargs
 
     @pytest.mark.asyncio
@@ -836,7 +836,7 @@ class TestConvertLabels:
         label_manager = AsyncMock(spec=LabelManager)
 
         kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager, AsyncMock())
+        await _convert_labels(kwargs, True, label_manager, AsyncMock())
         assert kwargs["labels"] == ["type/bug"]
         label_manager.get_label_map.assert_not_called()
 
@@ -846,7 +846,7 @@ class TestConvertLabels:
         label_manager = AsyncMock(spec=LabelManager)
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager, gitea_client=None)
+        await _convert_labels(kwargs, True, label_manager, gitea_client=None)
         assert kwargs["labels"] == ["type/bug"]
         label_manager.get_label_map.assert_not_called()
 
@@ -859,7 +859,7 @@ class TestConvertLabels:
         }
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", 42]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
 
         assert kwargs["labels"] == [1, 42]
 
@@ -872,7 +872,7 @@ class TestConvertLabels:
         }
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["Kind/Enhancement"]}
-        await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
 
         assert kwargs["labels"] == [5]
 
@@ -889,7 +889,7 @@ class TestConvertLabels:
 
         kwargs = {"owner": "my-org", "repo": "my-repo", "labels": ["bad/label"]}
         with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, MagicMock(), label_manager, _gitea_client)
+            await _convert_labels(kwargs, True, label_manager, _gitea_client)
 
         msg = str(excinfo.value)
         assert "my-org/my-repo" in msg

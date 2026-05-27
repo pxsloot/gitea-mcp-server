@@ -548,7 +548,6 @@ def _format_available_labels(label_names: list[str]) -> str:
 async def _convert_labels(
     kwargs: dict[str, Any],
     has_labels: bool,
-    component: Any,  # noqa: ARG001 - kept for signature stability
     label_manager: LabelManager,
     gitea_client: "GiteaClient | None" = None,
 ) -> None:
@@ -711,7 +710,7 @@ def customize_component(
 
     async def transform_fn(**kwargs: Any) -> Any:
         _run_validation(kwargs, component.parameters.get("required"))
-        await _convert_labels(kwargs, has_labels, component, label_manager, gitea_client)
+        await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
         return await _run_with_error_handling(kwargs, component, route, openapi_spec)
 
     # Set x-fastmcp-wrap-result on the inner OpenAPITool so its run()

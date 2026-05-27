@@ -160,6 +160,101 @@ class TestConvertSwaggerToOpenAPI:
         assert schema["properties"]["result"]["type"] == "object"
         assert "id" in schema["properties"]["result"]["properties"]
 
+    def test_text_plain_response_not_wrapped(self):
+        """text/plain responses should remain as string schema, not wrapped in result.
+
+        When a Swagger operation has ``produces: ['text/plain']``, the response
+        should use ``text/plain`` content type and NOT be wrapped in ``result``.
+        """
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "paths": {
+                "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
+                    "get": {
+                        "produces": ["text/plain"],
+                        "operationId": "repoDownloadPullDiffOrPatch",
+                        "parameters": [
+                            {"type": "string", "name": "owner", "in": "path", "required": True},
+                            {"type": "string", "name": "repo", "in": "path", "required": True},
+                            {"type": "integer", "format": "int64", "name": "index", "in": "path", "required": True},
+                            {"enum": ["diff", "patch"], "type": "string", "name": "diffType", "in": "path", "required": True},
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "APIString is a string response",
+                                "schema": {"type": "string"},
+                            }
+                        },
+                    }
+                },
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        path_item = result["paths"]["/repos/{owner}/{repo}/pulls/{index}.{diffType}"]["get"]
+
+        # Response should use text/plain content type, not application/json
+        response = path_item["responses"]["200"]
+        assert "text/plain" in response["content"]
+        assert "application/json" not in response["content"]
+
+        # Schema should be a plain string, NOT wrapped in result object
+        schema = response["content"]["text/plain"]["schema"]
+        assert schema["type"] == "string"
+
+        # x-original-content-types should be preserved
+        assert path_item.get("x-original-content-types") == ["text/plain"]
+
+    def test_x_original_content_types_preserved(self):
+        """The x-original-content-types extension should preserve produces info."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "paths": {
+                "/diff": {
+                    "get": {
+                        "produces": ["text/plain"],
+                        "operationId": "getDiff",
+                        "responses": {
+                            "200": {"description": "OK", "schema": {"type": "string"}},
+                        },
+                    }
+                },
+                "/json": {
+                    "get": {
+                        "produces": ["application/json"],
+                        "operationId": "getJson",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                            },
+                        },
+                    }
+                },
+                "/no-produces": {
+                    "get": {
+                        "operationId": "getNoProduces",
+                        "responses": {
+                            "200": {"description": "OK", "schema": {"type": "string"}},
+                        },
+                    }
+                },
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+
+        # text/plain endpoint should have x-original-content-types
+        assert result["paths"]["/diff"]["get"].get("x-original-content-types") == ["text/plain"]
+
+        # application/json endpoint should NOT have x-original-content-types
+        assert "x-original-content-types" not in result["paths"]["/json"]["get"]
+
+        # no-produces endpoint should NOT have x-original-content-types
+        assert "x-original-content-types" not in result["paths"]["/no-produces"]["get"]
+
 
 class TestEnrichResponseSchemas:
     """Tests for _wrap_success_response_schemas function."""
@@ -465,3 +560,28 @@ class TestEnrichResponseSchemas:
         assert post_schema["type"] == "object"
         assert "result" in post_schema["properties"]
         assert "id" in post_schema["properties"]["result"]["properties"]
+
+    def test_skips_text_plain_content(self):
+        """text/plain content types should NOT be wrapped in result."""
+        spec = {
+            "paths": {
+                "/diff": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "text/plain": {
+                                        "schema": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/diff"]["get"]["responses"]["200"]["content"]["text/plain"]["schema"]
+        # text/plain schemas should remain unwrapped
+        assert schema["type"] == "string"
+        assert "properties" not in schema

@@ -342,9 +342,18 @@ class OperationTransformer:
             if body_req:
                 op_copy["requestBody"] = body_req
 
+        # Preserve non-JSON content types before conversion (produces is
+        # stripped by remove_swagger_fields below). Used downstream to
+        # distinguish text/plain from application/json responses so we can
+        # skip output_schema wrapping for non-JSON endpoints.
+        produces = op_copy.get("produces", [])
+        non_json = [ct for ct in produces if ct.lower().strip() != "application/json"]
+        if non_json:
+            op_copy["x-original-content-types"] = non_json
+
         # Convert responses
         if "responses" in op_copy:
-            op_copy["responses"] = convert_responses(op_copy["responses"])
+            op_copy["responses"] = convert_responses(op_copy["responses"], produces)
 
         # Ensure operationId exists and is normalized
         if "operationId" not in op_copy:
@@ -624,8 +633,38 @@ def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]
     return new_params
 
 
-def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
-    """Convert Swagger 2.0 responses to OpenAPI 3.1 format."""
+def _determine_content_type(produces: list[str] | None) -> str:
+    """Determine the correct response content-type from the Swagger ``produces`` list.
+
+    Args:
+        produces: The ``produces`` list from a Swagger operation, or ``None``.
+
+    Returns:
+        The MIME type to use in the response content, defaulting to
+        ``application/json``.
+    """
+    if produces:
+        for ct in produces:
+            ct_lower = ct.lower().strip()
+            # Non-JSON types like text/plain should be preserved.
+            if ct_lower != "application/json":
+                return ct_lower
+    return "application/json"
+
+
+def convert_responses(
+    responses: dict[str, Any],
+    produces: list[str] | None = None,
+) -> dict[str, Any]:
+    """Convert Swagger 2.0 responses to OpenAPI 3.1 format.
+
+    Args:
+        responses: Swagger 2.0 responses dictionary
+        produces: Original ``produces`` content types from the operation.
+                  Used to preserve non-JSON content types (e.g. ``text/plain``)
+                  instead of always assigning ``application/json``.
+
+    """
     new_responses = {}
 
     for status, response in responses.items():
@@ -637,7 +676,13 @@ def convert_responses(responses: dict[str, Any]) -> dict[str, Any]:
 
         if "schema" in response_copy:
             schema = response_copy.pop("schema")
-            response_copy["content"] = {"application/json": {"schema": convert_schema(schema)}}
+            # Use the correct content type from produces if available.
+            # text/plain endpoints (diff, patch) should not be marked as
+            # application/json — FastMCP's OpenAPITool will try response.json()
+            # and fail, then fall back to ToolResult(content=text) which causes
+            # "outputSchema defined but no structured output returned".
+            content_type = _determine_content_type(produces)
+            response_copy["content"] = {content_type: {"schema": convert_schema(schema)}}
 
         if "headers" in response_copy and isinstance(response_copy["headers"], dict):
             headers = response_copy["headers"]

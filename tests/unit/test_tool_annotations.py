@@ -9,8 +9,13 @@ from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
+from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.server_setup.bm25_search import NAME_BOOST, _extract_searchable_text_enhanced
 from gitea_mcp_server.server_setup.label_manager import LabelManager
+from gitea_mcp_server.server_setup.tool_annotator import (
+    _convert_labels,
+    _format_available_labels,
+)
 from gitea_mcp_server.server_setup.tool_annotator import (
     add_inferred_hints as _add_inferred_hints,
 )
@@ -648,6 +653,30 @@ class TestCustomizeComponent:
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() in new_tool.description
 
+    def test_applies_label_guidance_with_nullable_array_type(self):
+        """Verify label guidance works with nullable array type ['array', 'null']."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_issue"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {
+            "properties": {"labels": {"type": ["array", "null"], "items": {"type": "integer"}}}
+        }
+        tool.output_schema = None
+        tool.description = "Create an issue"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        new_tool = _customize_component(route, tool, _label_manager)
+
+        assert new_tool is not None
+        assert LABEL_GUIDANCE.strip() in new_tool.description
+
     def test_does_not_apply_label_guidance_without_labels(self):
         """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
         route = MagicMock(
@@ -669,6 +698,203 @@ class TestCustomizeComponent:
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() not in new_tool.description
+
+
+class TestSchemaTypeIsArray:
+    """Tests for _schema_type_is_array."""
+
+    def test_detects_string_type(self):
+        """Should return True for type 'array'."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": "array"}) is True
+
+    def test_detects_list_type(self):
+        """Should return True for type ['array', 'null']."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": ["array", "null"]}) is True
+
+    def test_rejects_non_array_string(self):
+        """Should return False for non-array string types."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": "string"}) is False
+        assert _schema_type_is_array({"type": "object"}) is False
+
+    def test_rejects_non_array_list(self):
+        """Should return False when 'array' not in type list."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({"type": ["string", "null"]}) is False
+
+    def test_no_type_key(self):
+        """Should return False when no type key."""
+        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+
+        assert _schema_type_is_array({}) is False
+
+
+class TestFormatAvailableLabels:
+    """Tests for _format_available_labels."""
+
+    def test_groups_labels_by_prefix(self):
+        """Labels with same prefix should be grouped together."""
+        labels = ["type/bug", "priority/high", "type/feature", "priority/low", "status/triage"]
+        result = _format_available_labels(labels)
+        assert "type/bug, type/feature" in result
+        assert "priority/high, priority/low" in result
+        assert "status/triage" in result
+
+    def test_labels_without_prefix(self):
+        """Labels without a '/' should be grouped under empty prefix."""
+        labels = ["urgent", "type/bug", "wontfix"]
+        result = _format_available_labels(labels)
+        assert "urgent, wontfix" in result
+        assert "type/bug" in result
+
+    def test_single_label(self):
+        """Single label should produce one line."""
+        result = _format_available_labels(["type/bug"])
+        assert result == "  - type/bug"
+
+    def test_empty_list(self):
+        """Empty list should produce empty string."""
+        result = _format_available_labels([])
+        assert result == ""
+
+
+class TestConvertLabels:
+    """Tests for _convert_labels."""
+
+    @pytest.fixture
+    def _gitea_client(self):
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_converts_known_string_labels_to_ids(self, _gitea_client):
+        """Known string label names should be converted to integer IDs."""
+        label_manager = AsyncMock(spec=LabelManager)
+        label_manager.get_label_map.return_value = {
+            "type/bug": {"id": 1, "name": "type/bug"},
+            "type/feature": {"id": 2, "name": "type/feature"},
+        }
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", "type/feature"]}
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+
+        assert kwargs["labels"] == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_raises_validation_error_for_unknown_labels(self, _gitea_client):
+        """Unknown label names should raise ValidationError with available labels."""
+        label_manager = AsyncMock(spec=LabelManager)
+        label_manager.get_label_map.return_value = {
+            "type/bug": {"id": 1, "name": "type/bug"},
+            "type/feature": {"id": 2, "name": "type/feature"},
+        }
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/nonexistent"]}
+        with pytest.raises(ValidationError) as excinfo:
+            await _convert_labels(kwargs, True, label_manager, _gitea_client)
+
+        msg = str(excinfo.value)
+        assert "type/nonexistent" in msg
+        assert "test-owner/test-repo" in msg
+        assert "type/bug" in msg
+        assert "type/feature" in msg
+        assert excinfo.value.field == "labels"
+
+    @pytest.mark.asyncio
+    async def test_preserves_integer_labels(self):
+        """Integer labels should be passed through unchanged."""
+        label_manager = AsyncMock(spec=LabelManager)
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [1, 2, 3]}
+        await _convert_labels(kwargs, True, label_manager)
+
+        assert kwargs["labels"] == [1, 2, 3]
+        label_manager.get_label_map.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_has_labels_is_false(self):
+        """When has_labels is False, no conversion should happen."""
+        kwargs = {"labels": ["type/bug"]}
+        await _convert_labels(kwargs, False, MagicMock())
+        assert kwargs["labels"] == ["type/bug"]
+
+    @pytest.mark.asyncio
+    async def test_skips_when_labels_not_in_kwargs(self):
+        """When labels key is missing from kwargs, no conversion should happen."""
+        kwargs = {"owner": "test-owner", "repo": "test-repo"}
+        await _convert_labels(kwargs, True, MagicMock())
+        assert "labels" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_skips_when_owner_missing(self):
+        """When owner is missing, no conversion should happen."""
+        label_manager = AsyncMock(spec=LabelManager)
+
+        kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
+        await _convert_labels(kwargs, True, label_manager, AsyncMock())
+        assert kwargs["labels"] == ["type/bug"]
+        label_manager.get_label_map.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_gitea_client_missing(self):
+        """When gitea_client is None, no conversion should happen."""
+        label_manager = AsyncMock(spec=LabelManager)
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
+        await _convert_labels(kwargs, True, label_manager, gitea_client=None)
+        assert kwargs["labels"] == ["type/bug"]
+        label_manager.get_label_map.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handles_mixed_strings_and_integers(self, _gitea_client):
+        """Mixed string and integer labels should all be converted/preserved."""
+        label_manager = AsyncMock(spec=LabelManager)
+        label_manager.get_label_map.return_value = {
+            "type/bug": {"id": 1, "name": "type/bug"},
+        }
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", 42]}
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+
+        assert kwargs["labels"] == [1, 42]
+
+    @pytest.mark.asyncio
+    async def test_case_insensitive_matching(self, _gitea_client):
+        """Label matching should be case-insensitive."""
+        label_manager = AsyncMock(spec=LabelManager)
+        label_manager.get_label_map.return_value = {
+            "kind/enhancement": {"id": 5, "name": "Kind/Enhancement"},
+        }
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["Kind/Enhancement"]}
+        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+
+        assert kwargs["labels"] == [5]
+
+    @pytest.mark.asyncio
+    async def test_formats_error_with_grouped_labels(self, _gitea_client):
+        """Error message should group available labels by prefix."""
+        label_manager = AsyncMock(spec=LabelManager)
+        label_manager.get_label_map.return_value = {
+            "type/bug": {"id": 1, "name": "type/bug"},
+            "type/feature": {"id": 2, "name": "type/feature"},
+            "priority/high": {"id": 3, "name": "priority/high"},
+            "priority/low": {"id": 4, "name": "priority/low"},
+        }
+
+        kwargs = {"owner": "my-org", "repo": "my-repo", "labels": ["bad/label"]}
+        with pytest.raises(ValidationError) as excinfo:
+            await _convert_labels(kwargs, True, label_manager, _gitea_client)
+
+        msg = str(excinfo.value)
+        assert "my-org/my-repo" in msg
+        assert "  - priority/high, priority/low" in msg
+        assert "  - type/bug, type/feature" in msg
 
 
 class TestErrorHandlingEnhancement:
@@ -1161,12 +1387,13 @@ class TestDeriveOutputSchema:
 
     def test_integration_via_customize_component(self):
         """customize_component should set output_schema from openapi_spec."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
         from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
-        from fastmcp.server.providers.openapi import OpenAPITool
-        from fastmcp.tools.tool import ToolAnnotations
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1194,11 +1421,12 @@ class TestDeriveOutputSchema:
 
     def test_integration_no_output_schema_without_spec(self):
         """customize_component should not set output_schema when spec is None."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
-        from fastmcp.server.providers.openapi import OpenAPITool
-        from fastmcp.tools.tool import ToolAnnotations
 
         route = self._make_route("/test", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1221,11 +1449,12 @@ class TestDeriveOutputSchema:
     @pytest.mark.asyncio
     async def test_transform_fn_wraps_result_in_result_key(self):
         """transform_fn should wrap tool result in {'result': ...}."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
-        from fastmcp.server.providers.openapi import OpenAPITool
-        from fastmcp.tools.tool import ToolAnnotations
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1251,11 +1480,12 @@ class TestDeriveOutputSchema:
         """When component.output_schema has x-fastmcp-wrap-result, OpenAPITool.run()
         wraps ALL responses in {'result': ...}. The ToolResult flows through
         transform_fn → TransformedTool.run() unchanged."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
-        from fastmcp.server.providers.openapi import OpenAPITool
-        from fastmcp.tools.tool import ToolAnnotations
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1283,11 +1513,12 @@ class TestDeriveOutputSchema:
     async def test_array_wrapped_by_openapi_tool_even_without_x_fastmcp(self):
         """OpenAPITool.run() wraps arrays in {'result': [...]} even without
         x-fastmcp-wrap-result (for MCP protocol compliance)."""
+        from fastmcp.server.providers.openapi import OpenAPITool
+        from fastmcp.tools.tool import ToolAnnotations
+
         from gitea_mcp_server.server_setup.tool_annotator import (
             customize_component,
         )
-        from fastmcp.server.providers.openapi import OpenAPITool
-        from fastmcp.tools.tool import ToolAnnotations
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1669,8 +1900,9 @@ class TestSchemaToExample:
 
     def test_serialize_tool_schema_uses_output_example(self):
         """_serialize_tool_schema should produce output_example instead of output_schema."""
-        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
         from fastmcp.tools.base import Tool
+
+        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -1697,8 +1929,9 @@ class TestSchemaToExample:
 
     def test_serialize_tool_schema_no_output_schema(self):
         """_serialize_tool_schema should not include output_example when output_schema is None."""
-        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
         from fastmcp.tools.base import Tool
+
+        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",

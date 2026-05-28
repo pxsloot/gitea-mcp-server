@@ -1,0 +1,201 @@
+# Development Guide
+
+## Environment Setup
+
+```bash
+# Install mise (if not installed): https://mise.jdx.dev
+mise install
+mise trust
+eval "$(mise activate bash)"
+
+# Activate the project virtualenv
+.venv/bin/activate  # or: mise exec -- ...
+
+# Install dependencies
+uv sync
+
+# Copy and configure env
+cp .env.example .env
+# Edit .env: GITEA_URL, GITEA_TOKEN
+```
+
+**Key**: The `.venv` managed by `mise` must be active. The system Python
+will not work — dependencies are pinned via `uv.lock`.
+
+---
+
+## Running the Server
+
+```bash
+# Stdio transport (default)
+uv run python -m gitea_mcp_server
+
+# HTTP transport
+TRANSPORT_TYPE=http uv run python -m gitea_mcp_server
+```
+
+---
+
+## Running Tests
+
+```bash
+# All tests
+uv run pytest
+
+# Specific area
+uv run pytest tests/unit/openapi_converter/
+uv run pytest tests/unit/test_tool_annotations.py -v
+
+# With coverage
+uv run pytest --cov=gitea_mcp_server
+
+# Integration tests (need running Gitea + .env)
+uv run pytest tests/integration/
+```
+
+See `docs/TESTING_STANDARDS.md` for full details.
+
+---
+
+## Code Organization Rules
+
+### Public vs Private
+
+- Functions that are **implementation details** should be prefixed with `_`.
+- The module's `__all__` documents the intended public API.
+- Tests may import private functions (they test internals), but production
+  code should only import from `__all__`.
+
+### File Responsibilities
+
+| Directory | Contains |
+|-----------|----------|
+| `gitea_mcp_server/` | Core modules — config, client, conversion, server assembly |
+| `gitea_mcp_server/server_setup/` | Server initialization — spec loading, tool customization, resources |
+| `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
+| `docs/` | **Developer-facing** documentation (this file, ARCHITECTURE.md, etc.) |
+| `tests/` | Unit tests (`unit/`) and integration tests (`integration/`) |
+
+---
+
+## How to Add a Tool Customization
+
+Tool customizations live in `server_setup/tool_annotator.py` in the
+`customize_component()` function, which is called for every tool generated
+by the OpenAPI provider.  Common customizations:
+
+### 1. Schema augmentation (parameter constraints)
+
+Add to `SCHEMA_CONSTRAINTS` in `validation.py`:
+
+```python
+SCHEMA_CONSTRAINTS: dict[str, dict[str, Any]] = {
+    "owner": {"minLength": 1, "maxLength": 50, "pattern": OWNER_REPO_PATTERN},
+    # ... add new parameter constraint
+}
+```
+
+### 2. Custom annotation hints
+
+Annotations are inferred from HTTP method in `add_inferred_hints()`.
+To override for a specific tool, use `mcp_extensions.yaml`:
+
+```yaml
+tool_names:
+  repo_delete:
+    title: "Delete Repository"
+    description: "Permanently deletes a repository..."
+```
+
+### 3. New validation function
+
+1. Add validator in `validation.py`
+2. Add to `SINGLE_VALIDATORS` dict keyed by parameter name
+3. The `transform_fn` in `tool_annotator.py` automatically calls it
+
+### 4. Cache invalidation pattern
+
+Add to `_INVALIDATION_PATTERNS` in `tool_annotator.py`:
+
+```python
+_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
+    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
+    # ...
+]
+```
+
+---
+
+## How to Add a Custom Resource
+
+1. **Write the resource function** in `resources.py`:
+   ```python
+   async def my_resource(param: str, gitea_client: GiteaClient) -> ResourceResult:
+       """Description for agents."""
+       data = await gitea_client.request("GET", f"/api/path/{param}")
+       return _format_markdown(data)
+   ```
+
+2. **Add to the `custom_resources` list** in `register_custom_resources()`:
+   ```python
+   custom_resources: list[tuple[str, Callable, str, set[str], dict | None]] = [
+       ("gitea://my/{param}", my_resource, "text/markdown",
+        {"wrapper", "my_type"}, {"fastmcp": {"_internal": {"required_scope": "read:repository"}}}),
+       # ...
+   ]
+   ```
+
+3. **Add URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`** in `constants.py` if a
+   GET endpoint exists for the same path — this prevents the auto-generated
+   raw JSON resource from conflicting.
+
+---
+
+## MCP Extensions (YAML)
+
+The `mcp_extensions.yaml` file at project root lets you override tool titles,
+descriptions, and parameter docs without touching Python code.
+
+```yaml
+tool_names:
+  operation_id_name:
+    title: "Human-Readable Title"
+    description: |
+      Detailed description of what this tool does.
+      Supports multi-line.
+    parameters:
+      - name: param_name
+        description: "Override parameter description"
+```
+
+Set `MCP_EXTENSIONS_PATH` env var to use a different file location.
+
+---
+
+## Common Pitfalls
+
+1. **Don't edit on `main`** — Always create a feature branch first.
+2. **Don't import from outside `__all__`** in production code.  Internal
+   functions may be renamed/refactored without notice.
+3. **Resource URIs conflict** — When adding a custom resource that shadows
+   a GET endpoint, always add the URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`.
+4. **Tests that make HTTP calls** — Use `respx` to mock the Gitea API.
+   Integration tests need a real `.env` with credentials.
+5. **Cache confusion** — Resource reads are cached.  If your changes don't
+   appear, check cache TTL or invalidate manually.
+6. **Schema changes** — The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
+   If you add a new schema feature, ensure the converter preserves it.
+
+---
+
+## FastMCP Reference
+
+This project uses FastMCP 3.x.  Key APIs:
+
+- `OpenAPIProvider(spec, client)` — auto-generates tools from OpenAPI spec
+- `ResponseCachingMiddleware` — TTL-based resource caching
+- `BM25SearchTransform` — lazy loading with BM25 search
+- `Transform` — modify tool lists, intercept tool lookups
+- `Tool.from_tool(existing, transform_fn=...)` — wrap existing tools with new behavior
+
+For up-to-date FastMCP docs: https://gofastmcp.com/llms.txt

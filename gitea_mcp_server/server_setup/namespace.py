@@ -1,4 +1,4 @@
-"""Gitea namespace transform that namespaces tools/prompts but not resources.
+"""Gitea namespace transform — prefixes tools/prompts, not resources.
 
 Resources already carry the gitea namespace via their ``gitea://`` scheme,
 so injecting an additional ``/gitea/`` path segment (as FastMCP's built-in
@@ -7,6 +7,9 @@ so injecting an additional ``/gitea/`` path segment (as FastMCP's built-in
 
 This transform only prefixes tool and prompt names (e.g. ``create_issue`` →
 ``gitea_create_issue``).  Resource URIs are passed through unchanged.
+
+This is applied as a FastMCP transform in ``server.py`` after the lazy-loading
+search transform, ensuring even synthetic tools get the prefix.
 """
 
 from collections.abc import Sequence

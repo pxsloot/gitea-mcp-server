@@ -1,4 +1,11 @@
-"""Convert Swagger 2.0 spec to OpenAPI 3.1 format."""
+"""Convert Swagger 2.0 spec to OpenAPI 3.1 format.
+
+Public API
+----------
+The only public function is ``convert_swagger_to_openapi_v3``.
+All other functions and classes are internal implementation details
+and should not be imported directly. They may change without notice.
+"""
 
 import logging
 import re
@@ -947,3 +954,6 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
 
     logger.info("OpenAPI conversion completed successfully")
     return spec
+
+
+__all__ = ["convert_swagger_to_openapi_v3"]

@@ -1,7 +1,12 @@
 """Passive catalog for tracking registered MCP resources.
 
-This registry does not perform registration; it simply records metadata about
-resources that have already been registered with FastMCP via mcp.resource().
+This registry does **not** perform registration; it simply records metadata
+about resources that have already been registered with FastMCP via
+``mcp.resource()``.
+
+It is used by ``resources.py`` to track what has been registered and by
+``server_setup/resource_registry.py`` to orchestrate the two registration
+phases (auto-generated then custom overrides).
 
 Usage:
     registry = ResourceRegistry()

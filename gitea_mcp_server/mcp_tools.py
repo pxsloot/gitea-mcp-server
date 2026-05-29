@@ -19,7 +19,7 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
-from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+from gitea_mcp_server.server_setup.tool_examples import _schema_to_example
 
 logger = logging.getLogger(__name__)
 

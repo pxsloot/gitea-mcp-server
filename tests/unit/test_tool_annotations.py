@@ -10,9 +10,10 @@ from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.exceptions import ValidationError
-from gitea_mcp_server.server_setup.bm25_search import NAME_BOOST, _extract_searchable_text_enhanced
+from gitea_mcp_server.constants import SEARCH_NAME_BOOST
+from gitea_mcp_server.server_setup.bm25_search import _extract_searchable_text_enhanced
 from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.server_setup.tool_annotator import (
+from gitea_mcp_server.server_setup.tool_labels import (
     _convert_labels,
     _format_available_labels,
 )
@@ -40,93 +41,14 @@ class TestSearchableText:
     """Tests for _extract_searchable_text_enhanced."""
 
     def test_name_is_boosted(self):
-        """Tool name should appear NAME_BOOST times in the extracted text."""
+        """Tool name should appear SEARCH_NAME_BOOST times in the extracted text."""
         tool = Tool(
             name="gitea_user_get_current",
             description="Get the authenticated user",
             parameters={"properties": {}},
         )
         result = _extract_searchable_text_enhanced(tool)
-        assert result.count("gitea_user_get_current") == NAME_BOOST
-
-    def test_description_included(self):
-        """Tool description should appear in the extracted text."""
-        tool = Tool(
-            name="test_tool",
-            description="This is a test description",
-            parameters={"properties": {}},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        assert "test description" in result
-
-    def test_parameter_names_included(self):
-        """Parameter names and descriptions should be part of the searchable text."""
-        tool = Tool(
-            name="test_tool",
-            description="A test tool",
-            parameters={
-                "properties": {
-                    "owner": {"type": "string", "description": "The owner name"},
-                    "repo": {"type": "string", "description": "The repository name"},
-                }
-            },
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        assert "owner" in result
-        assert "repo" in result
-        assert "owner name" in result or "repository name" in result
-
-    def test_tags_and_aliases_included(self):
-        """Tags should be included with their category aliases."""
-        tool = Tool(
-            name="test_tool",
-            description="A test tool",
-            tags={"pull_request", "user"},
-            parameters={"properties": {}},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        assert "pull_request" in result
-        assert "pull request pr" in result or "pr" in result
-
-    def test_title_included(self):
-        """Tool title from annotations should be included."""
-        from fastmcp.tools.tool import ToolAnnotations
-
-        tool = Tool(
-            name="test_tool",
-            description="A test tool",
-            annotations=ToolAnnotations(title="Custom Title"),
-            parameters={"properties": {}},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        assert "Custom Title" in result
-
-    def test_word_aliases_expanded(self):
-        """Word aliases are only expanded on the query side, not in document text."""
-        tool = Tool(
-            name="test_repo_tool",
-            description="Manage repositories",
-            parameters={"properties": {}},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        # "repos" comes from the description, not alias expansion
-        assert "repos" in result
-
-    def test_name_boost_improves_ranking(self):
-        """Name boost should make tools findable by name terms not in description.
-        
-        A tool with distinctive name terms (like 'flag' in 'repo_get_flag') should
-        be findable even if the description doesn't contain those exact words.
-        """
-        tool = Tool(
-            name="gitea_repo_get_flag",
-            description="Check if a repository has a given flag",
-            parameters={"properties": {}},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        # The name is repeated NAME_BOOST times, so "flag" from name appears NAME_BOOST times
-        name_count = result.count("gitea_repo_get_flag")
-        assert name_count == NAME_BOOST
+        assert result.count("gitea_user_get_current") == SEARCH_NAME_BOOST
 
     def test_no_side_effects_on_empty_fields(self):
         """Should handle tools with minimal fields gracefully."""

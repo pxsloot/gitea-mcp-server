@@ -53,7 +53,7 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
     HTTP_STATUS_NOT_FOUND,
 )
-from gitea_mcp_server.server_setup.tool_annotator import derive_required_scope
+from gitea_mcp_server.server_setup.tool_customize import derive_required_scope
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 [project]
 name = "gitea-mcp-server"
 version = "0.1.0"
-description = "MCP server for Gitea/Forgejo API using FastMCP 2.0"
+description = "MCP server for Gitea/Forgejo API using FastMCP 3.x"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

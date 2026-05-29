@@ -1,7 +1,4 @@
-"""Tool output schema derivation and $ref resolution.
-
-Extracted from tool_annotator.py to isolate schema-related concerns.
-"""
+"""Tool output schema derivation and $ref resolution."""
 
 from typing import Any
 

@@ -1,7 +1,4 @@
-"""Schema-to-example and tool serialization utilities.
-
-Extracted from tool_annotator.py to isolate example generation concerns.
-"""
+"""Schema-to-example and tool serialization utilities."""
 
 from typing import Any
 

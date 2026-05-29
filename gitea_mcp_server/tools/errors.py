@@ -1,14 +1,11 @@
-"""Error handling utilities for tool execution.
-
-Extracted from tool_annotator.py to isolate error-handling concerns.
-"""
+"""Error handling utilities for tool execution."""
 
 import logging
 from typing import Any, NoReturn
 
 import httpx
 
-from gitea_mcp_server.server_setup.tool_schemas import _resolve_ref
+from gitea_mcp_server.tools.schemas import _resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
     ValidationError,

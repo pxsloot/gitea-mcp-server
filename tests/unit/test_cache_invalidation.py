@@ -12,7 +12,7 @@ from gitea_mcp_server.cache_invalidation import (
     compute_uris_to_invalidate,
     register_tool_invalidation,
 )
-from gitea_mcp_server.server_setup.tool_annotator import (
+from gitea_mcp_server.tools.customize import (
     compute_invalidation_patterns as _compute_tool_invalidation_patterns,
 )
 
@@ -233,7 +233,7 @@ class TestCacheInvalidationMiddleware:
 class TestComputeToolInvalidationPatterns:
     """Tests for _compute_tool_invalidation_patterns from server module."""
 
-    from gitea_mcp_server.server_setup.tool_annotator import (
+    from gitea_mcp_server.tools.customize import (
         compute_invalidation_patterns as _compute_tool_invalidation_patterns,
     )
 

@@ -1,0 +1,36 @@
+"""Tool customization and discovery package.
+
+All tool-related runtime concerns live here:
+- customize: Core customization pipeline (annotations, hints, title, categorization)
+- schemas: Output schema derivation and $ref resolution
+- errors: Error handling for tool execution
+- labels: Label name→ID conversion
+- examples: Schema-to-example generation, tool schema serialization
+- search: BM25 search engine + TolerantSearchTransform + synthetic tools
+- namespace: GiteaNamespace transform (prefix tools, pass resources through)
+- registry: Tool metadata and registration utilities
+"""
+
+from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.tools.customize import (
+    add_inferred_hints,
+    categorize_tool,
+    compute_invalidation_patterns,
+    customize_component,
+    generate_tool_title,
+)
+from gitea_mcp_server.tools.namespace import GiteaNamespace
+from gitea_mcp_server.tools.schemas import derive_output_schema
+from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+__all__ = [
+    "GiteaNamespace",
+    "TolerantSearchTransform",
+    "add_inferred_hints",
+    "categorize_tool",
+    "compute_invalidation_patterns",
+    "customize_component",
+    "derive_output_schema",
+    "derive_required_scope",
+    "generate_tool_title",
+]

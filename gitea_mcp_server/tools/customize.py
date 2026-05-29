@@ -1,6 +1,5 @@
 """Core tool customization pipeline.
 
-Extracted from tool_annotator.py to isolate the central customization concern.
 Contains customize_component and its immediate helpers (annotations, hint inference,
 categorization, title generation, scope derivation, invalidation computation).
 """
@@ -18,23 +17,22 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_IDEMPOTENT,
     HTTP_METHODS_SAFE,
     LABEL_GUIDANCE,
-    TAG_TO_SCOPE,
     TITLE_TRUNCATE_LIMIT,
     TOOL_INVALIDATION_PATTERNS,
 )
-from gitea_mcp_server.server_setup.tool_errors import _run_validation, _run_with_error_handling
-from gitea_mcp_server.server_setup.tool_labels import _convert_labels, update_labels_schema
-from gitea_mcp_server.server_setup.tool_schemas import (
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
+from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
+from gitea_mcp_server.tools.schemas import (
     _is_text_response,
     _schema_type_is_array,
     derive_output_schema,
 )
+from gitea_mcp_server.validation import augment_schema_with_validation
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
-
-from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.validation import augment_schema_with_validation
 
 _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/admin", "admin", False),
@@ -68,28 +66,6 @@ def generate_tool_title(route: Any) -> str:
         title = title[: TITLE_TRUNCATE_LIMIT - 3] + "..."
 
     return title
-
-
-def derive_required_scope(swagger_tags: set[str] | None, method: str | None) -> str | None:
-    if not swagger_tags:
-        return None
-
-    scope_name = None
-    for tag in swagger_tags:
-        s = TAG_TO_SCOPE.get(tag)
-        if s is not None:
-            scope_name = s
-            break
-
-    if scope_name is None:
-        return None
-
-    if scope_name == "sudo":
-        return "sudo"
-
-    if method and method.upper() in {"GET", "HEAD", "OPTIONS"}:
-        return f"read:{scope_name}"
-    return f"write:{scope_name}"
 
 
 def categorize_tool(path: str) -> str:
@@ -277,6 +253,5 @@ __all__ = [
     "categorize_tool",
     "compute_invalidation_patterns",
     "customize_component",
-    "derive_required_scope",
     "generate_tool_title",
 ]

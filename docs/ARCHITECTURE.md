@@ -68,60 +68,53 @@ removed when FastMCP catches up.
 
 ### Tool Customization Stack (applied in order)
 
-`tool_annotator.py` is now a **re-export facade**. The implementations live in six focused modules under `server_setup/`:
+All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 
-| Split Module | What it contains |
-|-------------|------------------|
-| `tool_customize.py` | `customize_component`, title/category generation, hint inference, scope derivation, invalidation |
-| `tool_schemas.py` | `derive_output_schema`, `$ref` resolution, text/JSON response detection |
-| `tool_errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
-| `tool_labels.py` | string→ID label conversion, label schema updates |
-| `tool_examples.py` | schema→example generation, tool schema serialization |
-| `tool_search.py` | `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
+| Module | What it contains |
+|--------|------------------|
+| `tools/customize.py` | `customize_component`, title/category generation, hint inference, invalidation |
+| `tools/schemas.py` | `derive_output_schema`, `$ref` resolution, text/JSON response detection |
+| `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
+| `tools/labels.py` | string→ID label conversion, label schema updates |
+| `tools/examples.py` | schema→example generation, tool schema serialization |
+| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
+| `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
 
 The customization layers as applied during server startup:
 
 | Layer | Module | What it does |
 |-------|--------|--------------|
-| 1. Annotations | `tool_customize.py` | title, category tag, readOnly/destructive/idempotent hints |
-| 2. Error handling | `tool_errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
-| 3. Label support | `tool_labels.py` | string-to-ID label conversion, schema updates |
+| 1. Annotations | `tools/customize.py` | title, category tag, readOnly/destructive/idempotent hints |
+| 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
+| 3. Label support | `tools/labels.py` | string-to-ID label conversion, schema updates |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
 | 6. Permissions | `tool_filter.py` | hide tools/resources that exceed token scopes |
-| 7. Search/lazy loading | `tool_search.py` + `bm25_search.py` | BM25 search with alias expansion, synthetic tools |
-| 8. Namespace | `namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
+| 7. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
+| 8. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 9. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
 
 ### Resource System
 
 | Module | Role |
 |--------|------|
-| `resources.py` | Two registration phases: auto-generated (raw JSON from GET endpoints) then custom (Markdown wrappers for common URIs) |
-| `resource_registry.py` | Passive `ResourceRegistry` catalog class recording what's been registered |
+| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON) |
+| `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs |
+| `resources/format.py` | Markdown formatters for repository, issues, pulls, users, releases |
+| `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources |
+| `resources/registry.py` | Passive `ResourceRegistry` catalog class recording what's been registered |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
 
-### Server Setup Orchestration
+### Server Setup Orchestration (startup-only)
 
 | Module | Role |
 |--------|------|
 | `server_setup/__init__.py` | Package marker |
 | `server_setup/spec_loader.py` | Fetch, convert, extend |
-| `server_setup/mcp_builder.py` | Create provider + customize tools |
-| `server_setup/tool_annotator.py` | **Re-export facade** — implementations in `tool_*` modules below |
-| `server_setup/tool_customize.py` | Core customization pipeline (`customize_component`) |
-| `server_setup/tool_schemas.py` | Schema derivation, `$ref` resolution |
-| `server_setup/tool_errors.py` | Error translation, validation runner |
-| `server_setup/tool_labels.py` | Label name→ID conversion |
-| `server_setup/tool_examples.py` | Schema→example generation |
-| `server_setup/tool_search.py` | `TolerantSearchTransform`, synthetic tools |
-| `server_setup/resource_setup.py` | Orchestrate resource registration (renamed from `resource_registry.py` to avoid collision with flat module of same name) |
-| `server_setup/namespace.py` | Tool-only prefix transform |
+| `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_manager`) |
+| `server_setup/resource_setup.py` | Orchestrate resource registration |
 | `server_setup/permissions.py` | Re-exports from `tool_filter.py` (avoids circular import) |
 | `server_setup/mcp_extensions.py` | YAML-based tool customizations (titles, descriptions, params) |
-| `server_setup/bm25_search.py` | BM25 search logic |
-| `server_setup/label_manager.py` | Cached label name→ID mapping |
-| `server_setup/logging.py` | Re-exports from logging_config.py |
 
 ---
 
@@ -162,7 +155,7 @@ The customization layers as applied during server startup:
    `server_setup/logging.py` → `logging_config.py`.
 
 8. **Naming collision resolved** — Two modules once shared the name
-   `resource_registry`: the flat `resource_registry.py` (class `ResourceRegistry`
+   `resource_registry`: the `resources/registry.py` (class `ResourceRegistry`
    catalog) and `server_setup/resource_registry.py` (orchestration function).
    The latter was renamed to `resource_setup.py` to eliminate confusion.
 

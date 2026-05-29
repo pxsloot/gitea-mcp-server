@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 
-from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.server_setup.tool_annotator import customize_component
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.tools.customize import customize_component
 
 if TYPE_CHECKING:
     from httpx import AsyncClient

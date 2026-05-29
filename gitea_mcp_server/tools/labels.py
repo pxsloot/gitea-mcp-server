@@ -1,19 +1,15 @@
-"""Label conversion utilities for tool arguments.
-
-Extracted from tool_annotator.py to isolate label-related concerns.
-"""
+"""Label conversion utilities for tool arguments."""
 
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import OpenAPITool
 
-from gitea_mcp_server.server_setup.tool_schemas import _schema_type_is_array
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.tools.schemas import _schema_type_is_array
 from gitea_mcp_server.validation import ValidationError
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
-
-from gitea_mcp_server.server_setup.label_manager import LabelManager
 
 
 def _format_available_labels(label_names: list[str]) -> str:

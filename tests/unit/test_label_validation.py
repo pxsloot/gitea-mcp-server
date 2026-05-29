@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.server_setup.tool_annotator import (
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.tools.customize import (
     customize_component as _customize_component_impl,
 )
-from gitea_mcp_server.server_setup.tool_annotator import (
+from gitea_mcp_server.tools.labels import (
     update_labels_schema as _update_labels_schema_impl,
 )
 

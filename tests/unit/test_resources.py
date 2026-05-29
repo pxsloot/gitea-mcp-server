@@ -9,17 +9,16 @@ from fastmcp.exceptions import ResourceError
 from mcp.server.fastmcp import FastMCP
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
-from gitea_mcp_server.resource_registry import ResourceRegistry
-from gitea_mcp_server.resources import (
-    _format_datetime,
-    _format_repo_markdown,
+from gitea_mcp_server.resources.auto import register_auto_generated_resources
+from gitea_mcp_server.resources.custom import (
     get_file,
     get_readme,
     get_repository,
     list_repo_issues,
-    register_auto_generated_resources,
     register_custom_resources,
 )
+from gitea_mcp_server.resources.format import _format_datetime, _format_repo_markdown
+from gitea_mcp_server.resources.registry import ResourceRegistry
 
 
 class TestFormatDateTime:
@@ -318,7 +317,7 @@ class TestGetActiveTokenScopes:
 
     @pytest.mark.asyncio
     async def test_returns_scopes_for_matched_token(self):
-        from gitea_mcp_server.resources import get_active_token_scopes
+        from gitea_mcp_server.resources.custom import get_active_token_scopes
 
         client = AsyncMock()
         token_val = "test-token-xxxxxx_last8"
@@ -341,7 +340,7 @@ class TestGetActiveTokenScopes:
 
     @pytest.mark.asyncio
     async def test_returns_null_when_no_token_match(self):
-        from gitea_mcp_server.resources import get_active_token_scopes
+        from gitea_mcp_server.resources.custom import get_active_token_scopes
 
         client = AsyncMock()
         client._config.token = "unknown-token"
@@ -362,7 +361,7 @@ class TestGetActiveTokenScopes:
 
     @pytest.mark.asyncio
     async def test_handles_api_failure(self):
-        from gitea_mcp_server.resources import get_active_token_scopes
+        from gitea_mcp_server.resources.custom import get_active_token_scopes
 
         client = AsyncMock()
         client.request = AsyncMock(side_effect=Exception("API error"))
@@ -435,7 +434,7 @@ class TestResourceFormatters:
 
     def test_format_issues_markdown_empty(self):
         """Test empty issues list."""
-        from gitea_mcp_server.resources import _format_issues_markdown
+        from gitea_mcp_server.resources.format import _format_issues_markdown
 
         result = _format_issues_markdown([], title="Test Issues")
         assert "# Test Issues" in result
@@ -443,7 +442,7 @@ class TestResourceFormatters:
 
     def test_format_pulls_markdown_with_data(self):
         """Test pull request formatting."""
-        from gitea_mcp_server.resources import _format_pulls_markdown
+        from gitea_mcp_server.resources.format import _format_pulls_markdown
 
         pull = {
             "number": 1,
@@ -465,7 +464,7 @@ class TestResourceFormatters:
 
     def test_format_user_markdown_regular_user(self):
         """Test user profile formatting."""
-        from gitea_mcp_server.resources import _format_user_markdown
+        from gitea_mcp_server.resources.format import _format_user_markdown
 
         user = {
             "login": "johndoe",
@@ -488,7 +487,7 @@ class TestResourceFormatters:
 
     def test_format_user_markdown_organization(self):
         """Test organization profile formatting."""
-        from gitea_mcp_server.resources import _format_user_markdown
+        from gitea_mcp_server.resources.format import _format_user_markdown
 
         org = {
             "login": "myorg",
@@ -677,7 +676,7 @@ class TestDeriveResourceName:
 
     def test_uses_operation_id_camel_case(self):
         """Test camelCase operationId is converted to snake_case."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": "getRepo"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}")
@@ -685,7 +684,7 @@ class TestDeriveResourceName:
 
     def test_uses_operation_id_snake_case(self):
         """Test snake_case operationId is kept as-is."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": "issue_get_issue"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -693,7 +692,7 @@ class TestDeriveResourceName:
 
     def test_preserves_multi_word_snake_case(self):
         """Test multi-word snake_case is preserved."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": "org_list_members"}
         name = _derive_resource_name(operation, "/orgs/{org}/members")
@@ -701,7 +700,7 @@ class TestDeriveResourceName:
 
     def test_falls_back_to_path_when_no_operation_id(self):
         """Test fallback when operationId is missing."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"summary": "Get an issue"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -710,7 +709,7 @@ class TestDeriveResourceName:
 
     def test_handles_empty_operation_id(self):
         """Test fallback when operationId is empty string."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": ""}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -718,7 +717,7 @@ class TestDeriveResourceName:
 
     def test_handles_complex_camel_case(self):
         """Test complex camelCase with multiple words."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": "issueCreateIssueComment"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}/comments")
@@ -726,7 +725,7 @@ class TestDeriveResourceName:
 
     def test_handles_leading_uppercase(self):
         """Test leading uppercase in camelCase like 'RepoGet'."""
-        from gitea_mcp_server.resources import _derive_resource_name
+        from gitea_mcp_server.resources.auto import _derive_resource_name
 
         operation = {"operationId": "RepoGet"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}")

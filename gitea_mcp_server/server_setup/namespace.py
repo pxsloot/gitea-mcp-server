@@ -62,3 +62,8 @@ class GiteaNamespace(Namespace):
         version: VersionSpec | None = None,
     ) -> ResourceTemplate | None:
         return await call_next(uri, version=version)
+
+
+__all__ = [
+    "GiteaNamespace",
+]

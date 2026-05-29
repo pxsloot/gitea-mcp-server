@@ -75,10 +75,10 @@ class TestResourcesIntegration:
 
             # Patch the resource registration to track calls
             with patch(
-                "gitea_mcp_server.server_setup.resource_registry.register_auto_generated_resources"
+                "gitea_mcp_server.server_setup.resource_setup.register_auto_generated_resources"
             ) as mock_auto:
                 with patch(
-                    "gitea_mcp_server.server_setup.resource_registry.register_custom_resources"
+                    "gitea_mcp_server.server_setup.resource_setup.register_custom_resources"
                 ) as mock_custom:
                     mcp = await create_mcp_server(gitea_client)
 

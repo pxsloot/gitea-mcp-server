@@ -40,7 +40,7 @@ from gitea_mcp_server.server_setup.permissions import (
     filter_resources_by_permissions,
     filter_tools_by_permissions,
 )
-from gitea_mcp_server.server_setup.resource_registry import register_all_resources
+from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.server_setup.tool_annotator import TolerantSearchTransform
 

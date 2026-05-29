@@ -11,27 +11,16 @@ from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
 from fastmcp.server.transforms.search.bm25 import _catalog_hash
 from fastmcp.tools.base import Tool
 
-MIN_TOKEN_LENGTH = 2
-"""Minimum character length for search tokens."""
-
-NAME_BOOST = 3
-"""Number of times tool name is included in searchable text to boost relevance."""
-
-CATEGORY_SEARCH_ALIASES: dict[str, str] = {
-    "pull_request": "pull request pr",
-    "issue": "issue issues bug",
-    "repository": "repo repository repos",
-    "repo": "repo repository repos",
-    "organization": "org organization team",
-    "org": "org organization team",
-    "user": "user users account",
-}
-"""Expanded aliases for category tags to improve search matching."""
+from gitea_mcp_server.constants import (
+    SEARCH_CATEGORY_ALIASES,
+    SEARCH_MIN_TOKEN_LENGTH,
+    SEARCH_NAME_BOOST,
+)
 
 
 def _tokenize_len2(text: str) -> list[str]:
     """Tokenize with support for 2-character tokens like 'pr'."""
-    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) >= MIN_TOKEN_LENGTH]
+    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) >= SEARCH_MIN_TOKEN_LENGTH]
 
 
 def _expand_word_aliases(text: str) -> str:
@@ -64,7 +53,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     - Tags with expanded aliases
     - Title
     """
-    parts = [tool.name] * NAME_BOOST
+    parts = [tool.name] * SEARCH_NAME_BOOST
 
     if tool.annotations and tool.annotations.title:
         parts.append(tool.annotations.title)
@@ -85,8 +74,8 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     if tool.tags:
         for tag in tool.tags:
             parts.append(tag)
-            if tag in CATEGORY_SEARCH_ALIASES:
-                parts.append(CATEGORY_SEARCH_ALIASES[tag])
+            if tag in SEARCH_CATEGORY_ALIASES:
+                parts.append(SEARCH_CATEGORY_ALIASES[tag])
 
     return " ".join(parts)
 
@@ -156,9 +145,6 @@ class TolerantBM25Search:
 
 
 __all__ = [
-    "CATEGORY_SEARCH_ALIASES",
-    "MIN_TOKEN_LENGTH",
-    "NAME_BOOST",
     "TolerantBM25Search",
     "_BM25IndexLen2",
     "_expand_word_aliases",

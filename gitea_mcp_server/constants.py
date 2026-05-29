@@ -180,3 +180,69 @@ LABEL_GUIDANCE = (
 """Guidance text added to tools that accept label parameters."""
 
 
+# ============================================================================
+# BM25 Search Configuration
+# ============================================================================
+
+SEARCH_MIN_TOKEN_LENGTH = 2
+"""Minimum character length for search tokens."""
+
+SEARCH_NAME_BOOST = 3
+"""Number of times tool name is included in searchable text to boost relevance."""
+
+SEARCH_CATEGORY_ALIASES: dict[str, str] = {
+    "pull_request": "pull request pr",
+    "issue": "issue issues bug",
+    "repository": "repo repository repos",
+    "repo": "repo repository repos",
+    "organization": "org organization team",
+    "org": "org organization team",
+    "user": "user users account",
+}
+"""Expanded aliases for category tags to improve search matching."""
+
+
+# ============================================================================
+# Tool Scope Mapping (Swagger tag → Gitea token scope)
+# ============================================================================
+
+TAG_TO_SCOPE: dict[str, str] = {
+    "admin": "sudo",
+    "repository": "repository",
+    "issue": "issue",
+    "organization": "organization",
+    "user": "user",
+    "notification": "notification",
+    "package": "package",
+    "activitypub": "activitypub",
+    "miscellaneous": "misc",
+    "settings": "repository",
+}
+
+
+# ============================================================================
+# Cache Invalidation Patterns
+# ============================================================================
+# Each entry: (path_prefix, match_type, [pattern_names])
+# match_type: None (prefix match) or "exact" (exact match)
+
+TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
+    (
+        "/repos/{owner}/{repo}/issues",
+        None,
+        [PATTERN_ISSUES_LIST],
+    ),
+    (
+        "/repos/{owner}/{repo}/pulls",
+        None,
+        [PATTERN_PULLS_LIST],
+    ),
+    ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),
+    ("/repos/{owner}/{repo}/labels", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/milestones", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
+    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
+]
+
+

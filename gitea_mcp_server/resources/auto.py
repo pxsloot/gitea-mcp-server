@@ -6,6 +6,7 @@ These can be overridden by custom resources with the same URI.
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastmcp import FastMCP
@@ -46,7 +47,7 @@ def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
 def _make_resource_func(
     path: str, method: str, operation: dict[str, Any], gitea_client: GiteaClient,
     resource_name: str | None = None,
-) -> Any:
+) -> Callable[..., Awaitable[str]]:
     """Create a resource function for a given OpenAPI operation."""
     path_params = []
     if "parameters" in operation:

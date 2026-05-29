@@ -94,8 +94,8 @@ class TestResourcesIntegration:
         of the API path (e.g. /repos/{owner}/{repo} → gitea://repos/...).
         No double-gitea URIs are produced.
         """
-        from gitea_mcp_server import resources
-        from gitea_mcp_server.resource_registry import ResourceRegistry
+        from gitea_mcp_server import resources as resources_pkg
+        from gitea_mcp_server.resources.registry import ResourceRegistry
 
         # Create a minimal FastMCP mock that tracks registered resources
         mcp = MagicMock()
@@ -133,7 +133,7 @@ class TestResourcesIntegration:
         }
 
         registry = ResourceRegistry()
-        resources.register_auto_generated_resources(
+        resources_pkg.register_auto_generated_resources(
             mcp, mock_client, spec, registry, skip_uris=set()
         )
 
@@ -151,15 +151,15 @@ class TestResourcesIntegration:
     @pytest.mark.asyncio
     async def test_custom_resources_override_with_markdown(self):
         """Test that custom resources are registered with proper URIs."""
-        from gitea_mcp_server import resources
-        from gitea_mcp_server.resource_registry import ResourceRegistry
+        from gitea_mcp_server import resources as resources_pkg
+        from gitea_mcp_server.resources.registry import ResourceRegistry
 
         mcp = MagicMock()
         mcp.resource = MagicMock()
         mock_client = AsyncMock()
         registry = ResourceRegistry()
 
-        resources.register_custom_resources(mcp, mock_client, registry)
+        resources_pkg.register_custom_resources(mcp, mock_client, registry)
 
         # Should register multiple resources
         assert mcp.resource.call_count >= 10

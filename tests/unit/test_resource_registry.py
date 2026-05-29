@@ -1,7 +1,7 @@
 """Tests for the resource_registry module."""
 
 
-from gitea_mcp_server.resource_registry import ResourceRegistry
+from gitea_mcp_server.resources.registry import ResourceRegistry
 
 
 class TestResourceRegistry:

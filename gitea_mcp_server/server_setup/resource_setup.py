@@ -6,11 +6,8 @@ from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
-from gitea_mcp_server.resource_registry import ResourceRegistry
-from gitea_mcp_server.resources import (
-    register_auto_generated_resources,
-    register_custom_resources,
-)
+from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
+from gitea_mcp_server.resources.registry import ResourceRegistry
 
 
 def register_all_resources(

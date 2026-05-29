@@ -32,17 +32,17 @@ from gitea_mcp_server.constants import (
     SEARCH_MAX_RESULTS,
 )
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.server_setup.logging import setup_logging
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
-from gitea_mcp_server.server_setup.namespace import GiteaNamespace
 from gitea_mcp_server.server_setup.permissions import (
     filter_resources_by_permissions,
     filter_tools_by_permissions,
 )
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
-from gitea_mcp_server.server_setup.tool_annotator import TolerantSearchTransform
+from gitea_mcp_server.tools.namespace import GiteaNamespace
+from gitea_mcp_server.tools.search import TolerantSearchTransform
 
 logger = logging.getLogger(__name__)
 

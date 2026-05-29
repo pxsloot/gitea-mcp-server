@@ -12,7 +12,7 @@ from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
     compute_uris_to_invalidate,
 )
-from gitea_mcp_server.server_setup.tool_annotator import (
+from gitea_mcp_server.tools.customize import (
     compute_invalidation_patterns as _compute_tool_invalidation_patterns,
 )
 

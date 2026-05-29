@@ -8,30 +8,21 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
-from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
+from gitea_mcp_server.constants import LABEL_GUIDANCE, SEARCH_NAME_BOOST, TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.exceptions import ValidationError
-from gitea_mcp_server.constants import SEARCH_NAME_BOOST
-from gitea_mcp_server.server_setup.bm25_search import _extract_searchable_text_enhanced
-from gitea_mcp_server.server_setup.label_manager import LabelManager
-from gitea_mcp_server.server_setup.tool_labels import (
+from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.resources.scope import derive_required_scope as _derive_required_scope
+from gitea_mcp_server.tools.customize import (
+    add_inferred_hints as _add_inferred_hints,
+    categorize_tool as _categorize_tool,
+    customize_component as _customize_component,
+    generate_tool_title as _generate_tool_title,
+)
+from gitea_mcp_server.tools.labels import (
     _convert_labels,
     _format_available_labels,
 )
-from gitea_mcp_server.server_setup.tool_annotator import (
-    add_inferred_hints as _add_inferred_hints,
-)
-from gitea_mcp_server.server_setup.tool_annotator import (
-    categorize_tool as _categorize_tool,
-)
-from gitea_mcp_server.server_setup.tool_annotator import (
-    customize_component as _customize_component,
-)
-from gitea_mcp_server.server_setup.tool_annotator import (
-    derive_required_scope as _derive_required_scope,
-)
-from gitea_mcp_server.server_setup.tool_annotator import (
-    generate_tool_title as _generate_tool_title,
-)
+from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
 
 # Create a label manager for tests that need it
 _label_manager = LabelManager()
@@ -627,32 +618,32 @@ class TestSchemaTypeIsArray:
 
     def test_detects_string_type(self):
         """Should return True for type 'array'."""
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": "array"}) is True
 
     def test_detects_list_type(self):
         """Should return True for type ['array', 'null']."""
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": ["array", "null"]}) is True
 
     def test_rejects_non_array_string(self):
         """Should return False for non-array string types."""
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": "string"}) is False
         assert _schema_type_is_array({"type": "object"}) is False
 
     def test_rejects_non_array_list(self):
         """Should return False when 'array' not in type list."""
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": ["string", "null"]}) is False
 
     def test_no_type_key(self):
         """Should return False when no type key."""
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_type_is_array
+        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({}) is False
 
@@ -1123,9 +1114,7 @@ class TestDeriveOutputSchema:
 
     def test_inline_schema_response(self):
         """Should extract inline schema directly from response content."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -1137,9 +1126,7 @@ class TestDeriveOutputSchema:
 
     def test_array_response(self):
         """Should handle array-type response schemas."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -1150,9 +1137,7 @@ class TestDeriveOutputSchema:
 
     def test_ref_response_resolved(self):
         """Should resolve $ref in response to get the schema."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec_with_ref: dict = {
             "openapi": "3.1.0",
@@ -1198,9 +1183,7 @@ class TestDeriveOutputSchema:
 
     def test_no_content_response_returns_none(self):
         """204 No Content responses should return None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "DELETE")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -1208,9 +1191,7 @@ class TestDeriveOutputSchema:
 
     def test_none_spec_returns_none(self):
         """When spec is None, should return None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/test", "GET")
         schema = derive_output_schema(route, None)
@@ -1218,9 +1199,7 @@ class TestDeriveOutputSchema:
 
     def test_missing_path_returns_none(self):
         """When route path is not in spec, should return None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/nonexistent/path", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -1228,9 +1207,7 @@ class TestDeriveOutputSchema:
 
     def test_missing_method_returns_none(self):
         """When route method is not in spec, should return None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "PATCH")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -1238,9 +1215,7 @@ class TestDeriveOutputSchema:
 
     def test_prefers_200_over_201(self):
         """Should prefer 200 over 201 when both are present."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec: dict = {
             "openapi": "3.1.0",
@@ -1278,9 +1253,7 @@ class TestDeriveOutputSchema:
 
     def test_falls_back_to_201_when_no_200(self):
         """Should fall back to 201 when no 200 response exists."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            derive_output_schema,
-        )
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec: dict = {
             "openapi": "3.1.0",
@@ -1313,9 +1286,7 @@ class TestDeriveOutputSchema:
         from fastmcp.tools.tool import ToolAnnotations
 
         from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            customize_component,
-        )
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1346,9 +1317,7 @@ class TestDeriveOutputSchema:
         from fastmcp.server.providers.openapi import OpenAPITool
         from fastmcp.tools.tool import ToolAnnotations
 
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            customize_component,
-        )
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/test", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1374,9 +1343,7 @@ class TestDeriveOutputSchema:
         from fastmcp.server.providers.openapi import OpenAPITool
         from fastmcp.tools.tool import ToolAnnotations
 
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            customize_component,
-        )
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1405,9 +1372,7 @@ class TestDeriveOutputSchema:
         from fastmcp.server.providers.openapi import OpenAPITool
         from fastmcp.tools.tool import ToolAnnotations
 
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            customize_component,
-        )
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1438,9 +1403,7 @@ class TestDeriveOutputSchema:
         from fastmcp.server.providers.openapi import OpenAPITool
         from fastmcp.tools.tool import ToolAnnotations
 
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            customize_component,
-        )
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1515,23 +1478,23 @@ class TestIsTextResponse:
         }
 
     def test_text_plain_endpoint_detected(self, text_spec):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
 
     def test_json_endpoint_not_text(self, text_spec):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
 
     def test_no_content_types_not_text(self, text_spec):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/no-content-types", "get") is False
 
     def test_missing_path_returns_false(self, text_spec):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/nonexistent", "get") is False
 
     def test_missing_method_returns_false(self, text_spec):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_text_response
+        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
 
@@ -1581,7 +1544,7 @@ class TestTextResponseOutputSchema:
 
     def test_text_plain_derive_output_schema_none(self):
         """text/plain endpoints should return None from derive_output_schema."""
-        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
         schema = derive_output_schema(route, self.TEXT_SPEC)
@@ -1589,7 +1552,7 @@ class TestTextResponseOutputSchema:
 
     def test_json_still_gets_output_schema(self):
         """JSON endpoints should still get output_schema."""
-        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
         schema = derive_output_schema(route, self.TEXT_SPEC)
@@ -1601,7 +1564,7 @@ class TestTextResponseOutputSchema:
         from fastmcp.server.providers.openapi import OpenAPITool
         from fastmcp.tools.tool import ToolAnnotations
 
-        from gitea_mcp_server.server_setup.tool_annotator import customize_component
+        from gitea_mcp_server.tools.customize import customize_component
 
         route = self._make_route("/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -1668,7 +1631,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_nested_property_refs(self):
         """Resolves $ref inside property values."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {
             "type": "object",
@@ -1684,7 +1647,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_items_ref(self):
         """Resolves $ref in array items."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {
             "type": "array",
@@ -1696,7 +1659,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_chain_of_refs(self):
         """Resolves $ref chains (Repo -> User -> no more refs)."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/NestedRef"}
         resolved = _deep_resolve_schema(schema, self.SPEC)
@@ -1707,7 +1670,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_allOf_entries(self):
         """Recursively resolves $ref inside allOf entries."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/AllOfSchema"}
         resolved = _deep_resolve_schema(schema, self.SPEC)
@@ -1716,7 +1679,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_top_level_ref(self):
         """Resolves a top-level $ref."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/User"}
         resolved = _deep_resolve_schema(schema, self.SPEC)
@@ -1726,7 +1689,7 @@ class TestDeepResolveSchema:
 
     def test_leaf_schema_unchanged(self):
         """A schema with no refs should return a copy unchanged."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
         resolved = _deep_resolve_schema(schema, self.SPEC)
@@ -1734,7 +1697,7 @@ class TestDeepResolveSchema:
 
     def test_circular_ref_does_not_loop(self):
         """Circular $ref should not cause infinite recursion."""
-        from gitea_mcp_server.server_setup.tool_annotator import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
         circular_spec = {
             "components": {
@@ -1757,7 +1720,7 @@ class TestDeepResolveSchema:
 
     def test_deep_resolve_applied_in_derive_output_schema(self):
         """derive_output_schema should deep-resolve nested refs."""
-        from gitea_mcp_server.server_setup.tool_annotator import derive_output_schema
+        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec = {
             "openapi": "3.1.0",
@@ -1807,9 +1770,7 @@ class TestCallToolOutputSchema:
 
     def test_call_tool_has_output_schema(self):
         """_make_call_tool should return a Tool with output_schema set."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -1823,9 +1784,7 @@ class TestCallToolOutputSchema:
 
     def test_call_tool_result_property_accepts_any_type(self):
         """The 'result' property must not have a 'type' constraint (accepts arrays, etc.)."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -1840,7 +1799,7 @@ class TestSchemaToExample:
     """Tests for _schema_to_example function."""
 
     def test_object_with_properties(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "object",
@@ -1859,7 +1818,7 @@ class TestSchemaToExample:
         assert result["score"] == 0.0
 
     def test_uses_schema_example(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "object",
@@ -1871,7 +1830,7 @@ class TestSchemaToExample:
         assert result["color"] == "00aabb"
 
     def test_array_type(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "array",
@@ -1883,13 +1842,13 @@ class TestSchemaToExample:
         assert result[0] == "text"
 
     def test_string_with_enum(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": "string", "enum": ["open", "closed"]}
         assert _schema_to_example(schema) == "open"
 
     def test_string_with_format_date_time(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": "string", "format": "date-time"}
         result = _schema_to_example(schema)
@@ -1897,7 +1856,7 @@ class TestSchemaToExample:
         assert "T" in result
 
     def test_anyof_skips_null(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "anyOf": [
@@ -1908,13 +1867,13 @@ class TestSchemaToExample:
         assert _schema_to_example(schema) == "text"
 
     def test_type_list_skips_null(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": ["null", "string"]}
         assert _schema_to_example(schema) == "text"
 
     def test_depth_limit(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "object",
@@ -1937,7 +1896,7 @@ class TestSchemaToExample:
         assert result["a"]["b"] == {}
 
     def test_property_count_limit(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "object",
@@ -1947,18 +1906,18 @@ class TestSchemaToExample:
         assert len(result) == 5
 
     def test_null_type(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         assert _schema_to_example({"type": "null"}) is None
 
     def test_non_dict_schema_raises(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         with pytest.raises(AttributeError):
             _schema_to_example("not a dict")  # type: ignore[arg-type]
 
     def test_nested_object_in_array(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
             "type": "array",
@@ -1977,7 +1936,7 @@ class TestSchemaToExample:
         assert result[0]["label"] == "text"
 
     def test_empty_object(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _schema_to_example
+        from gitea_mcp_server.tools.examples import _schema_to_example
 
         assert _schema_to_example({"type": "object", "properties": {}}) == {}
 
@@ -1985,7 +1944,7 @@ class TestSchemaToExample:
         """_serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
-        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -2014,7 +1973,7 @@ class TestSchemaToExample:
         """_serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
 
-        from gitea_mcp_server.server_setup.tool_annotator import _serialize_tool_schema
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -2038,9 +1997,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_passes_toolresult_through(self):
         """call_tool function should return the inner tool's ToolResult as-is."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2061,9 +2018,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_no_double_wrap_through_convert_result(self):
         """convert_result must not double-wrap a ToolResult returned by call_tool."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2089,9 +2044,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_preserves_user_meta_from_inner_tool(self):
         """call_tool should preserve meta from the inner tool's ToolResult."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2113,9 +2066,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_rejects_self_call(self):
         """call_tool should reject calling itself or search_tools."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2130,9 +2081,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_parses_json_string_arguments(self):
         """String arguments should be parsed as JSON before forwarding."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2149,9 +2098,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_rejects_non_dict_and_non_string_arguments(self):
         """Arguments that are neither dict nor None nor a JSON string should be rejected."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2166,9 +2113,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_rejects_invalid_json(self):
         """Invalid JSON string arguments should be rejected."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2180,9 +2125,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_handles_none_arguments(self):
         """None arguments should be forwarded as None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2197,9 +2140,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_handles_missing_arguments(self):
         """Omitting arguments should forward None."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2214,9 +2155,7 @@ class TestCallToolRuntimeBehavior:
     @pytest.mark.asyncio
     async def test_call_tool_routes_array_result_from_inner_tool(self):
         """When inner tool returns an array wrapped in {"result": [...]}, pass through."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            TolerantSearchTransform,
-        )
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         tool = transform._make_call_tool()
@@ -2367,9 +2306,7 @@ class TestCompactSearchSerializer:
 
     def test_returns_name_and_description_only(self):
         """Search results should only include name and description."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            _compact_search_serializer,
-        )
+        from gitea_mcp_server.tools.search import _compact_search_serializer
 
         tool = Tool(
             name="test_tool",
@@ -2390,9 +2327,7 @@ class TestCompactSearchSerializer:
 
     def test_handles_empty_fields(self):
         """Should handle tools with minimal fields."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            _compact_search_serializer,
-        )
+        from gitea_mcp_server.tools.search import _compact_search_serializer
 
         tool = Tool(
             name="minimal_tool",
@@ -2406,9 +2341,7 @@ class TestCompactSearchSerializer:
 
     def test_handles_multiple_tools(self):
         """Should serialize multiple tools correctly."""
-        from gitea_mcp_server.server_setup.tool_annotator import (
-            _compact_search_serializer,
-        )
+        from gitea_mcp_server.tools.search import _compact_search_serializer
 
         tools = [
             Tool(name="tool_a", description="First tool", parameters={"properties": {}}),
@@ -2424,7 +2357,7 @@ class TestIsArrayResponse:
     """Tests for _is_array_response function."""
 
     def test_detects_array_result(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         schema = {
             "type": "object",
@@ -2438,7 +2371,7 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is True
 
     def test_detects_nullable_array_result(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         schema = {
             "type": "object",
@@ -2452,7 +2385,7 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is True
 
     def test_rejects_object_result(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         schema = {
             "type": "object",
@@ -2466,23 +2399,23 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is False
 
     def test_missing_result_key(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         schema = {"type": "object", "properties": {}}
         assert _is_array_response(schema) is False
 
     def test_none_input(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         assert _is_array_response(None) is False
 
     def test_empty_dict(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         assert _is_array_response({}) is False
 
     def test_properties_not_a_dict(self):
-        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+        from gitea_mcp_server.tools.customize import _is_array_response
 
         schema = {"type": "object", "properties": "not_a_dict"}
         assert _is_array_response(schema) is False

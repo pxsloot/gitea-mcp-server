@@ -2496,3 +2496,307 @@ class TestCompactSearchSerializer:
         assert len(result) == 2
         assert result[0]["name"] == "tool_a"
         assert result[1]["name"] == "tool_b"
+
+
+class TestIsArrayResponse:
+    """Tests for _is_array_response function."""
+
+    def test_detects_array_result(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                },
+            },
+        }
+        assert _is_array_response(schema) is True
+
+    def test_detects_nullable_array_result(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": ["array", "null"],
+                    "items": {"type": "object"},
+                },
+            },
+        }
+        assert _is_array_response(schema) is True
+
+    def test_rejects_object_result(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            },
+        }
+        assert _is_array_response(schema) is False
+
+    def test_missing_result_key(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        schema = {"type": "object", "properties": {}}
+        assert _is_array_response(schema) is False
+
+    def test_none_input(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        assert _is_array_response(None) is False
+
+    def test_empty_dict(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        assert _is_array_response({}) is False
+
+    def test_properties_not_a_dict(self):
+        from gitea_mcp_server.server_setup.tool_annotator import _is_array_response
+
+        schema = {"type": "object", "properties": "not_a_dict"}
+        assert _is_array_response(schema) is False
+
+
+class TestPaginationMetadata:
+    """Tests for pagination metadata injection in transform_fn."""
+
+    PAGINATION_SPEC: dict = {
+        "openapi": "3.1.1",
+        "paths": {
+            "/repos/{owner}/{repo}/issues": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "IssueList",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+            "/repos/{owner}/{repo}/issues/{index}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "Issue",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer", "description": "Issue ID"},
+                                            "title": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+        },
+    }
+
+    @pytest.fixture
+    def _wrapped_spec(self):
+        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
+
+        spec = deepcopy(self.PAGINATION_SPEC)
+        _wrap_success_response_schemas(spec)
+        return spec
+
+    @pytest.mark.asyncio
+    async def test_has_more_true_when_result_equals_per_page(self, _wrapped_spec):
+        """has_more should be True when result length equals per_page."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(30)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 1, "per_page": 30})
+
+        assert result.structured_content["has_more"] is True
+        assert result.structured_content["next_offset"] == 2
+        assert result.structured_content["total_count"] is None
+        assert len(result.structured_content["result"]) == 30
+
+    @pytest.mark.asyncio
+    async def test_has_more_false_when_result_less_than_per_page(self, _wrapped_spec):
+        """has_more should be False when result length is less than per_page."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(15)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 1, "per_page": 30})
+
+        assert result.structured_content["has_more"] is False
+        assert result.structured_content["next_offset"] is None
+        assert result.structured_content["total_count"] is None
+
+    @pytest.mark.asyncio
+    async def test_defaults_when_kwargs_missing(self, _wrapped_spec):
+        """Should default to page=1 and limit=100 when no pagination args provided."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        # Return exactly 100 items, which equals the default `limit`
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(100)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({})
+
+        assert result.structured_content["has_more"] is True
+        assert result.structured_content["next_offset"] == 2
+
+    @pytest.mark.asyncio
+    async def test_uses_limit_parameter(self, _wrapped_spec):
+        """Should use 'limit' parameter as fallback when 'per_page' is not present."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "limit": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(50)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 1, "limit": 50})
+
+        assert result.structured_content["has_more"] is True
+        assert result.structured_content["next_offset"] == 2
+
+    @pytest.mark.asyncio
+    async def test_no_pagination_for_non_array_response(self, _wrapped_spec):
+        """Non-array responses should not get pagination metadata."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues/{index}", method="GET", summary="Get issue", operation_id="get_issue")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_get_issue"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": {"id": 1, "title": "Test"}}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({})
+
+        assert result.structured_content == {"result": {"id": 1, "title": "Test"}}
+        assert "has_more" not in result.structured_content
+
+    @pytest.mark.asyncio
+    async def test_total_count_always_none(self, _wrapped_spec):
+        """total_count should always be None (requires API headers)."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(5)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 2, "per_page": 10})
+
+        assert result.structured_content["total_count"] is None
+
+    @pytest.mark.asyncio
+    async def test_preserves_original_result_data(self, _wrapped_spec):
+        """Original result data should be preserved in enhanced response."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        original_data = [{"id": 1, "title": "First"}, {"id": 2, "title": "Second"}]
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": original_data}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 1, "per_page": 10})
+
+        assert result.structured_content["result"] == original_data

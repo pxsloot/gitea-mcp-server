@@ -569,6 +569,31 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
     return False
 
 
+def _is_array_response(output_schema: dict[str, Any] | None) -> bool:
+    """Check if the output schema represents an array response.
+
+    Checks if the output schema has a 'result' property that is an array type.
+
+    Args:
+        output_schema: The output schema dictionary
+
+    Returns:
+        True if the response is an array wrapped in result object
+    """
+    if not output_schema or not isinstance(output_schema, dict):
+        return False
+
+    properties = output_schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return False
+
+    result_schema = properties.get("result")
+    if not isinstance(result_schema, dict):
+        return False
+
+    return _schema_type_is_array(result_schema)
+
+
 def _format_available_labels(label_names: list[str]) -> str:
     """Group label names by prefix and format for readable agent display."""
     groups: dict[str, list[str]] = {}
@@ -755,6 +780,8 @@ def customize_component(
         _run_validation(kwargs, component.parameters.get("required"))
         await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
         result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
+
+        # Handle text/plain responses (diff, patch)
         if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
             # For text/plain responses (diff, patch), the inner OpenAPITool.run()
             # falls through json.JSONDecodeError and returns ToolResult(content=text)
@@ -768,6 +795,31 @@ def customize_component(
                 content=[TextContent(type="text", text=text)],
                 structured_content={"result": text},
             )
+
+        # Handle array responses to add pagination metadata
+        if _is_array_response(output_schema) and isinstance(result, ToolResult) and result.structured_content is not None:
+            # Extract the result data
+            result_data = result.structured_content.get("result")
+            if isinstance(result_data, list):
+                # Get pagination parameters
+                page = kwargs.get("page", 1)
+                per_page = kwargs.get("per_page") or kwargs.get("limit", 100)  # Gitea uses limit parameter
+
+                # Calculate pagination metadata
+                has_more = len(result_data) == per_page if per_page else False
+                next_offset = page + 1 if has_more else None
+
+                # Create enhanced result with pagination metadata at top level
+                enhanced_result = dict(result.structured_content)
+                enhanced_result["has_more"] = has_more
+                enhanced_result["next_offset"] = next_offset
+                enhanced_result["total_count"] = None  # Would need API headers to determine accurately
+
+                return ToolResult(
+                    content=[TextContent(type="text", text=str(enhanced_result))],
+                    structured_content=enhanced_result
+                )
+
         return result
 
     # Set x-fastmcp-wrap-result on the inner OpenAPITool so its run()

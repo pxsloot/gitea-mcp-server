@@ -11,6 +11,12 @@ The codebase is designed to work *with* FastMCP, not around it.  When FastMCP's
 API lacks something, we add a conversion/transform layer that can be cleanly
 removed when FastMCP catches up.
 
+> **Canonical source** — This document is the primary map for the codebase.
+> Before launching exploration subagents, check whether this document already
+> answers your question.  Subagents should only be used for dynamic
+> investigation (test failures, runtime behavior), not static code structure
+> discovery.
+
 ---
 
 ## Pipeline: Swagger 2.0 → FastMCP Tools & Resources

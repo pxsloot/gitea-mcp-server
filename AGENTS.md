@@ -35,6 +35,15 @@ Always use https://gofastmcp.com/llms.txt for up-to-date documentation.
 
 Dont use old style fastmcp from memory: it will impact code quality negatively.
 
+## Use doc knowledge, don't re-discover
+
+After reading docs/ARCHITECTURE.md and docs/DEVELOPMENT.md, use that knowledge
+directly. Do not launch subagent exploration for information already documented
+there. Reserve subagents for dynamic investigation: test failures, runtime
+behavior debugging, or tracing data flow.
+
+Browse specific source files with the Read tool when you need implementation
+details — not a broad subagent exploration.
 
 ## Tool naming
 

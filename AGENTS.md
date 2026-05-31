@@ -22,24 +22,24 @@ fastmcp api is changed later on, the changes to our code would be a rather
 simple removal of our 'fix'.
 
 
-## Important: fastmcp has changed since your training
+## Load the project skill first
 
-Always read docs/ARCHITECTURE.md and docs/DEVELOPMENT.md before working on
-gitea-mcp-server. The docs will give indispensible insight in the complex workings,
-development can not start without this knowledge.
+This project has a `gitea-mcp-server` skill in `.opencode/skills/gitea-mcp-server/`.
+Load it with `/skill gitea-mcp-server`. It encodes all the architecture,
+development workflow, customization patterns, and project conventions from
+`docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` — you do not need to read
+those files separately.
 
-Do not assume, read the docs first!
-Do not 'let me fix that quickly', read the docs first!
+## FastMCP docs always up to date
 
 Always use https://gofastmcp.com/llms.txt for up-to-date documentation.
+Do not use old style fastmcp from memory: it will impact code quality negatively.
 
-Dont use old style fastmcp from memory: it will impact code quality negatively.
+## Use skill knowledge, don't re-discover
 
-## Use doc knowledge, don't re-discover
-
-After reading docs/ARCHITECTURE.md and docs/DEVELOPMENT.md, use that knowledge
-directly. Do not launch subagent exploration for information already documented
-there. Reserve subagents for dynamic investigation: test failures, runtime
+After loading the `gitea-mcp-server` skill, use that knowledge directly.
+Do not launch subagent exploration for information already documented in the
+skill. Reserve subagents for dynamic investigation: test failures, runtime
 behavior debugging, or tracing data flow.
 
 Browse specific source files with the Read tool when you need implementation

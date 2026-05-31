@@ -13,17 +13,60 @@ from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
 from fastmcp.server.transforms.search.bm25 import _catalog_hash
 from fastmcp.tools.base import Tool, ToolResult
+from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_TOKEN_LENGTH,
     SEARCH_NAME_BOOST,
 )
+from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
     _raise_value_error_from,
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+
+def _format_result(
+    result: ToolResult,
+    fmt: str,
+    output_schema: dict[str, Any] | None = None,
+) -> ToolResult:
+    """Reformat ToolResult content by format.
+
+    ``structured_content`` is always preserved as raw data.
+    For non-JSON or binary results, all formats return unchanged.
+    """
+    if fmt == "raw" or not result.structured_content:
+        return result
+
+    data = result.structured_content.get("result")
+    if data is None:
+        return result
+
+    content: str | None = None
+
+    if fmt == "json":
+        content = json.dumps(data, indent=2)
+
+    elif fmt == "markdown" and isinstance(data, (dict, list)):
+        inner = (
+            output_schema.get("properties", {}).get("result", {})
+            if output_schema
+            else None
+        )
+        content = _format_as_markdown(data, inner)
+
+    if content is not None:
+        return ToolResult(
+            content=[TextContent(type="text", text=content)],
+            structured_content=result.structured_content,
+            meta=result.meta,
+        )
+
+    return result
+
 
 # ============================================================================
 # BM25 Search Engine (from bm25_search.py)
@@ -187,13 +230,14 @@ class TolerantSearchTransform(BM25SearchTransform):
 
         async def search_tools(
             query: Annotated[str, "Natural language query to search for tools"],
+            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
             ctx: Context = None,  # type: ignore[assignment]
         ) -> ToolResult:
             assert ctx is not None
             hidden = await transform._get_visible_tools(ctx)
             results = await transform._search(hidden, query)
             rendered = await transform._render_results(results)
-            return ToolResult(structured_content={"result": rendered})
+            return _format_result(ToolResult(structured_content={"result": rendered}), format)
 
         return Tool.from_function(
             fn=search_tools,
@@ -222,6 +266,7 @@ class TolerantSearchTransform(BM25SearchTransform):
         async def call_tool(
             name: Annotated[str, "The name of the tool to call"],
             arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
+            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
             ctx: Context | None = None,
         ) -> ToolResult:
             if name in {transform._call_tool_name, transform._search_tool_name, transform._tool_info_name}:
@@ -237,7 +282,13 @@ class TolerantSearchTransform(BM25SearchTransform):
                 msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
                 _raise_value_error(msg)
             assert ctx is not None
-            return await ctx.fastmcp.call_tool(name, arguments)
+            result = await ctx.fastmcp.call_tool(name, arguments)
+            output_schema = None
+            if format == "markdown":
+                tool_obj = await ctx.fastmcp.get_tool(name)
+                if tool_obj is not None:
+                    output_schema = tool_obj.output_schema
+            return _format_result(result, format, output_schema)
 
         return Tool.from_function(
             fn=call_tool,
@@ -257,13 +308,14 @@ class TolerantSearchTransform(BM25SearchTransform):
 
         async def tool_info(
             name: Annotated[str, "The exact name of the tool to inspect"],
+            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
             ctx: Context = None,  # type: ignore[assignment]
         ) -> ToolResult:
             assert ctx is not None
             tools = await transform.get_tool_catalog(ctx)
             for tool in tools:
                 if tool.name == name:
-                    return ToolResult(structured_content={"result": _serialize_tool_schema(tool)})
+                    return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
             msg = f"Tool '{name}' not found"
             _raise_value_error(msg)
             return None  # type: ignore[unreachable]

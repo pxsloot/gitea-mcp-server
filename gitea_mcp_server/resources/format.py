@@ -1,25 +1,18 @@
-"""Markdown formatters for MCP resources."""
+"""Markdown formatters for MCP resources.
 
-from datetime import datetime
+Domain-specific resource formatters. General-purpose
+schema-aware formatting lives in gitea_mcp_server/format.py.
+"""
+
 from typing import Any
 
 from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
+from gitea_mcp_server.format import _format_datetime
 
 # Type alias for resource return values
 ResourceResult = str
-
-
-def _format_datetime(dt: str | None) -> str:
-    """Format datetime string to human-readable format."""
-    if not dt:
-        return "N/A"
-    try:
-        parsed = datetime.fromisoformat(dt.replace("Z", "+00:00"))
-        return parsed.strftime("%Y-%m-%d %H:%M:%S UTC")
-    except (ValueError, AttributeError):
-        return dt
 
 
 def _format_repo_markdown(repo: dict[str, Any]) -> ResourceResult:

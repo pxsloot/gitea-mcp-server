@@ -71,6 +71,7 @@ removed when FastMCP catches up.
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
+| `format.py` | General-purpose schema-aware markdown formatters (shared by tools & resources) | `_format_as_markdown`, `_format_datetime`, `_format_simple_value` |
 
 ### Tool Customization Stack (applied in order)
 
@@ -106,7 +107,7 @@ The customization layers as applied during server startup:
 |--------|------|
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON) |
 | `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs |
-| `resources/format.py` | Markdown formatters for repository, issues, pulls, users, releases |
+| `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases) |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources |
 | `resources/registry.py` | Passive `ResourceRegistry` catalog class recording what's been registered |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |

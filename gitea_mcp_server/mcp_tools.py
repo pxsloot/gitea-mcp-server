@@ -18,7 +18,9 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
+from mcp.types import TextContent
 
+from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.tools.examples import _schema_to_example
 
 logger = logging.getLogger(__name__)
@@ -110,6 +112,28 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
     return {"resources": resources_list, "count": len(resources_list)}
 
 
+def _format_resource_content(raw: str, fmt: str) -> str:
+    """Reformat a resource result string by format.
+
+    If the content is JSON, parse and reformat (markdown or pretty-printed).
+    Otherwise return unchanged for all formats.
+    """
+    if fmt == "raw":
+        return raw
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return raw
+
+    if fmt == "json":
+        return json.dumps(data, indent=2)
+
+    if fmt == "markdown":
+        return _format_as_markdown(data, None)
+
+    return raw
+
+
 async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
     """Implementation of mcp_read_resource.
 
@@ -155,7 +179,10 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             },
         },
     })
-    async def mcp_list_resources(ctx: Context = CurrentContext()) -> ToolResult:
+    async def mcp_list_resources(
+        format: str = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
         """List all available MCP resources.
 
         This tool discovers all registered MCP resources and resource templates (parameterized URIs)
@@ -214,6 +241,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
           - `"read:repository"` - needs read access to repositories
           - `"read:issue"` - needs read access to issues
           - `null` - requires no specific scope (public info)
+        - Use the `format` parameter to control output: ``format=markdown`` (default),
+          ``format=json``, or ``format=raw``.
 
         Returns:
             Dictionary with 'resources' key containing a list of resource info:
@@ -230,8 +259,14 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                 ...
             ]
         """
-        result = await _mcp_list_resources_impl(ctx)
-        return ToolResult(structured_content={"result": result})
+        raw = await _mcp_list_resources_impl(ctx)
+        if format == "raw":
+            return ToolResult(structured_content={"result": raw})
+        content = json.dumps(raw, indent=2) if format == "json" else _format_as_markdown(raw, None)
+        return ToolResult(
+            content=[TextContent(type="text", text=content)],
+            structured_content={"result": raw},
+        )
 
     @mcp.tool(output_schema={
         "type": "object",
@@ -242,7 +277,11 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             },
         },
     })
-    async def mcp_read_resource(uri: str, ctx: Context = CurrentContext()) -> ToolResult:
+    async def mcp_read_resource(
+        uri: str,
+        format: str = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
         """Read the content of an MCP resource by URI.
 
         Fetches the resource from the server's resource registry and returns its
@@ -257,13 +296,19 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         URI format: `gitea://<path>` where path follows the Gitea API structure.
 
+        ## Parameter: format
+
+        Output format:
+        - ``markdown`` (default): schema-aware Markdown with tables and sections (for JSON resources).
+        - ``raw``: return the resource content exactly as stored.
+        - ``json``: pretty-printed JSON (for JSON resources).
+
+        Non-JSON resources (markdown, text, binary) are returned unchanged in all formats.
+
         ## Return Value
 
-        The resource content as a string. The format depends on the resource:
-        - `text/markdown`: Human-readable Markdown (for wrapper resources)
-        - `application/json`: Raw JSON (for auto-generated API resources)
-        - `text/plain`: Plain text (e.g., READMEs, file contents)
-        - Other MIME types as indicated in `mcp_list_resources`
+        The resource content as a string. The format depends on the resource
+        and the ``format`` parameter.
 
         ## Usage Examples
 
@@ -271,6 +316,13 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         ```python
         version = await mcp_read_resource("gitea://version")
         print(f"Server version: {version}")
+        ```
+
+        ### Reading with different formats
+        ```python
+        repo = await mcp_read_resource("gitea://repos/owner/repo")
+        repo_json = await mcp_read_resource("gitea://repos/owner/repo", format="json")
+        repo_raw = await mcp_read_resource("gitea://repos/owner/repo", format="raw")
         ```
 
         ### Reading a parameterized template
@@ -315,9 +367,11 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         3. **Use tags for filtering**: Filter resources by tags (e.g., "wrapper" for human-readable content)
         4. **Handle errors gracefully**: Wrap calls in try-except to handle missing resources or API failures
         5. **Cache when appropriate**: Resources have built-in caching; avoid repeated calls in tight loops
+        6. **Use format parameter**: ``format=json`` for structured data extraction, ``format=markdown`` for readability
 
         Args:
             uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
+            format: Output format — ``markdown`` (default), ``raw``, or ``json``.
 
         Returns:
             The resource content as a string. May be plain text, markdown, JSON, etc.
@@ -326,7 +380,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             ValueError: If the resource is not found or cannot be read
         """
         result = await _mcp_read_resource_impl(ctx, uri)
-        return ToolResult(structured_content={"result": result})
+        formatted = _format_resource_content(result, format)
+        return ToolResult(structured_content={"result": formatted})
 
     @mcp.resource(
         uri="gitea://tool/{name}/schema",

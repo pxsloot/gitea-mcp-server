@@ -20,7 +20,7 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_TOKEN_LENGTH,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.resources.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
     _raise_value_error_from,

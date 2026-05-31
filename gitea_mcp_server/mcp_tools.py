@@ -20,7 +20,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.resources.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.tools.examples import _schema_to_example
 
 logger = logging.getLogger(__name__)

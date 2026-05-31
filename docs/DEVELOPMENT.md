@@ -70,7 +70,7 @@ See `docs/TESTING_STANDARDS.md` for full details.
 
 | Directory | Contains |
 |-----------|----------|
-| `gitea_mcp_server/` | Core modules — config, client, conversion, server assembly, exceptions, constants, `label_manager` |
+| `gitea_mcp_server/` | Core modules — config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
 | `gitea_mcp_server/tools/` | **Runtime** tool customization — customize, schemas, errors, labels, examples, search, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system — auto-generated, custom, format helpers, scope derivation, registry |
 | `gitea_mcp_server/server_setup/` | **Startup-only** — spec loading, MCP builder, extensions, resource orchestration, permissions |
@@ -170,6 +170,24 @@ _INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
 4. **Add URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`** in `constants.py` if a
    GET endpoint exists for the same path — this prevents the auto-generated
    raw JSON resource from conflicting.
+
+---
+
+## Shared Formatters (`format.py`)
+
+General-purpose schema-aware formatting lives in `gitea_mcp_server/format.py`.
+This module is shared by both `tools/` and `resources/` — never import
+formatting utilities from one domain into the other.
+
+Add a utility formatter there if multiple consumers need it:
+
+```python
+# gitea_mcp_server/format.py
+def _format_custom_type(data: dict) -> str:
+    ...
+```
+
+Domain-specific resource formatters still go in `resources/format.py`.
 
 ---
 

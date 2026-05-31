@@ -1,13 +1,17 @@
 """Tests for MCP resource tools."""
 
+import json as json_module
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.server.context import Context
+from fastmcp.tools.base import ToolResult
+from mcp.types import TextContent
 
 from gitea_mcp_server.mcp_tools import (
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
+    _format_resource_content,
     register_mcp_resource_tools,
 )
 
@@ -312,3 +316,145 @@ class TestRegisterMcpResourceTools:
         register_mcp_resource_tools(mcp)
 
         assert mcp.tool.call_count == 2
+
+
+class TestFormatResourceContent:
+    """Tests for _format_resource_content helper.
+
+    This is used by mcp_read_resource to reformat resource content
+    (JSON strings) into markdown, json, or raw output.
+    """
+
+    def test_raw_passthrough(self):
+        """format=raw should return the string unchanged."""
+        assert _format_resource_content("hello world", "raw") == "hello world"
+
+    def test_raw_with_json_input(self):
+        """format=raw with JSON input should return the JSON string unchanged."""
+        raw = '{"key": "val"}'
+        assert _format_resource_content(raw, "raw") is raw
+
+    def test_json_reformats_json_dict(self):
+        """format=json with JSON dict input should pretty-print."""
+        result = _format_resource_content('{"key": "val", "num": 42}', "json")
+        parsed = json_module.loads(result)
+        assert parsed == {"key": "val", "num": 42}
+        assert '"key": "val"' in result
+
+    def test_json_reformats_json_array(self):
+        """format=json with JSON array input should pretty-print."""
+        result = _format_resource_content('[{"id": 1}, {"id": 2}]', "json")
+        parsed = json_module.loads(result)
+        assert parsed == [{"id": 1}, {"id": 2}]
+
+    def test_markdown_reformats_json_dict(self):
+        """format=markdown with JSON dict input should produce markdown."""
+        result = _format_resource_content('{"name": "test", "count": 3}', "markdown")
+        assert "|" in result
+        assert "Name" in result or "name" in result
+
+    def test_markdown_reformats_json_array(self):
+        """format=markdown with JSON array input should produce markdown table."""
+        result = _format_resource_content('[{"id": 1, "label": "a"}]', "markdown")
+        assert "| Property | Value |" in result
+        assert "| id | 1 |" in result
+        assert "| label | a |" in result
+
+    def test_non_json_passthrough_for_json_format(self):
+        """format=json with non-JSON content should return unchanged."""
+        assert _format_resource_content("plain text", "json") == "plain text"
+
+    def test_non_json_passthrough_for_markdown_format(self):
+        """format=markdown with non-JSON content should return unchanged."""
+        assert _format_resource_content("plain text", "markdown") == "plain text"
+
+    def test_non_json_passthrough_for_raw_format(self):
+        """format=raw with non-JSON content should return unchanged."""
+        assert _format_resource_content("plain text", "raw") == "plain text"
+
+
+class TestMcpListResourcesFormat:
+    """Tests that mcp_list_resources respects the format parameter.
+
+    Uses a mock FastMCP to capture the tool function, then calls it
+    directly with each format to verify structured_content and content.
+    """
+
+    @pytest.fixture
+    def _mock_resource(self) -> MagicMock:
+        """Create a clean mock resource that won't produce MagicMock objects in the output."""
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Version"
+        resource_mock.description = "Server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = set()
+        resource_mock.meta = None  # prevent MagicMock leakage into required_scope
+        return resource_mock
+
+    def _capture_tool(self, name: str):
+        """Register resource tools and return the named function."""
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        fn = captured[name]
+        assert fn is not None
+        return fn
+
+    @pytest.mark.asyncio
+    async def test_raw_format(self, _mock_resource):
+        """format=raw should return ToolResult with structured_content and no content."""
+        fn = self._capture_tool("mcp_list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="raw")
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["result"]["count"] == 1
+        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+
+    @pytest.mark.asyncio
+    async def test_json_format(self, _mock_resource):
+        """format=json should produce pretty-printed JSON in content."""
+        fn = self._capture_tool("mcp_list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="json")
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["result"]["count"] == 1
+        assert len(result.content) == 1
+        parsed = json_module.loads(result.content[0].text)
+        assert parsed["count"] == 1
+        assert parsed["resources"][0]["uri"] == "gitea://version"
+
+    @pytest.mark.asyncio
+    async def test_markdown_format(self, _mock_resource):
+        """format=markdown should produce markdown text in content."""
+        fn = self._capture_tool("mcp_list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="markdown")
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["result"]["count"] == 1
+        assert len(result.content) == 1
+        assert "|" in result.content[0].text
+        assert "version" in result.content[0].text.lower()

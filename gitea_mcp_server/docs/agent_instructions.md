@@ -87,8 +87,8 @@ Auth is configured via environment variables at server startup. You cannot chang
 ## Resources
 Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `mcp_read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
 
-**List resources**: `mcp_list_resources()` (always available)
-**Read resource**: `mcp_read_resource(uri)` where `uri` is like:
+**List resources**: `mcp_list_resources(format="markdown")` supports `markdown`/`raw`/`json` output.
+**Read resource**: `mcp_read_resource(uri, format="markdown")` accepts the same `format` parameter (``markdown`` / ``raw`` / ``json``). Common URIs:
 - `gitea://repos/{owner}/{repo}` → repository summary (Markdown)
 - `gitea://repos/{owner}/{repo}/issues` → all issues (Markdown)
 - `gitea://repos/{owner}/{repo}/readme` → README (plain text)
@@ -173,8 +173,36 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 ## Pagination
 Most list operations accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary (often 30-50). Always paginate to avoid overwhelming responses.
 
+## Output Format (`format` parameter)
+
+All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `mcp_list_resources`, `mcp_read_resource`) accept a `format` parameter to control how results are presented:
+
+| Format | When to use |
+|--------|-------------|
+| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. |
+| `raw` | Return the result exactly as received from the underlying API or resource. Use when you need the exact data shape — for example, to check undocumented response fields or debug. |
+| `json` | Pretty-printed JSON. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. More compact and parseable than markdown. |
+
+Examples:
+
+```python
+# Default markdown — human-readable tables
+call_tool("gitea_user_get_current")
+search_tools("issue")
+mcp_list_resources()
+
+# JSON — for programmatic access
+call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
+search_tools("issue", format="json")
+
+# Raw API output — for debugging
+mcp_read_resource("gitea://repos/org/repo", format="raw")
+```
+
+**Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data — the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
+
 ## Resources vs Tools
-- **Tools**: Execute API calls, may modify state, typically return structured data. Use `call_tool("search_tools", ...)` to discover.
-- **Resources**: Cached, efficient reads of formatted data (Markdown, JSON). Use `mcp_list_resources` to see all available URIs.
+- **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, and `tool_info` accept a `format` parameter for output style. Use `call_tool("search_tools", ...)` to discover.
+- **Resources**: Cached, efficient reads. `mcp_list_resources` and `mcp_read_resource` accept a `format` parameter. Use `mcp_list_resources` to see all available URIs.
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

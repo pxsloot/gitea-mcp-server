@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
+from mcp.types import TextContent
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, SEARCH_NAME_BOOST, TITLE_TRUNCATE_LIMIT
@@ -1986,6 +1987,99 @@ class TestSchemaToExample:
         assert "output_schema" not in result
 
 
+class TestFormatResult:
+    """Tests for _format_result helper that formats ToolResult content by format.
+
+    This helper is used by call_tool, search_tools, and tool_info to handle
+    the ``format`` parameter (markdown/json/raw). It always preserves
+    ``structured_content`` as raw data and only replaces ``content``.
+    """
+
+    def test_raw_format_returns_same_object(self):
+        """format=raw should return the ToolResult unchanged."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        inner = ToolResult(structured_content={"result": {"key": "value"}})
+        result = _format_result(inner, "raw")
+        assert result is inner
+
+    def test_json_format_with_dict_data(self):
+        """format=json with dict data should produce pretty-printed JSON in content."""
+        import json as json_module
+
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = {"key": "value", "num": 42}
+        inner = ToolResult(structured_content={"result": data})
+        result = _format_result(inner, "json")
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        parsed = json_module.loads(result.content[0].text)
+        assert parsed == data
+
+    def test_json_format_with_list_data(self):
+        """format=json with list data should produce pretty-printed JSON in content."""
+        import json as json_module
+
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = [{"name": "tool_a"}, {"name": "tool_b"}]
+        inner = ToolResult(structured_content={"result": data})
+        result = _format_result(inner, "json")
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        parsed = json_module.loads(result.content[0].text)
+        assert parsed == data
+
+    def test_markdown_format_with_dict_data(self):
+        """format=markdown with dict data should produce markdown in content."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = {"name": "test_tool", "description": "A test tool"}
+        inner = ToolResult(structured_content={"result": data})
+        result = _format_result(inner, "markdown")
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        assert "|" in result.content[0].text
+        assert "name" in result.content[0].text.lower()
+
+    def test_markdown_format_with_list_data(self):
+        """format=markdown with list data should produce markdown in content."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = [{"name": "tool_a", "description": "First"}]
+        inner = ToolResult(structured_content={"result": data})
+        result = _format_result(inner, "markdown")
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        assert "|" in result.content[0].text
+        assert "tool_a" in result.content[0].text
+
+    def test_markdown_with_scalar_data_returns_unchanged(self):
+        """format=markdown with scalar (non-dict/list) data should return ToolResult unchanged."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        inner = ToolResult(structured_content={"result": "just a string"})
+        result = _format_result(inner, "markdown")
+        assert result is inner
+
+    def test_no_structured_content_returns_unchanged(self):
+        """ToolResult without structured_content should be returned unchanged."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        inner = ToolResult(content=[TextContent(type="text", text="hello")], structured_content=None)
+        result = _format_result(inner, "markdown")
+        assert result is inner
+
+    def test_missing_result_key_returns_unchanged(self):
+        """structured_content without result key should be returned unchanged."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        inner = ToolResult(structured_content={"other": "data"})
+        result = _format_result(inner, "markdown")
+        assert result is inner
+
+
 class TestCallToolRuntimeBehavior:
     """Test runtime behavior of the call_tool function.
 
@@ -1996,7 +2090,7 @@ class TestCallToolRuntimeBehavior:
 
     @pytest.mark.asyncio
     async def test_call_tool_passes_toolresult_through(self):
-        """call_tool function should return the inner tool's ToolResult as-is."""
+        """call_tool should reformat result with markdown by default, preserving structured_content."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
@@ -2009,15 +2103,65 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         result = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
 
-        assert result is inner_result, "call_tool must return the exact ToolResult from inner tool"
         assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
+        assert len(result.content) == 1
+        assert "| id |" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_json_format(self):
+        """call_tool with format=json should produce pretty-printed JSON in content."""
+        import json as json_module
+
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_call_tool()
+        data = [{"id": 1}, {"id": 2}]
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": data},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+
+        result = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx, format="json")
+
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        parsed = json_module.loads(result.content[0].text)
+        assert parsed == data
+
+    @pytest.mark.asyncio
+    async def test_call_tool_raw_format(self):
+        """call_tool with format=raw should return the inner ToolResult unchanged."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_call_tool()
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {"key": "val"}},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+
+        result = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx, format="raw")
+
+        assert result is inner_result
 
     @pytest.mark.asyncio
     async def test_call_tool_no_double_wrap_through_convert_result(self):
-        """convert_result must not double-wrap a ToolResult returned by call_tool."""
+        """convert_result must pass the reformatted ToolResult through unchanged."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
@@ -2030,11 +2174,12 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
         final = tool.convert_result(raw)
 
-        assert final is inner_result, "convert_result must pass ToolResult through unchanged"
+        assert final is raw, "convert_result must pass ToolResult through unchanged"
         assert final.structured_content == {"result": {"items": [1, 2, 3], "count": 3}}
         inner = final.structured_content["result"]
         assert "result" not in inner, (
@@ -2057,6 +2202,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         raw = await tool.fn("gitea_test_tool", {"arg": "val"}, ctx=mock_ctx)
         final = tool.convert_result(raw)
@@ -2089,6 +2235,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": {}})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         await tool.fn("gitea_test_tool", '{"key": "val", "num": 42}', ctx=mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with(
@@ -2133,6 +2280,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": []})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         await tool.fn("gitea_test_tool", None, ctx=mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
@@ -2148,6 +2296,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": []})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         await tool.fn("gitea_test_tool", ctx=mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
@@ -2167,6 +2316,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
         raw = await tool.fn("gitea_array_tool", ctx=mock_ctx)
         final = tool.convert_result(raw)

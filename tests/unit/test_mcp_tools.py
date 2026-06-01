@@ -299,29 +299,29 @@ class TestMcpReadResourceImpl:
 class TestRegisterMcpResourceTools:
     """Tests for register_mcp_resource_tools function."""
 
-    def test_registers_two_tools(self):
-        """Should register exactly two tools."""
+    def test_registers_three_tools(self):
+        """Should register exactly three tools."""
         mcp = MagicMock()
         mcp.tool = MagicMock()
 
         register_mcp_resource_tools(mcp)
 
-        assert mcp.tool.call_count == 2
+        assert mcp.tool.call_count == 3
 
     def test_tool_decorators_applied(self):
-        """Should apply @mcp.tool() decorator to both functions."""
+        """Should apply @mcp.tool() decorator to all functions."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
 
         register_mcp_resource_tools(mcp)
 
-        assert mcp.tool.call_count == 2
+        assert mcp.tool.call_count == 3
 
 
 class TestFormatResourceContent:
     """Tests for _format_resource_content helper.
 
-    This is used by mcp_read_resource to reformat resource content
+    This is used by read_resource to reformat resource content
     (JSON strings) into markdown, json, or raw output.
     """
 
@@ -374,7 +374,7 @@ class TestFormatResourceContent:
 
 
 class TestMcpListResourcesFormat:
-    """Tests that mcp_list_resources respects the format parameter.
+    """Tests that list_resources respects the format parameter.
 
     Uses a mock FastMCP to capture the tool function, then calls it
     directly with each format to verify structured_content and content.
@@ -412,7 +412,7 @@ class TestMcpListResourcesFormat:
     @pytest.mark.asyncio
     async def test_raw_format(self, _mock_resource):
         """format=raw should return ToolResult with structured_content and no content."""
-        fn = self._capture_tool("mcp_list_resources")
+        fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
@@ -427,7 +427,7 @@ class TestMcpListResourcesFormat:
     @pytest.mark.asyncio
     async def test_json_format(self, _mock_resource):
         """format=json should produce pretty-printed JSON in content."""
-        fn = self._capture_tool("mcp_list_resources")
+        fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
@@ -445,7 +445,7 @@ class TestMcpListResourcesFormat:
     @pytest.mark.asyncio
     async def test_markdown_format(self, _mock_resource):
         """format=markdown should produce markdown text in content."""
-        fn = self._capture_tool("mcp_list_resources")
+        fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])

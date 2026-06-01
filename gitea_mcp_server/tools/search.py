@@ -123,9 +123,24 @@ class TolerantBM25Search:
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     result = []
     for tool in tools:
+        annotations = None
+        if tool.annotations:
+            a = tool.annotations
+            annotations = {
+                k: v
+                for k, v in {
+                    "title": a.title,
+                    "readOnlyHint": a.readOnlyHint,
+                    "destructiveHint": a.destructiveHint,
+                    "idempotentHint": a.idempotentHint,
+                }.items()
+                if v is not None
+            }
         item: dict[str, Any] = {
             "name": tool.name,
             "description": tool.description or "",
+            "tags": list(tool.tags) if tool.tags else [],
+            "annotations": annotations,
         }
         result.append(item)
     return result
@@ -136,7 +151,7 @@ class TolerantSearchTransform(BM25SearchTransform):
 
     Extends BM25SearchTransform with:
     - Tolerant argument handling (JSON string parsing)
-    - Compact search results (name + description only)
+    - Compact search results with name, description, tags and annotations
     - tool_info synthetic tool for retrieving full tool schemas
     - Enhanced BM25 search with alias expansion and 2-char token support
     """
@@ -164,14 +179,22 @@ class TolerantSearchTransform(BM25SearchTransform):
 
     def _make_search_tool(self) -> Tool:
         transform = self
+        _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
         async def search_tools(
             query: Annotated[str, "Natural language query to search for tools"],
+            category: Annotated[str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"] = None,
             format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
             ctx: Context = None,  # type: ignore[assignment]
         ) -> ToolResult:
             assert ctx is not None
             hidden = await transform._get_visible_tools(ctx)
+            if category is not None:
+                category_lower = category.lower()
+                if category_lower not in _VALID_CATEGORIES:
+                    msg = f"Invalid category '{category}'. Valid categories: {', '.join(_VALID_CATEGORIES)}"
+                    _raise_value_error(msg)
+                hidden = [t for t in hidden if t.tags and category_lower in t.tags]
             results = await transform._search(hidden, query)
             rendered = await transform._render_results(results)
             return _format_result(ToolResult(structured_content={"result": rendered}), format)
@@ -189,9 +212,19 @@ class TolerantSearchTransform(BM25SearchTransform):
                             "properties": {
                                 "name": {"type": "string"},
                                 "description": {"type": "string"},
+                                "tags": {"type": "array", "items": {"type": "string"}},
+                                "annotations": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "readOnlyHint": {"type": "boolean"},
+                                        "destructiveHint": {"type": "boolean"},
+                                        "idempotentHint": {"type": "boolean"},
+                                    },
+                                },
                             },
                         },
-                        "description": "Matching tool definitions (name + description only)",
+                        "description": "Matching tool definitions with name, description, tags and annotations",
                     },
                 },
             },

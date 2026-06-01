@@ -85,10 +85,11 @@ Auth is configured via environment variables at server startup. You cannot chang
 - **Save a tool name** for reuse: Once you find a tool name, you can use it directly without searching again.
 
 ## Resources
-Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `mcp_read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
+Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
 
-**List resources**: `mcp_list_resources(format="markdown")` supports `markdown`/`raw`/`json` output.
-**Read resource**: `mcp_read_resource(uri, format="markdown")` accepts the same `format` parameter (``markdown`` / ``raw`` / ``json``). Common URIs:
+**List resources**: `list_resources(format="markdown")` supports `markdown`/`raw`/`json` output.
+**Search resources**: `search_resources(query, format="markdown")` finds resources by natural language (BM25 ranking).
+**Read resource**: `read_resource(uri, format="markdown")` accepts the same `format` parameter (``markdown`` / ``raw`` / ``json``). Common URIs:
 - `gitea://repos/{owner}/{repo}` → repository summary (Markdown)
 - `gitea://repos/{owner}/{repo}/issues` → all issues (Markdown)
 - `gitea://repos/{owner}/{repo}/readme` → README (plain text)
@@ -117,7 +118,7 @@ call_tool("search_tools", {"query": "list labels"})
 labels = call_tool("gitea_issue_list_labels", {"owner": "org", "repo": "repo"})
 
 # Option 2: Read the labels resource (faster, cached)
-mcp_read_resource("gitea://repos/org/repo/labels")
+read_resource("gitea://repos/org/repo/labels")
 ```
 
 ### Example: Create an issue with label names
@@ -168,14 +169,14 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 - **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin.
 
 ## Tool Prefixes (for search)
-`issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `mcp_`, `topic_`, `search_`
+`issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `topic_`, `search_`
 
 ## Pagination
 Most list operations accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary (often 30-50). Always paginate to avoid overwhelming responses.
 
 ## Output Format (`format` parameter)
 
-All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `mcp_list_resources`, `mcp_read_resource`) accept a `format` parameter to control how results are presented:
+All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `search_resources`) accept a `format` parameter to control how results are presented:
 
 | Format | When to use |
 |--------|-------------|
@@ -189,20 +190,22 @@ Examples:
 # Default markdown — human-readable tables
 call_tool("gitea_user_get_current")
 search_tools("issue")
-mcp_list_resources()
+list_resources()
+search_resources("pull request")
 
 # JSON — for programmatic access
 call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
 search_tools("issue", format="json")
+search_resources("issue labels", format="json")
 
 # Raw API output — for debugging
-mcp_read_resource("gitea://repos/org/repo", format="raw")
+read_resource("gitea://repos/org/repo", format="raw")
 ```
 
 **Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data — the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
 - **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, and `tool_info` accept a `format` parameter for output style. Use `call_tool("search_tools", ...)` to discover.
-- **Resources**: Cached, efficient reads. `mcp_list_resources` and `mcp_read_resource` accept a `format` parameter. Use `mcp_list_resources` to see all available URIs.
+- **Resources**: Cached, efficient reads. `list_resources` and `read_resource` accept a `format` parameter. Use `list_resources` to see all available URIs or `search_resources` for natural-language discovery.
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

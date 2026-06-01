@@ -5,8 +5,9 @@ with the server. They bridge the gap between the resource protocol and the agent
 toolset.
 
 Tool list:
-- mcp_list_resources: List all available MCP resources
-- mcp_read_resource: Read a resource by its URI
+- list_resources: List all available MCP resources
+- read_resource: Read a resource by its URI
+- search_resources: Search resources by natural language (BM25 ranking)
 - gitea://tool/{name}/schema: Resource for full tool schema by name
 """
 
@@ -21,6 +22,7 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.examples import _schema_to_example
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
 
 
 async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
-    """Implementation of mcp_list_resources.
+    """Implementation of list_resources.
 
     Uses FastMCP Context to list registered resources and templates.
 
@@ -135,7 +137,7 @@ def _format_resource_content(raw: str, fmt: str) -> str:
 
 
 async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
-    """Implementation of mcp_read_resource.
+    """Implementation of read_resource.
 
     Args:
         ctx: FastMCP Context object (injected automatically)
@@ -179,8 +181,10 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             },
         },
     })
-    async def mcp_list_resources(
+    async def list_resources(
         format: str = "markdown",
+        tag: str = "",
+        type: str = "",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         """List all available MCP resources.
@@ -190,12 +194,17 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         and how to access it.
 
         For tool discovery (finding what actions you can perform), use search_tools instead.
-
-        Resources come in two types:
+        For natural-language resource discovery, use search_resources instead.
 
         Resources come in two types:
         - **resource**: Concrete resources with fixed URIs (e.g., `gitea://version`)
         - **template**: Parameterized URI templates requiring substitution (e.g., `gitea://repos/{owner}/{repo}`)
+
+        ## Parameters
+
+        - ``format``: Output format — ``markdown`` (default), ``json``, or ``raw``.
+        - ``tag``: Optional. Filter by tag name (e.g., ``"wrapper"``, ``"repository"``, ``"issue"``).
+        - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
 
         ## Return Structure
 
@@ -217,7 +226,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         ```python
         # Agent pattern: discover then read
-        result = await mcp_list_resources()
+        result = await list_resources()
         print(f"Found {result['count']} resources")
 
         for resource in result['resources']:
@@ -225,13 +234,13 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
             # Example: read a repository resource
             if 'repos/{owner}/{repo}' in resource['uri']:
-                content = await mcp_read_resource(uri="gitea://repos/owner/repo")
+                content = await read_resource(uri="gitea://repos/owner/repo")
                 print(content)
         ```
 
         ## Notes
 
-        - Templates require parameter substitution before calling `mcp_read_resource`
+        - Templates require parameter substitution before calling `read_resource`
         - Check the `tags` field to understand resource categories:
           - `wrapper`: User-friendly formatted content (Markdown)
           - `raw`: Raw JSON from API
@@ -260,6 +269,11 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             ]
         """
         raw = await _mcp_list_resources_impl(ctx)
+        if tag:
+            raw["resources"] = [r for r in raw["resources"] if tag in r.get("tags", [])]
+        if type:
+            raw["resources"] = [r for r in raw["resources"] if r.get("type", "") == type]
+        raw["count"] = len(raw["resources"])
         if format == "raw":
             return ToolResult(structured_content={"result": raw})
         content = json.dumps(raw, indent=2) if format == "json" else _format_as_markdown(raw, None)
@@ -277,7 +291,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             },
         },
     })
-    async def mcp_read_resource(
+    async def read_resource(
         uri: str,
         format: str = "markdown",
         ctx: Context = CurrentContext(),
@@ -314,26 +328,26 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         ### Reading a static resource
         ```python
-        version = await mcp_read_resource("gitea://version")
+        version = await read_resource("gitea://version")
         print(f"Server version: {version}")
         ```
 
         ### Reading with different formats
         ```python
-        repo = await mcp_read_resource("gitea://repos/owner/repo")
-        repo_json = await mcp_read_resource("gitea://repos/owner/repo", format="json")
-        repo_raw = await mcp_read_resource("gitea://repos/owner/repo", format="raw")
+        repo = await read_resource("gitea://repos/owner/repo")
+        repo_json = await read_resource("gitea://repos/owner/repo", format="json")
+        repo_raw = await read_resource("gitea://repos/owner/repo", format="raw")
         ```
 
         ### Reading a parameterized template
         ```python
         # Discover available templates first
-        resources = await mcp_list_resources()
+        resources = await list_resources()
         repo_template = next(r for r in resources['resources'] if r['uri'].endswith('repos/{owner}/{repo}'))
 
         # Substitute parameters
         uri = repo_template['uri'].format(owner='mcp-server', repo='gitea-mcp-server')
-        content = await mcp_read_resource(uri)
+        content = await read_resource(uri)
 
         # Content is Markdown for wrapper resources
         print(content)  # Formatted markdown with repo details
@@ -346,9 +360,9 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         issues_uri = "gitea://repos/owner/repo/issues"
         releases_uri = "gitea://repos/owner/repo/releases"
 
-        repo_info = await mcp_read_resource(repo_uri)
-        issues = await mcp_read_resource(issues_uri)
-        releases = await mcp_read_resource(releases_uri)
+        repo_info = await read_resource(repo_uri)
+        issues = await read_resource(issues_uri)
+        releases = await read_resource(releases_uri)
         ```
 
         ## Error Handling
@@ -362,7 +376,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         ## Best Practices
 
-        1. **Always discover first**: Call `mcp_list_resources()` to see available URIs and their metadata
+        1. **Always discover first**: Call `list_resources()` to see available URIs and their metadata
         2. **Check MIME type**: Use the `mimeType` field to anticipate content format
         3. **Use tags for filtering**: Filter resources by tags (e.g., "wrapper" for human-readable content)
         4. **Handle errors gracefully**: Wrap calls in try-except to handle missing resources or API failures
@@ -382,6 +396,95 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         result = await _mcp_read_resource_impl(ctx, uri)
         formatted = _format_resource_content(result, format)
         return ToolResult(structured_content={"result": formatted})
+
+    def _extract_resource_text(entry: dict[str, Any]) -> str:
+        """Build searchable text from a resource entry."""
+        parts = [entry.get("name", "")]
+        desc = entry.get("description", "")
+        if desc:
+            parts.append(desc)
+        for tag in entry.get("tags", []):
+            parts.append(tag)
+        return " ".join(parts)
+
+    @mcp.tool(output_schema={
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "uri": {"type": "string"},
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "mimeType": {"type": "string"},
+                        "type": {"type": "string"},
+                        "tags": {"type": "array"},
+                        "required_scope": {"type": "string"},
+                    },
+                },
+                "description": "Matching resource definitions ranked by relevance",
+            },
+        },
+    })
+    async def search_resources(
+        query: str,
+        format: str = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        """Search MCP resources by natural language query.
+
+        Uses BM25 ranking to find the most relevant resources matching your query.
+        Searches across resource URI, name, description, and tags.
+
+        Use this when you know what kind of information you want but not the
+        exact resource URI. For an exhaustive listing, use list_resources instead.
+
+        ## Parameters
+
+        - ``query``: Natural language search query (e.g., "list issues in a repo",
+          "get user profile", "pull request reviews")
+        - ``format``: Output format — ``markdown`` (default), ``json``, or ``raw``.
+
+        ## Return Value
+
+        A ranked list of matching resource definitions, each containing:
+        - ``uri``: Resource URI (may be a template with ``{param}`` placeholders)
+        - ``name``: Human-readable name
+        - ``description``: Description of what the resource provides
+        - ``mimeType``: MIME type of the content
+        - ``type``: Either ``"resource"`` or ``"template"``
+        - ``tags``: List of categorisation tags
+
+        Returns at most 10 results, ranked by relevance.
+
+        ## Usage
+
+        ```python
+        # Find resources related to pull requests
+        results = await search_resources("pull request reviews")
+        for r in results:
+            print(f"{r['uri']} — {r['description']}")
+
+        # Search by category
+        results = await search_resources("repository languages")
+        ```
+        """
+        raw = await _mcp_list_resources_impl(ctx)
+        if not raw["resources"]:
+            return ToolResult(structured_content={"result": []})
+        texts = [_extract_resource_text(r) for r in raw["resources"]]
+        engine = BM25SearchEngine()
+        indices = engine.search(texts, query, 10)
+        results = [raw["resources"][i] for i in indices]
+        if format == "raw":
+            return ToolResult(structured_content={"result": results})
+        serialized = json.dumps(results, indent=2) if format == "json" else _format_as_markdown(results, None)
+        return ToolResult(
+            content=[TextContent(type="text", text=serialized)],
+            structured_content={"result": results},
+        )
 
     @mcp.resource(
         uri="gitea://tool/{name}/schema",
@@ -428,4 +531,4 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             data["version"] = tool.version
         return json.dumps(data, indent=2)
 
-    logger.info("Registered MCP resource tools: mcp_list_resources, mcp_read_resource, tool_schema_resource")
+    logger.info("Registered MCP resource tools: list_resources, read_resource, search_resources, tool_schema_resource")

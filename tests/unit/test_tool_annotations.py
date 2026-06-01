@@ -2327,8 +2327,8 @@ class TestCallToolRuntimeBehavior:
 class TestFunctionToolResultWrapping:
     """Test that FunctionTool.convert_result() wraps when x-fastmcp-wrap-result is set.
 
-    This mirrors the exact pattern used by ``mcp_list_resources`` and
-    ``mcp_read_resource`` (``@mcp.tool(output_schema={..., "x-fastmcp-wrap-result": True})``).
+    This mirrors the exact pattern used by ``list_resources`` and
+    ``read_resource`` (``@mcp.tool(output_schema={..., "x-fastmcp-wrap-result": True})``).
     """
 
     MOCK_SCHEMA: dict = {

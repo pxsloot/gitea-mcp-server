@@ -88,9 +88,10 @@ class TestLazyLoading:
             assert f"{prefix}search_tools" in tool_names, f"Expected {prefix}search_tools, got: {tool_names}"
             assert f"{prefix}call_tool" in tool_names, f"Expected {prefix}call_tool, got: {tool_names}"
 
-            # Should have pinned MCP resource tools
-            assert f"{prefix}mcp_list_resources" in tool_names
-            assert f"{prefix}mcp_read_resource" in tool_names
+            # Should have pinned resource tools
+            assert f"{prefix}list_resources" in tool_names
+            assert f"{prefix}read_resource" in tool_names
+            assert f"{prefix}search_resources" in tool_names
 
             # Total should be small (pinned + synthetic)
             assert len(tool_names) <= 10, (
@@ -144,9 +145,10 @@ class TestLazyLoading:
             # Should have synthetic tools
             assert f"{prefix}search_tools" in tool_names
             assert f"{prefix}call_tool" in tool_names
-            # Should have pinned MCP resource tools
-            assert f"{prefix}mcp_list_resources" in tool_names
-            assert f"{prefix}mcp_read_resource" in tool_names
+            # Should have pinned resource tools
+            assert f"{prefix}list_resources" in tool_names
+            assert f"{prefix}read_resource" in tool_names
+            assert f"{prefix}search_resources" in tool_names
             # Admin tool should not appear
             assert "admin_settings" not in tool_names
             # Total should be small

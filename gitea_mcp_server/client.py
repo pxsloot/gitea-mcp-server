@@ -297,14 +297,11 @@ class GiteaClient:
         self._config = config
         self.transport = HTTPTransport(config)
         self.api = GiteaAPI(self.transport, config.base_url)
-        self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client (lazy initialization)."""
-        if self._client is None:
-            self._client = self.transport.client
-        return self._client
+        return self.transport.client
 
     async def request(
         self,
@@ -332,11 +329,6 @@ class GiteaClient:
         Raises:
             GiteaAPIError: On API errors after retries exhausted
         """
-        # Ensure client is initialized for backward compatibility
-        if self._client is None:
-            self._client = self.transport.client
-
-        # Determine if URL is absolute or relative
         full_url = (
             url
             if url.startswith(("http://", "https://"))
@@ -349,9 +341,7 @@ class GiteaClient:
 
     async def close(self) -> None:
         """Close the HTTP client and cleanup resources."""
-        if self._client is not None:
-            await self.transport.close()
-            self._client = None
+        await self.transport.close()
 
     async def __aenter__(self) -> "GiteaClient":
         """Async context manager entry."""

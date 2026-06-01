@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.exceptions import SpecError
@@ -46,13 +46,14 @@ async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
                 "paths_count": len(remote_spec.get("paths", {})),
             },
         )
-        return remote_spec  # type: ignore[no-any-return] # noqa: TRY300
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in spec from {spec_url}: {e}"
         raise SpecError(msg) from e
     except Exception as e:
         msg = f"Failed to fetch or parse spec from {spec_url}: {e}"
         raise SpecError(msg) from e
+    else:
+        return cast("dict[str, Any]", remote_spec)
 
 
 async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:

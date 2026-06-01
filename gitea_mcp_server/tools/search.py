@@ -185,9 +185,11 @@ class TolerantSearchTransform(BM25SearchTransform):
             query: Annotated[str, "Natural language query to search for tools"],
             category: Annotated[str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"] = None,
             format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context | None = None,
         ) -> ToolResult:
-            assert ctx is not None
+            if ctx is None:
+                msg = "Context is required"
+                _raise_value_error(msg)
             hidden = await transform._get_visible_tools(ctx)
             if category is not None:
                 category_lower = category.lower()
@@ -251,7 +253,9 @@ class TolerantSearchTransform(BM25SearchTransform):
             if arguments is not None and not isinstance(arguments, dict):
                 msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
                 _raise_value_error(msg)
-            assert ctx is not None
+            if ctx is None:
+                msg = "Context is required"
+                _raise_value_error(msg)
             result = await ctx.fastmcp.call_tool(name, arguments)
             output_schema = None
             if format == "markdown":
@@ -276,19 +280,20 @@ class TolerantSearchTransform(BM25SearchTransform):
     def _make_tool_info_tool(self) -> Tool:
         transform = self
 
-        async def tool_info(
+        async def tool_info(  # noqa: RET503 — _raise_value_error always raises
             name: Annotated[str, "The exact name of the tool to inspect"],
             format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context | None = None,
         ) -> ToolResult:
-            assert ctx is not None
+            if ctx is None:
+                msg = "Context is required"
+                _raise_value_error(msg)
             tools = await transform.get_tool_catalog(ctx)
             for tool in tools:
                 if tool.name == name:
                     return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
             msg = f"Tool '{name}' not found"
             _raise_value_error(msg)
-            return None  # type: ignore[unreachable]
 
         return Tool.from_function(
             fn=tool_info,

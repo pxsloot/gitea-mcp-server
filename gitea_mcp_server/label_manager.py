@@ -2,12 +2,17 @@
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypedDict
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import LABEL_CACHE_TTL
 
 logger = logging.getLogger(__name__)
+
+
+class _LabelCacheEntry(TypedDict):
+    map: dict[str, dict[str, Any]]
+    timestamp: datetime
 
 
 class LabelManager:
@@ -24,7 +29,7 @@ class LabelManager:
             cache_ttl: Cache TTL in seconds (default from constants)
         """
         self._cache_ttl = cache_ttl
-        self._label_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self._label_cache: dict[tuple[str, str], _LabelCacheEntry] = {}
 
     async def get_label_map(
         self, owner: str, repo: str, client: GiteaClient
@@ -46,7 +51,7 @@ class LabelManager:
         if cache_key in self._label_cache:
             entry = self._label_cache[cache_key]
             timestamp = entry["timestamp"]
-            age = now - timestamp  # type: ignore[operator]
+            age = now - timestamp
             if age.total_seconds() < self._cache_ttl:
                 return entry["map"]
 
@@ -60,7 +65,7 @@ class LabelManager:
                 label_map[name.lower()] = {"id": label["id"], "name": label["name"]}
 
         # Update cache
-        self._label_cache[cache_key] = {"map": label_map, "timestamp": now}  # type: ignore[dict-item]
+        self._label_cache[cache_key] = {"map": label_map, "timestamp": now}
         return label_map
 
     def clear_cache(self) -> None:

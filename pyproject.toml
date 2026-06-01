@@ -50,10 +50,11 @@ include = ["gitea_mcp_server/docs/agent_instructions.md"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC", "ICN", "G", "INP", "PIE", "PT", "Q", "RSE", "RET", "SIM", "TCH", "ARG", "PTH", "PD", "PL", "TRY", "NPY", "RUF"]
+lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC", "ICN", "G", "INP", "PIE", "PT", "Q", "RSE", "RET", "SIM", "TCH", "ARG", "PTH", "PD", "PL", "TRY", "NPY", "RUF", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["PLR2004", "PLC0415", "F841", "RUF043", "BLE001"]
+"tests/**/*" = ["PLR2004", "PLC0415", "F841", "RUF043", "BLE001", "S101"]
+"gitea_mcp_client/transport.py" = ["S401", "S404", "S603"]
 "check_annotations.py" = ["BLE001"]
 
 [tool.pytest.ini_options]

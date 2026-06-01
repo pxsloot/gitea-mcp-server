@@ -23,7 +23,7 @@ def _raise_value_error_from(message: str, cause: Exception) -> NoReturn:
     raise ValueError(message) from cause
 
 
-def _raise_validation_error(message: str, field: str, cause: Exception) -> None:
+def _raise_validation_error(message: str, field: str, cause: Exception) -> NoReturn:
     raise ValidationError(message, field=field) from cause
 
 

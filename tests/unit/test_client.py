@@ -96,17 +96,17 @@ class TestGiteaClient:
     async def test_client_lifecycle(self, config):
         """Test client creation and cleanup."""
         client = GiteaClient(config)
-        # Client should be None until accessed
-        assert client._client is None
-        _ = client.client
-        assert client._client is not None
+        transport_client = client.transport.client
+        assert transport_client is not None
 
         await client.close()
-        assert client._client is None
+        # After close, accessing client creates a new one
+        new_client = client.client
+        assert new_client is not None
 
     @pytest.mark.asyncio
     async def test_multiple_requests_reuse_client(self, config):
-        """Test that multiple requests reuse the same client."""
+        """Test that multiple requests reuse the same transport."""
         client = GiteaClient(config)
 
         with respx.mock() as mock:
@@ -116,9 +116,9 @@ class TestGiteaClient:
             await client.request("GET", "/user")
             await client.request("GET", "/repos")
 
-            assert client._client is not None
-            # Check that the base_url is correct
-            assert str(client._client.base_url) == "https://git.example.com/api/v1/"
+            transport_client = client.transport.client
+            assert transport_client is not None
+            assert str(transport_client.base_url) == "https://git.example.com/api/v1/"
 
     @pytest.mark.asyncio
     async def test_absolute_url(self, config):
@@ -138,7 +138,7 @@ class TestGiteaClient:
         """Test client initialization."""
         client = GiteaClient(config)
         assert client._config is config
-        assert client._client is None
+        assert client.transport is not None
 
     @pytest.mark.asyncio
     async def test_context_manager(self, config):

@@ -7,7 +7,7 @@ from a local YAML configuration file to the OpenAPI spec before tool generation.
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -87,7 +87,7 @@ def load_mcp_extensions(config_path: Path | None = None) -> dict[str, Any]:
                     "tools": len(extensions.get("tool_names", {})),
                 },
             )
-            return extensions  # type: ignore[no-any-return]
+            return cast("dict[str, Any]", extensions)
     except yaml.YAMLError:
         logger.exception("Invalid YAML in MCP extensions file %s", config_path)
         raise

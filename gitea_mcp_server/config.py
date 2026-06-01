@@ -74,7 +74,7 @@ class Config(BaseSettings):
         alias="TRANSPORT_TYPE",
     )
     http_host: str = Field(
-        default="0.0.0.0",
+        default="0.0.0.0",  # noqa: S104 — intentional default for HTTP server
         description="HTTP bind host",
         alias="HTTP_HOST",
     )
@@ -163,13 +163,12 @@ class Config(BaseSettings):
     @classmethod
     def parse_http_cors(cls, v: str | list[str] | None) -> list[str] | None:
         """Parse comma-separated CORS origins string into list."""
-        if v is None or isinstance(v, list):
-            return v
         if isinstance(v, str):
-            # Split by comma and strip whitespace
             origins = [origin.strip() for origin in v.split(",") if origin.strip()]
             return origins if origins else None
-        return None  # type: ignore[unreachable]
+        if isinstance(v, list):
+            return v
+        return None
 
     @property
     def base_url(self) -> str:

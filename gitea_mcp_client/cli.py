@@ -94,6 +94,16 @@ def pretty_print(data: Any) -> None:
         print(json.dumps(data, indent=2))
 
 
+MAX_COMPLETION_ARGS = 2
+
+
+def _safe_index(items: list[str], idx: int) -> str | None:
+    try:
+        return items[idx]
+    except IndexError:
+        return None
+
+
 class MCPCli(cmd.Cmd):
     intro = (
         "gitea-mcp-client -- interactive MCP client\n"
@@ -110,7 +120,7 @@ class MCPCli(cmd.Cmd):
 
     def _setup_completion(self) -> None:
         try:
-            import readline  # noqa: PLC0415
+            import readline  # noqa: PLC0415 — only available on Unix
 
             readline.set_completer(self._complete)
             readline.parse_and_bind("tab: complete")
@@ -121,33 +131,28 @@ class MCPCli(cmd.Cmd):
         except ImportError:
             pass
 
-    def _complete(self, text: str, state: int) -> str | None:  # noqa: PLR0911
+    def _complete(self, text: str, state: int) -> str | None:
         try:
-            import readline  # noqa: PLC0415
+            import readline  # noqa: PLC0415 — only available on Unix
 
             line = readline.get_line_buffer()
             tokens = shlex.split(line) if line.strip() else []
-        except Exception:  # noqa: BLE001
+        except (ImportError, ModuleNotFoundError):
             tokens = []
 
         if not tokens:
             commands = [c[3:] for c in dir(self) if c.startswith("do_") and c != "do_EOF"]
-            options = [c for c in commands if c.startswith(text)]
-            try:
-                return options[state]
-            except IndexError:
-                return None
+            return _safe_index([c for c in commands if c.startswith(text)], state)
 
         cmd_name = tokens[0]
-        if cmd_name in ("call", "c") and len(tokens) == 2:  # noqa: PLR2004
+        if cmd_name in ("call", "c") and len(tokens) == MAX_COMPLETION_ARGS:
             tools = self._session.tools
-            names = [str(t["name"]) for t in tools if str(t["name"]).startswith(text)]
-            try:
-                return names[state]
-            except IndexError:
-                return None
+            return _safe_index(
+                [str(t["name"]) for t in tools if str(t["name"]).startswith(text)],
+                state,
+            )
 
-        if cmd_name in ("read", "r") and len(tokens) == 2:  # noqa: PLR2004
+        if cmd_name in ("read", "r") and len(tokens) == MAX_COMPLETION_ARGS:
             resources = self._session.resources
             candidates = [
                 str(res["uri"])
@@ -156,10 +161,7 @@ class MCPCli(cmd.Cmd):
             ]
             if not candidates:
                 candidates = [str(res.get("uri", "")) for res in resources]
-            try:
-                return candidates[state]
-            except IndexError:
-                return None
+            return _safe_index(candidates, state)
 
         return None
 

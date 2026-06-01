@@ -487,8 +487,6 @@ class SchemaWalker:
 
         while stack:
             current_schema, parent, key = stack.pop()
-            if not isinstance(current_schema, dict):
-                continue  # type: ignore[unreachable]
 
             self.callback(current_schema, parent, key)
 
@@ -563,8 +561,6 @@ class OptionalPropertyTransformer:
     ) -> None:
         if parent is None or key is None:
             return
-        if not isinstance(parent, dict):
-            return  # type: ignore[unreachable]
 
         if not self._is_property_schema(parent, key):
             return
@@ -765,10 +761,10 @@ def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:
 # ============================================================================
 
 
-def _validate_spec(spec: dict[str, Any]) -> None:
+def _validate_spec(spec: Any) -> None:
     """Validate the input spec is a valid Swagger 2.0 dictionary."""
     if not isinstance(spec, dict):
-        msg = "Invalid spec: must be a dictionary"  # type: ignore[unreachable]
+        msg = "Invalid spec: must be a dictionary"
         raise SpecError(msg)
     swagger_version = spec.get("swagger")
     if swagger_version != "2.0":

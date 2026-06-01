@@ -54,7 +54,7 @@ def _example_string(schema: dict[str, Any]) -> str:
     return "text"
 
 
-def _schema_to_example(  # noqa: PLR0911, PLR0912
+def _schema_to_example(
     schema: dict[str, Any],
     depth: int = 0,
     max_depth: int = 3,
@@ -75,18 +75,26 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
                 break
         else:
             schema_type = "null"
+    if not isinstance(schema_type, str):
+        schema_type = None
 
     if "example" in schema:
         return schema["example"]
 
-    if schema_type == "object":
-        return _example_object(schema, depth, max_depth, max_properties)
-    if schema_type == "array":
-        return _example_array(schema, depth, max_depth, max_properties)
-    if schema_type == "string":
-        return _example_string(schema)
-    if schema_type in ("integer", "number", "boolean", "null"):
-        return {"integer": 0, "number": 0.0, "boolean": True, "null": None}[schema_type]
+    _dispatch: dict[str, Any] = {
+        "object": lambda: _example_object(schema, depth, max_depth, max_properties),
+        "array": lambda: _example_array(schema, depth, max_depth, max_properties),
+        "string": lambda: _example_string(schema),
+        "integer": lambda: 0,
+        "number": lambda: 0.0,
+        "boolean": lambda: True,
+        "null": lambda: None,
+    }
+    if schema_type is None:
+        return None
+    handler = _dispatch.get(schema_type)
+    if handler is not None:
+        return handler()
     return None
 
 

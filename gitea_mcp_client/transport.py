@@ -57,7 +57,9 @@ class Transport:
         stdin.flush()
 
     def recv(self) -> dict[str, Any]:
-        assert self._process.stdout is not None
+        if self._process.stdout is None:
+            err_msg = "stdout is closed"
+            raise TransportError(err_msg)
         line = self._process.stdout.readline()
         if not line:
             self._drain_stderr()

@@ -19,10 +19,12 @@ Tools are lazy-loaded (not in `list_tools()`) but the host can still call them b
 The full tool list is **not** available via `list_tools()` (lazy loading). Use `search_tools` to find tools by keyword:
 
 ```
-results = search_tools("issue")      # returns name + description for all issue-related tools
+results = search_tools("issue")      # returns name + description + tags + annotations for issue tools
 results = search_tools("list repo")  # natural-language queries work
-results = search_tools("user")       # broad queries surface related tools
+results = search_tools("create", category="admin")  # narrow by category: admin, organization, user, issue, pull_request, repository, misc
 ```
+
+Each result includes `tags` (category labels) and `annotations` (readOnlyHint, destructiveHint, idempotentHint, title) alongside `name` and `description`.
 
 Once you have a tool name, inspect its parameters with `tool_info`:
 
@@ -87,7 +89,7 @@ Auth is configured via environment variables at server startup. You cannot chang
 ## Resources
 Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
 
-**List resources**: `list_resources(format="markdown")` supports `markdown`/`raw`/`json` output.
+**List resources**: `list_resources(format="markdown", tag="", type="")` supports `markdown`/`raw`/`json` output. Filter by `tag` (e.g. `"wrapper"`, `"repository"`, `"issue"`) or `type` (`"resource"` or `"template"`) to narrow results.
 **Search resources**: `search_resources(query, format="markdown")` finds resources by natural language (BM25 ranking).
 **Read resource**: `read_resource(uri, format="markdown")` accepts the same `format` parameter (``markdown`` / ``raw`` / ``json``). Common URIs:
 - `gitea://repos/{owner}/{repo}` → repository summary (Markdown)

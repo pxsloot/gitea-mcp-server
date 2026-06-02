@@ -662,3 +662,47 @@ class TestMcpSearchResources:
         results = result.structured_content["result"]
         assert len(results) == 1
         assert results[0]["name"] == "Server Version"
+
+    @pytest.mark.asyncio
+    async def test_markdown_includes_cross_link_footer(self):
+        """Markdown output should include cross-linking hints footer."""
+        fn = self._capture_search_resources()
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Server Version"
+        resource_mock.description = "Gitea server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = {"server"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(query="version", ctx=ctx)
+
+        assert result.content is not None
+        text = result.content[0].text
+        assert "Cross-linking hints" in text
+        assert "search_docs" in text
+        assert "search_tools" in text
+
+    @pytest.mark.asyncio
+    async def test_empty_result_has_helpful_hint(self):
+        """Empty search results should include helpful cross-linking message."""
+        fn = self._capture_search_resources()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(query="nothing", ctx=ctx)
+
+        assert result.content is not None
+        text = result.content[0].text
+        assert "No resources found" in text
+        assert "search_docs" in text
+        assert "search_tools" in text
+        assert result.structured_content is not None
+        assert result.structured_content["result"] == []

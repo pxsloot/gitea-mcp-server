@@ -1,6 +1,6 @@
 ---
 title: Repository Management
-description: Repository lifecycle management — creation, mirrors (push/pull), push-to-create, archiving, transfer, deletion, topics, and flags.
+description: Repository lifecycle management -- creation, mirrors (push/pull), push-to-create, archiving, transfer, deletion, topics, and flags.
 tags: [repositories, mirrors, archiving, transfer, topics, settings]
 source: Forgejo Docs (CC-BY-SA-4.0)
 ---
@@ -10,10 +10,10 @@ source: Forgejo Docs (CC-BY-SA-4.0)
 ## Creating a Repository
 
 Use `gitea_admin_create_repo` (admin) or `gitea_repo_create` for user-visible repos. Key settings:
-- **Auto-init** — create with README, `.gitignore`, and/or license
-- **Template** — mark as template repo for use with `gitea_repo_generate`
-- **Issue labels** — choose a predefined label set at creation
-- **Visibility** — public, private, or limited (instance-dependent)
+- **Auto-init** -- create with README, `.gitignore`, and/or license
+- **Template** -- mark as template repo for use with `gitea_repo_generate`
+- **Issue labels** -- choose a predefined label set at creation
+- **Visibility** -- public, private, or limited (instance-dependent)
 
 ## Repository Templates
 
@@ -24,12 +24,12 @@ Template repos serve as the base for generating new repos. When generating from 
 
 ## Mirroring
 
-**Pull mirrors** — sync a remote repo into Gitea/Forgejo. Pull mirrors auto-fetch from the source on a schedule. Create with `gitea_repo_create` using the `mirror` parameter.
+**Pull mirrors** -- sync a remote repo into Gitea/Forgejo. Pull mirrors auto-fetch from the source on a schedule. Create with `gitea_repo_create` using the `mirror` parameter.
 
-**Push mirrors** — push changes from a Gitea repo to a remote destination. Manage with:
-- `gitea_repo_add_push_mirror` — add a push target (URL + credentials)
-- `gitea_repo_sync_push_mirror` — trigger a manual sync
-- `gitea_repo_remove_push_mirror` — remove a push target
+**Push mirrors** -- push changes from a Gitea repo to a remote destination. Manage with:
+- `gitea_repo_add_push_mirror` -- add a push target (URL + credentials)
+- `gitea_repo_sync_push_mirror` -- trigger a manual sync
+- `gitea_repo_remove_push_mirror` -- remove a push target
 
 ## Push-to-Create
 
@@ -47,15 +47,15 @@ Archiving a repo makes it read-only: no pushes, no issues/PRs, no wiki edits. Th
 
 ## Transfer & Deletion
 
-- **Transfer** — `gitea_repo_transfer` moves ownership to another user or org. New owner must accept.
-- **Deletion** — `gitea_admin_delete_repo` (admin) or repo owner can delete via UI. Irreversible.
+- **Transfer** -- `gitea_repo_transfer` moves ownership to another user or org. New owner must accept.
+- **Deletion** -- `gitea_admin_delete_repo` (admin) or repo owner can delete via UI. Irreversible.
 
 ## Topics
 
 Topics are searchable tags on a repo. Use:
-- `gitea_repo_add_topic` — add a topic
-- `gitea_repo_delete_topic` — remove a topic
-- `gitea_repo_search` — search repos by topic
+- `gitea_repo_add_topic` -- add a topic
+- `gitea_repo_delete_topic` -- remove a topic
+- `gitea_repo_search` -- search repos by topic
 
 ## Repository Flags
 
@@ -63,11 +63,11 @@ Flags are arbitrary key-value metadata on repos (Forgejo feature). Example use: 
 
 ## Relevant Tools
 
-- `gitea_repo_create` — create repo (user/org)
-- `gitea_repo_edit` — update settings (visibility, description, topics)
-- `gitea_repo_delete` — delete repository
-- `gitea_repo_transfer` — transfer ownership
-- `gitea_repo_mirror_sync` — trigger mirror sync
-- `gitea_repo_add_push_mirror` — add push mirror target
-- `gitea_repo_generate` — create repo from template
-- `gitea_repo_search` — find repos by name, topic, owner
+- `gitea_repo_create` -- create repo (user/org)
+- `gitea_repo_edit` -- update settings (visibility, description, topics)
+- `gitea_repo_delete` -- delete repository
+- `gitea_repo_transfer` -- transfer ownership
+- `gitea_repo_mirror_sync` -- trigger mirror sync
+- `gitea_repo_add_push_mirror` -- add push mirror target
+- `gitea_repo_generate` -- create repo from template
+- `gitea_repo_search` -- find repos by name, topic, owner

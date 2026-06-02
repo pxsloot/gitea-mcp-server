@@ -367,7 +367,7 @@ class TestEnrichResponseSchemas:
     def test_wraps_response_ref(self):
         """Response-level $ref is left as-is; component schema gets wrapped.
 
-        Note: response-level $ref never appears in practice — the Swagger 2.0
+        Note: response-level $ref never appears in practice -- the Swagger 2.0
         to OpenAPI 3.x converter inlines all refs. This test just verifies
         no crash when one is encountered.
         """

@@ -100,7 +100,7 @@ tool_names:
       Merge PR's baseBranch into headBranch
       Update a pull request's head branch by merging or rebasing it onto the base branch.
 
-      **This tool only updates the PR's branch** — it cannot modify PR metadata.
+      **This tool only updates the PR's branch** -- it cannot modify PR metadata.
 
       **Don't use this** for editing labels, assignees, title, body, milestone, or state.
       Use `repo_edit_pull_request` instead for general PR modifications.
@@ -146,7 +146,7 @@ tool_names:
   # Edit pull request: modify PR metadata (not branch)
   repo_edit_pull_request:
     description: |
-      Update a pull request's metadata — title, body, state, labels, assignees,
+      Update a pull request's metadata -- title, body, state, labels, assignees,
       milestone, or deadline.
 
       **This does NOT update the PR's branch.** To update a PR's head branch

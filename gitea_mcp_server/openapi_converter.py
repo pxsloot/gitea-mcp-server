@@ -681,7 +681,7 @@ def convert_responses(
             schema = response_copy.pop("schema")
             # Use the correct content type from produces if available.
             # text/plain endpoints (diff, patch) should not be marked as
-            # application/json — FastMCP's OpenAPITool will try response.json()
+            # application/json -- FastMCP's OpenAPITool will try response.json()
             # and fail, then fall back to ToolResult(content=text) which causes
             # "outputSchema defined but no structured output returned".
             content_type = _determine_content_type(produces)
@@ -882,7 +882,7 @@ def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
     The ``transform_fn`` in ``customize_component`` wraps all tool results
     in ``{"result": result}``. This function transforms the spec so every
-    200/201 response schema reflects that same wrapping — regardless of
+    200/201 response schema reflects that same wrapping -- regardless of
     the original response type.
 
     Shared response components in ``components/responses`` are also wrapped

@@ -1,4 +1,4 @@
-# Gitea MCP Server — Architecture
+# Gitea MCP Server -- Architecture
 
 ## Overview
 
@@ -11,7 +11,7 @@ The codebase is designed to work *with* FastMCP, not around it.  When FastMCP's
 API lacks something, we add a conversion/transform layer that can be cleanly
 removed when FastMCP catches up.
 
-> **Canonical source** — This document is the primary map for the codebase.
+> **Canonical source** -- This document is the primary map for the codebase.
 > Before launching exploration subagents, check whether this document already
 > answers your question.  Subagents should only be used for dynamic
 > investigation (test failures, runtime behavior), not static code structure
@@ -127,46 +127,46 @@ The customization layers as applied during server startup:
 
 ## Key Design Decisions
 
-1. **FastMCP providers, not manual tool registration** — The OpenAPI provider
+1. **FastMCP providers, not manual tool registration** -- The OpenAPI provider
    auto-generates tools from the spec. Customization happens via transforms
    and the `transform_fn` pattern, not by hand-registering each tool.
 
-2. **Lazy loading** — Tools are not listed by default. Agents discover them via
+2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
    `search_tools` (BM25). This prevents context pollution from ~200 tools being
    listed at once.  Three synthetic tools (`search_tools`, `call_tool`,
    `tool_info`) are always visible.
 
-3. **Resources pass through namespace** — Resources use the `gitea://` scheme
+3. **Resources pass through namespace** -- Resources use the `gitea://` scheme
    directly.  FastMCP's built-in `Namespace` would double-namespace them to
    `gitea://gitea/...`, so `GiteaNamespace` explicitly passes resource URIs
    through unchanged.
 
-4. **Custom resources override auto-generated** — Resources are registered in
+4. **Custom resources override auto-generated** -- Resources are registered in
    two phases: auto-generated (raw JSON from every GET endpoint) then custom
    (Markdown wrappers for common URIs).  FastMCP's last-registration-wins means
    custom ones replace raw ones at identical URIs.
 
-5. **Response schema wrapping** — FastMCP requires `output_schema` to be
+5. **Response schema wrapping** -- FastMCP requires `output_schema` to be
    `type: object`.  All response schemas are wrapped in `{"result": ...}` to
    match the runtime shape.  This is done in `openapi_converter.py` via
    `_wrap_success_response_schemas`.
 
-6. **Cache invalidation via middleware** — Write tools register invalidation
+6. **Cache invalidation via middleware** -- Write tools register invalidation
    patterns at startup.  The `CacheInvalidationMiddleware` computes concrete
    URIs from tool arguments and clears them from the response cache after
    successful writes.
 
-7. **Circular-import breaker pattern** — `server_setup/permissions.py` is a thin
+7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
    re-export from flat `tool_filter.py`, avoiding a circular import that would
    occur if `server.py` imported `tool_filter.py` directly.  Same pattern for
    `server_setup/logging.py` → `logging_config.py`.
 
-8. **Naming collision resolved** — Two modules once shared the name
+8. **Naming collision resolved** -- Two modules once shared the name
    `resource_registry`: the `resources/registry.py` (class `ResourceRegistry`
    catalog) and `server_setup/resource_registry.py` (orchestration function).
    The latter was renamed to `resource_setup.py` to eliminate confusion.
 
-9. **Constants consolidation** — `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
+9. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
    and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
    definitions into `constants.py`, the single source of truth for all magic values.
 
@@ -178,18 +178,18 @@ Gitea's API mixes content types: most endpoints return JSON, but some return
 plain text (diffs, patches), HTML (signing keys), or binary blobs (file
 downloads).  Handling this correctly requires coordination across four stages.
 
-### Stage 1 — Spec Conversion (`openapi_converter.py`)
+### Stage 1 -- Spec Conversion (`openapi_converter.py`)
 
 Swagger 2.0 specifies response types via the `produces` field (per-operation or
 top-level).  `convert_responses()` uses `produces` to set the OpenAPI 3.1
-`content` type on each response — but only if `produces` is propagated to the
+`content` type on each response -- but only if `produces` is propagated to the
 operation before `remove_swagger_fields()` strips it.
 
 If no `produces` is found, the converter defaults to `application/json`. This is
 correct for ~95% of endpoints, but silently wrong for the ~12 non-JSON
 endpoints if `produces` propagation is missed.
 
-### Stage 2 — Schema Wrapping (`openapi_converter.py:_wrap_success_response_schemas`)
+### Stage 2 -- Schema Wrapping (`openapi_converter.py:_wrap_success_response_schemas`)
 
 All `application/json` response schemas are wrapped in:
 ```
@@ -200,11 +200,11 @@ This matches the runtime shape FastMCP produces (see Stage 4) and satisfies the
 MCP SDK's requirement that `output_schema` be `type: object`.
 
 Non-JSON responses (text/plain, text/html, application/octet-stream) are
-**implicitly skipped** — `_wrap_response_schema` only looks at
+**implicitly skipped** -- `_wrap_response_schema` only looks at
 `content["application/json"]`, so if that key is absent the function returns
 without wrapping.  No special check is needed.
 
-### Stage 3 — Output Schema Derivation (`tool_annotator.py:_get_success_schema`)
+### Stage 3 -- Output Schema Derivation (`tool_annotator.py:_get_success_schema`)
 
 `derive_output_schema()` resolves the response schema from the OpenAPI spec for
 each tool.  For JSON endpoints, it returns the wrapped schema from Stage 2.
@@ -220,7 +220,7 @@ Optionally, a lightweight schema can be set here manually:
 This gives agents a useful `output_example` while still matching the runtime
 `{"result": text}` shape.
 
-### Stage 4 — Runtime Execution (`tool_annotator.py:customize_component`)
+### Stage 4 -- Runtime Execution (`tool_annotator.py:customize_component`)
 
 At runtime, FastMCP's `OpenAPITool.run()` sends the HTTP request and receives
 the response:

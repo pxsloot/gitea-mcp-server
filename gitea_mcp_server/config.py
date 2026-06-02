@@ -74,7 +74,7 @@ class Config(BaseSettings):
         alias="TRANSPORT_TYPE",
     )
     http_host: str = Field(
-        default="0.0.0.0",  # noqa: S104 — intentional default for HTTP server
+        default="0.0.0.0",  # noqa: S104 -- intentional default for HTTP server
         description="HTTP bind host",
         alias="HTTP_HOST",
     )

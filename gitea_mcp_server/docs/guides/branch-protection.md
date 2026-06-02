@@ -2,7 +2,7 @@
 title: Branch & Tag Protection
 description: Branch protection rules (force push, approvals, merge restrictions), glob patterns, rule priority, and tag protection with glob/regex patterns.
 tags: [branches, protection, tags, rules, permissions, security, glob, regex]
-source: Forgejo Docs — Branch and Tag Protection (CC-BY-SA-4.0)
+source: Forgejo Docs -- Branch and Tag Protection (CC-BY-SA-4.0)
 ---
 
 # Branch & Tag Protection
@@ -14,9 +14,9 @@ Protection rules prevent destructive actions on critical branches and tags.
 Configured per-repository in Settings → Branch. Each rule protects a branch pattern.
 
 **Pattern matching uses glob** where `/` is the separator and `**` spans across separators:
-- `main` — exact branch
-- `release/**` — all `release/` branches (e.g., `release/v1`, `release/v2/hotfix`)
-- `precious*` — branches starting with `precious`
+- `main` -- exact branch
+- `release/**` -- all `release/` branches (e.g., `release/v1`, `release/v2/hotfix`)
+- `precious*` -- branches starting with `precious`
 
 **Rule priority:** If two rules match the same branch, the one **without a glob** takes precedence over the one with a glob.
 
@@ -60,10 +60,10 @@ Configured per-repository in Settings → Tags. Each rule matches a tag name pat
 
 ## Relevant Tools
 
-- `gitea_repo_create_branch_protection` — create a branch protection rule
-- `gitea_repo_edit_branch_protection` — modify existing rule
-- `gitea_repo_delete_branch_protection` — remove rule
-- `gitea_repo_list_branch_protection` — list all rules
-- `gitea_repo_get_branch_protection` — get single rule details
-- `gitea_repo_get_branch` — returns effective branch protection
-- `gitea://repos/{owner}/{repo}/branch_protections` — resource
+- `gitea_repo_create_branch_protection` -- create a branch protection rule
+- `gitea_repo_edit_branch_protection` -- modify existing rule
+- `gitea_repo_delete_branch_protection` -- remove rule
+- `gitea_repo_list_branch_protection` -- list all rules
+- `gitea_repo_get_branch_protection` -- get single rule details
+- `gitea_repo_get_branch` -- returns effective branch protection
+- `gitea://repos/{owner}/{repo}/branch_protections` -- resource

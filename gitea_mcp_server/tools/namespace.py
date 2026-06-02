@@ -1,4 +1,4 @@
-"""Gitea namespace transform — prefixes tools/prompts, not resources.
+"""Gitea namespace transform -- prefixes tools/prompts, not resources.
 
 Resources already carry the gitea namespace via their ``gitea://`` scheme,
 so injecting an additional ``/gitea/`` path segment (as FastMCP's built-in
@@ -32,7 +32,7 @@ class GiteaNamespace(Namespace):
     """
 
     # ------------------------------------------------------------------ #
-    # Resources — pass through unchanged (already namespaced via scheme)
+    # Resources -- pass through unchanged (already namespaced via scheme)
     # ------------------------------------------------------------------ #
 
     async def list_resources(

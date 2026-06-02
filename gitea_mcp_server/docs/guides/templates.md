@@ -1,8 +1,8 @@
 ---
 title: Issue & PR Templates
-description: Issue and pull request templates in Gitea/Forgejo — YAML-based forms, markdown templates, and organization-wide defaults.
+description: Issue and pull request templates in Gitea/Forgejo -- YAML-based forms, markdown templates, and organization-wide defaults.
 tags: [templates, issues, PRs, forms, YAML, configuration]
-source: Forgejo Docs — Issue and Pull Request Templates (CC-BY-SA-4.0)
+source: Forgejo Docs -- Issue and Pull Request Templates (CC-BY-SA-4.0)
 ---
 
 # Issue & PR Templates
@@ -58,8 +58,8 @@ body:
 ## Markdown Templates
 
 For simpler templates, use markdown files:
-- `.forgejo/ISSUE_TEMPLATE.md` — issue template
-- `.forgejo/PULL_REQUEST_TEMPLATE.md` — PR template
+- `.forgejo/ISSUE_TEMPLATE.md` -- issue template
+- `.forgejo/PULL_REQUEST_TEMPLATE.md` -- PR template
 
 These are pre-filled in the issue/PR body.
 
@@ -82,16 +82,16 @@ Organizations can set default templates that apply to all new repos:
 
 ## Issue Config Validation
 
-- `gitea_repo_get_issue_config` — read current issue config
-- `gitea_repo_validate_issue_config` — validate YAML config
-- `gitea://repos/{owner}/{repo}/issue_config` — config resource
-- `gitea://repos/{owner}/{repo}/issue_templates` — templates resource
+- `gitea_repo_get_issue_config` -- read current issue config
+- `gitea_repo_validate_issue_config` -- validate YAML config
+- `gitea://repos/{owner}/{repo}/issue_config` -- config resource
+- `gitea://repos/{owner}/{repo}/issue_templates` -- templates resource
 
 ## Gitignore & Label Templates
 
 When creating a repo, you can apply:
-- **Gitignore templates** — language-specific `.gitignore` files
-- **Label templates** — predefined label sets (e.g., Default, GitHub)
-- **License templates** — open-source license files
+- **Gitignore templates** -- language-specific `.gitignore` files
+- **Label templates** -- predefined label sets (e.g., Default, GitHub)
+- **License templates** -- open-source license files
 
 Resources: `gitea://gitignore/templates/{name}`, `gitea://label/templates/{name}`, `gitea://licenses/{name}`

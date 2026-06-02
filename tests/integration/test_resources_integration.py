@@ -137,7 +137,7 @@ class TestResourcesIntegration:
             mcp, mock_client, spec, registry, skip_uris=set()
         )
 
-        # Check that the URI is gitea:// — no double-gitea
+        # Check that the URI is gitea:// -- no double-gitea
         mcp.resource.assert_called()
         uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in uris, (

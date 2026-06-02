@@ -27,7 +27,7 @@ simple removal of our 'fix'.
 This project has a `gitea-mcp-server` skill in `.opencode/skills/gitea-mcp-server/`.
 Load it with `/skill gitea-mcp-server`. It encodes all the architecture,
 development workflow, customization patterns, and project conventions from
-`docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` — you do not need to read
+`docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` -- you do not need to read
 those files separately.
 
 ## FastMCP docs always up to date
@@ -43,13 +43,13 @@ skill. Reserve subagents for dynamic investigation: test failures, runtime
 behavior debugging, or tracing data flow.
 
 Browse specific source files with the Read tool when you need implementation
-details — not a broad subagent exploration.
+details -- not a broad subagent exploration.
 
 ## Tool naming
 
 Tools are called with `call_tool()` using the names exactly as returned by
 `search_tools` (e.g., `gitea_issue_create_issue`). The MCP client's server
-instance prefix is handled transparently — do not include it.
+instance prefix is handled transparently -- do not include it.
 
 ## When to commit/push
 

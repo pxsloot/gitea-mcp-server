@@ -298,8 +298,8 @@ def register_doc_tools(
 
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
-        - ``format``: Output format -- ``markdown`` (default, guide content as-is),
-          ``raw`` (same as markdown for plain text guides).
+        - ``format``: Output format -- ``markdown`` (default, full content with
+          YAML frontmatter), ``raw`` (same as markdown — full content included).
 
         ## Return Value
 
@@ -307,7 +307,7 @@ def register_doc_tools(
 
         ## Error Handling
 
-        Raises ``ValueError`` if the topic is not found.
+        Raises ``ValueError`` if the topic is not found, listing available guides.
 
         Args:
             topic: The guide topic name (case-insensitive)
@@ -321,12 +321,15 @@ def register_doc_tools(
         """
         guide = doc_manager.get(topic)
         if guide is None:
-            msg = f"Guide '{topic}' not found. Use search_docs() to find available guides."
+            available = ", ".join(g.name for g in doc_manager.guides)
+            msg = (
+                f"Guide '{topic}' not found. "
+                f"Available guides: {available}. "
+                "Use search_docs() to find guides by topic, or read_doc(topic) to read one."
+            )
             raise ValueError(msg)
 
-        if format == "raw":
-            content = guide.markdown_body
-        elif format == "markdown":
+        if format in ("raw", "markdown"):
             content = guide.full_content
         else:
             msg = f"Unsupported format '{format}'. Use 'markdown' or 'raw'."

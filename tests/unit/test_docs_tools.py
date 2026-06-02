@@ -280,10 +280,29 @@ class TestRegisterDocTools:
             await fn(topic="unknown")
 
     @pytest.mark.asyncio
+    async def test_read_doc_error_includes_available_guides(self):
+        fn = self._capture_tool("read_doc")
+        with pytest.raises(ValueError) as exc_info:
+            await fn(topic="unknown")
+        msg = str(exc_info.value)
+        assert "Available guides:" in msg
+        assert "test" in msg  # the test guide name
+        assert "search_docs()" in msg
+
+    @pytest.mark.asyncio
     async def test_read_doc_raw_format(self):
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="raw")
-        assert result.structured_content["result"] == "Content"
+        assert "# Test" in result.structured_content["result"]
+        assert "Content" in result.structured_content["result"]
+
+    @pytest.mark.asyncio
+    async def test_read_doc_raw_and_markdown_match(self):
+        """raw and markdown formats should return identical content (both with frontmatter)."""
+        fn = self._capture_tool("read_doc")
+        raw = await fn(topic="test", format="raw")
+        md = await fn(topic="test", format="markdown")
+        assert raw.structured_content["result"] == md.structured_content["result"]
 
     @pytest.mark.asyncio
     async def test_read_doc_markdown_includes_frontmatter(self):

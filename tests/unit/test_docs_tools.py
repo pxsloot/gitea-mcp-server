@@ -44,8 +44,8 @@ class TestDocGuide:
             title="Test Guide",
             description="A test guide",
             tags=["tag1", "tag2"],
-            content="# content",
-            body="body",
+            full_content="# content",
+            markdown_body="actual body content here",
         )
         text = guide.search_text()
         assert text.count("test-guide") == 3
@@ -53,6 +53,7 @@ class TestDocGuide:
         assert "A test guide" in text
         assert "tag1" in text
         assert "tag2" in text
+        assert "actual body content" in text
 
 
 class TestDocManagerParseGuide:
@@ -65,7 +66,7 @@ class TestDocManagerParseGuide:
         assert guide.title == "Test Guide"
         assert guide.description == "A test guide description"
         assert guide.tags == ["test", "example", "guide"]
-        assert "This is the body" in guide.body
+        assert "This is the body" in guide.markdown_body
 
     def test_no_frontmatter(self):
         guide = DocManager._parse_guide("no-fm", SAMPLE_NO_FRONTMATTER)
@@ -74,14 +75,14 @@ class TestDocManagerParseGuide:
         assert guide.title == "No Fm"
         assert guide.description == ""
         assert guide.tags == []
-        assert guide.body == SAMPLE_NO_FRONTMATTER
+        assert guide.markdown_body == SAMPLE_NO_FRONTMATTER
 
     def test_invalid_yaml_uses_defaults(self):
         guide = DocManager._parse_guide("bad-yaml", SAMPLE_INVALID_YAML)
         assert guide is not None
         assert guide.name == "bad-yaml"
-        assert guide.body is not None
-        assert "Content after bad frontmatter" in guide.body
+        assert guide.markdown_body is not None
+        assert "Content after bad frontmatter" in guide.markdown_body
 
 
 class TestDocManager:
@@ -90,7 +91,9 @@ class TestDocManager:
     @staticmethod
     def _make_manager(guides: list[DocGuide] | None = None) -> DocManager:
         mgr = DocManager.__new__(DocManager)
-        mgr._guides = guides or []
+        lst = guides or []
+        mgr._guides = lst
+        mgr._search_texts = [g.search_text() for g in lst]
         mgr._search_engine = BM25SearchEngine()
         return mgr
 
@@ -166,9 +169,11 @@ class TestRegisterDocTools:
     @staticmethod
     def _make_manager() -> DocManager:
         mgr = DocManager.__new__(DocManager)
-        mgr._guides = [
+        guides = [
             DocGuide("test", "Test Guide", "A test guide", ["tag1"], "# Test\n\nContent", "Content"),
         ]
+        mgr._guides = guides
+        mgr._search_texts = [g.search_text() for g in guides]
         mgr._search_engine = BM25SearchEngine()
         return mgr
 
@@ -261,6 +266,18 @@ class TestRegisterDocTools:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="markdown")
         assert "# Test" in result.structured_content["result"]
+
+    @pytest.mark.asyncio
+    async def test_search_docs_invalid_format_raises(self):
+        fn = self._capture_tool("search_docs")
+        with pytest.raises(ValueError, match="Unsupported format 'xml'"):
+            await fn(query="test", format="xml")
+
+    @pytest.mark.asyncio
+    async def test_read_doc_invalid_format_raises(self):
+        fn = self._capture_tool("read_doc")
+        with pytest.raises(ValueError, match="Unsupported format 'xml'"):
+            await fn(topic="test", format="xml")
 
 
 class TestDocResource:

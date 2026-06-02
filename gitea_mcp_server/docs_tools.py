@@ -30,8 +30,11 @@ SEARCH_MAX_RESULTS = 10
 _DESC_TRUNCATE = 80
 """Max description length before truncation in manifest."""
 
-_FRONTMATTER_PARTS = 3
-"""Expected number of parts when splitting frontmatter (---/content/--- -> 3)."""
+_FRONTMATTER_SPLIT_LIMIT = 2
+"""Maximum number of splits when parsing frontmatter (---/content/--- -> 3 expected parts)."""
+
+_VALID_FORMATS = frozenset({"markdown", "raw", "json"})
+"""Accepted format parameter values for doc tools."""
 
 
 class DocGuide:
@@ -43,15 +46,15 @@ class DocGuide:
         title: str,
         description: str,
         tags: list[str],
-        content: str,
-        body: str,
+        full_content: str,
+        markdown_body: str,
     ) -> None:
         self.name = name
         self.title = title
         self.description = description
         self.tags = list(tags)
-        self.content = content
-        self.body = body
+        self.full_content = full_content
+        self.markdown_body = markdown_body
 
     def search_text(self) -> str:
         """Text for BM25 search indexing."""
@@ -59,6 +62,7 @@ class DocGuide:
         parts.append(self.title)
         parts.append(self.description)
         parts.extend(self.tags)
+        parts.append(self.markdown_body)
         return " ".join(parts)
 
 
@@ -71,6 +75,7 @@ class DocManager:
 
     def __init__(self) -> None:
         self._guides: list[DocGuide] = []
+        self._search_texts: list[str] = []
         self._search_engine = BM25SearchEngine()
         self._load()
 
@@ -89,6 +94,7 @@ class DocManager:
                 guide = self._parse_guide(entry.name[:-3], raw)
                 if guide:
                     self._guides.append(guide)
+            self._search_texts = [g.search_text() for g in self._guides]
             logger.info("Loaded %d workflow guides", len(self._guides))
         except Exception:
             logger.exception("Failed to load workflow guides")
@@ -97,10 +103,10 @@ class DocManager:
     def _parse_guide(name: str, raw: str) -> DocGuide | None:
         """Parse a guide file with optional YAML frontmatter."""
         if raw.startswith("---"):
-            parts = raw.split("---", _FRONTMATTER_PARTS - 1)
-            if len(parts) >= _FRONTMATTER_PARTS:
+            parts = raw.split("---", _FRONTMATTER_SPLIT_LIMIT)
+            if len(parts) >= _FRONTMATTER_SPLIT_LIMIT + 1:
                 frontmatter = parts[1].strip()
-                body = parts[2].strip()
+                markdown_body = parts[2].strip()
                 try:
                     meta = yaml.safe_load(frontmatter) or {}
                 except yaml.YAMLError:
@@ -116,8 +122,8 @@ class DocManager:
                     title=str(title),
                     description=str(description),
                     tags=list(tags),
-                    content=raw,
-                    body=body,
+                    full_content=raw,
+                    markdown_body=markdown_body,
                 )
         logger.debug("Guide '%s' has no frontmatter, using defaults", name)
         return DocGuide(
@@ -125,8 +131,8 @@ class DocManager:
             title=name.replace("-", " ").title(),
             description="",
             tags=[],
-            content=raw,
-            body=raw,
+            full_content=raw,
+            markdown_body=raw,
         )
 
     @property
@@ -146,15 +152,14 @@ class DocManager:
 
         Returns ranked list of guide metadata dicts (name, title, description, tags).
         """
-        texts = [g.search_text() for g in self._guides]
-        if not texts:
+        if not self._search_texts:
             return []
         if not query.strip():
             return [
                 {"name": g.name, "title": g.title, "description": g.description, "tags": g.tags}
                 for g in self._guides[:max_results]
             ]
-        indices = self._search_engine.search(texts, query, max_results)
+        indices = self._search_engine.search(self._search_texts, query, max_results)
         return [
             {"name": self._guides[i].name, "title": self._guides[i].title, "description": self._guides[i].description, "tags": self._guides[i].tags}
             for i in indices
@@ -254,7 +259,13 @@ def register_doc_tools(
         results = doc_manager.search(query)
         if format == "raw":
             return ToolResult(structured_content={"result": results})
-        content = json.dumps(results, indent=2) if format == "json" else _format_as_markdown(results, None)
+        if format == "json":
+            content = json.dumps(results, indent=2)
+        elif format == "markdown":
+            content = _format_as_markdown(results, None)
+        else:
+            msg = f"Unsupported format '{format}'. Use 'markdown', 'json', or 'raw'."
+            raise ValueError(msg)
         return ToolResult(
             content=[TextContent(type="text", text=content)],
             structured_content={"result": results},
@@ -313,7 +324,13 @@ def register_doc_tools(
             msg = f"Guide '{topic}' not found. Use search_docs() to find available guides."
             raise ValueError(msg)
 
-        content = guide.body if format == "raw" else guide.content
+        if format == "raw":
+            content = guide.markdown_body
+        elif format == "markdown":
+            content = guide.full_content
+        else:
+            msg = f"Unsupported format '{format}'. Use 'markdown' or 'raw'."
+            raise ValueError(msg)
         return ToolResult(
             content=[TextContent(type="text", text=content)],
             structured_content={"result": content},
@@ -341,7 +358,7 @@ def register_doc_tools(
                     "resource_id": topic,
                 }
             )
-        return guide.content
+        return guide.full_content
 
     logger.info(
         "Registered doc tools (search_docs, read_doc) and resource template for %d guides",

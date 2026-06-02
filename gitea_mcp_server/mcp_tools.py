@@ -479,7 +479,18 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """
         raw = await _mcp_list_resources_impl(ctx)
         if not raw["resources"]:
-            return ToolResult(structured_content={"result": []})
+            return ToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=(
+                        f"No resources found for '{query}'.\n\n"
+                        "**Cross-linking hints:**\n"
+                        "- For workflow guides: `search_docs(query)`\n"
+                        "- For API tools: `search_tools(query)`"
+                    ),
+                )],
+                structured_content={"result": []},
+            )
         texts = [_extract_resource_text(r) for r in raw["resources"]]
         engine = BM25SearchEngine()
         indices = engine.search(texts, query, 10)
@@ -487,6 +498,13 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         if format == "raw":
             return ToolResult(structured_content={"result": results})
         serialized = json.dumps(results, indent=2) if format == "json" else _format_as_markdown(results, None)
+        if format == "markdown":
+            serialized += (
+                "\n\n---\n"
+                "**Cross-linking hints:**\n"
+                "- For workflow guides: `search_docs(query)`\n"
+                "- For API tools: `search_tools(query)`"
+            )
         return ToolResult(
             content=[TextContent(type="text", text=serialized)],
             structured_content={"result": results},

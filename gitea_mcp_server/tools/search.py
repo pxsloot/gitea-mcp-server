@@ -200,7 +200,29 @@ class TolerantSearchTransform(BM25SearchTransform):
                 hidden = [t for t in hidden if t.tags and category_lower in t.tags]
             results = await transform._search(hidden, query)
             rendered = await transform._render_results(results)
-            return _format_result(ToolResult(structured_content={"result": rendered}), format)
+            result = _format_result(ToolResult(structured_content={"result": rendered}), format)
+            if format == "markdown" and result.content and isinstance(result.content[0], TextContent):
+                text = result.content[0].text
+                if query.strip() and rendered:
+                    text += (
+                        "\n\n---\n"
+                        "**Cross-linking hints:**\n"
+                        "- For workflow guides: `search_docs(query)`\n"
+                        "- For data resources: `search_resources(query)`"
+                    )
+                else:
+                    text = (
+                        f"No tools found for '{query}'.\n\n"
+                        "**Cross-linking hints:**\n"
+                        "- For workflow guides: `search_docs(query)`\n"
+                        "- For data resources: `search_resources(query)`"
+                    )
+                result = ToolResult(
+                    content=[TextContent(type="text", text=text)],
+                    structured_content=result.structured_content,
+                    meta=result.meta,
+                )
+            return result
 
         return Tool.from_function(
             fn=search_tools,

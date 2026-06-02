@@ -322,6 +322,27 @@ class TestRegisterDocTools:
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
             await fn(topic="test", format="xml")
 
+    @pytest.mark.asyncio
+    async def test_search_docs_markdown_includes_cross_link_footer(self):
+        fn = self._capture_tool("search_docs")
+        result = await fn(query="test")
+        assert result.content is not None
+        text = "".join(c.text for c in result.content)
+        assert "Cross-linking hints" in text
+        assert "search_tools" in text
+        assert "search_resources" in text
+
+    @pytest.mark.asyncio
+    async def test_search_docs_empty_result_has_helpful_hint(self):
+        fn = self._capture_tool("search_docs")
+        result = await fn(query="zzz_nonexistent")
+        assert result.content is not None
+        text = "".join(c.text for c in result.content)
+        assert "No workflow guides found" in text
+        assert "search_tools" in text
+        assert "search_resources" in text
+        assert result.structured_content is not None
+        assert result.structured_content["result"] == []
 
     def test_resource_tags_aggregated_across_multiple_guides(self):
         """Tags from multiple guides should all appear in resource template tags."""

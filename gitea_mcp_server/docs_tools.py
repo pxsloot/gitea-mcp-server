@@ -263,6 +263,21 @@ def register_doc_tools(
             content = json.dumps(results, indent=2)
         elif format == "markdown":
             content = _format_as_markdown(results, None)
+            if results:
+                content += (
+                    "\n\n---\n"
+                    "**Cross-linking hints:**\n"
+                    "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
+                    "- For API tools: `search_tools(query)`\n"
+                    "- For data resources: `search_resources(query)`"
+                )
+            else:
+                content = (
+                    f"No workflow guides found for '{query}'.\n\n"
+                    "**Cross-linking hints:**\n"
+                    "- For API tools: `search_tools(query)`\n"
+                    "- For data resources: `search_resources(query)`"
+                )
         else:
             msg = f"Unsupported format '{format}'. Use 'markdown', 'json', or 'raw'."
             raise ValueError(msg)

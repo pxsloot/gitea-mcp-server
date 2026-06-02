@@ -318,6 +318,136 @@ class TestRegisterMcpResourceTools:
         assert mcp.tool.call_count == 3
 
 
+class TestMcpReadResourceTool:
+    """Tests for read_resource tool function.
+
+    The tool always returns both content (TextContent with raw text) and
+    structured_content (for schema compliance). The key property is that
+    content[0].text delivers the resource content as-is without JSON escaping.
+    structured_content wraps it in {"result": ...} for tool validation.
+    """
+
+    def _capture_read_resource(self):
+        """Register resource tools and return the read_resource function."""
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        fn = captured["read_resource"]
+        assert fn is not None
+        return fn
+
+    @pytest.mark.asyncio
+    async def test_non_json_has_raw_text_in_content(self):
+        """Non-JSON (markdown/text) content text should be raw in content, not escaped."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent("# Hello\n\nThis is **markdown**")
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="markdown", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        assert len(tool_result.content) == 1
+        assert tool_result.content[0].text == "# Hello\n\nThis is **markdown**"
+        # structured_content is present for schema compliance
+        assert tool_result.structured_content is not None
+        assert tool_result.structured_content["result"] == "# Hello\n\nThis is **markdown**"
+
+    @pytest.mark.asyncio
+    async def test_json_returns_structured_content(self):
+        """JSON content should return structured_content with formatted result."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val", "num": 42}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="markdown", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        assert tool_result.structured_content is not None
+        assert "result" in tool_result.structured_content
+        result_text = tool_result.structured_content["result"]
+        assert "|" in result_text
+        assert "key" in result_text
+        assert "val" in result_text
+        assert "num" in result_text
+        assert "42" in result_text
+        # content is present with text for display
+        assert len(tool_result.content) == 1
+        assert "|" in tool_result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_raw_format_has_raw_text(self):
+        """format=raw should return raw text in content, not processed."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent("raw markdown")
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="raw", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        assert len(tool_result.content) == 1
+        assert tool_result.content[0].text == "raw markdown"
+        assert tool_result.structured_content is not None
+        assert tool_result.structured_content["result"] == "raw markdown"
+
+    @pytest.mark.asyncio
+    async def test_raw_format_with_json(self):
+        """format=raw with JSON content should return raw JSON in content."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val"}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="raw", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        assert len(tool_result.content) == 1
+        assert tool_result.content[0].text == '{"key": "val"}'
+        assert tool_result.structured_content is not None
+        assert tool_result.structured_content["result"] == '{"key": "val"}'
+
+    @pytest.mark.asyncio
+    async def test_non_json_with_json_format(self):
+        """Non-JSON content with format=json should return text in content."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent("plain text")
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="json", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        assert len(tool_result.content) == 1
+        assert tool_result.content[0].text == "plain text"
+        assert tool_result.structured_content is not None
+        assert tool_result.structured_content["result"] == "plain text"
+
+
 class TestFormatResourceContent:
     """Tests for _format_resource_content helper.
 

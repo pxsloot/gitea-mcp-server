@@ -282,15 +282,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
             structured_content={"result": raw},
         )
 
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {
-                "type": "string",
-                "description": "The resource content as a string",
-            },
-        },
-    })
+    @mcp.tool()
     async def read_resource(
         uri: str,
         format: str = "markdown",
@@ -299,7 +291,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """Read the content of an MCP resource by URI.
 
         Fetches the resource from the server's resource registry and returns its
-        content as a string. Works with both static resources and parameterized
+        content. Works with both static resources and parameterized
         resource templates.
 
         ## Parameter: uri
@@ -317,12 +309,14 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         - ``raw``: return the resource content exactly as stored.
         - ``json``: pretty-printed JSON (for JSON resources).
 
-        Non-JSON resources (markdown, text, binary) are returned unchanged in all formats.
+        Non-JSON resources (markdown, text, binary) are returned unchanged in all formats
+        and delivered as raw text (not JSON-wrapped).
 
         ## Return Value
 
-        The resource content as a string. The format depends on the resource
-        and the ``format`` parameter.
+        For JSON resources (auto-generated, ``token/scopes``), returns structured content
+        wrapped in ``{"result": ...}``. For text/markdown resources, returns raw text
+        content directly without JSON wrapping.
 
         ## Usage Examples
 
@@ -382,20 +376,27 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         4. **Handle errors gracefully**: Wrap calls in try-except to handle missing resources or API failures
         5. **Cache when appropriate**: Resources have built-in caching; avoid repeated calls in tight loops
         6. **Use format parameter**: ``format=json`` for structured data extraction, ``format=markdown`` for readability
+        7. **Text vs JSON**: Markdown and plain-text resources are returned as raw text;
+           JSON resources are returned as ``{"result": ...}`` structured content
 
         Args:
             uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
             format: Output format -- ``markdown`` (default), ``raw``, or ``json``.
 
         Returns:
-            The resource content as a string. May be plain text, markdown, JSON, etc.
+            Raw text content for text/markdown resources, or structured content
+            for JSON resources.
 
         Raises:
             ValueError: If the resource is not found or cannot be read
         """
         result = await _mcp_read_resource_impl(ctx, uri)
         formatted = _format_resource_content(result, format)
-        return ToolResult(structured_content={"result": formatted})
+
+        return ToolResult(
+            content=[TextContent(type="text", text=formatted)],
+            structured_content={"result": formatted},
+        )
 
     def _extract_resource_text(entry: dict[str, Any]) -> str:
         """Build searchable text from a resource entry."""

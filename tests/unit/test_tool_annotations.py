@@ -2502,6 +2502,55 @@ class TestCompactSearchSerializer:
         assert result[0]["name"] == "tool_a"
         assert result[1]["name"] == "tool_b"
 
+    def test_omits_annotations_when_null(self):
+        """Should omit annotations key when tool has no annotations."""
+        from gitea_mcp_server.tools.search import _compact_search_serializer
+
+        tool = Tool(
+            name="no_annotations",
+            description="A tool without annotations",
+            parameters={"properties": {}},
+        )
+        result = _compact_search_serializer([tool])
+        assert "annotations" not in result[0]
+
+    def test_includes_annotations_when_present(self):
+        """Should include annotations key when tool has annotations."""
+        from gitea_mcp_server.tools.search import _compact_search_serializer
+
+        tool = Tool(
+            name="with_annotations",
+            description="A tool with annotations",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(
+                title="Test Tool",
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=False,
+            ),
+        )
+        result = _compact_search_serializer([tool])
+        assert "annotations" in result[0]
+        assert result[0]["annotations"]["title"] == "Test Tool"
+
+    def test_omits_annotations_when_all_fields_null(self):
+        """Should omit annotations key when all annotation fields are None."""
+        from gitea_mcp_server.tools.search import _compact_search_serializer
+
+        tool = Tool(
+            name="empty_annotations",
+            description="A tool with null annotations fields",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(
+                title=None,
+                readOnlyHint=None,
+                destructiveHint=None,
+                idempotentHint=None,
+            ),
+        )
+        result = _compact_search_serializer([tool])
+        assert "annotations" not in result[0]
+
 
 class TestIsArrayResponse:
     """Tests for _is_array_response function."""

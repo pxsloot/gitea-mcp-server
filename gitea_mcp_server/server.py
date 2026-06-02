@@ -32,6 +32,7 @@ from gitea_mcp_server.constants import (
     SEARCH_ALWAYS_VISIBLE_TOOLS,
     SEARCH_MAX_RESULTS,
 )
+from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.logging_config import setup_logging
@@ -69,7 +70,7 @@ def load_instructions() -> str:
         )
 
 
-async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
+async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:  # noqa: PLR0915
     """Create the Gitea MCP server from OpenAPI spec.
 
     Args:
@@ -108,12 +109,24 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
         gitea_client=gitea_client,
     )
 
+    # Initialize doc manager (loads guides from package data)
+    doc_manager = DocManager()
+
+    # Build instructions with doc manifest
+    instructions = load_instructions()
+    manifest = doc_manager.get_manifest_markdown()
+    if manifest:
+        instructions += "\n" + manifest
+
     # Create FastMCP server
     mcp = FastMCP(
         name="Gitea MCP Server",
         providers=[provider],
-        instructions=load_instructions(),
+        instructions=instructions,
     )
+
+    # Register doc tools and resources
+    register_doc_tools(mcp, doc_manager)
 
     # Add response caching middleware
     logger.info("Adding response caching middleware...")

@@ -176,6 +176,17 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 ## Pagination
 Most list operations accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary (often 30-50). Always paginate to avoid overwhelming responses.
 
+## Workflow Guides
+
+Workflow guides explain Forgejo concepts and settings beyond individual API calls.
+Available guides are listed below. Use them when you need to understand how features
+work — token scopes, branch protection, permission models, labels, etc.
+
+**Two ways to access:**
+- `search_docs(query)` — find guides by natural language
+- `read_doc(topic)` — read a full guide
+- `gitea://docs/guide/{topic}` — same content as a resource
+
 ## Output Format (`format` parameter)
 
 All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `search_resources`) accept a `format` parameter to control how results are presented:

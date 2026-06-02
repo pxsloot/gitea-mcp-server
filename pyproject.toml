@@ -45,7 +45,10 @@ build-backend = "hatchling.build"
 packages = ["gitea_mcp_server", "gitea_mcp_client"]
 
 [tool.hatch.build]
-include = ["gitea_mcp_server/docs/agent_instructions.md"]
+include = [
+    "gitea_mcp_server/docs/agent_instructions.md",
+    "gitea_mcp_server/docs/guides/**/*.md",
+]
 
 [tool.ruff]
 line-length = 100

@@ -201,7 +201,7 @@ class TolerantSearchTransform(BM25SearchTransform):
             results = await transform._search(hidden, query)
             rendered = await transform._render_results(results)
             result = _format_result(ToolResult(structured_content={"result": rendered}), format)
-            if format == "markdown" and result.content:
+            if format == "markdown" and result.content and isinstance(result.content[0], TextContent):
                 text = result.content[0].text
                 if query.strip() and rendered:
                     text += (

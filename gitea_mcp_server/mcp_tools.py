@@ -401,6 +401,9 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     def _extract_resource_text(entry: dict[str, Any]) -> str:
         """Build searchable text from a resource entry."""
         parts = [entry.get("name", "")]
+        uri = entry.get("uri", "")
+        if uri:
+            parts.append(uri)
         desc = entry.get("description", "")
         if desc:
             parts.append(desc)

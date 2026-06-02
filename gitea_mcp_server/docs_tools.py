@@ -336,14 +336,28 @@ def register_doc_tools(
             structured_content={"result": content},
         )
 
+    # Compute dynamic tags and description from all loaded guides
+    # so resource discovery aligns with guide frontmatter content
+    all_tags: set[str] = {"docs", "guide", "workflow"}
+    topic_list: list[str] = []
+    for g in doc_manager.guides:
+        all_tags.update(g.tags)
+        all_tags.add(g.name)
+        topic_list.append(g.name)
+    topic_str = ", ".join(sorted(topic_list))
+    description = (
+        "Read a workflow guide by topic name. "
+        f"Topics: {topic_str}. "
+        "Use search_docs() to find guides by topic, or read_doc(topic) to read one."
+    )
+
     # Register the resource template for all guides
     @mcp.resource(
         uri="gitea://docs/guide/{topic}",
         name="Workflow Guide",
-        description="Read a workflow guide by topic name. "
-        "Use search_docs to find available topics.",
+        description=description,
         mime_type="text/markdown",
-        tags={"docs", "guide", "workflow"},
+        tags=all_tags,
     )
     async def doc_resource(topic: str) -> str:
         """Get a workflow guide by topic name."""

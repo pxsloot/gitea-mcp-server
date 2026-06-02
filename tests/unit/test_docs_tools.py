@@ -208,6 +208,30 @@ class TestRegisterDocTools:
         register_doc_tools(mcp, self._make_manager())
         assert mcp.resource.call_count == 1
 
+    def test_resource_tags_include_guide_frontmatter_tags(self):
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, self._make_manager())
+        kwargs = mcp.resource.call_args[1]
+        tags = kwargs["tags"]
+        assert "tag1" in tags, "guide frontmatter tag should be in resource tags"
+        assert "test" in tags, "guide topic name should be in resource tags"
+        assert "docs" in tags, "base docs tag should be present"
+        assert "guide" in tags, "base guide tag should be present"
+
+    def test_resource_description_includes_guide_topics(self):
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, self._make_manager())
+        kwargs = mcp.resource.call_args[1]
+        desc = kwargs["description"]
+        assert "Topics:" in desc
+        assert "test" in desc
+        assert "search_docs()" in desc
+        assert "read_doc(topic)" in desc
+
     @pytest.mark.asyncio
     async def test_search_docs_returns_markdown_by_default(self):
         fn = self._capture_tool("search_docs")
@@ -278,6 +302,50 @@ class TestRegisterDocTools:
         fn = self._capture_tool("read_doc")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
             await fn(topic="test", format="xml")
+
+
+    def test_resource_tags_aggregated_across_multiple_guides(self):
+        """Tags from multiple guides should all appear in resource template tags."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        mgr = DocManager.__new__(DocManager)
+        guides = [
+            DocGuide("wiki", "Wiki Guide", "Wiki docs", ["wiki", "documentation"], "# Wiki", "Wiki body"),
+            DocGuide("labels", "Labels Guide", "Labels docs", ["labels", "issue"], "# Labels", "Labels body"),
+        ]
+        mgr._guides = guides
+        mgr._search_texts = [g.search_text() for g in guides]
+        mgr._search_engine = BM25SearchEngine()
+        register_doc_tools(mcp, mgr)
+        kwargs = mcp.resource.call_args[1]
+        tags = kwargs["tags"]
+        for tag in ("wiki", "labels", "documentation", "issue", "docs", "guide", "workflow"):
+            assert tag in tags, f"Expected tag '{tag}' in aggregated resource tags"
+        desc = kwargs["description"]
+        assert "Topics:" in desc
+        assert "wiki" in desc
+        assert "labels" in desc
+
+    def test_resource_description_includes_multiple_topics(self):
+        """Description should list all guide topics when multiple guides exist."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        mgr = DocManager.__new__(DocManager)
+        guides = [
+            DocGuide("alpha", "Alpha", "First guide", [], "# A", "A"),
+            DocGuide("beta", "Beta", "Second guide", ["tag-x"], "# B", "B"),
+        ]
+        mgr._guides = guides
+        mgr._search_texts = [g.search_text() for g in guides]
+        mgr._search_engine = BM25SearchEngine()
+        register_doc_tools(mcp, mgr)
+        kwargs = mcp.resource.call_args[1]
+        desc = kwargs["description"]
+        assert "alpha" in desc
+        assert "beta" in desc
+        assert "Topics:" in desc
 
 
 class TestDocResource:

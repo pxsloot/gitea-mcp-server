@@ -421,7 +421,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
                         "mimeType": {"type": "string"},
                         "type": {"type": "string"},
                         "tags": {"type": "array"},
-                        "required_scope": {"type": "string"},
+                        "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
                     },
                 },
                 "description": "Matching resource definitions ranked by relevance",

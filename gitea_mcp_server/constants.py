@@ -96,7 +96,13 @@ LABEL_CACHE_TTL = 300
 SEARCH_MAX_RESULTS = 10
 """Maximum number of search results to return."""
 
-SEARCH_ALWAYS_VISIBLE_TOOLS = ["read_resource", "list_resources", "search_resources"]
+SEARCH_ALWAYS_VISIBLE_TOOLS = [
+    "read_resource",
+    "list_resources",
+    "search_resources",
+    "search_docs",
+    "read_doc",
+]
 """Tool names that are always visible regardless of lazy loading settings."""
 
 

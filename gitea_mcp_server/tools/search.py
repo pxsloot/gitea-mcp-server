@@ -140,8 +140,9 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
             "name": tool.name,
             "description": tool.description or "",
             "tags": list(tool.tags) if tool.tags else [],
-            "annotations": annotations,
         }
+        if annotations:
+            item["annotations"] = annotations
         result.append(item)
     return result
 

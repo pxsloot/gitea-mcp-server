@@ -118,13 +118,17 @@ def _format_resource_content(raw: str, fmt: str) -> str:
     """Reformat a resource result string by format.
 
     If the content is JSON, parse and reformat (markdown or pretty-printed).
-    Otherwise return unchanged for all formats.
+    If the content is not JSON and ``format=json`` is requested, wrap
+    in ``{"result": "..."}`` to provide structured output regardless of MIME type.
     """
     if fmt == "raw":
         return raw
+
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
+        if fmt == "json":
+            return json.dumps({"result": raw}, indent=2)
         return raw
 
     if fmt == "json":
@@ -307,10 +311,8 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         Output format:
         - ``markdown`` (default): schema-aware Markdown with tables and sections (for JSON resources).
         - ``raw``: return the resource content exactly as stored.
-        - ``json``: pretty-printed JSON (for JSON resources).
-
-        Non-JSON resources (markdown, text, binary) are returned unchanged in all formats
-        and delivered as raw text (not JSON-wrapped).
+        - ``json``: pretty-printed JSON (for JSON resources). For non-JSON resources,
+          wraps content in ``{"result": "..."}`` for consistent structured output.
 
         ## Return Value
 

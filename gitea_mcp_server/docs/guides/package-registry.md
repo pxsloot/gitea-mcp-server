@@ -1,8 +1,8 @@
 ---
 title: Package Registry
-description: Package registry in Gitea/Forgejo — supported formats, authentication, publishing, and consuming packages across 20+ types.
+description: Package registry in Gitea/Forgejo -- supported formats, authentication, publishing, and consuming packages across 20+ types.
 tags: [packages, registry, npm, PyPI, Docker, Maven, Go, publishing]
-source: Forgejo Docs — Package Registry (CC-BY-SA-4.0)
+source: Forgejo Docs -- Package Registry (CC-BY-SA-4.0)
 ---
 
 # Package Registry
@@ -46,12 +46,12 @@ Publishing requires authentication with a token that has `read:package` and/or `
 
 ## Managing Packages
 
-- `gitea://packages/{owner}` — list all packages for an owner (user or org)
-- `gitea://packages/{owner}/{type}/{name}/{version}` — get package details
-- `gitea://packages/{owner}/{type}/{name}/{version}/files` — list package files
+- `gitea://packages/{owner}` -- list all packages for an owner (user or org)
+- `gitea://packages/{owner}/{type}/{name}/{version}` -- get package details
+- `gitea://packages/{owner}/{type}/{name}/{version}/files` -- list package files
 
 ## Relevant Tools
 
-- `gitea://packages/{owner}` — list packages resource
-- `gitea//packages/{owner}/{type}/{name}/{version}` — package detail resource
-- `gitea//packages/{owner}/{type}/{name}/{version}/files` — files resource
+- `gitea://packages/{owner}` -- list packages resource
+- `gitea//packages/{owner}/{type}/{name}/{version}` -- package detail resource
+- `gitea//packages/{owner}/{type}/{name}/{version}/files` -- files resource

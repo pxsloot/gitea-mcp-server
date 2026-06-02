@@ -1,8 +1,8 @@
 ---
 title: Pull Requests & Git Flow
-description: Pull request workflow in Gitea/Forgejo — creating PRs, merge styles (merge/squash/rebase), reviews, CODEOWNERS, and merge message templates.
+description: Pull request workflow in Gitea/Forgejo -- creating PRs, merge styles (merge/squash/rebase), reviews, CODEOWNERS, and merge message templates.
 tags: [PRs, pull requests, merging, reviews, code owners, git flow]
-source: Forgejo Docs — Pull requests and Git flow (CC-BY-SA-4.0)
+source: Forgejo Docs -- Pull requests and Git flow (CC-BY-SA-4.0)
 ---
 
 # Pull Requests & Git Flow
@@ -32,9 +32,9 @@ Style availability is set per-repository. Use `gitea_repo_edit` to configure.
 ## Reviews
 
 Reviewers can approve, request changes, or comment. Reviews can be:
-- **Per-PR** — global review of all changes
-- **Per-commit** — review a single commit in a multi-commit PR
-- **Line comments** — inline feedback on specific lines
+- **Per-PR** -- global review of all changes
+- **Per-commit** -- review a single commit in a multi-commit PR
+- **Line comments** -- inline feedback on specific lines
 
 **CODEOWNERS** auto-requests reviews: place a `CODEOWNERS` file in the repo root, `docs/`, or `.forgejo/`. Syntax:
 ```
@@ -46,11 +46,11 @@ docs/.* @MyOrg/editors
 ## Merge Message Templates
 
 Configure merge commit messages in Settings → Repository → Merge Message Templates. Templates can reference:
-- `{title}` — PR title
-- `{body}` — PR description
-- `{number}` — PR number
-- `{author}` — PR author
-- `{co-authors}` — co-author trailers from commits
+- `{title}` -- PR title
+- `{body}` -- PR description
+- `{number}` -- PR number
+- `{author}` -- PR author
+- `{co-authors}` -- co-author trailers from commits
 
 Example:
 ```
@@ -60,12 +60,12 @@ Merge pull request #{number} from {author}
 
 ## Relevant Tools
 
-- `gitea_repo_create_pull_request` — create a PR (head, base, title, body)
-- `gitea_repo_edit_pull_request` — update PR title, body, labels, milestone
-- `gitea_repo_merge_pull_request` — merge with style selection
-- `gitea_repo_list_pull_requests` — list PRs by state
-- `gitea_repo_get_pull_request` — get PR details
-- `gitea_repo_create_pull_review` — submit a review (approve/request-changes/comment)
-- `gitea_repo_list_pull_reviews` — list reviews on a PR
-- `gitea_repo_get_pull_request_by_base_head` — find PR by branch pair
-- `gitea://repos/{owner}/{repo}/pulls` — PRs resource
+- `gitea_repo_create_pull_request` -- create a PR (head, base, title, body)
+- `gitea_repo_edit_pull_request` -- update PR title, body, labels, milestone
+- `gitea_repo_merge_pull_request` -- merge with style selection
+- `gitea_repo_list_pull_requests` -- list PRs by state
+- `gitea_repo_get_pull_request` -- get PR details
+- `gitea_repo_create_pull_review` -- submit a review (approve/request-changes/comment)
+- `gitea_repo_list_pull_reviews` -- list reviews on a PR
+- `gitea_repo_get_pull_request_by_base_head` -- find PR by branch pair
+- `gitea://repos/{owner}/{repo}/pulls` -- PRs resource

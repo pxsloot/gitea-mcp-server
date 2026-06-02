@@ -20,7 +20,7 @@ cp .env.example .env
 ```
 
 **Key**: The `.venv` managed by `mise` must be active. The system Python
-will not work — dependencies are pinned via `uv.lock`.
+will not work -- dependencies are pinned via `uv.lock`.
 
 ---
 
@@ -70,10 +70,10 @@ See `docs/TESTING_STANDARDS.md` for full details.
 
 | Directory | Contains |
 |-----------|----------|
-| `gitea_mcp_server/` | Core modules — config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
-| `gitea_mcp_server/tools/` | **Runtime** tool customization — customize, schemas, errors, labels, examples, search, namespace |
-| `gitea_mcp_server/resources/` | **Runtime** resource system — auto-generated, custom, format helpers, scope derivation, registry |
-| `gitea_mcp_server/server_setup/` | **Startup-only** — spec loading, MCP builder, extensions, resource orchestration, permissions |
+| `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
+| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, search, namespace |
+| `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, registry |
+| `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
 | `docs/` | **Developer-facing** documentation (this file, ARCHITECTURE.md, etc.) |
 | `tests/` | Unit tests (`unit/`) and integration tests (`integration/`) |
@@ -94,7 +94,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic tools |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
-Scope derivation (`derive_required_scope`) lives in `resources/scope.py` — it is
+Scope derivation (`derive_required_scope`) lives in `resources/scope.py` -- it is
 shared between tool customization and resource registration.
 
 The central entry point is `customize_component()` in `tools/customize.py`,
@@ -168,7 +168,7 @@ _INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
    ```
 
 4. **Add URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`** in `constants.py` if a
-   GET endpoint exists for the same path — this prevents the auto-generated
+   GET endpoint exists for the same path -- this prevents the auto-generated
    raw JSON resource from conflicting.
 
 ---
@@ -176,7 +176,7 @@ _INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
 ## Shared Formatters (`format.py`)
 
 General-purpose schema-aware formatting lives in `gitea_mcp_server/format.py`.
-This module is shared by both `tools/` and `resources/` — never import
+This module is shared by both `tools/` and `resources/` -- never import
 formatting utilities from one domain into the other.
 
 Add a utility formatter there if multiple consumers need it:
@@ -214,16 +214,16 @@ Set `MCP_EXTENSIONS_PATH` env var to use a different file location.
 
 ## Common Pitfalls
 
-1. **Don't edit on `main`** — Always create a feature branch first.
+1. **Don't edit on `main`** -- Always create a feature branch first.
 2. **Don't import from outside `__all__`** in production code.  Internal
    functions may be renamed/refactored without notice.
-3. **Resource URIs conflict** — When adding a custom resource that shadows
+3. **Resource URIs conflict** -- When adding a custom resource that shadows
    a GET endpoint, always add the URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`.
-4. **Tests that make HTTP calls** — Use `respx` to mock the Gitea API.
+4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.
    Integration tests need a real `.env` with credentials.
-5. **Cache confusion** — Resource reads are cached.  If your changes don't
+5. **Cache confusion** -- Resource reads are cached.  If your changes don't
    appear, check cache TTL or invalidate manually.
-6. **Schema changes** — The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
+6. **Schema changes** -- The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
    If you add a new schema feature, ensure the converter preserves it.
 
 ---
@@ -232,10 +232,10 @@ Set `MCP_EXTENSIONS_PATH` env var to use a different file location.
 
 This project uses FastMCP 3.x.  Key APIs:
 
-- `OpenAPIProvider(spec, client)` — auto-generates tools from OpenAPI spec
-- `ResponseCachingMiddleware` — TTL-based resource caching
-- `BM25SearchTransform` — lazy loading with BM25 search
-- `Transform` — modify tool lists, intercept tool lookups
-- `Tool.from_tool(existing, transform_fn=...)` — wrap existing tools with new behavior
+- `OpenAPIProvider(spec, client)` -- auto-generates tools from OpenAPI spec
+- `ResponseCachingMiddleware` -- TTL-based resource caching
+- `BM25SearchTransform` -- lazy loading with BM25 search
+- `Transform` -- modify tool lists, intercept tool lookups
+- `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior
 
 For up-to-date FastMCP docs: https://gofastmcp.com/llms.txt

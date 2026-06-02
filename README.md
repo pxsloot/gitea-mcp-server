@@ -18,10 +18,10 @@ See [docs/](docs/) for setup details and [DEVELOPMENT.md](docs/DEVELOPMENT.md) f
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `GITEA_URL` | — | Base URL of your Gitea instance |
-| `GITEA_TOKEN` | — | API token (Settings → Applications → Generate Token) |
+| `GITEA_URL` | -- | Base URL of your Gitea instance |
+| `GITEA_TOKEN` | -- | API token (Settings → Applications → Generate Token) |
 | `GITEA_VERIFY_SSL` | `true` | Set `false` for self-signed certs |
-| `SSL_CERT_FILE` | — | Custom CA bundle path |
+| `SSL_CERT_FILE` | -- | Custom CA bundle path |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `TRANSPORT_TYPE` | `stdio` | `stdio` or `http` |
@@ -74,11 +74,11 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/ARCHITECTURE.md](docs/A
 ## Key Features
 
 - **Auto-generated tools** from Gitea's Swagger spec (converted 2.0 → 3.1)
-- **Lazy loading** — BM25 search-based tool discovery, not all 200 tools listed upfront
-- **Permission filtering** — tools hidden based on token scopes
-- **MCP Resources** — cached, URI-based data access (`gitea://repos/{owner}/{repo}`)
-- **Tool annotations** — read-only/destructive/idempotent hints per tool
-- **mcp_extensions.yaml** — customize tool metadata without code
+- **Lazy loading** -- BM25 search-based tool discovery, not all 200 tools listed upfront
+- **Permission filtering** -- tools hidden based on token scopes
+- **MCP Resources** -- cached, URI-based data access (`gitea://repos/{owner}/{repo}`)
+- **Tool annotations** -- read-only/destructive/idempotent hints per tool
+- **mcp_extensions.yaml** -- customize tool metadata without code
 - **TOML logging**, HTTP/stdio transport, Docker support
 
 ## Contributing

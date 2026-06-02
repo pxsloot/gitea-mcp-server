@@ -1778,7 +1778,7 @@ class TestCallToolOutputSchema:
         assert tool.output_schema is not None
         assert tool.output_schema["type"] == "object"
         assert "result" in tool.output_schema["properties"]
-        # call_tool does NOT set x-fastmcp-wrap-result — it passes through
+        # call_tool does NOT set x-fastmcp-wrap-result -- it passes through
         # the inner tool's already-wrapped ToolResult, so the flag would
         # be a no-op (dead code).  Inner tools handle their own wrapping.
         assert "x-fastmcp-wrap-result" not in tool.output_schema

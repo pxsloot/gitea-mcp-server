@@ -281,7 +281,7 @@ class TolerantSearchTransform(BM25SearchTransform):
     def _make_tool_info_tool(self) -> Tool:
         transform = self
 
-        async def tool_info(  # noqa: RET503 — _raise_value_error always raises
+        async def tool_info(  # noqa: RET503 -- _raise_value_error always raises
             name: Annotated[str, "The exact name of the tool to inspect"],
             format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
             ctx: Context | None = None,

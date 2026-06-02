@@ -1,4 +1,4 @@
-"""Permission filtering utilities — re-exports from tool_filter.py.
+"""Permission filtering utilities -- re-exports from tool_filter.py.
 
 This module exists to avoid a circular import: ``server.py`` imports
 from ``server_setup``, which would create a cycle if it imported

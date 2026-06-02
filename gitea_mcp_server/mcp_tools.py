@@ -190,7 +190,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         """List all available MCP resources.
 
         This tool discovers all registered MCP resources and resource templates (parameterized URIs)
-        available from the server. Use this for data discovery — find what information is available
+        available from the server. Use this for data discovery -- find what information is available
         and how to access it.
 
         For tool discovery (finding what actions you can perform), use search_tools instead.
@@ -202,7 +202,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         ## Parameters
 
-        - ``format``: Output format — ``markdown`` (default), ``json``, or ``raw``.
+        - ``format``: Output format -- ``markdown`` (default), ``json``, or ``raw``.
         - ``tag``: Optional. Filter by tag name (e.g., ``"wrapper"``, ``"repository"``, ``"issue"``).
         - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
 
@@ -385,7 +385,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         Args:
             uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
-            format: Output format — ``markdown`` (default), ``raw``, or ``json``.
+            format: Output format -- ``markdown`` (default), ``raw``, or ``json``.
 
         Returns:
             The resource content as a string. May be plain text, markdown, JSON, etc.
@@ -445,7 +445,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
 
         - ``query``: Natural language search query (e.g., "list issues in a repo",
           "get user profile", "pull request reviews")
-        - ``format``: Output format — ``markdown`` (default), ``json``, or ``raw``.
+        - ``format``: Output format -- ``markdown`` (default), ``json``, or ``raw``.
 
         ## Return Value
 
@@ -465,7 +465,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         # Find resources related to pull requests
         results = await search_resources("pull request reviews")
         for r in results:
-            print(f"{r['uri']} — {r['description']}")
+            print(f"{r['uri']} -- {r['description']}")
 
         # Search by category
         results = await search_resources("repository languages")
@@ -500,9 +500,9 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         an output example, annotations, or tags for a specific tool.
 
         Typical workflow:
-        1. search_tools — discover available tools (name + description)
-        2. tool/{name}/schema — get full schema for a specific tool
-        3. call_tool — execute the tool with proper arguments
+        1. search_tools -- discover available tools (name + description)
+        2. tool/{name}/schema -- get full schema for a specific tool
+        3. call_tool -- execute the tool with proper arguments
 
         Args:
             name: The tool name (including any namespace prefix)

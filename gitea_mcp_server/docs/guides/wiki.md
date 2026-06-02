@@ -1,8 +1,8 @@
 ---
 title: Wiki
-description: Built-in wiki in Gitea/Forgejo — git-backed storage, permissions, markdown content, and management.
+description: Built-in wiki in Gitea/Forgejo -- git-backed storage, permissions, markdown content, and management.
 tags: [wiki, documentation, markdown, git]
-source: Forgejo Docs — Integrated Wiki (CC-BY-SA-4.0)
+source: Forgejo Docs -- Integrated Wiki (CC-BY-SA-4.0)
 ---
 
 # Wiki
@@ -19,9 +19,9 @@ The wiki is a separate git repository (`{repo}.wiki.git`). Pages are stored as m
 ## Wiki Structure
 
 - Pages are markdown files (`.md`) in the wiki repository root
-- `_Sidebar.md` — sidebar navigation
-- `_Footer.md` — page footer
-- `Home.md` — default landing page (must exist on wiki init)
+- `_Sidebar.md` -- sidebar navigation
+- `_Footer.md` -- page footer
+- `Home.md` -- default landing page (must exist on wiki init)
 
 ## Permissions
 
@@ -35,4 +35,4 @@ Wiki access follows the repository's permission model:
 
 - Wiki is primarily managed via git (clone/push/pull) or the web UI
 - Use `gitea_repo_edit` with `has_wiki=true/false` to enable/disable
-- No dedicated wiki API endpoints — manage content via the wiki git repo
+- No dedicated wiki API endpoints -- manage content via the wiki git repo

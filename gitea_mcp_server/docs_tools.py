@@ -40,7 +40,7 @@ _VALID_FORMATS = frozenset({"markdown", "raw", "json"})
 class DocGuide:
     """Represents a single workflow guide."""
 
-    def __init__(  # noqa: PLR0913 — data class with 6 fields
+    def __init__(  # noqa: PLR0913 -- data class with 6 fields
         self,
         name: str,
         title: str,
@@ -230,13 +230,13 @@ def register_doc_tools(
         Matches against guide name, title, description, and tags using BM25 ranking.
 
         Use this when you need to understand how Gitea/Forgejo features work
-        beyond individual API calls — e.g., permission models, token scopes,
+        beyond individual API calls -- e.g., permission models, token scopes,
         branch protection rules, label system, pull request workflows.
 
         ## Parameters
 
         - ``query``: Natural language query (e.g., "how do tokens work", "protect branches", "label scopes")
-        - ``format``: Output format — ``markdown`` (default, human-readable table), ``json`` (structured data), or ``raw``.
+        - ``format``: Output format -- ``markdown`` (default, human-readable table), ``json`` (structured data), or ``raw``.
 
         ## Return Value
 
@@ -298,7 +298,7 @@ def register_doc_tools(
 
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
-        - ``format``: Output format — ``markdown`` (default, guide content as-is),
+        - ``format``: Output format -- ``markdown`` (default, guide content as-is),
           ``raw`` (same as markdown for plain text guides).
 
         ## Return Value

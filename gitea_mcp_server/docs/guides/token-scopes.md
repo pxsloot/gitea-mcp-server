@@ -2,7 +2,7 @@
 title: Token Scopes & Authentication
 description: How Gitea/Forgejo API tokens work, the scope model, repository access restrictions, and administrator capabilities.
 tags: [auth, tokens, permissions, security, scopes, API]
-source: Forgejo Docs — Access Token Scope (CC-BY-SA-4.0)
+source: Forgejo Docs -- Access Token Scope (CC-BY-SA-4.0)
 ---
 
 # Token Scopes & Authentication
@@ -11,7 +11,7 @@ API tokens in Gitea/Forgejo are scoped to specific route groups. Every API call 
 
 ## Scope Model
 
-Each scope group has a `read:` level (GET routes) and a `write:` level (POST, PUT, PATCH, DELETE — includes GET).
+Each scope group has a `read:` level (GET routes) and a `write:` level (POST, PUT, PATCH, DELETE -- includes GET).
 
 | Scope | Routes Covered | When to Use |
 |-------|---------------|-------------|
@@ -29,11 +29,11 @@ Each scope group has a `read:` level (GET routes) and a `write:` level (POST, PU
 
 When creating a token, three access levels are available:
 
-**All (public, private, and limited)** — Full access to everything the user can see. No restrictions on scopes.
+**All (public, private, and limited)** -- Full access to everything the user can see. No restrictions on scopes.
 
-**Public only** — Restricted to public repos/orgs. Repository admin and site admin capabilities are disabled. All scope groups available but limited to public resources.
+**Public only** -- Restricted to public repos/orgs. Repository admin and site admin capabilities are disabled. All scope groups available but limited to public resources.
 
-**Specific repositories** — Restricted to named repos. Only `read:repository`, `write:repository`, `read:issue`, `write:issue` scopes are available. Cannot perform admin operations within the repo (transfer, add collaborators, change visibility).
+**Specific repositories** -- Restricted to named repos. Only `read:repository`, `write:repository`, `read:issue`, `write:issue` scopes are available. Cannot perform admin operations within the repo (transfer, add collaborators, change visibility).
 
 ## Administrator Capabilities
 
@@ -55,6 +55,6 @@ These capabilities are **disabled** when using a public-only or specific-reposit
 
 ## Relevant Tools
 
-- `gitea_user_get_current` — verify identity and active token
-- `gitea://token/scopes` — resource listing active token's scopes
-- `gitea_admin_create_user` / `gitea_admin_create_org` — admin operations
+- `gitea_user_get_current` -- verify identity and active token
+- `gitea://token/scopes` -- resource listing active token's scopes
+- `gitea_admin_create_user` / `gitea_admin_create_org` -- admin operations

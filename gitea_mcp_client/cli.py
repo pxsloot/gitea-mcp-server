@@ -120,7 +120,7 @@ class MCPCli(cmd.Cmd):
 
     def _setup_completion(self) -> None:
         try:
-            import readline  # noqa: PLC0415 — only available on Unix
+            import readline  # noqa: PLC0415 -- only available on Unix
 
             readline.set_completer(self._complete)
             readline.parse_and_bind("tab: complete")
@@ -133,7 +133,7 @@ class MCPCli(cmd.Cmd):
 
     def _complete(self, text: str, state: int) -> str | None:
         try:
-            import readline  # noqa: PLC0415 — only available on Unix
+            import readline  # noqa: PLC0415 -- only available on Unix
 
             line = readline.get_line_buffer()
             tokens = shlex.split(line) if line.strip() else []

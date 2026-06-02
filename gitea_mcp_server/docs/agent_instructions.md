@@ -58,7 +58,7 @@ Every tool carries four machine-readable annotations that help you make safer an
 
 | Annotation | Meaning | Use for |
 |------------|---------|---------|
-| `readOnlyHint` | Tool only reads data — no side effects | Discovery, preview, safe to call anytime |
+| `readOnlyHint` | Tool only reads data -- no side effects | Discovery, preview, safe to call anytime |
 | `destructiveHint` | Tool can delete/destroy data | Warn before calling, require confirmation |
 | `idempotentHint` | Calling multiple times has same effect as once | Safe to retry on network failure |
 | `openWorldHint` | Tool interacts with external Gitea server | All tools are open-world |
@@ -66,10 +66,10 @@ Every tool carries four machine-readable annotations that help you make safer an
 **Best practices**:
 - Prefer tools with `readOnlyHint: true` for non-destructive data retrieval (e.g., listing, searching, getting).
 - Display a warning before calling any tool where `destructiveHint: true`.
-- Retry on transient failures only when `idempotentHint: true` — POST and PATCH operations are NOT idempotent.
-- All Gitea tools have `openWorldHint: true` — they make HTTP calls to the Gitea API and reflect real server state.
+- Retry on transient failures only when `idempotentHint: true` -- POST and PATCH operations are NOT idempotent.
+- All Gitea tools have `openWorldHint: true` -- they make HTTP calls to the Gitea API and reflect real server state.
 
-Inspect annotations via `tool_info("gitea_tool_name")` — the response includes an `annotations` object with all four hints.
+Inspect annotations via `tool_info("gitea_tool_name")` -- the response includes an `annotations` object with all four hints.
 
 ## Authentication
 Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `call_tool("gitea_user_get_current")`.
@@ -80,14 +80,14 @@ Auth is configured via environment variables at server startup. You cannot chang
 - **Tool naming**: Tools use snake_case, derived from Gitea API operationIds (camelCase → snake_case).
 - **Tool prefix**: All tools are prefixed with `gitea_` (e.g., `gitea_issue_get_issue`).
 - **Common patterns**:
-  - `{domain}_{action}_{resource?}` — `issue_create_issue`, `repo_delete`, `user_get`
-  - `{domain}_list_{resource}` — `user_list_orgs`, `org_list_repos`
-  - `{domain}_search_{resource}` — `repo_search`, `issue_search_issues`
+  - `{domain}_{action}_{resource?}` -- `issue_create_issue`, `repo_delete`, `user_get`
+  - `{domain}_list_{resource}` -- `user_list_orgs`, `org_list_repos`
+  - `{domain}_search_{resource}` -- `repo_search`, `issue_search_issues`
 - **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
 - **Save a tool name** for reuse: Once you find a tool name, you can use it directly without searching again.
 
 ## Resources
-Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `read_resource()` over calling a tool** — resources are cached, pre-formatted, and consistently structured.
+Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `read_resource()` over calling a tool** -- resources are cached, pre-formatted, and consistently structured.
 
 **List resources**: `list_resources(format="markdown", tag="", type="")` supports `markdown`/`raw`/`json` output. Filter by `tag` (e.g. `"wrapper"`, `"repository"`, `"issue"`) or `type` (`"resource"` or `"template"`) to narrow results.
 **Search resources**: `search_resources(query, format="markdown")` finds resources by natural language (BM25 ranking).
@@ -180,12 +180,12 @@ Most list operations accept `page` (1-based) and `limit` (page size). Use these 
 
 Workflow guides explain Forgejo concepts and settings beyond individual API calls.
 Available guides are listed below. Use them when you need to understand how features
-work — token scopes, branch protection, permission models, labels, etc.
+work -- token scopes, branch protection, permission models, labels, etc.
 
 **Two ways to access:**
-- `search_docs(query)` — find guides by natural language
-- `read_doc(topic)` — read a full guide
-- `gitea://docs/guide/{topic}` — same content as a resource
+- `search_docs(query)` -- find guides by natural language
+- `read_doc(topic)` -- read a full guide
+- `gitea://docs/guide/{topic}` -- same content as a resource
 
 ## Output Format (`format` parameter)
 
@@ -194,28 +194,28 @@ All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `list_resources`,
 | Format | When to use |
 |--------|-------------|
 | `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. |
-| `raw` | Return the result exactly as received from the underlying API or resource. Use when you need the exact data shape — for example, to check undocumented response fields or debug. |
+| `raw` | Return the result exactly as received from the underlying API or resource. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
 | `json` | Pretty-printed JSON. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. More compact and parseable than markdown. |
 
 Examples:
 
 ```python
-# Default markdown — human-readable tables
+# Default markdown -- human-readable tables
 call_tool("gitea_user_get_current")
 search_tools("issue")
 list_resources()
 search_resources("pull request")
 
-# JSON — for programmatic access
+# JSON -- for programmatic access
 call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
 search_tools("issue", format="json")
 search_resources("issue labels", format="json")
 
-# Raw API output — for debugging
+# Raw API output -- for debugging
 read_resource("gitea://repos/org/repo", format="raw")
 ```
 
-**Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data — the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
+**Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data -- the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
 - **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, and `tool_info` accept a `format` parameter for output style. Use `call_tool("search_tools", ...)` to discover.

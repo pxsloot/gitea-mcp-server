@@ -430,7 +430,7 @@ class TestMcpReadResourceTool:
 
     @pytest.mark.asyncio
     async def test_non_json_with_json_format(self):
-        """Non-JSON content with format=json should return text in content."""
+        """Non-JSON content with format=json should wrap in {\"result\": ...}."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -443,9 +443,11 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert len(tool_result.content) == 1
-        assert tool_result.content[0].text == "plain text"
+        parsed = json_module.loads(tool_result.content[0].text)
+        assert parsed == {"result": "plain text"}
         assert tool_result.structured_content is not None
-        assert tool_result.structured_content["result"] == "plain text"
+        parsed_result = json_module.loads(tool_result.structured_content["result"])
+        assert parsed_result == {"result": "plain text"}
 
 
 class TestFormatResourceContent:
@@ -490,9 +492,11 @@ class TestFormatResourceContent:
         assert "| id | 1 |" in result
         assert "| label | a |" in result
 
-    def test_non_json_passthrough_for_json_format(self):
-        """format=json with non-JSON content should return unchanged."""
-        assert _format_resource_content("plain text", "json") == "plain text"
+    def test_non_json_wrapped_in_result_for_json_format(self):
+        """format=json with non-JSON content should wrap in {\"result\": ...}."""
+        result = _format_resource_content("plain text", "json")
+        parsed = json_module.loads(result)
+        assert parsed == {"result": "plain text"}
 
     def test_non_json_passthrough_for_markdown_format(self):
         """format=markdown with non-JSON content should return unchanged."""

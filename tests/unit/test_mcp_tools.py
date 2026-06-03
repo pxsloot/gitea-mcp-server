@@ -335,7 +335,7 @@ class TestMcpReadResourceTool:
 
         def tool_decorator(**kwargs):
             def deco(fn):
-                captured[fn.__name__] = fn
+                captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
         mcp.tool = tool_decorator
@@ -534,7 +534,7 @@ class TestMcpListResourcesFormat:
 
         def tool_decorator(**kwargs):
             def deco(fn):
-                captured[fn.__name__] = fn
+                captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
         mcp.tool = tool_decorator
@@ -605,7 +605,7 @@ class TestMcpSearchResources:
 
         def tool_decorator(**kwargs):
             def deco(fn):
-                captured[fn.__name__] = fn
+                captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
 

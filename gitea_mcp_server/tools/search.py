@@ -22,6 +22,9 @@ from gitea_mcp_server.tools.errors import (
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
+PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
+"""Keys in structured_content that carry pagination metadata."""
+
 
 def _format_result(
     result: ToolResult,
@@ -52,6 +55,15 @@ def _format_result(
             else None
         )
         content = _format_as_markdown(data, inner)
+
+        pagination = {
+            k: result.structured_content[k]
+            for k in PAGINATION_KEYS
+            if k in result.structured_content
+        }
+        if pagination:
+            content += "\n\n---\n"
+            content += _format_as_markdown(pagination, None)
 
     if content is not None:
         return ToolResult(

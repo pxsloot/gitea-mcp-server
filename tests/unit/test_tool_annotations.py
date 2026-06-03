@@ -11,6 +11,7 @@ from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, SEARCH_NAME_BOOST, TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.resources.scope import derive_required_scope as _derive_required_scope
 from gitea_mcp_server.tools.customize import (
@@ -2807,8 +2808,8 @@ class TestPaginationMetadata:
         assert "has_more" not in result.structured_content
 
     @pytest.mark.asyncio
-    async def test_total_count_always_none(self, _wrapped_spec):
-        """total_count should always be None (requires API headers)."""
+    async def test_total_count_defaults_to_none(self, _wrapped_spec):
+        """total_count should be None when no pagination headers captured."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "issue_list_issues"
@@ -2829,6 +2830,34 @@ class TestPaginationMetadata:
         result = await new_tool.run({"page": 2, "per_page": 10})
 
         assert result.structured_content["total_count"] is None
+
+    @pytest.mark.asyncio
+    async def test_total_count_from_headers(self, _wrapped_spec):
+        """total_count should be populated from pagination context var."""
+        pagination_ctx.set({"total_count": 42})
+
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+        tool.run = AsyncMock(return_value=ToolResult(
+            structured_content={"result": [{"id": i} for i in range(5)]}
+        ))
+
+        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        result = await new_tool.run({"page": 1, "per_page": 10})
+
+        assert result.structured_content["total_count"] == 42
+        assert result.structured_content["has_more"] is False
+        assert result.structured_content["next_offset"] is None
 
     @pytest.mark.asyncio
     async def test_preserves_original_result_data(self, _wrapped_spec):

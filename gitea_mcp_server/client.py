@@ -30,6 +30,7 @@ from gitea_mcp_server.constants import (
     RETRY_WAIT_MULTIPLIER,
 )
 from gitea_mcp_server.exceptions import GiteaAPIError
+from gitea_mcp_server.pagination import capture_pagination_headers
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ class HTTPTransport:
                     max_connections=HTTP_MAX_CONNECTIONS,
                 ),
                 follow_redirects=True,
+                event_hooks={"response": [capture_pagination_headers]},
             )
         return self._client
 

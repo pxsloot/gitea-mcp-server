@@ -21,6 +21,7 @@ from gitea_mcp_server.constants import (
     TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.resources.scope import derive_required_scope
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
@@ -216,7 +217,7 @@ def customize_component(
                 enhanced_result = dict(result.structured_content)
                 enhanced_result["has_more"] = has_more
                 enhanced_result["next_offset"] = next_offset
-                enhanced_result["total_count"] = None
+                enhanced_result["total_count"] = pagination_ctx.get().get("total_count")
 
                 return ToolResult(
                     content=[TextContent(type="text", text=str(enhanced_result))],
@@ -230,6 +231,21 @@ def customize_component(
 
     if output_schema is not None:
         output_schema["x-fastmcp-wrap-result"] = True
+
+        if _is_array_response(output_schema):
+            props = output_schema.setdefault("properties", {})
+            props["has_more"] = {
+                "type": "boolean",
+                "description": "Whether more pages exist",
+            }
+            props["next_offset"] = {
+                "type": "integer",
+                "description": "Page number for next page, if any",
+            }
+            props["total_count"] = {
+                "type": "integer",
+                "description": "Total item count from server, if available",
+            }
 
     component_meta = dict(component.meta) if component.meta else {}
     component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[

@@ -23,22 +23,15 @@ from gitea_mcp_server.docs_tools import DocManager  # noqa: TC001 — runtime us
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.search import BM25SearchEngine
-from gitea_mcp_server.tools.search import TolerantSearchTransform, _compact_search_serializer
+from gitea_mcp_server.tools.search import (
+    TolerantSearchTransform,
+    _compact_search_serializer,
+    _extract_searchable_text_enhanced,
+)
 
 logger = logging.getLogger(__name__)
 
 _UNIFIED_SEARCH_MAX_RESULTS = 10
-
-
-def _extract_tool_search_text(tool: dict[str, Any]) -> str:
-    """Build searchable text from a compact tool entry."""
-    parts = [tool["name"]] * 3
-    desc = tool.get("description", "")
-    if desc:
-        parts.append(desc)
-    for tag in tool.get("tags", []):
-        parts.append(tag)
-    return " ".join(parts)
 
 
 def _extract_resource_search_text(entry: dict[str, Any]) -> str:
@@ -106,7 +99,12 @@ def register_unified_search(
         all_items: list[dict[str, Any]] = []
         all_texts: list[str] = []
 
-        for t in tool_entries:
+        # Use _extract_searchable_text_enhanced on raw Tool objects for richer signal
+        # (parameter names, descriptions, SEARCH_CATEGORY_ALIASES expansion) but keep
+        # _compact_search_serializer dicts for lighter result items.
+        tool_search_texts = [_extract_searchable_text_enhanced(t) for t in raw_tools]
+
+        for i, t in enumerate(tool_entries):
             all_items.append({
                 "type": "tool",
                 "name": t["name"],
@@ -114,7 +112,7 @@ def register_unified_search(
                 "tags": t.get("tags", []),
                 "access_uri": t["name"],
             })
-            all_texts.append(_extract_tool_search_text(t))
+            all_texts.append(tool_search_texts[i])
 
         for r in resource_entries:
             all_items.append({
@@ -173,6 +171,8 @@ def register_unified_search(
                         "description": {"type": "string"},
                         "tags": {"type": "array", "items": {"type": "string"}},
                         "access_uri": {"type": "string", "description": "How to access this item"},
+                        "uri": {"type": "string", "description": "Resource URI (resource results only)"},
+                        "title": {"type": "string", "description": "Doc title (doc results only)"},
                     },
                 },
                 "description": "Merged results across tools, docs, and resources",

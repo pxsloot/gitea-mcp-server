@@ -556,3 +556,11 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         return json.dumps(data, indent=2)
 
     logger.info("Registered MCP resource tools: list_resources, read_resource, search_resources, tool_schema_resource")
+
+
+__all__ = [
+    "_format_resource_content",
+    "_mcp_list_resources_impl",
+    "_mcp_read_resource_impl",
+    "register_mcp_resource_tools",
+]

@@ -45,6 +45,7 @@ from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform
+from gitea_mcp_server.unified_search import register_unified_search
 
 logger = logging.getLogger(__name__)
 
@@ -150,16 +151,21 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:  # noqa: PLR0
 
     # Add search transform for lazy loading (FastMCP 3.x)
     # Must add this BEFORE namespace transform so namespace can prefix the synthetic tools too
+    search_transform: TolerantSearchTransform | None = None
     if getattr(config, "enable_lazy_loading", True):
         logger.info("Adding search transform for lazy loading...")
-        mcp.add_transform(
-            TolerantSearchTransform(
-                max_results=SEARCH_MAX_RESULTS,
-                always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
-            )
+        search_transform = TolerantSearchTransform(
+            max_results=SEARCH_MAX_RESULTS,
+            always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
         )
+        mcp.add_transform(search_transform)
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
+
+    # Register unified search tool (needs doc_manager + search_transform)
+    if search_transform is not None:
+        logger.info("Registering unified search tool...")
+        register_unified_search(mcp, doc_manager, search_transform)
 
     # Add namespace transform for tool prefix (FastMCP 3.x built-in)
     # Must be added AFTER search transform so it can prefix the synthetic tools

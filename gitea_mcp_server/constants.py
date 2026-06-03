@@ -97,6 +97,7 @@ SEARCH_MAX_RESULTS = 10
 """Maximum number of search results to return."""
 
 SEARCH_ALWAYS_VISIBLE_TOOLS = [
+    "search",
     "read_resource",
     "list_resources",
     "search_resources",

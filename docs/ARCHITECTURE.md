@@ -48,10 +48,16 @@ removed when FastMCP catches up.
                   └──────┬───────┘
                          ▼
                   ┌──────────────┐       ┌─────────────────────┐
-                  │ TolerantSearch│      │ Resource Registry   │
-                  │ Transform     │      │ (auto-generated +   │
-                  │ (lazy loading)│      │  custom overrides)  │
-                  └──────────────┘       └─────────────────────┘
+                   │ TolerantSearch│      │ Resource Registry   │
+                   │ Transform     │      │ (auto-generated +   │
+                   │ (lazy loading)│      │  custom overrides)  │
+                   └───────┬───────┘      └─────────────────────┘
+                           │
+                   ┌───────▼───────┐
+                   │ Unified Search│
+                   │ (tools + docs +│
+                   │  resources)   │
+                   └───────────────┘
 ```
 
 ---
@@ -72,6 +78,7 @@ removed when FastMCP catches up.
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
 | `format.py` | General-purpose schema-aware markdown formatters (shared by tools & resources) | `_format_as_markdown`, `_format_datetime`, `_format_simple_value` |
+| `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged BM25 + `type` discriminator) | `register_unified_search` |
 
 ### Tool Customization Stack (applied in order)
 
@@ -99,7 +106,8 @@ The customization layers as applied during server startup:
 | 6. Permissions | `tool_filter.py` | hide tools/resources that exceed token scopes |
 | 7. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
 | 8. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
-| 9. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
+| 9. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
+| 10. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
 
 ### Resource System
 
@@ -133,7 +141,7 @@ The customization layers as applied during server startup:
 
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
    `search_tools` (BM25). This prevents context pollution from ~200 tools being
-   listed at once.  Three synthetic tools (`search_tools`, `call_tool`,
+   listed at once.  Four synthetic tools (`search`, `search_tools`, `call_tool`,
    `tool_info`) are always visible.
 
 3. **Resources pass through namespace** -- Resources use the `gitea://` scheme
@@ -252,6 +260,19 @@ Stage 2), so `output_schema = None` is paired with the `transform_fn` fallback
 to produce the same `{"result": text}` shape.
 
 ---
+
+## Data Flow: Agent Calls the Unified Search
+
+```
+Agent: search("create issue")
+  │
+  └─▶ Unified search tool (closure in server.py)
+        ├─▶ fetch tools: TolerantSearchTransform.get_tool_catalog(ctx)
+        ├─▶ fetch resources: _mcp_list_resources_impl(ctx)
+        ├─▶ fetch docs: doc_manager.search(query)
+        ├─▶ merge → BM25 rank across all three corpora
+        └─▶ return results with type discriminator
+```
 
 ## Data Flow: Agent Calls a Tool
 

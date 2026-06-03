@@ -2,6 +2,25 @@
 
 This server provides ~200 tools and resources to interact with Gitea (self-hosted Git service).
 
+## Unified Search
+
+The `search` tool searches across **tools, workflow docs, and resources** in a single call. Results include a `type` discriminator so you know how to access each result:
+
+```
+result = search("issue")                     # default: markdown output
+result = search("create pull request")       # natural language works
+result = search("branch protection", format="json")
+```
+
+Each result item:
+- `type`: `"tool"`, `"doc"`, or `"resource"`
+- `name`: tool name, doc topic, or resource name
+- `description`: brief summary
+- `tags`: categorization tags
+- `access_uri`: how to access it (tool name for tools, `gitea://docs/guide/{topic}` for docs, `gitea://...` URI for resources)
+
+This is the recommended starting point for discovery. Use focused search tools (`search_tools`, `search_docs`, `search_resources`) when you need to narrow to a specific subsystem.
+
 ## Calling Tools
 
 All tools are prefixed with `gitea_` (e.g., `gitea_user_get_current`). Call any tool by name through the host's tool-call mechanism:
@@ -189,7 +208,7 @@ work -- token scopes, branch protection, permission models, labels, etc.
 
 ## Output Format (`format` parameter)
 
-All synthetic tools (`call_tool`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `search_resources`) accept a `format` parameter to control how results are presented:
+All synthetic tools (`call_tool`, `search_tools`, `search`, `tool_info`, `list_resources`, `read_resource`, `search_resources`) accept a `format` parameter to control how results are presented:
 
 | Format | When to use |
 |--------|-------------|
@@ -202,12 +221,14 @@ Examples:
 ```python
 # Default markdown -- human-readable tables
 call_tool("gitea_user_get_current")
+search("issue")                # unified: tools + docs + resources
 search_tools("issue")
 list_resources()
 search_resources("pull request")
 
 # JSON -- for programmatic access
 call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
+search("create pr", format="json")
 search_tools("issue", format="json")
 search_resources("issue labels", format="json")
 
@@ -218,7 +239,7 @@ read_resource("gitea://repos/org/repo", format="raw")
 **Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data -- the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
-- **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, and `tool_info` accept a `format` parameter for output style. Use `call_tool("search_tools", ...)` to discover.
+- **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, `search`, and `tool_info` accept a `format` parameter for output style. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
 - **Resources**: Cached, efficient reads. `list_resources` and `read_resource` accept a `format` parameter. Use `list_resources` to see all available URIs or `search_resources` for natural-language discovery.
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

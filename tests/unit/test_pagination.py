@@ -14,7 +14,6 @@ from gitea_mcp_server.pagination import (
 def reset_context():
     """Reset pagination context before each test."""
     pagination_ctx.set({})
-    yield
 
 
 def _make_response(

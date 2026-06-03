@@ -23,10 +23,19 @@ This is the recommended starting point for discovery. Use focused search tools (
 
 ## Calling Tools
 
-All tools are prefixed with `gitea_` (e.g., `gitea_user_get_current`). Call any tool by name through the host's tool-call mechanism:
+There are two kinds of tools:
+
+- **Synthetic tools** — `search`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `search_resources`. These are **called directly** by name (not via `call_tool`).
+- **API tools** — prefixed with `gitea_` (e.g., `gitea_user_get_current`). These are **called via `call_tool`**:
 
 ```
-call_tool("gitea_user_get_current")
+search("issue")                                    # synthetic — called directly
+search_tools("create pr", format="json")           # synthetic — called directly
+tool_info("gitea_issue_get_issue")                 # synthetic — called directly
+read_resource("gitea://repos/org/repo")            # synthetic — called directly
+list_resources(tag="repository")                   # synthetic — called directly
+
+call_tool("gitea_user_get_current")                           # API tool — via call_tool
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
@@ -69,7 +78,7 @@ info = tool_info("gitea_issue_get_issue")
 | `gitea_repo_list_branches` | List branches | `owner`, `repo`, `page`, `limit` |
 | `gitea_org_list_current_user_orgs` | List your organizations | (none) |
 
-For other tools, use `search_tools` → `tool_info` → `call_tool`.
+For other API tools, use `search_tools` → `tool_info` → `call_tool`.
 
 ## Tool Annotations
 
@@ -135,7 +144,7 @@ Before creating an issue/PR with labels, fetch the available labels:
 
 ```python
 # Option 1: Search then call
-call_tool("search_tools", {"query": "list labels"})
+search_tools("list labels")
 labels = call_tool("gitea_issue_list_labels", {"owner": "org", "repo": "repo"})
 
 # Option 2: Read the labels resource (faster, cached)
@@ -145,7 +154,7 @@ read_resource("gitea://repos/org/repo/labels")
 ### Example: Create an issue with label names
 
 ```python
-call_tool("search_tools", {"query": "create issue"})
+search_tools("create issue")
 result = call_tool("gitea_issue_create_issue", {
     "owner": "myorg",
     "repo": "myrepo",
@@ -167,7 +176,7 @@ repos = call_tool("gitea_user_current_list_repos", {"page": 1, "limit": 50})
 
 ### 2. Search and create an issue
 ```python
-call_tool("search_tools", {"query": "issue"})
+search_tools("issue")
 create = call_tool("gitea_issue_create_issue", {
     "owner": "myorg", "repo": "myrepo",
     "title": "Bug report", "body": "details", "labels": ["bug"],
@@ -176,17 +185,17 @@ create = call_tool("gitea_issue_create_issue", {
 
 ### 3. Manage repository topics
 ```python
-call_tool("search_tools", {"query": "topic"})
+search_tools("topic")
 call_tool("gitea_repo_add_topic", {"owner": "org", "repo": "repo", "topic": "gitea"})
 call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "old"})
 ```
 
 ## Troubleshooting
-- **"Unknown tool"**: The tool name doesn't exist. Search for it first with `call_tool("search_tools", ...)`.
+- **"Unknown tool"**: The tool name doesn't exist. Search for it first with `search_tools(...)`.
 - **No search results**: Try a single keyword. If still none, the tool may not exist or you lack permission.
 - **Empty resource**: Resources reflect permissions (e.g., `users/{username}/repos` returns public repos only). Use tools like `gitea_user_current_list_repos` to see private/accessible repos.
 - **Need to see all tools**: There is no way to list all tools directly due to lazy loading. Use broad search queries like "repo" to surface most repository-related tools.
-- **Need full tool schema**: Use `call_tool("tool_info", {"name": "..."})` to get parameters, output_example, annotations, and tags. Or read the `gitea://tool/{name}/schema` resource.
+- **Need full tool schema**: Use `tool_info("name")` to get parameters, output_example, annotations, and tags. Or read the `gitea://tool/{name}/schema` resource.
 - **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin.
 
 ## Tool Prefixes (for search)
@@ -239,7 +248,7 @@ read_resource("gitea://repos/org/repo", format="raw")
 **Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data -- the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
-- **Tools**: Execute API calls, may modify state. `call_tool`, `search_tools`, `search`, and `tool_info` accept a `format` parameter for output style. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
-- **Resources**: Cached, efficient reads. `list_resources` and `read_resource` accept a `format` parameter. Use `list_resources` to see all available URIs or `search_resources` for natural-language discovery.
+- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `tool_info`, `call_tool`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All synthetic tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
+- **Resources**: Cached, efficient reads. `list_resources`, `read_resource`, and `search_resources` accept a `format` parameter and are called directly (not via `call_tool`).
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

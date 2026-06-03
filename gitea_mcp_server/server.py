@@ -71,7 +71,98 @@ def load_instructions() -> str:
         )
 
 
-async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:  # noqa: PLR0915
+def _build_server_instructions(doc_manager: DocManager) -> str:
+    """Build server instructions by combining base instructions with doc manifest."""
+    instructions = load_instructions()
+    manifest = doc_manager.get_manifest_markdown()
+    if manifest:
+        instructions += "\n" + manifest
+    return instructions
+
+
+def _setup_caching_middleware(mcp: FastMCP) -> None:
+    """Add response caching and cache invalidation middleware.
+
+    Invalidation middleware must be added after caching middleware.
+    """
+    logger.info("Adding response caching middleware...")
+    caching_middleware = ResponseCachingMiddleware(
+        cache_storage=None,
+        read_resource_settings=ReadResourceSettings(enabled=True, ttl=int(CACHE_TTL_DEFAULT)),
+        list_resources_settings=ListResourcesSettings(
+            enabled=True, ttl=int(CACHE_TTL_RESOURCE_LIST)
+        ),
+        list_tools_settings=ListToolsSettings(enabled=False),
+        call_tool_settings=CallToolSettings(enabled=False),
+        get_prompt_settings=GetPromptSettings(enabled=False),
+        max_item_size=CACHE_MAX_ITEM_SIZE,
+    )
+    mcp.add_middleware(caching_middleware)
+
+    logger.info("Adding cache invalidation middleware...")
+    invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
+    mcp.add_middleware(invalidation_middleware)
+
+
+def _setup_tool_discovery(
+    mcp: FastMCP,
+    config: Config,
+    doc_manager: DocManager,
+) -> None:
+    """Setup lazy loading search transform, unified search, and namespace transform.
+
+    Search transform must be added BEFORE namespace so namespace can prefix
+    the synthetic tools (search_tools, tool_info, call_tool).
+    """
+    search_transform: TolerantSearchTransform | None = None
+    if config.enable_lazy_loading:
+        logger.info("Adding search transform for lazy loading...")
+        search_transform = TolerantSearchTransform(
+            max_results=SEARCH_MAX_RESULTS,
+            always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
+        )
+        mcp.add_transform(search_transform)
+    else:
+        logger.info("Lazy loading disabled via config; all tools will be listed directly")
+
+    if search_transform is not None:
+        logger.info("Registering unified search tool...")
+        register_unified_search(mcp, doc_manager, search_transform)
+
+    if config.tool_prefix:
+        logger.info("Adding namespace transform with prefix %s", config.tool_prefix)
+        mcp.add_transform(GiteaNamespace(config.tool_prefix.rstrip("_")))
+
+
+async def _apply_tool_filtering(
+    mcp: FastMCP,
+    gitea_client: GiteaClient,
+    config: Config,
+) -> None:
+    """Filter tools and resources based on user permissions if enabled."""
+    if not config.tool_filtering_enabled:
+        logger.info("Tool filtering is disabled")
+        return
+
+    try:
+        logger.info("Applying tool permission filtering")
+        await filter_tools_by_permissions(mcp, gitea_client)
+    except Exception as e:
+        logger.exception(
+            "Tool filtering failed, proceeding without filtering",
+            extra={"error": str(e)},
+        )
+    try:
+        logger.info("Applying resource permission filtering")
+        await filter_resources_by_permissions(mcp, gitea_client)
+    except Exception as e:
+        logger.exception(
+            "Resource filtering failed, proceeding without filtering",
+            extra={"error": str(e)},
+        )
+
+
+async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     """Create the Gitea MCP server from OpenAPI spec.
 
     Args:
@@ -85,12 +176,9 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:  # noqa: PLR0
     """
     config = gitea_client._config
 
-    # Setup logging as early as possible
     setup_logging(level=config.log_level, log_format=config.log_format)
-
     logger.info("Starting Gitea MCP Server initialization")
 
-    # Load and convert OpenAPI spec
     try:
         openapi_spec = await load_and_convert_spec(gitea_client)
     except SpecError:
@@ -99,104 +187,28 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:  # noqa: PLR0
         msg = f"Failed to load or convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
 
-    # Initialize label manager
     label_manager = LabelManager()
-
-    # Create OpenAPI provider
     provider = create_openapi_provider(
         openapi_spec=openapi_spec,
         client=gitea_client.client,
         label_manager=label_manager,
         gitea_client=gitea_client,
     )
-
-    # Initialize doc manager (loads guides from package data)
     doc_manager = DocManager()
 
-    # Build instructions with doc manifest
-    instructions = load_instructions()
-    manifest = doc_manager.get_manifest_markdown()
-    if manifest:
-        instructions += "\n" + manifest
+    instructions = _build_server_instructions(doc_manager)
 
-    # Create FastMCP server
     mcp = FastMCP(
         name="Gitea MCP Server",
         providers=[provider],
         instructions=instructions,
     )
 
-    # Register doc tools and resources
     register_doc_tools(mcp, doc_manager)
-
-    # Add response caching middleware
-    logger.info("Adding response caching middleware...")
-    caching_middleware = ResponseCachingMiddleware(
-        cache_storage=None,  # In-memory cache
-        read_resource_settings=ReadResourceSettings(enabled=True, ttl=int(CACHE_TTL_DEFAULT)),
-        list_resources_settings=ListResourcesSettings(
-            enabled=True, ttl=int(CACHE_TTL_RESOURCE_LIST)
-        ),
-        list_tools_settings=ListToolsSettings(enabled=False),
-        call_tool_settings=CallToolSettings(enabled=False),
-        get_prompt_settings=GetPromptSettings(enabled=False),
-        max_item_size=CACHE_MAX_ITEM_SIZE,
-    )
-    mcp.add_middleware(caching_middleware)
-
-    # Add cache invalidation middleware (must come after caching middleware)
-    logger.info("Adding cache invalidation middleware...")
-    invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
-    mcp.add_middleware(invalidation_middleware)
-
-    # Add search transform for lazy loading (FastMCP 3.x)
-    # Must add this BEFORE namespace transform so namespace can prefix the synthetic tools too
-    search_transform: TolerantSearchTransform | None = None
-    if getattr(config, "enable_lazy_loading", True):
-        logger.info("Adding search transform for lazy loading...")
-        search_transform = TolerantSearchTransform(
-            max_results=SEARCH_MAX_RESULTS,
-            always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
-        )
-        mcp.add_transform(search_transform)
-    else:
-        logger.info("Lazy loading disabled via config; all tools will be listed directly")
-
-    # Register unified search tool (needs doc_manager + search_transform)
-    if search_transform is not None:
-        logger.info("Registering unified search tool...")
-        register_unified_search(mcp, doc_manager, search_transform)
-
-    # Add namespace transform for tool prefix (FastMCP 3.x built-in)
-    # Must be added AFTER search transform so it can prefix the synthetic tools
-    if config.tool_prefix:
-        logger.info("Adding namespace transform with prefix %s", config.tool_prefix)
-        mcp.add_transform(GiteaNamespace(config.tool_prefix.rstrip("_")))
-
-    # Register resources
-    logger.info("Registering MCP resources...")
+    _setup_caching_middleware(mcp)
+    _setup_tool_discovery(mcp, config, doc_manager)
     register_all_resources(mcp, gitea_client, openapi_spec)
-
-    # Apply tool filtering based on user permissions if enabled
-    if config.tool_filtering_enabled:
-        try:
-            logger.info("Applying tool permission filtering")
-            await filter_tools_by_permissions(mcp, gitea_client)
-        except Exception as e:
-            logger.exception(
-                "Tool filtering failed, proceeding without filtering",
-                extra={"error": str(e)},
-            )
-        try:
-            logger.info("Applying resource permission filtering")
-            await filter_resources_by_permissions(mcp, gitea_client)
-        except Exception as e:
-            logger.exception(
-                "Resource filtering failed, proceeding without filtering",
-                extra={"error": str(e)},
-            )
-    else:
-        logger.info("Tool filtering is disabled")
+    await _apply_tool_filtering(mcp, gitea_client, config)
 
     logger.info("Gitea MCP Server initialized successfully")
     return mcp

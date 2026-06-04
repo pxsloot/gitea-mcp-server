@@ -24,17 +24,24 @@ except (OSError, json.JSONDecodeError) as e:
 class TestConvertSwaggerToOpenAPI:
     """Full integration tests for conversion."""
 
-    def test_minimal_swagger_spec(self):
-        spec = {
+    def _minimal_spec(self) -> dict:
+        return {
             "swagger": "2.0",
             "info": {"title": "Test API", "version": "1.0.0"},
             "basePath": "/api/v1",
             "paths": {"/ping": {"get": {"responses": {"200": {"description": "pong"}}}}},
         }
-        result = convert_swagger_to_openapi_v3(spec)
+
+    def test_output_version_is_3_1_1(self):
+        result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert result["openapi"] == "3.1.1"
-        assert "servers" in result
+
+    def test_basepath_becomes_server_url(self):
+        result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert result["servers"][0]["url"] == "/api/v1"
+
+    def test_paths_are_preserved(self):
+        result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert "/ping" in result["paths"]
 
     def test_full_spec_with_definitions(self):
@@ -198,9 +205,8 @@ class TestConvertSwaggerToOpenAPI:
         # x-original-content-types should be preserved
         assert path_item.get("x-original-content-types") == ["text/plain"]
 
-    def test_x_original_content_types_preserved(self):
-        """The x-original-content-types extension should preserve produces info."""
-        spec = {
+    def _make_x_original_spec(self) -> dict:
+        return {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -236,15 +242,17 @@ class TestConvertSwaggerToOpenAPI:
                 },
             },
         }
-        result = convert_swagger_to_openapi_v3(spec)
 
-        # text/plain endpoint should have x-original-content-types
+    def test_text_plain_endpoint_has_x_original_content_types(self):
+        result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert result["paths"]["/diff"]["get"].get("x-original-content-types") == ["text/plain"]
 
-        # application/json endpoint should NOT have x-original-content-types
+    def test_json_endpoint_does_not_have_x_original_content_types(self):
+        result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/json"]["get"]
 
-        # no-produces endpoint should NOT have x-original-content-types
+    def test_no_produces_endpoint_lacks_x_original_content_types(self):
+        result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/no-produces"]["get"]
 
 
@@ -484,13 +492,12 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        # Should not raise - 204 has no content schema
-        assert True
+        assert "content" not in spec["paths"]["/item/{id}"]["delete"]["responses"]["204"]
 
     def test_handles_empty_spec_gracefully(self):
         spec: dict = {}
         _wrap_success_response_schemas(spec)
-        assert True
+        assert spec == {}
 
     def test_wraps_201_created_responses(self):
         spec = {

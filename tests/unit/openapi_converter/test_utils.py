@@ -1,5 +1,7 @@
 """Unit tests for OpenAPI converter - utility functions."""
 
+import pytest
+
 from gitea_mcp_server.openapi_converter import camel_to_snake
 
 
@@ -12,9 +14,12 @@ class TestCamelToSnake:
     def test_simple_pascalcase(self):
         assert camel_to_snake("CreateIssue") == "create_issue"
 
-    def test_multiple_camel_phrases(self):
-        assert camel_to_snake("issueCreateIssue") == "issue_create_issue"
-        assert camel_to_snake("repoGetBranch") == "repo_get_branch"
+    @pytest.mark.parametrize("input_str,expected", [
+        ("issueCreateIssue", "issue_create_issue"),
+        ("repoGetBranch", "repo_get_branch"),
+    ])
+    def test_multiple_camel_phrases(self, input_str, expected):
+        assert camel_to_snake(input_str) == expected
 
     def test_consecutive_uppercase(self):
         assert camel_to_snake("GetURL") == "get_url"

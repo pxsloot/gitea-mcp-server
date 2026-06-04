@@ -8,7 +8,12 @@ import jsonschema
 import pytest
 
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3, _wrap_success_response_schemas
+from gitea_mcp_server.openapi_converter import (
+    BasePathToServerConverter,
+    SecuritySchemeConverter,
+    convert_swagger_to_openapi_v3,
+    _wrap_success_response_schemas,
+)
 
 # Load OpenAPI 3.1 schema once
 OAS_3_1_SCHEMA = None
@@ -584,3 +589,156 @@ class TestEnrichResponseSchemas:
         # text/plain schemas should remain unwrapped
         assert schema["type"] == "string"
         assert "properties" not in schema
+
+
+class TestSecuritySchemeConverter:
+    """Tests for SecuritySchemeConverter."""
+
+    def _converter(self):
+        return SecuritySchemeConverter()
+
+    def test_basic_auth(self):
+        """basic type should become http scheme basic."""
+        sec_defs = {
+            "basicAuth": {"type": "basic"},
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["basicAuth"]["type"] == "http"
+        assert result["basicAuth"]["scheme"] == "basic"
+
+    def test_api_key_with_in(self):
+        """apiKey type should preserve name and in fields."""
+        sec_defs = {
+            "apiKey": {"type": "apiKey", "name": "X-API-Key", "in": "header"},
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["apiKey"]["type"] == "apiKey"
+        assert result["apiKey"]["name"] == "X-API-Key"
+        assert result["apiKey"]["in"] == "header"
+
+    def test_api_key_defaults(self):
+        """apiKey without name/in should use defaults."""
+        sec_defs = {
+            "apiKey": {"type": "apiKey"},
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["apiKey"]["type"] == "apiKey"
+        assert "name" not in result["apiKey"]
+        assert "in" not in result["apiKey"]
+
+    def test_oauth2_implicit(self):
+        """oauth2 with flow=implicit should produce authorizationUrl."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+                "flow": "implicit",
+                "authorizationUrl": "https://example.com/auth",
+                "scopes": {"read": "read access"},
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["type"] == "oauth2"
+        flows = result["oauth"]["flows"]
+        assert "implicit" in flows
+        assert flows["implicit"]["authorizationUrl"] == "https://example.com/auth"
+        assert flows["implicit"]["scopes"] == {"read": "read access"}
+
+    def test_oauth2_password(self):
+        """oauth2 with flow=password should produce tokenUrl."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+                "flow": "password",
+                "tokenUrl": "https://example.com/token",
+                "scopes": {"write": "write access"},
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["type"] == "oauth2"
+        flows = result["oauth"]["flows"]
+        assert "password" in flows
+        assert flows["password"]["tokenUrl"] == "https://example.com/token"
+        assert flows["password"]["scopes"] == {"write": "write access"}
+
+    def test_oauth2_client_credentials(self):
+        """oauth2 with flow=clientCredentials should produce tokenUrl."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+                "flow": "clientCredentials",
+                "tokenUrl": "https://example.com/token",
+                "scopes": {"admin": "admin access"},
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["type"] == "oauth2"
+        flows = result["oauth"]["flows"]
+        assert "clientCredentials" in flows
+        assert flows["clientCredentials"]["tokenUrl"] == "https://example.com/token"
+        assert flows["clientCredentials"]["scopes"] == {"admin": "admin access"}
+
+    def test_oauth2_authorization_code(self):
+        """oauth2 with flow=authorizationCode should produce both urls."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+                "flow": "authorizationCode",
+                "authorizationUrl": "https://example.com/auth",
+                "tokenUrl": "https://example.com/token",
+                "scopes": {"all": "full access"},
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["type"] == "oauth2"
+        flows = result["oauth"]["flows"]
+        assert "authorizationCode" in flows
+        assert flows["authorizationCode"]["authorizationUrl"] == "https://example.com/auth"
+        assert flows["authorizationCode"]["tokenUrl"] == "https://example.com/token"
+        assert flows["authorizationCode"]["scopes"] == {"all": "full access"}
+
+    def test_security_defs_without_flow(self):
+        """oauth2 without flow key should produce empty flows."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["type"] == "oauth2"
+        assert "flows" not in result["oauth"]
+
+    def test_non_dict_details_skipped(self):
+        """Non-dict security definition entries should be skipped."""
+        sec_defs = {
+            "bad": "not a dict",
+        }
+        result = self._converter().convert(sec_defs)
+        assert result == {}
+
+
+class TestBasePathToServerConverter:
+    """Tests for BasePathToServerConverter."""
+
+    def test_with_host(self):
+        """When host is present, should construct full URL."""
+        spec = {"basePath": "/api/v1", "host": "git.example.com", "schemes": ["https"]}
+        BasePathToServerConverter().convert(spec)
+        assert spec.get("servers") == [{"url": "https://git.example.com/api/v1"}]
+
+    def test_without_host(self):
+        """Without host, should use basePath only."""
+        spec = {"basePath": "/api/v1"}
+        BasePathToServerConverter().convert(spec)
+        assert spec.get("servers") == [{"url": "/api/v1"}]
+
+    def test_without_base_path(self):
+        """Without basePath, should do nothing."""
+        spec = {"host": "git.example.com"}
+        BasePathToServerConverter().convert(spec)
+        assert "servers" not in spec
+
+    def test_default_scheme(self):
+        """When no schemes given, default to http."""
+        spec = {"basePath": "/api", "host": "git.example.com"}
+        BasePathToServerConverter().convert(spec)
+        assert spec["servers"][0]["url"].startswith("http://")

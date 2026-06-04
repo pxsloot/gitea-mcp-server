@@ -84,3 +84,48 @@ class TestConvertResponses:
         result = convert_responses(responses)
         assert "application/json" in result["200"]["content"]
         assert "text/plain" not in result["200"]["content"]
+
+    def test_response_with_headers(self):
+        """Response headers should be converted."""
+        responses = {
+            "200": {
+                "description": "OK",
+                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                "headers": {
+                    "X-RateLimit-Remaining": {"type": "integer", "description": "Remaining calls"},
+                    "X-RateLimit-Reset": {"type": "integer"},
+                },
+            }
+        }
+        result = convert_responses(responses)
+        assert "headers" in result["200"]
+        headers = result["200"]["headers"]
+        assert "X-RateLimit-Remaining" in headers
+        assert "X-RateLimit-Reset" in headers
+        # Header schema should be properly normalized
+        assert "schema" in headers["X-RateLimit-Remaining"]
+        assert headers["X-RateLimit-Remaining"]["schema"]["type"] == "integer"
+        assert headers["X-RateLimit-Remaining"]["description"] == "Remaining calls"
+
+    def test_response_with_non_dict_headers(self):
+        """Non-dict headers should be preserved as-is."""
+        responses = {
+            "200": {
+                "description": "OK",
+                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                "headers": {
+                    "X-Custom": "just a string",
+                },
+            }
+        }
+        result = convert_responses(responses)
+        assert "headers" in result["200"]
+        assert result["200"]["headers"]["X-Custom"] == "just a string"
+
+    def test_non_dict_response_preserved(self):
+        """Non-dict responses should be preserved as-is."""
+        responses = {
+            "200": "just a string",
+        }
+        result = convert_responses(responses)
+        assert result["200"] == "just a string"

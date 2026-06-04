@@ -394,6 +394,13 @@ class TestLookupResponseDescription:
         result = _lookup_response_description(openapi_spec, route, 404)
         assert result == "HTTP error 404"
 
+    def test_non_dict_paths_raises_attribute_error(self):
+        """When paths is not a dict, .get() raises AttributeError → fallback."""
+        openapi_spec = {"paths": [1, 2, 3]}
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
 
 class TestRunValidation:
     """Tests for _run_validation function."""
@@ -419,6 +426,22 @@ class TestRunValidation:
         """When per_page is too high, should raise ValidationError."""
         with pytest.raises(ValidationError, match="page|per_page"):
             _run_validation({"page": 1, "per_page": 99999})
+
+    def test_validator_raises_type_error_wraps_cleanly(self, monkeypatch):
+        """When a SINGLE_VALIDATOR raises TypeError, it should be wrapped as ValidationError."""
+        from gitea_mcp_server.validation import SINGLE_VALIDATORS
+
+        def bad_validator(value, *, field):
+            raise TypeError("unexpected type")
+
+        monkeypatch.setitem(SINGLE_VALIDATORS, "owner", bad_validator)
+        with pytest.raises(ValidationError, match="Validation error"):
+            _run_validation({"owner": "anything"})
+
+    def test_validator_raises_validation_error_re_raises(self):
+        """When a SINGLE_VALIDATOR raises ValidationError, it should re-raise unchanged."""
+        with pytest.raises(ValidationError):
+            _run_validation({"owner": ""})
 
 
 class TestErrorHandlingNonJson:

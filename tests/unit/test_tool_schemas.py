@@ -785,3 +785,168 @@ class TestDeepResolveSchema:
         assert schema is not None
         assert schema["properties"]["owner"]["type"] == "object"
         assert schema["properties"]["owner"]["properties"]["login"]["type"] == "string"
+
+    def test_deep_resolve_non_dict_schema(self):
+        """_deep_resolve_schema should return {} for non-dict input."""
+        assert _deep_resolve_schema("not a dict", {}) == {}
+
+    def test_deep_resolve_ref_resolves_to_non_dict(self):
+        """When $ref resolves to non-dict, should keep the $ref key."""
+        spec = {
+            "components": {
+                "schemas": {
+                    "Foo": "just a string",
+                }
+            }
+        }
+        result = _deep_resolve_schema({"$ref": "#/components/schemas/Foo"}, spec)
+        assert "$ref" in result
+
+    def test_deep_resolve_custom_dict_key(self):
+        """Non-standard keys with dict values should be deep-resolved."""
+        spec = {"components": {"schemas": {"Bar": {"type": "string"}}}}
+        schema = {
+            "type": "object",
+            "example": {"nested": {"$ref": "#/components/schemas/Bar"}},
+        }
+        resolved = _deep_resolve_schema(schema, spec)
+        assert resolved["example"]["nested"]["type"] == "string"
+
+
+class TestGetSuccessSchema:
+    """Tests for _get_success_schema edge cases."""
+
+    def test_non_dict_responses(self):
+        """When responses is not a dict, should return None."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": "not a dict",
+                    }
+                }
+            },
+        }
+        route = MagicMock(path="/test", method="GET")
+        assert _get_success_schema(spec, "/test", "get") is None
+
+    def test_ref_resolves_to_non_dict(self):
+        """When $ref in response resolves to non-dict, should continue to next status code."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/OK"},
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                    }
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+            "components": {
+                "responses": {
+                    "OK": "just a string",
+                }
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get")
+        assert result is not None
+        assert result["type"] == "object"
+
+    def test_non_dict_content(self):
+        """When content is not a dict, should continue."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {"description": "OK", "content": "not a dict"},
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {"schema": {"type": "string"}}
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get")
+        assert result is not None
+
+    def test_non_dict_json_content(self):
+        """When application/json content is not a dict, should continue."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": "not a dict",
+                                },
+                            },
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {"schema": {"type": "string"}}
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get")
+        assert result is not None
+
+    def test_non_dict_schema(self):
+        """When schema is not a dict, should continue."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {"schema": "not a dict"},
+                                },
+                            },
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {"schema": {"type": "string"}}
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get")
+        assert result is not None

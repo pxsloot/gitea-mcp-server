@@ -12,11 +12,6 @@ from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, l
 logger = logging.getLogger(__name__)
 
 
-def _raise_spec_error(message: str) -> None:
-    """Raise SpecError with pre-computed message."""
-    raise SpecError(message) from None
-
-
 async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
     """Load OpenAPI spec from Gitea instance.
 

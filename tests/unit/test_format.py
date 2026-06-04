@@ -321,6 +321,18 @@ class TestFormatAsMarkdown:
         assert "The Answer" in result
         assert "42" in result
 
+    def test_title_with_dict(self):
+        result = _format_as_markdown({"key": "val"}, title="MyTitle")
+        assert "# MyTitle" in result
+        assert "key" in result
+        assert "val" in result
+
+    def test_title_with_list(self):
+        result = _format_as_markdown(["a", "b"], title="MyTitle")
+        assert "# MyTitle" in result
+        assert "a" in result
+        assert "b" in result
+
     def test_allof_merged_schema(self):
         data = {"title": "Issue", "body": "Text"}
         schema = {

@@ -194,10 +194,16 @@ def _format_as_markdown(
         return "\n".join(lines)
 
     if isinstance(data, list):
-        return _format_list_as_markdown(data, schema, indent)
+        result = _format_list_as_markdown(data, schema, indent)
+        if title and _depth == 0:
+            return f"# {title}\n\n{result}"
+        return result
 
     if isinstance(data, dict):
-        return _format_dict_as_markdown(data, schema, indent, _depth)
+        result = _format_dict_as_markdown(data, schema, indent, _depth)
+        if title and _depth == 0:
+            return f"# {title}\n\n{result}"
+        return result
 
     lines.append(f"{indent}{_format_scalar(data, schema)}")
     return "\n".join(lines)

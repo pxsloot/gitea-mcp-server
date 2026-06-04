@@ -9,7 +9,6 @@ import hashlib
 import pytest
 
 from gitea_mcp_server.cache_invalidation import (
-    TOOL_INVALIDATION_MAP,
     compute_uris_to_invalidate,
 )
 from gitea_mcp_server.tools.customize import (
@@ -243,23 +242,6 @@ class TestTemplateSubstitution:
 
 class TestToolInvalidationCoverage:
     """Test that all important write tools are covered."""
-
-    def test_issue_write_tools_are_mapped(self):
-        """All issue write operations should have invalidation patterns."""
-        issue_write_tools_expected = [
-            "issue_create_repo_issue",
-            "issue_edit_issue",
-            "issue_delete_issue",
-            "issue_clear_labels",
-            "issue_add_labels",
-            "issue_remove_labels",
-            "issue_transfer",
-        ]
-        for tool in issue_write_tools_expected:
-            # These may be registered by the server automatically via _customize_component
-            # For test, we can manually check the map is populated
-            # In actual server, they'll be registered during startup
-            assert tool in TOOL_INVALIDATION_MAP or True  # Will be registered by server
 
     def test_pr_write_tools_are_mapped(self):
         """All PR write operations should have invalidation patterns."""

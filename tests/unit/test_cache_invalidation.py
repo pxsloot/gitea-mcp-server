@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
 from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
     CacheInvalidationMiddleware,
@@ -163,38 +165,34 @@ class TestCacheInvalidationMiddleware:
     @pytest.mark.asyncio
     async def test_successful_tool_invalidates_cache(self):
         """Successful tool call triggers cache invalidation."""
-        # Mock the caching middleware
-        mock_caching = MagicMock()
-        mock_caching._read_resource_cache = AsyncMock()
-        # Simulate that the cache has entries, so delete will be called
-        mock_caching._read_resource_cache.get = AsyncMock(return_value=MagicMock())
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
 
         middleware = CacheInvalidationMiddleware(mock_caching)
 
-        # Create mock context
         mock_context = MagicMock()
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        # Register this tool for invalidation
         register_tool_invalidation(
             "issue_edit_issue", ["issues_list"]
         )
 
-        # Mock call_next to return successful result
         async def mock_call_next(context):
             return MagicMock(is_error=False)
 
-        result = await middleware.on_call_tool(mock_context, mock_call_next)
+        await middleware.on_call_tool(mock_context, mock_call_next)
 
-        # Verify invalidation was attempted
-        assert mock_caching._read_resource_cache.delete.called
+        assert mock_cache.delete.called
 
     @pytest.mark.asyncio
     async def test_error_tool_no_invalidation(self):
         """Failed tool call does not invalidate cache."""
-        mock_caching = MagicMock()
-        mock_caching._read_resource_cache = AsyncMock()
+        mock_cache = AsyncMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
 
         middleware = CacheInvalidationMiddleware(mock_caching)
 
@@ -205,16 +203,16 @@ class TestCacheInvalidationMiddleware:
         async def mock_call_next(context):
             return MagicMock(is_error=True)
 
-        result = await middleware.on_call_tool(mock_context, mock_call_next)
+        await middleware.on_call_tool(mock_context, mock_call_next)
 
-        # No invalidation should happen
-        assert not mock_caching._read_resource_cache.delete.called
+        assert not mock_cache.delete.called
 
     @pytest.mark.asyncio
     async def test_unknown_tool_no_invalidation(self):
         """Tool not in invalidation map does not trigger invalidation."""
-        mock_caching = MagicMock()
-        mock_caching._read_resource_cache = AsyncMock()
+        mock_cache = AsyncMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
 
         middleware = CacheInvalidationMiddleware(mock_caching)
 
@@ -225,9 +223,9 @@ class TestCacheInvalidationMiddleware:
         async def mock_call_next(context):
             return MagicMock(is_error=False)
 
-        result = await middleware.on_call_tool(mock_context, mock_call_next)
+        await middleware.on_call_tool(mock_context, mock_call_next)
 
-        assert not mock_caching._read_resource_cache.delete.called
+        assert not mock_cache.delete.called
 
 
 class TestComputeToolInvalidationPatterns:
@@ -328,13 +326,11 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_close_issue_invalidates_resources(self):
         """Closing an issue via issue_edit_issue invalidates relevant caches."""
-        mock_caching = MagicMock()
-        mock_cache_adapter = AsyncMock()
-        mock_caching._read_resource_cache = mock_cache_adapter
-        # Simulate that cache entries exist so delete is called
-        mock_cache_adapter.get = AsyncMock(return_value=MagicMock())
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
 
-        # Register this tool
         register_tool_invalidation(
             "issue_edit_issue", ["issues_list"]
         )
@@ -353,10 +349,8 @@ class TestIntegration:
         async def mock_call_next(context):
             return MagicMock(is_error=False)
 
-        result = await middleware.on_call_tool(mock_context, mock_call_next)
+        await middleware.on_call_tool(mock_context, mock_call_next)
 
-        # Should attempt to delete the cache entry
-        assert mock_cache_adapter.delete.call_count >= 1
-        # Check that URIs contain expected patterns
-        deleted_uris = [call[1]["key"] for call in mock_cache_adapter.delete.call_args_list]
-        assert len(deleted_uris) >= 1
+        deleted_uris = [call[1]["key"] for call in mock_cache.delete.call_args_list]
+        expected_key = _compute_cache_key("gitea://repos/testorg/testrepo/issues")
+        assert deleted_uris == [expected_key]

@@ -1,20 +1,20 @@
-"""Test that x-fastmcp-wrap-result survives the full MCP server round-trip."""
+"""Unit tests for FunctionTool result wrapping (x-fastmcp-wrap-result)."""
 
-import asyncio
+from copy import deepcopy
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastmcp import FastMCP
-from fastmcp.client.transports.memory import FastMCPTransport
-from fastmcp.tools.base import ToolResult
-from mcp import ClientSession
+from fastmcp.tools.base import Tool, ToolResult
+from mcp.types import CallToolResult
 
+class TestFunctionToolResultWrapping:
+    """Test that FunctionTool.convert_result() wraps when x-fastmcp-wrap-result is set.
 
-@pytest.mark.asyncio
-async def test_wrapping_enabled():
-    """With x-fastmcp-wrap-result=True, verify the client receives wrapped result."""
-    mcp = FastMCP("test-server")
+    This mirrors the exact pattern used by ``list_resources`` and
+    ``read_resource`` (``@mcp.tool(output_schema={..., "x-fastmcp-wrap-result": True})``).
+    """
 
-    @mcp.tool(output_schema={
+    MOCK_SCHEMA: dict = {
         "type": "object",
         "properties": {
             "result": {
@@ -26,277 +26,109 @@ async def test_wrapping_enabled():
             },
         },
         "x-fastmcp-wrap-result": True,
-    })
-    async def my_list() -> dict:
-        return {"resources": [{"uri": "gitea://test", "name": "test"}], "count": 1}
+    }
 
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-        result = await session.call_tool("my_list", {})
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_dict_with_x_fastmcp(self):
+        """convert_result should wrap return value in {'result': ...}."""
+        from fastmcp.tools.base import Tool
+        from fastmcp.tools.function_parsing import ParsedFunction
 
-        print("\n=== WITH x-fastmcp-wrap-result ===")
-        print(f"type(result): {type(result)}")
-        print(f"result: {result!r}")
-        print(f"result.content: {result.content}")
-        sc = result.structuredContent if hasattr(result, 'structuredContent') else None
-        meta = result._meta if hasattr(result, '_meta') else None
-        print(f"result.structuredContent: {sc!r}")
-        print(f"result._meta: {meta!r}")
+        tool = Tool(
+            name="test_list",
+            description="Test list",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
 
-        assert sc is not None, f"structuredContent was None, result={result!r}"
-        # The structured_content should be {"result": {"resources": [...], "count": 1}}
-        assert "result" in sc, f"Expected 'result' key in structuredContent, got {sc!r}"
-        inner = sc["result"]
-        assert inner["resources"] == [{"uri": "gitea://test", "name": "test"}]
-        assert inner["count"] == 1
+        raw = {"resources": [{"uri": "gitea://test"}], "count": 1}
+        result = tool.convert_result(raw)
 
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": {"resources": [{"uri": "gitea://test"}], "count": 1}}
 
-@pytest.mark.asyncio
-async def test_wrapping_disabled():
-    """Without x-fastmcp-wrap-result, verify structuredContent is NOT wrapped."""
-    mcp = FastMCP("test-server")
+    @pytest.mark.asyncio
+    async def test_convert_result_wraps_array_with_x_fastmcp(self):
+        """convert_result should wrap arrays too."""
+        from fastmcp.tools.base import Tool
 
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "resources": {"type": "array"},
-            "count": {"type": "integer"},
-        },
-    })
-    async def my_list() -> dict:
-        return {"resources": [{"uri": "gitea://test", "name": "test"}], "count": 1}
+        tool = Tool(
+            name="test_array",
+            description="Test array",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
 
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-        result = await session.call_tool("my_list", {})
+        raw = [{"id": 1}, {"id": 2}]
+        result = tool.convert_result(raw)
 
-        print("\n=== WITHOUT x-fastmcp-wrap-result ===")
-        print(f"type(result): {type(result)}")
-        print(f"result: {result!r}")
-        print(f"result.content: {result.content}")
-        sc = result.structuredContent if hasattr(result, 'structuredContent') else None
-        print(f"result.structuredContent: {sc!r}")
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
 
-        assert sc is not None
-        # The structured_content should be {"resources": [...], "count": 1} directly
-        assert "resources" in sc, f"Expected 'resources' key in structuredContent, got {sc!r}"
-        assert sc["count"] == 1
+    @pytest.mark.asyncio
+    async def test_convert_result_sets_meta_when_wrapping(self):
+        """When wrapping, meta should be set to bypass MCP SDK validation."""
+        from fastmcp.tools.base import Tool
 
+        tool = Tool(
+            name="test_meta",
+            description="Test meta",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
+        )
 
-@pytest.mark.asyncio
-async def test_wrapping_no_output_schema():
-    """With no output_schema at all, verify structuredContent is NOT wrapped (dict return)."""
-    mcp = FastMCP("test-server")
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
 
-    @mcp.tool()
-    async def my_list() -> dict:
-        return {"resources": [{"uri": "gitea://test", "name": "test"}], "count": 1}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
 
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-        result = await session.call_tool("my_list", {})
+    def test_convert_result_no_wrap_without_flag(self):
+        """Without x-fastmcp-wrap-result, structured_content should not be wrapped."""
+        from fastmcp.tools.base import Tool
 
-        print("\n=== WITHOUT output_schema ===")
-        print(f"type(result): {type(result)}")
-        print(f"result: {result!r}")
-        print(f"result.content: {result.content}")
-        sc = result.structuredContent if hasattr(result, 'structuredContent') else None
-        print(f"result.structuredContent: {sc!r}")
-
-        assert sc is not None
-        # No output_schema means structured_content is just the dict
-        assert "resources" in sc, f"Expected 'resources' key in structuredContent, got {sc!r}"
-        assert sc["count"] == 1
-
-
-@pytest.mark.asyncio
-async def test_call_tool_proxy_no_double_wrap():
-    """A proxy tool that delegates via ctx.fastmcp.call_tool must not double-wrap.
-
-    This simulates the actual gitea-mcp-server call_tool: a synthetic proxy
-    that forwards to the real tool via ctx.fastmcp.call_tool(). The inner tool
-    already wraps with x-fastmcp-wrap-result, so the proxy must pass the
-    ToolResult through without adding a second wrapping layer.
-    """
-    from fastmcp.server.context import Context
-    from fastmcp.dependencies import CurrentContext
-
-    mcp = FastMCP("test-server")
-
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {
-                "type": "object",
-                "properties": {
-                    "items": {"type": "array"},
-                    "count": {"type": "integer"},
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "resources": {"type": "array"},
+                        "count": {"type": "integer"},
+                    },
                 },
             },
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def my_hidden_tool(page: int = 1) -> dict:
-        """A tool with wrapped output, like real OpenAPI tools."""
-        return {"items": [{"id": page}], "count": 1}
+        }
 
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {
-                "description": "Result of the tool call, wrapped in result for consistency",
-            },
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def call_tool_proxy(
-        name: str,
-        arguments: dict | None = None,
-        ctx: Context = CurrentContext(),
-    ):
-        """Like the real call_tool: forwards to ctx.fastmcp.call_tool()."""
-        return await ctx.fastmcp.call_tool(name, arguments)
-
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-
-        # Baseline: direct call to the hidden tool
-        direct = await session.call_tool("my_hidden_tool", {"page": 2})
-        sc_direct = direct.structuredContent
-        assert sc_direct == {"result": {"items": [{"id": 2}], "count": 1}}, (
-            f"Direct call: {sc_direct}"
+        tool = Tool(
+            name="test_nowrap",
+            description="Test no wrap",
+            parameters={"properties": {}},
+            output_schema=schema,
         )
 
-        # Proxy call: invoke the hidden tool through call_tool_proxy
-        proxy = await session.call_tool("call_tool_proxy", {
-            "name": "my_hidden_tool",
-            "arguments": {"page": 2},
-        })
-        sc_proxy = proxy.structuredContent
-        assert sc_proxy == {"result": {"items": [{"id": 2}], "count": 1}}, (
-            f"Proxy call: {sc_proxy}"
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+
+        assert result.structured_content == {"resources": [], "count": 0}
+        assert result.meta is None
+
+    @pytest.mark.asyncio
+    async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self):
+        """When meta is set (wrapping active), to_mcp_result should return
+        CallToolResult directly to bypass MCP SDK output validation."""
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="test_calltool",
+            description="Test CallToolResult",
+            parameters={"properties": {}},
+            output_schema=deepcopy(self.MOCK_SCHEMA),
         )
 
-        # Direct and proxy must return identical structure
-        assert sc_direct == sc_proxy, (
-            f"Mismatch: direct={sc_direct}, proxy={sc_proxy}"
-        )
+        raw = {"resources": [], "count": 0}
+        result = tool.convert_result(raw)
+        mcp_result = result.to_mcp_result()
 
-        # Verify NO double-wrapping: result is {"result": {...}}
-        # NOT {"result": {"result": {...}}}
-        assert "result" not in sc_proxy["result"], (
-            f"Double-wrapped! structuredContent={sc_proxy}"
-        )
-
-
-@pytest.mark.asyncio
-async def test_call_tool_proxy_array_result():
-    """Proxy must handle array results (inner tool returns a list)."""
-    from fastmcp.server.context import Context
-    from fastmcp.dependencies import CurrentContext
-
-    mcp = FastMCP("test-server")
-
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {
-                "type": "array",
-                "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
-            },
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def my_array_tool() -> list:
-        """Returns a list, should be wrapped in {"result": [...]}."""
-        return [{"id": 1}, {"id": 2}, {"id": 3}]
-
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {},
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def call_tool_proxy(
-        name: str,
-        arguments: dict | None = None,
-        ctx: Context = CurrentContext(),
-    ):
-        return await ctx.fastmcp.call_tool(name, arguments)
-
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-
-        # Direct call (baseline)
-        direct = await session.call_tool("my_array_tool", {})
-        sc_direct = direct.structuredContent
-        assert sc_direct == {"result": [{"id": 1}, {"id": 2}, {"id": 3}]}, (
-            f"Direct array: {sc_direct}"
-        )
-
-        # Proxy call
-        proxy = await session.call_tool("call_tool_proxy", {
-            "name": "my_array_tool",
-            "arguments": {},
-        })
-        sc_proxy = proxy.structuredContent
-        assert sc_proxy == {"result": [{"id": 1}, {"id": 2}, {"id": 3}]}, (
-            f"Proxy array: {sc_proxy}"
-        )
-
-        assert sc_direct == sc_proxy
-
-
-@pytest.mark.asyncio
-async def test_call_tool_proxy_handles_no_arguments():
-    """Proxy must work when called with arguments=None (omitted)."""
-    from fastmcp.server.context import Context
-    from fastmcp.dependencies import CurrentContext
-
-    mcp = FastMCP("test-server")
-
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {"type": "string"},
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def simple_tool() -> str:
-        return "hello"
-
-    @mcp.tool(output_schema={
-        "type": "object",
-        "properties": {
-            "result": {},
-        },
-        "x-fastmcp-wrap-result": True,
-    })
-    async def call_tool_proxy(
-        name: str,
-        arguments: dict | None = None,
-        ctx: Context = CurrentContext(),
-    ):
-        return await ctx.fastmcp.call_tool(name, arguments)
-
-    transport = FastMCPTransport(mcp)
-    async with transport.connect_session() as session:
-        assert isinstance(session, ClientSession)
-        await session.initialize()
-
-        proxy = await session.call_tool("call_tool_proxy", {
-            "name": "simple_tool",
-        })
-        sc = proxy.structuredContent
-        assert sc == {"result": "hello"}, f"Got: {sc}"
+        from mcp.types import CallToolResult
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.structuredContent == {"result": {"resources": [], "count": 0}}

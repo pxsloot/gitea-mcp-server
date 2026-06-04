@@ -4,11 +4,54 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+from fastmcp.server.providers.openapi import OpenAPITool
+from fastmcp.tools.tool import ToolAnnotations
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+
+def make_mock_tool(name="test_tool", tags=None, annotations=None, parameters=None,
+                    output_schema=None, description="", **kwargs):
+    """Create a MagicMock with OpenAPITool spec for unit tests.
+
+    Usage::
+
+        tool = make_mock_tool(name="issue_list_issues", tags={"issue"})
+        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": []}))
+    """
+    tool = MagicMock(spec=OpenAPITool)
+    tool.name = name
+    tool.annotations = annotations if annotations is not None else ToolAnnotations()
+    tool.tags = tags or set()
+    tool.parameters = parameters or {"properties": {}}
+    tool.output_schema = output_schema
+    tool.description = description
+    tool.version = "1"
+    tool.auth = None
+    tool.serializer = None
+    tool.meta = {}
+    for k, v in kwargs.items():
+        setattr(tool, k, v)
+    return tool
+
+
+def make_mock_route(path="/test", method="GET", summary="Test", operation_id="test_op"):
+    """Create a MagicMock route for unit tests.
+
+    Usage::
+
+        route = make_mock_route("/repos/{owner}/{repo}/issues", "GET")
+    """
+    return MagicMock(
+        path=path,
+        method=method,
+        summary=summary,
+        operation_id=operation_id,
+    )
 
 
 def extract_tool_names(tools):

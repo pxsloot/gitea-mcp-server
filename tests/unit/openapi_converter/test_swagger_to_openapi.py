@@ -72,9 +72,6 @@ class TestConvertSwaggerToOpenAPI:
     def test_load_real_swagger_file(self):
         """Test loading the actual swagger.v1.json file."""
         spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
-        if not spec_path.exists():
-            pytest.skip("swagger.v1.json not found")
-
         with spec_path.open() as f:
             spec = json.load(f)
 
@@ -85,12 +82,7 @@ class TestConvertSwaggerToOpenAPI:
 
     def test_valid_openapi_3_1_schema(self):
         """Test that the converted spec is valid against OpenAPI 3.1 schema."""
-        if OAS_3_1_SCHEMA is None:
-            pytest.skip("OpenAPI 3.1 schema not available")
-
         spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
-        if not spec_path.exists():
-            pytest.skip("swagger.v1.json not found")
 
         with spec_path.open() as f:
             spec = json.load(f)

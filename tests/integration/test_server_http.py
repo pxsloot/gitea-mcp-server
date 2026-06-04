@@ -6,9 +6,7 @@ point rather than manually wiring the ASGI app.
 
 Health endpoint requests use ASGI transport (no lifespan needed for
 static GET). MCP route presence is verified by inspecting the route
-table. CORS is verified on the inner mcp_app (the outer Starlette
-composition in main_async does not propagate middleware to the
-health route — this is a known limitation tracked separately).
+table.
 """
 
 from unittest.mock import AsyncMock
@@ -222,3 +220,32 @@ class TestCORSConfiguration:
         methods = cors.kwargs.get("allow_methods", [])
         assert "GET" in methods
         assert "POST" in methods
+
+    @pytest.mark.asyncio
+    async def test_health_cors_present_when_configured(self, captured_apps, monkeypatch):
+        """Test that /health returns CORS headers when CORS is configured."""
+        monkeypatch.setattr(
+            "gitea_mcp_server.server.Config.get",
+            lambda: SimpleHTTPConfig(http_cors=["https://example.com"]),
+        )
+        await main_async()
+        app = captured_apps["outer_app"]
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/health", headers={"Origin": "https://example.com"})
+            assert resp.status_code == 200
+            assert resp.headers.get("access-control-allow-origin") == "https://example.com"
+
+    @pytest.mark.asyncio
+    async def test_health_no_cors_when_not_configured(self, captured_apps, monkeypatch):
+        """Test that /health has no CORS headers when CORS is not configured."""
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig(http_cors=None))
+        await main_async()
+        app = captured_apps["outer_app"]
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/health", headers={"Origin": "https://evil.com"})
+            assert resp.status_code == 200
+            assert "access-control-allow-origin" not in resp.headers

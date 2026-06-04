@@ -3,7 +3,13 @@
 import pytest
 from fastmcp.tools.base import Tool
 
-from gitea_mcp_server.tools.examples import _schema_to_example, _serialize_tool_schema
+from gitea_mcp_server.tools.examples import (
+    _example_array,
+    _example_object,
+    _example_string,
+    _schema_to_example,
+    _serialize_tool_schema,
+)
 
 class TestSchemaToExample:
     """Tests for _schema_to_example function."""
@@ -194,3 +200,104 @@ class TestSchemaToExample:
         result = _serialize_tool_schema(tool)
         assert "output_example" not in result
         assert "output_schema" not in result
+
+    def test_example_string_email_format(self):
+        """_example_string with format=email should return user@example.com."""
+        assert _example_string({"format": "email"}) == "user@example.com"
+
+    def test_example_string_uri_format(self):
+        """_example_string with format=uri should return https://example.com."""
+        assert _example_string({"format": "uri"}) == "https://example.com"
+
+    def test_example_string_plain(self):
+        """_example_string without format/enum should return 'text'."""
+        assert _example_string({}) == "text"
+
+    def test_schema_to_example_oneOf_skips_null(self):
+        """oneOf should work like anyOf, skipping null types."""
+        schema = {
+            "oneOf": [
+                {"type": "null"},
+                {"type": "integer"},
+            ],
+        }
+        assert _schema_to_example(schema) == 0
+
+    def test_schema_to_example_oneOf_first_non_null(self):
+        """oneOf should return example for the first non-null option."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "integer"},
+            ],
+        }
+        assert _schema_to_example(schema) == "text"
+
+    def test_type_list_all_null(self):
+        """When type is a list and all entries are 'null', schema_type should become 'null'."""
+        schema = {"type": ["null", "null"]}
+        assert _schema_to_example(schema) is None
+
+    def test_unrecognized_type_returns_none(self):
+        """When schema_type is not recognized, return None."""
+        assert _schema_to_example({"type": "file"}) is None
+
+    def test_empty_array_items(self):
+        """_example_array with empty items dict should return empty list."""
+        assert _example_array({"items": {}}, 0, 3, 15) == []
+
+    def test_array_missing_items(self):
+        """_example_array without items key should return empty list."""
+        assert _example_array({}, 0, 3, 15) == []
+
+    def test_object_no_properties(self):
+        """_example_object without properties should return empty dict."""
+        assert _example_object({}, 0, 3, 15) == {}
+
+    def test_serialize_tool_schema_with_tags(self):
+        """_serialize_tool_schema should include tags when present."""
+        from fastmcp.tools.base import Tool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+        tool = Tool(
+            name="test_tool",
+            description="Test",
+            parameters={"properties": {}},
+            tags={"issue", "repository"},
+        )
+        result = _serialize_tool_schema(tool)
+        assert "tags" in result
+        assert set(result["tags"]) == {"issue", "repository"}
+
+    def test_serialize_tool_schema_with_version(self):
+        """_serialize_tool_schema should include version when present."""
+        from fastmcp.tools.base import Tool
+
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+        tool = Tool(
+            name="test_tool",
+            description="Test",
+            parameters={"properties": {}},
+            version="2.0",
+        )
+        result = _serialize_tool_schema(tool)
+        assert result["version"] == "2.0"
+
+    def test_serialize_tool_schema_with_open_world_hint(self):
+        """_serialize_tool_schema should include openWorldHint when True."""
+        from fastmcp.tools.base import Tool
+        from fastmcp.tools.tool import ToolAnnotations
+
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+        tool = Tool(
+            name="test_tool",
+            description="Test",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(openWorldHint=True),
+        )
+        result = _serialize_tool_schema(tool)
+        assert result["annotations"]["openWorldHint"] is True

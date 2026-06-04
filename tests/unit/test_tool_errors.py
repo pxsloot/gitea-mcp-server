@@ -2,12 +2,18 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.tools.customize import customize_component as _customize_component
+from gitea_mcp_server.tools.errors import (
+    _lookup_response_description,
+    _run_validation,
+)
+from gitea_mcp_server.validation import ValidationError
 
 _label_manager = LabelManager()
 
@@ -230,3 +236,240 @@ class TestErrorHandlingEnhancement:
         assert "unexpected" in error_msg.lower()
         # Should not show full Python traceback to user
         assert "RuntimeError" not in error_msg
+
+
+class TestLookupResponseDescription:
+    """Tests for _lookup_response_description function."""
+
+    def test_route_not_found_in_paths(self):
+        """When route.path is not found in paths, should return fallback."""
+        openapi_spec = {"paths": {}}
+        route = MagicMock(path="/nonexistent", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_empty_method_falls_back(self):
+        """When route.method is empty, should return fallback."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": {"description": "Not Found"},
+                        }
+                    }
+                }
+            }
+        }
+        route = MagicMock(path="/test", method="")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_status_code_not_in_responses(self):
+        """When status code is not in operation responses, should return fallback."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {"description": "OK"},
+                        }
+                    }
+                }
+            }
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_response_def_not_dict(self):
+        """When response_def is not a dict, should return fallback."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": "just a string",
+                        }
+                    }
+                }
+            }
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_ref_resolution(self):
+        """$ref in response_def should be resolved to get description."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": {"$ref": "#/components/responses/NotFound"},
+                        }
+                    }
+                }
+            },
+            "components": {
+                "responses": {
+                    "NotFound": {"description": "Resource not found"},
+                }
+            },
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "Resource not found"
+
+    def test_ref_resolution_resolved_not_dict(self):
+        """When _resolve_ref returns non-dict, should fallback."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": {"$ref": "#/components/responses/NotFound"},
+                        }
+                    }
+                }
+            },
+            "components": {
+                "responses": {
+                    "NotFound": "just a string",
+                }
+            },
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_ref_resolution_missing_description(self):
+        """When resolved ref has no description, should fallback."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": {"$ref": "#/components/responses/NotFound"},
+                        }
+                    }
+                }
+            },
+            "components": {
+                "responses": {
+                    "NotFound": {"type": "object"},
+                }
+            },
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+    def test_ref_resolution_with_description_from_schema(self):
+        """$ref pointing to a schema with description should work."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "404": {"$ref": "#/components/schemas/Error"},
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Error": {"description": "Standard error response"},
+                }
+            },
+        }
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "Standard error response"
+
+    def test_exception_during_lookup(self):
+        """When a KeyError occurs during lookup, should return fallback."""
+        openapi_spec = {"paths": {0: "bad"}}
+        route = MagicMock(path="/test", method="GET")
+        result = _lookup_response_description(openapi_spec, route, 404)
+        assert result == "HTTP error 404"
+
+
+class TestRunValidation:
+    """Tests for _run_validation function."""
+
+    def test_no_required_params(self):
+        """When required_params is None/empty, should not raise."""
+        _run_validation({"x": 1})  # should not raise
+
+    def test_missing_required_params(self):
+        """When a required param is missing, should raise ValidationError."""
+        with pytest.raises(ValidationError, match="Missing required parameter"):
+            _run_validation({"x": 1}, required_params=["x", "y"])
+
+    def test_validation_passes(self):
+        """When all validators pass, should not raise."""
+        _run_validation({"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"])
+
+    def test_pagination_validation_passes(self):
+        """When page/per_page are present with valid values, should not raise."""
+        _run_validation({"page": 1, "per_page": 50})
+
+    def test_pagination_validation_rejects_invalid(self):
+        """When per_page is too high, should raise ValidationError."""
+        with pytest.raises(ValidationError, match="page|per_page"):
+            _run_validation({"page": 1, "per_page": 99999})
+
+
+class TestErrorHandlingNonJson:
+    """Tests for error handling with non-JSON response bodies."""
+
+    @pytest.mark.asyncio
+    async def test_non_json_error_body_formatted_cleanly(self):
+        """When HTTP error response body is not valid JSON, should fall back to response.text."""
+        openapi_spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "500": {"description": "Internal Server Error"},
+                        }
+                    }
+                }
+            }
+        }
+
+        route = MagicMock(path="/test", method="GET", summary="Test", operation_id="test")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "test"
+        tool.annotations = ToolAnnotations()
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Test"
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {}
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.reason_phrase = "Internal Server Error"
+        # Simulate non-JSON response: .json() raises ValueError
+        mock_response.json.side_effect = ValueError("Not JSON")
+        mock_response.text = "Internal Server Error: something went wrong"
+
+        http_error = httpx.HTTPStatusError("500 Error", request=None, response=mock_response)
+        value_error = ValueError(f"HTTP error 500: {mock_response.reason_phrase}")
+        value_error.__cause__ = http_error
+
+        tool.run = AsyncMock(side_effect=value_error)
+
+        new_tool = _customize_component(route, tool, _label_manager, openapi_spec)
+
+        with pytest.raises(ValueError) as exc_info:
+            await new_tool.run({})
+
+        error_msg = str(exc_info.value)
+        assert "Internal Server Error" in error_msg
+        assert "something went wrong" in error_msg

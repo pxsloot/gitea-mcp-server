@@ -149,7 +149,21 @@ class TestResourcesIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_custom_resources_override_with_markdown(self):
+    async def test_custom_resources_register_expected_count(self):
+        """Test that register_custom_resources registers the expected number of resources."""
+        from gitea_mcp_server import resources as resources_pkg
+        from gitea_mcp_server.resources.registry import ResourceRegistry
+
+        mcp = MagicMock()
+        mcp.resource = MagicMock()
+        mock_client = AsyncMock()
+        registry = ResourceRegistry()
+
+        resources_pkg.register_custom_resources(mcp, mock_client, registry)
+        assert mcp.resource.call_count == 11
+
+    @pytest.mark.asyncio
+    async def test_custom_resources_include_expected_uris(self):
         """Test that custom resources are registered with proper URIs."""
         from gitea_mcp_server import resources as resources_pkg
         from gitea_mcp_server.resources.registry import ResourceRegistry
@@ -160,11 +174,6 @@ class TestResourcesIntegration:
         registry = ResourceRegistry()
 
         resources_pkg.register_custom_resources(mcp, mock_client, registry)
-
-        # Should register multiple resources
-        assert mcp.resource.call_count >= 10
-
-        # Check for some expected URIs
         call_uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in call_uris
         assert "gitea://repos/{owner}/{repo}/readme" in call_uris

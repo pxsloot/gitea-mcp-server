@@ -235,41 +235,43 @@ class TestValidateOwnerRepo:
     """Tests for the validate_owner_repo function."""
 
     @pytest.mark.parametrize(
-        "value",
-        ["owner", "my-repo", "test_123", "Org.Name", "a", "name.with.dots"],
-    )
-    def test_valid(self, value):
-        validate_owner_repo(value, field="owner")  # should not raise
-        validate_owner_repo(value, field="repo")
-
-    @pytest.mark.parametrize(
-        "value",
+        "value,field",
         [
-            "",
-            " ",
-            "-invalid",
-            "invalid-",
-            "in..valid",
-            "in/v?lid",
-            "name with spaces",
-            "name@at",
-            123,
-            None,
+            ("owner", "owner"),
+            ("my-repo", "owner"),
+            ("test_123", "repo"),
+            ("Org.Name", "repo"),
+            ("a", "owner"),
+            ("name.with.dots", "repo"),
         ],
     )
-    def test_invalid(self, value):
+    def test_valid(self, value, field):
+        validate_owner_repo(value, field=field)
+
+    @pytest.mark.parametrize(
+        "value,field",
+        [
+            ("", "owner"),
+            (" ", "repo"),
+            ("-invalid", "owner"),
+            ("invalid-", "repo"),
+            ("in..valid", "owner"),
+            ("in/v?lid", "repo"),
+            ("name with spaces", "owner"),
+            ("name@at", "repo"),
+            (123, "owner"),
+            (None, "repo"),
+        ],
+    )
+    def test_invalid(self, value, field):
         with pytest.raises(ValidationError) as exc:
-            validate_owner_repo(value, field="owner")
-        assert exc.value.field == "owner"
+            validate_owner_repo(value, field=field)
+        assert exc.value.field == field
         assert (
             "must be a string" in str(exc.value)
             or "cannot be empty" in str(exc.value)
             or "invalid characters" in str(exc.value)
         )
-
-        with pytest.raises(ValidationError) as exc:
-            validate_owner_repo(value, field="repo")
-        assert exc.value.field == "repo"
 
 
 class TestValidateFilepath:
@@ -545,6 +547,11 @@ class TestValidateState:
     @pytest.mark.parametrize("value", ["open", "closed", "all"])
     def test_valid_states(self, value):
         validate_state(value, field="state")
+
+    @pytest.mark.parametrize("value", ["OPEN", "Closed", "ALL"])
+    def test_case_sensitive(self, value):
+        with pytest.raises(ValidationError):
+            validate_state(value, field="state")
 
     @pytest.mark.parametrize(
         "value,expected_msg",

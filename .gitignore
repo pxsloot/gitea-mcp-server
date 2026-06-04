@@ -35,6 +35,7 @@ Thumbs.db
 # Project specific
 .env
 swagger.v1.json
+!tests/swagger.v1.json
 swagger.v3.json
 .mise.toml
 .opencode/

@@ -160,7 +160,7 @@ async def get_file(
             return str(response)
 
         if response.get("encoding") == "base64":
-            raw: str = base64.b64decode(response["content"]).decode("utf-8")
+            raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
             return raw
         return cast("str", response.get("content", ""))
     except Exception as e:
@@ -276,6 +276,48 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
         raise
 
 
+def make_resource(
+    func: Callable[..., Awaitable[str]],
+    gitea_client: GiteaClient,
+) -> Callable[..., Awaitable[str]]:
+    """Wrap a resource function to inject gitea_client.
+
+    Strips the ``gitea_client`` parameter from the function's signature
+    and returns a wrapper that injects it at call time.
+    """
+    sig = inspect.signature(func)
+    params: list[inspect.Parameter] = []
+
+    for param in sig.parameters.values():
+        if param.name == "gitea_client":
+            continue
+        if param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.VAR_POSITIONAL,
+        ):
+            msg = f"Resource function {func.__name__} does not support positional-only or *args parameters"
+            raise ValueError(msg)
+        params.append(param)
+
+    if params:
+        wrapper_sig = inspect.Signature(params, return_annotation=str)
+
+        @wraps(func)
+        async def wrapper_with_params(**kwargs: Any) -> str:
+            kwargs["gitea_client"] = gitea_client
+            return await func(**kwargs)
+
+        wrapper_with_params.__signature__ = wrapper_sig  # type: ignore[attr-defined]
+        return wrapper_with_params
+
+    @wraps(func)
+    async def wrapper_no_params() -> str:
+        return await func(gitea_client=gitea_client)
+
+    wrapper_no_params.__signature__ = inspect.Signature(return_annotation=str)  # type: ignore[attr-defined]
+    return wrapper_no_params
+
+
 def register_custom_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -287,42 +329,6 @@ def register_custom_resources(
     These override any auto-generated resources with the same URI.
     Uses FastMCP's last-registration-wins ordering.
     """
-
-    def make_resource(
-        func: Callable[..., Awaitable[str]],
-    ) -> Callable[..., Awaitable[str]]:
-        """Wrap a resource function to inject gitea_client."""
-        sig = inspect.signature(func)
-        params: list[inspect.Parameter] = []
-
-        for param in sig.parameters.values():
-            if param.name == "gitea_client":
-                continue
-            if param.kind in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.VAR_POSITIONAL,
-            ):
-                msg = f"Resource function {func.__name__} does not support positional-only or *args parameters"
-                raise ValueError(msg)
-            params.append(param)
-
-        if params:
-            wrapper_sig = inspect.Signature(params, return_annotation=str)
-
-            @wraps(func)
-            async def wrapper_with_params(**kwargs: Any) -> str:
-                kwargs["gitea_client"] = gitea_client
-                return await func(**kwargs)
-
-            wrapper_with_params.__signature__ = wrapper_sig  # type: ignore[attr-defined]
-            return wrapper_with_params
-
-        @wraps(func)
-        async def wrapper_no_params() -> str:
-            return await func(gitea_client=gitea_client)
-
-        wrapper_no_params.__signature__ = inspect.Signature(return_annotation=str)  # type: ignore[attr-defined]
-        return wrapper_no_params
 
     custom_resources: list[
         tuple[str, Callable[..., Awaitable[str]], str, set[str], dict[str, Any] | None]
@@ -443,7 +449,7 @@ def register_custom_resources(
         kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
         if meta is not None:
             kwargs["meta"] = meta
-        wrapped_func = make_resource(func)
+        wrapped_func = make_resource(func, gitea_client)
         mcp.resource(uri_template, **kwargs)(wrapped_func)
         registry.record(
             uri=uri_template,
@@ -466,5 +472,6 @@ __all__ = [
     "list_repo_issues",
     "list_repo_pulls",
     "list_repo_releases",
+    "make_resource",
     "register_custom_resources",
 ]

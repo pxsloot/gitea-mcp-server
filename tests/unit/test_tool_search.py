@@ -506,3 +506,424 @@ class TestCompactSearchSerializer:
         )
         result = _compact_search_serializer([tool])
         assert "annotations" not in result[0]
+
+    def test_includes_tags_when_present(self):
+        """Should include tags key when tool has tags."""
+        from gitea_mcp_server.tools.search import _compact_search_serializer
+
+        tool = Tool(
+            name="tagged_tool",
+            description="A tool with tags",
+            parameters={"properties": {}},
+            tags={"issue", "repository"},
+        )
+        result = _compact_search_serializer([tool])
+        assert set(result[0]["tags"]) == {"issue", "repository"}
+
+    def test_includes_hints_when_true(self):
+        """Should include hint annotations when they are True."""
+        from gitea_mcp_server.tools.search import _compact_search_serializer
+
+        tool = Tool(
+            name="hint_tool",
+            description="A tool with hints",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=True,
+                idempotentHint=True,
+            ),
+        )
+        result = _compact_search_serializer([tool])
+        assert result[0]["annotations"]["readOnlyHint"] is True
+        assert result[0]["annotations"]["destructiveHint"] is True
+        assert result[0]["annotations"]["idempotentHint"] is True
+
+
+class TestFormatResultExtended:
+    """Extended tests for _format_result helper."""
+
+    def test_markdown_with_pagination(self):
+        """format=markdown should append pagination metadata when present."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = [{"name": "tool_a"}, {"name": "tool_b"}]
+        inner = ToolResult(
+            structured_content={
+                "result": data,
+                "has_more": True,
+                "next_offset": 10,
+                "total_count": 42,
+            }
+        )
+        result = _format_result(inner, "markdown")
+        assert result.structured_content == inner.structured_content
+        assert len(result.content) == 1
+        text = result.content[0].text
+        assert "| name |" in text
+        assert "has_more" in text.lower() or "total" in text
+        assert "42" in text
+
+    def test_markdown_with_output_schema(self):
+        """format=markdown should use output_schema for better column layout."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = {"id": 1, "name": "test"}
+        inner = ToolResult(structured_content={"result": data})
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                    },
+                },
+            },
+        }
+        result = _format_result(inner, "markdown", output_schema=output_schema)
+        assert result.structured_content == inner.structured_content
+        assert len(result.content) == 1
+        # output_schema restricts columns to those defined in the schema
+        # Only "id" is defined in the schema, so only "Id" appears in output
+        assert "| Id |" in result.content[0].text
+        # "name" is not in the schema, so it's filtered out by formatter
+
+    def test_unknown_format_returns_unchanged(self):
+        """An unrecognized format string should return the ToolResult unchanged."""
+        from gitea_mcp_server.tools.search import _format_result
+
+        data = {"key": "value"}
+        inner = ToolResult(structured_content={"result": data})
+        result = _format_result(inner, "xml")
+        assert result is inner
+
+
+class TestSearchableTextExtended:
+    """Extended tests for _extract_searchable_text_enhanced."""
+
+    def test_includes_tags(self):
+        """Tool tags should appear in the extracted text."""
+        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {}},
+            tags={"issue", "repository"},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "issue" in result
+        assert "repository" in result
+
+    def test_includes_category_aliases(self):
+        """Tags that match SEARCH_CATEGORY_ALIASES should include expanded aliases."""
+        from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES
+        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {}},
+            tags={"issue"},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        for alias in SEARCH_CATEGORY_ALIASES["issue"].split():
+            assert alias in result
+
+    def test_includes_annotation_title(self):
+        """Tool annotations.title should appear in the extracted text."""
+        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(title="My Custom Title"),
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "My Custom Title" in result
+
+    def test_includes_parameter_descriptions(self):
+        """Parameter descriptions should appear in the extracted text."""
+        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+
+        tool = Tool(
+            name="test_tool",
+            description="A test tool",
+            parameters={
+                "properties": {
+                    "owner": {"description": "The repository owner"},
+                    "repo": {"description": "The repository name"},
+                }
+            },
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        assert "The repository owner" in result
+        assert "The repository name" in result
+
+
+class TestCallToolRuntimeBehaviorExtended:
+    """Extended tests for call_tool runtime behavior."""
+
+    @pytest.mark.asyncio
+    async def test_call_tool_markdown_with_output_schema(self):
+        """call_tool with format=markdown should use tool's output_schema for formatting."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_call_tool()
+
+        data = {"id": 1, "name": "test"}
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": data},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+
+        # Simulate a tool with output_schema
+        schema_tool = MagicMock()
+        schema_tool.output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            },
+        }
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=schema_tool)
+
+        result = await tool.fn("gitea_schema_tool", {"arg": 1}, ctx=mock_ctx, format="markdown")
+        assert result.structured_content == {"result": data}
+        assert len(result.content) == 1
+        # Keys are capitalized by the markdown formatter
+        assert "| Id |" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_ctx_is_none_raises(self):
+        """call_tool with ctx=None should raise ValueError."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_call_tool()
+
+        with pytest.raises(ValueError, match="Context is required"):
+            await tool.fn("gitea_test_tool", {}, ctx=None)
+
+
+class TestToolInfo:
+    """Tests for the tool_info synthetic tool."""
+
+    @pytest.mark.asyncio
+    async def test_tool_info_returns_schema(self):
+        """tool_info should return the schema for a known tool."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_tool_info_tool()
+
+        known_tool = Tool(
+            name="gitea_known_tool",
+            description="A known tool",
+            parameters={"properties": {"x": {"type": "integer"}}},
+            tags={"issue"},
+        )
+        mock_ctx = MagicMock()
+        # get_tool_catalog calls ctx.fastmcp.list_tools() internally
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[known_tool])
+
+        result = await tool.fn("gitea_known_tool", ctx=mock_ctx)
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        assert schema["name"] == "gitea_known_tool"
+        assert schema["description"] == "A known tool"
+
+    @pytest.mark.asyncio
+    async def test_tool_info_not_found(self):
+        """tool_info should raise ValueError for unknown tool."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_tool_info_tool()
+
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="not found"):
+            await tool.fn("gitea_nonexistent_tool", ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_tool_info_ctx_is_none_raises(self):
+        """tool_info with ctx=None should raise ValueError."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_tool_info_tool()
+
+        with pytest.raises(ValueError, match="Context is required"):
+            await tool.fn("gitea_test_tool", ctx=None)
+
+
+class TestSearchToolsSyntheticTool:
+    """Tests for the search_tools synthetic tool."""
+
+    @pytest.mark.asyncio
+    async def test_search_tools_requires_context(self):
+        """search_tools with ctx=None should raise ValueError."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        # Access the search_tool via make_search_tool since we can't list_tools
+        tool = transform._make_search_tool()
+
+        with pytest.raises(ValueError, match="Context is required"):
+            await tool.fn("test query", ctx=None)
+
+    @pytest.mark.asyncio
+    async def test_search_tools_category_filter_invalid(self):
+        """search_tools with invalid category should raise ValueError."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_search_tool()
+
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+        with pytest.raises(ValueError, match="Invalid category"):
+            await tool.fn("test query", category="invalid", ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_search_tools_with_no_results(self):
+        """search_tools with no matches should show cross-linking hints."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_search_tool()
+
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        result = await tool.fn("nonexistent", ctx=mock_ctx)
+        assert result.structured_content is not None
+        text = result.content[0].text if result.content else ""
+        assert "No tools found" in text or "search_docs" in text
+
+    @pytest.mark.asyncio
+    async def test_search_tools_with_results_and_cross_links(self):
+        """search_tools with results should show cross-linking hints."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_search_tool()
+
+        mock_tool = Tool(
+            name="gitea_issue_list",
+            description="List issues",
+            parameters={"properties": {}},
+            tags={"issue"},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[mock_tool])
+
+        result = await tool.fn("issue", ctx=mock_ctx)
+        assert result.structured_content is not None
+        text = result.content[0].text if result.content else ""
+        assert "Cross-linking" in text or "search_docs" in text
+
+    @pytest.mark.asyncio
+    async def test_search_tools_with_category_filter(self):
+        """search_tools with valid category should filter results."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tool = transform._make_search_tool()
+
+        issue_tool = Tool(
+            name="gitea_issue_list",
+            description="List issues",
+            parameters={"properties": {}},
+            tags={"issue"},
+        )
+        repo_tool = Tool(
+            name="gitea_repo_list",
+            description="List repos",
+            parameters={"properties": {}},
+            tags={"repository"},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[issue_tool, repo_tool])
+
+        result = await tool.fn("list", category="issue", ctx=mock_ctx)
+        assert result.structured_content is not None
+        text = result.content[0].text if result.content else ""
+        assert "gitea_issue_list" in text or "Cross-linking" in text
+
+
+class TestTolerantBM25Search:
+    """Tests for TolerantBM25Search."""
+
+    def test_search_returns_ranked_results(self):
+        """TolerantBM25Search should return ranked tools by relevance."""
+        from gitea_mcp_server.tools.search import TolerantBM25Search
+
+        searcher = TolerantBM25Search()
+        tools = [
+            Tool(name="tool_a", description="Issue management", parameters={"properties": {}}),
+            Tool(name="tool_b", description="Repository management", parameters={"properties": {}}),
+        ]
+        results = searcher.search(tools, "issue", max_results=10)
+        assert len(results) >= 1
+        assert results[0].name == "tool_a"
+
+    def test_search_with_limit(self):
+        """TolerantBM25Search should respect max_results limit."""
+        from gitea_mcp_server.tools.search import TolerantBM25Search
+
+        searcher = TolerantBM25Search()
+        tools = [
+            Tool(name=f"tool_{i}", description=f"Description {i}", parameters={"properties": {}})
+            for i in range(20)
+        ]
+        results = searcher.search(tools, "description", max_results=5)
+        assert len(results) <= 5
+
+
+class TestTolerantSearchTransform:
+    """Tests for TolerantSearchTransform."""
+
+    @pytest.mark.asyncio
+    async def test_get_tool_returns_tool_info(self):
+        """get_tool for tool_info name should return tool_info tool."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        call_next = AsyncMock()
+        tool = await transform.get_tool("tool_info", call_next)
+        assert tool is not None
+        assert tool.name == "tool_info"
+
+    @pytest.mark.asyncio
+    async def test_get_tool_delegates_to_parent(self):
+        """get_tool for non-special names should delegate to parent."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        call_next = AsyncMock(return_value=None)
+        tool = await transform.get_tool("some_other_tool", call_next)
+        call_next.assert_called_once()
+        assert tool is None
+
+    @pytest.mark.asyncio
+    async def test_transform_tools_includes_synthetic_tools(self):
+        """transform_tools should include search, call_tool, and tool_info synthetics."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        result = await transform.transform_tools([])
+        names = [t.name for t in result]
+        assert "search_tools" in names
+        assert "call_tool" in names
+        assert "tool_info" in names

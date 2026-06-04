@@ -1,6 +1,6 @@
 """Unit tests for OpenAPI converter - parameter conversion."""
 
-from gitea_mcp_server.openapi_converter import convert_parameters
+from gitea_mcp_server.openapi_converter import _convert_components, convert_parameters
 
 
 class TestConvertParameters:
@@ -44,3 +44,75 @@ class TestConvertParameters:
         # Top-level should not have type/minLength directly
         assert "type" not in result[0]
         assert "minLength" not in result[0]
+
+    def test_collection_format_removed(self):
+        """collectionFormat should be stripped from converted parameters."""
+        params = [{"name": "ids", "in": "query", "type": "array", "items": {"type": "integer"}, "collectionFormat": "csv"}]
+        result = convert_parameters(params)
+        assert "collectionFormat" not in result[0]
+        assert result[0]["name"] == "ids"
+        assert result[0]["schema"]["type"] == "array"
+
+    def test_parameter_without_schema_fields(self):
+        """Parameter without schema or type fields should get empty schema."""
+        params = [{"name": "empty", "in": "query"}]
+        result = convert_parameters(params)
+        assert result[0]["name"] == "empty"
+        assert "schema" not in result[0]
+
+
+class TestConvertComponents:
+    """Tests for _convert_components function."""
+
+    def test_parameters_as_dict(self):
+        """Parameters as a dict should be converted to named entries."""
+        spec = {
+            "parameters": {
+                "page": {"name": "page", "in": "query", "type": "integer"},
+            }
+        }
+        result = _convert_components(spec)
+        assert "parameters" in result
+        assert "page" in result["parameters"]
+        assert result["parameters"]["page"]["name"] == "page"
+        assert result["parameters"]["page"]["in"] == "query"
+
+    def test_parameters_as_list(self):
+        """Parameters as a list should also be converted."""
+        spec = {
+            "parameters": [
+                {"name": "page", "in": "query", "type": "integer"},
+                {"name": "limit", "in": "query", "type": "integer"},
+            ]
+        }
+        result = _convert_components(spec)
+        assert "parameters" in result
+        assert "page" in result["parameters"]
+        assert "limit" in result["parameters"]
+
+    def test_parameters_neither_dict_nor_list(self):
+        """Parameters as neither dict nor list should be skipped."""
+        spec = {
+            "parameters": "just a string",
+        }
+        result = _convert_components(spec)
+        assert "parameters" not in result
+
+    def test_empty_parameters_skipped(self):
+        """Empty parameters list should be skipped."""
+        spec = {
+            "parameters": {},
+        }
+        result = _convert_components(spec)
+        assert "parameters" not in result
+
+    def test_security_definitions_converted(self):
+        """securityDefinitions should be converted to securitySchemes."""
+        spec = {
+            "securityDefinitions": {
+                "basicAuth": {"type": "basic"},
+            }
+        }
+        result = _convert_components(spec)
+        assert "securitySchemes" in result
+        assert "basicAuth" in result["securitySchemes"]

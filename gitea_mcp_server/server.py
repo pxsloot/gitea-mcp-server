@@ -16,7 +16,6 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -264,11 +263,9 @@ async def main_async() -> None:
                 path=config.http_path,
                 middleware=middleware,
             )
-            # Compose health check route into the Starlette app alongside MCP routes
-            app = Starlette(
-                routes=[Route("/health", endpoint=health_check, methods=["GET"]), *mcp_app.routes],
-                lifespan=mcp_app.lifespan,
-            )
+            # Insert health check route into mcp_app so it inherits CORS middleware
+            mcp_app.routes.insert(0, Route("/health", endpoint=health_check, methods=["GET"]))
+            app = mcp_app
 
             logger.info(
                 "Starting MCP server (HTTP transport) on http://%s:%s with MCP path %s",

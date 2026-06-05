@@ -212,7 +212,7 @@ Non-JSON responses (text/plain, text/html, application/octet-stream) are
 `content["application/json"]`, so if that key is absent the function returns
 without wrapping.  No special check is needed.
 
-### Stage 3 -- Output Schema Derivation (`tool_annotator.py:_get_success_schema`)
+### Stage 3 -- Output Schema Derivation (`tools/schemas.py:derive_output_schema`)
 
 `derive_output_schema()` resolves the response schema from the OpenAPI spec for
 each tool.  For JSON endpoints, it returns the wrapped schema from Stage 2.
@@ -228,7 +228,7 @@ Optionally, a lightweight schema can be set here manually:
 This gives agents a useful `output_example` while still matching the runtime
 `{"result": text}` shape.
 
-### Stage 4 -- Runtime Execution (`tool_annotator.py:customize_component`)
+### Stage 4 -- Runtime Execution (`tools/customize.py:customize_component`)
 
 At runtime, FastMCP's `OpenAPITool.run()` sends the HTTP request and receives
 the response:
@@ -286,7 +286,7 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   │     └─▶ executes tool
   │     └─▶ on success: compute URIs to invalidate → clear cache
   │
-  └─▶ TransformedTool (from tool_annotator)
+  └─▶ Tool (from tools/customize.py)
         ├─▶ validate arguments (validation.py)
         ├─▶ convert label strings→IDs (label_manager)
         ├─▶ OpenAPITool.run() → httpx request to Gitea API

@@ -2,12 +2,14 @@
 
 Provides tokenization, alias expansion, and a reusable BM25 search engine.
 Used by both tool search (tools/search.py) and resource search (mcp_tools.py).
+
+BM25 index implementation is self-contained (not imported from FastMCP internals)
+to avoid coupling to FastMCP's private API.
 """
 
 import hashlib
+import math
 import re
-
-from fastmcp.server.transforms.search.bm25 import _BM25Index as _BaseBM25Index
 
 from gitea_mcp_server.constants import SEARCH_MIN_TOKEN_LENGTH
 
@@ -33,8 +35,68 @@ def _expand_word_aliases(text: str) -> str:
     return " ".join(parts)
 
 
-class _BM25IndexLen2(_BaseBM25Index):
-    """BM25 index that supports 2-character tokens."""
+class _BM25Index:
+    """Self-contained BM25 Okapi index.
+
+    This mirrors the BM25 algorithm from FastMCP's internal _BM25Index
+    but is maintained locally to avoid importing FastMCP private API.
+    """
+
+    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
+        self.k1 = k1
+        self.b = b
+        self._doc_tokens: list[list[str]] = []
+        self._doc_lengths: list[int] = []
+        self._avg_dl: float = 0.0
+        self._df: dict[str, int] = {}
+        self._tf: list[dict[str, int]] = []
+        self._n: int = 0
+
+    def build(self, documents: list[str]) -> None:
+        self._doc_tokens = [_tokenize_len2(doc) for doc in documents]
+        self._doc_lengths = [len(tokens) for tokens in self._doc_tokens]
+        self._n = len(documents)
+        self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
+
+        self._df = {}
+        self._tf = []
+        for tokens in self._doc_tokens:
+            tf: dict[str, int] = {}
+            seen: set[str] = set()
+            for token in tokens:
+                tf[token] = tf.get(token, 0) + 1
+                if token not in seen:
+                    self._df[token] = self._df.get(token, 0) + 1
+                    seen.add(token)
+            self._tf.append(tf)
+
+    def query(self, text: str, top_k: int) -> list[int]:
+        query_tokens = _tokenize_len2(text)
+        if not query_tokens or not self._n:
+            return []
+
+        scores: list[float] = [0.0] * self._n
+        for token in query_tokens:
+            if token not in self._df:
+                continue
+            idf = math.log(
+                (self._n - self._df[token] + 0.5) / (self._df[token] + 0.5) + 1.0
+            )
+            for i in range(self._n):
+                tf = self._tf[i].get(token, 0)
+                if tf == 0:
+                    continue
+                dl = self._doc_lengths[i]
+                numerator = tf * (self.k1 + 1)
+                denominator = tf + self.k1 * (1 - self.b + self.b * dl / self._avg_dl)
+                scores[i] += idf * numerator / denominator
+
+        ranked = sorted(range(self._n), key=lambda i: scores[i], reverse=True)
+        return [i for i in ranked[:top_k] if scores[i] > 0]
+
+
+class _BM25IndexLen2(_BM25Index):
+    """BM25 index that supports 2-character tokens (inherits from local _BM25Index)."""
 
     def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
         super().__init__(k1, b)
@@ -100,6 +162,7 @@ class BM25SearchEngine:
 
 __all__ = [
     "BM25SearchEngine",
+    "_BM25Index",
     "_BM25IndexLen2",
     "_expand_word_aliases",
     "_texts_hash",

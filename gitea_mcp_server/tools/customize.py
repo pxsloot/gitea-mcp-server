@@ -22,7 +22,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.pagination import pagination_ctx
-from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import (

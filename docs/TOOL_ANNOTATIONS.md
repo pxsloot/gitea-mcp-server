@@ -142,16 +142,16 @@ python show_annotations.py
 
 ### Source Code
 
-The annotation logic lives in `src/gitea_mcp_server/server.py`:
+The annotation logic lives in `gitea_mcp_server/tools/customize.py`:
 
-- `_add_inferred_hints(route, annotations)` - Infers hint values from HTTP method
-- `_customize_component(route, component)` - Main customization hook called by FastMCP
-- `_generate_tool_title(route)` - Creates human-readable titles
-- `_categorize_tool(path)` - Determines resource category
+- `add_inferred_hints(route, annotations)` - Infers hint values from HTTP method
+- `customize_component(route, component, ...)` - Main customization hook
+- `generate_tool_title(route)` - Creates human-readable titles
+- `categorize_tool(path)` - Determines resource category
 
 ### Testing
 
-Comprehensive unit tests in `tests/unit/test_tool_annotations.py`:
+Comprehensive unit tests in `tests/unit/test_tool_annotations.py` (now covering the functions in `tools/customize.py`):
 
 - `TestInferredHints` - Verifies hint inference for all HTTP methods
 - `TestCategorizeTool` - Path-to-category mapping

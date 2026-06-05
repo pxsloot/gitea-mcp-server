@@ -9,6 +9,10 @@ authors = [
     { name = "Peter", email = "peter@example.com" }
 ]
 dependencies = [
+    # NOTE: fastmcp 3.4.0 has a regression in _run_middleware's `wrapped` closure
+    # that renames the `context` param to `ctx`, causing the caching middleware's
+    # `call_next(context=context)` keyword call to fail with TypeError.
+    # Upgrade blocked until 3.4.1.
     "fastmcp>=3.3.1,<4",
     "httpx>=0.27.0",
     "uvicorn>=0.30.0",

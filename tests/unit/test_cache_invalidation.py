@@ -12,6 +12,7 @@ from gitea_mcp_server.cache_invalidation import (
     _compute_cache_key,
     _substitute_template,
     compute_uris_to_invalidate,
+    invalidate_cached_resources,
     register_tool_invalidation,
 )
 from gitea_mcp_server.tools.customize import (
@@ -226,6 +227,36 @@ class TestCacheInvalidationMiddleware:
         await middleware.on_call_tool(mock_context, mock_call_next)
 
         assert not mock_cache.delete.called
+
+    @pytest.mark.asyncio
+    async def test_missing_read_resource_cache_graceful(self):
+        """Graceful degradation when _read_resource_cache attribute is missing."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        del mock_caching._read_resource_cache
+
+        middleware = CacheInvalidationMiddleware(mock_caching)
+
+        mock_context = MagicMock()
+        mock_context.message.name = "issue_edit_issue"
+        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
+
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+
+        async def mock_call_next(context):
+            return MagicMock(is_error=False)
+
+        await middleware.on_call_tool(mock_context, mock_call_next)
+
+    @pytest.mark.asyncio
+    async def test_invalidate_cached_resources_missing_attribute(self):
+        """invalidate_cached_resources handles missing _read_resource_cache gracefully."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        del mock_caching._read_resource_cache
+
+        result = await invalidate_cached_resources(
+            mock_caching, ["gitea://repos/org/repo/issues"], "test_tool"
+        )
+        assert result is None
 
 
 class TestComputeToolInvalidationPatterns:

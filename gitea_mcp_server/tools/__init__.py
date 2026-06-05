@@ -11,7 +11,7 @@ All tool-related runtime concerns live here:
 - registry: Tool metadata and registration utilities
 """
 
-from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
     add_inferred_hints,
     categorize_tool,

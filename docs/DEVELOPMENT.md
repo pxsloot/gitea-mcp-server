@@ -127,14 +127,14 @@ tool_names:
 
 1. Add validator in `validation.py`
 2. Add to `SINGLE_VALIDATORS` dict keyed by parameter name
-3. The `transform_fn` in `tool_annotator.py` automatically calls it
+3. The `transform_fn` in `tools/customize.py` automatically calls it
 
 ### 4. Cache invalidation pattern
 
-Add to `_INVALIDATION_PATTERNS` in `tool_annotator.py`:
+Add to `TOOL_INVALIDATION_PATTERNS` in `constants.py`:
 
 ```python
-_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
+TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
     ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
     # ...
 ]

@@ -188,17 +188,23 @@ async def invalidate_cached_resources(
     if not uris:
         return
 
-    # NOTE: FastMCP does not expose a public API for cache invalidation.
-    # We access _read_resource_cache directly. This is fragile as FastMCP
-    # may change internal structure. Consider filing a feature request with
-    # FastMCP for official cache invalidation support.
-    cache_adapter = caching_middleware._read_resource_cache
+    # FastMCP does not expose a public API for cache invalidation yet.
+    # Access _read_resource_cache with graceful degradation in case the
+    # private attribute changes in a future FastMCP version.
+    cache_adapter = getattr(caching_middleware, "_read_resource_cache", None)
+    if cache_adapter is None:
+        logger.warning(
+            "Cache invalidation unavailable: "
+            "ResponseCachingMiddleware._read_resource_cache not found. "
+            "This may be caused by a FastMCP version upgrade."
+        )
+        return
+
     deleted_count = 0
 
     for uri in uris:
         cache_key = _compute_cache_key(uri)
         try:
-            # Check if key exists before deleting (to be safe)
             existing = await cache_adapter.get(key=cache_key)
             if existing is not None:
                 await cache_adapter.delete(key=cache_key)

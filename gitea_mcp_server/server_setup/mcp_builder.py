@@ -10,6 +10,7 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
@@ -45,6 +46,12 @@ logger = logging.getLogger(__name__)
 
 _META_CUSTOMIZED = "_customization_applied"
 """Flag in component.meta to avoid double-wrapping by the transform."""
+
+
+@dataclass
+class _RouteInfo:
+    path: str = ""
+    method: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +189,10 @@ class _ToolWrappingTransform(Transform):
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema
 
-        class _MockRoute:
-            path = customization.get("route_path", "")
-            method = customization.get("route_method", "")
-
-        mock_route = _MockRoute()
+        mock_route = _RouteInfo(
+            path=customization.get("route_path", ""),
+            method=customization.get("route_method", ""),
+        )
         label_manager = self._label_manager
         gitea_client = self._gitea_client
         openapi_spec = self._openapi_spec
@@ -282,5 +288,6 @@ def create_openapi_provider(
 
 
 __all__ = [
+    "_RouteInfo",
     "create_openapi_provider",
 ]

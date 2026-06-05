@@ -19,40 +19,8 @@ from gitea_mcp_server.tools.customize import (
 class TestCacheInvalidationIntegration:
     """Integration tests for cache invalidation using respx mocks."""
 
-    @pytest.fixture
-    def simple_config(self):
-        """Config fixture."""
-
-        class SimpleConfig:
-            def __init__(
-                self,
-                url="https://git.example.com",
-                token="test_token",
-                *,
-                verify_ssl=False,
-                ssl_cert_file=None,
-                log_level="ERROR",
-                log_format="text",
-                tool_filtering_enabled=False,
-                enable_lazy_loading=False,
-            ):
-                self.url = url.rstrip("/")
-                self.token = token
-                self.verify_ssl = verify_ssl
-                self.ssl_cert_file = ssl_cert_file
-                self.log_level = log_level
-                self.log_format = log_format
-                self.tool_filtering_enabled = tool_filtering_enabled
-                self.enable_lazy_loading = enable_lazy_loading
-
-            @property
-            def base_url(self) -> str:
-                return f"{self.url}/api/v1"
-
-        return SimpleConfig
-
     @pytest.mark.asyncio
-    async def test_issue_edit_invalidation_mapping(self, simple_config):
+    async def test_issue_edit_invalidation_mapping(self):
         """Test that issue_edit_issue is mapped to invalidate issues resources."""
 
         # Manually register for this test (server does this automatically on startup)
@@ -71,7 +39,7 @@ class TestCacheInvalidationIntegration:
         assert set(uris) == set(expected)
 
     @pytest.mark.asyncio
-    async def test_pr_create_invalidation_mapping(self, simple_config):
+    async def test_pr_create_invalidation_mapping(self):
         """Test that PR creation invalidates pulls resources."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -88,7 +56,7 @@ class TestCacheInvalidationIntegration:
         assert set(uris) == set(expected)
 
     @pytest.mark.asyncio
-    async def test_repo_edit_invalidation_mapping(self, simple_config):
+    async def test_repo_edit_invalidation_mapping(self):
         """Test that repo edit invalidates repo resource."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -101,7 +69,7 @@ class TestCacheInvalidationIntegration:
         assert uris == ["gitea://repos/myorg/myrepo"]
 
     @pytest.mark.asyncio
-    async def test_file_content_invalidation_mapping(self, simple_config):
+    async def test_file_content_invalidation_mapping(self):
         """Test file content operations use filepath parameter correctly."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -119,7 +87,7 @@ class TestCacheInvalidationIntegration:
         assert "gitea://repos/org/repo/files/README.md" in uris
 
     @pytest.mark.asyncio
-    async def test_label_operations_invalidation(self, simple_config):
+    async def test_label_operations_invalidation(self):
         """Test label CRUD invalidates both issues and pulls."""
         patterns = _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/labels", "POST")
         assert set(patterns) == {"issues_list", "pulls_list"}
@@ -128,7 +96,7 @@ class TestCacheInvalidationIntegration:
         assert set(patterns) == {"issues_list", "pulls_list"}
 
     @pytest.mark.asyncio
-    async def test_path_based_pattern_mapping_coverage(self, simple_config):
+    async def test_path_based_pattern_mapping_coverage(self):
         """Comprehensive test of path-based pattern mapping."""
         # Issues
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/issues", "POST") == [

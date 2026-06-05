@@ -15,28 +15,7 @@ from gitea_mcp_server.server_setup.spec_loader import (
     load_and_convert_spec,
     load_openapi_spec,
 )
-
-
-class SimpleConfig:
-    def __init__(self):
-        self.url = "https://git.example.com"
-        self.token = "test_token"
-        self.verify_ssl = False
-        self.ssl_cert_file = None
-        self.log_level = "ERROR"
-        self.log_format = "text"
-        self.tool_filtering_enabled = False
-        self.enable_lazy_loading = False
-        self.tool_prefix = "gitea_"
-        self.transport_type = "stdio"
-        self.http_host = "127.0.0.1"
-        self.http_port = 8080
-        self.http_path = "/mcp"
-        self.http_cors = None
-
-    @property
-    def base_url(self):
-        return f"{self.url}/api/v1"
+from tests.conftest import SimpleConfig
 
 
 @pytest.fixture

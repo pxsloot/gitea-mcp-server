@@ -7,39 +7,7 @@ import respx
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
-from tests.conftest import extract_tool_names
-
-
-class SimpleConfig:
-    """Simple config stub for tests, mirrors essential Config behavior."""
-
-    def __init__(
-        self,
-        url="https://git.example.com",
-        token="test_token",
-        *,
-        verify_ssl=False,
-        ssl_cert_file=None,
-        log_level="ERROR",
-        log_format="text",
-        tool_filtering_enabled=True,
-        enable_lazy_loading=False,
-        tool_prefix="gitea_",
-    ):
-        self.url = url.rstrip("/")
-        self.token = token
-        self.verify_ssl = verify_ssl
-        self.ssl_cert_file = ssl_cert_file
-        self.log_level = log_level
-        self.log_format = log_format
-        self.tool_filtering_enabled = tool_filtering_enabled
-        self.enable_lazy_loading = enable_lazy_loading
-        self.tool_prefix = tool_prefix
-
-    @property
-    def base_url(self) -> str:
-        """Get the API base URL."""
-        return f"{self.url}/api/v1"
+from tests.conftest import SimpleConfig, extract_tool_names
 
 
 class TestServerIntegration:

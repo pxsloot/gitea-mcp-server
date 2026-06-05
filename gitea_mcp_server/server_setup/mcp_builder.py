@@ -57,8 +57,6 @@ def _customize_metadata(
     component: OpenAPITool | Any,
     *,
     openapi_spec: dict[str, Any],
-    label_manager: LabelManager,
-    gitea_client: "GiteaClient | None" = None,
 ) -> None:
     """In-place metadata customisation for every OpenAPI component.
 
@@ -106,7 +104,7 @@ def _customize_metadata(
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
 
-    if _is_array_response(output_schema):
+    if output_schema is not None and _is_array_response(output_schema):
         props = output_schema.setdefault("properties", {})
         props["has_more"] = {
             "type": "boolean",
@@ -146,7 +144,7 @@ class _ToolWrappingTransform(Transform):
 
     Accessed via ``provider.add_transform()`` — part of FastMCP's public API.
     Handles: argument validation, label conversion, error handling,
-    text‑response wrapping, and pagination metadata injection.
+    text-response wrapping, and pagination metadata injection.
     """
 
     def __init__(
@@ -258,7 +256,7 @@ def create_openapi_provider(
     """Create an ``OpenAPIProvider`` with customised metadata + runtime wrapping.
 
     Uses only public FastMCP APIs:
-    * ``mcp_component_fn`` — in‑place metadata customisation.
+    * ``mcp_component_fn`` -- in-place metadata customisation.
     * ``provider.add_transform(…)`` — runtime behaviour wrapping.
 
     No private ``_tools``, ``_route``, or ``_read_resource_cache`` access.
@@ -270,8 +268,6 @@ def create_openapi_provider(
             route,
             component,
             openapi_spec=openapi_spec,
-            label_manager=label_manager,
-            gitea_client=gitea_client,
         ),
     )
 

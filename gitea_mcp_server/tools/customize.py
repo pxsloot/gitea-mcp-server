@@ -191,7 +191,11 @@ def customize_component(
     )
 
     async def transform_fn(**kwargs: Any) -> Any:
-        _run_validation(kwargs, component.parameters.get("required"))
+        _run_validation(
+            kwargs,
+            component.parameters.get("required"),
+            component.parameters.get("properties"),
+        )
         await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
         result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
 

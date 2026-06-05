@@ -61,9 +61,33 @@ def _lookup_response_description(
     return result
 
 
+def _param_is_boolean(properties: dict[str, Any] | None, name: str) -> bool:
+    """Check whether a parameter's JSON schema declares it as boolean type.
+
+    Args:
+        properties: The tool's parameter properties dict, or None.
+        name: The parameter name to check.
+
+    Returns:
+        True if the parameter schema has type 'boolean' or ['boolean', ...].
+    """
+    if not properties:
+        return False
+    schema = properties.get(name)
+    if not isinstance(schema, dict):
+        return False
+    t = schema.get("type")
+    if isinstance(t, str):
+        return t == "boolean"
+    if isinstance(t, list):
+        return "boolean" in t
+    return False
+
+
 def _run_validation(
     kwargs: dict[str, Any],
     required_params: list[str] | None = None,
+    param_properties: dict[str, Any] | None = None,
 ) -> None:
     missing = [p for p in (required_params or []) if p not in kwargs]
     if missing:
@@ -71,6 +95,8 @@ def _run_validation(
         _raise_validation_error(msg, missing[0], ValueError(msg))
     for name, value in kwargs.items():
         if name in SINGLE_VALIDATORS:
+            if _param_is_boolean(param_properties, name):
+                continue
             try:
                 SINGLE_VALIDATORS[name](value, field=name)
             except ValidationError:

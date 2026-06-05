@@ -11,6 +11,7 @@ from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.tools.customize import customize_component as _customize_component
 from gitea_mcp_server.tools.errors import (
     _lookup_response_description,
+    _param_is_boolean,
     _run_validation,
 )
 from gitea_mcp_server.validation import ValidationError
@@ -442,6 +443,79 @@ class TestRunValidation:
         """When a SINGLE_VALIDATOR raises ValidationError, it should re-raise unchanged."""
         with pytest.raises(ValidationError):
             _run_validation({"owner": ""})
+
+
+class TestParamIsBoolean:
+    """Tests for _param_is_boolean helper."""
+
+    def test_none_properties_returns_false(self):
+        assert _param_is_boolean(None, "labels") is False
+
+    def test_missing_param_returns_false(self):
+        assert _param_is_boolean({"owner": {"type": "string"}}, "labels") is False
+
+    def test_string_type_returns_false(self):
+        assert _param_is_boolean({"labels": {"type": "string"}}, "labels") is False
+
+    def test_array_type_returns_false(self):
+        assert _param_is_boolean({"labels": {"type": "array"}}, "labels") is False
+
+    def test_boolean_type_string_returns_true(self):
+        assert _param_is_boolean({"labels": {"type": "boolean"}}, "labels") is True
+
+    def test_boolean_in_list_type_returns_true(self):
+        assert _param_is_boolean({"labels": {"type": ["boolean", "null"]}}, "labels") is True
+
+    def test_array_in_list_type_returns_false(self):
+        assert _param_is_boolean({"labels": {"type": ["array", "null"]}}, "labels") is False
+
+
+class TestRunValidationParamProperties:
+    """Regression tests: _run_validation with param_projects should skip validators
+    when the parameter schema declares a boolean type."""
+
+    def test_labels_boolean_skips_validate_labels(self):
+        """labels param with boolean schema should NOT trigger validate_labels."""
+        _run_validation(
+            {"labels": True},
+            param_properties={"labels": {"type": "boolean"}},
+        )
+
+    def test_labels_boolean_nullable_skips_validate_labels(self):
+        """labels param with ['boolean', 'null'] schema should NOT trigger validate_labels."""
+        _run_validation(
+            {"labels": True},
+            param_properties={"labels": {"type": ["boolean", "null"]}},
+        )
+
+    def test_labels_array_still_validates(self):
+        """labels param with array schema should still trigger validate_labels."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _run_validation(
+                {"labels": True},
+                param_properties={"labels": {"type": "array", "items": {"type": "string"}}},
+            )
+
+    def test_boolean_skip_does_not_affect_other_validators(self):
+        """Other validators should still run even when labels is boolean."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _run_validation(
+                {"labels": True, "state": "invalid"},
+                param_properties={
+                    "labels": {"type": "boolean"},
+                    "state": {"type": "string"},
+                },
+            )
+
+    def test_no_param_properties_still_validates(self):
+        """When param_properties is None, all validators should run."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _run_validation({"labels": True})
+
+    def test_empty_param_properties_skips_boolean_check(self):
+        """When param_properties is empty dict, validators should run."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _run_validation({"labels": True}, param_properties={})
 
 
 class TestErrorHandlingNonJson:

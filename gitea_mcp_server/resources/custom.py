@@ -251,7 +251,7 @@ async def get_active_token_scopes(gitea_client: GiteaClient) -> ResourceResult:
         if not isinstance(tokens_data, list):
             return json.dumps({"scopes": None})
 
-        raw_token = gitea_client._config.token
+        raw_token = gitea_client.config.token
         last_eight = raw_token[-8:]
         for token in tokens_data:
             if isinstance(token, dict) and token.get("token_last_eight") == last_eight:

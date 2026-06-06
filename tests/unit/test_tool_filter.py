@@ -157,9 +157,9 @@ class TestFilterToolsByPermissions:
             token["token_last_eight"] = "00000000"
         return token
 
-    def _setup_mocks(self, mock_gitea_client, username: str = "dev2", token_val: str = "test-token"):
+    def _setup_mocks(self, mock_gitea_client, token_val: str = "test-token"):
         """Set up common mock attributes."""
-        mock_gitea_client._config.token = token_val
+        mock_gitea_client.config.token = token_val
 
     async def test_user_with_sudo_sees_all_tools(self, mock_mcp, mock_gitea_client):
         self._setup_mocks(mock_gitea_client)
@@ -176,7 +176,7 @@ class TestFilterToolsByPermissions:
 
         mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, admin_tool, user_tool])
 
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
+        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, "test-token")
 
         for tool in [repo_tool, admin_tool, user_tool]:
             assert "visibility" not in tool.meta.get("fastmcp", {}).get("_internal", {})
@@ -402,8 +402,8 @@ class TestFilterResourcesByPermissions:
             token["token_last_eight"] = "00000000"
         return token
 
-    def _setup_mocks(self, mock_gitea_client, username: str = "dev2", token_val: str = "test-token"):
-        mock_gitea_client._config.token = token_val
+    def _setup_mocks(self, mock_gitea_client, token_val: str = "test-token"):
+        mock_gitea_client.config.token = token_val
 
     async def test_user_with_sudo_sees_all_resources(self, mock_mcp, mock_gitea_client):
         self._setup_mocks(mock_gitea_client)

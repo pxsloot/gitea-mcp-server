@@ -146,7 +146,9 @@ async def _collect_provider_resources(mcp: FastMCP) -> list[Any]:
     return all_components
 
 
-async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
+async def filter_tools_by_permissions(
+    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None
+) -> None:
     """Filter tools based on the current user's Gitea token scopes.
 
     Removes tools that require a scope not present in the active token.
@@ -158,7 +160,11 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
     Args:
         mcp: The FastMCP server instance
         gitea_client: GiteaClient for making API calls
+        token: Raw GITEA_TOKEN value (defaults to gitea_client.config.token)
     """
+    if token is None:
+        token = gitea_client.config.token
+
     logger.info("Starting tool permission filtering")
 
     # Fetch current user info
@@ -185,7 +191,7 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
         return
 
     # Match the active token and get its scopes only
-    available_scopes = _match_active_token(tokens_data, gitea_client._config.token)
+    available_scopes = _match_active_token(tokens_data, token)
     if available_scopes is None:
         return
 
@@ -222,7 +228,9 @@ async def filter_tools_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -
     )
 
 
-async def filter_resources_by_permissions(mcp: FastMCP, gitea_client: GiteaClient) -> None:
+async def filter_resources_by_permissions(
+    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None
+) -> None:
     """Filter resources based on the current user's Gitea token scopes.
 
     Hides resources and resource templates that require a scope not present
@@ -232,7 +240,11 @@ async def filter_resources_by_permissions(mcp: FastMCP, gitea_client: GiteaClien
     Args:
         mcp: The FastMCP server instance
         gitea_client: GiteaClient for making API calls
+        token: Raw GITEA_TOKEN value (defaults to gitea_client.config.token)
     """
+    if token is None:
+        token = gitea_client.config.token
+
     logger.info("Starting resource permission filtering")
 
     # Fetch current user info
@@ -259,7 +271,7 @@ async def filter_resources_by_permissions(mcp: FastMCP, gitea_client: GiteaClien
         return
 
     # Match the active token and get its scopes only
-    available_scopes = _match_active_token(tokens_data, gitea_client._config.token)
+    available_scopes = _match_active_token(tokens_data, token)
     if available_scopes is None:
         return
 

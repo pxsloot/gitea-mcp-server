@@ -347,7 +347,7 @@ class TestGetActiveTokenScopes:
 
         client = AsyncMock()
         token_val = "test-token-xxxxxx_last8"
-        client._config.token = token_val
+        client.config.token = token_val
         client.request = AsyncMock(
             side_effect=[
                 {"login": "dev2"},
@@ -369,7 +369,7 @@ class TestGetActiveTokenScopes:
         from gitea_mcp_server.resources.custom import get_active_token_scopes
 
         client = AsyncMock()
-        client._config.token = "unknown-token"
+        client.config.token = "unknown-token"
         client.request = AsyncMock(
             side_effect=[
                 {"login": "dev2"},

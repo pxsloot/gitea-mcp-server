@@ -145,7 +145,7 @@ async def _apply_tool_filtering(
 
     try:
         logger.info("Applying tool permission filtering")
-        await filter_tools_by_permissions(mcp, gitea_client)
+        await filter_tools_by_permissions(mcp, gitea_client, config.token)
     except Exception as e:
         logger.exception(
             "Tool filtering failed, proceeding without filtering",
@@ -153,7 +153,7 @@ async def _apply_tool_filtering(
         )
     try:
         logger.info("Applying resource permission filtering")
-        await filter_resources_by_permissions(mcp, gitea_client)
+        await filter_resources_by_permissions(mcp, gitea_client, config.token)
     except Exception as e:
         logger.exception(
             "Resource filtering failed, proceeding without filtering",
@@ -161,11 +161,12 @@ async def _apply_tool_filtering(
         )
 
 
-async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
+async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = None) -> FastMCP:
     """Create the Gitea MCP server from OpenAPI spec.
 
     Args:
         gitea_client: Initialized GiteaClient to use for API calls
+        config: Application configuration (defaults to gitea_client.config)
 
     Returns:
         Configured FastMCP server instance
@@ -173,13 +174,14 @@ async def create_mcp_server(gitea_client: GiteaClient) -> FastMCP:
     Raises:
         SpecError: If spec loading or conversion fails
     """
-    config = gitea_client._config
+    if config is None:
+        config = gitea_client.config
 
     setup_logging(level=config.log_level, log_format=config.log_format)
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        openapi_spec = await load_and_convert_spec(gitea_client)
+        openapi_spec = await load_and_convert_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:

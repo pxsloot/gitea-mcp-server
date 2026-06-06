@@ -1511,3 +1511,94 @@ class TestFormatterGaps:
 
         error_data = exc_info.value.args[0]
         assert error_data["message"] == "Resource not found: 123"
+
+
+class TestResourceHandlerDecorator:
+    """Tests for the resource_handler decorator."""
+
+    @pytest.fixture
+    def mock_gitea_client(self):
+        return AsyncMock()
+
+    async def test_wraps_successful_response(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
+        async def my_resource(item_id: str, gitea_client):
+            data = await gitea_client.request("GET", f"/items/{item_id}")
+            if isinstance(data, str):
+                return data
+            return f"Formatted: {data}"
+
+        mock_gitea_client.request = AsyncMock(return_value={"name": "test"})
+        result = await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+        assert result == "Formatted: {'name': 'test'}"
+        mock_gitea_client.request.assert_called_once_with("GET", "/items/abc")
+
+    async def test_passes_through_string_response(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
+        async def my_resource(item_id: str, gitea_client):
+            data = await gitea_client.request("GET", f"/items/{item_id}")
+            if isinstance(data, str):
+                return data
+            return f"Formatted: {data}"
+
+        mock_gitea_client.request = AsyncMock(return_value="error string")
+        result = await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+        assert result == "error string"
+
+    async def test_404_converts_to_resource_error(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
+        async def my_resource(item_id: str, gitea_client):
+            data = await gitea_client.request("GET", f"/items/{item_id}")
+            if isinstance(data, str):
+                return data
+            return f"Formatted: {data}"
+
+        class MockGiteaError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(
+            side_effect=MockGiteaError(HTTP_STATUS_NOT_FOUND)
+        )
+
+        with pytest.raises(ResourceError) as exc_info:
+            await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+
+        error_data = exc_info.value.args[0]
+        assert error_data["code"] == "NOT_FOUND"
+        assert "Item 'abc' not found." in error_data["message"]
+        assert error_data["resource_type"] == "test_type"
+        assert error_data["resource_id"] == "abc"
+
+    async def test_non_404_passed_through(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
+        async def my_resource(item_id: str, gitea_client):
+            data = await gitea_client.request("GET", f"/items/{item_id}")
+            if isinstance(data, str):
+                return data
+            return f"Formatted: {data}"
+
+        mock_gitea_client.request = AsyncMock(side_effect=ValueError("boom"))
+
+        with pytest.raises(ValueError, match="boom"):
+            await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+
+    async def test_preserves_function_metadata(self):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
+        async def my_resource(item_id: str, gitea_client):
+            """My test resource."""
+            return "ok"
+
+        assert my_resource.__name__ == "my_resource"
+        assert my_resource.__doc__ == "My test resource."

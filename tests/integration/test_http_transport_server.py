@@ -61,7 +61,7 @@ class SimpleHTTPConfig:
 def patch_spec_loader(monkeypatch):
     """Patch the OpenAPI spec loader to avoid network calls."""
 
-    async def mock_load_and_convert_spec(gitea_client):
+    async def mock_load_and_convert_spec(gitea_client, config=None):
         return {
             "swagger": "2.0",
             "info": {"title": "Gitea API", "version": "1.0"},

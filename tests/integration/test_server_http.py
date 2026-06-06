@@ -56,6 +56,7 @@ def common_patches(monkeypatch):
         "gitea_mcp_server.server.GiteaClient",
         lambda config: AsyncMock(
             _config=config,
+            config=config,
             client=AsyncMock(),
             request=AsyncMock(return_value={}),
             close=AsyncMock(),

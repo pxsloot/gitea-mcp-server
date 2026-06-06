@@ -16,14 +16,17 @@ logger = logging.getLogger(__name__)
 
 
 def _raise_value_error(message: str) -> NoReturn:
+    """Raise a ValueError with a user-friendly message."""
     raise ValueError(message) from None
 
 
 def _raise_value_error_from(message: str, cause: Exception) -> NoReturn:
+    """Raise a ValueError with a user-friendly message, chaining the original cause."""
     raise ValueError(message) from cause
 
 
 def _raise_validation_error(message: str, field: str, cause: Exception) -> NoReturn:
+    """Raise a ValidationError for a specific field, chaining the original cause."""
     raise ValidationError(message, field=field) from cause
 
 

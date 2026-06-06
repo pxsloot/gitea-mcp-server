@@ -85,6 +85,12 @@ CACHE_MAX_ITEM_SIZE = 100_000_000
 # Label Cache Configuration
 # ============================================================================
 
+LABEL_MAX_LENGTH = 100
+"""Maximum length for a label name (characters)."""
+
+PAGE_SIZE_MAX = 100
+"""Maximum number of items per page for paginated endpoints."""
+
 LABEL_CACHE_TTL = 300
 """Cache TTL for repository label mappings (seconds, 5 minutes)."""
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 
 def _format_available_labels(label_names: list[str]) -> str:
+    """Format available labels as grouped text for error messages and tool descriptions."""
     groups: dict[str, list[str]] = {}
     for name in label_names:
         prefix = name.split("/", 1)[0] if "/" in name else ""

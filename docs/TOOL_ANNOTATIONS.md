@@ -128,7 +128,7 @@ The annotation logic lives in `gitea_mcp_server/tools/customize.py`:
 
 ### Testing
 
-Comprehensive unit tests in `tests/unit/test_tool_annotations.py` (now covering the functions in `tools/customize.py`):
+Unit tests in `tests/unit/test_tool_customize.py` (covering the functions in `tools/customize.py`):
 
 - `TestInferredHints` - Verifies hint inference for all HTTP methods
 - `TestCategorizeTool` - Path-to-category mapping
@@ -137,7 +137,7 @@ Comprehensive unit tests in `tests/unit/test_tool_annotations.py` (now covering 
 
 Run tests:
 ```bash
-pytest tests/unit/test_tool_annotations.py -v
+pytest tests/unit/test_tool_customize.py -v
 ```
 
 ## Future Enhancements
@@ -152,5 +152,5 @@ Potential improvements:
 
 ## References
 
-- [FastMCP ToolAnnotations](https://github.com/modelcontextprotocol/python-sdk/blob/main/fastmcp/tools/tool.py) - SDK definition
+- [FastMCP ToolAnnotations](https://gofastmcp.com/llms.txt) - SDK definition (search for "ToolAnnotations")
 - [HTTP Method Semantics](https://datatracker.ietf.org/doc/html/rfc7231) - RFC 7231 specification

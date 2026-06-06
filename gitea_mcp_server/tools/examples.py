@@ -11,6 +11,8 @@ def _example_object(
     max_depth: int,
     max_properties: int,
 ) -> dict[str, Any]:
+    """Generate an example value from an object schema."""
+
     if depth >= max_depth:
         return {}
     properties = schema.get("properties", {})
@@ -34,6 +36,7 @@ def _example_array(
     max_depth: int,
     max_properties: int,
 ) -> list[Any]:
+    """Generate an example value from an array schema."""
     items = schema.get("items", {})
     if isinstance(items, dict) and items:
         return [_schema_to_example(items, depth, max_depth, max_properties)]
@@ -41,6 +44,7 @@ def _example_array(
 
 
 def _example_string(schema: dict[str, Any]) -> str:
+    """Generate an example value from a string schema (respects format, enum)."""
     fmt = schema.get("format")
     if fmt == "date-time":
         return "2024-01-01T00:00:00Z"
@@ -60,6 +64,7 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
     max_depth: int = 3,
     max_properties: int = 15,
 ) -> Any:
+    """Generate an example value from any JSON schema (recursive)."""
     for key in ("anyOf", "oneOf"):
         options = schema.get(key)
         if isinstance(options, list):
@@ -91,6 +96,7 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
 
 
 def _serialize_tool_schema(tool: Tool) -> dict[str, Any]:
+    """Serialize a Tool to a compact dict (name, description, parameters, examples, annotations)."""
     data: dict[str, Any] = {
         "name": tool.name,
         "description": tool.description or "",

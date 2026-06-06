@@ -131,6 +131,13 @@ The customization layers as applied during server startup:
 | `server_setup/permissions.py` | Re-exports from `tool_filter.py` (avoids circular import) |
 | `server_setup/mcp_extensions.py` | YAML-based tool customizations (titles, descriptions, params) |
 
+### Flat Infrastructure Modules (shared, not domain-specific)
+
+| Module | Role |
+|--------|------|
+| `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/` |
+| `search.py` | BM25 search engine infrastructure (`BM25SearchEngine`) — generic text indexing and ranking, used by `tools/search.py` |
+
 ---
 
 ## Key Design Decisions
@@ -166,8 +173,8 @@ The customization layers as applied during server startup:
 
 7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
    re-export from flat `tool_filter.py`, avoiding a circular import that would
-   occur if `server.py` imported `tool_filter.py` directly.  Same pattern for
-   `server_setup/logging.py` → `logging_config.py`.
+   occur if `server.py` imported `tool_filter.py` directly.  Same pattern:
+   `resources/scope.py` re-exports from flat `scope.py`.
 
 8. **Naming collision resolved** -- Two modules once shared the name
    `resource_registry`: the `resources/registry.py` (class `ResourceRegistry`

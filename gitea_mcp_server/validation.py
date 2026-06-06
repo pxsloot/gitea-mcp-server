@@ -10,6 +10,7 @@ from typing import Any
 
 from fastmcp.server.providers.openapi import OpenAPITool
 
+from gitea_mcp_server.constants import LABEL_MAX_LENGTH, PAGE_SIZE_MAX
 from gitea_mcp_server.exceptions import ValidationError
 
 # Regex patterns for common Gitea parameters
@@ -29,9 +30,6 @@ USERNAME_PATTERN = OWNER_REPO_PATTERN
 
 # SHA1 (full): exactly 40 hexadecimal characters
 SHA_PATTERN = r"^[a-fA-F0-9]{40}$"
-
-LABEL_MAX_LENGTH = 100
-PAGE_SIZE_MAX = 100
 
 
 # Validator functions

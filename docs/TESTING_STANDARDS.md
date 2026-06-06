@@ -30,18 +30,32 @@ tests/
 │   ├── test_cache_invalidation.py
 │   ├── test_client.py
 │   ├── test_config.py
+│   ├── test_constants.py
 │   ├── test_docs_tools.py
+│   ├── test_exceptions.py
+│   ├── test_format.py
 │   ├── test_gitea_api.py
 │   ├── test_http_transport.py
 │   ├── test_label_validation.py
+│   ├── test_logging_config.py
+│   ├── test_mcp_builder.py
 │   ├── test_mcp_extensions.py
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
 │   ├── test_resource_registry.py
 │   ├── test_resources.py
-│   ├── test_tool_annotations.py
+│   ├── test_scope.py
+│   ├── test_search_engine.py
+│   ├── test_spec_loader.py
+│   ├── test_tool_customize.py
+│   ├── test_tool_errors.py
+│   ├── test_tool_examples.py
 │   ├── test_tool_filter.py
+│   ├── test_tool_labels.py
+│   ├── test_tool_namespace.py
+│   ├── test_tool_schemas.py
+│   ├── test_tool_search.py
 │   ├── test_unified_search.py
 │   └── test_validation.py
 └── integration/
@@ -146,7 +160,6 @@ async def test_server_creates_tools_from_spec(self):
 - **pytest-cov**: Coverage measurement
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
-- **fastmcp.testing**: `FastMCPTransport` for in-memory MCP round-trips (preferred over parsing stdio)
 
 ## What to Test (Per Layer)
 
@@ -244,18 +257,14 @@ async def test_fetch_user(self, config):
         assert route.called
 ```
 
-### Testing with FastMCPTransport
+### Testing with Server In-Memory
 
-Use `FastMCPTransport` for full round-trips without stdio.
+Use `server.call_tool()` and `server.list_tools()` directly for full round-trips without stdio.
 
 ```python
-from fastmcp.testing import FastMCPTransport
-
-async def test_tool_call_round_trip(self):
-    transport = FastMCPTransport(mcp_instance)
-    async with transport:
-        result = await transport.call_tool("gitea_issue_list_issues", {"owner": "o", "repo": "r"})
-        assert result[0].text
+async def test_tool_call_round_trip(self, mcp_server):
+    result = await mcp_server.call_tool("gitea_issue_list_issues", {"owner": "o", "repo": "r"})
+    assert result[0].text
 ```
 
 ### Testing the `resource_handler` Decorator
@@ -623,13 +632,13 @@ uv run pytest tests/integration/
    - **integration**: Multiple components wired together, real server creation
 5. Update this document if introducing new testing patterns
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
-7. Run `uv run pytest` before pushing — 1167+ tests should all pass
+7. Run `uv run pytest` before pushing — 1219+ tests should all pass
 
 ## Coverage Enforcement
 
-The project enforces a minimum coverage of 80% overall. This means:
+The project enforces a minimum coverage of 85% overall. This means:
 
-- `pytest` with coverage will fail if total coverage falls below 80%
+- `pytest` with coverage will fail if total coverage falls below 85%
 - New code should meet or exceed its module area's minimum (see table above)
 - When fixing bugs, add regression tests first
 - Coverage excludes: type checking blocks, abstract methods

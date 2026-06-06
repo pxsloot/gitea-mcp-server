@@ -133,6 +133,7 @@ class TolerantBM25Search:
 
 
 def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+    """Serialize tools to compact dicts (name, description, tags, annotations) for search display."""
     result = []
     for tool in tools:
         annotations = None

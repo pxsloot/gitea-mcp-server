@@ -10,6 +10,7 @@ from typing import Any
 
 
 def _snake_to_title(name: str) -> str:
+    """Convert snake_case or CamelCase to Title Case with spaces."""
     result = ""
     for i, ch in enumerate(name):
         if ch == "_":
@@ -35,6 +36,7 @@ def _format_datetime(dt: str | None) -> str:
 
 
 def _format_scalar(value: Any, schema: dict[str, Any] | None = None) -> str:
+    """Format a scalar value as a string, respecting schema format hints."""
     if value is None:
         return "N/A"
     if isinstance(value, bool):
@@ -50,6 +52,7 @@ def _format_scalar(value: Any, schema: dict[str, Any] | None = None) -> str:
 
 
 def _format_simple_value(value: Any) -> str:
+    """Format any value as a string (lists, dicts, scalars) without schema."""
     if value is None:
         return "N/A"
     if isinstance(value, list):
@@ -98,6 +101,7 @@ def _merge_allof_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _resolve_anyof_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Resolve anyOf/oneOf to the first object variant with properties."""
     if not schema:
         return None
     for key in ("anyOf", "oneOf"):

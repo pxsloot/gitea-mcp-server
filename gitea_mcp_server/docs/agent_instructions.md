@@ -25,7 +25,7 @@ This is the recommended starting point for discovery. Use focused search tools (
 
 There are two kinds of tools:
 
-- **Synthetic tools** — `search`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `search_resources`. These are **called directly** by name (not via `call_tool`).
+- **Synthetic tools** — `search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`. These are **called directly** by name (not via `call_tool`).
 - **API tools** — prefixed with `gitea_` (e.g., `gitea_user_get_current`). These are **called via `call_tool`**:
 
 ```
@@ -217,7 +217,7 @@ work -- token scopes, branch protection, permission models, labels, etc.
 
 ## Output Format (`format` parameter)
 
-All synthetic tools (`call_tool`, `search_tools`, `search`, `tool_info`, `list_resources`, `read_resource`, `search_resources`) accept a `format` parameter to control how results are presented:
+All synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) accept a `format` parameter to control how results are presented:
 
 | Format | When to use |
 |--------|-------------|
@@ -248,7 +248,7 @@ read_resource("gitea://repos/org/repo", format="raw")
 **Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data -- the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
-- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `tool_info`, `call_tool`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All synthetic tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
+- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All synthetic tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
 - **Resources**: Cached, efficient reads. `list_resources`, `read_resource`, and `search_resources` accept a `format` parameter and are called directly (not via `call_tool`).
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

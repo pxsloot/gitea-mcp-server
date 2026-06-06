@@ -50,6 +50,7 @@ _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
 
 
 def generate_tool_title(route: Any) -> str:
+    """Generate a human-readable title from the route's summary or operationId."""
     summary = getattr(route, "summary", None)
     operation_id = getattr(route, "operation_id", None)
 
@@ -70,6 +71,7 @@ def generate_tool_title(route: Any) -> str:
 
 
 def categorize_tool(path: str) -> str:
+    """Assign a category tag based on the request path prefix."""
     for prefix, category, contains in _CATEGORY_PREFIXES:
         if contains:
             if prefix in path:
@@ -80,6 +82,7 @@ def categorize_tool(path: str) -> str:
 
 
 def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
+    """Set readOnly, destructive, idempotent, and openWorld hints from HTTP method."""
     method = getattr(route, "method", None)
 
     if annotations.readOnlyHint is None:
@@ -96,6 +99,7 @@ def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
 
 
 def compute_invalidation_patterns(path: str, method: str) -> list[str]:
+    """Return cache invalidation URI patterns for the given path and HTTP method."""
     if method.upper() in ("GET", "HEAD", "OPTIONS"):
         return []
 
@@ -155,6 +159,11 @@ def customize_component(
     openapi_spec: dict[str, Any] | None = None,
     gitea_client: "GiteaClient | None" = None,
 ) -> Tool | None:
+    """Apply the full customization pipeline to a single OpenAPITool.
+
+    Wraps the tool with annotations, validation, label conversion, error handling,
+    cache invalidation, pagination metadata, and output schema enhancements.
+    """
     if not isinstance(component, OpenAPITool):
         return None
 

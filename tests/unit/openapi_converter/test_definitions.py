@@ -15,17 +15,20 @@ class TestFixReferences:
     """Tests for the fix_references function."""
 
     def test_fix_definitions_reference(self):
+        """Definitions with no refs should pass through unchanged."""
         spec = {"definitions": {"Model": {"type": "object"}}}
         result = fix_references(spec)
         assert "$ref" not in result  # No refs to fix yet
 
     def test_fix_path_parameter_reference(self):
+        """$ref in path parameters should be rewritten from definitions to components.schemas."""
         spec = {"paths": {"/test": {"get": {"parameters": [{"$ref": "#/definitions/Param"}]}}}}
         result = fix_references(spec)
         param_ref = result["paths"]["/test"]["get"]["parameters"][0]["$ref"]
         assert param_ref == "#/components/schemas/Param"
 
     def test_fix_response_reference(self):
+        """$ref in responses should be rewritten from responses to components.responses."""
         spec = {
             "responses": {"OK": {"description": "Success"}},
             "paths": {"/test": {"get": {"responses": {"200": {"$ref": "#/responses/OK"}}}}},
@@ -35,6 +38,7 @@ class TestFixReferences:
         assert resp_ref == "#/components/responses/OK"
 
     def test_fix_nested_references(self):
+        """Nested $ref inside definitions should be rewritten to components.schemas."""
         spec = {
             "definitions": {
                 "Model": {"properties": {"nested": {"$ref": "#/definitions/Nested"}}},
@@ -50,6 +54,7 @@ class TestConvertDefinitions:
     """Tests for the convert_definitions function."""
 
     def test_simple_definition(self):
+        """Basic definition with properties and required should be preserved."""
         definitions = {
             "User": {
                 "type": "object",
@@ -90,6 +95,7 @@ class TestConvertDefinitions:
         assert "required" not in pet_schema["properties"]["owner"]
 
     def test_nested_definitions(self):
+        """Definitions with $ref to other definitions should be rewritten."""
         definitions = {
             "Address": {
                 "type": "object",
@@ -107,6 +113,7 @@ class TestConvertDefinitions:
         assert result["Address"]["type"] == "object"
 
     def test_array_with_items_ref(self):
+        """Array items with $ref should be rewritten to components.schemas."""
         definitions = {
             "Tag": {"type": "string"},
             "Article": {

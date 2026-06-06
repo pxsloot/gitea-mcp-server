@@ -7,6 +7,7 @@ class TestConvertPaths:
     """Tests for the convert_paths function."""
 
     def test_simple_get(self):
+        """Simple GET path with no parameters should be preserved."""
         paths = {
             "/users": {
                 "get": {
@@ -22,6 +23,7 @@ class TestConvertPaths:
         assert result["/users"]["get"]["summary"] == "List users"
 
     def test_post_with_body(self):
+        """POST with body parameter should produce requestBody."""
         paths = {
             "/users": {
                 "post": {
@@ -36,6 +38,7 @@ class TestConvertPaths:
         assert "application/json" in op["requestBody"]["content"]
 
     def test_post_with_formData(self):
+        """POST with formData parameters should produce multipart requestBody."""
         paths = {
             "/upload": {
                 "post": {

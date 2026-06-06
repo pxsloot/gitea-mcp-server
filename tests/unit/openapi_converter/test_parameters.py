@@ -7,6 +7,7 @@ class TestConvertParameters:
     """Tests for the convert_parameters function."""
 
     def test_simple_parameter(self):
+        """Query parameter with type should be wrapped in schema."""
         params = [{"name": "page", "in": "query", "type": "integer", "description": "Page number"}]
         result = convert_parameters(params)
         assert len(result) == 1
@@ -19,11 +20,13 @@ class TestConvertParameters:
         assert result[0]["description"] == "Page number"
 
     def test_body_parameter_removed(self):
+        """Body parameters should be removed during parameter conversion."""
         params = [{"name": "body", "in": "body", "schema": {"type": "object"}}]
         result = convert_parameters(params)
         assert len(result) == 0  # Body params are skipped
 
     def test_formData_parameter(self):
+        """formData parameters should be removed; non-formData params preserved."""
         params = [
             {"name": "file", "in": "formData", "type": "string"},
             {"name": "query", "in": "query", "type": "string"},
@@ -35,6 +38,7 @@ class TestConvertParameters:
         assert result[0]["name"] == "query"
 
     def test_parameter_with_schema(self):
+        """Parameter with existing schema should preserve and normalize it."""
         params = [{"name": "user", "in": "query", "schema": {"type": "string", "minLength": 1}}]
         result = convert_parameters(params)
         # Schema should be preserved and normalized

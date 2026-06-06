@@ -7,6 +7,7 @@ class TestOperationIdNormalization:
     """Tests for operationId snake_case conversion in convert_paths."""
 
     def test_camelcase_operation_id_converted(self):
+        """CamelCase operationId should be converted to snake_case."""
         paths = {
             "/repos": {
                 "get": {
@@ -19,6 +20,7 @@ class TestOperationIdNormalization:
         assert result["/repos"]["get"]["operationId"] == "get_all_repos"
 
     def test_pascalcase_operation_id_converted(self):
+        """PascalCase operationId should be converted to snake_case."""
         paths = {
             "/issues": {
                 "post": {
@@ -31,6 +33,7 @@ class TestOperationIdNormalization:
         assert result["/issues"]["post"]["operationId"] == "create_issue"
 
     def test_mixed_operation_id_converted(self):
+        """Mixed-case operationId with repo prefix should be converted to snake_case."""
         paths = {
             "/repos/{owner}/{repo}/branches": {
                 "get": {
@@ -59,6 +62,7 @@ class TestOperationIdNormalization:
         assert op_id == op_id.lower()
 
     def test_complex_operation_id_with_acronyms(self):
+        """OperationId with acronyms and mixed case should be properly converted."""
         paths = {
             "/orgs/{org}/ teams": {
                 "get": {

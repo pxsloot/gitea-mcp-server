@@ -38,18 +38,22 @@ class TestConvertSwaggerToOpenAPI:
         }
 
     def test_output_version_is_3_1_1(self):
+        """Converted spec should have OpenAPI version 3.1.1."""
         result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert result["openapi"] == "3.1.1"
 
     def test_basepath_becomes_server_url(self):
+        """Swagger basePath should become OpenAPI server URL."""
         result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert result["servers"][0]["url"] == "/api/v1"
 
     def test_paths_are_preserved(self):
+        """All paths from Swagger spec should be preserved in output."""
         result = convert_swagger_to_openapi_v3(self._minimal_spec())
         assert "/ping" in result["paths"]
 
     def test_full_spec_with_definitions(self):
+        """Definitions should be converted to components.schemas."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
@@ -73,11 +77,13 @@ class TestConvertSwaggerToOpenAPI:
         assert "Pet" in result["components"]["schemas"]
 
     def test_invalid_swagger_version(self):
+        """Non-Swagger-2.0 input should raise SpecError."""
         spec = {"openapi": "3.0.0"}
         with pytest.raises(SpecError, match="Expected Swagger 2.0"):
             convert_swagger_to_openapi_v3(spec)
 
     def test_invalid_input_type(self):
+        """Non-dict input should raise SpecError."""
         with pytest.raises(SpecError, match="must be a dictionary"):
             convert_swagger_to_openapi_v3("not a dict")
 
@@ -249,14 +255,17 @@ class TestConvertSwaggerToOpenAPI:
         }
 
     def test_text_plain_endpoint_has_x_original_content_types(self):
+        """text/plain endpoints should have x-original-content-types preserved."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert result["paths"]["/diff"]["get"].get("x-original-content-types") == ["text/plain"]
 
     def test_json_endpoint_does_not_have_x_original_content_types(self):
+        """JSON endpoints should not have x-original-content-types marker."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/json"]["get"]
 
     def test_no_produces_endpoint_lacks_x_original_content_types(self):
+        """Endpoints without produces should not have x-original-content-types."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/no-produces"]["get"]
 
@@ -265,6 +274,7 @@ class TestEnrichResponseSchemas:
     """Tests for _wrap_success_response_schemas function."""
 
     def test_wraps_array_schema(self):
+        """Array response schemas should be wrapped in result object."""
         spec = {
             "paths": {
                 "/items": {
@@ -289,6 +299,7 @@ class TestEnrichResponseSchemas:
         assert schema["properties"]["result"]["type"] == "array"
 
     def test_wraps_object_schema(self):
+        """Object response schemas should be wrapped in result object."""
         spec = {
             "paths": {
                 "/item": {
@@ -416,6 +427,7 @@ class TestEnrichResponseSchemas:
         assert "version" in schema["properties"]["result"]["properties"]
 
     def test_wraps_primitive_schema(self):
+        """Primitive (string) response schemas should be wrapped in result object."""
         spec = {
             "paths": {
                 "/health": {
@@ -440,6 +452,7 @@ class TestEnrichResponseSchemas:
         assert schema["properties"]["result"]["type"] == "string"
 
     def test_wraps_component_responses_inline(self):
+        """Component-level response schemas should also be wrapped."""
         spec = {
             "components": {
                 "responses": {
@@ -459,6 +472,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
 
     def test_wraps_component_responses_ref(self):
+        """Component responses with $ref should be resolved and wrapped."""
         spec = {
             "components": {
                 "responses": {
@@ -485,6 +499,7 @@ class TestEnrichResponseSchemas:
         assert "id" in schema["properties"]["result"]["properties"]
 
     def test_skips_204_no_content(self):
+        """204 No Content responses should be skipped (no content to wrap)."""
         spec = {
             "paths": {
                 "/item/{id}": {
@@ -500,11 +515,13 @@ class TestEnrichResponseSchemas:
         assert "content" not in spec["paths"]["/item/{id}"]["delete"]["responses"]["204"]
 
     def test_handles_empty_spec_gracefully(self):
+        """Empty spec should not cause errors during wrapping."""
         spec: dict = {}
         _wrap_success_response_schemas(spec)
         assert spec == {}
 
     def test_wraps_201_created_responses(self):
+        """201 Created responses should be wrapped like 200 responses."""
         spec = {
             "paths": {
                 "/items": {
@@ -528,6 +545,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
 
     def test_wraps_multiple_methods_on_same_path(self):
+        """Multiple HTTP methods on the same path should each get wrapping."""
         spec = {
             "paths": {
                 "/items": {

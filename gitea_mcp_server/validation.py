@@ -42,43 +42,52 @@ def _raise_validation_error(message: str, field: str) -> None:
     raise ValidationError(message, field=field)
 
 
-def validate_owner_repo(value: Any, *, field: str) -> None:
-    """Validate an owner, repo, or org name.
+def _validate_string(
+    value: Any,
+    *,
+    field: str,
+    pattern: str | None = None,
+    allowed: set[str] | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Validate a string parameter with optional pattern or allowed-values check.
 
     Args:
-        value: The value to validate (should be a string).
+        value: The value to validate.
         field: The parameter name (used in error messages).
+        pattern: Optional regex pattern for fullmatch validation.
+        allowed: Optional set of allowed values.
+        error_message: Custom error message template with {field} placeholder.
 
     Raises:
         ValidationError: If validation fails.
     """
     if not isinstance(value, str):
         _raise_validation_error(f"{field} must be a string", field)
-    if not value:
+    if pattern is not None and not value:
         _raise_validation_error(f"{field} cannot be empty", field)
-    if not re.fullmatch(OWNER_REPO_PATTERN, value):
-        _raise_validation_error(
-            f"{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
-            field,
-        )
+    if pattern is not None and not re.fullmatch(pattern, value):
+        msg = error_message or f"{field} contains invalid characters"
+        _raise_validation_error(msg.format(field=field), field)
+    if allowed is not None and value not in allowed:
+        valid = ", ".join(sorted(allowed))
+        msg = error_message or f"{field} must be one of: {valid}"
+        _raise_validation_error(msg.format(field=field), field)
+
+
+def validate_owner_repo(value: Any, *, field: str) -> None:
+    """Validate an owner, repo, or org name."""
+    _validate_string(
+        value,
+        field=field,
+        pattern=OWNER_REPO_PATTERN,
+        error_message="{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
+    )
 
 
 def validate_filepath(value: Any, *, field: str) -> None:
-    """Validate a file path within a repository.
-
-    Args:
-        value: The filepath string.
-        field: Parameter name for error messages.
-
-    Raises:
-        ValidationError: If invalid.
-    """
-    if not isinstance(value, str):
-        msg = f"{field} must be a string"
-        raise ValidationError(msg, field=field)
-    if not value:
-        msg = f"{field} cannot be empty"
-        raise ValidationError(msg, field=field)
+    """Validate a file path within a repository."""
+    _validate_string(value, field=field)
     if value.startswith("/"):
         msg = f"{field} must be a relative path (cannot start with '/')"
         raise ValidationError(msg, field=field)
@@ -91,60 +100,33 @@ def validate_filepath(value: Any, *, field: str) -> None:
 
 
 def validate_ref(value: Any, *, field: str) -> None:
-    """Validate a git reference (branch, tag, or commit SHA).
-
-    Args:
-        value: The ref string.
-        field: Parameter name for error messages.
-
-    Raises:
-        ValidationError: If invalid.
-    """
-    if not isinstance(value, str):
-        _raise_validation_error(f"{field} must be a string", field)
-    if not value:
-        _raise_validation_error(f"{field} cannot be empty", field)
-    if not re.fullmatch(REF_PATTERN, value):
-        _raise_validation_error(f"{field} contains invalid characters for a git reference", field)
+    """Validate a git reference (branch, tag, or commit SHA)."""
+    _validate_string(
+        value,
+        field=field,
+        pattern=REF_PATTERN,
+        error_message="{field} contains invalid characters for a git reference",
+    )
 
 
 def validate_username(value: Any, *, field: str) -> None:
-    """Validate a username.
-
-    Args:
-        value: The username string.
-        field: Parameter name for error messages.
-
-    Raises:
-        ValidationError: If invalid.
-    """
-    if not isinstance(value, str):
-        _raise_validation_error(f"{field} must be a string", field)
-    if not value:
-        _raise_validation_error(f"{field} cannot be empty", field)
-    if not re.fullmatch(USERNAME_PATTERN, value):
-        _raise_validation_error(
-            f"{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
-            field,
-        )
+    """Validate a username."""
+    _validate_string(
+        value,
+        field=field,
+        pattern=USERNAME_PATTERN,
+        error_message="{field} contains invalid characters (allowed: letters, digits, underscores, hyphens, dots; must start and end with letter or digit)",
+    )
 
 
 def validate_sha(value: Any, *, field: str) -> None:
-    """Validate a full SHA-1 hash (40 hex characters).
-
-    Args:
-        value: The SHA string.
-        field: Parameter name for error messages.
-
-    Raises:
-        ValidationError: If invalid.
-    """
-    if not isinstance(value, str):
-        _raise_validation_error(f"{field} must be a string", field)
-    if not value:
-        _raise_validation_error(f"{field} cannot be empty", field)
-    if not re.fullmatch(SHA_PATTERN, value):
-        _raise_validation_error(f"{field} must be a 40-character hexadecimal SHA", field)
+    """Validate a full SHA-1 hash (40 hex characters)."""
+    _validate_string(
+        value,
+        field=field,
+        pattern=SHA_PATTERN,
+        error_message="{field} must be a 40-character hexadecimal SHA",
+    )
 
 
 def validate_labels(value: Any, *, field: str) -> None:
@@ -206,19 +188,13 @@ def validate_pagination(page: Any = None, per_page: Any = None) -> None:
 
 
 def validate_state(value: Any, *, field: str) -> None:
-    """Validate an issue/PR state parameter.
-
-    Args:
-        value: The state string.
-        field: Parameter name for error messages.
-
-    Raises:
-        ValidationError: If invalid.
-    """
-    if not isinstance(value, str):
-        _raise_validation_error(f"{field} must be a string", field)
-    if value not in ("open", "closed", "all"):
-        _raise_validation_error(f"{field} must be one of: open, closed, all", field)
+    """Validate an issue/PR state parameter."""
+    _validate_string(
+        value,
+        field=field,
+        allowed={"open", "closed", "all"},
+        error_message="{field} must be one of: open, closed, all",
+    )
 
 
 # Mapping from parameter name to validator function

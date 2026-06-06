@@ -20,7 +20,12 @@ from gitea_mcp_server.tools.customize import (
     _is_array_response,
 )
 
-_label_manager = LabelManager()
+
+@pytest.fixture
+def label_manager():
+    """Return a fresh LabelManager per test to avoid shared mutable state."""
+    return LabelManager()
+
 
 class TestCategorizeTool:
     """Tests for the _categorize_tool function."""
@@ -230,7 +235,7 @@ class TestInferredHints:
         # openWorldHint should be added
         assert tool.annotations.openWorldHint is True
 
-    def test_all_hints_added_when_annotations_empty(self):
+    def test_all_hints_added_when_annotations_empty(self, label_manager):
         route = MagicMock(path="/test", method="POST", summary="Test POST")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "test_post"
@@ -244,7 +249,7 @@ class TestInferredHints:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         # All hints should be set based on method
         assert new_tool is not None
@@ -258,14 +263,14 @@ class TestInferredHints:
 class TestCustomizeComponent:
     """Tests for the _customize_component function."""
 
-    def test_only_tools_are_customized(self):
+    def test_only_tools_are_customized(self, label_manager):
         from fastmcp.server.providers.openapi import OpenAPIResource
 
         # Mock a non-tool component with spec to pass isinstance check
         route = MagicMock(path="/test", summary="Test", operation_id="test_route")
         resource = MagicMock(spec=OpenAPIResource)
 
-        _customize_component(route, resource, _label_manager)
+        _customize_component(route, resource, label_manager)
 
         # Should return early without modifying
         assert True  # No exception means pass
@@ -285,7 +290,7 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert new_tool.annotations is not None
@@ -293,7 +298,7 @@ class TestCustomizeComponent:
         assert new_tool.annotations.title == "List issues"
         assert "issue" in new_tool.tags
 
-    def test_adds_annotations_to_tool_with_dict(self):
+    def test_adds_annotations_to_tool_with_dict(self, label_manager):
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
         )
@@ -309,14 +314,14 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert isinstance(new_tool.annotations, ToolAnnotations)
         assert new_tool.annotations.title == "List issues"  # Our title overrides dict
         assert "issue" in new_tool.tags
 
-    def test_converts_existing_toolannotations_properly(self):
+    def test_converts_existing_toolannotations_properly(self, label_manager):
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}",
             summary="Get pull request",
@@ -335,7 +340,7 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert isinstance(new_tool.annotations, ToolAnnotations)
@@ -343,7 +348,7 @@ class TestCustomizeComponent:
         assert new_tool.annotations.readOnlyHint is True  # Preserved
         assert "pull_request" in new_tool.tags
 
-    def test_category_detection_various_paths(self):
+    def test_category_detection_various_paths(self, label_manager):
         test_cases = [
             ("/repos/{owner}/{repo}/issues", "issue"),
             ("/repos/{owner}/{repo}/pulls/{index}", "pull_request"),
@@ -368,7 +373,7 @@ class TestCustomizeComponent:
             tool.serializer = None
             tool.meta = {}
 
-            new_tool = _customize_component(route, tool, _label_manager)
+            new_tool = _customize_component(route, tool, label_manager)
 
             assert new_tool is not None
             assert new_tool.annotations is not None
@@ -376,7 +381,7 @@ class TestCustomizeComponent:
                 f"Failed for {path}: category {expected_category} not in tags"
             )
 
-    def test_title_generation_from_operation_id(self):
+    def test_title_generation_from_operation_id(self, label_manager):
         route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "get_user_by_id"
@@ -390,12 +395,12 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert new_tool.annotations.title == "Get User By Id"
 
-    def test_long_operation_id_truncated(self):
+    def test_long_operation_id_truncated(self, label_manager):
         long_op_id = (
             "this_is_a_very_long_operation_id_that_exceeds_fifty_characters_and_needs_truncation"
         )
@@ -412,13 +417,13 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert len(new_tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
         assert new_tool.annotations.title.endswith("...")
 
-    def test_uses_tool_description_not_doc(self):
+    def test_uses_tool_description_not_doc(self, label_manager):
         """Verify that component.description is used, not __doc__."""
         route = MagicMock(path="/test", summary="Test", operation_id="test_op")
         tool = MagicMock(spec=OpenAPITool)
@@ -434,14 +439,14 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         # The description should come from component.description, not __doc__
         assert "Description from attribute" in new_tool.description
         assert "Docstring should be ignored" not in new_tool.description
 
-    def test_applies_label_guidance_when_labels_parameter_present(self):
+    def test_applies_label_guidance_when_labels_parameter_present(self, label_manager):
         """Verify LABEL_GUIDANCE is appended for tools with labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
@@ -460,12 +465,12 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() in new_tool.description
 
-    def test_applies_label_guidance_with_nullable_array_type(self):
+    def test_applies_label_guidance_with_nullable_array_type(self, label_manager):
         """Verify label guidance works with nullable array type ['array', 'null']."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
@@ -484,12 +489,12 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() in new_tool.description
 
-    def test_does_not_apply_label_guidance_without_labels(self):
+    def test_does_not_apply_label_guidance_without_labels(self, label_manager):
         """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
@@ -506,7 +511,7 @@ class TestCustomizeComponent:
         tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, _label_manager)
+        new_tool = _customize_component(route, tool, label_manager)
 
         assert new_tool is not None
         assert LABEL_GUIDANCE.strip() not in new_tool.description
@@ -638,7 +643,7 @@ class TestPaginationMetadata:
         return spec
 
     @pytest.mark.asyncio
-    async def test_has_more_true_when_result_equals_per_page(self, _wrapped_spec):
+    async def test_has_more_true_when_result_equals_per_page(self, _wrapped_spec, label_manager):
         """has_more should be True when result length equals per_page."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -656,7 +661,7 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(30)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 1, "per_page": 30})
 
         assert result.structured_content["has_more"] is True
@@ -665,7 +670,7 @@ class TestPaginationMetadata:
         assert len(result.structured_content["result"]) == 30
 
     @pytest.mark.asyncio
-    async def test_has_more_false_when_result_less_than_per_page(self, _wrapped_spec):
+    async def test_has_more_false_when_result_less_than_per_page(self, _wrapped_spec, label_manager):
         """has_more should be False when result length is less than per_page."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -683,7 +688,7 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(15)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 1, "per_page": 30})
 
         assert result.structured_content["has_more"] is False
@@ -691,7 +696,7 @@ class TestPaginationMetadata:
         assert result.structured_content["total_count"] is None
 
     @pytest.mark.asyncio
-    async def test_defaults_when_kwargs_missing(self, _wrapped_spec):
+    async def test_defaults_when_kwargs_missing(self, _wrapped_spec, label_manager):
         """Should default to page=1 and limit=100 when no pagination args provided."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -710,14 +715,14 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(100)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({})
 
         assert result.structured_content["has_more"] is True
         assert result.structured_content["next_offset"] == 2
 
     @pytest.mark.asyncio
-    async def test_uses_limit_parameter(self, _wrapped_spec):
+    async def test_uses_limit_parameter(self, _wrapped_spec, label_manager):
         """Should use 'limit' parameter as fallback when 'per_page' is not present."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -735,14 +740,14 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(50)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 1, "limit": 50})
 
         assert result.structured_content["has_more"] is True
         assert result.structured_content["next_offset"] == 2
 
     @pytest.mark.asyncio
-    async def test_no_pagination_for_non_array_response(self, _wrapped_spec):
+    async def test_no_pagination_for_non_array_response(self, _wrapped_spec, label_manager):
         """Non-array responses should not get pagination metadata."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues/{index}", method="GET", summary="Get issue", operation_id="get_issue")
         tool = MagicMock(spec=OpenAPITool)
@@ -760,14 +765,14 @@ class TestPaginationMetadata:
             structured_content={"result": {"id": 1, "title": "Test"}}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({})
 
         assert result.structured_content == {"result": {"id": 1, "title": "Test"}}
         assert "has_more" not in result.structured_content
 
     @pytest.mark.asyncio
-    async def test_total_count_defaults_to_none(self, _wrapped_spec):
+    async def test_total_count_defaults_to_none(self, _wrapped_spec, label_manager):
         """total_count should be None when no pagination headers captured."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -785,13 +790,13 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(5)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 2, "per_page": 10})
 
         assert result.structured_content["total_count"] is None
 
     @pytest.mark.asyncio
-    async def test_total_count_from_headers(self, _wrapped_spec):
+    async def test_total_count_from_headers(self, _wrapped_spec, label_manager):
         """total_count should be populated from pagination context var."""
         pagination_ctx.set({"total_count": 42})
 
@@ -811,7 +816,7 @@ class TestPaginationMetadata:
             structured_content={"result": [{"id": i} for i in range(5)]}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 1, "per_page": 10})
 
         assert result.structured_content["total_count"] == 42
@@ -819,7 +824,7 @@ class TestPaginationMetadata:
         assert result.structured_content["next_offset"] is None
 
     @pytest.mark.asyncio
-    async def test_preserves_original_result_data(self, _wrapped_spec):
+    async def test_preserves_original_result_data(self, _wrapped_spec, label_manager):
         """Original result data should be preserved in enhanced response."""
         route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
         tool = MagicMock(spec=OpenAPITool)
@@ -838,7 +843,7 @@ class TestPaginationMetadata:
             structured_content={"result": original_data}
         ))
 
-        new_tool = _customize_component(route, tool, _label_manager, _wrapped_spec)
+        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
         result = await new_tool.run({"page": 1, "per_page": 10})
 
         assert result.structured_content["result"] == original_data

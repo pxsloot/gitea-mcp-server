@@ -10,27 +10,35 @@ class TestDetermineContentType:
     """Tests for _determine_content_type helper."""
 
     def test_defaults_to_json_when_no_produces(self):
+        """Should default to application/json when no produces specified."""
         assert _determine_content_type(None) == "application/json"
 
     def test_defaults_to_json_when_empty_produces(self):
+        """Should default to application/json when produces is empty."""
         assert _determine_content_type([]) == "application/json"
 
     def test_returns_json_when_only_json(self):
+        """Should return application/json when that is the only produces type."""
         assert _determine_content_type(["application/json"]) == "application/json"
 
     def test_returns_text_plain_when_produces_text(self):
+        """Should return text/plain when produces contains it."""
         assert _determine_content_type(["text/plain"]) == "text/plain"
 
     def test_returns_text_plain_precedes_json(self):
+        """text/plain should be preferred over application/json when both present."""
         assert _determine_content_type(["text/plain", "application/json"]) == "text/plain"
 
     def test_returns_first_non_json(self):
+        """Should return the first non-json content type when available."""
         assert _determine_content_type(["application/xml", "application/json"]) == "application/xml"
 
     def test_case_insensitive(self):
+        """Content type matching should be case-insensitive."""
         assert _determine_content_type(["TEXT/PLAIN"]) == "text/plain"
 
     def test_handles_whitespace(self):
+        """Content types with surrounding whitespace should be handled."""
         assert _determine_content_type([" text/plain "]) == "text/plain"
 
 
@@ -38,6 +46,7 @@ class TestConvertResponses:
     """Tests for the convert_responses function."""
 
     def test_simple_response(self):
+        """Response with schema should be converted with content type.application/json."""
         responses = {
             "200": {
                 "description": "Success",
@@ -52,6 +61,7 @@ class TestConvertResponses:
         assert schema["type"] == "object"
 
     def test_response_without_schema(self):
+        """Responses without schema (e.g. 204) should have no content key."""
         responses = {"204": {"description": "No Content"}}
         result = convert_responses(responses)
         assert "204" in result

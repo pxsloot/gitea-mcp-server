@@ -441,7 +441,7 @@ source = ["gitea_mcp_server"]
 omit = ["*/migrations/*", "*/tests/*"]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 85
 show_missing = true
 skip_covered = false
 exclude_also = [

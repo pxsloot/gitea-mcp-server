@@ -10,6 +10,53 @@ import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
+
+class SimpleConfig:
+    """Canonical test config stub, mirrors essential Config behavior.
+
+    All test files should import this from conftest rather than defining
+    their own copy. Test-specific defaults can use ``functools.partial``
+    or pass keyword arguments at instantiation.
+    """
+
+    def __init__(
+        self,
+        url="https://git.example.com",
+        token="test_token",
+        *,
+        verify_ssl=False,
+        ssl_cert_file=None,
+        log_level="ERROR",
+        log_format="text",
+        tool_filtering_enabled=False,
+        enable_lazy_loading=False,
+        tool_prefix="gitea_",
+        transport_type="stdio",
+        http_host="127.0.0.1",
+        http_port=8080,
+        http_path="/mcp",
+        http_cors=None,
+    ):
+        self.url = url.rstrip("/")
+        self.token = token
+        self.verify_ssl = verify_ssl
+        self.ssl_cert_file = ssl_cert_file
+        self.log_level = log_level
+        self.log_format = log_format
+        self.tool_filtering_enabled = tool_filtering_enabled
+        self.enable_lazy_loading = enable_lazy_loading
+        self.tool_prefix = tool_prefix
+        self.transport_type = transport_type
+        self.http_host = http_host
+        self.http_port = http_port
+        self.http_path = http_path
+        self.http_cors = http_cors
+
+    @property
+    def base_url(self) -> str:
+        """Get the API base URL."""
+        return f"{self.url}/api/v1"
+
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 

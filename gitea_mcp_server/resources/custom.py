@@ -37,39 +37,70 @@ from gitea_mcp_server.resources.scope import make_resource_meta
 logger = logging.getLogger(__name__)
 
 
+def resource_handler(
+    resource_type: str,
+    id_format: str,
+    error_message: str,
+) -> Callable[..., Callable[..., Awaitable[str]]]:
+    """Decorator that wraps a resource function with error handling.
+
+    Catches exceptions, converts 404 to structured ResourceError
+    via _handle_not_found. The decorated function only needs to
+    perform the API request and formatting logic.
+
+    Args:
+        resource_type: Machine-readable type (e.g. "repository", "file")
+        id_format: Template string for resource_id using func kwargs
+            (e.g. "{owner}/{repo}")
+        error_message: User-facing error message template using func kwargs
+            (e.g. "Repository '{owner}/{repo}' not found.")
+    """
+
+    def decorator(func: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+        sig = inspect.signature(func)
+
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> ResourceResult:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                # Map positional args to parameter names for format templates
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                resource_id = id_format.format(**bound.arguments)
+                msg = error_message.format(**bound.arguments)
+                _handle_not_found(e, resource_type, resource_id, msg)
+                raise
+
+        return wrapper
+
+    return decorator
+
+
+@resource_handler("repository", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
 async def get_repository(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get full repository metadata with nice Markdown formatting."""
-    try:
-        data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
-        if isinstance(data, str):
-            return data
-        return _format_repo_markdown(data)
-    except Exception as e:
-        _handle_not_found(
-            e, "repository", f"{owner}/{repo}", f"Repository '{owner}/{repo}' not found."
-        )
-        raise
+    data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
+    if isinstance(data, str):
+        return data
+    return _format_repo_markdown(data)
 
 
+@resource_handler("readme", "{owner}/{repo}", "README not found for repository '{owner}/{repo}'.")
 async def get_readme(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get repository README content."""
-    try:
-        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
-        if isinstance(response, str):
-            return response
-        if not isinstance(response, dict):
-            return str(response)
-        if response.get("encoding") == "base64":
-            raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return raw
-        return cast("str", response.get("content", ""))
-    except Exception as e:
-        _handle_not_found(
-            e, "readme", f"{owner}/{repo}", f"README not found for repository '{owner}/{repo}'."
-        )
-        raise
+    response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
+    if isinstance(response, str):
+        return response
+    if not isinstance(response, dict):
+        return str(response)
+    if response.get("encoding") == "base64":
+        raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
+        return raw
+    return cast("str", response.get("content", ""))
 
 
+@resource_handler("issues", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no issues.")
 async def list_repo_issues(
     owner: str, repo: str, gitea_client: GiteaClient, state: str | None = None
 ) -> ResourceResult:
@@ -88,23 +119,15 @@ async def list_repo_issues(
             )
         params["state"] = state
 
-    try:
-        issues = await gitea_client.request("GET", f"/repos/{owner}/{repo}/issues", params=params)
-        if isinstance(issues, str):
-            return issues
-    except Exception as e:
-        _handle_not_found(
-            e,
-            "issues",
-            f"{owner}/{repo}",
-            f"Repository '{owner}/{repo}' not found or has no issues.",
-        )
-        raise
+    issues = await gitea_client.request("GET", f"/repos/{owner}/{repo}/issues", params=params)
+    if isinstance(issues, str):
+        return issues
 
     title = f"Issues ({state})" if state else "All Issues"
     return _format_issues_markdown(issues, title=title)
 
 
+@resource_handler("pulls", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no pull requests.")
 async def list_repo_pulls(
     owner: str, repo: str, gitea_client: GiteaClient, state: str | None = None
 ) -> ResourceResult:
@@ -123,23 +146,15 @@ async def list_repo_pulls(
             )
         params["state"] = state
 
-    try:
-        pulls = await gitea_client.request("GET", f"/repos/{owner}/{repo}/pulls", params=params)
-        if isinstance(pulls, str):
-            return pulls
-    except Exception as e:
-        _handle_not_found(
-            e,
-            "pulls",
-            f"{owner}/{repo}",
-            f"Repository '{owner}/{repo}' not found or has no pull requests.",
-        )
-        raise
+    pulls = await gitea_client.request("GET", f"/repos/{owner}/{repo}/pulls", params=params)
+    if isinstance(pulls, str):
+        return pulls
 
     title = f"Pull Requests ({state})" if state else "All Pull Requests"
     return _format_pulls_markdown(pulls, title=title)
 
 
+@resource_handler("file", "{owner}/{repo}/{path}", "File '{path}' not found in repository '{owner}/{repo}'.")
 async def get_file(
     owner: str, repo: str, path: str, gitea_client: GiteaClient, ref: str | None = None
 ) -> ResourceResult:
@@ -148,45 +163,28 @@ async def get_file(
     if ref:
         params["ref"] = ref
 
-    try:
-        response = await gitea_client.request(
-            "GET", f"/repos/{owner}/{repo}/contents/{path}", params=params
-        )
+    response = await gitea_client.request(
+        "GET", f"/repos/{owner}/{repo}/contents/{path}", params=params
+    )
 
-        if isinstance(response, str):
-            return response
+    if isinstance(response, str):
+        return response
 
-        if not isinstance(response, dict):
-            return str(response)
+    if not isinstance(response, dict):
+        return str(response)
 
-        if response.get("encoding") == "base64":
-            raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return raw
-        return cast("str", response.get("content", ""))
-    except Exception as e:
-        _handle_not_found(
-            e,
-            "file",
-            f"{owner}/{repo}/{path}",
-            f"File '{path}' not found in repository '{owner}/{repo}'.",
-        )
-        raise
+    if response.get("encoding") == "base64":
+        raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
+        return raw
+    return cast("str", response.get("content", ""))
 
 
+@resource_handler("releases", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no releases.")
 async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -> ResourceResult:
     """List releases for a repository."""
-    try:
-        releases = await gitea_client.request("GET", f"/repos/{owner}/{repo}/releases")
-        if isinstance(releases, str):
-            return releases
-    except Exception as e:
-        _handle_not_found(
-            e,
-            "releases",
-            f"{owner}/{repo}",
-            f"Repository '{owner}/{repo}' not found or has no releases.",
-        )
-        raise
+    releases = await gitea_client.request("GET", f"/repos/{owner}/{repo}/releases")
+    if isinstance(releases, str):
+        return releases
 
     if not releases:
         return f"# Releases for {owner}/{repo}\n\nNo releases found."
@@ -201,40 +199,31 @@ async def list_repo_releases(owner: str, repo: str, gitea_client: GiteaClient) -
     return "\n".join(lines)
 
 
+@resource_handler("user", "{username}", "User '{username}' not found.")
 async def get_user(username: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get user profile information."""
-    try:
-        user = await gitea_client.request("GET", f"/users/{username}")
-        if isinstance(user, str):
-            return user
-        return _format_user_markdown(user)
-    except Exception as e:
-        _handle_not_found(e, "user", username, f"User '{username}' not found.")
-        raise
+    user = await gitea_client.request("GET", f"/users/{username}")
+    if isinstance(user, str):
+        return user
+    return _format_user_markdown(user)
 
 
+@resource_handler("user", "current user", "Current user not found or not authenticated.")
 async def get_current_user(gitea_client: GiteaClient) -> ResourceResult:
     """Get current authenticated user profile information."""
-    try:
-        user = await gitea_client.request("GET", "/user")
-        if isinstance(user, str):
-            return user
-        return _format_user_markdown(user)
-    except Exception as e:
-        _handle_not_found(e, "user", "current user", "Current user not found or not authenticated.")
-        raise
+    user = await gitea_client.request("GET", "/user")
+    if isinstance(user, str):
+        return user
+    return _format_user_markdown(user)
 
 
+@resource_handler("version", "server", "Version information not available.")
 async def get_version(gitea_client: GiteaClient) -> ResourceResult:
     """Get server application version."""
-    try:
-        data = await gitea_client.request("GET", "/version")
-        if isinstance(data, str):
-            return data
-        return str(data.get("version", "Unknown"))
-    except Exception as e:
-        _handle_not_found(e, "version", "server", "Version information not available.")
-        raise
+    data = await gitea_client.request("GET", "/version")
+    if isinstance(data, str):
+        return data
+    return str(data.get("version", "Unknown"))
 
 
 async def get_active_token_scopes(gitea_client: GiteaClient) -> ResourceResult:
@@ -251,7 +240,7 @@ async def get_active_token_scopes(gitea_client: GiteaClient) -> ResourceResult:
         if not isinstance(tokens_data, list):
             return json.dumps({"scopes": None})
 
-        raw_token = gitea_client._config.token
+        raw_token = gitea_client.config.token
         last_eight = raw_token[-8:]
         for token in tokens_data:
             if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
@@ -264,16 +253,13 @@ async def get_active_token_scopes(gitea_client: GiteaClient) -> ResourceResult:
         return json.dumps({"scopes": None})
 
 
+@resource_handler("organization", "{orgname}", "Organization '{orgname}' not found.")
 async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
     """Get organization profile information."""
-    try:
-        org = await gitea_client.request("GET", f"/orgs/{orgname}")
-        if isinstance(org, str):
-            return org
-        return _format_user_markdown(org)
-    except Exception as e:
-        _handle_not_found(e, "organization", orgname, f"Organization '{orgname}' not found.")
-        raise
+    org = await gitea_client.request("GET", f"/orgs/{orgname}")
+    if isinstance(org, str):
+        return org
+    return _format_user_markdown(org)
 
 
 def make_resource(
@@ -474,4 +460,5 @@ __all__ = [
     "list_repo_releases",
     "make_resource",
     "register_custom_resources",
+    "resource_handler",
 ]

@@ -301,6 +301,11 @@ class GiteaClient:
         self.api = GiteaAPI(self.transport, config.base_url)
 
     @property
+    def config(self) -> Config:
+        """Get the application configuration."""
+        return self._config
+
+    @property
     def client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client (lazy initialization)."""
         return self.transport.client

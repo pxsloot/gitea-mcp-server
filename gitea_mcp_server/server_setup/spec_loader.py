@@ -5,6 +5,7 @@ import logging
 from typing import Any, cast
 
 from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
@@ -12,11 +13,12 @@ from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, l
 logger = logging.getLogger(__name__)
 
 
-async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
+async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[str, Any]:
     """Load OpenAPI spec from Gitea instance.
 
     Args:
         gitea_client: Client to use for fetching the spec
+        config: Application configuration
 
     Returns:
         OpenAPI spec (Swagger 2.0 format) as dictionary
@@ -25,7 +27,7 @@ async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         SpecError: If spec cannot be loaded or parsed
     """
     # Construct URL: base_url without /api/v1 + /swagger.v1.json
-    spec_url = f"{gitea_client._config.url}/swagger.v1.json"
+    spec_url = f"{config.url}/swagger.v1.json"
 
     logger.info("Loading OpenAPI spec from %s", spec_url)
 
@@ -51,11 +53,12 @@ async def load_openapi_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         return cast("dict[str, Any]", remote_spec)
 
 
-async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
+async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> dict[str, Any]:
     """Load Swagger spec and convert to OpenAPI v3 format.
 
     Args:
         gitea_client: GiteaClient for fetching the spec
+        config: Application configuration
 
     Returns:
         OpenAPI v3 spec as dictionary
@@ -64,7 +67,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient) -> dict[str, Any]:
         SpecError: If spec loading or conversion fails
     """
     try:
-        spec = await load_openapi_spec(gitea_client)
+        spec = await load_openapi_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:

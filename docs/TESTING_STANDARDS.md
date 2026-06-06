@@ -181,6 +181,9 @@ For each transform in the pipeline:
 - Custom resources: error handling (404, missing fields, API errors), Markdown formatting
 - Registry: CRUD operations for resource metadata
 - Scopes: correct mapping from HTTP method + tag → required scope
+- Resource handler decorator: test that `@resource_handler` wraps errors correctly,
+  formats `resource_id` and `error_message` from function parameters, and re-raises
+  non-404 exceptions transparently
 
 ### Server Setup / Wiring
 
@@ -255,6 +258,51 @@ async def test_tool_call_round_trip(self):
         assert result[0].text
 ```
 
+### Testing the `resource_handler` Decorator
+
+The `@resource_handler(resource_type, id_format, error_message)` decorator wraps
+custom resource functions to eliminate the 10× try/except pattern. Test three
+scenarios:
+
+1. **Success path**: function returns normally, decorator passes through
+2. **404 error**: `_handle_not_found` converts it to `ResourceError` with correct fields
+3. **Non-404 error**: decorator re-raises the original exception
+
+The `id_format` and `error_message` templates use `str.format()` with the
+function's parameters (both positional and keyword). The decorator resolves
+parameter names via `inspect.signature`.
+
+```python
+async def test_success_path(self):
+    @resource_handler("repo", "{owner}/{repo}", "Not found: {owner}/{repo}")
+    async def my_resource(owner: str, repo: str):
+        return f"OK: {owner}/{repo}"
+
+    result = await my_resource("user", "my-repo")
+    assert result == "OK: user/my-repo"
+
+async def test_404_converted(self, config):
+    client = GiteaClient(config)
+    @resource_handler("repo", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
+    async def my_resource(owner: str, repo: str, gitea_client: GiteaClient):
+        return await gitea_client.request("GET", f"/repos/{owner}/{repo}")
+
+    async with respx.mock:
+        respx.get("https://git.example.com/api/v1/repos/user/missing").respond(404)
+        with pytest.raises(ResourceError) as exc:
+            await my_resource("user", "missing", client)
+        assert exc.value.data["resource_type"] == "repo"
+
+async def test_non_404_re_raised(self):
+    @resource_handler("repo", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
+    async def my_resource(owner: str, repo: str):
+        raise ValueError("something else")
+
+    with pytest.raises(ValueError, match="something else"):
+        await my_resource("user", "my-repo")
+```
+
+
 ### Testing MCP Tool Call Results
 
 Tool results come back as lists of `ToolResult` or `TextContent`. Test both the text content and the structure.
@@ -283,15 +331,12 @@ Keep fixtures close to where they're used. Define them in the test class or file
 
 ### The SimpleConfig Pattern
 
-`SimpleConfig` is currently copy-pasted in `tests/integration/test_server.py`, `test_cache_invalidation.py`, `test_lazy_loading.py`, and `test_resources_integration.py`. This is technical debt. When adding a new integration test, either:
-
-1. Import the canonical `SimpleConfig` from `tests/conftest.py` (once it lives there), or
-2. Define it inline if it needs unique defaults for that file
-
-Prefer option 1. Do NOT add a fifth copy.
+The canonical `SimpleConfig` lives in `tests/conftest.py` and supports all config fields.
+Import it in tests that need a standard config. If a test file needs unique defaults
+(e.g., HTTP transport tests), define an inline subclass.
 
 ```python
-# Good — defined once in conftest.py
+# Good — canonical fixture from conftest.py
 @pytest.fixture
 def simple_config():
     return SimpleConfig(url="https://git.example.com", token="test_token")
@@ -333,6 +378,21 @@ async def mcp_server():
 - Set explicit `return_value` or `side_effect` on every mock
 - Verify calls when interaction matters: `mock.assert_called_once_with(...)`
 
+### Mocking GiteaClient
+
+When mocking `GiteaClient` in tests, always set both the `_config` attribute and
+the public `config` property (the real class has a `@property` that returns `_config`):
+
+```python
+# Good
+AsyncMock(
+    _config=config,
+    config=config,       # public property needed by create_mcp_server et al.
+    request=AsyncMock(return_value={}),
+    close=AsyncMock(),
+)
+```
+
 ### Bad
 
 - Mocking internals of the module under test
@@ -340,6 +400,8 @@ async def mcp_server():
 - Over-mocking: if you mock everything, you're testing your mocks, not your code
 - Shared mutable fixtures — fixtures should be fresh for each test
 - Using `respx` without a context manager in async tests
+- Forgetting to set `config=config` when mocking GiteaClient — the mock won't have
+  the public `config` property, causing `AttributeError` or returning a stray AsyncMock
 
 ```python
 # Good
@@ -362,7 +424,7 @@ These fail code review. Don't do them.
 | Deep dict comparison of full conversion output | Brittle — breaks on any schema change. Assert specific keys/paths only. |
 | Testing internals instead of behavior | Testing `_wrap_success_response_schemas` directly is fine. Testing `_private_helper` that's an implementation detail is not. Public API changes slower. |
 | Shared mutable fixtures | If one test mutates a fixture, other tests see it. Use factory fixtures or `copy.deepcopy`. |
-| Copy-pasting `SimpleConfig` | Already happens in 4 files. Don't make it 5. |
+| Copy-pasting `SimpleConfig` | Was duplicated in 4 files; now consolidated to canonical `tests/conftest.py`. Don't reintroduce copies. |
 | Skipped tests without explanation | Use `pytest.mark.skip(reason="...")`, not bare `pytest.skip()`. Always document why. |
 | `asyncio_mode = "auto"` without await | If a test is `async def` but forgets `await`, it passes trivially. Always await async calls. |
 | Tests that import from other test files | Each test file should be independently runnable. No shared import chains between test files. |
@@ -561,7 +623,7 @@ uv run pytest tests/integration/
    - **integration**: Multiple components wired together, real server creation
 5. Update this document if introducing new testing patterns
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
-7. Run `uv run pytest` before pushing — 819+ tests should all pass
+7. Run `uv run pytest` before pushing — 1167+ tests should all pass
 
 ## Coverage Enforcement
 

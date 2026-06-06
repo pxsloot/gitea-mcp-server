@@ -157,12 +157,8 @@ class TestFilterToolsByPermissions:
             token["token_last_eight"] = "00000000"
         return token
 
-    def _setup_mocks(self, mock_gitea_client, token_val: str = "test-token"):
-        """Set up common mock attributes."""
-        mock_gitea_client.config.token = token_val
-
     async def test_user_with_sudo_sees_all_tools(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -183,7 +179,7 @@ class TestFilterToolsByPermissions:
 
     async def test_only_active_token_scopes_used(self, mock_mcp, mock_gitea_client):
         """Only the active token's scopes are used, not union of all."""
-        self._setup_mocks(mock_gitea_client, token_val="active-token")
+        mock_gitea_client.config.token = "active-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -205,7 +201,7 @@ class TestFilterToolsByPermissions:
         assert repo_tool.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_disables_tools_without_required_scope(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -224,7 +220,7 @@ class TestFilterToolsByPermissions:
         assert issue_tool.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -242,7 +238,7 @@ class TestFilterToolsByPermissions:
     async def test_tools_without_scope_requirement_always_visible(
         self, mock_mcp, mock_gitea_client
     ):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -258,7 +254,7 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in misc_tool.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_token_fetch_failure_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -283,7 +279,7 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in tool.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_empty_provider_tools(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -295,7 +291,7 @@ class TestFilterToolsByPermissions:
         await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
 
     async def test_multiple_providers(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -319,7 +315,7 @@ class TestFilterToolsByPermissions:
 
     async def test_no_token_match_keeps_all_tools(self, mock_mcp, mock_gitea_client):
         """When no token matches the active token hash, keep all tools."""
-        self._setup_mocks(mock_gitea_client, token_val="unknown-token")
+        mock_gitea_client.config.token = "unknown-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -402,11 +398,8 @@ class TestFilterResourcesByPermissions:
             token["token_last_eight"] = "00000000"
         return token
 
-    def _setup_mocks(self, mock_gitea_client, token_val: str = "test-token"):
-        mock_gitea_client.config.token = token_val
-
     async def test_user_with_sudo_sees_all_resources(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -426,7 +419,7 @@ class TestFilterResourcesByPermissions:
             assert "visibility" not in r.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_disables_resources_without_required_scope(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -446,7 +439,7 @@ class TestFilterResourcesByPermissions:
         assert issue_res.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_disables_templates_without_required_scope(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -466,7 +459,7 @@ class TestFilterResourcesByPermissions:
         assert org_tpl.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -485,7 +478,7 @@ class TestFilterResourcesByPermissions:
     async def test_resources_without_scope_requirement_always_visible(
         self, mock_mcp, mock_gitea_client
     ):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -502,7 +495,7 @@ class TestFilterResourcesByPermissions:
         assert "visibility" not in version_res.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_token_fetch_failure_keeps_all_resources(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -529,7 +522,7 @@ class TestFilterResourcesByPermissions:
         assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
 
     async def test_empty_provider_resources(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client)
+        mock_gitea_client.config.token = "test-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -542,7 +535,7 @@ class TestFilterResourcesByPermissions:
         await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
 
     async def test_both_resources_and_templates_filtered(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client, token_val="mixed-token")
+        mock_gitea_client.config.token = "mixed-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},
@@ -566,7 +559,7 @@ class TestFilterResourcesByPermissions:
         assert org_tpl.meta["fastmcp"]["_internal"]["visibility"] is False
 
     async def test_no_token_match_keeps_all_resources(self, mock_mcp, mock_gitea_client):
-        self._setup_mocks(mock_gitea_client, token_val="unknown-token")
+        mock_gitea_client.config.token = "unknown-token"
         mock_gitea_client.request = AsyncMock(
             side_effect=[
                 {"admin": False, "login": "dev2"},

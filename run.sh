@@ -3,8 +3,6 @@
 
 set -euo pipefail
 
-cd /home/peter/devel/gitea_dev/gitea-mcp-server
-
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'

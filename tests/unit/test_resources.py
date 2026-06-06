@@ -1602,3 +1602,38 @@ class TestResourceHandlerDecorator:
 
         assert my_resource.__name__ == "my_resource"
         assert my_resource.__doc__ == "My test resource."
+
+    async def test_positional_args_resolved_correctly(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("repo", "{owner}/{repo}", "Not found: {owner}/{repo}")
+        async def my_resource(owner: str, repo: str, gitea_client):
+            return f"OK: {owner}/{repo}"
+
+        mock_gitea_client.request = AsyncMock(return_value={})
+        result = await my_resource("user", "my-repo", gitea_client=mock_gitea_client)
+        assert result == "OK: user/my-repo"
+
+    async def test_positional_args_error_formatting(self, mock_gitea_client):
+        from gitea_mcp_server.resources.custom import resource_handler
+
+        @resource_handler("repo", "{owner}/{repo}", "Repo '{owner}/{repo}' missing.")
+        async def my_resource(owner: str, repo: str, gitea_client):
+            data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
+            if isinstance(data, str):
+                return data
+            return f"Formatted: {data}"
+
+        class MockGiteaError(Exception):
+            def __init__(self, status_code):
+                self.status_code = status_code
+                super().__init__(f"HTTP {status_code}")
+
+        mock_gitea_client.request = AsyncMock(side_effect=MockGiteaError(HTTP_STATUS_NOT_FOUND))
+        with pytest.raises(ResourceError) as exc_info:
+            await my_resource("user", "my-repo", gitea_client=mock_gitea_client)
+
+        error_data = exc_info.value.args[0]
+        assert error_data["resource_type"] == "repo"
+        assert error_data["resource_id"] == "user/my-repo"
+        assert "Repo 'user/my-repo' missing." in error_data["message"]

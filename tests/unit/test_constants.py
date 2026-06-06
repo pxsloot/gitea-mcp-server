@@ -50,79 +50,60 @@ from gitea_mcp_server.constants import (
 class TestTitleAndFormatting:
     """Tests for title and response formatting constants."""
 
-    def test_title_truncate_limit_is_positive(self):
-        assert TITLE_TRUNCATE_LIMIT > 0
-
-    def test_response_preview_limit_is_positive(self):
-        assert RESPONSE_PREVIEW_LIMIT > 0
+    def test_title_and_preview_limits_are_reasonable(self):
+        assert 1 <= TITLE_TRUNCATE_LIMIT <= 200
+        assert 1 <= RESPONSE_PREVIEW_LIMIT <= 10000
 
 
 class TestHTTPClientConfig:
     """Tests for HTTP client timeout and connection constants."""
 
-    def test_timeouts_are_positive(self):
-        assert HTTP_TIMEOUT_CONNECT > 0
-        assert HTTP_TIMEOUT_READ > 0
-        assert HTTP_TIMEOUT_WRITE > 0
-        assert HTTP_TIMEOUT_POOL > 0
+    def test_timeouts_are_reasonable(self):
+        for timeout in (HTTP_TIMEOUT_CONNECT, HTTP_TIMEOUT_READ, HTTP_TIMEOUT_WRITE, HTTP_TIMEOUT_POOL):
+            assert 1 <= timeout <= 300
 
-    def test_connection_limits_are_positive(self):
-        assert HTTP_MAX_KEEPALIVE_CONNECTIONS > 0
-        assert HTTP_MAX_CONNECTIONS > 0
+    def test_connection_limits_are_reasonable(self):
+        assert 1 <= HTTP_MAX_KEEPALIVE_CONNECTIONS <= 1000
+        assert 1 <= HTTP_MAX_CONNECTIONS <= 10000
 
 
 class TestRetryConfig:
     """Tests for retry configuration constants."""
 
-    def test_retry_attempts_are_positive(self):
-        assert RETRY_MAX_ATTEMPTS > 0
+    def test_retry_attempts_reasonable(self):
+        assert 1 <= RETRY_MAX_ATTEMPTS <= 20
 
-    def test_wait_times_are_positive(self):
-        assert RETRY_WAIT_MULTIPLIER > 0
-        assert RETRY_WAIT_MIN > 0
-        assert RETRY_WAIT_MAX > 0
-
-    def test_wait_min_less_than_max(self):
-        assert RETRY_WAIT_MIN < RETRY_WAIT_MAX
+    def test_wait_times_reasonable(self):
+        assert 0 < RETRY_WAIT_MULTIPLIER <= 10
+        assert 0 < RETRY_WAIT_MIN < RETRY_WAIT_MAX
 
 
 class TestCacheConfig:
     """Tests for cache TTL and size constants."""
 
     def test_cache_ttls_are_non_negative(self):
-        assert CACHE_TTL_DEFAULT >= 0
-        assert CACHE_TTL_RESOURCE_LIST >= 0
-        assert CACHE_TTL_REPOSITORY >= 0
-        assert CACHE_TTL_README >= 0
-        assert CACHE_TTL_RELEASES >= 0
-        assert CACHE_TTL_USERS >= 0
+        for ttl in (CACHE_TTL_DEFAULT, CACHE_TTL_RESOURCE_LIST, CACHE_TTL_REPOSITORY, CACHE_TTL_README, CACHE_TTL_RELEASES, CACHE_TTL_USERS):
+            assert ttl >= 0
 
     def test_resource_list_ttl_higher_than_default(self):
         assert CACHE_TTL_RESOURCE_LIST >= CACHE_TTL_DEFAULT
 
-    def test_max_item_size_is_positive(self):
+    def test_max_item_size_and_label_ttl_are_positive(self):
         assert CACHE_MAX_ITEM_SIZE > 0
-
-    def test_label_cache_ttl_is_positive(self):
         assert LABEL_CACHE_TTL > 0
 
 
 class TestSearchConfig:
     """Tests for BM25 search configuration constants."""
 
-    def test_search_max_results_is_positive(self):
-        assert SEARCH_MAX_RESULTS > 0
+    def test_search_config_is_sensible(self):
+        assert 1 <= SEARCH_MAX_RESULTS <= 1000
+        assert 1 <= SEARCH_MIN_TOKEN_LENGTH <= 10
+        assert 0 < SEARCH_NAME_BOOST <= 100
 
     def test_always_visible_tools_contains_core_tools(self):
-        assert "search" in SEARCH_ALWAYS_VISIBLE_TOOLS
-        assert "read_resource" in SEARCH_ALWAYS_VISIBLE_TOOLS
-        assert "list_resources" in SEARCH_ALWAYS_VISIBLE_TOOLS
-
-    def test_min_token_length_is_at_least_one(self):
-        assert SEARCH_MIN_TOKEN_LENGTH >= 1
-
-    def test_name_boost_is_positive(self):
-        assert SEARCH_NAME_BOOST > 0
+        for tool in ("search", "read_resource", "list_resources"):
+            assert tool in SEARCH_ALWAYS_VISIBLE_TOOLS
 
     def test_category_aliases_contains_expected_keys(self):
         assert "pull_request" in SEARCH_CATEGORY_ALIASES

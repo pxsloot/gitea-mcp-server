@@ -67,6 +67,19 @@ class TestGiteaAPIError:
     def test_retry_after_is_class_level(self):
         assert GiteaAPIError.retry_after is None
 
+    def test_with_all_args(self):
+        """Construct with all optional args and assert round-trip."""
+        e = GiteaAPIError(
+            "rate limited",
+            status_code=429,
+            response='{"message":"too fast"}',
+            headers={"Retry-After": "30"},
+        )
+        assert str(e) == "rate limited"
+        assert e.status_code == 429
+        assert e.response == '{"message":"too fast"}'
+        assert e.headers == {"Retry-After": "30"}
+
 
 class TestSpecError:
     """Tests for spec loading/conversion error."""

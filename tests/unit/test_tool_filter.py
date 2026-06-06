@@ -5,10 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gitea_mcp_server.tool_filter import (
+    _fetch_user_and_tokens,
     _get_required_scope,
     _has_sufficient_scope,
-    _hide_resource,
     _match_active_token,
+    _set_visibility,
     filter_resources_by_permissions,
     filter_tools_by_permissions,
 )
@@ -331,27 +332,33 @@ class TestFilterToolsByPermissions:
         assert "visibility" not in repo_tool.meta.get("fastmcp", {}).get("_internal", {})
 
 
-class TestHideResource:
-    """Tests for the _hide_resource helper function."""
+class TestSetVisibility:
+    """Tests for the _set_visibility helper function."""
 
     def test_sets_visibility_false(self):
-        resource = MagicMock()
-        resource.meta = {}
-        _hide_resource(resource)
-        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+        obj = MagicMock()
+        obj.meta = {}
+        _set_visibility(obj, False)
+        assert obj.meta["fastmcp"]["_internal"]["visibility"] is False
+
+    def test_sets_visibility_true(self):
+        obj = MagicMock()
+        obj.meta = {}
+        _set_visibility(obj, True)
+        assert obj.meta["fastmcp"]["_internal"]["visibility"] is True
 
     def test_creates_nested_dicts_when_missing(self):
-        resource = MagicMock()
-        resource.meta = None
-        _hide_resource(resource)
-        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+        obj = MagicMock()
+        obj.meta = None
+        _set_visibility(obj, False)
+        assert obj.meta["fastmcp"]["_internal"]["visibility"] is False
 
     def test_preserves_existing_meta(self):
-        resource = MagicMock()
-        resource.meta = {"existing": "value"}
-        _hide_resource(resource)
-        assert resource.meta["existing"] == "value"
-        assert resource.meta["fastmcp"]["_internal"]["visibility"] is False
+        obj = MagicMock()
+        obj.meta = {"existing": "value"}
+        _set_visibility(obj, False)
+        assert obj.meta["existing"] == "value"
+        assert obj.meta["fastmcp"]["_internal"]["visibility"] is False
 
 
 class TestFilterResourcesByPermissions:

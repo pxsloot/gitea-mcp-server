@@ -86,26 +86,58 @@ def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | N
     return None
 
 
-def _hide_tool(tool: Any) -> None:
-    """Set a tool's visibility to False."""
-    if tool.meta is None:
-        tool.meta = {}
-    if "fastmcp" not in tool.meta:
-        tool.meta["fastmcp"] = {}
-    if "_internal" not in tool.meta["fastmcp"]:
-        tool.meta["fastmcp"]["_internal"] = {}
-    tool.meta["fastmcp"]["_internal"]["visibility"] = False
+async def _fetch_user_and_tokens(
+    gitea_client: GiteaClient, token: str, context: str = "tools"
+) -> set[str] | None:
+    """Fetch user info and match active token scopes.
+
+    Args:
+        gitea_client: GiteaClient for making API calls.
+        token: Raw GITEA_TOKEN value.
+        context: Context string for log messages ("tools" or "resources").
+
+    Returns:
+        Set of scope strings if successful, None on failure.
+    """
+    try:
+        user_data = await gitea_client.request("GET", "/user")
+        _validate_user_data(user_data)
+        username = user_data.get("login", "unknown")
+        logger.info("User info retrieved", extra={"username": username})
+    except Exception:
+        logger.exception("Failed to fetch user info for filtering, keeping all %s", context)
+        return None
+
+    try:
+        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
+        if not isinstance(tokens_data, list):
+            logger.warning(
+                "Unexpected tokens response type, keeping all %s",
+                context,
+                extra={"type": type(tokens_data).__name__},
+            )
+            return None
+    except Exception:
+        logger.exception("Failed to fetch tokens for filtering, keeping all %s", context)
+        return None
+
+    available_scopes = _match_active_token(tokens_data, token)
+    if available_scopes is None:
+        return None
+
+    logger.info("Active token scopes retrieved", extra={"scopes": sorted(available_scopes)})
+    return available_scopes
 
 
-def _hide_resource(resource: Any) -> None:
-    """Set a resource's or template's visibility to False."""
-    if resource.meta is None:
-        resource.meta = {}
-    if "fastmcp" not in resource.meta:
-        resource.meta["fastmcp"] = {}
-    if "_internal" not in resource.meta["fastmcp"]:
-        resource.meta["fastmcp"]["_internal"] = {}
-    resource.meta["fastmcp"]["_internal"]["visibility"] = False
+def _set_visibility(obj: Any, visible: bool) -> None:
+    """Set an object's visibility."""
+    if obj.meta is None:
+        obj.meta = {}
+    if "fastmcp" not in obj.meta:
+        obj.meta["fastmcp"] = {}
+    if "_internal" not in obj.meta["fastmcp"]:
+        obj.meta["fastmcp"]["_internal"] = {}
+    obj.meta["fastmcp"]["_internal"]["visibility"] = visible
 
 
 async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
@@ -165,37 +197,9 @@ async def filter_tools_by_permissions(
     if token is None:
         token = gitea_client.config.token
 
-    logger.info("Starting tool permission filtering")
-
-    # Fetch current user info
-    try:
-        user_data = await gitea_client.request("GET", "/user")
-        _validate_user_data(user_data)
-        username = user_data.get("login", "unknown")
-        logger.info("User info retrieved", extra={"username": username})
-    except Exception:
-        logger.exception("Failed to fetch user info for filtering, keeping all tools")
-        return
-
-    # Fetch user's token scopes
-    try:
-        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
-        if not isinstance(tokens_data, list):
-            logger.warning(
-                "Unexpected tokens response type, keeping all tools",
-                extra={"type": type(tokens_data).__name__},
-            )
-            return
-    except Exception:
-        logger.exception("Failed to fetch tokens for filtering, keeping all tools")
-        return
-
-    # Match the active token and get its scopes only
-    available_scopes = _match_active_token(tokens_data, token)
+    available_scopes = await _fetch_user_and_tokens(gitea_client, token, "tools")
     if available_scopes is None:
         return
-
-    logger.info("Active token scopes retrieved", extra={"scopes": sorted(available_scopes)})
 
     all_tools = await _collect_provider_tools(mcp)
     if not all_tools:
@@ -212,7 +216,7 @@ async def filter_tools_by_permissions(
         required = _get_required_scope(tool)
         if not _has_sufficient_scope(required, available_scopes):
             try:
-                _hide_tool(tool)
+                _set_visibility(tool, False)
                 disabled_count += 1
                 logger.info("Disabled tool due to insufficient scope", extra={"tool": tool.name, "key": tool.key})
             except Exception as e:
@@ -245,37 +249,9 @@ async def filter_resources_by_permissions(
     if token is None:
         token = gitea_client.config.token
 
-    logger.info("Starting resource permission filtering")
-
-    # Fetch current user info
-    try:
-        user_data = await gitea_client.request("GET", "/user")
-        _validate_user_data(user_data)
-        username = user_data.get("login", "unknown")
-        logger.info("User info retrieved", extra={"username": username})
-    except Exception:
-        logger.exception("Failed to fetch user info for filtering, keeping all resources")
-        return
-
-    # Fetch user's token scopes
-    try:
-        tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
-        if not isinstance(tokens_data, list):
-            logger.warning(
-                "Unexpected tokens response type, keeping all resources",
-                extra={"type": type(tokens_data).__name__},
-            )
-            return
-    except Exception:
-        logger.exception("Failed to fetch tokens for filtering, keeping all resources")
-        return
-
-    # Match the active token and get its scopes only
-    available_scopes = _match_active_token(tokens_data, token)
+    available_scopes = await _fetch_user_and_tokens(gitea_client, token, "resources")
     if available_scopes is None:
         return
-
-    logger.info("Active token scopes retrieved", extra={"scopes": sorted(available_scopes)})
 
     all_components = await _collect_provider_resources(mcp)
     if not all_components:
@@ -295,7 +271,7 @@ async def filter_resources_by_permissions(
         required = _get_required_scope(component)
         if not _has_sufficient_scope(required, available_scopes):
             try:
-                _hide_resource(component)
+                _set_visibility(component, False)
                 disabled_count += 1
                 name = getattr(component, "name", str(component))
                 logger.info("Disabled resource due to insufficient scope", extra={"resource": name})

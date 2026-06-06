@@ -10,6 +10,7 @@ def _deep_resolve_schema(
     openapi_spec: dict[str, Any],
     _seen: set[str] | None = None,
 ) -> dict[str, Any]:
+    """Recursively resolve all $ref pointers in a schema against the spec."""
     if not isinstance(schema, dict):
         return {}
     result: dict[str, Any] = {}
@@ -48,6 +49,7 @@ def _deep_resolve_schema(
 
 
 def _is_text_response(openapi_spec: dict[str, Any], path: str, method: str) -> bool:
+    """Check if the response for a given path/method is non-JSON (text/plain, etc.)."""
     paths = openapi_spec.get("paths", {})
     path_item = paths.get(path)
     if not isinstance(path_item, dict):
@@ -68,6 +70,7 @@ def _get_success_schema(
     path: str,
     method: str,
 ) -> dict[str, Any] | None:
+    """Extract the resolved 200/201 response schema for a path and method."""
     if _is_text_response(openapi_spec, path, method):
         return None
 
@@ -112,6 +115,7 @@ def derive_output_schema(
     route: Any,
     openapi_spec: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
+    """Derive a resolved output schema from the route's success response."""
     if openapi_spec is None:
         return None
 
@@ -120,6 +124,7 @@ def derive_output_schema(
 
 
 def _schema_type_is_array(schema: dict[str, Any]) -> bool:
+    """Check whether a schema dict has type 'array' (string or list form)."""
     t = schema.get("type")
     if isinstance(t, str):
         return t == "array"

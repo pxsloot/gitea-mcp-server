@@ -44,7 +44,7 @@ from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.namespace import GiteaNamespace
-from gitea_mcp_server.tools.search import TolerantSearchTransform
+from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
 from gitea_mcp_server.unified_search import register_unified_search
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,8 @@ def _setup_tool_discovery(
             always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
         )
         mcp.add_transform(search_transform)
+        logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
+        register_synthetic_tools(mcp, search_transform)
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
 

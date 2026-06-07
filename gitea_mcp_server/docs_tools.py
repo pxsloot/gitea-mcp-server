@@ -201,6 +201,7 @@ def register_doc_tools(
     """
 
     @mcp.tool(
+        tags={"synthetic"},
         output_schema={
             "type": "object",
             "properties": {
@@ -287,6 +288,7 @@ def register_doc_tools(
         )
 
     @mcp.tool(
+        tags={"synthetic"},
         output_schema={
             "type": "object",
             "properties": {

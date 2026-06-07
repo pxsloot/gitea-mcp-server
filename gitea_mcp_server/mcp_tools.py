@@ -556,13 +556,18 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     """
     mcp.tool(
         name="list_resources",
+        tags={"synthetic"},
         output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
     )(_list_resources_tool)
 
-    mcp.tool(name="read_resource")(_read_resource_tool)
+    mcp.tool(
+        name="read_resource",
+        tags={"synthetic"},
+    )(_read_resource_tool)
 
     mcp.tool(
         name="search_resources",
+        tags={"synthetic"},
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
     )(_search_resources_tool)
 

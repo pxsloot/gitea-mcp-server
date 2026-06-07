@@ -158,7 +158,7 @@ def register_unified_search(
             structured_content={"result": results},
         )
 
-    mcp.tool(name="search", output_schema={
+    mcp.tool(name="search", tags={"synthetic"}, output_schema={
         "type": "object",
         "properties": {
             "result": {

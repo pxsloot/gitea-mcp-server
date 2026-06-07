@@ -93,6 +93,11 @@ class Config(BaseSettings):
         description="CORS allowed origins (comma-separated list)",
         alias="HTTP_CORS",
     )
+    exclude_config_path: str | None = Field(
+        default=None,
+        description="Path to YAML config file with tool/resource exclude/include patterns",
+        alias="EXCLUDE_CONFIG_PATH",
+    )
 
     @field_validator("url")
     @classmethod

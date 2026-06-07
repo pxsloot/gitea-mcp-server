@@ -42,7 +42,7 @@ from gitea_mcp_server.server_setup.permissions import (
 )
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
-from gitea_mcp_server.tools.exclusions import ExclusionTransform, load_exclusion_config
+from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 from gitea_mcp_server.unified_search import register_unified_search
@@ -106,24 +106,24 @@ def _setup_caching_middleware(mcp: FastMCP) -> None:
 
 def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
     """Apply server-level exclusion transform for tools and resources."""
-    exclude_config_path = getattr(config, "exclude_config_path", None)
-    if not exclude_config_path:
+    exclusion_config = load_exclusion_config(
+        getattr(config, "exclude_config_path", None)
+    )
+    if not exclusion_config["exclude"] and not exclusion_config["include"]:
         return
-    exclusion_config = load_exclusion_config(exclude_config_path)
-    if exclusion_config["exclude"] or exclusion_config["include"]:
-        tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""
-        logger.info(
-            "Adding server-level exclusion transform: %d exclude, %d include patterns",
-            len(exclusion_config["exclude"]),
-            len(exclusion_config["include"]),
+    tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""
+    logger.info(
+        "Adding server-level exclusion transform: %d exclude, %d include patterns",
+        len(exclusion_config["exclude"]),
+        len(exclusion_config["include"]),
+    )
+    mcp.add_transform(
+        ExclusionTransform(
+            exclude=exclusion_config["exclude"],
+            include=exclusion_config["include"],
+            tool_prefix=tool_prefix,
         )
-        mcp.add_transform(
-            ExclusionTransform(
-                exclude=exclusion_config["exclude"],
-                include=exclusion_config["include"],
-                tool_prefix=tool_prefix,
-            )
-        )
+    )
 
 
 def _setup_tool_discovery(

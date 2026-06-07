@@ -71,7 +71,7 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | Directory | Contains |
 |-----------|----------|
 | `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
-| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusions, search, namespace |
+| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusion, search, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, registry |
 | `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |

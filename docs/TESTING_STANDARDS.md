@@ -116,7 +116,7 @@ def test_array_response_wrapped_in_result(self):
 
 ### Zone 2: Customization Stack (tools/)
 
-**What it tests**: The 10-step pipeline: annotations, error handling, labels, validation, caching, filtering, search, namespace, examples, schemas.
+**What it tests**: The pipeline: annotations, error handling, labels, validation, caching, filtering, exclusions, search, namespace, examples, schemas.
 
 **Pattern**: Compose a mock tool with a known spec, apply one transform at a time, assert the tool's metadata changed correctly. For runtime behavior, wrap a mock `run` function and assert it's called (or not) with the right arguments.
 
@@ -180,7 +180,7 @@ Write focused dict-in/dict-out tests. Cover:
 For each transform in the pipeline:
 - **customize.py**: Title inference, categorization, description hints
 - **errors.py**: HTTP status → user-friendly error message mapping
-- **exclusions.py**: Pattern matching (exact name, glob, tag: prefix), include overrides exclude, prefix-aware matching for prefixed/unprefixed names, filtering for tools/resources/templates, config file loading (missing, empty, malformed YAML)
+- **exclusion.py**: Pattern matching (exact name, glob, tag: prefix), include overrides exclude, prefix-aware matching for prefixed/unprefixed names, filtering for tools/resources/templates, config file loading (missing, empty, malformed YAML)
 - **labels.py**: String "bug" → integer 1 conversion, guidance text injection
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
 - **cache_invalidation.py**: URI pattern computation for each tool type
@@ -466,7 +466,7 @@ exclude_also = [
 | Area | Minimum | Notes |
 |------|---------|-------|
 | `openapi_converter.py` | 95% | Core schema transformation — all branches matter |
-| `tools/*.py` (each) | 90% | Each transform is independently testable |
+| `tools/exclusion.py` | 90% | Exclusion pattern matching + config loading |
 | `validation.py` | 95% | Security-sensitive input validation |
 | `resources/*.py` (each) | 85% | Formatters, registry, scope derivation |
 | `resources/custom.py` | 80% | Error paths matter; some formatting is visual |

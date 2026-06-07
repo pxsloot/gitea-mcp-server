@@ -92,7 +92,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
 | `tools/labels.py` | string→ID label conversion, label schema updates |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
-| `tools/exclusions.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
+| `tools/exclusion.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
 
@@ -106,7 +106,7 @@ The customization layers as applied during server startup:
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
 | 6. Permissions | `tool_filter.py` | hide tools/resources that exceed token scopes |
-| 7. Exclusion config | `tools/exclusions.py` | exclude/include tools, resources, and templates by name, glob, or tag pattern (YAML config) |
+| 7. Exclusion config | `tools/exclusion.py` | exclude/include tools, resources, and templates by name, glob, or tag pattern (YAML config) |
 | 8. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
 | 9. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 10. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |

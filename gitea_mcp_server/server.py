@@ -42,6 +42,7 @@ from gitea_mcp_server.server_setup.permissions import (
 )
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
+from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 from gitea_mcp_server.unified_search import register_unified_search
@@ -101,6 +102,28 @@ def _setup_caching_middleware(mcp: FastMCP) -> None:
     logger.info("Adding cache invalidation middleware...")
     invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
     mcp.add_middleware(invalidation_middleware)
+
+
+def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
+    """Apply server-level exclusion transform for tools and resources."""
+    exclusion_config = load_exclusion_config(
+        getattr(config, "exclude_config_path", None)
+    )
+    if not exclusion_config["exclude"] and not exclusion_config["include"]:
+        return
+    tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""
+    logger.info(
+        "Adding server-level exclusion transform: %d exclude, %d include patterns",
+        len(exclusion_config["exclude"]),
+        len(exclusion_config["include"]),
+    )
+    mcp.add_transform(
+        ExclusionTransform(
+            exclude=exclusion_config["exclude"],
+            include=exclusion_config["include"],
+            tool_prefix=tool_prefix,
+        )
+    )
 
 
 def _setup_tool_discovery(
@@ -209,6 +232,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     _setup_caching_middleware(mcp)
     _setup_tool_discovery(mcp, config, doc_manager)
     register_all_resources(mcp, gitea_client, openapi_spec)
+    _setup_tool_exclusions(mcp, config)
     await _apply_tool_filtering(mcp, gitea_client, config)
 
     logger.info("Gitea MCP Server initialized successfully")

@@ -71,7 +71,7 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | Directory | Contains |
 |-----------|----------|
 | `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
-| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, search, namespace |
+| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusion, search, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, registry |
 | `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
@@ -209,6 +209,53 @@ tool_names:
 ```
 
 Set `MCP_EXTENSIONS_PATH` env var to use a different file location.
+
+---
+
+## Tool/Resource Exclusion Config
+
+The server supports excluding or including specific tools, resources, and
+resource templates via a YAML config file.  This is useful for fine-grained
+control beyond token-scope filtering — e.g., hiding destructive operations
+or admin tools.
+
+### Setup
+
+Set the `EXCLUDE_CONFIG_PATH` env var to point to your YAML config:
+
+```bash
+EXCLUDE_CONFIG_PATH=/path/to/disable.yaml uv run python -m gitea_mcp_server
+```
+
+### Config format
+
+```yaml
+# disable.yaml
+exclude:
+  - "repo_delete"           # exact name match (operationId)
+  - "admin_*"               # fnmatch glob on component name
+  - "tag:admin"             # tag-based (all tools with 'admin' tag)
+include:
+  - "admin_get_server_version"   # override: re-allow within excluded group
+```
+
+### How it works
+
+- Patterns match against both unprefixed (operationId) and prefixed
+  (`gitea_`-prefixed) component names, so both forms work in patterns.
+- `include` overrides `exclude`: if a component matches any include pattern,
+  it passes through regardless of exclude matches.
+- `include` without `exclude` is a no-op.
+- Token scope filter runs **before** exclusion config: a tool filtered by
+  scope cannot be re-added via include.
+- The exclusion is applied as a **server-level transform**, covering tools,
+  resources, and resource templates from all providers.
+
+### Execution order
+
+1. Token scope filter (`tool_filter.py`) — removes tools the token can't use
+2. Exclusion config (new) — removes excluded, re-adds included
+3. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling
 
 ---
 

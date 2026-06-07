@@ -36,6 +36,7 @@ class SimpleConfig:
         http_port=8080,
         http_path="/mcp",
         http_cors=None,
+        exclude_config_path=None,
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -51,6 +52,7 @@ class SimpleConfig:
         self.http_port = http_port
         self.http_path = http_path
         self.http_cors = http_cors
+        self.exclude_config_path = exclude_config_path
 
     @property
     def base_url(self) -> str:

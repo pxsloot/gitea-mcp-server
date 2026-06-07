@@ -54,3 +54,4 @@ coverage.xml
 tmp/
 temp/
 .gitea-mcp-cli-history
+mcp_filter.yaml

@@ -104,6 +104,9 @@ SEARCH_MAX_RESULTS = 10
 
 SEARCH_ALWAYS_VISIBLE_TOOLS = [
     "search",
+    "search_tools",
+    "call_tool",
+    "tool_info",
     "read_resource",
     "list_resources",
     "search_resources",

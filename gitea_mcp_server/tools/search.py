@@ -8,9 +8,12 @@ import json
 from collections.abc import Sequence
 from typing import Annotated, Any
 
+from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES, SEARCH_NAME_BOOST
@@ -161,203 +164,242 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
 
 
 class TolerantSearchTransform(BM25SearchTransform):
-    """Search transform with tolerant tool discovery, call_tool proxy, and tool_info.
+    """Search transform for lazy-loading tool discovery.
 
-    Extends BM25SearchTransform with:
-    - Tolerant argument handling (JSON string parsing)
-    - Compact search results with name, description, tags and annotations
-    - tool_info synthetic tool for retrieving full tool schemas
-    - Enhanced BM25 search with alias expansion and 2-char token support
+    Unlike the base class, this transform does NOT register synthetic tools
+    (search_tools, call_tool, tool_info) — those are normal ``mcp.tool()``
+    registrations in ``register_synthetic_tools()``. The transform only
+    controls which tools appear in ``list_tools()`` output (pinned set) and
+    provides BM25 search over the catalog.
     """
 
     def __init__(self, **kwargs: Any) -> None:
         if "search_result_serializer" not in kwargs:
             kwargs["search_result_serializer"] = _compact_search_serializer
-        self._tool_info_name = kwargs.pop("tool_info_name", "tool_info")
         super().__init__(**kwargs)
         self._searcher = TolerantBM25Search()
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         pinned = [t for t in tools if t.name in self._always_visible]
-        return [*pinned, self._make_search_tool(), self._make_call_tool(), self._make_tool_info_tool()]
-
-    async def get_tool(
-        self, name: str, call_next: Any, *, version: Any = None
-    ) -> Tool | None:
-        if name == self._tool_info_name:
-            return self._make_tool_info_tool()
-        return await super().get_tool(name, call_next, version=version)
+        return [*pinned]
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         return self._searcher.search(tools, query, self._max_results)
 
-    def _make_search_tool(self) -> Tool:
-        transform = self
-        _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Resolve all tools through normal provider lookup.
 
-        async def search_tools(
-            query: Annotated[str, "Natural language query to search for tools"],
-            category: Annotated[str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"] = None,
-            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
-            ctx: Context | None = None,
-        ) -> ToolResult:
-            if ctx is None:
-                msg = "Context is required"
-                _raise_value_error(msg)
-            hidden = await transform._get_visible_tools(ctx)
-            if category is not None:
-                category_lower = category.lower()
-                if category_lower not in _VALID_CATEGORIES:
-                    msg = f"Invalid category '{category}'. Valid categories: {', '.join(_VALID_CATEGORIES)}"
-                    _raise_value_error(msg)
-                hidden = [t for t in hidden if t.tags and category_lower in t.tags]
-            results = await transform._search(hidden, query)
-            rendered = await transform._render_results(results)
-            result = _format_result(ToolResult(structured_content={"result": rendered}), format)
-            if format == "markdown" and result.content and isinstance(result.content[0], TextContent):
-                text = result.content[0].text
-                if query.strip() and rendered:
-                    text += (
-                        "\n\n---\n"
-                        "**Cross-linking hints:**\n"
-                        "- For workflow guides: `search_docs(query)`\n"
-                        "- For data resources: `search_resources(query)`"
-                    )
-                else:
-                    text = (
-                        f"No tools found for '{query}'.\n\n"
-                        "**Cross-linking hints:**\n"
-                        "- For workflow guides: `search_docs(query)`\n"
-                        "- For data resources: `search_resources(query)`"
-                    )
-                result = ToolResult(
-                    content=[TextContent(type="text", text=text)],
-                    structured_content=result.structured_content,
-                    meta=result.meta,
-                )
-            return result
+        No special intercepts — synthetic tools are registered as normal
+        tools on the provider via ``register_synthetic_tools()``.
+        """
+        return await call_next(name, version=version)
 
-        return Tool.from_function(
-            fn=search_tools,
-            name=self._search_tool_name,
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "description": {"type": "string"},
-                                "tags": {"type": "array", "items": {"type": "string"}},
-                                "annotations": {
-                                    "type": "object",
-                                    "properties": {
-                                        "title": {"type": "string"},
-                                        "readOnlyHint": {"type": "boolean"},
-                                        "destructiveHint": {"type": "boolean"},
-                                        "idempotentHint": {"type": "boolean"},
-                                    },
-                                },
-                            },
-                        },
-                        "description": "Matching tool definitions with name, description, tags and annotations",
-                    },
-                },
-            },
-        )
 
-    def _make_call_tool(self) -> Tool:
-        transform = self
+# ── Synthetic tool implementations (exported for testing) ──────────────
 
-        async def call_tool(
-            name: Annotated[str, "The name of the tool to call"],
-            arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
-            ctx: Context | None = None,
-        ) -> ToolResult:
-            if name in {transform._call_tool_name, transform._search_tool_name, transform._tool_info_name}:
-                msg = f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
-                _raise_value_error(msg)
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError as e:
-                    msg = f"Invalid JSON in arguments: {e}"
-                    _raise_value_error_from(msg, e)
-            if arguments is not None and not isinstance(arguments, dict):
-                msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
-                _raise_value_error(msg)
-            if ctx is None:
-                msg = "Context is required"
-                _raise_value_error(msg)
-            result = await ctx.fastmcp.call_tool(name, arguments)
-            output_schema = None
-            if format == "markdown":
-                tool_obj = await ctx.fastmcp.get_tool(name)
-                if tool_obj is not None:
-                    output_schema = tool_obj.output_schema
-            return _format_result(result, format, output_schema)
 
-        return Tool.from_function(
-            fn=call_tool,
-            name=self._call_tool_name,
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "description": "Result of the tool call, wrapped in result for consistency",
-                    },
-                },
-            },
-        )
+async def _call_tool_impl(
+    name: str,
+    arguments: Any,
+    format: str,
+    ctx: Context,
+) -> ToolResult:
+    """Core call_tool implementation."""
+    if name == "call_tool":
+        msg = "'call_tool' cannot call itself — call it directly instead"
+        _raise_value_error(msg)
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError as e:
+            msg = f"Invalid JSON in arguments: {e}"
+            _raise_value_error_from(msg, e)
+    if arguments is not None and not isinstance(arguments, dict):
+        msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
+        _raise_value_error(msg)
+    result = await ctx.fastmcp.call_tool(name, arguments)
+    output_schema = None
+    if format == "markdown":
+        tool_obj = await ctx.fastmcp.get_tool(name)
+        if tool_obj is not None:
+            output_schema = tool_obj.output_schema
+    return _format_result(result, format, output_schema)
 
-    def _make_tool_info_tool(self) -> Tool:
-        transform = self
 
-        async def tool_info(  # noqa: RET503 -- _raise_value_error always raises
-            name: Annotated[str, "The exact name of the tool to inspect"],
-            format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
-            ctx: Context | None = None,
-        ) -> ToolResult:
-            if ctx is None:
-                msg = "Context is required"
-                _raise_value_error(msg)
-            tools = await transform.get_tool_catalog(ctx)
-            for tool in tools:
-                if tool.name == name:
-                    return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
-            msg = f"Tool '{name}' not found"
+_VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
+
+
+async def _search_tools_impl(
+    query: str,
+    category: str | None,
+    format: str,
+    ctx: Context,
+    transform: TolerantSearchTransform,
+) -> ToolResult:
+    """Core search_tools implementation."""
+    hidden = await transform._get_visible_tools(ctx)
+    if category is not None:
+        category_lower = category.lower()
+        if category_lower not in _VALID_CATEGORIES:
+            msg = f"Invalid category '{category}'. Valid categories: {', '.join(_VALID_CATEGORIES)}"
             _raise_value_error(msg)
+        hidden = [t for t in hidden if t.tags and category_lower in t.tags]
+    results = await transform._search(hidden, query)
+    rendered = await transform._render_results(results)
+    result = _format_result(ToolResult(structured_content={"result": rendered}), format)
+    if format == "markdown" and result.content and isinstance(result.content[0], TextContent):
+        text = result.content[0].text
+        if query.strip() and rendered:
+            text += (
+                "\n\n---\n"
+                "**Cross-linking hints:**\n"
+                "- For workflow guides: `search_docs(query)`\n"
+                "- For data resources: `search_resources(query)`"
+            )
+        else:
+            text = (
+                f"No tools found for '{query}'.\n\n"
+                "**Cross-linking hints:**\n"
+                "- For workflow guides: `search_docs(query)`\n"
+                "- For data resources: `search_resources(query)`"
+            )
+        result = ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content=result.structured_content,
+            meta=result.meta,
+        )
+    return result
 
-        return Tool.from_function(
-            fn=tool_info,
-            name=self._tool_info_name,
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
+
+async def _tool_info_impl(
+    name: str,
+    format: str,
+    ctx: Context,
+    transform: TolerantSearchTransform,
+) -> ToolResult:
+    """Core tool_info implementation."""
+    tools = await transform.get_tool_catalog(ctx)
+    for tool in tools:
+        if tool.name == name:
+            return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
+    msg = f"Tool '{name}' not found"
+    raise _raise_value_error(msg)
+
+
+# ── Registration helper ────────────────────────────────────────────────
+
+
+def register_synthetic_tools(
+    mcp: Any,
+    transform: TolerantSearchTransform,
+) -> None:
+    """Register synthetic tools (call_tool, search_tools, tool_info) on the FastMCP server.
+
+    These tools were previously created dynamically inside TolerantSearchTransform.
+    Now they're properly registered via ``mcp.tool()`` so they're findable through
+    ``ctx.fastmcp.call_tool()`` and carry the ``synthetic`` tag for agent awareness.
+    """
+
+    async def search_tools_fn(
+        query: Annotated[str, "Natural language query to search for tools"],
+        category: Annotated[str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"] = None,
+        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        return await _search_tools_impl(query, category, format, ctx, transform)
+
+    mcp.tool(
+        name="search_tools",
+        tags={"synthetic"},
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {
                         "type": "object",
                         "properties": {
                             "name": {"type": "string"},
                             "description": {"type": "string"},
-                            "parameters": {"type": "object"},
-                            "output_example": {"description": "Example return value (may be object, array, etc.)"},
-                            "annotations": {"type": "object"},
-                            "tags": {"type": "array"},
-                            "version": {"type": "string"},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                            "annotations": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "readOnlyHint": {"type": "boolean"},
+                                    "destructiveHint": {"type": "boolean"},
+                                    "idempotentHint": {"type": "boolean"},
+                                },
+                            },
                         },
-                        "description": "Full tool schema",
                     },
+                    "description": "Matching tool definitions with name, description, tags and annotations",
                 },
             },
-        )
+        },
+    )(search_tools_fn)
+
+    async def call_tool_fn(
+        name: Annotated[str, "The name of the tool to call"],
+        arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
+        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        return await _call_tool_impl(name, arguments, format, ctx)
+
+    mcp.tool(
+        name="call_tool",
+        tags={"synthetic"},
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "description": "Result of the tool call, wrapped in result for consistency",
+                },
+            },
+        },
+    )(call_tool_fn)
+
+    async def tool_info_fn(
+        name: Annotated[str, "The exact name of the tool to inspect"],
+        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        return await _tool_info_impl(name, format, ctx, transform)
+
+    mcp.tool(
+        name="tool_info",
+        tags={"synthetic"},
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "parameters": {"type": "object"},
+                        "output_example": {"description": "Example return value (may be object, array, etc.)"},
+                        "annotations": {"type": "object"},
+                        "tags": {"type": "array"},
+                        "version": {"type": "string"},
+                    },
+                    "description": "Full tool schema",
+                },
+            },
+        },
+    )(tool_info_fn)
 
 
 __all__ = [
     "TolerantBM25Search",
     "TolerantSearchTransform",
+    "_call_tool_impl",
     "_compact_search_serializer",
     "_extract_searchable_text_enhanced",
+    "_search_tools_impl",
+    "_tool_info_impl",
+    "register_synthetic_tools",
 ]

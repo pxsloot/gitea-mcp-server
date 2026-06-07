@@ -3,6 +3,8 @@
 import pytest
 import respx
 
+from fastmcp.exceptions import ToolError
+
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig, extract_tool_names
@@ -187,10 +189,6 @@ class TestLazyLoading:
             assert f"{prefix}user_current_list_repos" in repo_names, f"Expected {prefix}user_current_list_repos in {repo_names}"
             assert f"{prefix}repo_list_pull_requests" in repo_names, f"Expected {prefix}repo_list_pull_requests in {repo_names}"
 
-            # Should NOT return synthetic tools
-            assert f"{prefix}search_tools" not in repo_names
-            assert f"{prefix}call_tool" not in repo_names
-
             # Additionally, search for "repos" should find list_user_repos
             search_repos = await mcp.call_tool(f"{prefix}search_tools", {"query": "repos"})
             repos_tools = search_repos.structured_content.get("result", [])
@@ -256,10 +254,6 @@ class TestLazyLoading:
             assert f"{prefix}repo_list_pull_requests" in repo_names, (
                 f"Cache poisoning: expected {prefix}repo_list_pull_requests in {repo_names}"
             )
-
-            # Should NOT return synthetic tools
-            assert f"{prefix}search_tools" not in repo_names
-            assert f"{prefix}call_tool" not in repo_names
 
     @pytest.mark.asyncio
     async def test_search_discovers_pull_request_tools_with_various_queries(self):
@@ -405,3 +399,63 @@ class TestLazyLoading:
             assert f"{prefix}issue_create_issue" in create_names, (
                 f"Query 'create issue' should find {prefix}issue_create_issue, got: {create_names}"
             )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_proxy_dispatches_synthetic_tools(self):
+        """Test that call_tool can dispatch search_tools and tool_info, but blocks self-call."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "operationId": "issueListIssues",
+                        "summary": "List issues in a repository",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            prefix = config.tool_prefix or ""
+
+            # 1. call_tool can dispatch search_tools
+            result = await mcp.call_tool(
+                f"{prefix}call_tool",
+                {"name": f"{prefix}search_tools", "arguments": {"query": "issue"}},
+            )
+            tools = result.structured_content.get("result", [])
+            names = [t["name"] for t in tools if isinstance(t, dict)]
+            assert f"{prefix}issue_list_issues" in names, (
+                f"Expected {prefix}issue_list_issues via call_tool proxy, got: {names}"
+            )
+
+            # 2. call_tool can dispatch tool_info
+            info_result = await mcp.call_tool(
+                f"{prefix}call_tool",
+                {"name": f"{prefix}tool_info", "arguments": {"name": f"{prefix}search_tools"}},
+            )
+            info = info_result.structured_content.get("result", {})
+            assert isinstance(info, dict), f"Expected dict from tool_info, got: {type(info)}"
+            assert info.get("name") == f"{prefix}search_tools"
+
+            # 3. call_tool blocks self-call
+            with pytest.raises(ToolError, match="cannot call itself"):
+                await mcp.call_tool(
+                    f"{prefix}call_tool",
+                    {"name": "call_tool"},
+                )

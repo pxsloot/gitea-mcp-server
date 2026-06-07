@@ -23,10 +23,10 @@ This is the recommended starting point for discovery. Use focused search tools (
 
 ## Calling Tools
 
-There are two kinds of tools:
+All tools can be called via `call_tool`, but **synthetic tools** (discovery helpers) are best called **directly by name** for clarity:
 
-- **Synthetic tools** — `search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`. These are **called directly** by name (not via `call_tool`).
-- **API tools** — prefixed with `gitea_` (e.g., `gitea_user_get_current`). These are **called via `call_tool`**:
+- **Synthetic tools** — `search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `list_resources`, `read_resource`, `read_doc`, `call_tool`. These have a `"synthetic"` tag in search results.
+- **API tools** — prefixed with `gitea_` (e.g., `gitea_user_get_current`).
 
 ```
 search("issue")                                    # synthetic — called directly
@@ -39,6 +39,8 @@ call_tool("gitea_user_get_current")                           # API tool — via
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
+
+You **can** call synthetic tools through `call_tool` (e.g., `call_tool("search_docs", ...)`) but it's redundant — they work either way. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
 
 Tools are lazy-loaded (not in `list_tools()`) but the host can still call them by name.
 
@@ -102,15 +104,18 @@ Inspect annotations via `tool_info("gitea_tool_name")` -- the response includes 
 ## Authentication
 Auth is configured via environment variables at server startup. You cannot change it. Verify identity with `call_tool("gitea_user_get_current")`.
 
+## Tool Naming Convention
+
+- **API tools**: Use snake_case derived from Gitea API operationIds (camelCase → snake_case), prefixed with `gitea_` (e.g., `gitea_issue_create_issue`).
+  - `{domain}_{action}_{resource?}` — `issue_create_issue`, `repo_delete`, `user_get`
+  - `{domain}_list_{resource}` — `user_list_orgs`, `org_list_repos`
+  - `{domain}_search_{resource}` — `repo_search`, `issue_search_issues`
+- **Synthetic tools**: No prefix, always lowercase (e.g., `search`, `search_tools`, `call_tool`, `search_docs`, `read_doc`, `list_resources`, `read_resource`, `search_resources`, `tool_info`). They carry a `"synthetic"` tag in search results.
+
 ## Tool Discovery Tips
 - **Start with broad keywords**: "issue", "repo", "user", "pull", "org", "topic", "release", "admin", "milestone", "label", "comment", "webhook", "key", "branch", "tag", "team", "permission".
 - **If no results**: Simplify the query to one word. Search is case-insensitive and matches on tool name, description, and tags.
-- **Tool naming**: Tools use snake_case, derived from Gitea API operationIds (camelCase → snake_case).
-- **Tool prefix**: All tools are prefixed with `gitea_` (e.g., `gitea_issue_get_issue`).
-- **Common patterns**:
-  - `{domain}_{action}_{resource?}` -- `issue_create_issue`, `repo_delete`, `user_get`
-  - `{domain}_list_{resource}` -- `user_list_orgs`, `org_list_repos`
-  - `{domain}_search_{resource}` -- `repo_search`, `issue_search_issues`
+- **Synthetic tools vs API tools**: Synthetic tools are called directly; API tools are called via `call_tool`. Both appear in `search_tools` results — synthetic tools are tagged with `"synthetic"`.
 - **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
 - **Save a tool name** for reuse: Once you find a tool name, you can use it directly without searching again.
 

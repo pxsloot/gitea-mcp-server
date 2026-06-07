@@ -285,7 +285,7 @@ async def _tool_info_impl(
         if tool.name == name:
             return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
     msg = f"Tool '{name}' not found"
-    raise _raise_value_error(msg)
+    raise ValueError(msg) from None
 
 
 # ── Registration helper ────────────────────────────────────────────────

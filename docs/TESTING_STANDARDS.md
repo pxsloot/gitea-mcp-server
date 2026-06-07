@@ -51,6 +51,7 @@ tests/
 │   ├── test_tool_customize.py
 │   ├── test_tool_errors.py
 │   ├── test_tool_examples.py
+│   ├── test_tool_exclusions.py
 │   ├── test_tool_filter.py
 │   ├── test_tool_labels.py
 │   ├── test_tool_namespace.py
@@ -179,6 +180,7 @@ Write focused dict-in/dict-out tests. Cover:
 For each transform in the pipeline:
 - **customize.py**: Title inference, categorization, description hints
 - **errors.py**: HTTP status → user-friendly error message mapping
+- **exclusions.py**: Pattern matching (exact name, glob, tag: prefix), include overrides exclude, prefix-aware matching for prefixed/unprefixed names, filtering for tools/resources/templates, config file loading (missing, empty, malformed YAML)
 - **labels.py**: String "bug" → integer 1 conversion, guidance text injection
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
 - **cache_invalidation.py**: URI pattern computation for each tool type

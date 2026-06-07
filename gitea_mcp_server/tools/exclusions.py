@@ -1,7 +1,7 @@
 """Exclusion transform — exclude/include tools and resources via config patterns.
 
 Provides:
-- ``ExclusionTransform`` — provider-level ``Transform`` that filters tools,
+- ``ExclusionTransform`` — server-level ``Transform`` that filters tools,
   resources, and resource templates based on exclude/include patterns.
 - ``load_exclusion_config`` — loads exclusion rules from a YAML config file.
 
@@ -18,8 +18,9 @@ import logging
 from collections.abc import Sequence
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import yaml
 from fastmcp.resources import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.transforms import Transform
@@ -40,11 +41,9 @@ def _matches_pattern(
     if _is_tag_pattern(pattern):
         tag_name = pattern[len(_TAG_PREFIX):]
         return tag_name in tags
-    if fnmatch(name, pattern):
-        return True
     if tool_prefix and fnmatch(f"{tool_prefix}{name}", pattern):
         return True
-    return False
+    return fnmatch(name, pattern)
 
 
 def _matches_any(
@@ -70,8 +69,6 @@ def load_exclusion_config(config_path: str | None) -> dict[str, list[str]]:
     if not path.exists():
         logger.info("Exclusion config not found: %s", config_path)
         return {"exclude": [], "include": []}
-
-    import yaml
 
     try:
         with path.open() as f:
@@ -111,11 +108,10 @@ class ExclusionTransform(Transform):
 
     def _is_allowed(self, name: str, tags: set[str] | None = None) -> bool:
         tags = tags or set()
-        if _matches_any(name, tags, self._include, self._tool_prefix):
-            return True
-        if _matches_any(name, tags, self._exclude, self._tool_prefix):
-            return False
-        return True
+        return (
+            _matches_any(name, tags, self._include, self._tool_prefix)
+            or not _matches_any(name, tags, self._exclude, self._tool_prefix)
+        )
 
     # -- tools --------------------------------------------------------------
 
@@ -125,7 +121,7 @@ class ExclusionTransform(Transform):
     async def get_tool(
         self, name: str, call_next: Any, *, version: Any = None
     ) -> Tool | None:
-        tool = await call_next(name, version=version)
+        tool = cast("Tool | None", await call_next(name, version=version))
         if tool is None:
             return None
         if not self._is_allowed(tool.name, tool.tags):
@@ -140,7 +136,7 @@ class ExclusionTransform(Transform):
     async def get_resource(
         self, uri: str, call_next: Any, *, version: Any = None
     ) -> Resource | None:
-        resource = await call_next(uri, version=version)
+        resource = cast("Resource | None", await call_next(uri, version=version))
         if resource is None:
             return None
         if not self._is_allowed(resource.name, resource.tags):
@@ -157,7 +153,7 @@ class ExclusionTransform(Transform):
     async def get_resource_template(
         self, uri: str, call_next: Any, *, version: Any = None
     ) -> ResourceTemplate | None:
-        template = await call_next(uri, version=version)
+        template = cast("ResourceTemplate | None", await call_next(uri, version=version))
         if template is None:
             return None
         if not self._is_allowed(template.name, template.tags):

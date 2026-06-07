@@ -14,7 +14,6 @@ from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.tools.exclusions import ExclusionTransform, load_exclusion_config
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

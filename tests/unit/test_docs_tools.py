@@ -201,6 +201,19 @@ class TestRegisterDocTools:
         register_doc_tools(mcp, self._make_manager())
         assert mcp.tool.call_count == 2
 
+    def test_tools_have_openworld_false(self):
+        """search_docs and read_doc should have openWorldHint=False."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, self._make_manager())
+
+        for call_args in mcp.tool.call_args_list:
+            kwargs = call_args[1]
+            annotations = kwargs.get("annotations")
+            assert annotations is not None, f"{kwargs.get('name', 'unnamed')} missing annotations"
+            assert annotations.openWorldHint is False, f"{kwargs.get('name', 'unnamed')}.openWorldHint should be False"
+
     def test_registers_one_resource(self):
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from fastmcp.exceptions import ResourceError
 from fastmcp.tools.base import ToolResult
+from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
@@ -202,6 +203,7 @@ def register_doc_tools(
 
     @mcp.tool(
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -289,6 +291,7 @@ def register_doc_tools(
 
     @mcp.tool(
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
             "type": "object",
             "properties": {

@@ -47,7 +47,12 @@ removed when FastMCP catches up.
 │       mcp_builder        │  │      resource_setup      │
 │  create_openapi_provider │  │  register_all_resources  │
 │                          │  │                          │
-│  Phase 1: _customize     │  │  • auto_generated:       │
+│  Phase 0: _get_deprecated│  │  • auto_generated:       │
+│  _routes → exclude       │  │    every GET endpoint    │
+│  deprecated endpoints    │  │    → raw JSON resource   │
+│                          │  │                          │
+│  Phase 1: _customize     │  │  • custom wrappers:      │
+│  _metadata (per tool):   │  │    Markdown formatters   │
 │  _metadata (per tool):   │  │    every GET endpoint    │
 │  • title, category       │  │    → raw JSON resource   │
 │  • annotations, hints    │  │                          │
@@ -129,7 +134,7 @@ Agent reads a resource:
 | `client.py` | httpx client with retry, rate-limit handling, SSL | `GiteaClient` |
 | `openapi_converter.py` | Swagger 2.0 → OpenAPI 3.1 | `convert_swagger_to_openapi_v3` |
 | `spec_loader.py` | Fetch spec, convert, apply extensions | `load_and_convert_spec` |
-| `mcp_builder.py` | Create `OpenAPIProvider` from spec + client | `create_openapi_provider` |
+| `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; exclude deprecated endpoints via `route_map_fn` | `create_openapi_provider`, `_get_deprecated_routes` |
 | `server.py` | Assemble everything, serve via stdio or HTTP | `main()`, `create_mcp_server()` |
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
@@ -156,6 +161,7 @@ The customization layers as applied during server startup:
 
 | Layer | Module | What it does |
 |-------|--------|--------------|
+| 0. Deprecated filter | `server_setup/mcp_builder.py` | exclude endpoints with `deprecated: true` via FastMCP `route_map_fn` before component creation |
 | 1. Annotations | `tools/customize.py` | title, category tag, readOnly/destructive/idempotent hints |
 | 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
 | 3. Label support | `tools/labels.py` | string-to-ID label conversion, schema updates |

@@ -19,46 +19,102 @@ removed when FastMCP catches up.
 
 ---
 
-## Pipeline: Swagger 2.0 → FastMCP Tools & Resources
+## Pipeline: Swagger 2.0 → FastMCP Server
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐     ┌────────────┐
-│ Gitea Server │────▶│ spec_loader  │────▶│ openapi_converter│────▶│ mcp_builder│
-│ swagger.v1   │     │ (fetch +     │     │ (Swagger 2→3.1)  │     │ (create    │
-│   .json      │     │  parse)      │     │                  │     │ OpenAPI    │
-└──────────────┘     └──────────────┘     └──────────────────┘     │ Provider)  │
-                                                                    └─────┬──────┘
-                                                                          │
-                                                    ┌─────────────────────┘
-                                                    ▼
-                                          ┌──────────────────┐
-                                          │  FastMCP Server  │
-                                          │  (provider +     │
-                                          │   transforms)    │
-                                          └────────┬─────────┘
-                                                   │
-                          ┌────────────────────────┼────────────────────┐
-                          ▼                        ▼                    ▼
-                  ┌──────────────┐       ┌────────────────┐    ┌──────────────┐
-                   │ tool_annotat │       │  tool_filter   │    │  Exclusion   │
-                   │ or           │       │  (permission-  │    │  Transform   │
-                   │ (annotations,│       │   based hide)  │    │ (config-     │
-                   │  labels,     │       └────────────────┘    │  based       │
-                   │  validation) │                              │  hide/show)  │
-                   └──────┬───────┘                              └──────┬───────┘
-                  └──────┬───────┘
+┌──────────────┐
+│ Gitea Server │
+│ swagger.json │
+└──────┬───────┘
+       │
+       ▼
+┌────────────────────────────────────────────────┐
+│             spec_loader                        │
+│  load_and_convert_spec()                       │
+│  ┌───────────┐   ┌──────────────────────────┐  │
+│  │ fetch +   │──▶│ openapi_converter        │  │
+│  │ parse     │   │  Swagger 2.0 → OpenAPI   │  │
+│  └───────────┘   │  3.1                     │  │
+│                  │  + wrap response schemas │  │
+│                  │  + apply MCP extensions  │  │
+│                  └───────────┬──────────────┘  │
+└──────────────────────────────┼─────────────────┘
+                               │ OpenAPI 3.1 spec
+                    ┌──────────┴──────────┐
+                    │                     │
+                    ▼                     ▼
+┌──────────────────────────┐  ┌──────────────────────────┐
+│       mcp_builder        │  │      resource_setup      │
+│  create_openapi_provider │  │  register_all_resources  │
+│                          │  │                          │
+│  Phase 1: _customize     │  │  • auto_generated:       │
+│  _metadata (per tool):   │  │    every GET endpoint    │
+│  • title, category       │  │    → raw JSON resource   │
+│  • annotations, hints    │  │                          │
+│  • output/label schemas  │  │  • custom wrappers:      │
+│  • invalidation patterns │  │    Markdown formatters   │
+│                          │  │    for common URIs       │
+│  Phase 2: _ToolWrapping  │  │    (override auto)       │
+│  _Transform:             │  │                          │
+│  • validate args         │  │  • mcp resource tools    │
+│  • label string→ID conv  │  │    list/read_resource    │
+│  • error translation     │  └───────────┬──────────────┘
+│  • text result wrapping  │              │
+│  • pagination metadata   │              │
+└─────────────┬────────────┘              │
+              │                           │
+              └──────────┬────────────────┘
+                         │
                          ▼
-                  ┌──────────────┐       ┌─────────────────────┐
-                   │ TolerantSearch│      │ Resource Registry   │
-                   │ Transform     │      │ (auto-generated +   │
-                   │ (lazy loading)│      │  custom overrides)  │
-                   └───────┬───────┘      └─────────────────────┘
-                           │
-                   ┌───────▼───────┐
-                   │ Unified Search│
-                   │ (tools + docs +│
-                   │  resources)   │
-                   └───────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   FastMCP Server                        │
+│                                                         │
+│  Server transforms (applied in order on list_tools):    │
+│    1. TolerantSearchTransform — hides all but 4         │
+│       synthetic tools (search_tools, call_tool,         │
+│       tool_info, unified_search)                        │
+│    2. GiteaNamespace — prefixes tool names with         │
+│       gitea_; resources pass through unchanged          │
+│    3. ExclusionTransform — hides tools/resources        │
+│       matching YAML config patterns                     │
+│                                                         │
+│  Post-transform:                                        │
+│    • Permission filtering  — hide by token scopes       │
+│                                                         │
+│  Middleware:                                            │
+│    • ResponseCaching          — TTL for resources       │
+│    • CacheInvalidationOnWrite — clear on write tools    │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Runtime: Tool Call & Resource Read Flows
+
+```
+Agent calls a tool:
+
+  call_tool("gitea_create_issue", {...})
+    │
+    ├─▶ TolerantSearchTransform (synthetic handler)
+    │     └─▶ ctx.fastmcp.call_tool(name, args)
+    │
+    ├─▶ CacheInvalidationMiddleware
+    │     ├─▶ executes the tool
+    │     └─▶ on success: invalidate cached resources
+    │
+    ├─▶ ExclusionTransform       — reject if excluded
+    ├─▶ GiteaNamespace            — strip gitea_ prefix
+    ├─▶ _ToolWrappingTransform    — validate → convert labels
+    │                                → run → wrap result
+    └─▶ OpenAPITool.run()        — httpx → Gitea API
+                                     → {"result": data}
+
+Agent reads a resource:
+
+  read_resource("gitea://repos/owner/repo")
+    │
+    ├─▶ ResponseCachingMiddleware  — return cached if fresh
+    └─▶ Resource handler           — auto or custom
+         └─▶ format as Markdown → return content
 ```
 
 ---

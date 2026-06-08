@@ -29,7 +29,7 @@ class TestSchemaToExample:
         result = _schema_to_example(schema)
         assert isinstance(result, dict)
         assert result["id"] == 0
-        assert result["name"] == "text"
+        assert result["name"] == "example-name"
         assert result["active"] is True
         assert result["score"] == 0.0
 
@@ -55,7 +55,7 @@ class TestSchemaToExample:
         result = _schema_to_example(schema)
         assert isinstance(result, list)
         assert len(result) == 1
-        assert result[0] == "text"
+        assert result[0] == "example"
 
     def test_string_with_enum(self):
         from gitea_mcp_server.tools.examples import _schema_to_example
@@ -80,13 +80,13 @@ class TestSchemaToExample:
                 {"type": "string"},
             ],
         }
-        assert _schema_to_example(schema) == "text"
+        assert _schema_to_example(schema) == "example"
 
     def test_type_list_skips_null(self):
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": ["null", "string"]}
-        assert _schema_to_example(schema) == "text"
+        assert _schema_to_example(schema) == "example"
 
     def test_depth_limit(self):
         from gitea_mcp_server.tools.examples import _schema_to_example
@@ -149,7 +149,7 @@ class TestSchemaToExample:
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["id"] == 0
-        assert result[0]["label"] == "text"
+        assert result[0]["label"] == "bug"
 
     def test_empty_object(self):
         from gitea_mcp_server.tools.examples import _schema_to_example
@@ -183,7 +183,7 @@ class TestSchemaToExample:
         assert "output_example" in result
         assert "output_schema" not in result
         assert result["output_example"]["id"] == 0
-        assert result["output_example"]["name"] == "text"
+        assert result["output_example"]["name"] == "example-name"
 
     def test_serialize_tool_schema_no_output_schema(self):
         """_serialize_tool_schema should not include output_example when output_schema is None."""
@@ -210,8 +210,8 @@ class TestSchemaToExample:
         assert _example_string({"format": "uri"}) == "https://example.com"
 
     def test_example_string_plain(self):
-        """_example_string without format/enum should return 'text'."""
-        assert _example_string({}) == "text"
+        """_example_string without format/enum/prop_name should return 'example'."""
+        assert _example_string({}) == "example"
 
     def test_schema_to_example_oneOf_skips_null(self):
         """oneOf should work like anyOf, skipping null types."""
@@ -231,7 +231,7 @@ class TestSchemaToExample:
                 {"type": "integer"},
             ],
         }
-        assert _schema_to_example(schema) == "text"
+        assert _schema_to_example(schema) == "example"
 
     def test_type_list_all_null(self):
         """When type is a list and all entries are 'null', schema_type should become 'null'."""

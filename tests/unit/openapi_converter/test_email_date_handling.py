@@ -224,3 +224,74 @@ class TestDateFormatHandling:
                 assert field_schema.get("format") == "date"
             else:
                 assert field_schema.get("format") == "date-time"
+
+
+class TestUuidFormatHandling:
+    """Tests that uuid format fields are nullable but do NOT get empty string anyOf.
+
+    UUID format is similar to date/date-time: Gitea returns null for missing
+    values, not empty strings. Optional uuid fields should get nullable type
+    without anyOf.
+    """
+
+    def test_optional_uuid_field_gets_nullable_type_no_anyof(self):
+        """Optional format:uuid fields should be nullable without anyOf."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "token_id": {"type": "string", "format": "uuid", "description": "A UUID token"}
+            },
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        uuid_schema = schema["properties"]["token_id"]
+        assert "anyOf" not in uuid_schema
+        assert uuid_schema.get("type") == ["string", "null"] or uuid_schema.get("type") == [
+            "null",
+            "string",
+        ]
+        assert uuid_schema.get("format") == "uuid"
+        assert uuid_schema.get("description") == "A UUID token"
+
+    def test_required_uuid_field_stays_simple(self):
+        """Required uuid field remains simple string with format."""
+        schema = {
+            "type": "object",
+            "required": ["token_id"],
+            "properties": {"token_id": {"type": "string", "format": "uuid"}},
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        uuid_schema = schema["properties"]["token_id"]
+        assert "anyOf" not in uuid_schema
+        assert uuid_schema.get("type") == "string"
+        assert uuid_schema.get("format") == "uuid"
+
+    def test_uuid_integration_validates_openapi_3_1(self):
+        """Test that spec with uuid fields converts to valid OpenAPI 3.1."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "definitions": {
+                "Token": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "format": "uuid"},
+                    },
+                }
+            },
+            "paths": {
+                "/tokens/{id}": {
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Token"}}}}
+                }
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+        token_schema = result["components"]["schemas"]["Token"]
+        uuid_field = token_schema["properties"]["id"]
+        assert "anyOf" not in uuid_field
+        assert uuid_field.get("type") == ["string", "null"] or uuid_field.get("type") == [
+            "null",
+            "string",
+        ]
+        assert uuid_field.get("format") == "uuid"

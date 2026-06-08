@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.docs_tools import DocManager  # noqa: TC001 — runtime use via get_type_hints
@@ -158,7 +159,7 @@ def register_unified_search(
             structured_content={"result": results},
         )
 
-    mcp.tool(name="search", tags={"synthetic"}, output_schema={
+    mcp.tool(name="search", tags={"synthetic"}, annotations=ToolAnnotations(openWorldHint=False), output_schema={
         "type": "object",
         "properties": {
             "result": {

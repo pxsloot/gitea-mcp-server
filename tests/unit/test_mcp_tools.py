@@ -317,6 +317,45 @@ class TestRegisterMcpResourceTools:
 
         assert mcp.tool.call_count == 3
 
+    def test_list_resources_has_openworld_false(self):
+        """list_resources should have openWorldHint=False."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+
+        register_mcp_resource_tools(mcp)
+
+        call_kwargs = mcp.tool.call_args_list[0][1]
+        assert call_kwargs.get("name") == "list_resources"
+        annotations = call_kwargs.get("annotations")
+        assert annotations is not None
+        assert annotations.openWorldHint is False
+
+    def test_search_resources_has_openworld_false(self):
+        """search_resources should have openWorldHint=False."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+
+        register_mcp_resource_tools(mcp)
+
+        call_kwargs = mcp.tool.call_args_list[2][1]
+        assert call_kwargs.get("name") == "search_resources"
+        annotations = call_kwargs.get("annotations")
+        assert annotations is not None
+        assert annotations.openWorldHint is False
+
+    def test_read_resource_has_openworld_true(self):
+        """read_resource should have openWorldHint=True (fetches from Gitea API)."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+
+        register_mcp_resource_tools(mcp)
+
+        call_kwargs = mcp.tool.call_args_list[1][1]
+        assert call_kwargs.get("name") == "read_resource"
+        annotations = call_kwargs.get("annotations")
+        assert annotations is not None
+        assert annotations.openWorldHint is True
+
 
 class TestMcpReadResourceTool:
     """Tests for read_resource tool function.

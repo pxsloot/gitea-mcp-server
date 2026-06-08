@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
+from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
@@ -557,17 +558,20 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
     mcp.tool(
         name="list_resources",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
     )(_list_resources_tool)
 
     mcp.tool(
         name="read_resource",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=True),
     )(_read_resource_tool)
 
     mcp.tool(
         name="search_resources",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
     )(_search_resources_tool)
 

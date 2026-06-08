@@ -13,6 +13,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.tool import ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
@@ -313,6 +314,7 @@ def register_synthetic_tools(
     mcp.tool(
         name="search_tools",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -352,6 +354,7 @@ def register_synthetic_tools(
     mcp.tool(
         name="call_tool",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=True),
         output_schema={
             "type": "object",
             "properties": {
@@ -372,6 +375,7 @@ def register_synthetic_tools(
     mcp.tool(
         name="tool_info",
         tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
             "type": "object",
             "properties": {

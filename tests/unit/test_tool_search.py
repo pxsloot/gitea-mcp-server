@@ -15,6 +15,7 @@ from gitea_mcp_server.tools.search import (
     _format_result,
     _search_tools_impl,
     _tool_info_impl,
+    register_synthetic_tools,
     TolerantSearchTransform,
 )
 
@@ -823,3 +824,43 @@ class TestTolerantSearchTransform:
         result = await transform.transform_tools([known_tool])
         # Without always_visible set, no tools should be pinned
         assert list(result) == []
+
+
+class TestSyntheticToolAnnotations:
+    """Tests for openWorldHint annotations on synthetic tools."""
+
+    @pytest.mark.asyncio
+    async def test_local_synthetic_tools_openworld_false(self):
+        """Local synthetic tools should have openWorldHint=False."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+
+        local_tools = ["search_tools", "tool_info"]
+        for name in local_tools:
+            t = tool_map.get(name)
+            assert t is not None, f"{name} not registered"
+            assert t.annotations is not None
+            assert t.annotations.openWorldHint is False, f"{name}.openWorldHint should be False"
+
+    @pytest.mark.asyncio
+    async def test_call_tool_openworld_true(self):
+        """call_tool should have openWorldHint=True (delegates to Gitea API tools)."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+
+        t = tool_map.get("call_tool")
+        assert t is not None, "call_tool not registered"
+        assert t.annotations is not None
+        assert t.annotations.openWorldHint is True

@@ -81,3 +81,27 @@ class TestConvertPaths:
         assert any(p["name"] == "q" for p in op["parameters"])
         # Should have requestBody from the body parameter
         assert "requestBody" in op
+
+    def test_delete_has_no_request_body(self):
+        """DELETE operations should never include requestBody, even with body/formData params."""
+        paths = {
+            "/items/{id}": {
+                "delete": {
+                    "parameters": [
+                        {"name": "id", "in": "path", "type": "integer", "required": True},
+                        {"name": "body", "in": "body", "schema": {"type": "object"}},
+                        {"name": "file", "in": "formData", "type": "string"},
+                    ],
+                    "responses": {"204": {"description": "No Content"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        op = result["/items/{id}"]["delete"]
+        # path params are preserved
+        assert any(p["name"] == "id" for p in op["parameters"])
+        # body and formData params are filtered out (handled by convert_parameters)
+        assert not any(p["name"] == "body" for p in op["parameters"])
+        assert not any(p["name"] == "file" for p in op["parameters"])
+        # No requestBody should be created for DELETE
+        assert "requestBody" not in op

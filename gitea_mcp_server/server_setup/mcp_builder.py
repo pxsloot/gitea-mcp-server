@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
+from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool import ToolResult
@@ -249,6 +249,38 @@ class _ToolWrappingTransform(Transform):
 
 
 # ---------------------------------------------------------------------------
+# Deprecated route filtering
+# ---------------------------------------------------------------------------
+
+_HTTP_METHODS = frozenset({
+    "get", "post", "put", "delete", "patch", "options", "head", "trace",
+})
+
+
+def _get_deprecated_routes(openapi_spec: dict[str, Any]) -> set[tuple[str, str]]:
+    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations."""
+    deprecated: set[tuple[str, str]] = set()
+    paths = openapi_spec.get("paths", {})
+    if not isinstance(paths, dict):
+        return deprecated
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in _HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            if operation.get("deprecated", False):
+                deprecated.add((path, method.upper()))
+    if deprecated:
+        logger.info(
+            "Found %d deprecated operations to exclude",
+            len(deprecated),
+            extra={"deprecated_routes": sorted(deprecated)},
+        )
+    return deprecated
+
+
+# ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
@@ -262,14 +294,26 @@ def create_openapi_provider(
     """Create an ``OpenAPIProvider`` with customised metadata + runtime wrapping.
 
     Uses only public FastMCP APIs:
+    * ``route_map_fn`` -- exclude deprecated endpoints before component creation.
     * ``mcp_component_fn`` -- in-place metadata customisation.
-    * ``provider.add_transform(…)`` — runtime behaviour wrapping.
+    * ``provider.add_transform(…)`` -- runtime behaviour wrapping.
 
     No private ``_tools``, ``_route``, or ``_read_resource_cache`` access.
     """
+    deprecated_routes = _get_deprecated_routes(openapi_spec)
+
+    def _deprecated_route_filter(
+        route: Any, _mcp_type: MCPType
+    ) -> MCPType | None:
+        if (route.path, route.method) in deprecated_routes:
+            logger.debug("Excluding deprecated endpoint: %s %s", route.method, route.path)
+            return MCPType.EXCLUDE
+        return None
+
     provider = OpenAPIProvider(
         openapi_spec=openapi_spec,
         client=client,
+        route_map_fn=_deprecated_route_filter,
         mcp_component_fn=lambda route, component: _customize_metadata(
             route,
             component,

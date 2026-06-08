@@ -10,6 +10,7 @@ from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
+    _get_deprecated_routes,
     _RouteInfo,
     _ToolWrappingTransform,
 )
@@ -216,6 +217,158 @@ class TestRouteInfo:
         info = _RouteInfo(path="/test/path", method="POST")
         assert info.path == "/test/path"
         assert info.method == "POST"
+
+
+# ---------------------------------------------------------------------------
+# _get_deprecated_routes
+# ---------------------------------------------------------------------------
+
+
+class TestGetDeprecatedRoutes:
+    """Tests for _get_deprecated_routes — filtering deprecated operations from OpenAPI spec."""
+
+    def test_empty_paths(self):
+        """Empty paths dict returns empty set."""
+        spec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
+        result = _get_deprecated_routes(spec)
+        assert result == set()
+
+    def test_missing_paths(self):
+        """Spec with no paths key returns empty set."""
+        spec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
+        result = _get_deprecated_routes(spec)
+        assert result == set()
+
+    def test_non_dict_paths(self):
+        """Non-dict paths value returns empty set."""
+        spec = {"openapi": "3.1.1", "paths": "not_a_dict"}
+        result = _get_deprecated_routes(spec)
+        assert result == set()
+
+    def test_no_deprecated_returns_empty(self):
+        """No deprecated:true operations returns empty set."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser"},
+                    "post": {"operationId": "createUser"},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == set()
+
+    def test_single_deprecated_get(self):
+        """Single deprecated GET is found."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser", "deprecated": True},
+                    "post": {"operationId": "createUser"},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == {("/user", "GET")}
+
+    def test_multiple_deprecated_operations(self):
+        """Multiple deprecated methods on same path are found."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {"operationId": "getRepo"},
+                    "put": {"operationId": "updateRepo", "deprecated": True},
+                    "delete": {"operationId": "deleteRepo", "deprecated": True},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == {("/repos/{owner}/{repo}", "PUT"), ("/repos/{owner}/{repo}", "DELETE")}
+
+    def test_multiple_paths_mixed(self):
+        """Deprecated across multiple paths, non-deprecated excluded."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/v1/old": {
+                    "get": {"operationId": "oldGet", "deprecated": True},
+                    "post": {"operationId": "oldPost", "deprecated": True},
+                },
+                "/v2/active": {
+                    "get": {"operationId": "activeGet"},
+                    "post": {"operationId": "activePost"},
+                },
+                "/v2/also_old": {
+                    "patch": {"operationId": "oldPatch", "deprecated": True},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == {
+            ("/v1/old", "GET"),
+            ("/v1/old", "POST"),
+            ("/v2/also_old", "PATCH"),
+        }
+
+    def test_deprecated_false_not_included(self):
+        """deprecated: false is treated as not deprecated."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser", "deprecated": False},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == set()
+
+    def test_non_http_method_keys_ignored(self):
+        """Parameters key at path level is not treated as an operation."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "parameters": [{"name": "owner", "in": "path"}],
+                    "get": {"operationId": "getRepo", "deprecated": True},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == {("/repos/{owner}/{repo}", "GET")}
+
+    def test_non_dict_path_item_skipped(self):
+        """Non-dict path item is skipped defensively."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/broken": "not_a_dict",
+                "/good": {
+                    "get": {"operationId": "goodGet", "deprecated": True},
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        assert result == {("/good", "GET")}
+
+    def test_http_methods_comprehensive(self):
+        """All HTTP methods are properly detected."""
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/resource": {
+                    method: {"operationId": f"{method}Resource", "deprecated": True}
+                    for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")
+                },
+            },
+        }
+        result = _get_deprecated_routes(spec)
+        expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
+        assert result == expected
+        assert len(result) == 8
 
 
 # ---------------------------------------------------------------------------

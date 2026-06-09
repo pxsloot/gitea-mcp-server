@@ -321,7 +321,7 @@ def print_report(results: dict) -> None:
         if len(pc["missing_in_our"]) > 10:
             print(f"    ... and {len(pc['missing_in_our']) - 10} more")
     if pc["extra_in_our"]:
-        print(f"  ℹ Extra in our output: {len(pc['extra_in_our'])}")
+        print(f"  (+) Extra in our output: {len(pc['extra_in_our'])}")
         for p in pc["extra_in_our"][:10]:
             print(f"    + {p}")
         if len(pc["extra_in_our"]) > 10:

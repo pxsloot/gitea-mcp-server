@@ -275,6 +275,48 @@ class TestSyntheticToolMetadata:
             )
 
 
+class TestCustomResources:
+    """Integration tests for custom resource reading."""
+
+    @pytest.mark.asyncio
+    async def test_read_server_info(self):
+        """Regression test: reading gitea://server/info should succeed.
+
+        The get_server_info() function takes no parameters (it closes over
+        openapi_spec from the outer scope). This should be registered and
+        readable without crashes.
+        """
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea Test API", "version": "9.9.9"},
+            "basePath": "/api/v1",
+            "paths": {},
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            from fastmcp.server.context import Context
+
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://server/info")
+            assert len(result.contents) > 0
+            text = result.contents[0].content
+            assert "Server Information" in text
+            assert "Gitea Test API" in text
+            assert "9.9.9" in text
+
+
 class TestToolFiltering:
     """Tests for tool permission filtering."""
 

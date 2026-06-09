@@ -1315,55 +1315,81 @@ class TestGetOrg:
         assert result == "raw"
 
 
-class TestMakeResource:
-    """Tests for the make_resource wrapper function."""
+class TestInjectGiteaClientDepends:
+    """Tests for _inject_gitea_client_depends helper."""
 
-    def test_rejects_var_positional_parameter(self):
-        async def bad_func(*args, gitea_client):
-            return "test"
+    def test_returns_unchanged_when_no_gitea_client(self):
+        """Function without gitea_client param should be returned unchanged."""
+        async def no_client_func() -> str:
+            return "no client"
 
-        with pytest.raises(ValueError, match="does not support.*\\*args"):
-            from gitea_mcp_server.resources.custom import make_resource
-            make_resource(bad_func, AsyncMock())
+        from gitea_mcp_server.resources.custom import _inject_gitea_client_depends
 
-    def test_rejects_positional_only_parameter(self):
-        async def bad_func(a, /, gitea_client):
-            return "test"
+        result = _inject_gitea_client_depends(no_client_func, AsyncMock())
+        assert result is no_client_func  # same object, no wrapper
 
-        with pytest.raises(ValueError, match="does not support positional-only"):
-            from gitea_mcp_server.resources.custom import make_resource
-            make_resource(bad_func, AsyncMock())
+    def test_injects_depends_for_gitea_client_param(self):
+        """Function with gitea_client param should get Depends() as default."""
+        async def with_client(owner: str, gitea_client):
+            return f"{owner}"
 
-    def test_wraps_function_with_params(self):
-        async def good_func(owner: str, repo: str, gitea_client):
+        from gitea_mcp_server.resources.custom import _inject_gitea_client_depends
+
+        result = _inject_gitea_client_depends(with_client, AsyncMock())
+        sig = inspect.signature(result)
+        assert "owner" in sig.parameters
+        assert "gitea_client" in sig.parameters
+        default = sig.parameters["gitea_client"].default
+        # Default should be a Depends dependency object — not None, not the mock
+        assert default is not None
+        assert not isinstance(default, AsyncMock)
+        # Duck-type: Depends objects have a factory attribute and are
+        # not plain callables — they're uncalled_for Dependency instances
+        assert hasattr(default, "factory")
+        assert hasattr(default, "cache")
+        assert hasattr(default, "single")
+
+    def test_preserves_other_parameters(self):
+        """Non-gitea_client parameters should be unchanged."""
+        async def complex_func(owner: str, repo: str, gitea_client, state: str | None = None):
             return f"{owner}/{repo}"
 
-        from gitea_mcp_server.resources.custom import make_resource
-        wrapped = make_resource(good_func, AsyncMock())
-        sig = inspect.signature(wrapped)
-        assert "owner" in sig.parameters
-        assert "repo" in sig.parameters
-        assert "gitea_client" not in sig.parameters
+        from gitea_mcp_server.resources.custom import _inject_gitea_client_depends
 
-    def test_wraps_no_params_function(self):
-        async def no_param_func(gitea_client):
-            return "result"
+        result = _inject_gitea_client_depends(complex_func, AsyncMock())
+        sig = inspect.signature(result)
+        assert list(sig.parameters.keys()) == ["owner", "repo", "gitea_client", "state"]
+        assert sig.parameters["state"].default is None  # preserved
 
-        from gitea_mcp_server.resources.custom import make_resource
-        wrapped = make_resource(no_param_func, AsyncMock())
-        sig = inspect.signature(wrapped)
-        assert len(sig.parameters) == 0
-
-    async def test_wrapper_injects_gitea_client(self):
+    async def test_direct_call_with_explicit_client_still_works(self):
+        """Direct calls with gitea_client=client should override Depends()."""
         mock_client = AsyncMock()
 
         async def needs_client(gitea_client):
-            return f"ok"
+            return "ok"
 
-        from gitea_mcp_server.resources.custom import make_resource
-        wrapped = make_resource(needs_client, mock_client)
-        result = await wrapped()
+        from gitea_mcp_server.resources.custom import _inject_gitea_client_depends
+
+        wrapped = _inject_gitea_client_depends(needs_client, mock_client)
+        result = await wrapped(gitea_client=mock_client)
         assert result == "ok"
+
+    async def test_no_params_function_unchanged(self):
+        """Regression test: function with zero parameters should work.
+
+        get_server_info() takes no parameters and closes over openapi_spec.
+        _inject_gitea_client_depends must return it unchanged.
+        """
+        mock_client = AsyncMock()
+
+        async def no_params_func():
+            return "no client needed"
+
+        from gitea_mcp_server.resources.custom import _inject_gitea_client_depends
+
+        wrapped = _inject_gitea_client_depends(no_params_func, mock_client)
+        result = await wrapped()
+        assert result == "no client needed"
 
 
 class TestFormatterGaps:

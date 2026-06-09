@@ -13,6 +13,7 @@ from functools import wraps
 from typing import Any, cast
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.client import GiteaClient
@@ -262,46 +263,33 @@ async def get_org(orgname: str, gitea_client: GiteaClient) -> ResourceResult:
     return _format_user_markdown(org)
 
 
-def make_resource(
+def _inject_gitea_client_depends(
     func: Callable[..., Awaitable[str]],
     gitea_client: GiteaClient,
 ) -> Callable[..., Awaitable[str]]:
-    """Wrap a resource function to inject gitea_client.
+    """Replace ``gitea_client`` parameter with FastMCP ``Depends()``.
 
-    Strips the ``gitea_client`` parameter from the function's signature
-    and returns a wrapper that injects it at call time.
+    FastMCP's ``Depends()`` marks a parameter as a runtime dependency: it is
+    excluded from the MCP schema and auto-injected at call time.  This is the
+    FastMCP-native equivalent of the old ``make_resource`` wrapper.
+
+    Functions that lack a ``gitea_client`` parameter are returned unchanged —
+    they don't need the client and should not advertise the dependency.
     """
     sig = inspect.signature(func)
+    if "gitea_client" not in sig.parameters:
+        return func
+
+    def _get_client() -> GiteaClient:
+        return gitea_client
+
     params: list[inspect.Parameter] = []
+    for p in sig.parameters.values():
+        updated = p.replace(default=Depends(_get_client)) if p.name == "gitea_client" else p
+        params.append(updated)
 
-    for param in sig.parameters.values():
-        if param.name == "gitea_client":
-            continue
-        if param.kind in (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.VAR_POSITIONAL,
-        ):
-            msg = f"Resource function {func.__name__} does not support positional-only or *args parameters"
-            raise ValueError(msg)
-        params.append(param)
-
-    if params:
-        wrapper_sig = inspect.Signature(params, return_annotation=str)
-
-        @wraps(func)
-        async def wrapper_with_params(**kwargs: Any) -> str:
-            kwargs["gitea_client"] = gitea_client
-            return await func(**kwargs)
-
-        wrapper_with_params.__signature__ = wrapper_sig  # type: ignore[attr-defined]
-        return wrapper_with_params
-
-    @wraps(func)
-    async def wrapper_no_params() -> str:
-        return await func(gitea_client=gitea_client)
-
-    wrapper_no_params.__signature__ = inspect.Signature(return_annotation=str)  # type: ignore[attr-defined]
-    return wrapper_no_params
+    func.__signature__ = sig.replace(parameters=params)  # type: ignore[attr-defined]
+    return func
 
 
 def register_custom_resources(
@@ -435,7 +423,7 @@ def register_custom_resources(
         kwargs: dict[str, Any] = {"mime_type": mime_type, "tags": tags}
         if meta is not None:
             kwargs["meta"] = meta
-        wrapped_func = make_resource(func, gitea_client)
+        wrapped_func = _inject_gitea_client_depends(func, gitea_client)
         mcp.resource(uri_template, **kwargs)(wrapped_func)
         registry.record(
             uri=uri_template,
@@ -447,6 +435,7 @@ def register_custom_resources(
 
 
 __all__ = [
+    "_inject_gitea_client_depends",
     "get_active_token_scopes",
     "get_current_user",
     "get_file",
@@ -458,7 +447,6 @@ __all__ = [
     "list_repo_issues",
     "list_repo_pulls",
     "list_repo_releases",
-    "make_resource",
     "register_custom_resources",
     "resource_handler",
 ]

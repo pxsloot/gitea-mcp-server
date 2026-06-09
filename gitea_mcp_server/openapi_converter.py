@@ -268,14 +268,19 @@ class SecuritySchemeConverter:
 
             sec_type = details.get("type", "apiKey").lower()
 
+            scheme: dict[str, Any] = {}
+            if "description" in details:
+                scheme["description"] = details["description"]
+
             if sec_type == "basic":
-                scheme: dict[str, Any] = {"type": "http", "scheme": "basic"}
+                scheme["type"] = "http"
+                scheme["scheme"] = "basic"
             elif sec_type == "oauth2":
-                scheme = {"type": "oauth2"}
+                scheme["type"] = "oauth2"
                 if "flow" in details:
                     scheme["flows"] = self._convert_flow(details)
             else:
-                scheme = {"type": details.get("type", "apiKey")}
+                scheme["type"] = details.get("type", "apiKey")
                 if "name" in details:
                     scheme["name"] = details["name"]
                 if "in" in details:

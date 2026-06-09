@@ -20,7 +20,7 @@ from gitea_mcp_server.exceptions import ValidationError
 OWNER_REPO_PATTERN = r"^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$"
 
 # Filepath: relative path, must start and end with alphanumeric; allow slashes and other safe characters
-FILEPATH_PATTERN = r"^[a-zA-Z0-9](?:[a-zA-Z0-9_./ -]*[a-zA-Z0-9])?$"
+FILEPATH_PATTERN = r"^[a-zA-Z0-9.](?:[a-zA-Z0-9_./ -]*[a-zA-Z0-9.])?$"
 
 # Git reference: similar to owner/repo but with additional git-specific characters (~,^,@)
 REF_PATTERN = r"^[a-zA-Z0-9](?:[a-zA-Z0-9_./~^@-]*[a-zA-Z0-9])?$"

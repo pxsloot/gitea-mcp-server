@@ -354,7 +354,7 @@ def register_custom_resources(
             make_resource_meta("read:repository"),
         ),
         (
-            "gitea://repos/{owner}/{repo}/files/{path}",
+            "gitea://repos/{owner}/{repo}/files/{path*}",
             get_file,
             "text/plain",
             {"wrapper", "files"},

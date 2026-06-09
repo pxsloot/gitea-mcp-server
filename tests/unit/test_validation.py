@@ -111,8 +111,6 @@ class TestFilepathPattern:
         [
             "/absolute/path",
             "/etc/passwd",
-            "..",
-            "../parent",
             "name|with*special",
             "name?with:question colon",
             "name\\with/slash",  # backslash not allowed
@@ -299,6 +297,8 @@ class TestValidateFilepath:
     @pytest.mark.parametrize(
         "value",
         [
+            "..",
+            "../parent",
             "../escape",
             "sub/../../etc",
             "../../parent",

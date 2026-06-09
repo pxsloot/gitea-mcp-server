@@ -160,6 +160,67 @@ class TestServerIntegration:
                 assert hasattr(tool, "inputSchema") or hasattr(tool, "output_schema")
 
 
+class TestSyntheticToolMetadata:
+    """Integration tests for synthetic tool metadata (descriptions, etc.)."""
+
+    def _synthetic_base_names(self):
+        return [
+            "search",
+            "search_tools",
+            "call_tool",
+            "tool_info",
+            "list_resources",
+            "read_resource",
+            "search_resources",
+            "search_docs",
+            "read_doc",
+        ]
+
+    def _expected_synthetic_names(self, prefix: str) -> list[str]:
+        """Build expected synthetic tool names with the given prefix."""
+        return [f"{prefix}{base}" if prefix else base for base in self._synthetic_base_names()]
+
+    @pytest.mark.asyncio
+    async def test_synthetic_tools_have_descriptions(self):
+        """All synthetic tools must have non-empty descriptions."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                json={
+                    "swagger": "2.0",
+                    "info": {"title": "Gitea API", "version": "1.0"},
+                    "paths": {},
+                    "definitions": {},
+                },
+            )
+            mcp = await create_mcp_server(gitea_client)
+            tools = await mcp.list_tools()
+            tool_map = {t.name: t for t in tools}
+
+            expected = self._expected_synthetic_names(config.tool_prefix or "")
+            missing = []
+            for name in expected:
+                t = tool_map.get(name)
+                if t is None:
+                    missing.append(f"{name} (not registered)")
+                elif not t.description or not t.description.strip():
+                    missing.append(f"{name} (empty description: {t.description!r})")
+
+            assert not missing, (
+                f"{len(missing)} synthetic tool(s) with missing or empty descriptions:\n  "
+                + "\n  ".join(missing)
+            )
+
+
 class TestToolFiltering:
     """Tests for tool permission filtering."""
 

@@ -313,6 +313,7 @@ def register_synthetic_tools(
 
     mcp.tool(
         name="search_tools",
+        description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
         tags={"synthetic"},
         annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
@@ -353,6 +354,7 @@ def register_synthetic_tools(
 
     mcp.tool(
         name="call_tool",
+        description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
         tags={"synthetic"},
         annotations=ToolAnnotations(openWorldHint=True),
         output_schema={
@@ -374,6 +376,7 @@ def register_synthetic_tools(
 
     mcp.tool(
         name="tool_info",
+        description="Get the full schema for a registered tool by exact name. Returns parameter details, output example, annotations, and tags. Use after search_tools to inspect a specific tool before calling it.",
         tags={"synthetic"},
         annotations=ToolAnnotations(openWorldHint=False),
         output_schema={

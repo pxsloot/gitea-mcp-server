@@ -159,7 +159,12 @@ def register_unified_search(
             structured_content={"result": results},
         )
 
-    mcp.tool(name="search", tags={"synthetic"}, annotations=ToolAnnotations(openWorldHint=False), output_schema={
+    mcp.tool(
+        name="search",
+        description="Unified search across tools, workflow docs, and data resources. Returns merged BM25-ranked results with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
+        tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
+        output_schema={
         "type": "object",
         "properties": {
             "result": {

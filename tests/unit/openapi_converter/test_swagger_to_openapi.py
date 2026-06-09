@@ -733,6 +733,43 @@ class TestSecuritySchemeConverter:
         result = self._converter().convert(sec_defs)
         assert result == {}
 
+    def test_description_preserved(self):
+        """Description field in security definitions should be preserved."""
+        sec_defs = {
+            "token": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header",
+                "description": "API tokens must be prepended with 'token' followed by a space.",
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["token"]["description"] == "API tokens must be prepended with 'token' followed by a space."
+
+    def test_description_preserved_for_basic_auth(self):
+        """Description should be preserved for basic auth type."""
+        sec_defs = {
+            "basic": {
+                "type": "basic",
+                "description": "Basic HTTP authentication",
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["basic"]["description"] == "Basic HTTP authentication"
+
+    def test_description_preserved_for_oauth2(self):
+        """Description should be preserved for OAuth2 type."""
+        sec_defs = {
+            "oauth": {
+                "type": "oauth2",
+                "flow": "implicit",
+                "authorizationUrl": "https://example.com/auth",
+                "description": "OAuth2 implicit flow",
+            }
+        }
+        result = self._converter().convert(sec_defs)
+        assert result["oauth"]["description"] == "OAuth2 implicit flow"
+
 
 class TestBasePathToServerConverter:
     """Tests for BasePathToServerConverter."""

@@ -341,7 +341,7 @@ def print_report(results: dict) -> None:
         for d in dc["missing_in_our"][:10]:
             print(f"    - {d}")
     if dc["extra_in_our"]:
-        print(f"  ℹ Extra in our: {len(dc['extra_in_our'])}")
+        print(f"  (+) Extra in our: {len(dc['extra_in_our'])}")
         for d in dc["extra_in_our"][:10]:
             print(f"    + {d}")
 

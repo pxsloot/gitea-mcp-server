@@ -436,7 +436,7 @@ class TestRegisterCustomResources:
             "gitea://repos/{owner}/{repo}/readme",
             "gitea://repos/{owner}/{repo}/issues{?state}",
             "gitea://repos/{owner}/{repo}/pulls{?state}",
-            "gitea://repos/{owner}/{repo}/files/{path}",
+            "gitea://repos/{owner}/{repo}/files/{path*}",
             "gitea://repos/{owner}/{repo}/releases",
             "gitea://users/{username}",
             "gitea://user",

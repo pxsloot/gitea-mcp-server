@@ -102,8 +102,8 @@ class TestLoadAndConvertSpec:
                 lambda spec, ext: None,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_conversion_error_raises_spec_error(self, gitea_client, test_config, spec_url, valid_spec, monkeypatch):
@@ -143,8 +143,8 @@ class TestLoadAndConvertSpec:
                 failing_apply,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_spec_error_from_load_passthrough(self, gitea_client, test_config, spec_url):
@@ -167,8 +167,8 @@ class TestLoadAndConvertSpec:
                 lambda: None,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_http_error_during_load_propagates(self, gitea_client, test_config, spec_url):

@@ -181,6 +181,60 @@ class TestSyntheticToolMetadata:
         return [f"{prefix}{base}" if prefix else base for base in self._synthetic_base_names()]
 
     @pytest.mark.asyncio
+    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch):
+        """ExtensionMetadataTransform should apply YAML description overrides to tools."""
+        monkeypatch.setattr(
+            "gitea_mcp_server.server_setup.spec_loader.load_mcp_extensions",
+            lambda: {"tool_names": {"search": {"description": "CUSTOM SEARCH DESCRIPTION"}}},
+        )
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "basePath": "/api/v1",
+            "paths": {
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "operationId": "get_repo_issues",
+                        "summary": "List repository issues",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+            tools = await mcp.list_tools()
+            tool_map = {t.name: t for t in tools}
+
+            search_tool = tool_map.get("gitea_search")
+            assert search_tool is not None, "gitea_search should be registered"
+            assert search_tool.description == "CUSTOM SEARCH DESCRIPTION", (
+                f"Expected YAML override, got {search_tool.description!r}"
+            )
+
+            from fastmcp.server.context import Context
+
+            ctx = Context(fastmcp=mcp)
+            retrieved = await ctx.fastmcp.get_tool("gitea_search")
+            assert retrieved is not None
+            assert retrieved.description == "CUSTOM SEARCH DESCRIPTION", (
+                f"get_tool should also show YAML override, got {retrieved.description!r}"
+            )
+
+    @pytest.mark.asyncio
     async def test_synthetic_tools_have_descriptions(self):
         """All synthetic tools must have non-empty descriptions."""
         config = SimpleConfig(

@@ -159,8 +159,45 @@ class TestComputeUrisToInvalidate:
         # Should return empty because patterns can't be substituted
         assert uris == []
 
+    def test_unknown_pattern_logs_warning(self, caplog):
+        """Unknown pattern name logs a warning."""
+        import logging
+        caplog.set_level(logging.WARNING)
 
-class TestCacheInvalidationMiddleware:
+        register_tool_invalidation("some_tool", ["unknown_pattern"])
+        arguments = {"owner": "org", "repo": "repo"}
+        uris = compute_uris_to_invalidate("some_tool", arguments)
+        assert uris == []
+        assert "Unknown resource pattern" in caplog.text
+        assert "unknown_pattern" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_empty_uris_list_noop(self):
+        """invalidate_cached_resources with empty list returns immediately."""
+        from unittest.mock import MagicMock
+
+        mock_caching = MagicMock()
+        result = await invalidate_cached_resources(mock_caching, [], "test_tool")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cache_delete_key_error_logged(self, caplog):
+        """KeyError during cache delete is caught and logged."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()  # exists
+        mock_cache.delete.side_effect = KeyError("cache key not found")
+
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        uris = compute_uris_to_invalidate("issue_edit_issue", {"owner": "org", "repo": "repo", "index": 1})
+
+        await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
+        assert "Failed to invalidate cache" in caplog.text
     """Tests for CacheInvalidationMiddleware."""
 
     @pytest.mark.asyncio

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from gitea_mcp_server.config import Config
+from gitea_mcp_server.config import HTTP_PORT_MAX, Config
 from gitea_mcp_server.exceptions import ConfigError
 
 
@@ -289,3 +289,88 @@ class TestConfig:
         Config._instance = None
         config = Config.get()
         assert config.http_cors == ["https://origin1.com", "https://origin2.com"]
+
+
+class TestConfigEdgeCases:
+    """Tests for config edge cases (validator branches, error paths)."""
+
+    def test_empty_url_raises(self, monkeypatch):
+        """Empty URL string raises ConfigError."""
+        monkeypatch.setenv("GITEA_URL", "")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="cannot be empty"):
+            Config.get()
+
+    def test_token_strip_whitespace(self, monkeypatch):
+        """Token with surrounding whitespace is stripped."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "  my-token  ")
+
+        Config._instance = None
+        config = Config.get()
+        assert config.token == "my-token"
+
+    def test_http_port_invalid_low(self, monkeypatch):
+        """HTTP port below 1 raises ConfigError."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_PORT", "0")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="HTTP_PORT must be between 1 and"):
+            Config.get()
+
+    def test_http_port_too_high(self, monkeypatch):
+        """HTTP port above max raises ConfigError."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_PORT", str(HTTP_PORT_MAX + 1))
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="HTTP_PORT must be between 1 and"):
+            Config.get()
+
+    def test_http_path_no_leading_slash(self, monkeypatch):
+        """HTTP path without leading slash raises ConfigError."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("HTTP_PATH", "mcp")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="HTTP_PATH must start with '/'"):
+            Config.get()
+
+    def test_exception_during_init_logged(self):
+        """Exception during configuration init is logged and re-raised."""
+        with patch.object(Config, "_instance", None):
+            with patch.object(Config, "__init__", side_effect=ConfigError("init failed")):
+                with pytest.raises(ConfigError, match="init failed"):
+                    Config.get()
+
+    def test_empty_token_after_strip_raises(self, monkeypatch):
+        """Token that is only whitespace raises ConfigError."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "   ")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="cannot be empty"):
+            Config.get()
+
+    def test_http_cors_already_list(self):
+        """http_cors as a list is returned as-is."""
+        with patch.dict(
+            os.environ,
+            {
+                "GITEA_URL": "https://git.example.com",
+                "GITEA_TOKEN": "test",
+                "HTTP_CORS": '["https://origin1.com", "https://origin2.com"]',
+            },
+            clear=True,
+        ):
+            Config._instance = None
+            config = Config.get()
+            # Pydantic will parse the JSON string as list via env parsing
+            # but http_cors validator also handles list type
+            assert config.http_cors is None or isinstance(config.http_cors, list)

@@ -581,3 +581,288 @@ class TestFilterResourcesByPermissions:
         await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
 
         assert "visibility" not in repo_res.meta.get("fastmcp", {}).get("_internal", {})
+
+
+class TestValidateUserData:
+    """Tests for _validate_user_data edge cases."""
+
+    def test_non_dict_raises_type_error(self):
+        """Non-dict user data raises TypeError."""
+        from gitea_mcp_server.tool_filter import _validate_user_data
+
+        with pytest.raises(TypeError, match="Unexpected user data type"):
+            _validate_user_data("not a dict")
+
+
+class TestCollectProviderToolsEdgeCases:
+    """Tests for _collect_provider_tools and _collect_provider_resources edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_provider_list_tools_exception_skipped(self):
+        """Exception in provider.list_tools() is handled gracefully."""
+        from unittest.mock import MagicMock, AsyncMock
+
+        from gitea_mcp_server.tool_filter import _collect_provider_tools
+
+        mcp = MagicMock()
+        provider = AsyncMock()
+        provider.list_tools = AsyncMock(side_effect=AttributeError("missing method"))
+        mcp.providers = [provider]
+
+        result = await _collect_provider_tools(mcp)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_provider_list_resources_exception_skipped(self):
+        """Exception in provider.list_resources() is handled gracefully."""
+        from unittest.mock import MagicMock, AsyncMock
+
+        from gitea_mcp_server.tool_filter import _collect_provider_resources
+
+        mcp = MagicMock()
+        provider = AsyncMock()
+        provider.list_resources = AsyncMock(side_effect=AttributeError("missing method"))
+        provider.list_resource_templates = AsyncMock(return_value=[])
+        mcp.providers = [provider]
+
+        result = await _collect_provider_resources(mcp)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_provider_list_templates_exception_skipped(self):
+        """Exception in provider.list_resource_templates() is handled gracefully."""
+        from unittest.mock import MagicMock, AsyncMock
+
+        from gitea_mcp_server.tool_filter import _collect_provider_resources
+
+        mcp = MagicMock()
+        provider = AsyncMock()
+        provider.list_resources = AsyncMock(return_value=[])
+        provider.list_resource_templates = AsyncMock(side_effect=AttributeError("missing method"))
+        mcp.providers = [provider]
+
+        result = await _collect_provider_resources(mcp)
+        assert result == []
+
+
+class TestFetchUserAndTokensEdgeCases:
+    """Tests for _fetch_user_and_tokens edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_user_fetch_exception_returns_none(self):
+        """Exception fetching user returns None."""
+        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(side_effect=Exception("API error"))
+
+        result = await _fetch_user_and_tokens(mock_client, "test-token")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_tokens_not_a_list_returns_none(self):
+        """Tokens response that is not a list returns None."""
+        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                "not_a_list",
+            ]
+        )
+
+        result = await _fetch_user_and_tokens(mock_client, "test-token")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_token_match_none_returns_none(self):
+        """No matching token returns None."""
+        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
+
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["sudo"]}],
+            ]
+        )
+
+        result = await _fetch_user_and_tokens(mock_client, "no-match-token")
+        assert result is None
+
+
+class TestFilterToolsByPermissionsEdgeCases:
+    """Tests for edge cases in filter_tools_by_permissions."""
+
+    @pytest.mark.asyncio
+    async def test_non_dict_user_data_logged(self):
+        """Non-dict user data is handled gracefully."""
+        mock_mcp = MagicMock()
+        mock_mcp.providers = []
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(return_value="not a dict")
+
+        from gitea_mcp_server.tool_filter import filter_tools_by_permissions
+
+        await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_provider_list_tools_exception_logged(self):
+        """Exception from provider.list_tools is caught by filter_tools_by_permissions."""
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
+            ]
+        )
+
+        mock_mcp = MagicMock()
+        bad_provider = AsyncMock()
+        bad_provider.list_tools = AsyncMock(side_effect=TypeError("unexpected"))
+        mock_mcp.providers = [bad_provider]
+
+        from gitea_mcp_server.tool_filter import filter_tools_by_permissions
+
+        await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_provider_list_resources_exception_logged(self):
+        """Exception from provider.list_resources is caught."""
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
+            ]
+        )
+
+        mock_mcp = MagicMock()
+        bad_provider = AsyncMock()
+        bad_provider.list_resources = AsyncMock(side_effect=TypeError("unexpected"))
+        bad_provider.list_resource_templates = AsyncMock(return_value=[])
+        mock_mcp.providers = [bad_provider]
+
+        from gitea_mcp_server.tool_filter import filter_resources_by_permissions
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_set_visibility_exception_in_filter_tools(self):
+        """Exception in _set_visibility during filter_tools_by_permissions is caught."""
+        from unittest.mock import patch
+
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:admin"]}],
+            ]
+        )
+
+        mock_mcp = MagicMock()
+        tool_with_scope = MagicMock()
+        tool_with_scope.name = "admin_tool"
+        tool_with_scope.key = "admin_tool"
+        # Mock the required scope to be one we don't have (e.g., "sudo")
+        provider = AsyncMock()
+        provider.list_tools = AsyncMock(return_value=[tool_with_scope])
+        mock_mcp.providers = [provider]
+
+        with patch(
+            "gitea_mcp_server.tool_filter._get_required_scope",
+            return_value="sudo",
+        ):
+            with patch(
+                "gitea_mcp_server.tool_filter._set_visibility",
+                side_effect=TypeError("meta is read-only"),
+            ):
+                from gitea_mcp_server.tool_filter import filter_tools_by_permissions
+                await filter_tools_by_permissions(mock_mcp, mock_gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_set_visibility_exception_in_filter_resources(self):
+        """Exception in _set_visibility during filter_resources_by_permissions is caught."""
+        from unittest.mock import patch
+
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
+            ]
+        )
+
+        mock_mcp = MagicMock()
+        resource_component = MagicMock()
+        resource_component.name = "admin_resource"
+        provider = AsyncMock()
+        provider.list_resources = AsyncMock(return_value=[resource_component])
+        provider.list_resource_templates = AsyncMock(return_value=[])
+        mock_mcp.providers = [provider]
+
+        with patch(
+            "gitea_mcp_server.tool_filter._get_required_scope",
+            return_value="sudo",
+        ):
+            with patch(
+                "gitea_mcp_server.tool_filter._set_visibility",
+                side_effect=TypeError("meta is read-only"),
+            ):
+                from gitea_mcp_server.tool_filter import filter_resources_by_permissions
+                await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_provider_list_templates_exception_logged(self):
+        """Exception from provider.list_resource_templates is caught."""
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.config.token = "test-token"
+        mock_gitea_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
+            ]
+        )
+
+        mock_mcp = MagicMock()
+        bad_provider = AsyncMock()
+        bad_provider.list_resources = AsyncMock(return_value=[])
+        bad_provider.list_resource_templates = AsyncMock(side_effect=TypeError("unexpected"))
+        mock_mcp.providers = [bad_provider]
+
+        from gitea_mcp_server.tool_filter import filter_resources_by_permissions
+
+        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+
+
+class TestCollectProviderToolsIntegration:
+    """Integration tests for provider tool collection."""
+
+    @pytest.mark.asyncio
+    async def test_multiple_providers_some_fail(self):
+        """Some providers failing doesn't prevent others from being collected."""
+        from unittest.mock import MagicMock, AsyncMock
+
+        from gitea_mcp_server.tool_filter import _collect_provider_tools
+
+        mcp = MagicMock()
+
+        provider1 = AsyncMock()
+        provider1.list_tools = AsyncMock(return_value=["tool1"])
+
+        provider2 = AsyncMock()
+        provider2.list_tools = AsyncMock(side_effect=TypeError("unexpected error"))
+
+        provider3 = AsyncMock()
+        provider3.list_tools = AsyncMock(return_value=["tool2", "tool3"])
+
+        mcp.providers = [provider1, provider2, provider3]
+
+        result = await _collect_provider_tools(mcp)
+        assert result == ["tool1", "tool2", "tool3"]

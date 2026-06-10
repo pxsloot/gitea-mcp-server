@@ -742,3 +742,274 @@ class TestToolFiltering:
             tool_names = extract_tool_names(tools)
 
             assert len(tool_names) > 0
+
+
+class TestServerEdgeCases:
+    """Tests for server edge cases and error paths."""
+
+    @pytest.mark.asyncio
+    async def test_load_instructions_fallback(self):
+        """FileNotFoundError in load_instructions returns fallback text."""
+        from unittest.mock import patch
+
+        from gitea_mcp_server.server import load_instructions
+
+        with (
+            patch("gitea_mcp_server.server.pkg_resources.files") as mock_files,
+        ):
+            mock_files.side_effect = FileNotFoundError("Package not found")
+            result = load_instructions()
+            assert "Gitea MCP Server" in result
+            assert "Authentication" in result
+            assert "lazy loading" in result.lower() or "search" in result.lower()
+
+    async def test_apply_tool_filtering_exception_handled(self):
+        """Exception in tool filtering doesn't crash server creation."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            log_format="text",
+            tool_filtering_enabled=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "basePath": "/api/v1",
+            "paths": {},
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mcp = await create_mcp_server(gitea_client)
+            assert mcp is not None
+
+    @pytest.mark.asyncio
+    async def test_filter_tools_permissions_exception_logged(self):
+        """Exception in filter_tools_by_permissions is caught by _apply_tool_filtering."""
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        from gitea_mcp_server.server import _apply_tool_filtering
+
+        mcp = MagicMock()
+        gitea_client = AsyncMock()
+        gitea_client.request = AsyncMock(side_effect=Exception("API failure"))
+        gitea_client.config.token = "test-token"
+        config = MagicMock()
+        config.tool_filtering_enabled = True
+        config.token = "test-token"
+
+        await _apply_tool_filtering(mcp, gitea_client, config)
+        # Should not raise - exception is caught and logged
+
+    @pytest.mark.asyncio
+    async def test_filter_tools_exception_disabled(self):
+        """_apply_tool_filtering returns early when filtering is disabled."""
+        from unittest.mock import MagicMock
+
+        from gitea_mcp_server.server import _apply_tool_filtering
+
+        mcp = MagicMock()
+        config = MagicMock()
+        config.tool_filtering_enabled = False
+
+        await _apply_tool_filtering(mcp, None, config)
+        # No exception - early return
+
+    @pytest.mark.asyncio
+    async def test_spec_loading_error_propagates(self):
+        """Spec loading error propagates as SpecError."""
+        from gitea_mcp_server.exceptions import SpecError
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(500)
+            with pytest.raises(SpecError):
+                await create_mcp_server(gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_build_server_instructions_without_manifest(self):
+        """_build_server_instructions works when manifest is empty."""
+        from gitea_mcp_server.docs_tools import DocManager
+        from gitea_mcp_server.server import _build_server_instructions, load_instructions
+
+        dm = DocManager.__new__(DocManager)
+        dm._guides = []
+        result = _build_server_instructions(dm)
+        assert "Gitea MCP Server" in result
+
+    @pytest.mark.asyncio
+    async def test_setup_tool_exclusions_noop_when_no_config(self):
+        """_setup_tool_exclusions is a no-op when no exclude config is set."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.server import _setup_tool_exclusions
+
+        mcp = MagicMock()
+        config = SimpleConfig(exclude_config_path=None)
+
+        with patch(
+            "gitea_mcp_server.server.load_exclusion_config",
+            return_value={"exclude": [], "include": []},
+        ) as mock_load:
+            _setup_tool_exclusions(mcp, config)
+            mock_load.assert_called_once()
+            mcp.add_transform.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_setup_tool_exclusions_with_config(self):
+        """_setup_tool_exclusions adds transform when exclusion config exists."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.server import _setup_tool_exclusions
+
+        mcp = MagicMock()
+        config = SimpleConfig(exclude_config_path="/fake/path.yaml")
+
+        with patch(
+            "gitea_mcp_server.server.load_exclusion_config",
+            return_value={"exclude": ["admin_*"], "include": []},
+        ):
+            _setup_tool_exclusions(mcp, config)
+            mcp.add_transform.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_tool_discovery_with_lazy_loading(self):
+        """_setup_tool_discovery adds search + namespace transforms when lazy loading enabled."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.docs_tools import DocManager
+        from gitea_mcp_server.server import _setup_tool_discovery
+
+        mcp = MagicMock()
+        config = SimpleConfig(enable_lazy_loading=True)
+        dm = DocManager.__new__(DocManager)
+        dm._guides = []
+        dm._search_texts = []
+
+        with patch(
+            "gitea_mcp_server.server.register_synthetic_tools"
+        ) as mock_register:
+            _setup_tool_discovery(mcp, config, dm)
+            # add_transform called for search + namespace
+            assert mcp.add_transform.call_count == 2
+            mock_register.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_tool_discovery_without_lazy_loading(self):
+        """_setup_tool_discovery skips search transform when lazy loading disabled."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.docs_tools import DocManager
+        from gitea_mcp_server.server import _setup_tool_discovery
+
+        mcp = MagicMock()
+        config = SimpleConfig(enable_lazy_loading=False)
+        dm = DocManager.__new__(DocManager)
+        dm._guides = []
+
+        with patch(
+            "gitea_mcp_server.server.register_synthetic_tools"
+        ) as mock_register:
+            _setup_tool_discovery(mcp, config, dm)
+            mock_register.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_main_async_config_error(self):
+        """main_async handles config initialization errors gracefully."""
+        from unittest.mock import patch
+
+        with patch("gitea_mcp_server.server.Config.get", side_effect=Exception("Config init failed")):
+            with pytest.raises(SystemExit) as exc:
+                from gitea_mcp_server.server import main_async
+                await main_async()
+            assert exc.value.code == 1
+
+    def test_main_calls_async_main(self):
+        """main() calls asyncio.run(main_async())."""
+        import asyncio
+        from unittest.mock import patch
+
+        # asyncio.run cannot be called from a running event loop, so mock it too
+        with patch("gitea_mcp_server.server.main_async") as mock_main_async:
+            with patch.object(asyncio, "run", lambda coro, **kw: coro):
+                from gitea_mcp_server.server import main
+                main()
+                mock_main_async.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_create_server_exception_exits(self):
+        """main_async exits with code 1 when create_mcp_server fails."""
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        with patch("gitea_mcp_server.server.Config.get") as mock_config:
+            mock_config.return_value = MagicMock(log_level="INFO", log_format="text")
+            with patch("gitea_mcp_server.server.create_mcp_server", side_effect=Exception("boom")):
+                with patch("gitea_mcp_server.server.GiteaClient") as mock_client:
+                    mock_client.return_value.close = AsyncMock()
+                    with pytest.raises(SystemExit) as exc:
+                        from gitea_mcp_server.server import main_async
+                        await main_async()
+                    assert exc.value.code == 1
+                    mock_client.return_value.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_stdio_transport(self):
+        """main_async with stdio transport calls run_stdio_async."""
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        mock_mcp = AsyncMock()
+        mock_mcp.run_stdio_async = AsyncMock()
+
+        with patch("gitea_mcp_server.server.Config.get") as mock_config:
+            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
+            mock_config.return_value = cfg
+            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
+                with patch("gitea_mcp_server.server.GiteaClient"):
+                    from gitea_mcp_server.server import main_async
+                    await main_async()
+                    mock_mcp.run_stdio_async.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_async_keyboard_interrupt_handled(self):
+        """main_async handles KeyboardInterrupt gracefully."""
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        mock_mcp = AsyncMock()
+        mock_mcp.run_stdio_async = AsyncMock(side_effect=KeyboardInterrupt)
+
+        with patch("gitea_mcp_server.server.Config.get") as mock_config:
+            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
+            mock_config.return_value = cfg
+            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
+                with patch("gitea_mcp_server.server.GiteaClient"):
+                    from gitea_mcp_server.server import main_async
+                    await main_async()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_create_mcp_server_generic_exception_wrapped(self):
+        """create_mcp_server wraps non-SpecError exceptions in SpecError."""
+        from unittest.mock import patch
+
+        from gitea_mcp_server.exceptions import SpecError
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+        )
+        gitea_client = GiteaClient(config)
+
+        # Mock load_and_convert_spec to raise a generic exception
+        with patch("gitea_mcp_server.server.load_and_convert_spec", side_effect=ValueError("bad spec")):
+            with pytest.raises(SpecError, match="Failed to load or convert OpenAPI spec"):
+                await create_mcp_server(gitea_client)

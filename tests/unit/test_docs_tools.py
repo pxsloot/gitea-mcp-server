@@ -163,6 +163,82 @@ class TestDocManager:
         assert "..." in manifest
 
 
+class TestDocManagerLoadEdgeCases:
+    """Tests for DocManager._load edge cases."""
+
+    def test_guides_dir_not_found(self, caplog):
+        """When guides directory doesn't exist, warning is logged and no guides loaded."""
+        import logging
+        import os
+        caplog.set_level(logging.WARNING)
+
+        # Patch pkg_files to return a path that doesn't exist
+        from unittest.mock import patch
+        fake_path = "/nonexistent/guides/path"
+        with patch("gitea_mcp_server.docs_tools.pkg_files") as mock_pkg_files:
+            mock_path = __import__("pathlib").Path(fake_path)
+            mock_pkg_files.return_value.joinpath.return_value = mock_path
+            mgr = DocManager()
+            assert len(mgr._guides) == 0
+            assert "Guides directory not found" in caplog.text
+
+    def test_load_exception_logged(self, caplog):
+        """Exception during _load is caught and logged."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        from unittest.mock import patch
+        with patch("gitea_mcp_server.docs_tools.pkg_files", side_effect=PermissionError("Access denied")):
+            mgr = DocManager()
+            assert len(mgr._guides) == 0
+            assert "Failed to load workflow guides" in caplog.text
+
+    def test_non_md_files_skipped(self, tmp_path, caplog):
+        """Non-.md files in the guides directory are skipped."""
+        import logging
+        caplog.set_level(logging.DEBUG)
+
+        from unittest.mock import patch
+
+        # Create tmp dir with mixed files
+        guides_dir = tmp_path / "docs" / "guides"
+        guides_dir.mkdir(parents=True)
+        (guides_dir / "readme.md").write_text("# Readme\nContent")
+        (guides_dir / "notes.txt").write_text("Not a guide")
+        (guides_dir / "image.png").write_bytes(b"PNG")
+
+        with patch("gitea_mcp_server.docs_tools.pkg_files") as mock_pkg_files:
+            mock_pkg_files.return_value.joinpath.return_value = guides_dir
+            mgr = DocManager()
+            assert len(mgr._guides) == 1  # Only readme.md loaded
+            assert mgr._guides[0].name == "readme"
+
+
+class TestDocManagerTagsAsString:
+    """Tests for tags-as-string fallback in _parse_guide."""
+
+    def test_tags_as_string_converted_to_list(self):
+        """When frontmatter tags is a string, it's converted to a single-element list."""
+        raw = """---
+title: Test
+tags: just-one-tag
+---
+Content here"""
+        guide = DocManager._parse_guide("test-guide", raw)
+        assert guide is not None
+        assert guide.tags == ["just-one-tag"]
+
+    def test_tags_as_number_raises(self):
+        """When frontmatter tags is a number, list() wrapping raises TypeError."""
+        raw = """---
+title: Test
+tags: 42
+---
+Content here"""
+        with pytest.raises(TypeError):
+            DocManager._parse_guide("test-guide", raw)
+
+
 class TestRegisterDocTools:
     """Tests for register_doc_tools registration and tool behavior."""
 

@@ -575,3 +575,21 @@ class TestErrorHandlingNonJson:
         error_msg = str(exc_info.value)
         assert "Internal Server Error" in error_msg
         assert "something went wrong" in error_msg
+
+
+class TestParamIsBoolean:
+    """Tests for _param_is_boolean edge cases."""
+
+    def test_non_string_non_list_type_returns_false(self):
+        """_param_is_boolean returns False when type is neither str nor list."""
+        from gitea_mcp_server.tools.errors import _param_is_boolean
+
+        # When type is a dict (or other non-str/non-list), line 87 return False
+        assert _param_is_boolean({"flag": {"type": {}}}, "flag") is False
+
+    def test_non_dict_schema_returns_false(self):
+        """_param_is_boolean returns False when schema entry is not a dict (line 81)."""
+        from gitea_mcp_server.tools.errors import _param_is_boolean
+
+        # When properties has a non-dict value for the parameter name
+        assert _param_is_boolean({"flag": "string_value"}, "flag") is False

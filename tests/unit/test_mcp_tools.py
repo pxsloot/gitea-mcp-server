@@ -545,6 +545,10 @@ class TestFormatResourceContent:
         """format=raw with non-JSON content should return unchanged."""
         assert _format_resource_content("plain text", "raw") == "plain text"
 
+    def test_unknown_format_with_json_returns_raw(self):
+        """Unknown format with valid JSON returns raw string unchanged."""
+        assert _format_resource_content('{"key": "val"}', "xml") == '{"key": "val"}'
+
 
 class TestMcpListResourcesFormat:
     """Tests that list_resources respects the format parameter.
@@ -745,3 +749,322 @@ class TestMcpSearchResources:
         assert "search_tools" in text
         assert result.structured_content is not None
         assert result.structured_content["result"] == []
+
+
+class TestMcpListResourcesTagTypeFilter:
+    """Tests for tag and type filtering in list_resources tool."""
+
+    def _capture_tool(self, name: str):
+        """Register resource tools and return the named function."""
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
+            return deco
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        fn = captured[name]
+        assert fn is not None
+        return fn
+
+    @pytest.mark.asyncio
+    async def test_tag_filter(self):
+        """list_resources with tag filter returns only matching resources."""
+        fn = self._capture_tool("list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+
+        r1 = MagicMock()
+        r1.uri = "gitea://repos/owner/repo"
+        r1.name = "Repo"
+        r1.description = "Repository"
+        r1.mime_type = "text/markdown"
+        r1.tags = {"wrapper", "repository"}
+        r1.meta = None
+
+        r2 = MagicMock()
+        r2.uri = "gitea://users/user"
+        r2.name = "User"
+        r2.description = "User"
+        r2.mime_type = "text/markdown"
+        r2.tags = {"wrapper", "user"}
+        r2.meta = None
+
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[r1, r2])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, tag="user")
+
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["count"] == 1
+        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://users/user"
+
+    @pytest.mark.asyncio
+    async def test_type_filter(self):
+        """list_resources with type filter returns only matching type."""
+        fn = self._capture_tool("list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+
+        tpl = MagicMock()
+        tpl.uri_template = "gitea://repos/{owner}/{repo}"
+        tpl.name = "Repo"
+        tpl.description = "Repo template"
+        tpl.mime_type = "text/markdown"
+        tpl.tags = {"wrapper"}
+        tpl.meta = None
+
+        res = MagicMock()
+        res.uri = "gitea://version"
+        res.name = "Version"
+        res.description = "Version"
+        res.mime_type = "text/plain"
+        res.tags = {"server"}
+        res.meta = None
+
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[res])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[tpl])
+
+        result = await fn(ctx=ctx, type="template")
+
+        assert result.structured_content["result"]["count"] == 1
+        assert result.structured_content["result"]["resources"][0]["type"] == "template"
+
+    @pytest.mark.asyncio
+    async def test_type_and_tag_filter_combined(self):
+        """list_resources with both tag and type filter."""
+        fn = self._capture_tool("list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+
+        r = MagicMock()
+        r.uri = "gitea://version"
+        r.name = "Version"
+        r.description = "Version"
+        r.mime_type = "text/plain"
+        r.tags = {"wrapper", "server"}
+        r.meta = None
+
+        tpl = MagicMock()
+        tpl.uri_template = "gitea://repos/{owner}/{repo}"
+        tpl.name = "Repo"
+        tpl.description = "Repo"
+        tpl.mime_type = "text/markdown"
+        tpl.tags = {"wrapper", "repository"}
+        tpl.meta = None
+
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[tpl])
+
+        result = await fn(ctx=ctx, tag="wrapper", type="resource")
+
+        assert result.structured_content["result"]["count"] == 1
+        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+
+
+class TestExtractResourceContent:
+    """Tests for _extract_resource_content helper."""
+
+    def test_non_bytes_non_str_content(self):
+        """Non-bytes, non-string content is converted via str()."""
+        from gitea_mcp_server.mcp_tools import _extract_resource_content
+
+        class CustomContent:
+            def __str__(self):
+                return "custom content"
+
+        result = _extract_resource_content([type("Obj", (), {"content": CustomContent()})()], "gitea://test")
+        assert result == "custom content"
+
+    @pytest.mark.asyncio
+    async def test_list_resources_impl_exception_handled(self):
+        """Exception in _mcp_list_resources_impl returns empty result."""
+        from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
+
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(side_effect=AttributeError("no attribute"))
+        ctx.fastmcp.list_resource_templates = AsyncMock(side_effect=AttributeError("no attribute"))
+
+        result = await _mcp_list_resources_impl(ctx)
+        assert result == {"resources": [], "count": 0}
+
+
+class TestMcpSearchResourcesRawFormat:
+    """Tests for search_resources raw format output."""
+
+    def _capture_search_resources(self):
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
+            return deco
+
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        fn = captured["search_resources"]
+        assert fn is not None
+        return fn
+
+    @pytest.mark.asyncio
+    async def test_raw_format(self):
+        """search_resources format=raw returns structured_content with result array."""
+        fn = self._capture_search_resources()
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Server Version"
+        resource_mock.description = "Server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = {"server"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(query="version", format="raw", ctx=ctx)
+        assert result.structured_content is not None
+        assert len(result.structured_content["result"]) == 1
+        assert result.structured_content["result"][0]["uri"] == "gitea://version"
+
+
+class TestToolSchemaResource:
+    """Tests for _tool_schema_resource."""
+
+    def _capture_resource_fn(self):
+        mcp = MagicMock()
+        captured: dict[str, object] = {}
+        resource_registry: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+
+        def resource_decorator(**kwargs):
+            def deco(fn):
+                resource_registry[fn.__name__] = fn
+                return fn
+            return deco
+
+        mcp.tool = tool_decorator
+        mcp.resource = resource_decorator
+        register_mcp_resource_tools(mcp)
+        assert "_tool_schema_resource" in resource_registry
+        return resource_registry["_tool_schema_resource"]
+
+    @pytest.mark.asyncio
+    async def test_returns_full_tool_schema(self):
+        """tool/{name}/schema returns full tool schema with params, output, tags."""
+        fn = self._capture_resource_fn()
+        ctx = MagicMock(spec=Context)
+        tool = MagicMock()
+        tool.name = "gitea_issue_list"
+        tool.description = "List issues"
+        tool.parameters = {"properties": {"owner": {"type": "string"}}, "required": ["owner"]}
+        tool.output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {"type": "array", "items": {"type": "object"}},
+            },
+        }
+        tool.tags = {"issue"}
+        tool.version = "1.0"
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.get_tool = AsyncMock(return_value=tool)
+
+        import json
+        result = await fn(name="gitea_issue_list", ctx=ctx)
+        data = json.loads(result)
+        assert data["name"] == "gitea_issue_list"
+        assert data["description"] == "List issues"
+        assert "parameters" in data
+        assert "output_example" in data
+        assert "tags" in data
+        assert data["tags"] == ["issue"]
+        assert data["version"] == "1.0"
+
+    @pytest.mark.asyncio
+    async def test_raises_for_missing_tool(self):
+        """tool/{name}/schema raises ValueError for unknown tool."""
+        fn = self._capture_resource_fn()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+
+        with pytest.raises(ValueError, match="Tool 'unknown_tool' not found"):
+            await fn(name="unknown_tool", ctx=ctx)
+
+    @pytest.mark.asyncio
+    async def test_handles_missing_output_schema(self):
+        """tool/{name}/schema handles None output_schema gracefully."""
+        fn = self._capture_resource_fn()
+        ctx = MagicMock(spec=Context)
+        tool = MagicMock()
+        tool.name = "text_tool"
+        tool.description = "Text tool"
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.tags = None
+        tool.version = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.get_tool = AsyncMock(return_value=tool)
+
+        import json
+        result = await fn(name="text_tool", ctx=ctx)
+        data = json.loads(result)
+        assert data["name"] == "text_tool"
+        assert "output_example" not in data
+        assert "tags" not in data
+        assert "version" not in data
+
+
+class TestMcpListResourcesRawFormat:
+    """Tests for list_resources raw format output."""
+
+    def _capture_tool(self):
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
+            return deco
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        return captured["list_resources"]
+
+    @pytest.mark.asyncio
+    async def test_raw_format_has_structured_content(self):
+        """format=raw should return ToolResult with structured_content only."""
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        r = MagicMock()
+        r.uri = "gitea://version"
+        r.name = "Version"
+        r.description = "Server version"
+        r.mime_type = "text/plain"
+        r.tags = set()
+        r.meta = None
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="raw")
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["count"] == 1
+        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"

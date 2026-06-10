@@ -316,6 +316,259 @@ class TestCustomResources:
             assert "Gitea Test API" in text
             assert "9.9.9" in text
 
+    @pytest.mark.asyncio
+    async def test_read_version(self):
+        """Read gitea://version returns server version."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/version").respond(200, json={"version": "1.99.0"})
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://version")
+            assert "1.99.0" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_user(self):
+        """Read gitea://users/{username} returns formatted user."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/users/alice").respond(
+                200, json={
+                    "login": "alice", "full_name": "Alice",
+                    "html_url": "https://git.example.com/alice",
+                    "public_repos": 5, "followers_count": 10, "following_count": 3,
+                    "created_at": "2023-01-01T00:00:00Z",
+                    "bio": "Developer", "location": "Earth", "website": "",
+                }
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://users/alice")
+            assert "alice" in result.contents[0].content
+            assert "Alice" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_repository(self):
+        """Read gitea://repos/{owner}/{repo} returns formatted repo."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/repos/owner/repo").respond(
+                200, json={
+                    "full_name": "owner/repo", "description": "A test repo",
+                    "default_branch": "main", "html_url": "https://git.example.com/owner/repo",
+                    "owner": {"login": "owner", "id": 1},
+                    "stargazers_count": 5, "forks_count": 2, "open_issues_count": 1,
+                    "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-06-01T00:00:00Z",
+                }
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://repos/owner/repo")
+            assert "owner/repo" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_releases(self):
+        """Read gitea://repos/{owner}/{repo}/releases returns formatted releases."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/repos/owner/repo/releases").respond(
+                200,
+                json=[
+                    {"tag_name": "v1.0", "name": "First", "draft": False, "prerelease": False,
+                     "created_at": "2024-01-01T00:00:00Z", "published_at": "2024-01-02T00:00:00Z",
+                     "body": "Initial release", "author": {"login": "dev", "id": 1, "html_url": "https://git.example.com/dev"}},
+                ],
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://repos/owner/repo/releases")
+            assert "v1.0" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_readme(self):
+        """Read gitea://repos/{owner}/{repo}/readme returns README content."""
+        import base64
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        content = "# Hello"
+        encoded = base64.b64encode(content.encode()).decode()
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/repos/owner/repo/contents/README.md").respond(
+                200, json={"content": encoded, "encoding": "base64"}
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://repos/owner/repo/readme")
+            assert "Hello" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_issues(self):
+        """Read gitea://repos/{owner}/{repo}/issues returns formatted issues."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get(
+                "https://git.example.com/api/v1/repos/owner/repo/issues",
+                params={"state": "open"},
+            ).respond(
+                200,
+                json=[
+                    {"number": 1, "title": "Bug", "state": "open", "user": {"login": "dev"},
+                     "created_at": "2024-01-01T00:00:00Z", "comments": 0, "labels": [],
+                     "html_url": "https://example.com/issue/1"},
+                ],
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://repos/owner/repo/issues?state=open")
+            assert "Bug" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_token_scopes(self):
+        """Read gitea://token/scopes returns token scopes."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test-token-prefix_last8",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "dev2"})
+            mock.get("https://git.example.com/api/v1/users/dev2/tokens").respond(
+                200,
+                json=[
+                    {"id": 1, "name": "test", "token_last_eight": "ix_last8", "scopes": ["read:repo", "write:issue"]},
+                ],
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://token/scopes")
+            assert "read:repo" in result.contents[0].content
+            assert "write:issue" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_token_scopes_no_match(self):
+        """Read gitea://token/scopes returns null when token doesn't match."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="unknown-token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "dev2"})
+            mock.get("https://git.example.com/api/v1/users/dev2/tokens").respond(
+                200,
+                json=[
+                    {"id": 1, "name": "t1", "token_last_eight": "ffffffff", "scopes": ["sudo"]},
+                ],
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://token/scopes")
+            import json
+            data = json.loads(result.contents[0].content)
+            assert data["scopes"] is None
+
+    @pytest.mark.asyncio
+    async def test_read_organization(self):
+        """Read gitea://orgs/{orgname} returns formatted org."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/orgs/myorg").respond(
+                200, json={
+                    "login": "myorg", "full_name": "My Org",
+                    "html_url": "https://git.example.com/myorg",
+                    "type": "Organization",
+                    "public_repos": 10, "followers_count": 0, "following_count": 0,
+                    "created_at": "2022-01-01T00:00:00Z",
+                    "bio": "", "location": "", "website": "",
+                }
+            )
+            mcp = await create_mcp_server(gitea_client)
+            from fastmcp.server.context import Context
+            ctx = Context(fastmcp=mcp)
+            result = await ctx.read_resource("gitea://orgs/myorg")
+            assert "myorg" in result.contents[0].content
+
 
 class TestToolFiltering:
     """Tests for tool permission filtering."""

@@ -12,12 +12,12 @@ Resources provide read-only access to Gitea entities via URI templates.
 from gitea_mcp_server.resources.auto import register_auto_generated_resources
 from gitea_mcp_server.resources.custom import register_custom_resources
 from gitea_mcp_server.resources.registry import ResourceRegistry
-from gitea_mcp_server.resources.scope import derive_required_scope, make_resource_meta
+from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
 
 __all__ = [
     "ResourceRegistry",
     "derive_required_scope",
-    "make_resource_meta",
+    "scope_meta",
     "register_auto_generated_resources",
     "register_custom_resources",
 ]

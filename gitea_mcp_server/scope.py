@@ -30,11 +30,11 @@ def derive_required_scope(swagger_tags: set[str] | None, method: str | None) -> 
     return f"write:{scope_name}"
 
 
-def make_resource_meta(required_scope: str | None) -> dict[str, Any]:
+def scope_meta(required_scope: str | None) -> dict[str, Any]:
     return {"fastmcp": {"_internal": {"required_scope": required_scope}}}
 
 
 __all__ = [
     "derive_required_scope",
-    "make_resource_meta",
+    "scope_meta",
 ]

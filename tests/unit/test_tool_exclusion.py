@@ -453,6 +453,13 @@ class TestExclusionTransformGetTemplate:
         result = await transform.get_resource_template("gitea://admin/users/user", call_next)
         assert result is None
 
+    async def test_none_template_returns_none(self):
+        """get_resource_template returns None when call_next returns None (line 158)."""
+        call_next = AsyncMock(return_value=None)
+        transform = ExclusionTransform(exclude=[], include=[])
+        result = await transform.get_resource_template("gitea://repos/owner/repo", call_next)
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # Integration: load + transform

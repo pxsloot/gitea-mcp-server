@@ -847,3 +847,74 @@ class TestPaginationMetadata:
         result = await new_tool.run({"page": 1, "per_page": 10})
 
         assert result.structured_content["result"] == original_data
+
+
+class TestPrepareAnnotationsEdgeCases:
+    """Tests for _prepare_annotations edge cases."""
+
+    def test_non_standard_annotations_raises_fallback(self):
+        """Non-standard annotations that can't construct ToolAnnotations uses fallback."""
+        from gitea_mcp_server.tools.customize import _prepare_annotations
+
+        component = MagicMock()
+        component.annotations = "string_annotations"
+
+        result = _prepare_annotations(component, "Test Title")
+        assert result.title == "Test Title"
+        assert isinstance(result, ToolAnnotations)
+
+
+class TestCustomizeComponentTextResponse:
+    """Tests for _customize_component with text response wrapping."""
+
+    @pytest.mark.asyncio
+    async def test_text_response_strips_structured_content(self):
+        """Text response transforms content and structured_content."""
+        from fastmcp.tools.base import ToolResult
+        from mcp.types import TextContent
+
+        from gitea_mcp_server.tools.customize import customize_component
+
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            method="GET",
+            summary="List issues",
+            operation_id="issue_list_issues",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = ToolAnnotations()
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.version = "1"
+        tool.auth = None
+        tool.serializer = None
+        tool.meta = {
+            "_customization": {
+                "is_text_response": True,
+                "route_path": "/repos/{owner}/{repo}/issues",
+                "route_method": "GET",
+            }
+        }
+        tool.run = AsyncMock(
+            return_value=ToolResult(
+                content=[TextContent(type="text", text="raw text output")],
+                structured_content=None,
+            )
+        )
+
+        openapi_spec = {
+            "paths": {
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "x-original-content-types": ["text/plain"],
+                    }
+                }
+            }
+        }
+        new_tool = customize_component(route, tool, label_manager, openapi_spec=openapi_spec)
+        result = await new_tool.run({})
+        assert result.structured_content == {"result": "raw text output"}
+        assert result.content[0].text == "raw text output"

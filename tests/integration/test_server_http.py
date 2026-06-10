@@ -65,11 +65,14 @@ def common_patches(monkeypatch):
     monkeypatch.setattr(
         "gitea_mcp_server.server.load_and_convert_spec",
         AsyncMock(
-            return_value={
-                "openapi": "3.1.0",
-                "info": {"title": "Test", "version": "1"},
-                "paths": {},
-            }
+            return_value=(
+                {
+                    "openapi": "3.1.0",
+                    "info": {"title": "Test", "version": "1"},
+                    "paths": {},
+                },
+                {},
+            )
         ),
     )
 

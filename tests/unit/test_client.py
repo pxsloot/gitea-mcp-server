@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+import httpx
 import pytest
 import respx
 
@@ -265,3 +266,58 @@ class TestGiteaClient:
         wait_time = _wait_retry(mock_retry_state)
         assert isinstance(wait_time, (int, float))
         assert wait_time >= 0
+
+    def test_should_retry_invalid_retry_after_header(self):
+        """Test _should_retry handles invalid Retry-After header gracefully."""
+        error = GiteaAPIError(
+            "Rate limited",
+            status_code=429,
+            headers={"Retry-After": "not-a-number"},
+        )
+        assert _should_retry(error) is True
+        # retry_after should remain None when int() conversion fails
+        # (the ValueError is caught, the attribute is never updated from its default)
+        assert error.retry_after is None
+
+    def test_should_retry_httpx_http_status_error(self):
+        """Test _should_retry handles direct httpx.HTTPStatusError."""
+        response = httpx.Response(500, request=httpx.Request("GET", "https://example.com/api"))
+        error = httpx.HTTPStatusError("Server error", request=response.request, response=response)
+        assert _should_retry(error) is True
+
+        # Non-retryable status code
+        response2 = httpx.Response(404, request=httpx.Request("GET", "https://example.com/api"))
+        error2 = httpx.HTTPStatusError("Not found", request=response2.request, response=response2)
+        assert _should_retry(error2) is False
+
+    def test_should_retry_generic_httpx_error(self):
+        """Test _should_retry handles generic httpx.HTTPError (not HTTPStatusError)."""
+        error = httpx.TimeoutException("Connection timed out")
+        assert _should_retry(error) is True
+
+    def test_should_retry_non_httpx_error(self):
+        """Test _should_retry returns False for non-httpx exceptions."""
+        error = ValueError("Some other error")
+        assert _should_retry(error) is False
+
+    def test_should_retry_gitea_error_with_cause_httpx_error(self):
+        """Test _should_retry with GiteaAPIError caused by httpx.HTTPError."""
+        cause = httpx.TimeoutException("Timed out")
+        error = GiteaAPIError("Request failed", status_code=500)
+        error.__cause__ = cause
+        assert _should_retry(error) is True
+
+    def test_should_retry_gitea_error_with_cause_http_status_error(self):
+        """Test _should_retry with GiteaAPIError caused by httpx.HTTPStatusError."""
+        response = httpx.Response(404, request=httpx.Request("GET", "https://example.com/api"))
+        cause = httpx.HTTPStatusError("Not found", request=response.request, response=response)
+        error = GiteaAPIError("Not found", status_code=404)
+        error.__cause__ = cause
+        # httpx.HTTPStatusError is also httpx.HTTPError, but the check says:
+        # isinstance(exception.__cause__, httpx.HTTPError) AND NOT isinstance(exception.__cause__, httpx.HTTPStatusError)
+        assert _should_retry(error) is False
+
+    def test_should_retry_gitea_error_without_cause(self):
+        """Test _should_retry with GiteaAPIError having no __cause__."""
+        error = GiteaAPIError("Client error", status_code=400)
+        assert _should_retry(error) is False

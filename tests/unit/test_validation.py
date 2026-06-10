@@ -675,6 +675,19 @@ class TestAugmentSchemaWithValidation:
         assert "some_other_param" in component.parameters["properties"]
         assert component.parameters["properties"]["some_other_param"] == {"type": "string"}
 
+    def test_skips_non_dict_existing_schema(self):
+        """augment_schema_with_validation skips when existing_schema is not a dict (line 286)."""
+        component = MagicMock()
+        component.parameters = {
+            "properties": {
+                "owner": "not_a_dict",  # schema value is a string, not dict
+            }
+        }
+        # Should not raise TypeError; the non-dict value is skipped
+        augment_schema_with_validation(component)
+        # The value should remain unchanged
+        assert component.parameters["properties"]["owner"] == "not_a_dict"
+
 
 class TestRunValidation:
     """Tests for _run_validation function."""

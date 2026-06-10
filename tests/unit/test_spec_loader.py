@@ -10,6 +10,8 @@ import pytest
 import respx
 
 from gitea_mcp_server.client import GiteaClient
+from unittest.mock import MagicMock, patch
+
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.spec_loader import (
     load_and_convert_spec,
@@ -102,8 +104,8 @@ class TestLoadAndConvertSpec:
                 lambda spec, ext: None,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_conversion_error_raises_spec_error(self, gitea_client, test_config, spec_url, valid_spec, monkeypatch):
@@ -143,8 +145,8 @@ class TestLoadAndConvertSpec:
                 failing_apply,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_spec_error_from_load_passthrough(self, gitea_client, test_config, spec_url):
@@ -167,8 +169,8 @@ class TestLoadAndConvertSpec:
                 lambda: None,
             )
 
-            result = await load_and_convert_spec(gitea_client, test_config)
-            assert result["openapi"] == "3.1.0"
+            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
     async def test_http_error_during_load_propagates(self, gitea_client, test_config, spec_url):
@@ -176,3 +178,15 @@ class TestLoadAndConvertSpec:
             respx.get(spec_url).mock(side_effect=httpx.RequestError("connection refused"))
             with pytest.raises(SpecError, match="Failed to fetch or parse"):
                 await load_and_convert_spec(gitea_client, test_config)
+
+    @pytest.mark.asyncio
+    async def test_non_spec_error_during_load_wrapped(self, test_config):
+        """load_and_convert_spec wraps non-SpecError exceptions from load_openapi_spec."""
+        mock_client = MagicMock()
+
+        with patch(
+            "gitea_mcp_server.server_setup.spec_loader.load_openapi_spec",
+            side_effect=ValueError("unexpected error"),
+        ):
+            with pytest.raises(SpecError, match="Failed to load OpenAPI spec"):
+                await load_and_convert_spec(mock_client, test_config)

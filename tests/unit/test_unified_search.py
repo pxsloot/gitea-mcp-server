@@ -57,6 +57,22 @@ def _setup_mcp() -> tuple[MagicMock, Any]:
 class TestUnifiedSearchAnnotations:
     """Tests annotation metadata on the unified search tool."""
 
+    def test_search_tool_has_description(self):
+        """search tool must have a non-empty description."""
+        from gitea_mcp_server.unified_search import register_unified_search
+
+        doc_manager = MagicMock()
+        search_transform = MagicMock()
+
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        call_kwargs = mcp.tool.call_args[1]
+        assert call_kwargs.get("name") == "search"
+        desc = call_kwargs.get("description")
+        assert desc, f"search.description should be non-empty, got: {desc!r}"
+
     def test_search_has_openworld_false(self):
         """search tool should have openWorldHint=False."""
         from gitea_mcp_server.unified_search import register_unified_search
@@ -261,6 +277,41 @@ class TestUnifiedSearch:
 
         registered_fn = decorator.call_args[0][0]
         result = await registered_fn(query="xyznonexistent123", format="raw", ctx=ctx)
+        items = result.structured_content["result"]
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_ctx_none_raises_value_error(self) -> None:
+        """When ctx is None, should raise ValueError (lines 87-88)."""
+        from gitea_mcp_server.unified_search import register_unified_search
+
+        doc_manager = MagicMock(spec=DocManager)
+        search_transform = _make_search_transform([])
+        mcp, decorator = _setup_mcp()
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        registered_fn = decorator.call_args[0][0]
+        with pytest.raises(ValueError, match="Context is required"):
+            await registered_fn(query="test", format="raw", ctx=None)
+
+    @pytest.mark.asyncio
+    async def test_all_texts_empty_returns_empty_result(self) -> None:
+        """When tools/resources/docs all produce no text, return empty result (line 142)."""
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        doc_manager = MagicMock(spec=DocManager)
+        doc_manager.search.return_value = []
+
+        # Empty tool catalog means no tool entries → all_texts will be empty
+        search_transform = _make_search_transform([])
+
+        mcp, decorator = _setup_mcp()
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        registered_fn = decorator.call_args[0][0]
+        result = await registered_fn(query="anything", format="raw", ctx=ctx)
         items = result.structured_content["result"]
         assert items == []
 

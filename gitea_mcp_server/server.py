@@ -5,6 +5,7 @@ import contextlib
 import importlib.resources as pkg_resources
 import logging
 import sys
+from typing import Any
 
 import uvicorn
 from fastmcp import FastMCP
@@ -43,6 +44,7 @@ from gitea_mcp_server.server_setup.permissions import (
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
+from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
 from gitea_mcp_server.unified_search import register_unified_search
@@ -130,11 +132,15 @@ def _setup_tool_discovery(
     mcp: FastMCP,
     config: Config,
     doc_manager: DocManager,
+    extensions: dict[str, Any] | None = None,
 ) -> None:
-    """Setup lazy loading search transform, unified search, and namespace transform.
+    """Setup lazy loading search transform, unified search, namespace, and extensions.
 
     Search transform must be added BEFORE namespace so namespace can prefix
     the synthetic tools (search_tools, tool_info, call_tool).
+
+    Extension metadata transform must come AFTER namespace so it sees
+    consistent prefixed tool names in both ``list_tools`` and ``get_tool``.
     """
     search_transform: TolerantSearchTransform | None = None
     if config.enable_lazy_loading:
@@ -156,6 +162,15 @@ def _setup_tool_discovery(
     if config.tool_prefix:
         logger.info("Adding namespace transform with prefix %s", config.tool_prefix)
         mcp.add_transform(GiteaNamespace(config.tool_prefix.rstrip("_")))
+
+    tool_names = (extensions or {}).get("tool_names", {})
+    if tool_names:
+        prefix = config.tool_prefix or ""
+        logger.info(
+            "Adding extension metadata transform with %d overrides",
+            len(tool_names),
+        )
+        mcp.add_transform(ExtensionMetadataTransform(tool_names, prefix=prefix))
 
 
 async def _apply_tool_filtering(
@@ -206,7 +221,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        openapi_spec = await load_and_convert_spec(gitea_client, config)
+        openapi_spec, extensions = await load_and_convert_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:
@@ -232,7 +247,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
 
     register_doc_tools(mcp, doc_manager)
     _setup_caching_middleware(mcp)
-    _setup_tool_discovery(mcp, config, doc_manager)
+    _setup_tool_discovery(mcp, config, doc_manager, extensions)
     register_all_resources(mcp, gitea_client, openapi_spec)
     _setup_tool_exclusions(mcp, config)
     await _apply_tool_filtering(mcp, gitea_client, config)

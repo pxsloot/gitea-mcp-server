@@ -827,7 +827,24 @@ class TestTolerantSearchTransform:
 
 
 class TestSyntheticToolAnnotations:
-    """Tests for openWorldHint annotations on synthetic tools."""
+    """Tests for openWorldHint annotations and descriptions on synthetic tools."""
+
+    @pytest.mark.asyncio
+    async def test_synthetic_tools_have_descriptions(self):
+        """All synthetic tools (search_tools, call_tool, tool_info) must have non-empty descriptions."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+
+        for name in ["search_tools", "call_tool", "tool_info"]:
+            t = tool_map.get(name)
+            assert t is not None, f"{name} not registered"
+            assert t.description, f"{name}.description should be non-empty, got: {t.description!r}"
 
     @pytest.mark.asyncio
     async def test_local_synthetic_tools_openworld_false(self):

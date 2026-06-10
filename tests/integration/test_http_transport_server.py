@@ -62,12 +62,15 @@ def patch_spec_loader(monkeypatch):
     """Patch the OpenAPI spec loader to avoid network calls."""
 
     async def mock_load_and_convert_spec(gitea_client, config=None):
-        return {
-            "swagger": "2.0",
-            "info": {"title": "Gitea API", "version": "1.0"},
-            "paths": {},
-            "definitions": {},
-        }
+        return (
+            {
+                "swagger": "2.0",
+                "info": {"title": "Gitea API", "version": "1.0"},
+                "paths": {},
+                "definitions": {},
+            },
+            {},  # no extensions
+        )
 
     # Patch where it's used, not where it's defined
     monkeypatch.setattr(

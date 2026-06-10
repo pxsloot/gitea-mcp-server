@@ -301,3 +301,29 @@ class TestSchemaToExample:
         )
         result = _serialize_tool_schema(tool)
         assert result["annotations"]["openWorldHint"] is True
+
+
+class TestLookupStringExampleSuffix:
+    """Tests for _lookup_string_example suffix pattern matching (line 66)."""
+
+    def test_suffix_pattern_matches_url(self):
+        """_lookup_string_example matches suffix patterns like _url."""
+        from gitea_mcp_server.tools.examples import _lookup_string_example
+
+        # "html_url" should match the ("_url", "_uri", ...) suffix pattern
+        result = _lookup_string_example("html_url")
+        assert result == "https://example.com/path"
+
+    def test_suffix_pattern_matches_sha(self):
+        """_lookup_string_example matches suffix patterns like _sha."""
+        from gitea_mcp_server.tools.examples import _lookup_string_example
+
+        result = _lookup_string_example("commit_sha")
+        assert result == "abc123def456"
+
+    def test_suffix_pattern_matches_id(self):
+        """_lookup_string_example matches suffix patterns like _id."""
+        from gitea_mcp_server.tools.examples import _lookup_string_example
+
+        result = _lookup_string_example("user_id")
+        assert result == "example-id"

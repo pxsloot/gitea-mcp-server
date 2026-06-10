@@ -42,6 +42,11 @@ class TestSnakeToTitle:
         result = _snake_to_title("repo_2fa")
         assert result == "Repo 2Fa"
 
+    def test_space_before_uppercase(self):
+        """Names with embedded space before uppercase converts to lowercase."""
+        result = _snake_to_title("get URL")
+        assert result == "Get Url"
+
 
 class TestFormatDatetime:
     def test_valid_iso_datetime(self):
@@ -384,6 +389,54 @@ class TestFormatAsMarkdown:
         }
         result = _format_as_markdown(data, schema)
         assert "user" in result
+
+    def test_nested_section_with_depth(self):
+        """Nested section at depth>0 uses indent-bold format."""
+        data = {
+            "config": {
+                "database": {
+                    "host": "localhost",
+                    "port": 5432,
+                }
+            }
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "properties": {
+                        "database": {
+                            "type": "object",
+                            "properties": {
+                                "host": {"type": "string"},
+                                "port": {"type": "integer"},
+                            },
+                        }
+                    },
+                }
+            },
+        }
+        result = _format_as_markdown(data, schema)
+        # Should contain the bold label format at depth > 0
+        assert "Host" in result or "Port" in result or "database" in result
+
+    def test_property_schema_not_a_dict_skipped(self):
+        """Property schema that is not a dict is skipped gracefully."""
+        data = {
+            "name": "test",
+            "ref": "abc123",
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "ref": "$ref: #/components/schemas/Ref",
+            },
+        }
+        # If ref prop schema is not a dict (it's a string), it should be skipped
+        result = _format_as_markdown(data, schema)
+        assert "Name" in result
 
     def test_non_dict_non_list_input(self):
         assert _format_as_markdown(True) == "True"

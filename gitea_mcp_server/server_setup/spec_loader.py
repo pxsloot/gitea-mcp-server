@@ -53,15 +53,16 @@ async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[s
         return cast("dict[str, Any]", remote_spec)
 
 
-async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> dict[str, Any]:
-    """Load Swagger spec and convert to OpenAPI v3 format.
+async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load Swagger spec, convert to OpenAPI v3, and load extensions.
 
     Args:
         gitea_client: GiteaClient for fetching the spec
         config: Application configuration
 
     Returns:
-        OpenAPI v3 spec as dictionary
+        Tuple of (openapi_v3_spec, extensions_dict).
+        ``extensions_dict`` is the raw YAML content (may be empty).
 
     Raises:
         SpecError: If spec loading or conversion fails
@@ -80,6 +81,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> di
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
 
+    extensions: dict[str, Any] = {}
     try:
         extensions = load_mcp_extensions()
         if extensions:
@@ -90,7 +92,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> di
             extra={"error": str(e)},
         )
 
-    return openapi_spec
+    return openapi_spec, extensions
 
 
 __all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

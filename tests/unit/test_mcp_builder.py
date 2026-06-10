@@ -197,6 +197,74 @@ class TestCustomizeMetadata:
 
             mock_register.assert_not_called()
 
+    def test_output_schema_not_none_sets_wrap_flag(self):
+        """When output_schema is not None, x-fastmcp-wrap-result is set."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}",
+            summary="Get repo",
+            operation_id="get_repo",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "get_repo"
+        tool.annotations = None
+        tool.tags = set()
+        tool.description = ""
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.meta = {}
+
+        output_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
+            return_value=output_schema,
+        ):
+            _customize_metadata(route, tool, openapi_spec={})
+            assert tool.output_schema["x-fastmcp-wrap-result"] is True
+
+    def test_array_output_schema_adds_pagination_fields(self):
+        """Array output_schema gets pagination fields (has_more, next_offset, total_count)."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="List issues",
+            operation_id="list_issues",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "list_issues"
+        tool.annotations = None
+        tool.tags = set()
+        tool.description = ""
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.meta = {}
+
+        # Array output schema: type=array with items schema
+        output_schema = {
+            "type": "array",
+            "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+        }
+
+        with (
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
+                return_value=output_schema,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=True,
+            ),
+        ):
+            _customize_metadata(route, tool, openapi_spec={})
+            props = output_schema.setdefault("properties", {})
+            assert "has_more" in props
+            assert "next_offset" in props
+            assert "total_count" in props
+            assert props["has_more"]["type"] == "boolean"
+            assert props["next_offset"]["type"] == "integer"
+            assert props["total_count"]["type"] == "integer"
+
 
 # ---------------------------------------------------------------------------
 # _RouteInfo
@@ -369,6 +437,51 @@ class TestGetDeprecatedRoutes:
         expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
         assert result == expected
         assert len(result) == 8
+
+
+# ---------------------------------------------------------------------------
+# create_openapi_provider
+# ---------------------------------------------------------------------------
+
+
+class TestCreateOpenapiProvider:
+    """Tests for create_openapi_provider — provider creation and deprecated route filtering."""
+
+    def test_deprecated_routes_are_filtered_out(self, caplog):
+        """Deprecated routes are excluded via route_map_fn."""
+        import logging
+
+        caplog.set_level(logging.DEBUG)
+
+        from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
+
+        # Spec with a deprecated route
+        openapi_spec = {
+            "openapi": "3.1.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser"},
+                },
+                "/old/endpoint": {
+                    "post": {"operationId": "oldEndpoint", "deprecated": True},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+
+        from gitea_mcp_server.label_manager import LabelManager
+
+        client = MagicMock()
+        label_manager = LabelManager()
+        provider = create_openapi_provider(
+            openapi_spec=openapi_spec,
+            client=client,
+            label_manager=label_manager,
+        )
+
+        assert provider is not None
+        assert "Excluding deprecated endpoint" in caplog.text
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from gitea_mcp_server.constants import (
     AUTO_GENERATED_RESOURCE_SKIP_URIS,
     HTTP_STATUS_NOT_FOUND,
 )
-from gitea_mcp_server.resources.scope import derive_required_scope, make_resource_meta
+from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ def register_auto_generated_resources(
                     resource_name=resource_name,
                 )
 
-                resource_meta = make_resource_meta(required_scope)
+                resource_meta = scope_meta(required_scope)
 
                 try:
                     mcp.resource(

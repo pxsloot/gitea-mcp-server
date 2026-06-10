@@ -19,11 +19,13 @@ from gitea_mcp_server.tools.customize import (
     customize_component,
     generate_tool_title,
 )
+from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.schemas import derive_output_schema
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 
 __all__ = [
+    "ExtensionMetadataTransform",
     "GiteaNamespace",
     "TolerantSearchTransform",
     "add_inferred_hints",

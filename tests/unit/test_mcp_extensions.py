@@ -294,3 +294,116 @@ tool_names:
         with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
             with pytest.raises(Exception):
                 load_mcp_extensions()
+
+
+class TestLoadMcpExtensionsEdgeCases:
+    """Tests for edge cases in load_mcp_extensions."""
+
+    def test_project_root_not_found_falls_back_to_cwd(self, tmp_path):
+        """When pyproject.toml is not found, fall back to cwd."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_extensions._find_project_root") as mock_find,
+            patch.object(Path, "cwd", return_value=tmp_path),
+        ):
+            mock_find.side_effect = RuntimeError("No pyproject.toml")
+            result = load_mcp_extensions()
+            assert result == {}
+
+    def test_runtime_error_from_find_project_root(self):
+        """_find_project_root raises RuntimeError when no pyproject.toml found."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        # Mock the __file__ path to be in a dir without pyproject.toml
+        with (
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            from gitea_mcp_server.server_setup.mcp_extensions import _find_project_root
+            with pytest.raises(RuntimeError, match="Could not find project root"):
+                _find_project_root()
+
+    def test_os_error_on_read_propagates(self, tmp_path):
+        """OSError when reading extensions file propagates."""
+        yaml_file = tmp_path / "mcp_extensions.yaml"
+        yaml_file.write_text("tool_names:\n  test: {}")
+
+        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
+            with patch("gitea_mcp_server.server_setup.mcp_extensions.Path.open") as mock_open:
+                mock_open.side_effect = OSError("Permission denied")
+                with pytest.raises(OSError, match="Permission denied"):
+                    load_mcp_extensions()
+
+    def test_apply_parameter_extensions_skips_missing_name(self):
+        """apply_mcp_extensions skips parameter extensions with no name."""
+        spec = {
+            "paths": {
+                "/test": {
+                    "post": {
+                        "operationId": "test_op",
+                        "parameters": [
+                            {
+                                "name": "existing",
+                                "in": "query",
+                                "description": "Original",
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+        extensions = {
+            "tool_names": {
+                "test_op": {
+                    "parameters": [
+                        {"description": "No name field"},
+                    ]
+                }
+            }
+        }
+        apply_mcp_extensions(spec, extensions)
+        param = spec["paths"]["/test"]["post"]["parameters"][0]
+        assert param["description"] == "Original"
+
+    def test_apply_skips_non_dict_path_item(self):
+        """apply_mcp_extensions skips path items that are not dicts."""
+        spec = {
+            "paths": {
+                "/valid": {
+                    "get": {
+                        "operationId": "get_valid",
+                    }
+                },
+                "/broken": "not_a_dict",
+            }
+        }
+        extensions = {"tool_names": {"get_valid": {"description": "Updated"}}}
+        apply_mcp_extensions(spec, extensions)
+        # Non-dict path is skipped, no crash
+        assert spec["paths"]["/valid"]["get"]["operationId"] == "get_valid"
+
+    def test_apply_skips_invalid_operation_types(self):
+        """apply_mcp_extensions skips non-dict operations or invalid methods."""
+        spec = {
+            "paths": {
+                "/test": {
+                    "get": {
+                        "operationId": "get_test",
+                    },
+                    "invalid_method": "this is not a dict",
+                    "parameters": [{"name": "p1", "in": "query"}],
+                }
+            }
+        }
+        extensions = {"tool_names": {"get_test": {"description": "Updated"}}}
+        apply_mcp_extensions(spec, extensions)
+        assert spec["paths"]["/test"]["get"]["description"] == "Updated"
+
+    def test_apply_with_empty_tool_names(self):
+        """apply_mcp_extensions with no tool_names returns early."""
+        spec = {"paths": {}}
+        apply_mcp_extensions(spec, extensions={"tool_names": {}})
+        assert True  # No error

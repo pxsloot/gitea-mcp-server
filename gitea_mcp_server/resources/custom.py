@@ -77,9 +77,7 @@ def resource_handler(
     return decorator
 
 
-def _find_matching_token_scopes(
-    tokens_data: list, raw_token: str
-) -> list[str] | None:
+def _find_matching_token_scopes(tokens_data: list, raw_token: str) -> list[str] | None:
     """Match token by last eight characters and return sorted scopes, or None."""
     last_eight = raw_token[-8:]
     for token in tokens_data:
@@ -103,11 +101,26 @@ def register_custom_resources(  # noqa: PLR0915
     so function signatures expose only URI-relevant parameters.
     Uses FastMCP's last-registration-wins ordering.
     """
+
+    def _register(
+        uri: str, mime_type: str, tags: set[str], meta: dict[str, Any] | None
+    ) -> Callable[
+        [Callable[..., Awaitable[ResourceResult]]], Callable[..., Awaitable[ResourceResult]]
+    ]:
+        def deco(
+            func: Callable[..., Awaitable[ResourceResult]],
+        ) -> Callable[..., Awaitable[ResourceResult]]:
+            mcp.resource(uri, mime_type=mime_type, tags=tags, meta=meta)(func)
+            registry.record(uri=uri, func=func, mime_type=mime_type, tags=tags, meta=meta)
+            return func
+
+        return deco
+
     # ── repository ──────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_REPOSITORY, **scope_meta("read:repository")}
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}",
         mime_type="text/markdown",
         tags={"wrapper", "repository"},
@@ -121,25 +134,19 @@ def register_custom_resources(  # noqa: PLR0915
             return data
         return _format_repo_markdown(data)
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}",
-        func=get_repository,
-        mime_type="text/markdown",
-        tags={"wrapper", "repository"},
-        meta=_meta,
-    )
-
     # ── readme ──────────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_README, **scope_meta("read:repository")}
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}/readme",
         mime_type="text/plain",
         tags={"wrapper", "readme"},
         meta=_meta,
     )
-    @resource_handler("readme", "{owner}/{repo}", "README not found for repository '{owner}/{repo}'.")
+    @resource_handler(
+        "readme", "{owner}/{repo}", "README not found for repository '{owner}/{repo}'."
+    )
     async def get_readme(owner: str, repo: str) -> ResourceResult:
         """Get repository README content."""
         response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
@@ -152,25 +159,19 @@ def register_custom_resources(  # noqa: PLR0915
             return raw
         return cast("str", response.get("content", ""))
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}/readme",
-        func=get_readme,
-        mime_type="text/plain",
-        tags={"wrapper", "readme"},
-        meta=_meta,
-    )
-
     # ── issues ──────────────────────────────────────────────────────────────
 
     _meta = scope_meta("read:repository")
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}/issues{?state}",
         mime_type="text/markdown",
         tags={"wrapper", "issues"},
         meta=_meta,
     )
-    @resource_handler("issues", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no issues.")
+    @resource_handler(
+        "issues", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no issues."
+    )
     async def list_repo_issues(owner: str, repo: str, state: str | None = None) -> ResourceResult:
         """List issues for a repository, optionally filtered by state (open/closed)."""
         params = {}
@@ -194,25 +195,19 @@ def register_custom_resources(  # noqa: PLR0915
         title = f"Issues ({state})" if state else "All Issues"
         return _format_issues_markdown(issues, title=title)
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}/issues{?state}",
-        func=list_repo_issues,
-        mime_type="text/markdown",
-        tags={"wrapper", "issues"},
-        meta=_meta,
-    )
-
     # ── pulls ───────────────────────────────────────────────────────────────
 
     _meta = scope_meta("read:repository")
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}/pulls{?state}",
         mime_type="text/markdown",
         tags={"wrapper", "pull_requests"},
         meta=_meta,
     )
-    @resource_handler("pulls", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no pull requests.")
+    @resource_handler(
+        "pulls", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no pull requests."
+    )
     async def list_repo_pulls(owner: str, repo: str, state: str | None = None) -> ResourceResult:
         """List pull requests for a repository, optionally filtered by state."""
         params = {}
@@ -236,25 +231,19 @@ def register_custom_resources(  # noqa: PLR0915
         title = f"Pull Requests ({state})" if state else "All Pull Requests"
         return _format_pulls_markdown(pulls, title=title)
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}/pulls{?state}",
-        func=list_repo_pulls,
-        mime_type="text/markdown",
-        tags={"wrapper", "pull_requests"},
-        meta=_meta,
-    )
-
     # ── file ────────────────────────────────────────────────────────────────
 
     _meta = scope_meta("read:repository")
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}/files/{path*}",
         mime_type="text/plain",
         tags={"wrapper", "files"},
         meta=_meta,
     )
-    @resource_handler("file", "{owner}/{repo}/{path}", "File '{path}' not found in repository '{owner}/{repo}'.")
+    @resource_handler(
+        "file", "{owner}/{repo}/{path}", "File '{path}' not found in repository '{owner}/{repo}'."
+    )
     async def get_file(owner: str, repo: str, path: str, ref: str | None = None) -> ResourceResult:
         """Get file content from repository."""
         params = {}
@@ -276,25 +265,19 @@ def register_custom_resources(  # noqa: PLR0915
             return raw
         return cast("str", response.get("content", ""))
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}/files/{path*}",
-        func=get_file,
-        mime_type="text/plain",
-        tags={"wrapper", "files"},
-        meta=_meta,
-    )
-
     # ── releases ────────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_RELEASES, **scope_meta("read:repository")}
 
-    @mcp.resource(
+    @_register(
         "gitea://repos/{owner}/{repo}/releases",
         mime_type="text/markdown",
         tags={"wrapper", "releases"},
         meta=_meta,
     )
-    @resource_handler("releases", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no releases.")
+    @resource_handler(
+        "releases", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no releases."
+    )
     async def list_repo_releases(owner: str, repo: str) -> ResourceResult:
         """List releases for a repository."""
         releases = await gitea_client.request("GET", f"/repos/{owner}/{repo}/releases")
@@ -313,23 +296,12 @@ def register_custom_resources(  # noqa: PLR0915
 
         return "\n".join(lines)
 
-    registry.record(
-        uri="gitea://repos/{owner}/{repo}/releases",
-        func=list_repo_releases,
-        mime_type="text/markdown",
-        tags={"wrapper", "releases"},
-        meta=_meta,
-    )
-
     # ── user ────────────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
 
-    @mcp.resource(
-        "gitea://users/{username}",
-        mime_type="text/markdown",
-        tags={"wrapper", "user"},
-        meta=_meta,
+    @_register(
+        "gitea://users/{username}", mime_type="text/markdown", tags={"wrapper", "user"}, meta=_meta
     )
     @resource_handler("user", "{username}", "User '{username}' not found.")
     async def get_user(username: str) -> ResourceResult:
@@ -339,24 +311,11 @@ def register_custom_resources(  # noqa: PLR0915
             return user
         return _format_user_markdown(user)
 
-    registry.record(
-        uri="gitea://users/{username}",
-        func=get_user,
-        mime_type="text/markdown",
-        tags={"wrapper", "user"},
-        meta=_meta,
-    )
-
     # ── current user ────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
 
-    @mcp.resource(
-        "gitea://user",
-        mime_type="text/markdown",
-        tags={"wrapper", "user"},
-        meta=_meta,
-    )
+    @_register("gitea://user", mime_type="text/markdown", tags={"wrapper", "user"}, meta=_meta)
     @resource_handler("user", "current user", "Current user not found or not authenticated.")
     async def get_current_user() -> ResourceResult:
         """Get current authenticated user profile information."""
@@ -365,19 +324,11 @@ def register_custom_resources(  # noqa: PLR0915
             return user
         return _format_user_markdown(user)
 
-    registry.record(
-        uri="gitea://user",
-        func=get_current_user,
-        mime_type="text/markdown",
-        tags={"wrapper", "user"},
-        meta=_meta,
-    )
-
     # ── organization ────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:organization")}
 
-    @mcp.resource(
+    @_register(
         "gitea://orgs/{orgname}",
         mime_type="text/markdown",
         tags={"wrapper", "organization"},
@@ -391,24 +342,11 @@ def register_custom_resources(  # noqa: PLR0915
             return org
         return _format_user_markdown(org)
 
-    registry.record(
-        uri="gitea://orgs/{orgname}",
-        func=get_org,
-        mime_type="text/markdown",
-        tags={"wrapper", "organization"},
-        meta=_meta,
-    )
-
     # ── version ─────────────────────────────────────────────────────────────
 
     _meta = scope_meta(None)
 
-    @mcp.resource(
-        "gitea://version",
-        mime_type="text/plain",
-        tags={"wrapper", "server"},
-        meta=_meta,
-    )
+    @_register("gitea://version", mime_type="text/plain", tags={"wrapper", "server"}, meta=_meta)
     @resource_handler("version", "server", "Version information not available.")
     async def get_version() -> ResourceResult:
         """Get server application version."""
@@ -417,23 +355,12 @@ def register_custom_resources(  # noqa: PLR0915
             return data
         return str(data.get("version", "Unknown"))
 
-    registry.record(
-        uri="gitea://version",
-        func=get_version,
-        mime_type="text/plain",
-        tags={"wrapper", "server"},
-        meta=_meta,
-    )
-
     # ── token scopes ────────────────────────────────────────────────────────
 
     _meta = scope_meta("read:user")
 
-    @mcp.resource(
-        "gitea://token/scopes",
-        mime_type="application/json",
-        tags={"wrapper", "server"},
-        meta=_meta,
+    @_register(
+        "gitea://token/scopes", mime_type="application/json", tags={"wrapper", "server"}, meta=_meta
     )
     async def get_active_token_scopes() -> ResourceResult:
         """Get the scopes of the active Gitea token."""
@@ -455,36 +382,17 @@ def register_custom_resources(  # noqa: PLR0915
             logger.exception("Failed to retrieve active token scopes")
             return json.dumps({"scopes": None})
 
-    registry.record(
-        uri="gitea://token/scopes",
-        func=get_active_token_scopes,
-        mime_type="application/json",
-        tags={"wrapper", "server"},
-        meta=_meta,
-    )
-
     # ── server info (only when openapi_spec is available) ───────────────────
 
     if openapi_spec is not None:
         _meta = scope_meta(None)
 
-        @mcp.resource(
-            "gitea://server/info",
-            mime_type="text/markdown",
-            tags={"wrapper", "server"},
-            meta=_meta,
+        @_register(
+            "gitea://server/info", mime_type="text/markdown", tags={"wrapper", "server"}, meta=_meta
         )
         async def get_server_info() -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
             return _build_server_info_markdown(openapi_spec)
-
-        registry.record(
-            uri="gitea://server/info",
-            func=get_server_info,
-            mime_type="text/markdown",
-            tags={"wrapper", "server"},
-            meta=_meta,
-        )
 
 
 __all__ = [

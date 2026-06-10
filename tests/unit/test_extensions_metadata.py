@@ -132,5 +132,3 @@ class TestExtensionMetadataTransform:
         assert tool is not None
         assert tool.description == "Unified search across tools, docs, and resources"
 
-
-__all__ = []

@@ -445,6 +445,27 @@ class TestRegisterCustomResources:
             fastmcp_internal = meta.get("fastmcp", {}).get("_internal", {})
             assert "required_scope" in fastmcp_internal, f"Missing required_scope for {call[1].get('uri')}"
 
+    async def test_registers_all_custom_resources_with_openapi_spec(
+        self, mock_mcp, mock_gitea_client, mock_registry
+    ):
+        """Test that 12 custom resources are registered when openapi_spec is provided."""
+        register_custom_resources(
+            mock_mcp, mock_gitea_client, mock_registry,
+            openapi_spec={"info": {"title": "test", "version": "1.0.0"}},
+        )
+        assert mock_mcp.resource.call_count == 12
+
+    async def test_custom_resources_include_server_info_uri_with_openapi_spec(
+        self, mock_mcp, mock_gitea_client, mock_registry
+    ):
+        """Test that gitea://server/info is registered when openapi_spec is provided."""
+        register_custom_resources(
+            mock_mcp, mock_gitea_client, mock_registry,
+            openapi_spec={"info": {"title": "test", "version": "1.0.0"}},
+        )
+        uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
+        assert "gitea://server/info" in uri_templates
+
 
 class TestResourceFormatters:
     """Tests for other formatting functions."""
@@ -533,8 +554,8 @@ class TestCustomResourceErrorHandling:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("repository", "{owner}/{repo}", "Repository '{owner}/{repo}' not found")
-        async def get_repository(owner: str, repo: str, gitea_client):
-            data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
+        async def get_repository(owner: str, repo: str):
+            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}")
             if isinstance(data, str):
                 return data
             return data
@@ -544,7 +565,7 @@ class TestCustomResourceErrorHandling:
         )
 
         with pytest.raises(ResourceError) as exc_info:
-            await get_repository("owner", "repo", gitea_client=mock_gitea_client)
+            await get_repository("owner", "repo")
 
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "NOT_FOUND"
@@ -557,8 +578,8 @@ class TestCustomResourceErrorHandling:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("file", "{owner}/{repo}/{path}", "File '{path}' not found")
-        async def get_file(owner: str, repo: str, path: str, gitea_client):
-            data = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/{path}")
+        async def get_file(owner: str, repo: str, path: str):
+            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/{path}")
             if isinstance(data, str):
                 return data
             return data
@@ -568,7 +589,7 @@ class TestCustomResourceErrorHandling:
         )
 
         with pytest.raises(ResourceError) as exc_info:
-            await get_file("owner", "repo", "path/to/file", gitea_client=mock_gitea_client)
+            await get_file("owner", "repo", "path/to/file")
 
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "NOT_FOUND"
@@ -581,7 +602,7 @@ class TestCustomResourceErrorHandling:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("issues", "{owner}/{repo}", "Resource not found: {owner}/{repo}")
-        async def list_repo_issues(owner: str, repo: str, gitea_client, state: str = "open"):
+        async def list_repo_issues(owner: str, repo: str, state: str = "open"):
             valid_states = {"open", "closed", "all"}
             if state not in valid_states:
                 raise ResourceError(
@@ -592,13 +613,13 @@ class TestCustomResourceErrorHandling:
                         "resource_id": f"{owner}/{repo}",
                     }
                 )
-            data = await gitea_client.request("GET", f"/repos/{owner}/{repo}/issues")
+            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}/issues")
             if isinstance(data, str):
                 return data
             return data
 
         with pytest.raises(ResourceError) as exc_info:
-            await list_repo_issues("owner", "repo", gitea_client=mock_gitea_client, state="invalid")
+            await list_repo_issues("owner", "repo", state="invalid")
 
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "VALIDATION_ERROR"
@@ -1286,14 +1307,14 @@ class TestResourceHandlerDecorator:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str, gitea_client):
-            data = await gitea_client.request("GET", f"/items/{item_id}")
+        async def my_resource(item_id: str):
+            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
             if isinstance(data, str):
                 return data
             return f"Formatted: {data}"
 
         mock_gitea_client.request = AsyncMock(return_value={"name": "test"})
-        result = await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+        result = await my_resource(item_id="abc")
         assert result == "Formatted: {'name': 'test'}"
         mock_gitea_client.request.assert_called_once_with("GET", "/items/abc")
 
@@ -1301,22 +1322,22 @@ class TestResourceHandlerDecorator:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str, gitea_client):
-            data = await gitea_client.request("GET", f"/items/{item_id}")
+        async def my_resource(item_id: str):
+            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
             if isinstance(data, str):
                 return data
             return f"Formatted: {data}"
 
         mock_gitea_client.request = AsyncMock(return_value="error string")
-        result = await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+        result = await my_resource(item_id="abc")
         assert result == "error string"
 
     async def test_404_converts_to_resource_error(self, mock_gitea_client):
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str, gitea_client):
-            data = await gitea_client.request("GET", f"/items/{item_id}")
+        async def my_resource(item_id: str):
+            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
             if isinstance(data, str):
                 return data
             return f"Formatted: {data}"
@@ -1331,7 +1352,7 @@ class TestResourceHandlerDecorator:
         )
 
         with pytest.raises(ResourceError) as exc_info:
-            await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+            await my_resource(item_id="abc")
 
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "NOT_FOUND"
@@ -1343,8 +1364,8 @@ class TestResourceHandlerDecorator:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str, gitea_client):
-            data = await gitea_client.request("GET", f"/items/{item_id}")
+        async def my_resource(item_id: str):
+            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
             if isinstance(data, str):
                 return data
             return f"Formatted: {data}"
@@ -1352,13 +1373,13 @@ class TestResourceHandlerDecorator:
         mock_gitea_client.request = AsyncMock(side_effect=ValueError("boom"))
 
         with pytest.raises(ValueError, match="boom"):
-            await my_resource(item_id="abc", gitea_client=mock_gitea_client)
+            await my_resource(item_id="abc")
 
     async def test_preserves_function_metadata(self):
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str, gitea_client):
+        async def my_resource(item_id: str):
             """My test resource."""
             return "ok"
 
@@ -1369,19 +1390,18 @@ class TestResourceHandlerDecorator:
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("repo", "{owner}/{repo}", "Not found: {owner}/{repo}")
-        async def my_resource(owner: str, repo: str, gitea_client):
+        async def my_resource(owner: str, repo: str):
             return f"OK: {owner}/{repo}"
 
-        mock_gitea_client.request = AsyncMock(return_value={})
-        result = await my_resource("user", "my-repo", gitea_client=mock_gitea_client)
+        result = await my_resource("user", "my-repo")
         assert result == "OK: user/my-repo"
 
     async def test_positional_args_error_formatting(self, mock_gitea_client):
         from gitea_mcp_server.resources.custom import resource_handler
 
         @resource_handler("repo", "{owner}/{repo}", "Repo '{owner}/{repo}' missing.")
-        async def my_resource(owner: str, repo: str, gitea_client):
-            data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
+        async def my_resource(owner: str, repo: str):
+            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}")
             if isinstance(data, str):
                 return data
             return f"Formatted: {data}"
@@ -1393,7 +1413,7 @@ class TestResourceHandlerDecorator:
 
         mock_gitea_client.request = AsyncMock(side_effect=MockGiteaError(HTTP_STATUS_NOT_FOUND))
         with pytest.raises(ResourceError) as exc_info:
-            await my_resource("user", "my-repo", gitea_client=mock_gitea_client)
+            await my_resource("user", "my-repo")
 
         error_data = exc_info.value.args[0]
         assert error_data["resource_type"] == "repo"

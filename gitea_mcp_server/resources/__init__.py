@@ -17,7 +17,7 @@ from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
 __all__ = [
     "ResourceRegistry",
     "derive_required_scope",
-    "scope_meta",
     "register_auto_generated_resources",
     "register_custom_resources",
+    "scope_meta",
 ]

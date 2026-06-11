@@ -124,10 +124,6 @@ def _apply_operation_extension(
         extra={"operation_id": op_id, "path": path, "method": method},
     )
 
-    if "title" in ext:
-        operation["summary"] = ext["title"]
-    if "description" in ext:
-        operation["description"] = ext["description"]
     if "parameters" in ext and isinstance(ext["parameters"], list):
         _apply_parameter_extensions(operation, ext["parameters"])
 
@@ -138,9 +134,11 @@ def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any
     """Apply MCP customizations from extensions to the OpenAPI spec.
 
     This function mutates the openapi_spec in-place by:
-    - Overriding operation summary (title) and description from extensions
     - Updating parameter descriptions and examples
     - Removing any x-mcp fields after processing
+
+    Note: Tool-level metadata overrides (title, description, tags, annotation hints)
+    are handled by ``ExtensionMetadataTransform`` at query time, not here.
 
     Args:
         openapi_spec: The OpenAPI specification dictionary (will be modified in-place)

@@ -1,16 +1,26 @@
 """Extension metadata transform — applies YAML extension overrides to tool metadata at query time.
 
 Works *with* FastMCP's transform pattern: intercepts ``list_tools`` and
-``get_tool`` to patch tool descriptions and titles from the extensions
-config, supporting both prefixed and unprefixed tool names.
+``get_tool`` to patch tool descriptions, titles, tags, and annotation
+hints from the extensions config, supporting both prefixed and
+unprefixed tool names.
 """
 
 from collections.abc import Sequence
 from typing import Any
 
 from fastmcp.server.transforms import Transform
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
+
+# Fields that live directly on FastMCPComponent/Tool (title, description, tags).
+# Note: tags comes from YAML as a list[str] but Tool accepts set[str]
+# via Pydantic's BeforeValidator, so we pass it through as-is.
+_COMPONENT_FIELDS = {"title", "description", "tags"}
+
+# Fields that live inside ToolAnnotations (the hints documented in
+# mcp_extensions.yaml under "Annotation Overrides").
+_ANNOTATION_FIELDS = {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
 
 
 class ExtensionMetadataTransform(Transform):
@@ -38,8 +48,17 @@ class ExtensionMetadataTransform(Transform):
         if override is None:
             return tool
         updates: dict[str, Any] = {}
-        if "description" in override:
-            updates["description"] = override["description"]
+        for field in _COMPONENT_FIELDS:
+            if field in override:
+                value = override[field]
+                if field == "tags":
+                    value = set(value)
+                updates[field] = value
+        annotation_overrides = {k: v for k, v in override.items() if k in _ANNOTATION_FIELDS}
+        if annotation_overrides:
+            current = tool.annotations.model_dump() if tool.annotations else {}
+            current.update(annotation_overrides)
+            updates["annotations"] = ToolAnnotations(**current)
         return tool.model_copy(update=updates)
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:

@@ -25,6 +25,14 @@
 # the HTTP-method-based inference in `add_inferred_hints`.
 
 tool_names:
+  search:
+    readOnlyHint: true       # Mark as read-only even if HTTP method suggests otherwise
+    destructiveHint: false   # Suppress destructive warning
+    idempotentHint: true     # Mark as idempotent for safe retry
+    openWorldHint: false     # Mark as internal (rare, Gitea tools are all open-world)
+    title: "Custom Title"    # Override the auto-generated title
+    description: "Natural language query to search for gitea-mcp-server tools, docs, and resources"    # Override the auto-generated description
+    tags: ["custom", "tag"]  # Add extra tags for search/filtering
   # Clarify that issue_create_comment works for both issues AND pull requests
   issue_create_comment:
     description: |

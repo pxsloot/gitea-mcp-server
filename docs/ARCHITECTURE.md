@@ -36,7 +36,7 @@ removed when FastMCP catches up.
 │  │ parse     │   │  Swagger 2.0 → OpenAPI   │  │
 │  └───────────┘   │  3.1                     │  │
 │                  │  + wrap response schemas │  │
-│                  │  + apply MCP extensions  │  │
+│                  │  + apply param extensions│  │
 │                  └───────────┬──────────────┘  │
 └──────────────────────────────┼─────────────────┘
                                │ OpenAPI 3.1 spec
@@ -80,7 +80,11 @@ removed when FastMCP catches up.
 │       tool_info, unified_search)                        │
 │    2. GiteaNamespace — prefixes tool names with         │
 │       gitea_; resources pass through unchanged          │
-│    3. ExclusionTransform — hides tools/resources        │
+│    3. ExtensionMetadataTransform — applies YAML         │
+│       overrides (title, description, tags, hints)       │
+│       to matching tools; matches both prefixed and      │
+│       unprefixed names                                  │
+│    4. ExclusionTransform — hides tools/resources        │
 │       matching YAML config patterns                     │
 │                                                         │
 │  Post-transform:                                        │
@@ -133,7 +137,7 @@ Agent reads a resource:
 | `config.py` | Pydantic settings from env vars (GITEA_URL, GITEA_TOKEN, etc.) | `Config` |
 | `client.py` | httpx client with retry, rate-limit handling, SSL | `GiteaClient` |
 | `openapi_converter.py` | Swagger 2.0 → OpenAPI 3.1 | `convert_swagger_to_openapi_v3` |
-| `spec_loader.py` | Fetch spec, convert, apply extensions | `load_and_convert_spec` |
+| `spec_loader.py` | Fetch spec, convert, apply parameter extensions; load YAML overrides for transform | `load_and_convert_spec` |
 | `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; exclude deprecated endpoints via `route_map_fn` | `create_openapi_provider`, `_get_deprecated_routes` |
 | `server.py` | Assemble everything, serve via stdio or HTTP | `main()`, `create_mcp_server()` |
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
@@ -153,6 +157,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
 | `tools/labels.py` | string→ID label conversion, label schema updates |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
+| `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
@@ -171,8 +176,9 @@ The customization layers as applied during server startup:
 | 7. Exclusion config | `tools/exclusion.py` | exclude/include tools, resources, and templates by name, glob, or tag pattern (YAML config) |
 | 8. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
 | 9. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
-| 10. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
-| 11. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
+| 10. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
+| 11. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
+| 12. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
 
 ### Resource System
 
@@ -194,7 +200,7 @@ The customization layers as applied during server startup:
 | `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_manager`) |
 | `server_setup/resource_setup.py` | Orchestrate resource registration |
 | `server_setup/permissions.py` | Re-exports from `tool_filter.py` (avoids circular import) |
-| `server_setup/mcp_extensions.py` | YAML-based tool customizations (titles, descriptions, params) |
+| `server_setup/mcp_extensions.py` | YAML-based parameter extensions (applied to spec before tool generation) |
 
 ### Flat Infrastructure Modules (shared, not domain-specific)
 

@@ -59,27 +59,29 @@ def minimal_spec():
     }
 
 
-def test_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec):
-    """Test that mcp_extensions.yaml customizations propagate to tool descriptions."""
+def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec):
+    """Test that mcp_extensions.yaml parameter customizations propagate through spec to tools.
+
+    Note: Tool-level metadata overrides (title, description, tags, hints) are handled
+    by ``ExtensionMetadataTransform`` at query time, not at the spec level.
+    """
     # Create a fake Gitea client
     mock_client = MagicMock()
     mock_client.request.return_value = {}
 
-    # Apply extensions manually
+    # Apply extensions manually — only parameter overrides are spec-level
     extensions = {
         "tool_names": {
             "issue_create_issue": {
-                "description": "Custom issue creation description with labels guidance.\n\n**Labels**: Accepts both names and IDs."
-            },
-            "issue_create_comment": {
-                "description": "Custom comment description. Works for PRs too."
+                "parameters": [
+                    {"name": "labels", "description": "Custom labels parameter description"},
+                ]
             },
         }
     }
     apply_mcp_extensions(minimal_spec, extensions)
 
     # Convert to OpenAPI v3 (the spec is already v3, but this simulates the pipeline)
-    # In reality, spec_loader.load_and_convert_spec does conversion then apply
     provider = create_openapi_provider(
         openapi_spec=minimal_spec,
         client=mock_client,
@@ -91,12 +93,8 @@ def test_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec):
     tool_names = {t.name: t for t in tools}
 
     assert "issue_create_issue" in tool_names
-    assert "Custom issue creation description" in tool_names["issue_create_issue"].description
-    assert "labels guidance" in tool_names["issue_create_issue"].description.lower()
-
-    assert "issue_create_comment" in tool_names
-    assert "Custom comment description" in tool_names["issue_create_comment"].description
-    assert "Works for PRs too" in tool_names["issue_create_comment"].description
+    # Description is NOT overridden at spec level — stays as original
+    assert "Original description" in tool_names["issue_create_issue"].description
 
 
 def test_extensions_load_from_yaml_file(minimal_spec, tmp_path):

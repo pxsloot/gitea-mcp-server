@@ -4,16 +4,24 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolAnnotations
 
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 
 
-def _make_tool(name: str, description: str = "", tags: set[str] | None = None) -> Tool:
+def _make_tool(
+    name: str,
+    description: str = "",
+    tags: set[str] | None = None,
+    title: str | None = None,
+    annotations: ToolAnnotations | None = None,
+) -> Tool:
     return Tool(
         name=name,
         description=description,
         tags=tags or set(),
+        title=title,
+        annotations=annotations,
         parameters={},
     )
 
@@ -131,4 +139,112 @@ class TestExtensionMetadataTransform:
         tool = await transform.get_tool("search", call_next)
         assert tool is not None
         assert tool.description == "Unified search across tools, docs, and resources"
+
+
+class TestExtensionMetadataTransformNewFields:
+    """Tests for the expanded field support in ExtensionMetadataTransform."""
+
+    @pytest.mark.asyncio
+    async def test_overrides_title(self):
+        """title override should propagate to tool title."""
+        transform = ExtensionMetadataTransform({"search": {"title": "Custom Title"}})
+        tool = _make_tool("search", title="Old Title")
+        result = await transform.list_tools([tool])
+        assert result[0].title == "Custom Title"
+
+    @pytest.mark.asyncio
+    async def test_overrides_tags(self):
+        """tags override should propagate (YAML list coerced to set)."""
+        transform = ExtensionMetadataTransform({"search": {"tags": ["custom", "tag"]}})
+        tool = _make_tool("search", tags={"old"})
+        result = await transform.list_tools([tool])
+        assert result[0].tags == {"custom", "tag"}
+
+    @pytest.mark.asyncio
+    async def test_overrides_read_only_hint(self):
+        """readOnlyHint should propagate into ToolAnnotations."""
+        transform = ExtensionMetadataTransform({"search": {"readOnlyHint": True}})
+        tool = _make_tool("search")
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.readOnlyHint is True
+
+    @pytest.mark.asyncio
+    async def test_overrides_destructive_hint(self):
+        """destructiveHint should propagate into ToolAnnotations."""
+        transform = ExtensionMetadataTransform({"search": {"destructiveHint": False}})
+        tool = _make_tool("search")
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.destructiveHint is False
+
+    @pytest.mark.asyncio
+    async def test_overrides_idempotent_hint(self):
+        """idempotentHint should propagate into ToolAnnotations."""
+        transform = ExtensionMetadataTransform({"search": {"idempotentHint": True}})
+        tool = _make_tool("search")
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.idempotentHint is True
+
+    @pytest.mark.asyncio
+    async def test_overrides_open_world_hint(self):
+        """openWorldHint should propagate into ToolAnnotations."""
+        transform = ExtensionMetadataTransform({"search": {"openWorldHint": False}})
+        tool = _make_tool("search")
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.openWorldHint is False
+
+    @pytest.mark.asyncio
+    async def test_merges_annotations_with_existing(self):
+        """Annotation overrides merge with existing annotations, not replace them."""
+        transform = ExtensionMetadataTransform({"search": {"idempotentHint": True}})
+        existing = ToolAnnotations(readOnlyHint=True, destructiveHint=True)
+        tool = _make_tool("search", annotations=existing)
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.readOnlyHint is True  # preserved
+        assert result[0].annotations.destructiveHint is True  # preserved
+        assert result[0].annotations.idempotentHint is True  # overridden
+
+    @pytest.mark.asyncio
+    async def test_creates_annotations_when_none(self):
+        """When tool has no annotations, override creates them."""
+        transform = ExtensionMetadataTransform({"search": {"readOnlyHint": True}})
+        tool = _make_tool("search", annotations=None)
+        result = await transform.list_tools([tool])
+        assert result[0].annotations is not None
+        assert result[0].annotations.readOnlyHint is True
+
+    @pytest.mark.asyncio
+    async def test_combined_component_and_annotation_overrides(self):
+        """title, description, tags, and hints can all be overridden in one entry."""
+        transform = ExtensionMetadataTransform({
+            "search": {
+                "title": "New Title",
+                "description": "New description",
+                "tags": ["a", "b"],
+                "readOnlyHint": True,
+                "idempotentHint": True,
+            }
+        })
+        tool = _make_tool("search", description="Old", tags={"x"}, title="Old Title")
+        result = await transform.list_tools([tool])
+        assert result[0].title == "New Title"
+        assert result[0].description == "New description"
+        assert result[0].tags == {"a", "b"}
+        assert result[0].annotations is not None
+        assert result[0].annotations.readOnlyHint is True
+        assert result[0].annotations.idempotentHint is True
+
+    @pytest.mark.asyncio
+    async def test_override_does_not_clear_unspecified_fields(self):
+        """Only fields present in the override are changed; others pass through."""
+        transform = ExtensionMetadataTransform({"search": {"title": "Only Title"}})
+        tool = _make_tool("search", description="Keep me", tags={"keep"})
+        result = await transform.list_tools([tool])
+        assert result[0].title == "Only Title"
+        assert result[0].description == "Keep me"
+        assert result[0].tags == {"keep"}
 

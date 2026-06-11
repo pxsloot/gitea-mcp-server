@@ -13,7 +13,8 @@ from gitea_mcp_server.server_setup.mcp_extensions import (
 class TestApplyMcpExtensions:
     """Tests for the apply_mcp_extensions function."""
 
-    def test_applies_title_override(self):
+    def test_does_not_apply_title_or_description_at_spec_level(self):
+        """title/description overrides are handled by ExtensionMetadataTransform, not here."""
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -37,8 +38,8 @@ class TestApplyMcpExtensions:
         apply_mcp_extensions(spec, extensions)
 
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
-        assert op["summary"] == "Custom Create Issue Title"
-        assert op["description"] == "Custom description"
+        assert op["summary"] == "Original title"
+        assert op["description"] == "Original description"
         assert "x-mcp" not in op
 
     def test_applies_parameter_customization(self):
@@ -147,7 +148,7 @@ class TestApplyMcpExtensions:
                 }
             }
         }
-        extensions = {"tool_names": {"create_issue": {"title": "Custom"}}}
+        extensions = {"tool_names": {"create_issue": {"description": "Custom"}}}
 
         apply_mcp_extensions(spec, extensions)
 
@@ -171,7 +172,8 @@ class TestApplyMcpExtensions:
 
         assert spec["paths"]["/some/path"]["post"]["summary"] == "No op ID"
 
-    def test_applies_only_provided_fields(self):
+    def test_applies_only_provided_parameters(self):
+        """Only parameters field is processed at spec level; title/description are ignored."""
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -179,6 +181,9 @@ class TestApplyMcpExtensions:
                         "operationId": "create_issue",
                         "summary": "Original title",
                         "description": "Original description",
+                        "parameters": [
+                            {"name": "body", "in": "query", "description": "Original body"},
+                        ],
                     }
                 }
             }
@@ -187,7 +192,9 @@ class TestApplyMcpExtensions:
             "tool_names": {
                 "create_issue": {
                     "title": "New title",
-                    # description not provided, should not change
+                    "parameters": [
+                        {"name": "body", "description": "Custom body desc"},
+                    ],
                 }
             }
         }
@@ -195,8 +202,9 @@ class TestApplyMcpExtensions:
         apply_mcp_extensions(spec, extensions)
 
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
-        assert op["summary"] == "New title"
+        assert op["summary"] == "Original title"
         assert op["description"] == "Original description"
+        assert op["parameters"][0]["description"] == "Custom body desc"
 
     def test_handles_empty_extensions(self):
         spec = {
@@ -216,36 +224,48 @@ class TestApplyMcpExtensions:
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
         assert op["summary"] == "Original"
 
-    def test_merges_multiple_operations(self):
+    def test_merges_multiple_operation_parameters(self):
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
                         "summary": "Original create",
+                        "parameters": [
+                            {"name": "title", "in": "query", "description": "Orig title"},
+                        ],
                     }
                 },
                 "/repos/{owner}/{repo}/issues/{index}": {
                     "put": {
                         "operationId": "edit_issue",
                         "summary": "Original edit",
+                        "parameters": [
+                            {"name": "body", "in": "query", "description": "Orig body"},
+                        ],
                     }
                 },
             }
         }
         extensions = {
             "tool_names": {
-                "create_issue": {"title": "Custom create"},
-                "edit_issue": {"title": "Custom edit"},
+                "create_issue": {
+                    "parameters": [{"name": "title", "description": "Custom title"}],
+                },
+                "edit_issue": {
+                    "parameters": [{"name": "body", "description": "Custom body"}],
+                },
             }
         }
 
         apply_mcp_extensions(spec, extensions)
 
-        assert spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["summary"] == "Custom create"
+        assert spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["summary"] == "Original create"
         assert (
-            spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["summary"] == "Custom edit"
+            spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["summary"] == "Original edit"
         )
+        assert spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0]["description"] == "Custom title"
+        assert spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["parameters"][0]["description"] == "Custom body"
 
 
 class TestLoadMcpExtensions:
@@ -400,7 +420,8 @@ class TestLoadMcpExtensionsEdgeCases:
         }
         extensions = {"tool_names": {"get_test": {"description": "Updated"}}}
         apply_mcp_extensions(spec, extensions)
-        assert spec["paths"]["/test"]["get"]["description"] == "Updated"
+        # description is not applied at spec level; get_test's params/x-mcp aren't set either
+        assert "description" not in spec["paths"]["/test"]["get"]
 
     def test_apply_with_empty_tool_names(self):
         """apply_mcp_extensions with no tool_names returns early."""

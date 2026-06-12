@@ -934,12 +934,17 @@ class TestServerEdgeCases:
                 await main_async()
             assert exc.value.code == 1
 
+    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
     def test_main_calls_async_main(self):
-        """main() calls asyncio.run(main_async())."""
+        """main() calls asyncio.run(main_async()).
+
+        ``asyncio.run`` is patched to return the raw coroutine because it
+        cannot be called from an already-running event loop.  The resulting
+        unawaited-coroutine RuntimeWarning is suppressed.
+        """
         import asyncio
         from unittest.mock import patch
 
-        # asyncio.run cannot be called from a running event loop, so mock it too
         with patch("gitea_mcp_server.server.main_async") as mock_main_async:
             with patch.object(asyncio, "run", lambda coro, **kw: coro):
                 from gitea_mcp_server.server import main

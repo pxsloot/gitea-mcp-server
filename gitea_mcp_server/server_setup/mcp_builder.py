@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
-from fastmcp.tools.base import Tool
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
@@ -185,57 +184,14 @@ class _ToolWrappingTransform(Transform):
             return tool
 
         customization = meta.get("_customization", {})
-        has_labels = customization.get("has_labels", False)
-        is_text_response = customization.get("is_text_response", False)
-        output_schema = tool.output_schema
 
         mock_route = _RouteInfo(
             path=customization.get("route_path", ""),
             method=customization.get("route_method", ""),
         )
-        label_manager = self._label_manager
-        gitea_client = self._gitea_client
-        openapi_spec = self._openapi_spec
-        component_params = tool.parameters
 
         async def transform_fn(**kwargs: Any) -> Any:
-            _run_validation(
-                kwargs,
-                component_params.get("required"),
-                component_params.get("properties"),
-            )
-            await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
-            result = await _run_with_error_handling(
-                kwargs, tool, mock_route, openapi_spec
-            )
-
-            if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
-                text = next(
-                    (c.text for c in result.content if isinstance(c, TextContent)),
-                    "",
-                )
-                return ToolResult(
-                    content=[TextContent(type="text", text=text)],
-                    structured_content={"result": text},
-                )
-
-            if _is_array_response(output_schema) and isinstance(result, ToolResult) and result.structured_content is not None:
-                result_data = result.structured_content.get("result")
-                if isinstance(result_data, list):
-                    page = kwargs.get("page", 1)
-                    per_page = kwargs.get("per_page") or kwargs.get("limit", 100)
-                    has_more = len(result_data) == per_page if per_page else False
-                    next_offset = page + 1 if has_more else None
-                    enhanced = dict(result.structured_content)
-                    enhanced["has_more"] = has_more
-                    enhanced["next_offset"] = next_offset
-                    enhanced["total_count"] = pagination_ctx.get().get("total_count")
-                    return ToolResult(
-                        content=[TextContent(type="text", text=str(enhanced))],
-                        structured_content=enhanced,
-                    )
-
-            return result
+            return await self._run_transform_pipeline(kwargs, tool, mock_route)
 
         return Tool.from_tool(
             tool,
@@ -243,9 +199,65 @@ class _ToolWrappingTransform(Transform):
             tags=tool.tags,
             description=tool.description,
             transform_fn=transform_fn,
-            output_schema=output_schema,
+            output_schema=tool.output_schema,
             meta=tool.meta,
         )
+
+    async def _run_transform_pipeline(
+        self,
+        kwargs: dict[str, Any],
+        tool: Tool,
+        route: Any,
+    ) -> ToolResult | Any:
+        """Run the full tool execution pipeline: validate, convert labels, execute, wrap result.
+
+        Args:
+            kwargs: The tool arguments from the agent.
+            tool: The Tool being wrapped (provides parameter schema and meta).
+            route: Route-like object with ``path`` and ``method`` attributes, used for
+                error message lookups.
+        """
+        meta = tool.meta or {}
+        customization = meta.get("_customization", {})
+        has_labels = customization.get("has_labels", False)
+        is_text_response = customization.get("is_text_response", False)
+        output_schema = tool.output_schema
+
+        _run_validation(
+            kwargs,
+            tool.parameters.get("required"),
+            tool.parameters.get("properties"),
+        )
+        await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+        result = await _run_with_error_handling(kwargs, tool, route, self._openapi_spec)
+
+        if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
+            text = next(
+                (c.text for c in result.content if isinstance(c, TextContent)),
+                "",
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=text)],
+                structured_content={"result": text},
+            )
+
+        if _is_array_response(output_schema) and isinstance(result, ToolResult) and result.structured_content is not None:
+            result_data = result.structured_content.get("result")
+            if isinstance(result_data, list):
+                page = kwargs.get("page", 1)
+                per_page = kwargs.get("per_page") or kwargs.get("limit", 100)
+                has_more = len(result_data) == per_page if per_page else False
+                next_offset = page + 1 if has_more else None
+                enhanced = dict(result.structured_content)
+                enhanced["has_more"] = has_more
+                enhanced["next_offset"] = next_offset
+                enhanced["total_count"] = pagination_ctx.get().get("total_count")
+                return ToolResult(
+                    content=[TextContent(type="text", text=str(enhanced))],
+                    structured_content=enhanced,
+                )
+
+        return result
 
 
 # ---------------------------------------------------------------------------

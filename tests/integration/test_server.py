@@ -940,7 +940,9 @@ class TestServerEdgeCases:
 
         ``asyncio.run`` is patched to return the raw coroutine because it
         cannot be called from an already-running event loop.  The resulting
-        unawaited-coroutine RuntimeWarning is suppressed.
+        unawaited-coroutine RuntimeWarning is suppressed here — see
+        https://git.home.lan/mcp-server/gitea-mcp-server/issues/335
+        for the proper fix.
         """
         import asyncio
         from unittest.mock import patch

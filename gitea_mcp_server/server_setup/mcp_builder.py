@@ -344,6 +344,5 @@ def create_openapi_provider(
 
 
 __all__ = [
-    "_RouteInfo",
     "create_openapi_provider",
 ]

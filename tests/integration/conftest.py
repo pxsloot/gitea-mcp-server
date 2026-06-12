@@ -50,11 +50,11 @@ integration tests.  Two patterns are supported:
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
 
 import pytest
 import respx
 
+from fastmcp import FastMCP
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
@@ -109,7 +109,7 @@ def lazy_config() -> SimpleConfig:
 
 
 @pytest.fixture
-def base_spec() -> dict[str, Any]:
+def base_spec() -> dict:
     """Minimal valid Swagger 2.0 spec with no endpoints.
 
     Override in a test class or module to add paths:
@@ -143,8 +143,8 @@ def base_spec() -> dict[str, Any]:
 
 async def create_test_server(
     config: SimpleConfig,
-    spec: dict[str, Any],
-) -> Any:
+    spec: dict,
+) -> FastMCP:
     """Create a fully wired MCP server for testing.
 
     **Must be called inside a ``respx.mock()`` context** that includes a route
@@ -160,8 +160,7 @@ async def create_test_server(
     Returns
     -------
     FastMCP
-        The configured server instance (type is ``FastMCP``, kept as ``Any``
-        to avoid import-time coupling).
+        The configured server instance.
     """
     gitea_client = GiteaClient(config)
     return await create_mcp_server(gitea_client)
@@ -175,8 +174,8 @@ async def create_test_server(
 @pytest.fixture
 async def mcp_server(
     simple_config: SimpleConfig,
-    base_spec: dict[str, Any],
-) -> AsyncIterator[Any]:
+    base_spec: dict,
+) -> AsyncIterator[FastMCP]:
     """Pre-wired MCP server for the default configuration.
 
     The swagger spec fetch is mocked from ``base_spec``.  Additional
@@ -199,8 +198,8 @@ async def mcp_server(
 @pytest.fixture
 async def search_mcp_server(
     lazy_config: SimpleConfig,
-    base_spec: dict[str, Any],
-) -> AsyncIterator[Any]:
+    base_spec: dict,
+) -> AsyncIterator[FastMCP]:
     """Pre-wired MCP server with lazy loading enabled.
 
     Use this fixture when tests need the synthetic tools (``search_tools``,

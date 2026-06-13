@@ -11,7 +11,6 @@ from fastmcp.tools.tool import ToolAnnotations
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _get_deprecated_routes,
-    _RouteInfo,
     _ToolWrappingTransform,
 )
 
@@ -264,27 +263,6 @@ class TestCustomizeMetadata:
             assert props["has_more"]["type"] == "boolean"
             assert props["next_offset"]["type"] == "integer"
             assert props["total_count"]["type"] == "integer"
-
-
-# ---------------------------------------------------------------------------
-# _RouteInfo
-# ---------------------------------------------------------------------------
-
-
-class TestRouteInfo:
-    """Tests for _RouteInfo dataclass."""
-
-    def test_defaults(self):
-        """Defaults to empty strings."""
-        info = _RouteInfo()
-        assert info.path == ""
-        assert info.method == ""
-
-    def test_custom_values(self):
-        """Custom values are stored."""
-        info = _RouteInfo(path="/test/path", method="POST")
-        assert info.path == "/test/path"
-        assert info.method == "POST"
 
 
 # ---------------------------------------------------------------------------

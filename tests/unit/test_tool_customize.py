@@ -1,7 +1,6 @@
-"""Unit tests for tool customization (categorize, title, hints, customize_component)."""
+"""Unit tests for tool customization (categorize, title, hints, metadata, wrapping)."""
 
-from copy import deepcopy
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -10,21 +9,17 @@ from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.label_manager import LabelManager
-from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
 from gitea_mcp_server.pagination import pagination_ctx
+from gitea_mcp_server.server_setup.mcp_builder import (
+    _customize_metadata,
+    _ToolWrappingTransform,
+)
 from gitea_mcp_server.tools.customize import (
     add_inferred_hints as _add_inferred_hints,
     categorize_tool as _categorize_tool,
-    customize_component as _customize_component,
     generate_tool_title as _generate_tool_title,
     _is_array_response,
 )
-
-
-@pytest.fixture
-def label_manager():
-    """Return a fresh LabelManager per test to avoid shared mutable state."""
-    return LabelManager()
 
 
 class TestCategorizeTool:
@@ -235,7 +230,7 @@ class TestInferredHints:
         # openWorldHint should be added
         assert tool.annotations.openWorldHint is True
 
-    def test_all_hints_added_when_annotations_empty(self, label_manager):
+    def test_all_hints_added_when_annotations_empty(self):
         route = MagicMock(path="/test", method="POST", summary="Test POST")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "test_post"
@@ -244,36 +239,32 @@ class TestInferredHints:
         tool.parameters = {"properties": {}}  # Provide minimal parameters
         tool.output_schema = None
         tool.description = "Test POST"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
         # All hints should be set based on method
-        assert new_tool is not None
-        assert new_tool.annotations.readOnlyHint is False
-        assert new_tool.annotations.destructiveHint is False
-        assert new_tool.annotations.idempotentHint is False
-        assert new_tool.annotations.openWorldHint is True
-        assert new_tool.annotations.title == "Test POST"  # Title uses summary as-is
+        assert tool.annotations.readOnlyHint is False
+        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.idempotentHint is False
+        assert tool.annotations.openWorldHint is True
+        assert tool.annotations.title == "Test POST"  # Title uses summary as-is
 
 
 class TestCustomizeComponent:
-    """Tests for the _customize_component function."""
+    """Tests for _customize_metadata — in-place metadata on OpenAPITools."""
 
-    def test_only_tools_are_customized(self, label_manager):
+    def test_only_tools_are_customized(self):
+        """Non-OpenAPITool components are skipped."""
         from fastmcp.server.providers.openapi import OpenAPIResource
 
-        # Mock a non-tool component with spec to pass isinstance check
         route = MagicMock(path="/test", summary="Test", operation_id="test_route")
         resource = MagicMock(spec=OpenAPIResource)
 
-        _customize_component(route, resource, label_manager)
+        _customize_metadata(route, resource, openapi_spec={})
 
-        # Should return early without modifying
-        assert True  # No exception means pass
+        # No exception means pass — skipped non-tool component silently
+        assert True
 
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
@@ -285,20 +276,17 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}
         tool.output_schema = None
         tool.description = "List issues"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert new_tool.annotations is not None
-        assert isinstance(new_tool.annotations, ToolAnnotations)
-        assert new_tool.annotations.title == "List issues"
-        assert "issue" in new_tool.tags
+        assert tool.annotations is not None
+        assert isinstance(tool.annotations, ToolAnnotations)
+        assert tool.annotations.title == "List issues"
+        assert "issue" in tool.tags
 
-    def test_adds_annotations_to_tool_with_dict(self, label_manager):
+    def test_adds_annotations_to_tool_with_dict(self):
+        """Annotations dict is converted to ToolAnnotations."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
         )
@@ -309,19 +297,16 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}
         tool.output_schema = None
         tool.description = "List issues"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert isinstance(new_tool.annotations, ToolAnnotations)
-        assert new_tool.annotations.title == "List issues"  # Our title overrides dict
-        assert "issue" in new_tool.tags
+        assert isinstance(tool.annotations, ToolAnnotations)
+        assert tool.annotations.title == "List issues"  # Our title overrides dict
+        assert "issue" in tool.tags
 
-    def test_converts_existing_toolannotations_properly(self, label_manager):
+    def test_converts_existing_toolannotations_properly(self):
+        """Existing ToolAnnotations are preserved and updated."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}",
             summary="Get pull request",
@@ -335,20 +320,17 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}
         tool.output_schema = None
         tool.description = "Get pull request"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert isinstance(new_tool.annotations, ToolAnnotations)
-        assert new_tool.annotations.title == "Get pull request"  # Updated
-        assert new_tool.annotations.readOnlyHint is True  # Preserved
-        assert "pull_request" in new_tool.tags
+        assert isinstance(tool.annotations, ToolAnnotations)
+        assert tool.annotations.title == "Get pull request"  # Updated
+        assert tool.annotations.readOnlyHint is True  # Preserved
+        assert "pull_request" in tool.tags
 
-    def test_category_detection_various_paths(self, label_manager):
+    def test_category_detection_various_paths(self):
+        """Category tag is inferred correctly from various route paths."""
         test_cases = [
             ("/repos/{owner}/{repo}/issues", "issue"),
             ("/repos/{owner}/{repo}/pulls/{index}", "pull_request"),
@@ -368,20 +350,17 @@ class TestCustomizeComponent:
             tool.parameters = {"properties": {}}
             tool.output_schema = None
             tool.description = "Test"
-            tool.version = "1"
-            tool.auth = None
-            tool.serializer = None
             tool.meta = {}
 
-            new_tool = _customize_component(route, tool, label_manager)
+            _customize_metadata(route, tool, openapi_spec={})
 
-            assert new_tool is not None
-            assert new_tool.annotations is not None
-            assert expected_category in new_tool.tags, (
+            assert tool.annotations is not None
+            assert expected_category in tool.tags, (
                 f"Failed for {path}: category {expected_category} not in tags"
             )
 
-    def test_title_generation_from_operation_id(self, label_manager):
+    def test_title_generation_from_operation_id(self):
+        """Title is generated from operationId when summary is None."""
         route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "get_user_by_id"
@@ -390,17 +369,14 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}
         tool.output_schema = None
         tool.description = "Get user by ID"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert new_tool.annotations.title == "Get User By Id"
+        assert tool.annotations.title == "Get User By Id"
 
-    def test_long_operation_id_truncated(self, label_manager):
+    def test_long_operation_id_truncated(self):
+        """Operation IDs longer than TITLE_TRUNCATE_LIMIT are truncated."""
         long_op_id = (
             "this_is_a_very_long_operation_id_that_exceeds_fifty_characters_and_needs_truncation"
         )
@@ -412,18 +388,14 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}
         tool.output_schema = None
         tool.description = "Test operation"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert len(new_tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
-        assert new_tool.annotations.title.endswith("...")
+        assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
+        assert tool.annotations.title.endswith("...")
 
-    def test_uses_tool_description_not_doc(self, label_manager):
+    def test_uses_tool_description_not_doc(self):
         """Verify that component.description is used, not __doc__."""
         route = MagicMock(path="/test", summary="Test", operation_id="test_op")
         tool = MagicMock(spec=OpenAPITool)
@@ -434,19 +406,15 @@ class TestCustomizeComponent:
         tool.output_schema = None
         tool.description = "Description from attribute"
         tool.__doc__ = "Docstring should be ignored"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
         # The description should come from component.description, not __doc__
-        assert "Description from attribute" in new_tool.description
-        assert "Docstring should be ignored" not in new_tool.description
+        assert "Description from attribute" in tool.description
+        assert "Docstring should be ignored" not in tool.description
 
-    def test_applies_label_guidance_when_labels_parameter_present(self, label_manager):
+    def test_applies_label_guidance_when_labels_parameter_present(self):
         """Verify LABEL_GUIDANCE is appended for tools with labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
@@ -460,17 +428,13 @@ class TestCustomizeComponent:
         }
         tool.output_schema = None
         tool.description = "Create an issue"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert LABEL_GUIDANCE.strip() in new_tool.description
+        assert LABEL_GUIDANCE.strip() in tool.description
 
-    def test_applies_label_guidance_with_nullable_array_type(self, label_manager):
+    def test_applies_label_guidance_with_nullable_array_type(self):
         """Verify label guidance works with nullable array type ['array', 'null']."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
@@ -484,17 +448,13 @@ class TestCustomizeComponent:
         }
         tool.output_schema = None
         tool.description = "Create an issue"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert LABEL_GUIDANCE.strip() in new_tool.description
+        assert LABEL_GUIDANCE.strip() in tool.description
 
-    def test_does_not_apply_label_guidance_without_labels(self, label_manager):
+    def test_does_not_apply_label_guidance_without_labels(self):
         """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
@@ -506,15 +466,11 @@ class TestCustomizeComponent:
         tool.parameters = {"properties": {}}  # No labels parameter
         tool.output_schema = None
         tool.description = "List issues"
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
         tool.meta = {}
 
-        new_tool = _customize_component(route, tool, label_manager)
+        _customize_metadata(route, tool, openapi_spec={})
 
-        assert new_tool is not None
-        assert LABEL_GUIDANCE.strip() not in new_tool.description
+        assert LABEL_GUIDANCE.strip() not in tool.description
 
 
 class TestIsArrayResponse:
@@ -586,267 +542,246 @@ class TestIsArrayResponse:
 
 
 class TestPaginationMetadata:
-    """Tests for pagination metadata injection in transform_fn."""
+    """Tests for pagination metadata injection via _ToolWrappingTransform."""
 
-    PAGINATION_SPEC: dict = {
-        "openapi": "3.1.1",
-        "paths": {
-            "/repos/{owner}/{repo}/issues": {
-                "get": {
-                    "responses": {
-                        "200": {
-                            "description": "IssueList",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {"id": {"type": "integer"}},
-                                        },
-                                    }
-                                }
-                            },
-                        }
-                    }
-                }
-            },
-            "/repos/{owner}/{repo}/issues/{index}": {
-                "get": {
-                    "responses": {
-                        "200": {
-                            "description": "Issue",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "id": {"type": "integer", "description": "Issue ID"},
-                                            "title": {"type": "string"},
-                                        },
-                                    }
-                                }
-                            },
-                        }
-                    }
-                }
+    ARRAY_OUTPUT_SCHEMA: dict = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
             },
         },
     }
 
-    @pytest.fixture
-    def _wrapped_spec(self):
-        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
+    OBJECT_OUTPUT_SCHEMA: dict = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}, "title": {"type": "string"}},
+            },
+        },
+    }
 
-        spec = deepcopy(self.PAGINATION_SPEC)
-        _wrap_success_response_schemas(spec)
-        return spec
+    def _make_transform(self):
+        return _ToolWrappingTransform(
+            label_manager=LabelManager(),
+            openapi_spec={},
+        )
+
+    def _make_tool(
+        self,
+        name: str = "issue_list_issues",
+        output_schema: dict | None = None,
+        page_param: bool = True,
+        per_page_param: bool = True,
+        limit_param: bool = False,
+    ) -> Tool:
+        props: dict = {}
+        if page_param:
+            props["page"] = {"type": "integer"}
+        if per_page_param:
+            props["per_page"] = {"type": "integer"}
+        if limit_param:
+            props["limit"] = {"type": "integer"}
+
+        return Tool(
+            name=name,
+            tags={"issue"},
+            description="",
+            parameters={"properties": props},
+            output_schema=output_schema or self.ARRAY_OUTPUT_SCHEMA,
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "route_path": "/repos/{owner}/{repo}/issues",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="List issues"),
+        )
 
     @pytest.mark.asyncio
-    async def test_has_more_true_when_result_equals_per_page(self, _wrapped_spec, label_manager):
+    async def test_has_more_true_when_result_equals_per_page(self):
         """has_more should be True when result length equals per_page."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(30)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool()
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 1, "per_page": 30})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(30)]},
+            )
 
-        assert result.structured_content["has_more"] is True
-        assert result.structured_content["next_offset"] == 2
-        assert result.structured_content["total_count"] is None
-        assert len(result.structured_content["result"]) == 30
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 30})
+
+            assert output.structured_content["has_more"] is True
+            assert output.structured_content["next_offset"] == 2
+            assert output.structured_content["total_count"] is None
+            assert len(output.structured_content["result"]) == 30
 
     @pytest.mark.asyncio
-    async def test_has_more_false_when_result_less_than_per_page(self, _wrapped_spec, label_manager):
+    async def test_has_more_false_when_result_less_than_per_page(self):
         """has_more should be False when result length is less than per_page."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(15)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool()
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 1, "per_page": 30})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(15)]},
+            )
 
-        assert result.structured_content["has_more"] is False
-        assert result.structured_content["next_offset"] is None
-        assert result.structured_content["total_count"] is None
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 30})
+
+            assert output.structured_content["has_more"] is False
+            assert output.structured_content["next_offset"] is None
+            assert output.structured_content["total_count"] is None
 
     @pytest.mark.asyncio
-    async def test_defaults_when_kwargs_missing(self, _wrapped_spec, label_manager):
+    async def test_defaults_when_kwargs_missing(self):
         """Should default to page=1 and limit=100 when no pagination args provided."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        # Return exactly 100 items, which equals the default `limit`
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(100)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool()
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            # Return exactly 100 items, which equals the default `limit`
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(100)]},
+            )
 
-        assert result.structured_content["has_more"] is True
-        assert result.structured_content["next_offset"] == 2
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+            assert output.structured_content["has_more"] is True
+            assert output.structured_content["next_offset"] == 2
 
     @pytest.mark.asyncio
-    async def test_uses_limit_parameter(self, _wrapped_spec, label_manager):
+    async def test_uses_limit_parameter(self):
         """Should use 'limit' parameter as fallback when 'per_page' is not present."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "limit": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(50)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool(limit_param=True)
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 1, "limit": 50})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(50)]},
+            )
 
-        assert result.structured_content["has_more"] is True
-        assert result.structured_content["next_offset"] == 2
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "limit": 50})
+
+            assert output.structured_content["has_more"] is True
+            assert output.structured_content["next_offset"] == 2
 
     @pytest.mark.asyncio
-    async def test_no_pagination_for_non_array_response(self, _wrapped_spec, label_manager):
+    async def test_no_pagination_for_non_array_response(self):
         """Non-array responses should not get pagination metadata."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues/{index}", method="GET", summary="Get issue", operation_id="get_issue")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_get_issue"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": {"id": 1, "title": "Test"}}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool(
+            name="issue_get_issue",
+            output_schema=self.OBJECT_OUTPUT_SCHEMA,
+        )
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": {"id": 1, "title": "Test"}},
+            )
 
-        assert result.structured_content == {"result": {"id": 1, "title": "Test"}}
-        assert "has_more" not in result.structured_content
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+            assert output.structured_content == {"result": {"id": 1, "title": "Test"}}
+            assert "has_more" not in output.structured_content
 
     @pytest.mark.asyncio
-    async def test_total_count_defaults_to_none(self, _wrapped_spec, label_manager):
+    async def test_total_count_defaults_to_none(self):
         """total_count should be None when no pagination headers captured."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(5)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool()
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 2, "per_page": 10})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(5)]},
+            )
 
-        assert result.structured_content["total_count"] is None
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 2, "per_page": 10})
+
+            assert output.structured_content["total_count"] is None
 
     @pytest.mark.asyncio
-    async def test_total_count_from_headers(self, _wrapped_spec, label_manager):
+    async def test_total_count_from_headers(self):
         """total_count should be populated from pagination context var."""
         pagination_ctx.set({"total_count": 42})
 
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": [{"id": i} for i in range(5)]}
-        ))
+        transform = self._make_transform()
+        tool = self._make_tool()
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 1, "per_page": 10})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(5)]},
+            )
 
-        assert result.structured_content["total_count"] == 42
-        assert result.structured_content["has_more"] is False
-        assert result.structured_content["next_offset"] is None
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 10})
+
+            assert output.structured_content["total_count"] == 42
+            assert output.structured_content["has_more"] is False
+            assert output.structured_content["next_offset"] is None
+
+            pagination_ctx.set({})
 
     @pytest.mark.asyncio
-    async def test_preserves_original_result_data(self, _wrapped_spec, label_manager):
+    async def test_preserves_original_result_data(self):
         """Original result data should be preserved in enhanced response."""
-        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET", summary="List issues", operation_id="list_issues")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {}
+        transform = self._make_transform()
+        tool = self._make_tool()
         original_data = [{"id": 1, "title": "First"}, {"id": 2, "title": "Second"}]
-        tool.run = AsyncMock(return_value=ToolResult(
-            structured_content={"result": original_data}
-        ))
 
-        new_tool = _customize_component(route, tool, label_manager, _wrapped_spec)
-        result = await new_tool.run({"page": 1, "per_page": 10})
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": original_data},
+            )
 
-        assert result.structured_content["result"] == original_data
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 10})
+
+            assert output.structured_content["result"] == original_data
 
 
 class TestPrepareAnnotationsEdgeCases:
@@ -865,56 +800,48 @@ class TestPrepareAnnotationsEdgeCases:
 
 
 class TestCustomizeComponentTextResponse:
-    """Tests for _customize_component with text response wrapping."""
+    """Tests for text response wrapping via _ToolWrappingTransform."""
 
     @pytest.mark.asyncio
     async def test_text_response_strips_structured_content(self):
         """Text response transforms content and structured_content."""
-        from fastmcp.tools.base import ToolResult
         from mcp.types import TextContent
 
-        from gitea_mcp_server.tools.customize import customize_component
-
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues",
-            method="GET",
-            summary="List issues",
-            operation_id="issue_list_issues",
+        transform = _ToolWrappingTransform(
+            label_manager=LabelManager(),
+            openapi_spec={},
         )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = ToolAnnotations()
-        tool.tags = {"issue"}
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = ""
-        tool.version = "1"
-        tool.auth = None
-        tool.serializer = None
-        tool.meta = {
-            "_customization": {
-                "is_text_response": True,
-                "route_path": "/repos/{owner}/{repo}/issues",
-                "route_method": "GET",
-            }
-        }
-        tool.run = AsyncMock(
-            return_value=ToolResult(
+
+        tool = Tool(
+            name="issue_list_issues",
+            tags={"issue"},
+            description="",
+            parameters={"properties": {}},
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": True,
+                    "route_path": "/repos/{owner}/{repo}/issues",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="List issues"),
+        )
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
                 content=[TextContent(type="text", text="raw text output")],
                 structured_content=None,
             )
-        )
 
-        openapi_spec = {
-            "paths": {
-                "/repos/{owner}/{repo}/issues": {
-                    "get": {
-                        "x-original-content-types": ["text/plain"],
-                    }
-                }
-            }
-        }
-        new_tool = customize_component(route, tool, label_manager, openapi_spec=openapi_spec)
-        result = await new_tool.run({})
-        assert result.structured_content == {"result": "raw text output"}
-        assert result.content[0].text == "raw text output"
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+            assert output.structured_content == {"result": "raw text output"}
+            assert output.content[0].text == "raw text output"

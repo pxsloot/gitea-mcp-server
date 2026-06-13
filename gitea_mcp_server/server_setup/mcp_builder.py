@@ -100,6 +100,15 @@ def _customize_metadata(
         getattr(route, "method", "").lower(),
     )
 
+    # Lightweight fallback schema for text/plain endpoints so agents
+    # get schema guidance matching the {"result": text} runtime shape.
+    if output_schema is None and is_text_response:
+        output_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+        }
+        component.output_schema = output_schema
+
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
 

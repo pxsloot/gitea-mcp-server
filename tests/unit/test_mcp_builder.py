@@ -264,6 +264,73 @@ class TestCustomizeMetadata:
             assert props["next_offset"]["type"] == "integer"
             assert props["total_count"]["type"] == "integer"
 
+    def test_text_plain_fallback_schema(self):
+        """Text/plain endpoints get string output_schema when derive_output_schema returns None."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/pulls/{index}.{diffType}",
+            summary="Download pull request diff",
+            operation_id="repo_download_pull_diff_or_patch",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_download_pull_diff_or_patch"
+        tool.annotations = None
+        tool.tags = set()
+        tool.description = ""
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.meta = {}
+
+        with (
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
+                return_value=None,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_text_response",
+                return_value=True,
+            ),
+        ):
+            _customize_metadata(route, tool, openapi_spec={})
+
+            assert tool.output_schema is not None
+            assert tool.output_schema["type"] == "object"
+            assert tool.output_schema["properties"]["result"]["type"] == "string"
+            # x-fastmcp-wrap-result should be set since output_schema is now not None
+            assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+    def test_json_endpoint_retains_derived_schema(self):
+        """JSON endpoints keep their derived output_schema even when is_text_response is False."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="List issues",
+            operation_id="list_issues",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "list_issues"
+        tool.annotations = None
+        tool.tags = set()
+        tool.description = ""
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.meta = {}
+
+        derived_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "array", "items": {"type": "object"}}},
+        }
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
+            return_value=derived_schema,
+        ):
+            _customize_metadata(route, tool, openapi_spec={})
+
+            assert tool.output_schema is not None
+            # Should be the derived schema, not the text/plain fallback
+            assert tool.output_schema["properties"]["result"]["type"] == "array"
+
 
 # ---------------------------------------------------------------------------
 # _get_deprecated_routes

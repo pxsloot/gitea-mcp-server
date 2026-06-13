@@ -10,7 +10,6 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
@@ -45,12 +44,6 @@ logger = logging.getLogger(__name__)
 
 _META_CUSTOMIZED = "_customization_applied"
 """Flag in component.meta to avoid double-wrapping by the transform."""
-
-
-@dataclass
-class _RouteInfo:
-    path: str = ""
-    method: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +177,11 @@ class _ToolWrappingTransform(Transform):
             return tool
 
         customization = meta.get("_customization", {})
-
-        mock_route = _RouteInfo(
-            path=customization.get("route_path", ""),
-            method=customization.get("route_method", ""),
-        )
+        route_path: str = customization.get("route_path", "")
+        route_method: str = customization.get("route_method", "")
 
         async def transform_fn(**kwargs: Any) -> Any:
-            return await self._run_transform_pipeline(kwargs, tool, mock_route)
+            return await self._run_transform_pipeline(kwargs, tool, route_path, route_method)
 
         return Tool.from_tool(
             tool,
@@ -207,15 +197,18 @@ class _ToolWrappingTransform(Transform):
         self,
         kwargs: dict[str, Any],
         tool: Tool,
-        route: Any,
+        route_path: str,
+        route_method: str,
     ) -> ToolResult | Any:
         """Run the full tool execution pipeline: validate, convert labels, execute, wrap result.
 
         Args:
             kwargs: The tool arguments from the agent.
             tool: The Tool being wrapped (provides parameter schema and meta).
-            route: Route-like object with ``path`` and ``method`` attributes, used for
-                error message lookups.
+            route_path: The request path template for error message enrichment
+                (e.g. ``/repos/{owner}/{repo}``).
+            route_method: The HTTP method for error message enrichment
+                (e.g. ``GET``, ``POST``).
         """
         meta = tool.meta or {}
         customization = meta.get("_customization", {})
@@ -229,7 +222,9 @@ class _ToolWrappingTransform(Transform):
             tool.parameters.get("properties"),
         )
         await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
-        result = await _run_with_error_handling(kwargs, tool, route, self._openapi_spec)
+        result = await _run_with_error_handling(
+            kwargs, tool, self._openapi_spec, route_path, route_method,
+        )
 
         if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
             text = next(

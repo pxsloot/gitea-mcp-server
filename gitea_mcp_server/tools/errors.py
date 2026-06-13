@@ -32,19 +32,31 @@ def _raise_validation_error(message: str, field: str, cause: Exception) -> NoRet
 
 def _lookup_response_description(
     openapi_spec: dict[str, Any],
-    route: Any,
+    path: str,
+    method: str,
     status_code: int,
 ) -> str:
+    """Look up the response description from the OpenAPI spec for error formatting.
+
+    Args:
+        openapi_spec: The full OpenAPI 3.1 spec dict.
+        path: The request path template (e.g. /repos/{owner}/{repo}).
+        method: HTTP method (case-insensitive; normalized to lowercase internally).
+        status_code: The HTTP status code returned.
+
+    Returns:
+        The description string from the spec, or a fallback ``"HTTP error {code}"``.
+    """
     fallback = f"HTTP error {status_code}"
     result = fallback
     try:
         paths = openapi_spec.get("paths", {})
-        path_item = paths.get(route.path)
+        path_item = paths.get(path)
         if not path_item:
             result = fallback
         else:
-            method = getattr(route, "method", "").lower()
-            operation = path_item.get(method) if method else None
+            op_method = method.lower()
+            operation = path_item.get(op_method) if op_method else None
             if not operation:
                 result = fallback
             else:
@@ -114,16 +126,34 @@ def _run_validation(
 async def _run_with_error_handling(
     kwargs: dict[str, Any],
     component: Any,
-    route: Any,
     openapi_spec: dict[str, Any] | None,
+    route_path: str,
+    route_method: str,
 ) -> Any:
+    """Execute a tool run with comprehensive error translation.
+
+    Catches HTTP status errors, network errors, and unexpected exceptions,
+    translating them into agent-friendly ``ValueError`` messages enriched
+    with response descriptions from the OpenAPI spec.
+
+    Args:
+        kwargs: The validated tool arguments.
+        component: The tool component (must have a ``.run()`` method).
+        openapi_spec: OpenAPI spec for response description lookups, or ``None``
+            to skip spec-based enrichment.
+        route_path: Request path template for error message context
+            (e.g. ``/repos/{owner}/{repo}``).
+        route_method: HTTP method for error message context (e.g. ``GET``, ``POST``).
+    """
     try:
         return await component.run(kwargs)
     except ValueError as e:
         cause = e.__cause__
         if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
             status_code = cause.response.status_code
-            description = _lookup_response_description(openapi_spec, route, status_code)
+            description = _lookup_response_description(
+                openapi_spec, route_path, route_method, status_code,
+            )
             try:
                 error_body = cause.response.json()
                 message = error_body.get("message", "")

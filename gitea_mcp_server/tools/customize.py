@@ -1,17 +1,13 @@
 """Core tool customization pipeline.
 
-Contains customize_component and its immediate helpers (annotations, hint inference,
+Immediate helpers for the customization pipeline (annotations, hint inference,
 categorization, title generation, scope derivation, invalidation computation).
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
-from mcp.types import TextContent
 
-from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,
     HTTP_METHODS_IDEMPOTENT,
@@ -20,20 +16,7 @@ from gitea_mcp_server.constants import (
     TITLE_TRUNCATE_LIMIT,
     TOOL_INVALIDATION_PATTERNS,
 )
-from gitea_mcp_server.label_manager import LabelManager
-from gitea_mcp_server.pagination import pagination_ctx
-from gitea_mcp_server.scope import derive_required_scope
-from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
-from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
-from gitea_mcp_server.tools.schemas import (
-    _is_text_response,
-    _schema_type_is_array,
-    derive_output_schema,
-)
-from gitea_mcp_server.validation import augment_schema_with_validation
-
-if TYPE_CHECKING:
-    from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
 _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/admin", "admin", False),
@@ -152,135 +135,9 @@ def _prepare_description(component: Any) -> tuple[str, bool]:
     return description, has_labels
 
 
-def customize_component(
-    route: Any,
-    component: Any,
-    label_manager: LabelManager,
-    openapi_spec: dict[str, Any] | None = None,
-    gitea_client: "GiteaClient | None" = None,
-) -> Tool | None:
-    """Apply the full customization pipeline to a single OpenAPITool.
-
-    Wraps the tool with annotations, validation, label conversion, error handling,
-    cache invalidation, pagination metadata, and output schema enhancements.
-    """
-    if not isinstance(component, OpenAPITool):
-        return None
-
-    title = generate_tool_title(route)
-    category = categorize_tool(route.path)
-
-    tags = (set(component.tags) if component.tags else set()) | {category}
-
-    annotations = _prepare_annotations(component, title)
-    add_inferred_hints(route, annotations)
-
-    method = getattr(route, "method", None)
-    if method:
-        patterns = compute_invalidation_patterns(route.path, method)
-        if patterns:
-            register_tool_invalidation(component.name, patterns)
-
-    required_scope = derive_required_scope(
-        set(component.tags) if component.tags else None,
-        method,
-    )
-
-    description, has_labels = _prepare_description(component)
-
-    output_schema = derive_output_schema(route, openapi_spec)
-
-    augment_schema_with_validation(component)
-    if has_labels:
-        update_labels_schema(component)
-
-    is_text_response = (
-        openapi_spec is not None
-        and _is_text_response(openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower())
-    )
-
-    async def transform_fn(**kwargs: Any) -> Any:
-        _run_validation(
-            kwargs,
-            component.parameters.get("required"),
-            component.parameters.get("properties"),
-        )
-        await _convert_labels(kwargs, has_labels, label_manager, gitea_client)
-        result = await _run_with_error_handling(kwargs, component, route, openapi_spec)
-
-        if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
-            text = next(
-                (c.text for c in result.content if isinstance(c, TextContent)),
-                "",
-            )
-            return ToolResult(
-                content=[TextContent(type="text", text=text)],
-                structured_content={"result": text},
-            )
-
-        if _is_array_response(output_schema) and isinstance(result, ToolResult) and result.structured_content is not None:
-            result_data = result.structured_content.get("result")
-            if isinstance(result_data, list):
-                page = kwargs.get("page", 1)
-                per_page = kwargs.get("per_page") or kwargs.get("limit", 100)
-
-                has_more = len(result_data) == per_page if per_page else False
-                next_offset = page + 1 if has_more else None
-
-                enhanced_result = dict(result.structured_content)
-                enhanced_result["has_more"] = has_more
-                enhanced_result["next_offset"] = next_offset
-                enhanced_result["total_count"] = pagination_ctx.get().get("total_count")
-
-                return ToolResult(
-                    content=[TextContent(type="text", text=str(enhanced_result))],
-                    structured_content=enhanced_result
-                )
-
-        return result
-
-    if component.output_schema is not None:
-        component.output_schema["x-fastmcp-wrap-result"] = True
-
-    if output_schema is not None:
-        output_schema["x-fastmcp-wrap-result"] = True
-
-        if _is_array_response(output_schema):
-            props = output_schema.setdefault("properties", {})
-            props["has_more"] = {
-                "type": "boolean",
-                "description": "Whether more pages exist",
-            }
-            props["next_offset"] = {
-                "type": "integer",
-                "description": "Page number for next page, if any",
-            }
-            props["total_count"] = {
-                "type": "integer",
-                "description": "Total item count from server, if available",
-            }
-
-    component_meta = dict(component.meta) if component.meta else {}
-    component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-        "required_scope"
-    ] = required_scope
-
-    return Tool.from_tool(
-        component,
-        title=title,
-        tags=tags,
-        annotations=annotations,
-        description=description,
-        transform_fn=transform_fn,
-        output_schema=output_schema,
-        meta=component_meta,
-    )
-
-
 __all__ = [
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",
-    "customize_component",
     "generate_tool_title",
 ]

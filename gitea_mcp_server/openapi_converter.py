@@ -843,7 +843,7 @@ def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> Non
     """Wrap a response schema in ``result`` so output_schema matches runtime shape.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
-    The ``transform_fn`` in ``customize_component`` always wraps results in
+    The wrapping pipeline always wraps results in
     ``{"result": result}``. This function ensures the schema in the OpenAPI
     spec reflects that same wrapping.
 
@@ -885,7 +885,7 @@ def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
     """Wrap all success response schemas in a ``result`` object container.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
-    The ``transform_fn`` in ``customize_component`` wraps all tool results
+    The wrapping pipeline wraps all tool results
     in ``{"result": result}``. This function transforms the spec so every
     200/201 response schema reflects that same wrapping -- regardless of
     the original response type.

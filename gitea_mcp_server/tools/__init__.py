@@ -16,7 +16,6 @@ from gitea_mcp_server.tools.customize import (
     add_inferred_hints,
     categorize_tool,
     compute_invalidation_patterns,
-    customize_component,
     generate_tool_title,
 )
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
@@ -31,7 +30,6 @@ __all__ = [
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",
-    "customize_component",
     "derive_output_schema",
     "derive_required_scope",
     "generate_tool_title",

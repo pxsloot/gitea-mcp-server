@@ -55,8 +55,8 @@ def _lookup_response_description(
         if not path_item:
             result = fallback
         else:
-            op_method = method.lower()
-            operation = path_item.get(op_method) if op_method else None
+            method_lower = method.lower()
+            operation = path_item.get(method_lower) if method_lower else None
             if not operation:
                 result = fallback
             else:

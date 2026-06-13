@@ -177,11 +177,16 @@ class _ToolWrappingTransform(Transform):
             return tool
 
         customization = meta.get("_customization", {})
-        route_path: str = customization.get("route_path", "")
-        route_method: str = customization.get("route_method", "")
+        if not customization:
+            logger.warning(
+                "Tool %r has %r flag but empty customization metadata. "
+                "Error messages may lack route context.",
+                tool.name,
+                _META_CUSTOMIZED,
+            )
 
         async def transform_fn(**kwargs: Any) -> Any:
-            return await self._run_transform_pipeline(kwargs, tool, route_path, route_method)
+            return await self._run_transform_pipeline(kwargs, tool)
 
         return Tool.from_tool(
             tool,
@@ -197,21 +202,17 @@ class _ToolWrappingTransform(Transform):
         self,
         kwargs: dict[str, Any],
         tool: Tool,
-        route_path: str,
-        route_method: str,
     ) -> ToolResult | Any:
         """Run the full tool execution pipeline: validate, convert labels, execute, wrap result.
 
         Args:
             kwargs: The tool arguments from the agent.
             tool: The Tool being wrapped (provides parameter schema and meta).
-            route_path: The request path template for error message enrichment
-                (e.g. ``/repos/{owner}/{repo}``).
-            route_method: The HTTP method for error message enrichment
-                (e.g. ``GET``, ``POST``).
         """
         meta = tool.meta or {}
         customization = meta.get("_customization", {})
+        route_path: str = customization.get("route_path", "")
+        route_method: str = customization.get("route_method", "")
         has_labels = customization.get("has_labels", False)
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema

@@ -623,8 +623,31 @@ class TestToolWrappingTransform:
             result = await transform.list_tools([tool])
             wrapped = result[0]
 
-            with pytest.raises(ValidationError, match="Bad input"):
+            with pytest.raises(ValueError, match="Bad input"):
                 await wrapped.run(arguments={"name": ""})
+
+    @pytest.mark.asyncio
+    async def test_label_conversion_error_to_value_error(self):
+        """ValidationError from _convert_labels is converted to ValueError."""
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+        tool.meta["_customization"]["has_labels"] = True
+
+        from gitea_mcp_server.validation import ValidationError
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels", new_callable=AsyncMock
+            ) as mock_labels,
+        ):
+            mock_labels.side_effect = ValidationError("Unknown label: foo", field="labels")
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+
+            with pytest.raises(ValueError, match="Unknown label"):
+                await wrapped.run(arguments={"labels": ["foo"]})
 
     @pytest.mark.asyncio
     async def test_text_response_wrapping(self):

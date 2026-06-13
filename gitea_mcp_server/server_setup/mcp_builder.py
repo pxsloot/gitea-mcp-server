@@ -33,7 +33,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
-from gitea_mcp_server.validation import augment_schema_with_validation
+from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -217,12 +217,15 @@ class _ToolWrappingTransform(Transform):
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema
 
-        _run_validation(
-            kwargs,
-            tool.parameters.get("required"),
-            tool.parameters.get("properties"),
-        )
-        await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+        try:
+            _run_validation(
+                kwargs,
+                tool.parameters.get("required"),
+                tool.parameters.get("properties"),
+            )
+            await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+        except ValidationError as e:
+            raise ValueError(str(e)) from e
         result = await _run_with_error_handling(
             kwargs, tool, self._openapi_spec, route_path, route_method,
         )

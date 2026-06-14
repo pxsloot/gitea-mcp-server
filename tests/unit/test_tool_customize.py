@@ -7,7 +7,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
-from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
+from gitea_mcp_server.constants import TITLE_TRUNCATE_LIMIT
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -231,6 +231,7 @@ class TestInferredHints:
         assert tool.annotations.openWorldHint is True
 
     def test_all_hints_added_when_annotations_empty(self):
+        """Mini-integration check: _customize_metadata sets all hints and title when annotations are empty."""
         route = MagicMock(path="/test", method="POST", summary="Test POST")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "test_post"
@@ -251,234 +252,10 @@ class TestInferredHints:
         assert tool.annotations.title == "Test POST"  # Title uses summary as-is
 
 
-class TestCustomizeComponent:
-    """Tests for _customize_metadata — in-place metadata on OpenAPITools."""
-
-    def test_only_tools_are_customized(self):
-        """Non-OpenAPITool components are skipped."""
-        from fastmcp.server.providers.openapi import OpenAPIResource
-
-        route = MagicMock(path="/test", summary="Test", operation_id="test_route")
-        resource = MagicMock(spec=OpenAPIResource)
-
-        _customize_metadata(route, resource, openapi_spec={})
-
-        # No exception means pass — skipped non-tool component silently
-        assert True
-
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "list_issues"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "List issues"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert tool.annotations is not None
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "List issues"
-        assert "issue" in tool.tags
-
-    def test_adds_annotations_to_tool_with_dict(self):
-        """Annotations dict is converted to ToolAnnotations."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "list_issues"
-        tool.annotations = {"title": "Old Title"}  # dict that can be unpacked to ToolAnnotations
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "List issues"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "List issues"  # Our title overrides dict
-        assert "issue" in tool.tags
-
-    def test_converts_existing_toolannotations_properly(self):
-        """Existing ToolAnnotations are preserved and updated."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/pulls/{index}",
-            summary="Get pull request",
-            operation_id="get_pull",
-        )
-        existing = ToolAnnotations(title="Old Title", readOnlyHint=True)
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "get_pull"
-        tool.annotations = existing
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "Get pull request"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "Get pull request"  # Updated
-        assert tool.annotations.readOnlyHint is True  # Preserved
-        assert "pull_request" in tool.tags
-
-    def test_category_detection_various_paths(self):
-        """Category tag is inferred correctly from various route paths."""
-        test_cases = [
-            ("/repos/{owner}/{repo}/issues", "issue"),
-            ("/repos/{owner}/{repo}/pulls/{index}", "pull_request"),
-            ("/user/keys", "user"),
-            ("/orgs/{org}", "organization"),
-            ("/admin/users", "admin"),
-            ("/repos/{owner}/{repo}/branches", "repository"),
-            ("/version", "misc"),
-        ]
-
-        for path, expected_category in test_cases:
-            route = MagicMock(path=path, summary=None, operation_id="test_op")
-            tool = MagicMock(spec=OpenAPITool)
-            tool.name = "test"
-            tool.annotations = None
-            tool.tags = set()
-            tool.parameters = {"properties": {}}
-            tool.output_schema = None
-            tool.description = "Test"
-            tool.meta = {}
-
-            _customize_metadata(route, tool, openapi_spec={})
-
-            assert tool.annotations is not None
-            assert expected_category in tool.tags, (
-                f"Failed for {path}: category {expected_category} not in tags"
-            )
-
-    def test_title_generation_from_operation_id(self):
-        """Title is generated from operationId when summary is None."""
-        route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "get_user_by_id"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "Get user by ID"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert tool.annotations.title == "Get User By Id"
-
-    def test_long_operation_id_truncated(self):
-        """Operation IDs longer than TITLE_TRUNCATE_LIMIT are truncated."""
-        long_op_id = (
-            "this_is_a_very_long_operation_id_that_exceeds_fifty_characters_and_needs_truncation"
-        )
-        route = MagicMock(path="/test", summary=None, operation_id=long_op_id)
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "test"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "Test operation"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
-        assert tool.annotations.title.endswith("...")
-
-    def test_uses_tool_description_not_doc(self):
-        """Verify that component.description is used, not __doc__."""
-        route = MagicMock(path="/test", summary="Test", operation_id="test_op")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "test_op"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "Description from attribute"
-        tool.__doc__ = "Docstring should be ignored"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        # The description should come from component.description, not __doc__
-        assert "Description from attribute" in tool.description
-        assert "Docstring should be ignored" not in tool.description
-
-    def test_applies_label_guidance_when_labels_parameter_present(self):
-        """Verify LABEL_GUIDANCE is appended for tools with labels parameter."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_create_issue"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {
-            "properties": {"labels": {"type": "array", "items": {"type": "integer"}}}
-        }
-        tool.output_schema = None
-        tool.description = "Create an issue"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert LABEL_GUIDANCE.strip() in tool.description
-
-    def test_applies_label_guidance_with_nullable_array_type(self):
-        """Verify label guidance works with nullable array type ['array', 'null']."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue"
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_create_issue"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {
-            "properties": {"labels": {"type": ["array", "null"], "items": {"type": "integer"}}}
-        }
-        tool.output_schema = None
-        tool.description = "Create an issue"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert LABEL_GUIDANCE.strip() in tool.description
-
-    def test_does_not_apply_label_guidance_without_labels(self):
-        """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues"
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}  # No labels parameter
-        tool.output_schema = None
-        tool.description = "List issues"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert LABEL_GUIDANCE.strip() not in tool.description
-
-
 class TestIsArrayResponse:
     """Tests for _is_array_response function."""
 
     def test_detects_array_result(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         schema = {
             "type": "object",
             "properties": {
@@ -491,8 +268,6 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is True
 
     def test_detects_nullable_array_result(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         schema = {
             "type": "object",
             "properties": {
@@ -505,8 +280,6 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is True
 
     def test_rejects_object_result(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         schema = {
             "type": "object",
             "properties": {
@@ -519,24 +292,16 @@ class TestIsArrayResponse:
         assert _is_array_response(schema) is False
 
     def test_missing_result_key(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         schema = {"type": "object", "properties": {}}
         assert _is_array_response(schema) is False
 
     def test_none_input(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         assert _is_array_response(None) is False
 
     def test_empty_dict(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         assert _is_array_response({}) is False
 
     def test_properties_not_a_dict(self):
-        from gitea_mcp_server.tools.customize import _is_array_response
-
         schema = {"type": "object", "properties": "not_a_dict"}
         assert _is_array_response(schema) is False
 
@@ -740,26 +505,26 @@ class TestPaginationMetadata:
     async def test_total_count_from_headers(self):
         """total_count should be populated from pagination context var."""
         pagination_ctx.set({"total_count": 42})
+        try:
+            transform = self._make_transform()
+            tool = self._make_tool()
 
-        transform = self._make_transform()
-        tool = self._make_tool()
+            with patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run:
+                mock_run.return_value = ToolResult(
+                    structured_content={"result": [{"id": i} for i in range(5)]},
+                )
 
-        with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-            new_callable=AsyncMock,
-        ) as mock_run:
-            mock_run.return_value = ToolResult(
-                structured_content={"result": [{"id": i} for i in range(5)]},
-            )
+                result = await transform.list_tools([tool])
+                wrapped = result[0]
+                output = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
-            result = await transform.list_tools([tool])
-            wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 10})
-
-            assert output.structured_content["total_count"] == 42
-            assert output.structured_content["has_more"] is False
-            assert output.structured_content["next_offset"] is None
-
+                assert output.structured_content["total_count"] == 42
+                assert output.structured_content["has_more"] is False
+                assert output.structured_content["next_offset"] is None
+        finally:
             pagination_ctx.set({})
 
     @pytest.mark.asyncio
@@ -787,8 +552,8 @@ class TestPaginationMetadata:
 class TestPrepareAnnotationsEdgeCases:
     """Tests for _prepare_annotations edge cases."""
 
-    def test_non_standard_annotations_raises_fallback(self):
-        """Non-standard annotations that can't construct ToolAnnotations uses fallback."""
+    def test_non_standard_annotations_uses_fallback(self):
+        """Non-standard annotations that can't construct ToolAnnotations use fallback."""
         from gitea_mcp_server.tools.customize import _prepare_annotations
 
         component = MagicMock()

@@ -123,10 +123,18 @@ def test_array_response_wrapped_in_result(self):
 **Coverage target**: 90%+ for individual transforms, 80%+ for composition/integration.
 
 ```python
-def test_label_conversion_adds_guidance(self):
-    tool = Tool(name="test_labels", ...)
-    result = customize_component(tool, spec, client)
-    assert "Available labels" in result.description
+def test_customize_metadata_sets_labels(self):
+    route = MagicMock(path="/repos/{owner}/{repo}/issues", summary="Create issue", operation_id="create_issue", method="POST")
+    tool = MagicMock(spec=OpenAPITool)
+    tool.name = "issue_create_issue"
+    tool.annotations = None
+    tool.tags = set()
+    tool.parameters = {"properties": {"labels": {"type": "array", "items": {"type": "integer"}}}}
+    tool.output_schema = None
+    tool.description = "Create an issue"
+    tool.meta = {}
+    _customize_metadata(route, tool, openapi_spec={})
+    assert "Available labels" in tool.description
 ```
 
 ### Zone 3: Resource System (resources/)
@@ -225,11 +233,18 @@ def test_adds_category_from_tag(self):
 
 # Integration test for composition — one test, not one per transform
 async def test_full_customization_pipeline(self):
-    tool = create_mock_tool(...)
-    result = customize_component(tool, spec, client)
-    assert result.name == "gitea_issue_list_issues"
-    assert result.category == "issue"
-    assert "Available labels" in result.description
+    route = MagicMock(path="/repos/{owner}/{repo}/issues", summary="List issues", operation_id="list_issues", method="GET")
+    tool = MagicMock(spec=OpenAPITool)
+    tool.name = "issue_list_issues"
+    tool.annotations = None
+    tool.tags = set()
+    tool.parameters = {"properties": {}}
+    tool.output_schema = None
+    tool.description = ""
+    tool.meta = {}
+    _customize_metadata(route, tool, openapi_spec={})
+    assert tool.name == "issue_list_issues"  # actually "gitea_issue_list_issues" after namespace
+    assert "issue" in tool.tags
 ```
 
 ### Testing Runtime Behavior

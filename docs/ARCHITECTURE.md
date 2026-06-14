@@ -53,7 +53,7 @@ removed when FastMCP catches up.
 │                          │  │                          │
 │  Phase 1: _customize     │  │  • custom wrappers:      │
 │  _metadata (per tool):   │  │    Markdown formatters   │
-│  _metadata (per tool):   │  │    every GET endpoint    │
+│  • title, category       │  │    every GET endpoint    │
 │  • title, category       │  │    → raw JSON resource   │
 │  • annotations, hints    │  │                          │
 │  • output/label schemas  │  │  • custom wrappers:      │
@@ -152,7 +152,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 
 | Module | What it contains |
 |--------|------------------|
-| `tools/customize.py` | `customize_component`, title/category generation, hint inference, invalidation |
+| `tools/customize.py` | title/category generation, hint inference, annotation prep, invalidation helpers |
 | `tools/schemas.py` | `derive_output_schema`, `$ref` resolution, text/JSON response detection |
 | `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
 | `tools/labels.py` | string→ID label conversion, label schema updates |
@@ -214,8 +214,9 @@ The customization layers as applied during server startup:
 ## Key Design Decisions
 
 1. **FastMCP providers, not manual tool registration** -- The OpenAPI provider
-   auto-generates tools from the spec. Customization happens via transforms
-   and the `transform_fn` pattern, not by hand-registering each tool.
+   auto-generates tools from the spec. Customization happens via
+   `_ToolWrappingTransform` and the `transform_fn` pattern, not by
+   hand-registering each tool.
 
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
    `search_tools` (BM25). This prevents context pollution from ~200 tools being
@@ -306,7 +307,7 @@ Optionally, a lightweight schema can be set here manually:
 This gives agents a useful `output_example` while still matching the runtime
 `{"result": text}` shape.
 
-### Stage 4 -- Runtime Execution (`tools/customize.py:customize_component`)
+### Stage 4 -- Runtime Execution (`server_setup/mcp_builder.py:_ToolWrappingTransform`)
 
 At runtime, FastMCP's `OpenAPITool.run()` sends the HTTP request and receives
 the response:
@@ -322,7 +323,7 @@ the response:
   no structured output returned"*.
 
   When `output_schema = None` (from Stage 3), validation is skipped. The
-  `transform_fn` in `customize_component()` wraps the text in
+  `_ToolWrappingTransform._wrap()` method wraps the text in
   `{"result": raw_text}` for client consistency with JSON endpoints.
 
 ### The `x-fastmcp-wrap-result` Extension
@@ -334,8 +335,8 @@ structured content matching the output schema.  This is how `{"result": data}`
 is produced at runtime for JSON endpoints.
 
 For non-JSON endpoints, this extension is absent (no wrapping was applied in
-Stage 2), so `output_schema = None` is paired with the `transform_fn` fallback
-to produce the same `{"result": text}` shape.
+Stage 2), so `output_schema = None` is paired with the
+`_ToolWrappingTransform` fallback to produce the same `{"result": text}` shape.
 
 ---
 

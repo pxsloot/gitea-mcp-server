@@ -6,9 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gitea_mcp_server.label_manager import LabelManager
-from gitea_mcp_server.tools.customize import (
-    customize_component as _customize_component_impl,
-)
+from gitea_mcp_server.server_setup.mcp_builder import _customize_metadata
 from gitea_mcp_server.tools.labels import (
     update_labels_schema as _update_labels_schema_impl,
 )
@@ -17,7 +15,6 @@ from gitea_mcp_server.tools.labels import (
 _label_manager = LabelManager()
 
 
-# Compatibility wrappers matching old signatures
 async def _get_repository_label_map(owner, repo, client):
     """Fetch label map using the test label manager."""
     return await _label_manager.get_label_map(owner, repo, client)
@@ -26,11 +23,6 @@ async def _get_repository_label_map(owner, repo, client):
 def _update_labels_schema(component):
     """Update labels schema."""
     return _update_labels_schema_impl(component)
-
-
-def _customize_component(route, component):
-    """Customize component with annotations."""
-    return _customize_component_impl(route, component, _label_manager)
 
 
 class TestLabelCache:
@@ -242,7 +234,7 @@ class TestUpdateLabelsSchema:
         _update_labels_schema(tool)
 
     def test_updates_schema_during_customize(self):
-        """_customize_component should trigger schema update for tools with labels."""
+        """_customize_metadata should trigger schema update for tools with labels."""
         from fastmcp.server.providers.openapi import OpenAPITool
 
         route = MagicMock(
@@ -269,7 +261,7 @@ class TestUpdateLabelsSchema:
         tool.serializer = None
         tool.meta = {}
 
-        _customize_component(route, tool)
+        _customize_metadata(route, tool, openapi_spec={})
 
         # Verify schema was updated
         labels_schema = tool.parameters["properties"]["labels"]

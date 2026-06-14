@@ -8,7 +8,10 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.tool import ToolAnnotations
 
 from gitea_mcp_server.label_manager import LabelManager
-from gitea_mcp_server.tools.customize import customize_component as _customize_component
+from gitea_mcp_server.server_setup.mcp_builder import (
+    _customize_metadata,
+    _ToolWrappingTransform,
+)
 from gitea_mcp_server.tools.errors import (
     _lookup_response_description,
     _param_is_boolean,
@@ -93,12 +96,13 @@ class TestErrorHandlingEnhancement:
 
         tool.run = AsyncMock(side_effect=value_error)
 
-        # Call customize_component with openapi_spec
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        # Apply metadata and wrap via transform (live pipeline path)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
-        # Call the transformed tool with necessary arguments
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run(
+            await wrapped.run(
                 {
                     "owner": "mcp-server",
                     "repo": "gitea-mcp-server",
@@ -138,10 +142,12 @@ class TestErrorHandlingEnhancement:
         value_error = ValueError("Some unrelated validation error")
         tool.run = AsyncMock(side_effect=value_error)
 
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run({})
+            await wrapped.run({})
 
         assert str(exc_info.value) == "Some unrelated validation error"
 
@@ -169,10 +175,12 @@ class TestErrorHandlingEnhancement:
         network_error = httpx.NetworkError("Connection failed")
         tool.run = AsyncMock(side_effect=network_error)
 
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run({})
+            await wrapped.run({})
 
         error_msg = str(exc_info.value)
         assert "Network error" in error_msg or "Could not connect" in error_msg
@@ -201,10 +209,12 @@ class TestErrorHandlingEnhancement:
         timeout_error = httpx.TimeoutException("Request timed out")
         tool.run = AsyncMock(side_effect=timeout_error)
 
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run({})
+            await wrapped.run({})
 
         error_msg = str(exc_info.value)
         assert "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
@@ -232,10 +242,12 @@ class TestErrorHandlingEnhancement:
         unexpected_error = RuntimeError("Something unexpected happened")
         tool.run = AsyncMock(side_effect=unexpected_error)
 
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run({})
+            await wrapped.run({})
 
         error_msg = str(exc_info.value)
         # Should be user-friendly, not expose raw exception type by default
@@ -250,8 +262,7 @@ class TestLookupResponseDescription:
     def test_route_not_found_in_paths(self):
         """When route.path is not found in paths, should return fallback."""
         openapi_spec = {"paths": {}}
-        route = MagicMock(path="/nonexistent", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/nonexistent", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_empty_method_falls_back(self):
@@ -267,8 +278,7 @@ class TestLookupResponseDescription:
                 }
             }
         }
-        route = MagicMock(path="/test", method="")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "", 404)
         assert result == "HTTP error 404"
 
     def test_status_code_not_in_responses(self):
@@ -284,8 +294,7 @@ class TestLookupResponseDescription:
                 }
             }
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_response_def_not_dict(self):
@@ -301,8 +310,7 @@ class TestLookupResponseDescription:
                 }
             }
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_ref_resolution(self):
@@ -323,8 +331,7 @@ class TestLookupResponseDescription:
                 }
             },
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "Resource not found"
 
     def test_ref_resolution_resolved_not_dict(self):
@@ -345,8 +352,7 @@ class TestLookupResponseDescription:
                 }
             },
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_ref_resolution_missing_description(self):
@@ -367,8 +373,7 @@ class TestLookupResponseDescription:
                 }
             },
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_ref_resolution_with_description_from_schema(self):
@@ -389,22 +394,19 @@ class TestLookupResponseDescription:
                 }
             },
         }
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "Standard error response"
 
     def test_exception_during_lookup(self):
         """When a KeyError occurs during lookup, should return fallback."""
         openapi_spec = {"paths": {0: "bad"}}
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_non_dict_paths_raises_attribute_error(self):
         """When paths is not a dict, .get() raises AttributeError → fallback."""
         openapi_spec = {"paths": [1, 2, 3]}
-        route = MagicMock(path="/test", method="GET")
-        result = _lookup_response_description(openapi_spec, route, 404)
+        result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
 
@@ -567,10 +569,12 @@ class TestErrorHandlingNonJson:
 
         tool.run = AsyncMock(side_effect=value_error)
 
-        new_tool = _customize_component(route, tool, label_manager, openapi_spec)
+        _customize_metadata(route, tool, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
-            await new_tool.run({})
+            await wrapped.run({})
 
         error_msg = str(exc_info.value)
         assert "Internal Server Error" in error_msg

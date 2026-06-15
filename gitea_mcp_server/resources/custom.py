@@ -91,7 +91,6 @@ def _find_matching_token_scopes(tokens_data: list, raw_token: str) -> list[str] 
 def register_custom_resources(  # noqa: PLR0915
     mcp: FastMCP,
     gitea_client: GiteaClient,
-    registry: Any,
     openapi_spec: dict[str, Any] | None = None,
 ) -> None:
     """Register custom-formatted and custom resources.
@@ -111,7 +110,6 @@ def register_custom_resources(  # noqa: PLR0915
             func: Callable[..., Awaitable[ResourceResult]],
         ) -> Callable[..., Awaitable[ResourceResult]]:
             mcp.resource(uri, mime_type=mime_type, tags=tags, meta=meta)(func)
-            registry.record(uri=uri, func=func, mime_type=mime_type, tags=tags, meta=meta)
             return func
 
         return deco

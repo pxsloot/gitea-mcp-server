@@ -136,7 +136,6 @@ def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: dict[str, Any],
-    registry: Any,
     skip_uris: set[str] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec."""
@@ -186,13 +185,6 @@ def register_auto_generated_resources(
                         tags={"api", "raw", "auto"},
                         meta=resource_meta,
                     )(resource_func)
-                    registry.record(
-                        uri=uri_template,
-                        func=resource_func,
-                        mime_type="application/json",
-                        tags={"api", "raw", "auto"},
-                        meta=resource_meta,
-                    )
                     count += 1
                     logger.debug("Registered auto-generated resource: %s", uri_template)
                 except ValueError as e:

@@ -188,7 +188,6 @@ The customization layers as applied during server startup:
 | `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs |
 | `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases) |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources |
-| `resources/registry.py` | Passive `ResourceRegistry` catalog class recording what's been registered |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
 
 ### Server Setup Orchestration (startup-only)
@@ -248,12 +247,7 @@ The customization layers as applied during server startup:
    occur if `server.py` imported `tool_filter.py` directly.  Same pattern:
    `resources/scope.py` re-exports from flat `scope.py`.
 
-8. **Naming collision resolved** -- Two modules once shared the name
-   `resource_registry`: the `resources/registry.py` (class `ResourceRegistry`
-   catalog) and `server_setup/resource_registry.py` (orchestration function).
-   The latter was renamed to `resource_setup.py` to eliminate confusion.
-
-9. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
+8. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
    and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
    definitions into `constants.py`, the single source of truth for all magic values.
 

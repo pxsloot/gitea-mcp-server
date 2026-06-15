@@ -64,7 +64,6 @@ class TestResourcesIntegration:
         No double-gitea URIs are produced.
         """
         from gitea_mcp_server import resources as resources_pkg
-        from gitea_mcp_server.resources.registry import ResourceRegistry
 
         # Create a minimal FastMCP mock that tracks registered resources
         mcp = MagicMock()
@@ -101,9 +100,8 @@ class TestResourcesIntegration:
             }
         }
 
-        registry = ResourceRegistry()
         resources_pkg.register_auto_generated_resources(
-            mcp, mock_client, spec, registry, skip_uris=set()
+            mcp, mock_client, spec, skip_uris=set()
         )
 
         # Check that the URI is gitea:// -- no double-gitea
@@ -121,28 +119,24 @@ class TestResourcesIntegration:
     async def test_custom_resources_register_expected_count(self):
         """Test that register_custom_resources registers the expected number of resources."""
         from gitea_mcp_server import resources as resources_pkg
-        from gitea_mcp_server.resources.registry import ResourceRegistry
 
         mcp = MagicMock()
         mcp.resource = MagicMock()
         mock_client = AsyncMock()
-        registry = ResourceRegistry()
 
-        resources_pkg.register_custom_resources(mcp, mock_client, registry)
+        resources_pkg.register_custom_resources(mcp, mock_client)
         assert mcp.resource.call_count == 11
 
     @pytest.mark.asyncio
     async def test_custom_resources_include_expected_uris(self):
         """Test that custom resources are registered with proper URIs."""
         from gitea_mcp_server import resources as resources_pkg
-        from gitea_mcp_server.resources.registry import ResourceRegistry
 
         mcp = MagicMock()
         mcp.resource = MagicMock()
         mock_client = AsyncMock()
-        registry = ResourceRegistry()
 
-        resources_pkg.register_custom_resources(mcp, mock_client, registry)
+        resources_pkg.register_custom_resources(mcp, mock_client)
         call_uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in call_uris
         assert "gitea://repos/{owner}/{repo}/readme" in call_uris

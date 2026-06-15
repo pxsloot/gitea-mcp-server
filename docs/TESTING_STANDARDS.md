@@ -43,7 +43,6 @@ tests/
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
-│   ├── test_resource_registry.py
 │   ├── test_resources.py
 │   ├── test_scope.py
 │   ├── test_search_engine.py
@@ -141,7 +140,7 @@ def test_customize_metadata_sets_labels(self):
 
 **What it tests**: Auto-generated resource registration, custom resource formatters, scope derivation, registry operations, Markdown formatting.
 
-**Pattern**: Unit-test formatters with known input dicts. Test registration by inspecting a ResourceRegistry instance. Test error paths (404, missing fields) with controlled inputs.
+**Pattern**: Unit-test formatters with known input dicts. Verify registration by inspecting `mcp.resource()` call args. Test error paths (404, missing fields) with controlled inputs.
 
 **Coverage target**: 85%+.
 

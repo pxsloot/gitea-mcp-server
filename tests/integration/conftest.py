@@ -179,8 +179,10 @@ async def mcp_server(
     """Pre-wired MCP server for the default configuration.
 
     The swagger spec fetch is mocked from ``base_spec``.  Additional
-    ``respx`` routes can be registered inside the test body because the
-    ``respx`` context is still active.
+    ``respx`` routes can be registered inside the test body via the
+    module-level ``respx.get()`` / ``respx.post()`` / etc. API —
+    the fixture activates the **global** ``respx.router`` so that
+    module-level calls add routes to the same active router.
 
     .. code-block:: python
 
@@ -189,10 +191,17 @@ async def mcp_server(
                 .respond(200, json={"name": "repo"})
             result = await mcp_server.call_tool("gitea_repo_get", …)
     """
-    async with respx.mock() as mock:
-        mock.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
+    # Use ``respx.start()`` / ``stop()`` instead of the ``respx.mock()``
+    # context manager so that module-level ``respx.get() / post() / ...``
+    # calls inside the test body add routes to the **same** global router
+    # that is intercepting requests.
+    respx.start()
+    try:
+        respx.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
         server = await create_test_server(simple_config, base_spec)
         yield server
+    finally:
+        respx.stop(clear=True, reset=True)
 
 
 @pytest.fixture
@@ -205,7 +214,10 @@ async def search_mcp_server(
     Use this fixture when tests need the synthetic tools (``search_tools``,
     ``call_tool``, ``tool_info``, ``list_resources``, etc.) to be visible.
     """
-    async with respx.mock() as mock:
-        mock.get(f"{lazy_config.url}/swagger.v1.json").respond(200, json=base_spec)
+    respx.start()
+    try:
+        respx.get(f"{lazy_config.url}/swagger.v1.json").respond(200, json=base_spec)
         server = await create_test_server(lazy_config, base_spec)
         yield server
+    finally:
+        respx.stop(clear=True, reset=True)

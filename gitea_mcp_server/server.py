@@ -183,9 +183,14 @@ async def _apply_tool_filtering(
         logger.info("Tool filtering is disabled")
         return
 
+    # Compute the tool-name prefix that GiteaNamespace will apply at query time,
+    # so that mcp.disable() uses the correct final tool keys.
+    # GiteaNamespace strips the underscore, but _make_tool_key needs it
+    tool_prefix = config.tool_prefix.rstrip("_") + "_" if config.tool_prefix else ""
+
     try:
         logger.info("Applying tool permission filtering")
-        await filter_tools_by_permissions(mcp, gitea_client, config.token)
+        await filter_tools_by_permissions(mcp, gitea_client, config.token, tool_prefix)
     except Exception as e:
         logger.exception(
             "Tool filtering failed, proceeding without filtering",

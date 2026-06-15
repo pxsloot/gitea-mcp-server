@@ -934,6 +934,110 @@ class TestServerEdgeCases:
                 await main_async()
             assert exc.value.code == 1
 
+    @pytest.mark.asyncio
+    async def test_mcp_disable_hides_tools_from_listing(self):
+        """mcp.disable() causes tools to be absent from server.list_tools()."""
+        from fastmcp import FastMCP
+
+        server = FastMCP("Test")
+
+        @server.tool
+        def public_tool() -> str:
+            """A public tool."""
+            return "public"
+
+        @server.tool
+        def secret_tool() -> str:
+            """A secret tool."""
+            return "secret"
+
+        # Before disable — both tools visible
+        tools_before = await server.list_tools()
+        names_before = {t.name for t in tools_before}
+        assert "public_tool" in names_before
+        assert "secret_tool" in names_before
+
+        # Disable secret_tool
+        server.disable(keys={"tool:secret_tool@"})
+
+        # After disable — secret_tool hidden
+        tools_after = await server.list_tools()
+        names_after = {t.name for t in tools_after}
+        assert "public_tool" in names_after
+        assert "secret_tool" not in names_after
+
+    @pytest.mark.asyncio
+    async def test_mcp_disable_raises_not_found_on_call(self):
+        """Calling a disabled tool raises NotFoundError."""
+        from fastmcp import FastMCP
+        from fastmcp.exceptions import NotFoundError
+
+        server = FastMCP("Test")
+
+        @server.tool
+        def my_tool() -> str:
+            return "result"
+
+        server.disable(keys={"tool:my_tool@"})
+
+        with pytest.raises(NotFoundError):
+            await server.call_tool("my_tool")
+
+    @pytest.mark.asyncio
+    async def test_mcp_disable_hides_resources(self):
+        """mcp.disable() with resource keys hides resources from listing."""
+        from fastmcp import FastMCP
+
+        server = FastMCP("Test")
+
+        @server.resource("data://public")
+        def public_resource() -> str:
+            return "public"
+
+        @server.resource("data://secret")
+        def secret_resource() -> str:
+            return "secret"
+
+        # Before disable — both resources visible
+        resources_before = await server.list_resources()
+        uris_before = {str(r.uri) for r in resources_before}
+        assert "data://public" in uris_before
+        assert "data://secret" in uris_before
+
+        # Disable secret resource
+        server.disable(keys={"resource:data://secret@"})
+
+        # After disable — secret resource hidden
+        resources_after = await server.list_resources()
+        uris_after = {str(r.uri) for r in resources_after}
+        assert "data://public" in uris_after
+        assert "data://secret" not in uris_after
+
+    @pytest.mark.asyncio
+    async def test_mcp_disable_hides_resource_templates(self):
+        """mcp.disable() with template keys hides templates from listing."""
+        from fastmcp import FastMCP
+        from fastmcp.resources import ResourceTemplate
+
+        server = FastMCP("Test")
+
+        @server.resource("data://{item}")
+        def dynamic_resource(item: str) -> str:
+            return f"data for {item}"
+
+        # Before disable — template visible
+        templates_before = await server.list_resource_templates()
+        uris_before = {t.uri_template for t in templates_before}
+        assert "data://{item}" in uris_before
+
+        # Disable template
+        server.disable(keys={"template:data://{item}@"})
+
+        # After disable — template hidden
+        templates_after = await server.list_resource_templates()
+        uris_after = {t.uri_template for t in templates_after}
+        assert "data://{item}" not in uris_after
+
     @pytest.mark.filterwarnings("ignore::RuntimeWarning")
     def test_main_calls_async_main(self):
         """main() calls asyncio.run(main_async()).

@@ -129,15 +129,17 @@ async def _fetch_user_and_tokens(
     return available_scopes
 
 
-def _set_visibility(obj: Any, visible: bool) -> None:
-    """Set an object's visibility."""
-    if obj.meta is None:
-        obj.meta = {}
-    if "fastmcp" not in obj.meta:
-        obj.meta["fastmcp"] = {}
-    if "_internal" not in obj.meta["fastmcp"]:
-        obj.meta["fastmcp"]["_internal"] = {}
-    obj.meta["fastmcp"]["_internal"]["visibility"] = visible
+def _make_tool_key(name: str, prefix: str = "") -> str:
+    """Build a tool key suitable for mcp.disable(keys=...).
+
+    Args:
+        name: The raw (unprefixed) tool name from the provider.
+        prefix: Optional prefix to prepend (e.g. "gitea_").
+
+    Returns:
+        Key string like "tool:gitea_issue_list@" or "tool:get_version@".
+    """
+    return f"tool:{prefix}{name}@"
 
 
 async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
@@ -179,20 +181,21 @@ async def _collect_provider_resources(mcp: FastMCP) -> list[Any]:
 
 
 async def filter_tools_by_permissions(
-    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None
+    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None, prefix: str = ""
 ) -> None:
     """Filter tools based on the current user's Gitea token scopes.
 
-    Removes tools that require a scope not present in the active token.
-    The active token is identified by matching the last 8 chars of it
-    against Gitea's ``token_last_eight`` field.
-    This function should be called before any list_tools request to avoid
-    caching of unfiltered tools.
+    Disables tools that require a scope not present in the active token using
+    FastMCP's ``mcp.disable()`` API.  The active token is identified by matching
+    the last 8 chars of it against Gitea's ``token_last_eight`` field.
 
     Args:
         mcp: The FastMCP server instance
         gitea_client: GiteaClient for making API calls
         token: Raw GITEA_TOKEN value (defaults to gitea_client.config.token)
+        prefix: Tool name prefix (e.g. ``"gitea_"``) matching what
+            ``GiteaNamespace`` will apply at query time, so that the
+            ``Visibility`` transform matches the final tool names.
     """
     if token is None:
         token = gitea_client.config.token
@@ -211,25 +214,31 @@ async def filter_tools_by_permissions(
         extra={"total_tools": len(all_tools), "tools": [t.name for t in all_tools][:20]},
     )
 
-    disabled_count = 0
+    keys_to_disable: set[str] = set()
     for tool in all_tools:
         required = _get_required_scope(tool)
         if not _has_sufficient_scope(required, available_scopes):
-            try:
-                _set_visibility(tool, False)
-                disabled_count += 1
-                logger.info("Disabled tool due to insufficient scope", extra={"tool": tool.name, "key": tool.key})
-            except Exception as e:
-                logger.exception("Failed to disable tool", extra={"tool": tool.name, "key": tool.key, "error": str(e)})
+            key = _make_tool_key(tool.name, prefix)
+            keys_to_disable.add(key)
+            logger.info(
+                "Tool requires scope not available",
+                extra={"tool": tool.name, "key": key, "required": required},
+            )
 
-    logger.info(
-        "Tool filtering completed",
-        extra={
-            "total_tools": len(all_tools),
-            "disabled_tools": disabled_count,
-            "remaining_tools": len(all_tools) - disabled_count,
-        },
-    )
+    if keys_to_disable:
+        try:
+            mcp.disable(keys=keys_to_disable)
+            logger.info(
+                "Tool filtering completed",
+                extra={"disabled_tools": len(keys_to_disable)},
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to disable tools via mcp.disable()",
+                extra={"error": str(e)},
+            )
+    else:
+        logger.info("Tool filtering completed — no tools to disable")
 
 
 async def filter_resources_by_permissions(
@@ -237,9 +246,10 @@ async def filter_resources_by_permissions(
 ) -> None:
     """Filter resources based on the current user's Gitea token scopes.
 
-    Hides resources and resource templates that require a scope not present
-    in the active token. The active token is identified by matching the last
-    8 chars of it against Gitea's ``token_last_eight`` field.
+    Disables resources and resource templates that require a scope not present
+    in the active token using FastMCP's ``mcp.disable()`` API.  The active token
+    is identified by matching the last 8 chars of it against Gitea's
+    ``token_last_eight`` field.
 
     Args:
         mcp: The FastMCP server instance
@@ -266,26 +276,29 @@ async def filter_resources_by_permissions(
         },
     )
 
-    disabled_count = 0
+    keys_to_disable: set[str] = set()
     for component in all_components:
         required = _get_required_scope(component)
         if not _has_sufficient_scope(required, available_scopes):
-            try:
-                _set_visibility(component, False)
-                disabled_count += 1
-                name = getattr(component, "name", str(component))
-                logger.info("Disabled resource due to insufficient scope", extra={"resource": name})
-            except Exception as e:
-                logger.exception(
-                    "Failed to disable resource",
-                    extra={"resource": name, "error": str(e)},
-                )
+            key = component.key
+            keys_to_disable.add(key)
+            name = getattr(component, "name", str(component))
+            logger.info(
+                "Resource requires scope not available",
+                extra={"resource": name, "key": key, "required": required},
+            )
 
-    logger.info(
-        "Resource filtering completed",
-        extra={
-            "total_resources": len(all_components),
-            "disabled_resources": disabled_count,
-            "remaining_resources": len(all_components) - disabled_count,
-        },
-    )
+    if keys_to_disable:
+        try:
+            mcp.disable(keys=keys_to_disable)
+            logger.info(
+                "Resource filtering completed",
+                extra={"disabled_resources": len(keys_to_disable)},
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to disable resources via mcp.disable()",
+                extra={"error": str(e)},
+            )
+    else:
+        logger.info("Resource filtering completed — no resources to disable")

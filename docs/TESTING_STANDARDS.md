@@ -43,7 +43,6 @@ tests/
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
-│   ├── test_resource_registry.py
 │   ├── test_resources.py
 │   ├── test_scope.py
 │   ├── test_search_engine.py
@@ -139,9 +138,9 @@ def test_customize_metadata_sets_labels(self):
 
 ### Zone 3: Resource System (resources/)
 
-**What it tests**: Auto-generated resource registration, custom resource formatters, scope derivation, registry operations, Markdown formatting.
+**What it tests**: Auto-generated resource registration, custom resource formatters, scope derivation, resource registration operations, Markdown formatting.
 
-**Pattern**: Unit-test formatters with known input dicts. Test registration by inspecting a ResourceRegistry instance. Test error paths (404, missing fields) with controlled inputs.
+**Pattern**: Unit-test formatters with known input dicts. Verify registration by inspecting `mcp.resource()` call args. Test error paths (404, missing fields) with controlled inputs.
 
 **Coverage target**: 85%+.
 
@@ -483,7 +482,7 @@ exclude_also = [
 | `openapi_converter.py` | 95% | Core schema transformation — all branches matter |
 | `tools/exclusion.py` | 90% | Exclusion pattern matching + config loading |
 | `validation.py` | 95% | Security-sensitive input validation |
-| `resources/*.py` (each) | 85% | Formatters, registry, scope derivation |
+| `resources/*.py` (each) | 85% | Formatters, resource registration, scope derivation |
 | `resources/custom.py` | 80% | Error paths matter; some formatting is visual |
 | `exceptions.py` | 100% | Trivial — exception classes only |
 | `constants.py` | 100% | Constants only — values are coverage |

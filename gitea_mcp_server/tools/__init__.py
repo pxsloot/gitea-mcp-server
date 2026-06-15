@@ -8,7 +8,6 @@ All tool-related runtime concerns live here:
 - examples: Schema-to-example generation, tool schema serialization
 - search: BM25 search engine + TolerantSearchTransform + synthetic tools
 - namespace: GiteaNamespace transform (prefix tools, pass resources through)
-- registry: Tool metadata and registration utilities
 """
 
 from gitea_mcp_server.scope import derive_required_scope

@@ -22,7 +22,6 @@ from fastmcp import FastMCP
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.resources.custom import register_custom_resources
-from gitea_mcp_server.resources.registry import ResourceRegistry
 from gitea_mcp_server.validation import FILEPATH_PATTERN, validate_filepath
 
 
@@ -42,15 +41,11 @@ class TestFilesResourceUriTemplate:
     def mock_client(self):
         return AsyncMock()
 
-    @pytest.fixture
-    def mock_registry(self):
-        return MagicMock(spec=ResourceRegistry)
-
     def test_files_uri_template_uses_wildcard_path(
-        self, mock_mcp, mock_client, mock_registry
+        self, mock_mcp, mock_client
     ):
         """The files resource URI must use {path*} to match multi-segment paths."""
-        register_custom_resources(mock_mcp, mock_client, mock_registry)
+        register_custom_resources(mock_mcp, mock_client)
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
         files_uri = next(u for u in uri_templates if "files" in u)
         assert "{path*}" in files_uri, (

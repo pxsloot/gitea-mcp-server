@@ -185,6 +185,7 @@ async def _apply_tool_filtering(
 
     # Compute the tool-name prefix that GiteaNamespace will apply at query time,
     # so that mcp.disable() uses the correct final tool keys.
+    # GiteaNamespace strips the underscore, but _make_tool_key needs it
     tool_prefix = config.tool_prefix.rstrip("_") + "_" if config.tool_prefix else ""
 
     try:

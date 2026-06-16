@@ -14,8 +14,7 @@ from pathlib import Path
 
 import pytest
 import respx
-from fastmcp.exceptions import ToolError
-from fastmcp.tools.base import Tool, ToolAnnotations
+from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
@@ -157,6 +156,12 @@ def _tool_map(tools: list[Tool]) -> dict[str, Tool]:
     return {t.name: t for t in tools}
 
 
+# Module-level base_spec fixture shared by all test classes.
+@pytest.fixture
+def base_spec():
+    return _make_annotation_spec()
+
+
 # ===================================================================
 # Scenario 1 — readOnlyHint
 # ===================================================================
@@ -164,10 +169,6 @@ def _tool_map(tools: list[Tool]) -> dict[str, Tool]:
 
 class TestReadOnlyHint:
     """``readOnlyHint`` must be True for GET, False for write methods."""
-
-    @pytest.fixture
-    def base_spec(self):
-        return _make_annotation_spec()
 
     async def test_get_is_read_only(self, mcp_server) -> None:
         """GET endpoint → readOnlyHint=True."""
@@ -206,10 +207,6 @@ class TestReadOnlyHint:
 class TestDestructiveHint:
     """``destructiveHint`` must be True for DELETE, False for other methods."""
 
-    @pytest.fixture
-    def base_spec(self):
-        return _make_annotation_spec()
-
     async def test_delete_is_destructive(self, mcp_server) -> None:
         """DELETE endpoint → destructiveHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
@@ -239,10 +236,6 @@ class TestDestructiveHint:
 
 class TestIdempotentHint:
     """``idempotentHint`` must be True for GET/PUT/DELETE, False for POST."""
-
-    @pytest.fixture
-    def base_spec(self):
-        return _make_annotation_spec()
 
     async def test_get_is_idempotent(self, mcp_server) -> None:
         """GET endpoint → idempotentHint=True."""
@@ -331,10 +324,6 @@ class TestOpenWorldHintSyntheticTools:
     ``list_resources`` are registered unconditionally via
     ``register_mcp_resource_tools()``.
     """
-
-    @pytest.fixture
-    def base_spec(self):
-        return _make_annotation_spec()
 
     async def test_search_tools_is_local(self, search_mcp_server) -> None:
         """``search_tools`` operates on in-memory data → openWorldHint=False."""
@@ -474,10 +463,6 @@ class TestToolInfoAnnotations:
     tools (search_tools, call_tool, tool_info) are only registered when
     ``enable_lazy_loading=True``.
     """
-
-    @pytest.fixture
-    def base_spec(self):
-        return _make_annotation_spec()
 
     async def test_synthetic_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
         """tool_info returns correct annotations for a synthetic tool."""

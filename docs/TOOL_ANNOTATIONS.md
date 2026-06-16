@@ -139,9 +139,15 @@ Unit tests in `tests/unit/test_tool_customize.py` (covering the functions in `to
 - `TestCustomizeMetadata` (in `tests/unit/test_mcp_builder.py`) - `_customize_metadata` tests
 - Helper tests remain in `tests/unit/test_tool_customize.py` (categorize, title, hints, etc.)
 
+**Integration tests** in `tests/integration/test_tool_annotations.py` verify the full transform chain:
+annotation inference → namespace → extension metadata → exclusion → final tool metadata.
+34 tests cover all hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+and all 7 category tags end-to-end through a real server instance.
+
 Run tests:
 ```bash
 pytest tests/unit/test_tool_customize.py -v
+pytest tests/integration/test_tool_annotations.py -v
 ```
 
 ## Future Enhancements

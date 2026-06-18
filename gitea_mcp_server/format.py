@@ -9,6 +9,10 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
+# Length bounds for auto-detecting ISO datetime strings without schema hint
+_ISO_DT_MIN_LEN = 20
+_ISO_DT_MAX_LEN = 30
+
 
 def _snake_to_title(name: str) -> str:
     """Convert snake_case or CamelCase to Title Case with spaces."""
@@ -40,17 +44,13 @@ def _format_scalar(value: Any, schema: dict[str, Any] | None = None) -> str:
     """Format a scalar value as a string, respecting schema format hints."""
     if value is None:
         return "N/A"
-    if isinstance(value, bool):
-        return str(value)
-    if isinstance(value, (int, float)):
-        return str(value)
     if not isinstance(value, str):
         return str(value)
     fmt = schema.get("format") if schema else None
     if fmt == "date-time":
         return _format_datetime(value)
     # Auto-format ISO datetime strings even without schema hint
-    if 20 <= len(value) <= 30 and "T" in value:
+    if _ISO_DT_MIN_LEN <= len(value) <= _ISO_DT_MAX_LEN and "T" in value:
         formatted = _format_datetime(value)
         if formatted != value:
             return formatted

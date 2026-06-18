@@ -190,8 +190,10 @@ def _format_dict_as_markdown(
             raw_val = data.get(key)
             is_nested = isinstance(raw_val, (dict, list))
             if is_nested:
+                # Don't propagate field_filter into nested sub-objects —
+                # the parent's field names don't apply to child objects.
                 sub = _format_as_markdown(
-                    raw_val, effective or prop_schema, _depth=_depth + 1, field_filter=field_filter,
+                    raw_val, effective or prop_schema, _depth=_depth + 1,
                 )
                 if sub.strip():
                     nested.append((label, sub))

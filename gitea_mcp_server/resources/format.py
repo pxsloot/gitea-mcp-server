@@ -57,7 +57,7 @@ def _format_issues_markdown(
 ) -> ResourceResult:
     """Format issues list as Markdown."""
     if not issues:
-        return _format_as_markdown(issues, title=title, field_filter=_ISSUE_FIELDS, item_title_key="title")
+        return _format_as_markdown(issues, title=title, field_filter=_ISSUE_FIELDS)
 
     display_title = title
     if total is not None:
@@ -78,7 +78,7 @@ def _format_pulls_markdown(
 ) -> ResourceResult:
     """Format pull requests list as Markdown."""
     if not pulls:
-        return _format_as_markdown(pulls, title=title, field_filter=_PULL_FIELDS, item_title_key="title")
+        return _format_as_markdown(pulls, title=title, field_filter=_PULL_FIELDS)
 
     display_title = f"{title} — {len(pulls)} pull requests"
     return _format_as_markdown(
@@ -91,9 +91,13 @@ def _format_pulls_markdown(
 
 def _format_user_markdown(user: dict[str, Any]) -> ResourceResult:
     """Format user profile as Markdown."""
+    # Normalize: API may return 'created_at' or 'created' for the same field
+    data = dict(user)
+    if "created_at" not in data and "created" in data:
+        data["created_at"] = data["created"]
     return _format_as_markdown(
-        user,
-        title=user.get("login", "User"),
+        data,
+        title=data.get("login", "User"),
         field_filter=_USER_FIELDS,
     )
 

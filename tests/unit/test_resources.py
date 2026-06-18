@@ -73,7 +73,7 @@ class TestFormatRepoMarkdown:
         assert "# owner/repo" in result
         assert "| Description | Test repo |" in result
         assert "## Owner" in result
-        assert "| login | owner |" in result
+        assert "| Login | owner |" in result
         assert "| Stargazers Count | 42 |" in result
         assert "test" in result and "example" in result
         assert "## License" in result

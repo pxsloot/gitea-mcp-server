@@ -33,6 +33,7 @@ wheels/
 Thumbs.db
 
 # Project specific
+.rag-mcp
 .env
 swagger.v1.json
 !tests/swagger.v1.json

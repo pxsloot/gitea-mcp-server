@@ -5,8 +5,13 @@ Kept at the flat level so neither domain depends on the other.
 """
 
 import json as json_module
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
+
+# Length bounds for auto-detecting ISO datetime strings without schema hint
+_ISO_DT_MIN_LEN = 20
+_ISO_DT_MAX_LEN = 30
 
 
 def _snake_to_title(name: str) -> str:
@@ -39,15 +44,16 @@ def _format_scalar(value: Any, schema: dict[str, Any] | None = None) -> str:
     """Format a scalar value as a string, respecting schema format hints."""
     if value is None:
         return "N/A"
-    if isinstance(value, bool):
-        return str(value)
-    if isinstance(value, (int, float)):
-        return str(value)
     if not isinstance(value, str):
         return str(value)
     fmt = schema.get("format") if schema else None
     if fmt == "date-time":
         return _format_datetime(value)
+    # Auto-format ISO datetime strings even without schema hint
+    if _ISO_DT_MIN_LEN <= len(value) <= _ISO_DT_MAX_LEN and "T" in value:
+        formatted = _format_datetime(value)
+        if formatted != value:
+            return formatted
     return value
 
 
@@ -67,6 +73,8 @@ def _format_list_as_markdown(
     data: list[Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
+    field_filter: Sequence[str] | None = None,
+    item_title_key: str | None = None,
 ) -> str:
     lines: list[str] = []
     item_schema = schema.get("items") if isinstance(schema, dict) else None
@@ -74,8 +82,15 @@ def _format_list_as_markdown(
         lines.append(f"{indent}*None*")
     elif data and isinstance(data[0], dict):
         for i, item in enumerate(data):
+            title: str | None = None
+            if item_title_key:
+                val = item.get(item_title_key)
+                if val is not None:
+                    title = str(val)
+            if title is None:
+                title = f"Item {i + 1}"
             sub = _format_as_markdown(
-                item, item_schema, title=f"Item {i + 1}", _depth=0
+                item, item_schema, title=title, _depth=0, field_filter=field_filter,
             )
             lines.append(sub)
     elif item_schema and item_schema.get("type") in ("string", "number", "integer", "boolean"):
@@ -142,6 +157,7 @@ def _format_dict_as_markdown(
     schema: dict[str, Any] | None = None,
     indent: str = "",
     _depth: int = 0,
+    field_filter: Sequence[str] | None = None,
 ) -> str:
     lines: list[str] = []
     combined_schema = _merge_allof_schema(schema)
@@ -151,21 +167,34 @@ def _format_dict_as_markdown(
         else {}
     )
 
+    # Determine which keys to iterate
+    if field_filter is not None:
+        keys = [k for k in field_filter if k in data]
+    elif properties:
+        keys = list(properties.keys())
+    else:
+        keys = list(data.keys())
+
     if not data:
         lines.append(f"{indent}*Empty*")
-    elif properties:
+    elif keys:
         flat: list[tuple[str, str]] = []
         nested: list[tuple[str, str]] = []
 
-        for key, prop_schema in properties.items():
-            if not isinstance(prop_schema, dict):
+        for key in keys:
+            prop_schema = properties.get(key) if properties else None
+            if prop_schema is not None and not isinstance(prop_schema, dict):
                 continue
-            effective = _resolve_anyof_schema(prop_schema)
+            effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
             label = _snake_to_title(key)
             raw_val = data.get(key)
             is_nested = isinstance(raw_val, (dict, list))
             if is_nested:
-                sub = _format_as_markdown(raw_val, effective or prop_schema, _depth=_depth + 1)
+                # Don't propagate field_filter into nested sub-objects —
+                # the parent's field names don't apply to child objects.
+                sub = _format_as_markdown(
+                    raw_val, effective or prop_schema, _depth=_depth + 1,
+                )
                 if sub.strip():
                     nested.append((label, sub))
             else:
@@ -185,6 +214,8 @@ def _format_as_markdown(
     schema: dict[str, Any] | None = None,
     title: str | None = None,
     _depth: int = 0,
+    field_filter: Sequence[str] | None = None,
+    item_title_key: str | None = None,
 ) -> str:
     lines: list[str] = []
     indent = "  " * _depth
@@ -198,13 +229,15 @@ def _format_as_markdown(
         return "\n".join(lines)
 
     if isinstance(data, list):
-        result = _format_list_as_markdown(data, schema, indent)
+        result = _format_list_as_markdown(
+            data, schema, indent, field_filter=field_filter, item_title_key=item_title_key,
+        )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
         return result
 
     if isinstance(data, dict):
-        result = _format_dict_as_markdown(data, schema, indent, _depth)
+        result = _format_dict_as_markdown(data, schema, indent, _depth, field_filter=field_filter)
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
         return result

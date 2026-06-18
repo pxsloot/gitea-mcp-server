@@ -211,7 +211,7 @@ class TestCallToolRuntimeBehavior:
 
         assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
         assert len(result.content) == 1
-        assert "| id |" in result.content[0].text
+        assert "| Id | 1 |" in result.content[0].text
 
     @pytest.mark.asyncio
     async def test_call_tool_json_format(self):
@@ -527,8 +527,8 @@ class TestFormatResultExtended:
         assert result.structured_content == inner.structured_content
         assert len(result.content) == 1
         text = result.content[0].text
-        assert "| name |" in text
-        assert "has_more" in text.lower() or "total" in text
+        assert "| Name |" in text
+        assert "has more" in text.lower() or "total" in text.lower()
         assert "42" in text
 
     def test_markdown_with_output_schema(self):

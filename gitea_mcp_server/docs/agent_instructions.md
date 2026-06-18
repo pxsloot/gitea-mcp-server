@@ -226,7 +226,7 @@ All synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`
 
 | Format | When to use |
 |--------|-------------|
-| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. |
+| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
 | `raw` | Return the result exactly as received from the underlying API or resource. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
 | `json` | Pretty-printed JSON. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. More compact and parseable than markdown. |
 
@@ -249,8 +249,6 @@ search_resources("issue labels", format="json")
 # Raw API output -- for debugging
 read_resource("gitea://repos/org/repo", format="raw")
 ```
-
-**Tip**: If markdown output ever looks odd (e.g., unexpected inline numbers, odd table layout), switch to `raw` or `json` to see the underlying API data -- the markdown formatter relies on the Gitea OpenAPI schema and occasionally misinterprets nested or nullable fields.
 
 ## Resources vs Tools
 - **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All synthetic tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.

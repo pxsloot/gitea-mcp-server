@@ -421,9 +421,9 @@ class TestMcpReadResourceTool:
         assert "result" in tool_result.structured_content
         result_text = tool_result.structured_content["result"]
         assert "|" in result_text
-        assert "key" in result_text
+        assert "Key" in result_text
         assert "val" in result_text
-        assert "num" in result_text
+        assert "Num" in result_text
         assert "42" in result_text
         # content is present with text for display
         assert len(tool_result.content) == 1
@@ -528,8 +528,8 @@ class TestFormatResourceContent:
         """format=markdown with JSON array input should produce markdown table."""
         result = _format_resource_content('[{"id": 1, "label": "a"}]', "markdown")
         assert "| Property | Value |" in result
-        assert "| id | 1 |" in result
-        assert "| label | a |" in result
+        assert "| Id | 1 |" in result
+        assert "| Label | a |" in result
 
     def test_non_json_wrapped_in_result_for_json_format(self):
         """format=json with non-JSON content should wrap in {\"result\": ...}."""

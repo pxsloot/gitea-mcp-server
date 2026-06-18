@@ -250,7 +250,7 @@ class TestFormatAsMarkdown:
         result = _format_as_markdown(data)
         assert "Alice" in result
         assert "Bob" in result
-        assert "| name |" in result
+        assert "| Name |" in result
 
     def test_list_of_dicts_with_schema(self):
         data = [{"id": 1, "name": "Foo"}]
@@ -329,7 +329,7 @@ class TestFormatAsMarkdown:
     def test_title_with_dict(self):
         result = _format_as_markdown({"key": "val"}, title="MyTitle")
         assert "# MyTitle" in result
-        assert "key" in result
+        assert "| Key | val |" in result
         assert "val" in result
 
     def test_title_with_list(self):
@@ -440,3 +440,75 @@ class TestFormatAsMarkdown:
 
     def test_non_dict_non_list_input(self):
         assert _format_as_markdown(True) == "True"
+
+    # ── field_filter and item_title_key hooks ──────────────────────────────────────
+
+    def test_field_filter_on_dict_selects_subset(self):
+        """field_filter shows only the specified properties."""
+        data = {"id": 1, "name": "Alice", "email": "alice@test.com", "role": "admin"}
+        result = _format_as_markdown(data, field_filter=["id", "name"])
+        assert "| Id | 1 |" in result
+        assert "| Name | Alice |" in result
+        assert "Email" not in result
+        assert "Role" not in result
+
+    def test_field_filter_on_list_of_dicts(self):
+        """field_filter applies to each item in a list of dicts."""
+        data = [
+            {"id": 1, "name": "Foo", "extra": "x"},
+            {"id": 2, "name": "Bar", "extra": "y"},
+        ]
+        result = _format_as_markdown(data, field_filter=["id", "name"])
+        for row in ("Foo", "Bar", "1", "2"):
+            assert row in result
+        assert "extra" not in result.lower() and "Extra" not in result
+
+    def test_field_filter_skips_missing_keys_gracefully(self):
+        """field_filter entries not in data are silently skipped."""
+        data = {"name": "Alice"}
+        result = _format_as_markdown(data, field_filter=["name", "nonexistent"])
+        assert "| Name | Alice |" in result
+        assert "nonexistent" not in result.lower()
+
+    def test_item_title_key_customizes_list_headings(self):
+        """item_title_key uses the specified field value as the item heading."""
+        data = [{"number": 42, "title": "Bug fix"}, {"number": 43, "title": "Feature"}]
+        result = _format_as_markdown(data, item_title_key="title")
+        assert "# Bug fix" in result
+        assert "# Feature" in result
+        assert "| Number | 42 |" in result
+        assert "| Number | 43 |" in result
+
+    def test_item_title_key_falls_back_to_item_n_when_missing(self):
+        """When item_title_key field is missing, falls back to 'Item N'."""
+        data = [{"id": 1, "name": "Alice"}]
+        result = _format_as_markdown(data, item_title_key="nonexistent")
+        assert "# Item 1" in result
+        assert "| Id | 1 |" in result
+
+    def test_field_filter_and_item_title_key_together(self):
+        """Both hooks can be used together."""
+        data = [{"number": 1, "title": "Bug", "body": "Details"}]
+        result = _format_as_markdown(
+            data,
+            field_filter=["number", "title"],
+            item_title_key="title",
+        )
+        assert "# Bug" in result
+        assert "| Number | 1 |" in result
+        assert "| Title | Bug |" in result
+        assert "Body" not in result and "body" not in result
+
+    # ── Consistency: tool and resource should produce same structure ──────────────
+
+    def test_format_produces_nested_sub_tables_for_nested_objects(self):
+        """Nested dicts render as bold sub-sections with sub-tables (not dot-path)."""
+        data = {"user": {"id": 12, "login": "dev2"}, "labels": [{"name": "Cleanup"}]}
+        result = _format_as_markdown(data)
+        # User appears as a nested sub-section, not as dot-path keys
+        assert "**User:**" in result or "## User" in result
+        # Labels appears as a nested section
+        assert "**Labels:**" in result or "## Labels" in result
+        # Dot-path keys should NOT appear
+        assert "user.id" not in result
+        assert "labels.Name" not in result

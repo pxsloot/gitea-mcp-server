@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from fastmcp.tools.tool import ToolResult
 
 from fastmcp.server.middleware.caching import (
-    ANONYMOUS_AUTH_KEY as _FASTMCP_ANON_AUTH,
     _get_auth_partition_key,
 )
 from fastmcp.server.middleware.middleware import (

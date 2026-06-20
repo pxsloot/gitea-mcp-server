@@ -777,7 +777,6 @@ class TestServerEdgeCases:
         config = MagicMock()
         config.tool_filtering_enabled = True
         config.token = "test-token"
-        config.tool_prefix = ""
 
         await _apply_permission_filter(mcp, gitea_client, config)
         # Should not raise - exception is caught and logged

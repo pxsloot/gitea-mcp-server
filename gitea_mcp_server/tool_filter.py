@@ -14,12 +14,19 @@ Usage in ``server.py``::
 """
 
 import logging
+from collections.abc import Sequence
 from typing import Any, cast
 
 from fastmcp.resources import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.transforms import Transform
+from fastmcp.server.transforms import (
+    GetResourceNext,
+    GetResourceTemplateNext,
+    GetToolNext,
+    Transform,
+)
 from fastmcp.tools.base import Tool
+from fastmcp.utilities.versions import VersionSpec
 
 from gitea_mcp_server.client import GiteaClient
 
@@ -155,17 +162,14 @@ class PermissionFilterTransform(Transform):
     once constructed.
     """
 
-    def __init__(self, available_scopes: set[str], prefix: str = "") -> None:
+    def __init__(self, available_scopes: set[str]) -> None:
         """Initialise the transform.
 
         Args:
             available_scopes: Set of Gitea scope strings the user's token possesses.
-            prefix: Tool name prefix (e.g. ``"gitea_"``).  Used for logging only;
-                scope-checking happens on the raw tool/resource metadata, not names.
         """
         super().__init__()
         self._available = available_scopes
-        self._prefix = prefix
 
     def _is_allowed(self, item: Any) -> bool:
         """Check whether an item (tool or resource) is allowed by the token scope."""
@@ -181,21 +185,19 @@ class PermissionFilterTransform(Transform):
 
     # ── tools ──────────────────────────────────────────────────────────
 
-    async def list_tools(self, tools: list[Tool], *, _prefix: str = "") -> list[Tool]:
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Filter out tools whose required scope is not available."""
         return [t for t in tools if self._is_allowed(t)]
 
     async def get_tool(
         self,
         name: str,
-        call_next: Any,
+        call_next: GetToolNext,
         *,
-        _prefix: str = "",
-        version: str | None = None,
-        warnings: list[str] | None = None,
+        version: VersionSpec | None = None,
     ) -> Tool | None:
         """Return the tool only if its required scope is available."""
-        tool = await call_next(name, version=version, warnings=warnings)
+        tool = await call_next(name, version=version)
         if tool is not None and not self._is_allowed(tool):
             return None
         return tool
@@ -203,27 +205,26 @@ class PermissionFilterTransform(Transform):
     # ── resources ──────────────────────────────────────────────────────
 
     async def list_resources(
-        self, resources: list[Resource], *, _prefix: str = ""
-    ) -> list[Resource]:
+        self, resources: Sequence[Resource]
+    ) -> Sequence[Resource]:
         """Filter out resources whose required scope is not available."""
         return [r for r in resources if self._is_allowed(r)]
 
     async def list_resource_templates(
-        self, templates: list[ResourceTemplate], *, _prefix: str = ""
-    ) -> list[ResourceTemplate]:
+        self, templates: Sequence[ResourceTemplate]
+    ) -> Sequence[ResourceTemplate]:
         """Filter out resource templates whose required scope is not available."""
         return [t for t in templates if self._is_allowed(t)]
 
     async def get_resource(
         self,
         uri: str,
-        call_next: Any,
+        call_next: GetResourceNext,
         *,
-        _prefix: str = "",
-        warnings: list[str] | None = None,
+        version: VersionSpec | None = None,
     ) -> Resource | None:
         """Return the resource only if its required scope is available."""
-        resource = await call_next(uri, warnings=warnings)
+        resource = await call_next(uri, version=version)
         if resource is not None and not self._is_allowed(resource):
             return None
         return resource
@@ -231,12 +232,12 @@ class PermissionFilterTransform(Transform):
     async def get_resource_template(
         self,
         uri: str,
-        call_next: Any,
+        call_next: GetResourceTemplateNext,
         *,
-        _prefix: str = "",
+        version: VersionSpec | None = None,
     ) -> ResourceTemplate | None:
         """Return the resource template only if its required scope is available."""
-        template = await call_next(uri)
+        template = await call_next(uri, version=version)
         if template is not None and not self._is_allowed(template):
             return None
         return template

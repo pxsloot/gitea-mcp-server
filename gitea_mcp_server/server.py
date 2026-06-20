@@ -221,9 +221,6 @@ async def _apply_permission_filter(
         logger.info("Permission filtering is disabled")
         return
 
-    # Prefix is used for logging only; scope-checking works on raw metadata.
-    tool_prefix = config.tool_prefix or ""
-
     try:
         logger.info("Fetching token scopes for permission filtering")
         available_scopes = await fetch_token_scopes(gitea_client, config.token)
@@ -241,9 +238,9 @@ async def _apply_permission_filter(
     try:
         logger.info(
             "Adding PermissionFilterTransform",
-            extra={"scopes": sorted(available_scopes), "prefix": tool_prefix},
+            extra={"scopes": sorted(available_scopes)},
         )
-        mcp.add_transform(PermissionFilterTransform(available_scopes, prefix=tool_prefix))
+        mcp.add_transform(PermissionFilterTransform(available_scopes))
     except Exception as e:
         logger.exception(
             "Failed to add PermissionFilterTransform, proceeding without filtering",

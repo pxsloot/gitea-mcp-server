@@ -272,7 +272,6 @@ class TestPermissionFilterTransformTools:
     def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
         return PermissionFilterTransform(
             available_scopes if available_scopes is not None else {"read:repository"},
-            prefix="",
         )
 
     # ── list_tools ─────────────────────────────────────────────────
@@ -327,7 +326,7 @@ class TestPermissionFilterTransformTools:
         transform = self._transform({"read:repository"})
         repo_tool = _make_tool("repo_list", required_scope="read:repository")
 
-        async def call_next(name, version=None, warnings=None):
+        async def call_next(name, *, version=None):
             return repo_tool
 
         result = await transform.get_tool("repo_list", call_next)
@@ -337,7 +336,7 @@ class TestPermissionFilterTransformTools:
         transform = self._transform({"read:repository"})
         issue_tool = _make_tool("issue_list", required_scope="read:issue")
 
-        async def call_next(name, version=None, warnings=None):
+        async def call_next(name, *, version=None):
             return issue_tool
 
         result = await transform.get_tool("issue_list", call_next)
@@ -346,7 +345,7 @@ class TestPermissionFilterTransformTools:
     async def test_get_tool_returns_none_when_next_returns_none(self):
         transform = self._transform({"read:repository"})
 
-        async def call_next(name, version=None, warnings=None):
+        async def call_next(name, *, version=None):
             return None
 
         result = await transform.get_tool("nonexistent", call_next)
@@ -363,7 +362,6 @@ class TestPermissionFilterTransformResources:
     def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
         return PermissionFilterTransform(
             available_scopes if available_scopes is not None else {"read:repository"},
-            prefix="",
         )
 
     # ── list_resources ─────────────────────────────────────────────
@@ -417,7 +415,7 @@ class TestPermissionFilterTransformResources:
         transform = self._transform({"read:repository"})
         resource = _make_resource("repo", required_scope="read:repository")
 
-        async def call_next(uri, warnings=None):
+        async def call_next(uri, *, version=None):
             return resource
 
         result = await transform.get_resource("gitea://repo", call_next)
@@ -427,7 +425,7 @@ class TestPermissionFilterTransformResources:
         transform = self._transform({"read:repository"})
         resource = _make_resource("issue", required_scope="read:issue")
 
-        async def call_next(uri, warnings=None):
+        async def call_next(uri, *, version=None):
             return resource
 
         result = await transform.get_resource("gitea://issue", call_next)
@@ -436,7 +434,7 @@ class TestPermissionFilterTransformResources:
     async def test_get_resource_none_when_next_returns_none(self):
         transform = self._transform({"read:repository"})
 
-        async def call_next(uri, warnings=None):
+        async def call_next(uri, *, version=None):
             return None
 
         result = await transform.get_resource("gitea://nonexistent", call_next)
@@ -448,7 +446,7 @@ class TestPermissionFilterTransformResources:
         transform = self._transform({"read:repository"})
         template = _make_template("repo_tpl", required_scope="read:repository")
 
-        async def call_next(uri):
+        async def call_next(uri, *, version=None):
             return template
 
         result = await transform.get_resource_template("gitea://repo", call_next)
@@ -458,7 +456,7 @@ class TestPermissionFilterTransformResources:
         transform = self._transform({"read:repository"})
         template = _make_template("org_tpl", required_scope="read:organization")
 
-        async def call_next(uri):
+        async def call_next(uri, *, version=None):
             return template
 
         result = await transform.get_resource_template("gitea://org", call_next)
@@ -467,7 +465,7 @@ class TestPermissionFilterTransformResources:
     async def test_get_resource_template_none_when_next_returns_none(self):
         transform = self._transform({"read:repository"})
 
-        async def call_next(uri):
+        async def call_next(uri, *, version=None):
             return None
 
         result = await transform.get_resource_template("gitea://nonexistent", call_next)

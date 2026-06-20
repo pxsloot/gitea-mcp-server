@@ -32,14 +32,11 @@ from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.logging_config import setup_logging
-from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
-from gitea_mcp_server.server_setup.permissions import (
-    filter_resources_by_permissions,
-    filter_tools_by_permissions,
-)
 from gitea_mcp_server.server_setup.http_server import run_http_server
+from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
+from gitea_mcp_server.tool_filter import PermissionFilterTransform, fetch_token_scopes
 from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
@@ -208,35 +205,48 @@ def _setup_tool_discovery(
         mcp.add_transform(ExtensionMetadataTransform(tool_names, prefix=prefix))
 
 
-async def _apply_tool_filtering(
+async def _apply_permission_filter(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     config: Config,
 ) -> None:
-    """Filter tools and resources based on user permissions if enabled."""
+    """Add a PermissionFilterTransform if user permission filtering is enabled.
+
+    Fetches the available token scopes once at startup and attaches them to a
+    ``Transform`` that filters tools/resources at query time.  If the token
+    scopes cannot be fetched (auth failure, network error, etc.), the transform
+    is simply not added and all tools remain visible.
+    """
     if not config.tool_filtering_enabled:
-        logger.info("Tool filtering is disabled")
+        logger.info("Permission filtering is disabled")
         return
 
-    # Compute the tool-name prefix that GiteaNamespace will apply at query time,
-    # so that mcp.disable() uses the correct final tool keys.
-    # GiteaNamespace strips the underscore, but _make_tool_key needs it
-    tool_prefix = config.tool_prefix.rstrip("_") + "_" if config.tool_prefix else ""
+    # Prefix is used for logging only; scope-checking works on raw metadata.
+    tool_prefix = config.tool_prefix or ""
 
     try:
-        logger.info("Applying tool permission filtering")
-        await filter_tools_by_permissions(mcp, gitea_client, config.token, tool_prefix)
+        logger.info("Fetching token scopes for permission filtering")
+        available_scopes = await fetch_token_scopes(gitea_client, config.token)
     except Exception as e:
         logger.exception(
-            "Tool filtering failed, proceeding without filtering",
+            "Failed to fetch token scopes, proceeding without filtering",
             extra={"error": str(e)},
         )
+        return
+
+    if available_scopes is None:
+        logger.warning("No token scopes available, proceeding without filtering")
+        return
+
     try:
-        logger.info("Applying resource permission filtering")
-        await filter_resources_by_permissions(mcp, gitea_client, config.token)
+        logger.info(
+            "Adding PermissionFilterTransform",
+            extra={"scopes": sorted(available_scopes), "prefix": tool_prefix},
+        )
+        mcp.add_transform(PermissionFilterTransform(available_scopes, prefix=tool_prefix))
     except Exception as e:
         logger.exception(
-            "Resource filtering failed, proceeding without filtering",
+            "Failed to add PermissionFilterTransform, proceeding without filtering",
             extra={"error": str(e)},
         )
 
@@ -290,7 +300,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     _setup_tool_discovery(mcp, config, doc_manager, extensions)
     register_all_resources(mcp, gitea_client, openapi_spec)
     _setup_tool_exclusions(mcp, config)
-    await _apply_tool_filtering(mcp, gitea_client, config)
+    await _apply_permission_filter(mcp, gitea_client, config)
 
     logger.info("Gitea MCP Server initialized successfully")
     return mcp

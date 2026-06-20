@@ -1,35 +1,73 @@
-"""Unit tests for tool permission filtering."""
+"""Unit tests for tool permission filtering.
 
-from unittest.mock import AsyncMock, MagicMock, patch
+Tests for ``PermissionFilterTransform``, ``fetch_token_scopes``, and their
+supporting helpers (``_get_required_scope``, ``_has_sufficient_scope``, etc.).
+"""
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from gitea_mcp_server.tool_filter import (
-    _fetch_user_and_tokens,
+    PermissionFilterTransform,
     _get_required_scope,
     _has_sufficient_scope,
-    _make_tool_key,
     _match_active_token,
-    filter_resources_by_permissions,
-    filter_tools_by_permissions,
+    fetch_token_scopes,
 )
 
 
-class TestMakeToolKey:
-    """Tests for the _make_tool_key helper function."""
+# ═══════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════
 
-    def test_without_prefix(self):
-        assert _make_tool_key("issue_list") == "tool:issue_list@"
+def _make_tool(name: str, required_scope: str | None = None) -> MagicMock:
+    """Create a mock Tool object with optional scope metadata."""
+    tool = MagicMock()
+    tool.name = name
+    tool.key = name
+    tool.tags = set()
+    tool.meta = {}
+    if required_scope is not None:
+        tool.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+            "required_scope"
+        ] = required_scope
+    return tool
 
-    def test_with_prefix(self):
-        assert _make_tool_key("issue_list", "gitea_") == "tool:gitea_issue_list@"
 
-    def test_empty_name(self):
-        assert _make_tool_key("") == "tool:@"
+def _make_resource(
+    name: str, uri: str = "", required_scope: str | None = None
+) -> MagicMock:
+    """Create a mock Resource object with optional scope metadata."""
+    resource = MagicMock()
+    resource.name = name
+    resource.uri = uri or f"gitea://{name}"
+    resource.meta = {}
+    if required_scope is not None:
+        resource.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+            "required_scope"
+        ] = required_scope
+    return resource
 
-    def test_empty_prefix(self):
-        assert _make_tool_key("get_version", "") == "tool:get_version@"
 
+def _make_template(
+    name: str, uri_template: str = "", required_scope: str | None = None
+) -> MagicMock:
+    """Create a mock ResourceTemplate object with optional scope metadata."""
+    template = MagicMock()
+    template.name = name
+    template.uri_template = uri_template or f"gitea://{name}/{{param}}"
+    template.meta = {}
+    if required_scope is not None:
+        template.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
+            "required_scope"
+        ] = required_scope
+    return template
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _match_active_token
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestMatchActiveToken:
     """Tests for the _match_active_token helper function."""
@@ -65,26 +103,19 @@ class TestMatchActiveToken:
         assert result is None
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# _get_required_scope
+# ═══════════════════════════════════════════════════════════════════════
+
 class TestGetRequiredScope:
     """Tests for the _get_required_scope helper function."""
 
-    def _make_tool_with_scope(self, required_scope: str | None):
-        tool = MagicMock()
-        tool.name = "test_tool"
-        tool.key = "test_tool"
-        tool.meta = {}
-        if required_scope is not None:
-            tool.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-                "required_scope"
-            ] = required_scope
-        return tool
-
     def test_returns_scope_from_meta(self):
-        tool = self._make_tool_with_scope("read:repository")
+        tool = _make_tool("test_tool", required_scope="read:repository")
         assert _get_required_scope(tool) == "read:repository"
 
     def test_returns_sudo_from_meta(self):
-        tool = self._make_tool_with_scope("sudo")
+        tool = _make_tool("test_tool", required_scope="sudo")
         assert _get_required_scope(tool) == "sudo"
 
     def test_returns_none_when_no_meta(self):
@@ -102,16 +133,20 @@ class TestGetRequiredScope:
         tool.meta = {"fastmcp": {}}
         assert _get_required_scope(tool) is None
 
-    def test_returns_none_when_missing_fastmcp(self):
+    def test_returns_none_when_missing_fastmcp_key(self):
         tool = MagicMock()
-        tool.meta = {}
+        tool.meta = {"other": {}}
         assert _get_required_scope(tool) is None
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# _has_sufficient_scope
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestHasSufficientScope:
     """Tests for the _has_sufficient_scope helper function."""
 
-    def test_sudo_in_available_grants_any_scope(self):
+    def test_sudo_grants_any_scope(self):
         assert _has_sufficient_scope("read:repository", {"sudo"}) is True
         assert _has_sufficient_scope("write:issue", {"sudo"}) is True
         assert _has_sufficient_scope("sudo", {"sudo"}) is True
@@ -139,562 +174,39 @@ class TestHasSufficientScope:
         assert _has_sufficient_scope("read:repository", set()) is False
 
 
-class TestFilterToolsByPermissions:
-    """Tests for the filter_tools_by_permissions function.
-
-    Verifies that mcp.disable() is called with the correct tool keys
-    for tools whose required scope exceeds the active token's scopes.
-    """
-
-    @pytest.fixture
-    def mock_mcp(self):
-        mcp = MagicMock()
-        provider = AsyncMock()
-        mcp.providers = [provider]
-        return mcp
-
-    @pytest.fixture
-    def mock_gitea_client(self):
-        return MagicMock()
-
-    def create_tool(self, name: str, tags: set | None = None, required_scope: str | None = None):
-        tool = MagicMock()
-        tool.name = name
-        tool.key = name
-        tool.tags = tags or set()
-        tool.meta = {}
-        if required_scope is not None:
-            tool.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-                "required_scope"
-            ] = required_scope
-        return tool
-
-    def _make_token(self, name: str, scopes: list[str], token_val: str | None = None) -> dict:
-        """Create a token dict that matches the API format."""
-        token = {"id": 1, "name": name, "scopes": scopes}
-        if token_val:
-            token["token_last_eight"] = token_val[-8:]
-        else:
-            token["token_last_eight"] = "00000000"
-        return token
-
-    async def test_user_with_sudo_sees_all_tools(self, mock_mcp, mock_gitea_client):
-        """Sudo scope should keep all tools visible (no disable call)."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("admin-token", ["sudo"], "test-token")],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        admin_tool = self.create_tool("admin_users", required_scope="sudo")
-        user_tool = self.create_tool("user_get", required_scope="read:user")
-
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, admin_tool, user_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, "test-token", prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_only_active_token_scopes_used(self, mock_mcp, mock_gitea_client):
-        """Only the active token's scopes are used, not union of all."""
-        mock_gitea_client.config.token = "active-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [
-                    self._make_token("limited", ["read:issue"], "active-token"),
-                    self._make_token("powerful", ["write:repository", "read:user"], "other-token"),
-                ],
-            ]
-        )
-
-        issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-        repo_tool = self.create_tool("repo_create", required_scope="write:repository")
-
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[issue_tool, repo_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        # issue_list has read:issue (which is available) -> not disabled
-        # repo_create has write:repository (not in limited token) -> disabled
-        mock_mcp.disable.assert_called_once_with(keys={"tool:repo_create@"})
-
-    async def test_disables_tools_without_required_scope(self, mock_mcp, mock_gitea_client):
-        """Tools needing scopes outside the token should be disabled."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool, issue_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_called_once_with(keys={"tool:issue_list@"})
-
-    async def test_disables_with_prefix(self, mock_mcp, mock_gitea_client):
-        """When a prefix is provided, tool keys should include it."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-
-        issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[issue_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="gitea_")
-
-        mock_mcp.disable.assert_called_once_with(keys={"tool:gitea_issue_list@"})
-
-    async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
-        """Write scope should satisfy read requirements."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["write:repository"], "test-token")],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_tools_without_scope_requirement_always_visible(
-        self, mock_mcp, mock_gitea_client
-    ):
-        """Tools with no scope requirement should never be disabled."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", [], "test-token")],
-            ]
-        )
-
-        misc_tool = self.create_tool("get_version")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[misc_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_token_fetch_failure_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        """API failure fetching tokens should keep all tools visible."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                Exception("Token API error"),
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, "test-token", prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_user_fetch_failure_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        """API failure fetching user should keep all tools visible."""
-        mock_gitea_client.request = AsyncMock(side_effect=Exception("API error"))
-        tool = self.create_tool("repo_list", required_scope="read:repository")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_empty_provider_tools(self, mock_mcp, mock_gitea_client):
-        """Empty tool list from providers should not call mcp.disable."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_multiple_providers(self, mock_mcp, mock_gitea_client):
-        """Tools from multiple providers should all be considered."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        issue_tool = self.create_tool("issue_list", required_scope="read:issue")
-
-        provider1 = AsyncMock()
-        provider1.list_tools = AsyncMock(return_value=[repo_tool])
-        provider2 = AsyncMock()
-        provider2.list_tools = AsyncMock(return_value=[issue_tool])
-        mock_mcp.providers = [provider1, provider2]
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_called_once_with(keys={"tool:issue_list@"})
-
-    async def test_no_token_match_keeps_all_tools(self, mock_mcp, mock_gitea_client):
-        """When no token matches the active token hash, keep all tools."""
-        mock_gitea_client.config.token = "unknown-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("t1", ["read:repo"], "other-token")],
-            ]
-        )
-
-        repo_tool = self.create_tool("repo_list", required_scope="read:repository")
-        mock_mcp.providers[0].list_tools = AsyncMock(return_value=[repo_tool])
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-        mock_mcp.disable.assert_not_called()
-
-
-class TestFilterResourcesByPermissions:
-    """Tests for the filter_resources_by_permissions function.
-
-    Verifies that mcp.disable() is called with the correct resource/template
-    keys for components whose required scope exceeds the active token's scopes.
-    """
-
-    @pytest.fixture
-    def mock_mcp(self):
-        mcp = MagicMock()
-        provider = AsyncMock()
-        mcp.providers = [provider]
-        return mcp
-
-    @pytest.fixture
-    def mock_gitea_client(self):
-        return MagicMock()
-
-    def create_resource(self, name: str, uri: str, required_scope: str | None = None):
-        resource = MagicMock()
-        resource.name = name
-        resource.uri = uri
-        # Real Resource.key would be resource:{uri}@{version}, match that pattern
-        resource.key = f"resource:{uri}@"
-        resource.meta = {}
-        if required_scope is not None:
-            resource.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-                "required_scope"
-            ] = required_scope
-        return resource
-
-    def create_template(self, name: str, uri_template: str, required_scope: str | None = None):
-        template = MagicMock()
-        template.name = name
-        template.uri_template = uri_template
-        # Real ResourceTemplate.key would be template:{uri_template}@{version}
-        template.key = f"template:{uri_template}@"
-        template.meta = {}
-        if required_scope is not None:
-            template.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-                "required_scope"
-            ] = required_scope
-        return template
-
-    def _make_token(self, name: str, scopes: list[str], token_val: str | None = None) -> dict:
-        token = {"id": 1, "name": name, "scopes": scopes}
-        if token_val:
-            token["token_last_eight"] = token_val[-8:]
-        else:
-            token["token_last_eight"] = "00000000"
-        return token
-
-    async def test_user_with_sudo_sees_all_resources(self, mock_mcp, mock_gitea_client):
-        """Sudo scope should keep all resources visible."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("admin-token", ["sudo"], "test-token")],
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        org_res = self.create_resource("org", "gitea://org", required_scope="read:organization")
-
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, org_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_disables_resources_without_required_scope(self, mock_mcp, mock_gitea_client):
-        """Resources needing scopes outside the token should be disabled."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        issue_res = self.create_resource("issue", "gitea://issue", required_scope="read:issue")
-
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, issue_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_called_once_with(keys={"resource:gitea://issue@"})
-
-    async def test_disables_templates_without_required_scope(self, mock_mcp, mock_gitea_client):
-        """Resource templates needing scopes outside the token should be disabled."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-
-        tpl = self.create_template("repo_tpl", "gitea://repos/{owner}/{repo}", required_scope="read:repository")
-        org_tpl = self.create_template("org_tpl", "gitea://orgs/{org}", required_scope="read:organization")
-
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[tpl, org_tpl])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_called_once_with(keys={"template:gitea://orgs/{org}@"})
-
-    async def test_write_scope_covers_read_needs(self, mock_mcp, mock_gitea_client):
-        """Write scope should satisfy read requirements for resources."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["write:repository"], "test-token")],
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_resources_without_scope_requirement_always_visible(
-        self, mock_mcp, mock_gitea_client
-    ):
-        """Resources with no scope requirement should never be disabled."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", [], "test-token")],
-            ]
-        )
-
-        version_res = self.create_resource("version", "gitea://version")
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[version_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_token_fetch_failure_keeps_all_resources(self, mock_mcp, mock_gitea_client):
-        """API failure fetching tokens should keep all resources visible."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                Exception("Token API error"),
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_user_fetch_failure_keeps_all_resources(self, mock_mcp, mock_gitea_client):
-        """API failure fetching user should keep all resources visible."""
-        mock_gitea_client.request = AsyncMock(side_effect=Exception("API error"))
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_empty_provider_resources(self, mock_mcp, mock_gitea_client):
-        """Empty resource list from providers should not call mcp.disable."""
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("test", ["read:repository"], "test-token")],
-            ]
-        )
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
-    async def test_both_resources_and_templates_filtered(self, mock_mcp, mock_gitea_client):
-        """Both resources and templates are checked for scope sufficiency."""
-        mock_gitea_client.config.token = "mixed-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [
-                    self._make_token("mixed", ["read:repository", "read:user"], "mixed-token"),
-                ],
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repos/static", required_scope="read:repository")
-        org_tpl = self.create_template("org_tpl", "gitea://orgs/{org}", required_scope="read:organization")
-        user_res = self.create_resource("user", "gitea://user", required_scope="read:user")
-
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res, user_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[org_tpl])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_called_once_with(keys={"template:gitea://orgs/{org}@"})
-
-    async def test_no_token_match_keeps_all_resources(self, mock_mcp, mock_gitea_client):
-        """When no token matches, keep all resources visible."""
-        mock_gitea_client.config.token = "unknown-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"admin": False, "login": "dev2"},
-                [self._make_token("t1", ["read:repo"], "other-token")],
-            ]
-        )
-
-        repo_res = self.create_resource("repo", "gitea://repo", required_scope="read:repository")
-        mock_mcp.providers[0].list_resources = AsyncMock(return_value=[repo_res])
-        mock_mcp.providers[0].list_resource_templates = AsyncMock(return_value=[])
-
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
-
-        mock_mcp.disable.assert_not_called()
-
+# ═══════════════════════════════════════════════════════════════════════
+# _validate_user_data
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestValidateUserData:
     """Tests for _validate_user_data edge cases."""
 
     def test_non_dict_raises_type_error(self):
-        """Non-dict user data raises TypeError."""
         from gitea_mcp_server.tool_filter import _validate_user_data
 
         with pytest.raises(TypeError, match="Unexpected user data type"):
             _validate_user_data("not a dict")
 
 
-class TestCollectProviderToolsEdgeCases:
-    """Tests for _collect_provider_tools and _collect_provider_resources edge cases."""
+# ═══════════════════════════════════════════════════════════════════════
+# fetch_token_scopes
+# ═══════════════════════════════════════════════════════════════════════
 
-    @pytest.mark.asyncio
-    async def test_provider_list_tools_exception_skipped(self):
-        """Exception in provider.list_tools() is handled gracefully."""
-        from unittest.mock import MagicMock, AsyncMock
-
-        from gitea_mcp_server.tool_filter import _collect_provider_tools
-
-        mcp = MagicMock()
-        provider = AsyncMock()
-        provider.list_tools = AsyncMock(side_effect=AttributeError("missing method"))
-        mcp.providers = [provider]
-
-        result = await _collect_provider_tools(mcp)
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_provider_list_resources_exception_skipped(self):
-        """Exception in provider.list_resources() is handled gracefully."""
-        from unittest.mock import MagicMock, AsyncMock
-
-        from gitea_mcp_server.tool_filter import _collect_provider_resources
-
-        mcp = MagicMock()
-        provider = AsyncMock()
-        provider.list_resources = AsyncMock(side_effect=AttributeError("missing method"))
-        provider.list_resource_templates = AsyncMock(return_value=[])
-        mcp.providers = [provider]
-
-        result = await _collect_provider_resources(mcp)
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_provider_list_templates_exception_skipped(self):
-        """Exception in provider.list_resource_templates() is handled gracefully."""
-        from unittest.mock import MagicMock, AsyncMock
-
-        from gitea_mcp_server.tool_filter import _collect_provider_resources
-
-        mcp = MagicMock()
-        provider = AsyncMock()
-        provider.list_resources = AsyncMock(return_value=[])
-        provider.list_resource_templates = AsyncMock(side_effect=AttributeError("missing method"))
-        mcp.providers = [provider]
-
-        result = await _collect_provider_resources(mcp)
-        assert result == []
-
-
-class TestFetchUserAndTokensEdgeCases:
-    """Tests for _fetch_user_and_tokens edge cases."""
+class TestFetchTokenScopes:
+    """Tests for fetch_token_scopes."""
 
     @pytest.mark.asyncio
     async def test_user_fetch_exception_returns_none(self):
         """Exception fetching user returns None."""
-        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
-
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(side_effect=Exception("API error"))
 
-        result = await _fetch_user_and_tokens(mock_client, "test-token")
+        result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_tokens_not_a_list_returns_none(self):
         """Tokens response that is not a list returns None."""
-        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
-
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -703,14 +215,12 @@ class TestFetchUserAndTokensEdgeCases:
             ]
         )
 
-        result = await _fetch_user_and_tokens(mock_client, "test-token")
+        result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_token_match_none_returns_none(self):
         """No matching token returns None."""
-        from gitea_mcp_server.tool_filter import _fetch_user_and_tokens
-
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -719,179 +229,246 @@ class TestFetchUserAndTokensEdgeCases:
             ]
         )
 
-        result = await _fetch_user_and_tokens(mock_client, "no-match-token")
+        result = await fetch_token_scopes(mock_client, "no-match-token")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_non_dict_user_data_returns_none(self):
+        """Non-dict user data is handled gracefully (returns None)."""
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                "not a dict",
+            ]
+        )
+
+        result = await fetch_token_scopes(mock_client, "test-token")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_successful_fetch_returns_scopes(self):
+        """Successful token fetch returns scopes."""
+        token_val = "test-t-token----"
+        last_eight = token_val[-8:]
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["read:repo", "write:issue"]}],
+            ]
+        )
+
+        result = await fetch_token_scopes(mock_client, token_val)
+        assert result == {"read:repo", "write:issue"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PermissionFilterTransform — tools
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestPermissionFilterTransformTools:
+    """Tests for PermissionFilterTransform tool-related methods."""
+
+    def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
+        return PermissionFilterTransform(
+            available_scopes if available_scopes is not None else {"read:repository"},
+            prefix="",
+        )
+
+    # ── list_tools ─────────────────────────────────────────────────
+
+    async def test_list_tools_filters_by_scope(self):
+        transform = self._transform({"read:repository"})
+        tools = [
+            _make_tool("repo_list", required_scope="read:repository"),
+            _make_tool("issue_list", required_scope="read:issue"),
+            _make_tool("version"),
+        ]
+        result = await transform.list_tools(tools)
+        assert len(result) == 2
+        assert result[0].name == "repo_list"
+        assert result[1].name == "version"
+
+    async def test_list_tools_sudo_sees_all(self):
+        transform = self._transform({"sudo"})
+        tools = [
+            _make_tool("admin_op", required_scope="sudo"),
+            _make_tool("repo_op", required_scope="read:repository"),
+            _make_tool("version"),
+        ]
+        result = await transform.list_tools(tools)
+        assert len(result) == 3
+
+    async def test_list_tools_write_covers_read(self):
+        transform = self._transform({"write:repository"})
+        tools = [
+            _make_tool("repo_list", required_scope="read:repository"),
+            _make_tool("repo_create", required_scope="write:repository"),
+        ]
+        result = await transform.list_tools(tools)
+        assert len(result) == 2
+
+    async def test_list_tools_all_filtered_when_no_scopes(self):
+        transform = self._transform(set())
+        tools = [
+            _make_tool("repo_list", required_scope="read:repository"),
+        ]
+        result = await transform.list_tools(tools)
+        assert len(result) == 0
+
+    async def test_list_tools_empty_input(self):
+        transform = self._transform({"read:repository"})
+        result = await transform.list_tools([])
+        assert result == []
+
+    # ── get_tool ───────────────────────────────────────────────────
+
+    async def test_get_tool_returns_allowed_tool(self):
+        transform = self._transform({"read:repository"})
+        repo_tool = _make_tool("repo_list", required_scope="read:repository")
+
+        async def call_next(name, version=None, warnings=None):
+            return repo_tool
+
+        result = await transform.get_tool("repo_list", call_next)
+        assert result is repo_tool
+
+    async def test_get_tool_returns_none_for_denied_tool(self):
+        transform = self._transform({"read:repository"})
+        issue_tool = _make_tool("issue_list", required_scope="read:issue")
+
+        async def call_next(name, version=None, warnings=None):
+            return issue_tool
+
+        result = await transform.get_tool("issue_list", call_next)
+        assert result is None
+
+    async def test_get_tool_returns_none_when_next_returns_none(self):
+        transform = self._transform({"read:repository"})
+
+        async def call_next(name, version=None, warnings=None):
+            return None
+
+        result = await transform.get_tool("nonexistent", call_next)
         assert result is None
 
 
-class TestFilterToolsByPermissionsEdgeCases:
-    """Tests for edge cases in filter_tools_by_permissions."""
+# ═══════════════════════════════════════════════════════════════════════
+# PermissionFilterTransform — resources
+# ═══════════════════════════════════════════════════════════════════════
 
-    @pytest.mark.asyncio
-    async def test_non_dict_user_data_logged(self):
-        """Non-dict user data is handled gracefully."""
-        mock_mcp = MagicMock()
-        mock_mcp.providers = []
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(return_value="not a dict")
+class TestPermissionFilterTransformResources:
+    """Tests for PermissionFilterTransform resource-related methods."""
 
-        from gitea_mcp_server.tool_filter import filter_tools_by_permissions
-
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
-
-    @pytest.mark.asyncio
-    async def test_provider_list_tools_exception_logged(self):
-        """Exception from provider.list_tools is caught by filter_tools_by_permissions."""
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
-            ]
+    def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
+        return PermissionFilterTransform(
+            available_scopes if available_scopes is not None else {"read:repository"},
+            prefix="",
         )
 
-        mock_mcp = MagicMock()
-        bad_provider = AsyncMock()
-        bad_provider.list_tools = AsyncMock(side_effect=TypeError("unexpected"))
-        mock_mcp.providers = [bad_provider]
+    # ── list_resources ─────────────────────────────────────────────
 
-        from gitea_mcp_server.tool_filter import filter_tools_by_permissions
+    async def test_list_resources_filters_by_scope(self):
+        transform = self._transform({"read:repository"})
+        resources = [
+            _make_resource("repo", required_scope="read:repository"),
+            _make_resource("issue", required_scope="read:issue"),
+            _make_resource("version"),
+        ]
+        result = await transform.list_resources(resources)
+        assert len(result) == 2
+        assert result[0].name == "repo"
+        assert result[1].name == "version"
 
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
+    async def test_list_resources_sudo_sees_all(self):
+        transform = self._transform({"sudo"})
+        resources = [
+            _make_resource("admin", required_scope="sudo"),
+            _make_resource("repo", required_scope="read:repository"),
+        ]
+        result = await transform.list_resources(resources)
+        assert len(result) == 2
 
-    @pytest.mark.asyncio
-    async def test_provider_list_resources_exception_logged(self):
-        """Exception from provider.list_resources is caught."""
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
-            ]
-        )
+    async def test_list_resources_empty_input(self):
+        transform = self._transform({"read:repository"})
+        result = await transform.list_resources([])
+        assert result == []
 
-        mock_mcp = MagicMock()
-        bad_provider = AsyncMock()
-        bad_provider.list_resources = AsyncMock(side_effect=TypeError("unexpected"))
-        bad_provider.list_resource_templates = AsyncMock(return_value=[])
-        mock_mcp.providers = [bad_provider]
+    # ── list_resource_templates ────────────────────────────────────
 
-        from gitea_mcp_server.tool_filter import filter_resources_by_permissions
+    async def test_list_resource_templates_filters_by_scope(self):
+        transform = self._transform({"read:repository"})
+        templates = [
+            _make_template("repo_tpl", required_scope="read:repository"),
+            _make_template("org_tpl", required_scope="read:organization"),
+        ]
+        result = await transform.list_resource_templates(templates)
+        assert len(result) == 1
+        assert result[0].name == "repo_tpl"
 
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+    async def test_list_resource_templates_empty_input(self):
+        transform = self._transform({"read:repository"})
+        result = await transform.list_resource_templates([])
+        assert result == []
 
-    @pytest.mark.asyncio
-    async def test_provider_list_templates_exception_logged(self):
-        """Exception from provider.list_resource_templates is caught."""
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = "test-token"
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": "test-token", "scopes": ["read:repo"]}],
-            ]
-        )
+    # ── get_resource ───────────────────────────────────────────────
 
-        mock_mcp = MagicMock()
-        bad_provider = AsyncMock()
-        bad_provider.list_resources = AsyncMock(return_value=[])
-        bad_provider.list_resource_templates = AsyncMock(side_effect=TypeError("unexpected"))
-        mock_mcp.providers = [bad_provider]
+    async def test_get_resource_returns_allowed(self):
+        transform = self._transform({"read:repository"})
+        resource = _make_resource("repo", required_scope="read:repository")
 
-        from gitea_mcp_server.tool_filter import filter_resources_by_permissions
+        async def call_next(uri, warnings=None):
+            return resource
 
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+        result = await transform.get_resource("gitea://repo", call_next)
+        assert result is resource
 
-    @pytest.mark.asyncio
-    async def test_mcp_disable_exception_in_filter_tools(self):
-        """Exception in mcp.disable() during filter_tools_by_permissions is caught."""
-        raw_token = "admin-token-last8ok"
-        last_eight = raw_token[-8:]
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = raw_token
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["read:admin"]}],
-            ]
-        )
+    async def test_get_resource_returns_none_for_denied(self):
+        transform = self._transform({"read:repository"})
+        resource = _make_resource("issue", required_scope="read:issue")
 
-        mock_mcp = MagicMock()
-        tool_with_scope = MagicMock()
-        tool_with_scope.name = "admin_tool"
-        tool_with_scope.key = "admin_tool"
-        tool_with_scope.meta = {"fastmcp": {"_internal": {"required_scope": "sudo"}}}
-        provider = AsyncMock()
-        provider.list_tools = AsyncMock(return_value=[tool_with_scope])
-        mock_mcp.providers = [provider]
+        async def call_next(uri, warnings=None):
+            return resource
 
-        # Make mcp.disable raise an exception
-        mock_mcp.disable.side_effect = TypeError("visibility transform error")
+        result = await transform.get_resource("gitea://issue", call_next)
+        assert result is None
 
-        from gitea_mcp_server.tool_filter import filter_tools_by_permissions
-        await filter_tools_by_permissions(mock_mcp, mock_gitea_client, prefix="")
+    async def test_get_resource_none_when_next_returns_none(self):
+        transform = self._transform({"read:repository"})
 
-        # Should not propagate — exception is caught and logged
-        mock_mcp.disable.assert_called_once()
+        async def call_next(uri, warnings=None):
+            return None
 
-    @pytest.mark.asyncio
-    async def test_mcp_disable_exception_in_filter_resources(self):
-        """Exception in mcp.disable() during filter_resources_by_permissions is caught."""
-        raw_token = "admin-token-last8ok"
-        last_eight = raw_token[-8:]
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.config.token = raw_token
-        mock_gitea_client.request = AsyncMock(
-            side_effect=[
-                {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["read:admin"]}],
-            ]
-        )
+        result = await transform.get_resource("gitea://nonexistent", call_next)
+        assert result is None
 
-        mock_mcp = MagicMock()
-        resource_component = MagicMock()
-        resource_component.name = "admin_resource"
-        resource_component.key = "resource:admin://data@"
-        resource_component.meta = {"fastmcp": {"_internal": {"required_scope": "sudo"}}}
-        provider = AsyncMock()
-        provider.list_resources = AsyncMock(return_value=[resource_component])
-        provider.list_resource_templates = AsyncMock(return_value=[])
-        mock_mcp.providers = [provider]
+    # ── get_resource_template ──────────────────────────────────────
 
-        # Make mcp.disable raise an exception
-        mock_mcp.disable.side_effect = TypeError("visibility transform error")
+    async def test_get_resource_template_returns_allowed(self):
+        transform = self._transform({"read:repository"})
+        template = _make_template("repo_tpl", required_scope="read:repository")
 
-        from gitea_mcp_server.tool_filter import filter_resources_by_permissions
-        await filter_resources_by_permissions(mock_mcp, mock_gitea_client)
+        async def call_next(uri):
+            return template
 
-        # Should not propagate — exception is caught and logged
-        mock_mcp.disable.assert_called_once()
+        result = await transform.get_resource_template("gitea://repo", call_next)
+        assert result is template
 
+    async def test_get_resource_template_returns_none_for_denied(self):
+        transform = self._transform({"read:repository"})
+        template = _make_template("org_tpl", required_scope="read:organization")
 
-class TestCollectProviderToolsIntegration:
-    """Integration tests for provider tool collection."""
+        async def call_next(uri):
+            return template
 
-    @pytest.mark.asyncio
-    async def test_multiple_providers_some_fail(self):
-        """Some providers failing doesn't prevent others from being collected."""
-        from unittest.mock import MagicMock, AsyncMock
+        result = await transform.get_resource_template("gitea://org", call_next)
+        assert result is None
 
-        from gitea_mcp_server.tool_filter import _collect_provider_tools
+    async def test_get_resource_template_none_when_next_returns_none(self):
+        transform = self._transform({"read:repository"})
 
-        mcp = MagicMock()
+        async def call_next(uri):
+            return None
 
-        provider1 = AsyncMock()
-        provider1.list_tools = AsyncMock(return_value=["tool1"])
-
-        provider2 = AsyncMock()
-        provider2.list_tools = AsyncMock(side_effect=TypeError("unexpected error"))
-
-        provider3 = AsyncMock()
-        provider3.list_tools = AsyncMock(return_value=["tool2", "tool3"])
-
-        mcp.providers = [provider1, provider2, provider3]
-
-        result = await _collect_provider_tools(mcp)
-        assert result == ["tool1", "tool2", "tool3"]
+        result = await transform.get_resource_template("gitea://nonexistent", call_next)
+        assert result is None

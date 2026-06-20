@@ -430,59 +430,38 @@ class PathsConverter:
 class SchemaWalker:
     """Iterative schema walker for applying transformations."""
 
-    COMBINATOR_KEYS = ("allOf", "anyOf", "oneOf")
+    # Schemas whose value is a dict — iterate over entries, push each sub-schema
+    _DICT_ITER_KEYS = ("properties", "patternProperties")
+    # Schemas whose value is a single dict — push directly
+    _SINGLE_DICT_KEYS = ("items", "additionalProperties")
+    # Schemas whose value is a list of schemas — iterate, push each
+    _LIST_ITER_KEYS = ("allOf", "anyOf", "oneOf")
 
     def __init__(self, callback: SchemaCallback):
         self.callback = callback
 
-    def _push_properties(
-        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None, _key: str | None
+    def _push_child_schemas(
+        self, stack: list, current_schema: dict[str, Any]
     ) -> None:
-        """Push property schemas to stack."""
-        props = current_schema.get("properties")
-        if not isinstance(props, dict):
-            return
-        for prop_name, prop_schema in props.items():
-            if isinstance(prop_schema, dict):
-                stack.append((prop_schema, current_schema, prop_name))
+        """Push all child schemas onto the stack for further processing."""
+        for key in self._DICT_ITER_KEYS:
+            children = current_schema.get(key)
+            if isinstance(children, dict):
+                for name, child in children.items():
+                    if isinstance(child, dict):
+                        stack.append((child, current_schema, name))
 
-    def _push_combinators(
-        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
-    ) -> None:
-        """Push combinator schemas to stack."""
-        for combo_key in self.COMBINATOR_KEYS:
-            items = current_schema.get(combo_key)
+        for key in self._SINGLE_DICT_KEYS:
+            child = current_schema.get(key)
+            if isinstance(child, dict):
+                stack.append((child, current_schema, key))
+
+        for key in self._LIST_ITER_KEYS:
+            items = current_schema.get(key)
             if isinstance(items, list):
                 for item in items:
                     if isinstance(item, dict):
-                        stack.append((item, current_schema, combo_key))
-
-    def _push_array_items(
-        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
-    ) -> None:
-        """Push array items schema to stack."""
-        items_schema = current_schema.get("items")
-        if isinstance(items_schema, dict):
-            stack.append((items_schema, current_schema, "items"))
-
-    def _push_additional_props(
-        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
-    ) -> None:
-        """Push additionalProperties schema to stack."""
-        add_props = current_schema.get("additionalProperties")
-        if isinstance(add_props, dict):
-            stack.append((add_props, current_schema, "additionalProperties"))
-
-    def _push_pattern_props(
-        self, stack: list, current_schema: dict[str, Any], _parent: dict[str, Any] | None
-    ) -> None:
-        """Push patternProperties schemas to stack."""
-        pattern_props = current_schema.get("patternProperties")
-        if not isinstance(pattern_props, dict):
-            return
-        for pat_key, pat_schema in pattern_props.items():
-            if isinstance(pat_schema, dict):
-                stack.append((pat_schema, current_schema, pat_key))
+                        stack.append((item, current_schema, key))
 
     def walk(self, schema: dict[str, Any]) -> None:
         """Walk the schema tree iteratively and apply callback to each schema node."""
@@ -495,11 +474,7 @@ class SchemaWalker:
 
             self.callback(current_schema, parent, key)
 
-            self._push_properties(stack, current_schema, parent, key)
-            self._push_combinators(stack, current_schema, parent)
-            self._push_array_items(stack, current_schema, parent)
-            self._push_additional_props(stack, current_schema, parent)
-            self._push_pattern_props(stack, current_schema, parent)
+            self._push_child_schemas(stack, current_schema)
 
 
 class OptionalPropertyTransformer:

@@ -225,10 +225,7 @@ class TestSyntheticToolMetadata:
                 f"Expected YAML override, got {search_tool.description!r}"
             )
 
-            from fastmcp.server.context import Context
-
-            ctx = Context(fastmcp=mcp)
-            retrieved = await ctx.fastmcp.get_tool("gitea_search")
+            retrieved = await mcp.get_tool("gitea_search")
             assert retrieved is not None
             assert retrieved.description == "CUSTOM SEARCH DESCRIPTION", (
                 f"get_tool should also show YAML override, got {retrieved.description!r}"
@@ -306,10 +303,7 @@ class TestCustomResources:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mcp = await create_mcp_server(gitea_client)
 
-            from fastmcp.server.context import Context
-
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://server/info")
+            result = await mcp.read_resource("gitea://server/info")
             assert len(result.contents) > 0
             text = result.contents[0].content
             assert "Server Information" in text
@@ -332,9 +326,7 @@ class TestCustomResources:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/version").respond(200, json={"version": "1.99.0"})
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://version")
+            result = await mcp.read_resource("gitea://version")
             assert "1.99.0" in result.contents[0].content
 
     @pytest.mark.asyncio
@@ -361,9 +353,7 @@ class TestCustomResources:
                 }
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://users/alice")
+            result = await mcp.read_resource("gitea://users/alice")
             assert "alice" in result.contents[0].content
             assert "Alice" in result.contents[0].content
 
@@ -391,9 +381,7 @@ class TestCustomResources:
                 }
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://repos/owner/repo")
+            result = await mcp.read_resource("gitea://repos/owner/repo")
             assert "owner/repo" in result.contents[0].content
 
     @pytest.mark.asyncio
@@ -419,9 +407,7 @@ class TestCustomResources:
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://repos/owner/repo/releases")
+            result = await mcp.read_resource("gitea://repos/owner/repo/releases")
             assert "v1.0" in result.contents[0].content
 
     @pytest.mark.asyncio
@@ -446,9 +432,7 @@ class TestCustomResources:
                 200, json={"content": encoded, "encoding": "base64"}
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://repos/owner/repo/readme")
+            result = await mcp.read_resource("gitea://repos/owner/repo/readme")
             assert "Hello" in result.contents[0].content
 
     @pytest.mark.asyncio
@@ -477,9 +461,7 @@ class TestCustomResources:
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://repos/owner/repo/issues?state=open")
+            result = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
             assert "Bug" in result.contents[0].content
 
     @pytest.mark.asyncio
@@ -504,9 +486,7 @@ class TestCustomResources:
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://token/scopes")
+            result = await mcp.read_resource("gitea://token/scopes")
             assert "read:repo" in result.contents[0].content
             assert "write:issue" in result.contents[0].content
 
@@ -532,9 +512,7 @@ class TestCustomResources:
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://token/scopes")
+            result = await mcp.read_resource("gitea://token/scopes")
             import json
             data = json.loads(result.contents[0].content)
             assert data["scopes"] is None
@@ -564,9 +542,7 @@ class TestCustomResources:
                 }
             )
             mcp = await create_mcp_server(gitea_client)
-            from fastmcp.server.context import Context
-            ctx = Context(fastmcp=mcp)
-            result = await ctx.read_resource("gitea://orgs/myorg")
+            result = await mcp.read_resource("gitea://orgs/myorg")
             assert "myorg" in result.contents[0].content
 
 

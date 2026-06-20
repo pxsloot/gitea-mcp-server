@@ -158,13 +158,18 @@ class TestCacheInvalidationIntegration:
 class TestCacheKeyConsistency:
     """Test that cache key computation matches FastMCP's algorithm."""
 
-    def test_cache_key_matches_sha256(self):
-        """Verify our cache key computation matches FastMCP's."""
+    def test_cache_key_matches_fastmcp_format(self):
+        """Verify our cache key matches FastMCP's ``_make_read_resource_cache_key``.
+
+        The key includes the auth partition prefix to match the format
+        ``sha256(f"{auth_key}:{uri}")``.
+        """
         uri = "gitea://repos/owner/repo/issues"
-        expected = hashlib.sha256(uri.encode()).hexdigest()
+        auth_key = "__anonymous__"
+        expected = hashlib.sha256(f"{auth_key}:{uri}".encode()).hexdigest()
         from gitea_mcp_server.cache_invalidation import _compute_cache_key
 
-        assert _compute_cache_key(uri) == expected
+        assert _compute_cache_key(uri, auth_key=auth_key) == expected
 
     def test_different_uris_different_keys(self):
         """Different URIs should produce different cache keys."""

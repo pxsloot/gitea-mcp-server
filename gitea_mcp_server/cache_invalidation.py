@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from fastmcp.server.middleware.caching import ResponseCachingMiddleware
     from fastmcp.tools.tool import ToolResult
 
+from fastmcp.server.middleware.caching import (
+    _get_auth_partition_key,
+)
 from fastmcp.server.middleware.middleware import (
     CallNext,
     Middleware,
@@ -60,8 +63,13 @@ RESOURCE_URI_PATTERNS: dict[str, str] = {
 }
 
 # Global invalidation map populated at server startup.
-# Maps tool name -> list of pattern names (keys in RESOURCE_URI_PATTERNS)
+# Maps tool name (bare operationId, not namespaced) -> list of pattern names
+# (keys in RESOURCE_URI_PATTERNS).
 TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
+
+# Namespace prefix applied at query time by GiteaNamespace (must match
+# config.tool_prefix minus the trailing underscore).
+_GITEA_TOOL_PREFIX = "gitea_"
 
 
 def register_tool_invalidation(tool_name: str, patterns: list[str]) -> None:
@@ -82,19 +90,26 @@ def register_tool_invalidation(tool_name: str, patterns: list[str]) -> None:
         )
 
 
-def _compute_cache_key(uri: str) -> str:
+def _compute_cache_key(uri: str, auth_key: str | None = None) -> str:
     """Compute the cache key for a resource URI using SHA256.
 
-    This mirrors FastMCP's _hash_cache_key function to ensure we compute
-    the exact same key that the caching middleware uses.
+    This mirrors FastMCP's ``_make_read_resource_cache_key`` to ensure we
+    compute the exact same key that the caching middleware uses.  The cache
+    key is ``sha256(f"{auth_key}:{uri}")`` — the auth partition prevents
+    per-token response filtering from leaking across users.
 
     Args:
         uri: The resource URI
+        auth_key: Auth partition key.  If ``None``, the current request's
+            auth key is fetched via ``_get_auth_partition_key()`` (which
+            returns ``__anonymous__`` for STDIO / unauthenticated callers).
 
     Returns:
         Hex digest of SHA256 hash
     """
-    return hashlib.sha256(uri.encode()).hexdigest()
+    if auth_key is None:
+        auth_key = _get_auth_partition_key()
+    return hashlib.sha256(f"{auth_key}:{uri}".encode()).hexdigest()
 
 
 def _substitute_template(template: str, params: dict[str, Any]) -> str:
@@ -139,6 +154,10 @@ def _substitute_template(template: str, params: dict[str, Any]) -> str:
 def compute_uris_to_invalidate(tool_name: str, arguments: dict[str, Any]) -> list[str]:
     """Compute the list of concrete resource URIs to invalidate for a tool call.
 
+    Lookup tries the exact name first, then strips the ``gitea_`` namespace
+    prefix if present — the map is keyed by bare ``operationId`` while the
+    middleware receives the namespaced name at runtime.
+
     Args:
         tool_name: Name of the tool being called
         arguments: Arguments passed to the tool
@@ -147,7 +166,14 @@ def compute_uris_to_invalidate(tool_name: str, arguments: dict[str, Any]) -> lis
         List of concrete resource URIs to invalidate
     """
     if tool_name not in TOOL_INVALIDATION_MAP:
-        return []
+        if tool_name.startswith(_GITEA_TOOL_PREFIX):
+            stripped = tool_name[len(_GITEA_TOOL_PREFIX):]
+            if stripped in TOOL_INVALIDATION_MAP:
+                tool_name = stripped
+            else:
+                return []
+        else:
+            return []
 
     pattern_names = TOOL_INVALIDATION_MAP[tool_name]
     uris = []

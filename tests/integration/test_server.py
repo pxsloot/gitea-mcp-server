@@ -1038,23 +1038,30 @@ class TestServerEdgeCases:
         uris_after = {t.uri_template for t in templates_after}
         assert "data://{item}" not in uris_after
 
-    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-    def test_main_calls_async_main(self):
+    @pytest.mark.asyncio
+    async def test_main_calls_async_main(self) -> None:
         """main() calls asyncio.run(main_async()).
 
-        ``asyncio.run`` is patched to return the raw coroutine because it
-        cannot be called from an already-running event loop.  The resulting
-        unawaited-coroutine RuntimeWarning is suppressed here — see
-        https://git.home.lan/mcp-server/gitea-mcp-server/issues/335
-        for the proper fix.
+        ``asyncio.run`` is patched to schedule the coroutine on the current
+        event loop, avoiding the nested-event-loop error while still
+        executing the coroutine properly.
         """
         import asyncio
         from unittest.mock import patch
 
+        task = None
+
+        def _run_on_current_loop(coro, *args, **kwargs):
+            nonlocal task
+            task = asyncio.ensure_future(coro)
+            return task
+
         with patch("gitea_mcp_server.server.main_async") as mock_main_async:
-            with patch.object(asyncio, "run", lambda coro, **kw: coro):
+            with patch.object(asyncio, "run", _run_on_current_loop):
                 from gitea_mcp_server.server import main
                 main()
+                if task is not None:
+                    await task
                 mock_main_async.assert_called_once()
 
     @pytest.mark.asyncio

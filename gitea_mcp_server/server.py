@@ -7,6 +7,7 @@ import logging
 import sys
 from typing import Any
 
+import fastmcp.server.server as _fastmcp_server_mod
 import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
@@ -63,8 +64,6 @@ logger = logging.getLogger(__name__)
 # keyword calls from fastmcp's built-in middleware work correctly.
 # Remove this block when fastmcp fixes the regression upstream.
 # ---------------------------------------------------------------------------
-import fastmcp.server.server as _fastmcp_server_mod
-
 _fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
 
 async def _compat_run_middleware(
@@ -78,7 +77,7 @@ async def _compat_run_middleware(
         next_chain: Any = chain
 
         async def wrapped(
-            context: Any = None,  # noqa: E253 — 'context' not 'ctx' for fastmcp compat
+            context: Any = None,
             mw: Any = mw,
             call_next: Any = next_chain,
         ) -> Any:
@@ -87,7 +86,7 @@ async def _compat_run_middleware(
         chain = wrapped
     return await chain(context)
 
-_fastmcp_server_mod.FastMCP._run_middleware = _compat_run_middleware
+_fastmcp_server_mod.FastMCP._run_middleware = _compat_run_middleware  # type: ignore[method-assign]
 # ---------------------------------------------------------------------------
 
 

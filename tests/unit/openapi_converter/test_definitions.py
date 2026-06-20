@@ -7,7 +7,7 @@ from gitea_mcp_server.openapi_converter import (
     SchemaWalker,
     convert_definitions,
     fix_references,
-    _add_nullable_for_optional_refs_impl,
+    _add_nullable_for_optional_refs,
 )
 
 
@@ -346,7 +346,7 @@ class TestRequestBodyBuilder:
 
 
 class TestAddNullableForOptionalRefs:
-    """Tests for _add_nullable_for_optional_refs_impl."""
+    """Tests for _add_nullable_for_optional_refs."""
 
     def test_adds_nullable_to_optional_refs(self):
         """Optional $ref schemas should get nullable anyOf wrapper."""
@@ -365,7 +365,7 @@ class TestAddNullableForOptionalRefs:
                 }
             }
         }
-        _add_nullable_for_optional_refs_impl(spec)
+        _add_nullable_for_optional_refs(spec)
         email_prop = spec["components"]["schemas"]["User"]["properties"]["email"]
         assert "anyOf" in email_prop
         assert email_prop["anyOf"][1]["type"] == "null"

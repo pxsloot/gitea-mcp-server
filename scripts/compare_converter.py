@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from gitea_mcp_server.openapi_converter import (
-    _add_nullable_for_optional_refs_impl,
+    _add_nullable_for_optional_refs,
     _wrap_success_response_schemas,
     convert_swagger_to_openapi_v3,
 )
@@ -66,7 +66,7 @@ def convert_core(spec: dict[str, Any]) -> dict[str, Any]:
 
     This produces a spec more comparable to the official converter output:
     - No ``_wrap_success_response_schemas``
-    - No ``_add_nullable_for_optional_refs_impl``
+    - No ``_add_nullable_for_optional_refs``
     - Everything else is the same
     """
     from gitea_mcp_server.exceptions import SpecError

@@ -580,20 +580,7 @@ class OptionalPropertyTransformer:
             self._add_nullable(schema)
 
 
-# The following transformers are no-ops because recursion is handled by walker
-class CombinatorSchemaTransformer: ...
-
-
-class ArrayItemsTransformer: ...
-
-
-class AdditionalPropertiesTransformer: ...
-
-
-class PatternPropertiesTransformer: ...
-
-
-def _add_nullable_for_optional_refs_impl(spec: dict[str, Any]) -> None:
+def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
     """Apply nullable transformations to all component schemas."""
     components = spec.get("components", {})
     schemas = components.get("schemas", {})
@@ -601,12 +588,6 @@ def _add_nullable_for_optional_refs_impl(spec: dict[str, Any]) -> None:
     for schema in schemas.values():
         if isinstance(schema, dict):
             walker.walk(schema)
-
-
-# Backward compatibility
-def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
-    """Legacy wrapper."""
-    _add_nullable_for_optional_refs_impl(spec)
 
 
 # ============================================================================
@@ -950,7 +931,7 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
 
     remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
     spec = ReferenceFixer().fix(spec)
-    _add_nullable_for_optional_refs_impl(spec)
+    _add_nullable_for_optional_refs(spec)
     _wrap_success_response_schemas(spec)
 
     logger.info("OpenAPI conversion completed successfully")

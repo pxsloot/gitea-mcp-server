@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 # Patch _run_middleware to use the original parameter name `context` so that
 # keyword calls from fastmcp's built-in middleware work correctly.
 # Remove this block when fastmcp fixes the regression upstream.
+# Tracked in https://git.home.lan/mcp-server/gitea-mcp-server/issues/374
 # ---------------------------------------------------------------------------
 _fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
 

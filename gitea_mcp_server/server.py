@@ -8,7 +8,6 @@ import sys
 from typing import Any
 
 import fastmcp.server.server as _fastmcp_server_mod
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
@@ -18,10 +17,6 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
@@ -42,6 +37,7 @@ from gitea_mcp_server.server_setup.permissions import (
     filter_resources_by_permissions,
     filter_tools_by_permissions,
 )
+from gitea_mcp_server.server_setup.http_server import run_http_server
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
@@ -321,59 +317,7 @@ async def main_async() -> None:
 
     try:
         if config.transport_type == "http":
-            # Configure CORS middleware if origins specified
-            cors_origins = config.http_cors or []
-            middleware = []
-            if cors_origins:
-                middleware = [
-                    Middleware(
-                        CORSMiddleware,
-                        allow_origins=cors_origins,
-                        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-                        allow_headers=[
-                            "mcp-protocol-version",
-                            "mcp-session-id",
-                            "Authorization",
-                            "Content-Type",
-                        ],
-                        expose_headers=["mcp-session-id"],
-                    )
-                ]
-
-            # Create health check endpoint function
-            async def health_check(_: object) -> JSONResponse:
-                """Health check endpoint for container orchestration."""
-                return JSONResponse({"status": "ok"})
-
-            # Create HTTP app with middleware and custom path
-            mcp_app = mcp.http_app(
-                path=config.http_path,
-                middleware=middleware,
-            )
-            # Insert health check route into mcp_app so it inherits CORS middleware
-            mcp_app.routes.insert(0, Route("/health", endpoint=health_check, methods=["GET"]))
-            app = mcp_app
-
-            logger.info(
-                "Starting MCP server (HTTP transport) on http://%s:%s with MCP path %s",
-                config.http_host,
-                config.http_port,
-                config.http_path,
-            )
-            logger.info(
-                "Health check available at http://%s:%s/health",
-                config.http_host,
-                config.http_port,
-            )
-
-            # Run with uvicorn
-            uvicorn_config = uvicorn.Config(
-                app=app,
-                host=config.http_host,
-                port=config.http_port,
-            )
-            server = uvicorn.Server(uvicorn_config)
-            await server.serve()
+            await run_http_server(mcp, config)
         else:
             logger.info("Starting MCP server (stdio transport)")
             await mcp.run_stdio_async()

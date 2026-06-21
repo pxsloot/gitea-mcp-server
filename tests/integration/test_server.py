@@ -591,7 +591,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -631,7 +631,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -712,7 +712,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(500, json={"message": "Error"})
+            mock.get("https://git.example.com/api/v1/user").respond(500, json={"message": "Error"})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)

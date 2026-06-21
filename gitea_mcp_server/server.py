@@ -8,7 +8,6 @@ import sys
 from typing import Any
 
 import fastmcp.server.server as _fastmcp_server_mod
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
@@ -18,10 +17,6 @@ from fastmcp.server.middleware.caching import (
     ReadResourceSettings,
     ResponseCachingMiddleware,
 )
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
@@ -37,13 +32,11 @@ from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.logging_config import setup_logging
+from gitea_mcp_server.server_setup.http_server import run_http_server
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
-from gitea_mcp_server.server_setup.permissions import (
-    filter_resources_by_permissions,
-    filter_tools_by_permissions,
-)
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
+from gitea_mcp_server.tool_filter import PermissionFilterTransform, fetch_token_scopes
 from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
@@ -63,6 +56,7 @@ logger = logging.getLogger(__name__)
 # Patch _run_middleware to use the original parameter name `context` so that
 # keyword calls from fastmcp's built-in middleware work correctly.
 # Remove this block when fastmcp fixes the regression upstream.
+# Tracked in https://git.home.lan/mcp-server/gitea-mcp-server/issues/374
 # ---------------------------------------------------------------------------
 _fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
 
@@ -211,35 +205,45 @@ def _setup_tool_discovery(
         mcp.add_transform(ExtensionMetadataTransform(tool_names, prefix=prefix))
 
 
-async def _apply_tool_filtering(
+async def _apply_permission_filter(
     mcp: FastMCP,
     gitea_client: GiteaClient,
     config: Config,
 ) -> None:
-    """Filter tools and resources based on user permissions if enabled."""
+    """Add a PermissionFilterTransform if user permission filtering is enabled.
+
+    Fetches the available token scopes once at startup and attaches them to a
+    ``Transform`` that filters tools/resources at query time.  If the token
+    scopes cannot be fetched (auth failure, network error, etc.), the transform
+    is simply not added and all tools remain visible.
+    """
     if not config.tool_filtering_enabled:
-        logger.info("Tool filtering is disabled")
+        logger.info("Permission filtering is disabled")
         return
 
-    # Compute the tool-name prefix that GiteaNamespace will apply at query time,
-    # so that mcp.disable() uses the correct final tool keys.
-    # GiteaNamespace strips the underscore, but _make_tool_key needs it
-    tool_prefix = config.tool_prefix.rstrip("_") + "_" if config.tool_prefix else ""
-
     try:
-        logger.info("Applying tool permission filtering")
-        await filter_tools_by_permissions(mcp, gitea_client, config.token, tool_prefix)
+        logger.info("Fetching token scopes for permission filtering")
+        available_scopes = await fetch_token_scopes(gitea_client, config.token)
     except Exception as e:
         logger.exception(
-            "Tool filtering failed, proceeding without filtering",
+            "Failed to fetch token scopes, proceeding without filtering",
             extra={"error": str(e)},
         )
+        return
+
+    if available_scopes is None:
+        logger.warning("No token scopes available, proceeding without filtering")
+        return
+
     try:
-        logger.info("Applying resource permission filtering")
-        await filter_resources_by_permissions(mcp, gitea_client, config.token)
+        logger.info(
+            "Adding PermissionFilterTransform",
+            extra={"scopes": sorted(available_scopes)},
+        )
+        mcp.add_transform(PermissionFilterTransform(available_scopes))
     except Exception as e:
         logger.exception(
-            "Resource filtering failed, proceeding without filtering",
+            "Failed to add PermissionFilterTransform, proceeding without filtering",
             extra={"error": str(e)},
         )
 
@@ -293,7 +297,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     _setup_tool_discovery(mcp, config, doc_manager, extensions)
     register_all_resources(mcp, gitea_client, openapi_spec)
     _setup_tool_exclusions(mcp, config)
-    await _apply_tool_filtering(mcp, gitea_client, config)
+    await _apply_permission_filter(mcp, gitea_client, config)
 
     logger.info("Gitea MCP Server initialized successfully")
     return mcp
@@ -320,59 +324,7 @@ async def main_async() -> None:
 
     try:
         if config.transport_type == "http":
-            # Configure CORS middleware if origins specified
-            cors_origins = config.http_cors or []
-            middleware = []
-            if cors_origins:
-                middleware = [
-                    Middleware(
-                        CORSMiddleware,
-                        allow_origins=cors_origins,
-                        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-                        allow_headers=[
-                            "mcp-protocol-version",
-                            "mcp-session-id",
-                            "Authorization",
-                            "Content-Type",
-                        ],
-                        expose_headers=["mcp-session-id"],
-                    )
-                ]
-
-            # Create health check endpoint function
-            async def health_check(_: object) -> JSONResponse:
-                """Health check endpoint for container orchestration."""
-                return JSONResponse({"status": "ok"})
-
-            # Create HTTP app with middleware and custom path
-            mcp_app = mcp.http_app(
-                path=config.http_path,
-                middleware=middleware,
-            )
-            # Insert health check route into mcp_app so it inherits CORS middleware
-            mcp_app.routes.insert(0, Route("/health", endpoint=health_check, methods=["GET"]))
-            app = mcp_app
-
-            logger.info(
-                "Starting MCP server (HTTP transport) on http://%s:%s with MCP path %s",
-                config.http_host,
-                config.http_port,
-                config.http_path,
-            )
-            logger.info(
-                "Health check available at http://%s:%s/health",
-                config.http_host,
-                config.http_port,
-            )
-
-            # Run with uvicorn
-            uvicorn_config = uvicorn.Config(
-                app=app,
-                host=config.http_host,
-                port=config.http_port,
-            )
-            server = uvicorn.Server(uvicorn_config)
-            await server.serve()
+            await run_http_server(mcp, config)
         else:
             logger.info("Starting MCP server (stdio transport)")
             await mcp.run_stdio_async()

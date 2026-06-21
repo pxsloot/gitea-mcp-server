@@ -1,9 +1,32 @@
-"""Tool permission filtering for Gitea MCP Server."""
+"""Tool and resource permission filtering via Transform.
+
+Converts the old ``filter_tools_by_permissions()`` / ``filter_resources_by_permissions()``
+post-hoc pattern (which used ``mcp.disable()``) into a proper FastMCP ``Transform``
+that filters at query time, consistent with the other transforms (exclusion, namespace, etc.).
+
+Usage in ``server.py``::
+
+    from gitea_mcp_server.tool_filter import PermissionFilterTransform, fetch_token_scopes
+
+    available_scopes = await fetch_token_scopes(gitea_client, config.token)
+    if available_scopes is not None:
+        mcp.add_transform(PermissionFilterTransform(available_scopes, prefix=config.tool_prefix))
+"""
 
 import logging
+from collections.abc import Sequence
 from typing import Any, cast
 
-from fastmcp import FastMCP
+from fastmcp.resources import Resource
+from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.transforms import (
+    GetResourceNext,
+    GetResourceTemplateNext,
+    GetToolNext,
+    Transform,
+)
+from fastmcp.tools.base import Tool
+from fastmcp.utilities.versions import VersionSpec
 
 from gitea_mcp_server.client import GiteaClient
 
@@ -17,17 +40,17 @@ def _validate_user_data(data: Any) -> None:
         raise TypeError(msg) from None
 
 
-def _get_required_scope(tool: Any) -> str | None:
-    """Get the required Gitea token scope from a tool's metadata.
+def _get_required_scope(item: Any) -> str | None:
+    """Get the required Gitea token scope from a tool/resource's metadata.
 
     Args:
-        tool: Tool object with meta containing 'required_scope'.
+        item: Tool or Resource object with meta containing 'required_scope'.
 
     Returns:
         Scope string (e.g. "read:repository", "sudo"), or None if no scope needed.
     """
     try:
-        return cast("str | None", tool.meta["fastmcp"]["_internal"]["required_scope"])
+        return cast("str | None", item.meta["fastmcp"]["_internal"]["required_scope"])
     except (KeyError, TypeError, AttributeError):
         return None
 
@@ -86,15 +109,14 @@ def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | N
     return None
 
 
-async def _fetch_user_and_tokens(
-    gitea_client: GiteaClient, token: str, context: str = "tools"
+async def fetch_token_scopes(
+    gitea_client: GiteaClient, token: str
 ) -> set[str] | None:
     """Fetch user info and match active token scopes.
 
     Args:
         gitea_client: GiteaClient for making API calls.
         token: Raw GITEA_TOKEN value.
-        context: Context string for log messages ("tools" or "resources").
 
     Returns:
         Set of scope strings if successful, None on failure.
@@ -105,20 +127,19 @@ async def _fetch_user_and_tokens(
         username = user_data.get("login", "unknown")
         logger.info("User info retrieved", extra={"username": username})
     except Exception:
-        logger.exception("Failed to fetch user info for filtering, keeping all %s", context)
+        logger.exception("Failed to fetch user info for filtering, keeping all tools/resources")
         return None
 
     try:
         tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
         if not isinstance(tokens_data, list):
             logger.warning(
-                "Unexpected tokens response type, keeping all %s",
-                context,
+                "Unexpected tokens response type, keeping all tools/resources",
                 extra={"type": type(tokens_data).__name__},
             )
             return None
     except Exception:
-        logger.exception("Failed to fetch tokens for filtering, keeping all %s", context)
+        logger.exception("Failed to fetch tokens for filtering, keeping all tools/resources")
         return None
 
     available_scopes = _match_active_token(tokens_data, token)
@@ -129,176 +150,94 @@ async def _fetch_user_and_tokens(
     return available_scopes
 
 
-def _make_tool_key(name: str, prefix: str = "") -> str:
-    """Build a tool key suitable for mcp.disable(keys=...).
+class PermissionFilterTransform(Transform):
+    """FastMCP Transform that filters tools/resources by Gitea token scopes.
 
-    Args:
-        name: The raw (unprefixed) tool name from the provider.
-        prefix: Optional prefix to prepend (e.g. "gitea_").
+    Replaces the old ``mcp.disable()`` post-hoc pattern with a proper Transform
+    that intercepts ``list_tools`` / ``get_tool`` / ``list_resources`` and filters
+    out items whose required scope is not present in the user's token.
 
-    Returns:
-        Key string like "tool:gitea_issue_list@" or "tool:get_version@".
+    The ``available_scopes`` set must be fetched **before** constructing this
+    transform (via ``fetch_token_scopes()``).  The transform itself is stateless
+    once constructed.
     """
-    return f"tool:{prefix}{name}@"
 
+    def __init__(self, available_scopes: set[str]) -> None:
+        """Initialise the transform.
 
-async def _collect_provider_tools(mcp: FastMCP) -> list[Any]:
-    """Gather all tools from all providers."""
-    all_tools = []
-    for provider in getattr(mcp, "providers", []):
-        try:
-            provider_tools = await provider.list_tools()
-            all_tools.extend(provider_tools)
-        except (AttributeError, TypeError) as e:
-            logger.warning(
-                "Failed to list tools from provider, skipping",
-                extra={"provider": type(provider).__name__, "error": str(e)},
-            )
-    return all_tools
+        Args:
+            available_scopes: Set of Gitea scope strings the user's token possesses.
+        """
+        super().__init__()
+        self._available = available_scopes
 
-
-async def _collect_provider_resources(mcp: FastMCP) -> list[Any]:
-    """Gather all resources and resource templates from all providers."""
-    all_components: list[Any] = []
-    for provider in getattr(mcp, "providers", []):
-        try:
-            provider_resources = await provider.list_resources()
-            all_components.extend(provider_resources)
-        except (AttributeError, TypeError) as e:
-            logger.warning(
-                "Failed to list resources from provider, skipping",
-                extra={"provider": type(provider).__name__, "error": str(e)},
-            )
-        try:
-            provider_templates = await provider.list_resource_templates()
-            all_components.extend(provider_templates)
-        except (AttributeError, TypeError) as e:
-            logger.warning(
-                "Failed to list resource templates from provider, skipping",
-                extra={"provider": type(provider).__name__, "error": str(e)},
-            )
-    return all_components
-
-
-async def filter_tools_by_permissions(
-    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None, prefix: str = ""
-) -> None:
-    """Filter tools based on the current user's Gitea token scopes.
-
-    Disables tools that require a scope not present in the active token using
-    FastMCP's ``mcp.disable()`` API.  The active token is identified by matching
-    the last 8 chars of it against Gitea's ``token_last_eight`` field.
-
-    Args:
-        mcp: The FastMCP server instance
-        gitea_client: GiteaClient for making API calls
-        token: Raw GITEA_TOKEN value (defaults to gitea_client.config.token)
-        prefix: Tool name prefix (e.g. ``"gitea_"``) matching what
-            ``GiteaNamespace`` will apply at query time, so that the
-            ``Visibility`` transform matches the final tool names.
-    """
-    if token is None:
-        token = gitea_client.config.token
-
-    available_scopes = await _fetch_user_and_tokens(gitea_client, token, "tools")
-    if available_scopes is None:
-        return
-
-    all_tools = await _collect_provider_tools(mcp)
-    if not all_tools:
-        logger.warning("No tools found in providers to filter")
-        return
-
-    logger.debug(
-        "Tools before filtering",
-        extra={"total_tools": len(all_tools), "tools": [t.name for t in all_tools][:20]},
-    )
-
-    keys_to_disable: set[str] = set()
-    for tool in all_tools:
-        required = _get_required_scope(tool)
-        if not _has_sufficient_scope(required, available_scopes):
-            key = _make_tool_key(tool.name, prefix)
-            keys_to_disable.add(key)
+    def _is_allowed(self, item: Any) -> bool:
+        """Check whether an item (tool or resource) is allowed by the token scope."""
+        required = _get_required_scope(item)
+        allowed = _has_sufficient_scope(required, self._available)
+        if not allowed:
+            name = getattr(item, "name", str(item))
             logger.info(
-                "Tool requires scope not available",
-                extra={"tool": tool.name, "key": key, "required": required},
+                "Item requires scope not available, filtering out",
+                extra={"item": name, "required": required, "available": sorted(self._available)},
             )
+        return allowed
 
-    if keys_to_disable:
-        try:
-            mcp.disable(keys=keys_to_disable)
-            logger.info(
-                "Tool filtering completed",
-                extra={"disabled_tools": len(keys_to_disable)},
-            )
-        except Exception as e:
-            logger.exception(
-                "Failed to disable tools via mcp.disable()",
-                extra={"error": str(e)},
-            )
-    else:
-        logger.info("Tool filtering completed — no tools to disable")
+    # ── tools ──────────────────────────────────────────────────────────
 
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        """Filter out tools whose required scope is not available."""
+        return [t for t in tools if self._is_allowed(t)]
 
-async def filter_resources_by_permissions(
-    mcp: FastMCP, gitea_client: GiteaClient, token: str | None = None
-) -> None:
-    """Filter resources based on the current user's Gitea token scopes.
+    async def get_tool(
+        self,
+        name: str,
+        call_next: GetToolNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Tool | None:
+        """Return the tool only if its required scope is available."""
+        tool = await call_next(name, version=version)
+        if tool is not None and not self._is_allowed(tool):
+            return None
+        return tool
 
-    Disables resources and resource templates that require a scope not present
-    in the active token using FastMCP's ``mcp.disable()`` API.  The active token
-    is identified by matching the last 8 chars of it against Gitea's
-    ``token_last_eight`` field.
+    # ── resources ──────────────────────────────────────────────────────
 
-    Args:
-        mcp: The FastMCP server instance
-        gitea_client: GiteaClient for making API calls
-        token: Raw GITEA_TOKEN value (defaults to gitea_client.config.token)
-    """
-    if token is None:
-        token = gitea_client.config.token
+    async def list_resources(
+        self, resources: Sequence[Resource]
+    ) -> Sequence[Resource]:
+        """Filter out resources whose required scope is not available."""
+        return [r for r in resources if self._is_allowed(r)]
 
-    available_scopes = await _fetch_user_and_tokens(gitea_client, token, "resources")
-    if available_scopes is None:
-        return
+    async def list_resource_templates(
+        self, templates: Sequence[ResourceTemplate]
+    ) -> Sequence[ResourceTemplate]:
+        """Filter out resource templates whose required scope is not available."""
+        return [t for t in templates if self._is_allowed(t)]
 
-    all_components = await _collect_provider_resources(mcp)
-    if not all_components:
-        logger.warning("No resources found in providers to filter")
-        return
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        """Return the resource only if its required scope is available."""
+        resource = await call_next(uri, version=version)
+        if resource is not None and not self._is_allowed(resource):
+            return None
+        return resource
 
-    logger.debug(
-        "Resources before filtering",
-        extra={
-            "total_resources": len(all_components),
-            "resources": [getattr(c, "name", str(c)) for c in all_components][:20],
-        },
-    )
-
-    keys_to_disable: set[str] = set()
-    for component in all_components:
-        required = _get_required_scope(component)
-        if not _has_sufficient_scope(required, available_scopes):
-            key = component.key
-            keys_to_disable.add(key)
-            name = getattr(component, "name", str(component))
-            logger.info(
-                "Resource requires scope not available",
-                extra={"resource": name, "key": key, "required": required},
-            )
-
-    if keys_to_disable:
-        try:
-            mcp.disable(keys=keys_to_disable)
-            logger.info(
-                "Resource filtering completed",
-                extra={"disabled_resources": len(keys_to_disable)},
-            )
-        except Exception as e:
-            logger.exception(
-                "Failed to disable resources via mcp.disable()",
-                extra={"error": str(e)},
-            )
-    else:
-        logger.info("Resource filtering completed — no resources to disable")
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        """Return the resource template only if its required scope is available."""
+        template = await call_next(uri, version=version)
+        if template is not None and not self._is_allowed(template):
+            return None
+        return template

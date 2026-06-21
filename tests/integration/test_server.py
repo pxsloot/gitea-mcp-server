@@ -591,7 +591,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -631,7 +631,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -712,7 +712,7 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("/api/v1/user").respond(500, json={"message": "Error"})
+            mock.get("https://git.example.com/api/v1/user").respond(500, json={"message": "Error"})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -739,8 +739,8 @@ class TestServerEdgeCases:
             assert "Authentication" in result
             assert "lazy loading" in result.lower() or "search" in result.lower()
 
-    async def test_apply_tool_filtering_exception_handled(self):
-        """Exception in tool filtering doesn't crash server creation."""
+    async def test_apply_permission_filter_exception_handled(self):
+        """Exception in permission filtering doesn't crash server creation."""
         config = SimpleConfig(
             url="https://git.example.com",
             token="test_token",
@@ -764,11 +764,11 @@ class TestServerEdgeCases:
             assert mcp is not None
 
     @pytest.mark.asyncio
-    async def test_filter_tools_permissions_exception_logged(self):
-        """Exception in filter_tools_by_permissions is caught by _apply_tool_filtering."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+    async def test_permission_filter_exception_logged(self):
+        """Exception in fetch_token_scopes is caught by _apply_permission_filter."""
+        from unittest.mock import AsyncMock, MagicMock
 
-        from gitea_mcp_server.server import _apply_tool_filtering
+        from gitea_mcp_server.server import _apply_permission_filter
 
         mcp = MagicMock()
         gitea_client = AsyncMock()
@@ -778,21 +778,21 @@ class TestServerEdgeCases:
         config.tool_filtering_enabled = True
         config.token = "test-token"
 
-        await _apply_tool_filtering(mcp, gitea_client, config)
+        await _apply_permission_filter(mcp, gitea_client, config)
         # Should not raise - exception is caught and logged
 
     @pytest.mark.asyncio
-    async def test_filter_tools_exception_disabled(self):
-        """_apply_tool_filtering returns early when filtering is disabled."""
+    async def test_permission_filter_disabled_returns_early(self):
+        """_apply_permission_filter returns early when filtering is disabled."""
         from unittest.mock import MagicMock
 
-        from gitea_mcp_server.server import _apply_tool_filtering
+        from gitea_mcp_server.server import _apply_permission_filter
 
         mcp = MagicMock()
         config = MagicMock()
         config.tool_filtering_enabled = False
 
-        await _apply_tool_filtering(mcp, None, config)
+        await _apply_permission_filter(mcp, None, config)
         # No exception - early return
 
     @pytest.mark.asyncio

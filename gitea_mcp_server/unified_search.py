@@ -126,7 +126,7 @@ def register_unified_search(
             all_texts.append(_extract_doc_search_text(d))
 
         if not all_texts:
-            return ToolResult(structured_content={"result": []})
+            return ToolResult(structured_content={"result": [], "_hint": f"No results found for '{query}'. Try search_tools, search_docs, or search_resources for more targeted searches."})
 
         # BM25 rank across combined corpus
         engine = BM25SearchEngine()
@@ -135,6 +135,19 @@ def register_unified_search(
 
         if format == "raw":
             return ToolResult(structured_content={"result": results})
+
+        if not results:
+            hint = (
+                f"No results found for '{query}'.\n\n"
+                "**Cross-linking hints:**\n"
+                "- For API tools: `search_tools(query)`\n"
+                "- For workflow guides: `search_docs(query)`\n"
+                "- For data resources: `search_resources(query)`"
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=hint)],
+                structured_content={"result": [], "_hint": hint},
+            )
 
         serialized = (
             json.dumps(results, indent=2)

@@ -134,7 +134,7 @@ def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented inte
         text = _empty_results_message(query, cross_link_hints)
         return ToolResult(
             content=[TextContent(type="text", text=text)],
-            structured_content={"result": []},
+            structured_content={"result": [], "_hint": text},
         )
 
     engine = BM25SearchEngine()
@@ -145,7 +145,7 @@ def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented inte
         text = _empty_results_message(query, cross_link_hints)
         return ToolResult(
             content=[TextContent(type="text", text=text)],
-            structured_content={"result": []},
+            structured_content={"result": [], "_hint": text},
         )
 
     if fmt == "raw":

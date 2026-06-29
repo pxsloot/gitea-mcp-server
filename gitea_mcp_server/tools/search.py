@@ -92,8 +92,9 @@ def _format_result(
 
 def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) -> str:
     """Build a helpful message when a search returns no results."""
-    text = f"No results found for '{query}'.\n\n**Cross-linking hints:**\n"
+    text = f"No results found for '{query}'."
     if cross_link_hints:
+        text += "\n\n**Cross-linking hints:**\n"
         for label, tool in cross_link_hints.items():
             text += f"- For {label}: `{tool}(query)`\n"
     return text

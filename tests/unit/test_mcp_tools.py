@@ -299,14 +299,14 @@ class TestMcpReadResourceImpl:
 class TestRegisterMcpResourceTools:
     """Tests for register_mcp_resource_tools function."""
 
-    def test_registers_three_tools(self):
-        """Should register exactly three tools."""
+    def test_registers_two_tools(self):
+        """Should register exactly two tools (list_resources, read_resource)."""
         mcp = MagicMock()
         mcp.tool = MagicMock()
 
         register_mcp_resource_tools(mcp)
 
-        assert mcp.tool.call_count == 3
+        assert mcp.tool.call_count == 2
 
     def test_tool_decorators_applied(self):
         """Should apply @mcp.tool() decorator to all functions."""
@@ -315,7 +315,7 @@ class TestRegisterMcpResourceTools:
 
         register_mcp_resource_tools(mcp)
 
-        assert mcp.tool.call_count == 3
+        assert mcp.tool.call_count == 2
 
     def test_list_resources_has_openworld_false(self):
         """list_resources should have openWorldHint=False."""

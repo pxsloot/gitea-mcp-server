@@ -18,7 +18,11 @@ from fastmcp.tools.tool import ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
-from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES, SEARCH_NAME_BOOST, SEARCH_MAX_RESULTS
+from gitea_mcp_server.constants import (
+    SEARCH_CATEGORY_ALIASES,
+    SEARCH_MAX_RESULTS,
+    SEARCH_NAME_BOOST,
+)
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.search import BM25SearchEngine
@@ -86,7 +90,7 @@ def _format_result(
 # ============================================================================
 
 
-def _search_and_format(
+def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented internal helper
     items: list[dict[str, Any]],
     texts: list[str],
     query: str,

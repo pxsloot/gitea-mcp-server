@@ -90,6 +90,15 @@ def _format_result(
 # ============================================================================
 
 
+def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) -> str:
+    """Build a helpful message when a search returns no results."""
+    text = f"No results found for '{query}'.\n\n**Cross-linking hints:**\n"
+    if cross_link_hints:
+        for label, tool in cross_link_hints.items():
+            text += f"- For {label}: `{tool}(query)`\n"
+    return text
+
+
 def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented internal helper
     items: list[dict[str, Any]],
     texts: list[str],
@@ -121,10 +130,7 @@ def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented inte
         containing the ranked items.
     """
     if not items or not texts:
-        text = f"No results found for '{query}'.\n\n**Cross-linking hints:**\n"
-        if cross_link_hints:
-            for label, tool in cross_link_hints.items():
-                text += f"- For {label}: `{tool}(query)`\n"
+        text = _empty_results_message(query, cross_link_hints)
         return ToolResult(
             content=[TextContent(type="text", text=text)],
             structured_content={"result": []},
@@ -133,6 +139,13 @@ def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented inte
     engine = BM25SearchEngine()
     indices = engine.search(texts, query, max_results)
     results = [items[i] for i in indices]
+
+    if not results:
+        text = _empty_results_message(query, cross_link_hints)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": []},
+        )
 
     if fmt == "raw":
         return ToolResult(structured_content={"result": results})
@@ -143,7 +156,7 @@ def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented inte
         else _format_as_markdown(results, None)
     )
 
-    if fmt == "markdown" and cross_link_hints and results:
+    if fmt == "markdown" and cross_link_hints:
         serialized += "\n\n---\n**Cross-linking hints:**\n"
         for label, tool in cross_link_hints.items():
             serialized += f"- For {label}: `{tool}(query)`\n"

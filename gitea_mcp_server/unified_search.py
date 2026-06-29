@@ -27,26 +27,13 @@ from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _compact_search_serializer,
+    _extract_resource_text,
     _extract_searchable_text_enhanced,
 )
 
 logger = logging.getLogger(__name__)
 
 _UNIFIED_SEARCH_MAX_RESULTS = 10
-
-
-def _extract_resource_search_text(entry: dict[str, Any]) -> str:
-    """Build searchable text from a resource entry."""
-    parts = [entry.get("name", "")]
-    uri = entry.get("uri", "")
-    if uri:
-        parts.append(uri)
-    desc = entry.get("description", "")
-    if desc:
-        parts.append(desc)
-    for tag in entry.get("tags", []):
-        parts.append(tag)
-    return " ".join(parts)
 
 
 def _extract_doc_search_text(doc: dict[str, Any]) -> str:
@@ -124,7 +111,7 @@ def register_unified_search(
                 "uri": r.get("uri", ""),
                 "access_uri": r.get("uri", ""),
             })
-            all_texts.append(_extract_resource_search_text(r))
+            all_texts.append(_extract_resource_text(r))
 
         for d in doc_entries:
             topic = d["name"]

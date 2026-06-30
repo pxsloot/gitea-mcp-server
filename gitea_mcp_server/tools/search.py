@@ -1,7 +1,8 @@
 """Search transform and synthetic tools for tool discovery.
 
 BM25 search engine lives in gitea_mcp_server/search.py (flat infra layer).
-This module contains Tool-specific search wrappers and the TolerantSearchTransform.
+This module contains Tool-specific search wrappers, the TolerantSearchTransform,
+and the shared BM25+format pipeline used by both search_tools and search_resources.
 """
 
 import json
@@ -17,8 +18,13 @@ from fastmcp.tools.tool import ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
-from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES, SEARCH_NAME_BOOST
+from gitea_mcp_server.constants import (
+    SEARCH_CATEGORY_ALIASES,
+    SEARCH_MAX_RESULTS,
+    SEARCH_NAME_BOOST,
+)
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
@@ -80,7 +86,90 @@ def _format_result(
 
 
 # ============================================================================
-# Tool-specific text extraction (uses flat BM25 engine from search.py)
+# Shared BM25 + format pipeline (used by search_tools and search_resources)
+# ============================================================================
+
+
+def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) -> str:
+    """Build a helpful message when a search returns no results."""
+    text = f"No results found for '{query}'."
+    if cross_link_hints:
+        text += "\n\n**Cross-linking hints:**\n"
+        for label, tool in cross_link_hints.items():
+            text += f"- For {label}: `{tool}(query)`\n"
+    return text
+
+
+def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented internal helper
+    items: list[dict[str, Any]],
+    texts: list[str],
+    query: str,
+    fmt: str,
+    max_results: int = SEARCH_MAX_RESULTS,
+    *,
+    cross_link_hints: dict[str, str] | None = None,
+) -> ToolResult:
+    """BM25 search → format → ToolResult.
+
+    Shared pipeline used by both ``_search_tools_impl`` and
+    ``_search_resources_impl``.  Receives pre-serialized items (dicts) and
+    their searchable text strings, runs BM25 ranking, formats the output
+    (markdown/json/raw), appends a cross-linking footer, and returns a
+    ``ToolResult`` with both display content and structured data.
+
+    Args:
+        items: Serialized item dicts (aligned with ``texts`` by index).
+        texts: Searchable text strings, one per item.
+        query: Natural language query.
+        fmt: Output format — ``"markdown"``, ``"json"``, or ``"raw"``.
+        max_results: Maximum number of results to return.
+        cross_link_hints: Mapping of label → tool name for the footer,
+            e.g. ``{"workflow guides": "search_docs"}``.
+
+    Returns:
+        ToolResult with formatted content and ``structured_content["result"]``
+        containing the ranked items.
+    """
+    if not items or not texts:
+        text = _empty_results_message(query, cross_link_hints)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    engine = BM25SearchEngine()
+    indices = engine.search(texts, query, max_results)
+    results = [items[i] for i in indices]
+
+    if not results:
+        text = _empty_results_message(query, cross_link_hints)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    if fmt == "raw":
+        return ToolResult(structured_content={"result": results})
+
+    serialized: str = (
+        json.dumps(results, indent=2)
+        if fmt == "json"
+        else _format_as_markdown(results, None)
+    )
+
+    if fmt == "markdown" and cross_link_hints:
+        serialized += "\n\n---\n**Cross-linking hints:**\n"
+        for label, tool in cross_link_hints.items():
+            serialized += f"- For {label}: `{tool}(query)`\n"
+
+    return ToolResult(
+        content=[TextContent(type="text", text=serialized)],
+        structured_content={"result": results},
+    )
+
+
+# ============================================================================
+# Text extraction helpers
 # ============================================================================
 
 
@@ -110,6 +199,20 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
             if tag in SEARCH_CATEGORY_ALIASES:
                 parts.append(SEARCH_CATEGORY_ALIASES[tag])
 
+    return " ".join(parts)
+
+
+def _extract_resource_text(entry: dict[str, Any]) -> str:
+    """Build searchable text from a resource entry dict."""
+    parts = [entry.get("name", "")]
+    uri = entry.get("uri", "")
+    if uri:
+        parts.append(uri)
+    desc = entry.get("description", "")
+    if desc:
+        parts.append(desc)
+    for tag in entry.get("tags", []):
+        parts.append(tag)
     return " ".join(parts)
 
 
@@ -239,39 +342,32 @@ async def _search_tools_impl(
     ctx: Context,
     transform: TolerantSearchTransform,
 ) -> ToolResult:
-    """Core search_tools implementation."""
-    hidden = await transform._get_visible_tools(ctx)
+    """Core search_tools implementation.
+
+    Fetches the tool catalog via the transform, optionally filters by
+    category, then delegates to ``_search_and_format`` for BM25 ranking
+    and output formatting.
+    """
+    tools = await transform.get_tool_catalog(ctx)
     if category is not None:
         category_lower = category.lower()
         if category_lower not in _VALID_CATEGORIES:
             msg = f"Invalid category '{category}'. Valid categories: {', '.join(_VALID_CATEGORIES)}"
             _raise_value_error(msg)
-        hidden = [t for t in hidden if t.tags and category_lower in t.tags]
-    results = await transform._search(hidden, query)
-    rendered = await transform._render_results(results)
-    result = _format_result(ToolResult(structured_content={"result": rendered}), format)
-    if format == "markdown" and result.content and isinstance(result.content[0], TextContent):
-        text = result.content[0].text
-        if query.strip() and rendered:
-            text += (
-                "\n\n---\n"
-                "**Cross-linking hints:**\n"
-                "- For workflow guides: `search_docs(query)`\n"
-                "- For data resources: `search_resources(query)`"
-            )
-        else:
-            text = (
-                f"No tools found for '{query}'.\n\n"
-                "**Cross-linking hints:**\n"
-                "- For workflow guides: `search_docs(query)`\n"
-                "- For data resources: `search_resources(query)`"
-            )
-        result = ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content=result.structured_content,
-            meta=result.meta,
-        )
-    return result
+        tools = [t for t in tools if t.tags and category_lower in t.tags]
+
+    texts = [_extract_searchable_text_enhanced(t) for t in tools]
+    serialized = _compact_search_serializer(tools)
+    return _search_and_format(
+        items=serialized,
+        texts=texts,
+        query=query,
+        fmt=format,
+        cross_link_hints={
+            "workflow guides": "search_docs",
+            "data resources": "search_resources",
+        },
+    )
 
 
 async def _tool_info_impl(
@@ -289,6 +385,54 @@ async def _tool_info_impl(
     raise ValueError(msg) from None
 
 
+_SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "result": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "uri": {"type": "string"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "mimeType": {"type": "string"},
+                    "type": {"type": "string"},
+                    "tags": {"type": "array"},
+                    "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                },
+            },
+            "description": "Matching resource definitions ranked by relevance",
+        },
+    },
+}
+
+
+async def _search_resources_impl(
+    query: str,
+    format: str,
+    ctx: Context,
+) -> ToolResult:
+    """Core search_resources implementation.
+
+    Fetches all registered MCP resources via ``_mcp_list_resources_impl``,
+    runs BM25 ranking, and returns formatted results via ``_search_and_format``.
+    """
+    raw = await _mcp_list_resources_impl(ctx)
+    resources = raw.get("resources", [])
+    texts = [_extract_resource_text(r) for r in resources]
+    return _search_and_format(
+        items=resources,
+        texts=texts,
+        query=query,
+        fmt=format,
+        cross_link_hints={
+            "workflow guides": "search_docs",
+            "API tools": "search_tools",
+        },
+    )
+
+
 # ── Registration helper ────────────────────────────────────────────────
 
 
@@ -296,7 +440,7 @@ def register_synthetic_tools(
     mcp: Any,
     transform: TolerantSearchTransform,
 ) -> None:
-    """Register synthetic tools (call_tool, search_tools, tool_info) on the FastMCP server.
+    """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
     These tools were previously created dynamically inside TolerantSearchTransform.
     Now they're properly registered via ``mcp.tool()`` so they're findable through
@@ -399,13 +543,35 @@ def register_synthetic_tools(
         },
     )(tool_info_fn)
 
+    async def search_resources_fn(
+        query: Annotated[str, "Natural language query to search for resources"],
+        format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        return await _search_resources_impl(query, format, ctx)
+
+    mcp.tool(
+        name="search_resources",
+        description="Search MCP resources by natural language query. "
+        "Uses BM25 ranking to find the most relevant resources matching your query. "
+        "Searches across resource URI, name, description, and tags. "
+        "Use this when you know what kind of information you want but not the "
+        "exact resource URI. For an exhaustive listing, use list_resources instead.",
+        tags={"synthetic"},
+        annotations=ToolAnnotations(openWorldHint=False),
+        output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
+    )(search_resources_fn)
+
 
 __all__ = [
     "TolerantBM25Search",
     "TolerantSearchTransform",
     "_call_tool_impl",
     "_compact_search_serializer",
+    "_extract_resource_text",
     "_extract_searchable_text_enhanced",
+    "_search_and_format",
+    "_search_resources_impl",
     "_search_tools_impl",
     "_tool_info_impl",
     "register_synthetic_tools",

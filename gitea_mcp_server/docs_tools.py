@@ -284,9 +284,12 @@ def register_doc_tools(
         else:
             msg = f"Unsupported format '{format}'. Use 'markdown', 'json', or 'raw'."
             raise ValueError(msg)
+        structured: dict[str, Any] = {"result": results}
+        if not results:
+            structured["_hint"] = content
         return ToolResult(
             content=[TextContent(type="text", text=content)],
-            structured_content={"result": results},
+            structured_content=structured,
         )
 
     @mcp.tool(

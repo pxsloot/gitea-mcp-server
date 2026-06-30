@@ -7,8 +7,10 @@ toolset.
 Tool list:
 - list_resources: List all available MCP resources
 - read_resource: Read a resource by its URI
-- search_resources: Search resources by natural language (BM25 ranking)
 - gitea://tool/{name}/schema: Resource for full tool schema by name
+
+Note: ``search_resources`` is registered in ``tools/search.py`` alongside
+``search_tools`` via ``register_synthetic_tools()``.
 """
 
 import json
@@ -23,7 +25,6 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
-from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.examples import _schema_to_example
 
 logger = logging.getLogger(__name__)
@@ -177,43 +178,6 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
         },
     },
 }
-
-_SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "result": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "uri": {"type": "string"},
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "mimeType": {"type": "string"},
-                    "type": {"type": "string"},
-                    "tags": {"type": "array"},
-                    "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
-                },
-            },
-            "description": "Matching resource definitions ranked by relevance",
-        },
-    },
-}
-
-
-def _extract_resource_text(entry: dict[str, Any]) -> str:
-    """Build searchable text from a resource entry."""
-    parts = [entry.get("name", "")]
-    uri = entry.get("uri", "")
-    if uri:
-        parts.append(uri)
-    desc = entry.get("description", "")
-    if desc:
-        parts.append(desc)
-    for tag in entry.get("tags", []):
-        parts.append(tag)
-    return " ".join(parts)
-
 
 async def _list_resources_tool(
     format: str = "markdown",
@@ -431,83 +395,6 @@ async def _read_resource_tool(
     )
 
 
-async def _search_resources_tool(
-    query: str,
-    format: str = "markdown",
-    ctx: Context = CurrentContext(),
-) -> ToolResult:
-    """Search MCP resources by natural language query.
-
-    Uses BM25 ranking to find the most relevant resources matching your query.
-    Searches across resource URI, name, description, and tags.
-
-    Use this when you know what kind of information you want but not the
-    exact resource URI. For an exhaustive listing, use list_resources instead.
-
-    ## Parameters
-
-    - ``query``: Natural language search query (e.g., "list issues in a repo",
-      "get user profile", "pull request reviews")
-    - ``format``: Output format -- ``markdown`` (default), ``json``, or ``raw``.
-
-    ## Return Value
-
-    A ranked list of matching resource definitions, each containing:
-    - ``uri``: Resource URI (may be a template with ``{param}`` placeholders)
-    - ``name``: Human-readable name
-    - ``description``: Description of what the resource provides
-    - ``mimeType``: MIME type of the content
-    - ``type``: Either ``"resource"`` or ``"template"``
-    - ``tags``: List of categorisation tags
-
-    Returns at most 10 results, ranked by relevance.
-
-    ## Usage
-
-    ```python
-    # Find resources related to pull requests
-    results = await search_resources("pull request reviews")
-    for r in results:
-        print(f"{r['uri']} -- {r['description']}")
-
-    # Search by category
-    results = await search_resources("repository languages")
-    ```
-    """
-    raw = await _mcp_list_resources_impl(ctx)
-    if not raw["resources"]:
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=(
-                    f"No resources found for '{query}'.\n\n"
-                    "**Cross-linking hints:**\n"
-                    "- For workflow guides: `search_docs(query)`\n"
-                    "- For API tools: `search_tools(query)`"
-                ),
-            )],
-            structured_content={"result": []},
-        )
-    texts = [_extract_resource_text(r) for r in raw["resources"]]
-    engine = BM25SearchEngine()
-    indices = engine.search(texts, query, 10)
-    results = [raw["resources"][i] for i in indices]
-    if format == "raw":
-        return ToolResult(structured_content={"result": results})
-    serialized = json.dumps(results, indent=2) if format == "json" else _format_as_markdown(results, None)
-    if format == "markdown":
-        serialized += (
-            "\n\n---\n"
-            "**Cross-linking hints:**\n"
-            "- For workflow guides: `search_docs(query)`\n"
-            "- For API tools: `search_tools(query)`"
-        )
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized)],
-        structured_content={"result": results},
-    )
-
-
 async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
     """Get the full tool schema for a registered tool by name.
 
@@ -568,13 +455,6 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         annotations=ToolAnnotations(openWorldHint=True),
     )(_read_resource_tool)
 
-    mcp.tool(
-        name="search_resources",
-        tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
-        output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
-    )(_search_resources_tool)
-
     mcp.resource(
         uri="gitea://tool/{name}/schema",
         name="Tool Schema",
@@ -583,7 +463,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         mime_type="application/json",
     )(_tool_schema_resource)
 
-    logger.info("Registered MCP resource tools: list_resources, read_resource, search_resources, tool_schema_resource")
+    logger.info("Registered MCP resource tools: list_resources, read_resource, tool_schema_resource")
 
 
 __all__ = [

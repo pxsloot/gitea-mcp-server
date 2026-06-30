@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastmcp import Context
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
@@ -11,8 +12,10 @@ from gitea_mcp_server.constants import SEARCH_NAME_BOOST
 from gitea_mcp_server.tools.search import (
     _call_tool_impl,
     _compact_search_serializer,
+    _extract_resource_text,
     _extract_searchable_text_enhanced,
     _format_result,
+    _search_resources_impl,
     _search_tools_impl,
     _tool_info_impl,
     register_synthetic_tools,
@@ -881,3 +884,147 @@ class TestSyntheticToolAnnotations:
         assert t is not None, "call_tool not registered"
         assert t.annotations is not None
         assert t.annotations.openWorldHint is True
+
+    @pytest.mark.asyncio
+    async def test_search_resources_openworld_false(self):
+        """search_resources should have openWorldHint=False."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        t = tool_map.get("search_resources")
+        assert t is not None, "search_resources not registered"
+        assert t.annotations is not None
+        assert t.annotations.openWorldHint is False
+
+    @pytest.mark.asyncio
+    async def test_search_resources_has_description(self):
+        """search_resources should have a non-empty description."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        t = tool_map.get("search_resources")
+        assert t is not None, "search_resources not registered"
+        assert t.description, "search_resources.description should be non-empty"
+
+
+class TestSearchResourcesSyntheticTool:
+    """Tests for the search_resources synthetic tool via _search_resources_impl."""
+
+    @pytest.mark.asyncio
+    async def test_searches_resource_by_uri(self):
+        """Resource URI should be searchable via search_resources."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://wiki/guide"
+        resource_mock.name = "Wiki Guide"
+        resource_mock.description = "A guide about the wiki feature"
+        resource_mock.mime_type = "text/markdown"
+        resource_mock.tags = {"guide"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="wiki", format="markdown", ctx=ctx)
+
+        assert result.structured_content is not None
+        results = result.structured_content["result"]
+        assert len(results) == 1
+        assert results[0]["uri"] == "gitea://wiki/guide"
+
+    @pytest.mark.asyncio
+    async def test_searches_resource_by_name(self):
+        """Resource name should still be searchable (baseline check)."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Server Version"
+        resource_mock.description = "Gitea server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = {"server"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="version", format="markdown", ctx=ctx)
+
+        assert result.structured_content is not None
+        results = result.structured_content["result"]
+        assert len(results) == 1
+        assert results[0]["name"] == "Server Version"
+
+    @pytest.mark.asyncio
+    async def test_markdown_includes_cross_link_footer(self):
+        """Markdown output should include cross-linking hints footer."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Server Version"
+        resource_mock.description = "Gitea server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = {"server"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="version", format="markdown", ctx=ctx)
+
+        assert result.content is not None
+        text = result.content[0].text
+        assert "Cross-linking hints" in text
+        assert "search_docs" in text
+        assert "search_tools" in text
+
+    @pytest.mark.asyncio
+    async def test_empty_result_has_helpful_hint(self):
+        """Empty search results should include helpful cross-linking message."""
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="nothing", format="markdown", ctx=ctx)
+
+        assert result.content is not None
+        text = result.content[0].text
+        assert "No results found" in text or "No resources" in text
+        assert "search_docs" in text
+        assert "search_tools" in text
+        assert result.structured_content is not None
+        assert result.structured_content["result"] == []
+
+    @pytest.mark.asyncio
+    async def test_raw_format(self):
+        """search_resources format=raw returns structured_content with result array."""
+        ctx = MagicMock(spec=Context)
+        resource_mock = MagicMock()
+        resource_mock.uri = "gitea://version"
+        resource_mock.name = "Server Version"
+        resource_mock.description = "Server version"
+        resource_mock.mime_type = "text/plain"
+        resource_mock.tags = {"server"}
+        resource_mock.meta = None
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="version", format="raw", ctx=ctx)
+        assert result.structured_content is not None
+        assert len(result.structured_content["result"]) == 1
+        assert result.structured_content["result"][0]["uri"] == "gitea://version"

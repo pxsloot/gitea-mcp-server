@@ -264,7 +264,6 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     if config is None:
         config = gitea_client.config
 
-    setup_logging(level=config.log_level, log_format=config.log_format)
     logger.info("Starting Gitea MCP Server initialization")
 
     try:

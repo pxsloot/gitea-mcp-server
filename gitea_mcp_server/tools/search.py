@@ -440,7 +440,7 @@ def register_synthetic_tools(
     mcp: Any,
     transform: TolerantSearchTransform,
 ) -> None:
-    """Register synthetic tools (call_tool, search_tools, tool_info) on the FastMCP server.
+    """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
     These tools were previously created dynamically inside TolerantSearchTransform.
     Now they're properly registered via ``mcp.tool()`` so they're findable through

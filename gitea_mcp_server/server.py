@@ -183,7 +183,7 @@ def _setup_tool_discovery(
         )
         mcp.add_transform(search_transform)
         logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
-        register_synthetic_tools(mcp, search_transform)
+        register_synthetic_tools(mcp, search_transform, tool_prefix=config.tool_prefix)
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
 

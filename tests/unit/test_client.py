@@ -193,7 +193,7 @@ class TestGiteaClient:
 
     @pytest.mark.asyncio
     async def test_429_retry_exhaustion(self, config):
-        """Test 429 responses exhaust retry limit and raise error."""
+        """Test 429 responses exhaust retry limit and raise error with retry-after guidance."""
         client = GiteaClient(config)
 
         with respx.mock() as mock:
@@ -208,6 +208,43 @@ class TestGiteaClient:
                 await client.request("GET", "/user")
 
             assert exc_info.value.status_code == 429
+            assert "retry after 1 seconds" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_429_retry_exhaustion_no_retry_after(self, config):
+        """Test 429 exhaustion without Retry-After header says 'retry later'."""
+        client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            # Always return 429 without Retry-After header
+            mock.get("/api/v1/user").respond(
+                429,
+                json={"message": "Rate limit exceeded"},
+            )
+
+            with pytest.raises(GiteaAPIError) as exc_info:
+                await client.request("GET", "/user")
+
+            assert exc_info.value.status_code == 429
+            assert "retry later" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_429_retry_exhaustion_invalid_retry_after(self, config):
+        """Test 429 exhaustion with invalid Retry-After header."""
+        client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get("/api/v1/user").respond(
+                429,
+                json={"message": "Rate limit exceeded"},
+                headers={"Retry-After": "not-a-number"},
+            )
+
+            with pytest.raises(GiteaAPIError) as exc_info:
+                await client.request("GET", "/user")
+
+            assert exc_info.value.status_code == 429
+            assert "retry after Retry-After duration" in str(exc_info.value)
 
     def test_should_retry_with_retry_after_header(self):
         """Test _should_retry extracts Retry-After from 429."""

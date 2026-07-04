@@ -203,6 +203,18 @@ class HTTPTransport:
                 preview = e.response.text[:RESPONSE_PREVIEW_LIMIT] if e.response.text else ""
                 error_msg += f": {preview}"
 
+            # Add retry-after guidance for rate-limited (429) responses
+            if e.response.status_code == HTTP_STATUS_RATE_LIMIT:
+                retry_after = e.response.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        retry_after_secs = int(retry_after)
+                        error_msg += f" (retry after {retry_after_secs} seconds)"
+                    except (ValueError, TypeError):
+                        error_msg += " (rate limited — retry after Retry-After duration)"
+                else:
+                    error_msg += " (rate limited — retry later)"
+
             logger.exception(
                 "API request failed",
                 extra={

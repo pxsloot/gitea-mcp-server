@@ -29,9 +29,7 @@ def _make_tool(name: str, required_scope: str | None = None) -> MagicMock:
     tool.tags = set()
     tool.meta = {}
     if required_scope is not None:
-        tool.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-            "required_scope"
-        ] = required_scope
+        tool.meta["required_scope"] = required_scope
     return tool
 
 
@@ -44,9 +42,7 @@ def _make_resource(
     resource.uri = uri or f"gitea://{name}"
     resource.meta = {}
     if required_scope is not None:
-        resource.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-            "required_scope"
-        ] = required_scope
+        resource.meta["required_scope"] = required_scope
     return resource
 
 
@@ -59,9 +55,7 @@ def _make_template(
     template.uri_template = uri_template or f"gitea://{name}/{{param}}"
     template.meta = {}
     if required_scope is not None:
-        template.meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-            "required_scope"
-        ] = required_scope
+        template.meta["required_scope"] = required_scope
     return template
 
 
@@ -128,12 +122,7 @@ class TestGetRequiredScope:
         tool.meta = None
         assert _get_required_scope(tool) is None
 
-    def test_returns_none_when_missing_internal(self):
-        tool = MagicMock()
-        tool.meta = {"fastmcp": {}}
-        assert _get_required_scope(tool) is None
-
-    def test_returns_none_when_missing_fastmcp_key(self):
+    def test_returns_none_when_scope_key_absent(self):
         tool = MagicMock()
         tool.meta = {"other": {}}
         assert _get_required_scope(tool) is None

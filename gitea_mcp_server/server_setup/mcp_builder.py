@@ -128,9 +128,7 @@ def _customize_metadata(
         }
 
     component_meta = dict(component.meta) if component.meta else {}
-    component_meta.setdefault("fastmcp", {}).setdefault("_internal", {})[
-        "required_scope"
-    ] = required_scope
+    component_meta["required_scope"] = required_scope
 
     component_meta["_customization"] = {
         "has_labels": has_labels,

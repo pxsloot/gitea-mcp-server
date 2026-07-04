@@ -50,7 +50,7 @@ def _get_required_scope(item: Any) -> str | None:
         Scope string (e.g. "read:repository", "sudo"), or None if no scope needed.
     """
     try:
-        return cast("str | None", item.meta["fastmcp"]["_internal"]["required_scope"])
+        return cast("str | None", item.meta["required_scope"])
     except (KeyError, TypeError, AttributeError):
         return None
 

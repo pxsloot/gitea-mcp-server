@@ -23,24 +23,28 @@ This is the recommended starting point for discovery. Use focused search tools (
 
 ## Calling Tools
 
-All tools can be called via `call_tool`, but **synthetic tools** (discovery helpers) are best called **directly by name** for clarity:
+All tools are called via the MCP host's `call_tool` function. **Synthetic tools** (discovery helpers) and **API tools** both follow the same prefix convention — all tool names are prefixed with `gitea_`. The table below shows the conceptual names alongside their actual MCP protocol names:
 
-- **Synthetic tools** — `search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `list_resources`, `read_resource`, `read_doc`, `call_tool`. These have a `"synthetic"` tag in search results.
-- **API tools** — prefixed with `gitea_` (e.g., `gitea_user_get_current`).
+| Category | Conceptual name | Actual MCP name |
+|----------|----------------|-----------------|
+| Synthetic | `search`, `search_tools`, `tool_info`, `list_resources`, `read_resource`, `read_doc`, `call_tool`, ... | `gitea_search`, `gitea_search_tools`, `gitea_tool_info`, `gitea_list_resources`, `gitea_read_resource`, `gitea_read_doc`, `gitea_call_tool`, ... |
+| API | `issue_create_issue`, `user_get_current`, ... | `gitea_issue_create_issue`, `gitea_user_get_current`, ... |
+
+**When calling tools:** Use the **actual MCP name** (with the `gitea_` prefix):
 
 ```
-search("issue")                                    # synthetic — called directly
-search_tools("create pr", format="json")           # synthetic — called directly
-tool_info("gitea_issue_get_issue")                 # synthetic — called directly
-read_resource("gitea://repos/org/repo")            # synthetic — called directly
-list_resources(tag="repository")                   # synthetic — called directly
+call_tool("gitea_search", {"query": "issue"})
+call_tool("gitea_search_tools", {"query": "create pr"})
+call_tool("gitea_tool_info", {"name": "gitea_issue_get_issue"})
+call_tool("gitea_read_resource", {"uri": "gitea://repos/org/repo"})
+call_tool("gitea_list_resources", {"tag": "repository"})
 
-call_tool("gitea_user_get_current")                           # API tool — via call_tool
+call_tool("gitea_user_get_current")
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
 
-You **can** call synthetic tools through `call_tool` (e.g., `call_tool("search_docs", ...)`) but it's redundant — they work either way. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
+The synthetic `call_tool` tool (e.g., `call_tool("gitea_search_tools", ...)`) is a proxy that dispatches to other tools. Both prefixed and unprefixed names work with it — it automatically resolves unprefixed names (e.g., `search_tools`) to their prefixed form. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
 
 Tools are lazy-loaded (not in `list_tools()`) but the host can still call them by name.
 
@@ -106,16 +110,20 @@ Auth is configured via environment variables at server startup. You cannot chang
 
 ## Tool Naming Convention
 
-- **API tools**: Use snake_case derived from Gitea API operationIds (camelCase → snake_case), prefixed with `gitea_` (e.g., `gitea_issue_create_issue`).
-  - `{domain}_{action}_{resource?}` — `issue_create_issue`, `repo_delete`, `user_get`
-  - `{domain}_list_{resource}` — `user_list_orgs`, `org_list_repos`
-  - `{domain}_search_{resource}` — `repo_search`, `issue_search_issues`
-- **Synthetic tools**: No prefix, always lowercase (e.g., `search`, `search_tools`, `call_tool`, `search_docs`, `read_doc`, `list_resources`, `read_resource`, `search_resources`, `tool_info`). They carry a `"synthetic"` tag in search results.
+All tools — both API tools and synthetic tools — are prefixed with `gitea_` in the MCP protocol. This prefix is applied by the server at runtime, so every tool you call must include it.
+
+- **API tools**: Snake_case derived from Gitea API operationIds (camelCase → snake_case), prefixed with `gitea_` (e.g., `gitea_issue_create_issue`).
+  - `gitea_{domain}_{action}_{resource?}` — `gitea_issue_create_issue`, `gitea_repo_delete`, `gitea_user_get`
+  - `gitea_{domain}_list_{resource}` — `gitea_user_list_orgs`, `gitea_org_list_repos`
+  - `gitea_{domain}_search_{resource}` — `gitea_repo_search`, `gitea_issue_search_issues`
+- **Synthetic tools**: Lowercase, also prefixed with `gitea_` (e.g., `gitea_search`, `gitea_search_tools`, `gitea_call_tool`, `gitea_search_docs`, `gitea_read_doc`, `gitea_list_resources`, `gitea_read_resource`, `gitea_search_resources`, `gitea_tool_info`). They carry a `"synthetic"` tag in search results.
+
+**Note**: The conceptual names shown in documentation (e.g., `search_tools`, `tool_info`) omit the prefix for readability. Always use the `gitea_`-prefixed form when calling tools. When using the synthetic `call_tool` proxy, unprefixed names also work — it resolves them automatically.
 
 ## Tool Discovery Tips
 - **Start with broad keywords**: "issue", "repo", "user", "pull", "org", "topic", "release", "admin", "milestone", "label", "comment", "webhook", "key", "branch", "tag", "team", "permission".
 - **If no results**: Simplify the query to one word. Search is case-insensitive and matches on tool name, description, and tags.
-- **Synthetic tools vs API tools**: Synthetic tools are called directly; API tools are called via `call_tool`. Both appear in `search_tools` results — synthetic tools are tagged with `"synthetic"`.
+- **Synthetic tools vs API tools**: Both appear in `search_tools` results — synthetic tools are tagged with `"synthetic"`. Both are called using the `gitea_`-prefixed name via the host's `call_tool`. The synthetic `call_tool` proxy also accepts unprefixed names.
 - **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
 - **Save a tool name** for reuse: Once you find a tool name, you can use it directly without searching again.
 

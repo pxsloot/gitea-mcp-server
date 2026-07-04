@@ -304,11 +304,35 @@ class TolerantSearchTransform(BM25SearchTransform):
 # ── Synthetic tool implementations (exported for testing) ──────────────
 
 
+async def _resolve_tool_name(
+    name: str,
+    ctx: Context,
+    tool_prefix: str = "",
+) -> str:
+    """Resolve a tool name, trying it both as-is and with the configured prefix.
+
+    The GiteaNamespace transform prefixes all tool names (e.g. ``search_tools``
+    becomes ``gitea_search_tools``).  When agents pass an unprefixed name to
+    ``call_tool`` or ``tool_info``, the lookup fails because the catalog only
+    contains prefixed names.  This helper tries both forms.
+    """
+    tool = await ctx.fastmcp.get_tool(name)
+    if tool is not None:
+        return name
+    if tool_prefix:
+        prefixed = f"{tool_prefix}{name}"
+        tool = await ctx.fastmcp.get_tool(prefixed)
+        if tool is not None:
+            return prefixed
+    return name
+
+
 async def _call_tool_impl(
     name: str,
     arguments: Any,
     format: str,
     ctx: Context,
+    tool_prefix: str = "",
 ) -> ToolResult:
     """Core call_tool implementation."""
     if name == "call_tool":
@@ -323,10 +347,11 @@ async def _call_tool_impl(
     if arguments is not None and not isinstance(arguments, dict):
         msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
         _raise_value_error(msg)
-    result = await ctx.fastmcp.call_tool(name, arguments)
+    resolved = await _resolve_tool_name(name, ctx, tool_prefix)
+    result = await ctx.fastmcp.call_tool(resolved, arguments)
     output_schema = None
     if format == "markdown":
-        tool_obj = await ctx.fastmcp.get_tool(name)
+        tool_obj = await ctx.fastmcp.get_tool(resolved)
         if tool_obj is not None:
             output_schema = tool_obj.output_schema
     return _format_result(result, format, output_schema)
@@ -375,11 +400,19 @@ async def _tool_info_impl(
     format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
+    tool_prefix: str = "",
 ) -> ToolResult:
-    """Core tool_info implementation."""
+    """Core tool_info implementation.
+
+    Accepts both prefixed (``gitea_search_tools``) and bare (``search_tools``)
+    tool names.  Tries bare name first, then prepends ``tool_prefix``.
+    """
     tools = await transform.get_tool_catalog(ctx)
+    candidates = {name}
+    if tool_prefix and not name.startswith(tool_prefix):
+        candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
-        if tool.name == name:
+        if tool.name in candidates:
             return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
     msg = f"Tool '{name}' not found"
     raise ValueError(msg) from None
@@ -439,12 +472,20 @@ async def _search_resources_impl(
 def register_synthetic_tools(
     mcp: Any,
     transform: TolerantSearchTransform,
+    tool_prefix: str = "",
 ) -> None:
     """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
     These tools were previously created dynamically inside TolerantSearchTransform.
     Now they're properly registered via ``mcp.tool()`` so they're findable through
     ``ctx.fastmcp.call_tool()`` and carry the ``synthetic`` tag for agent awareness.
+
+    Args:
+        mcp: The FastMCP server instance
+        transform: The search transform instance
+        tool_prefix: Optional prefix used by GiteaNamespace (e.g. ``"gitea_"``).
+            When provided, ``call_tool`` and ``tool_info`` will also accept bare
+            (unprefixed) tool names by trying the prefixed variant as a fallback.
     """
 
     async def search_tools_fn(
@@ -494,7 +535,7 @@ def register_synthetic_tools(
         format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, format, ctx)
+        return await _call_tool_impl(name, arguments, format, ctx, tool_prefix)
 
     mcp.tool(
         name="call_tool",
@@ -516,7 +557,7 @@ def register_synthetic_tools(
         format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _tool_info_impl(name, format, ctx, transform)
+        return await _tool_info_impl(name, format, ctx, transform, tool_prefix)
 
     mcp.tool(
         name="tool_info",
@@ -570,6 +611,7 @@ __all__ = [
     "_compact_search_serializer",
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
+    "_resolve_tool_name",
     "_search_and_format",
     "_search_resources_impl",
     "_search_tools_impl",

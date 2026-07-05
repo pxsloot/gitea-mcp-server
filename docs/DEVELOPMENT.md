@@ -284,6 +284,68 @@ include:
 
 ---
 
+## OpenTelemetry Observability
+
+FastMCP 3.x includes native OpenTelemetry instrumentation. The server emits
+auto-generated spans for all tool calls, resource reads, and prompt renders
+with no code changes.
+
+### Span Hierarchy (auto-generated + custom)
+
+```
+tools/call gitea_issue_create_issue          (auto, by FastMCP)
+├── gitea_issue_create_issue.validate        (custom, validation)
+├── gitea_issue_create_issue.convert_labels  (custom, label conversion)
+└── gitea_issue_create_issue.execute         (custom, HTTP execution)
+```
+
+### Quick Start (local trace visualization)
+
+```bash
+# Terminal 1: Start otel-desktop-viewer (UI at http://localhost:8000)
+brew install nico-barbas/brew/otel-desktop-viewer
+otel-desktop-viewer
+
+# Terminal 2: Run server with tracing
+opentelemetry-instrument \
+  --service_name gitea-mcp-server \
+  fastmcp run python -m gitea_mcp_server
+```
+
+### Production Configuration
+
+```bash
+# Install the OTLP exporter
+uv add opentelemetry-exporter-otlp
+
+# Run with tracing
+opentelemetry-instrument \
+  --service_name gitea-mcp-server \
+  --exporter_otlp_endpoint http://localhost:4317 \
+  fastmcp run python -m gitea_mcp_server
+```
+
+Or configure via environment variables:
+
+```bash
+export OTEL_SERVICE_NAME=gitea-mcp-server
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+opentelemetry-instrument fastmcp run python -m gitea_mcp_server
+```
+
+### Testing Telemetry
+
+Tests use ``InMemorySpanExporter`` from ``opentelemetry-sdk``. See
+``tests/unit/test_mcp_builder.py::TestToolWrappingTransformTelemetry``
+for the fixture pattern.
+
+### Key Reference
+
+- [FastMCP Telemetry Docs](https://gofastmcp.com/servers/telemetry.md)
+- [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/)
+
+---
+
 ## FastMCP Reference
 
 This project uses FastMCP 3.x.  Key APIs:

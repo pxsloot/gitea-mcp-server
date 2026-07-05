@@ -10,7 +10,7 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
@@ -19,6 +19,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
@@ -55,7 +56,7 @@ def _customize_metadata(
     route: Any,
     component: OpenAPITool | Any,
     *,
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
 ) -> None:
     """In-place metadata customisation for every OpenAPI component.
 
@@ -156,7 +157,7 @@ class _ToolWrappingTransform(Transform):
     def __init__(
         self,
         label_manager: LabelManager,
-        openapi_spec: dict[str, Any],
+        openapi_spec: OpenAPISpec,
         gitea_client: "GiteaClient | None" = None,
     ) -> None:
         self._label_manager = label_manager
@@ -275,12 +276,12 @@ _HTTP_METHODS = frozenset({
 })
 
 
-def _get_deprecated_routes(openapi_spec: dict[str, Any]) -> set[tuple[str, str]]:
+def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
     """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations."""
     deprecated: set[tuple[str, str]] = set()
-    paths = openapi_spec.get("paths", {})
-    if not isinstance(paths, dict):
-        return deprecated
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    if not isinstance(paths, dict):  # runtime guard for malformed spec
+        return deprecated  # type: ignore[unreachable]
     for path, path_item in paths.items():
         if not isinstance(path_item, dict):
             continue
@@ -304,7 +305,7 @@ def _get_deprecated_routes(openapi_spec: dict[str, Any]) -> set[tuple[str, str]]
 
 
 def create_openapi_provider(
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     client: "AsyncClient",
     label_manager: LabelManager,
     gitea_client: "GiteaClient | None" = None,
@@ -329,7 +330,7 @@ def create_openapi_provider(
         return None
 
     provider = OpenAPIProvider(
-        openapi_spec=openapi_spec,
+        openapi_spec=cast("dict[str, Any]", openapi_spec),
         client=client,
         route_map_fn=_deprecated_route_filter,
         mcp_component_fn=lambda route, component: _customize_metadata(

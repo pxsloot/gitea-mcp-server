@@ -1,10 +1,11 @@
 """Error handling utilities for tool execution."""
 
 import logging
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import httpx
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.schemas import _resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
@@ -31,7 +32,7 @@ def _raise_validation_error(message: str, field: str, cause: Exception) -> NoRet
 
 
 def _lookup_response_description(
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     path: str,
     method: str,
     status_code: int,
@@ -50,7 +51,7 @@ def _lookup_response_description(
     fallback = f"HTTP error {status_code}"
     result = fallback
     try:
-        paths = openapi_spec.get("paths", {})
+        paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         path_item = paths.get(path)
         if not path_item:
             result = fallback
@@ -67,7 +68,7 @@ def _lookup_response_description(
                 elif "description" in response_def:
                     result = str(response_def["description"])
                 elif "$ref" in response_def:
-                    resolved = _resolve_ref(openapi_spec, response_def["$ref"])
+                    resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), response_def["$ref"])
                     if isinstance(resolved, dict):
                         desc = resolved.get("description")
                         result = str(desc) if desc else fallback
@@ -126,7 +127,7 @@ def _run_validation(
 async def _run_with_error_handling(
     kwargs: dict[str, Any],
     component: Any,
-    openapi_spec: dict[str, Any] | None,
+    openapi_spec: OpenAPISpec | None,
     route_path: str,
     route_method: str,
 ) -> Any:

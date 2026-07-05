@@ -1,14 +1,19 @@
 """OpenAPI spec loading and conversion utilities."""
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.client import GiteaClient
+    from gitea_mcp_server.config import Config
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,8 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tu
         raise SpecError(msg) from e
 
     try:
-        openapi_spec = convert_swagger_to_openapi_v3(spec)
+        raw_spec = convert_swagger_to_openapi_v3(spec)
+        openapi_spec: OpenAPISpec = cast("OpenAPISpec", raw_spec)
     except Exception as e:
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
@@ -92,7 +98,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tu
             extra={"error": str(e)},
         )
 
-    return openapi_spec, extensions
+    return cast("tuple[dict[str, Any], dict[str, Any]]", (openapi_spec, extensions))
 
 
 __all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

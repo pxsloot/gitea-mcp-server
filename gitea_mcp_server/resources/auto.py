@@ -7,7 +7,7 @@ These can be overridden by custom resources with the same URI.
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
@@ -17,6 +17,7 @@ from gitea_mcp_server.constants import (
     AUTO_GENERATED_RESOURCE_SKIP_URIS,
     HTTP_STATUS_NOT_FOUND,
 )
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
 
 logger = logging.getLogger(__name__)
@@ -135,19 +136,19 @@ def _make_resource_func(
 def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     skip_uris: set[str] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec."""
     if skip_uris is None:
         skip_uris = AUTO_GENERATED_RESOURCE_SKIP_URIS
 
-    paths = openapi_spec.get("paths", {})
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     count = 0
     for path, path_item in paths.items():
         for method in ["get", "GET"]:
             if method in path_item:
-                operation = path_item[method]
+                operation = cast("dict[str, Any]", path_item[method])
 
                 if "{" not in path:
                     logger.debug(

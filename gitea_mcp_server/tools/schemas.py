@@ -1,13 +1,14 @@
 """Tool output schema derivation and $ref resolution."""
 
-from typing import Any
+from typing import Any, cast
 
 from gitea_mcp_server.openapi_converter import _resolve_spec_ref as _resolve_ref
+from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
 def _deep_resolve_schema(
     schema: Any,
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     _seen: set[str] | None = None,
 ) -> dict[str, Any]:
     """Recursively resolve all $ref pointers in a schema against the spec."""
@@ -22,7 +23,7 @@ def _deep_resolve_schema(
                 result[key] = value
                 continue
             _seen.add(value)
-            resolved = _resolve_ref(openapi_spec, value)
+            resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), value)
             if isinstance(resolved, dict):
                 deep = _deep_resolve_schema(resolved, openapi_spec, _seen)
                 result.update(deep)
@@ -48,9 +49,9 @@ def _deep_resolve_schema(
     return result
 
 
-def _is_text_response(openapi_spec: dict[str, Any], path: str, method: str) -> bool:
+def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
     """Check if the response for a given path/method is non-JSON (text/plain, etc.)."""
-    paths = openapi_spec.get("paths", {})
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     path_item = paths.get(path)
     if not isinstance(path_item, dict):
         return False
@@ -66,7 +67,7 @@ def _is_text_response(openapi_spec: dict[str, Any], path: str, method: str) -> b
 
 
 def _get_success_schema(
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     path: str,
     method: str,
 ) -> dict[str, Any] | None:
@@ -74,7 +75,7 @@ def _get_success_schema(
     if _is_text_response(openapi_spec, path, method):
         return None
 
-    paths = openapi_spec.get("paths", {})
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     path_item = paths.get(path)
     if not isinstance(path_item, dict):
         return None
@@ -91,7 +92,7 @@ def _get_success_schema(
             continue
 
         if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), response["$ref"])
             if not isinstance(resolved, dict):
                 continue
             response = resolved
@@ -113,7 +114,7 @@ def _get_success_schema(
 
 def derive_output_schema(
     route: Any,
-    openapi_spec: dict[str, Any] | None,
+    openapi_spec: OpenAPISpec | None,
 ) -> dict[str, Any] | None:
     """Derive a resolved output schema from the route's success response."""
     if openapi_spec is None:

@@ -22,6 +22,7 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
 )
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.format import (
     ResourceResult,
     _build_server_info_markdown,
@@ -91,7 +92,7 @@ def _find_matching_token_scopes(tokens_data: list, raw_token: str) -> list[str] 
 def register_custom_resources(  # noqa: PLR0915
     mcp: FastMCP,
     gitea_client: GiteaClient,
-    openapi_spec: dict[str, Any] | None = None,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> None:
     """Register custom-formatted and custom resources.
 

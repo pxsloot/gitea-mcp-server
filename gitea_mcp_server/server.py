@@ -7,7 +7,7 @@ import contextlib
 import importlib.resources as pkg_resources
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 import fastmcp.server.server as _fastmcp_server_mod
 from fastmcp import FastMCP
@@ -35,9 +35,6 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
-
-if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
@@ -65,6 +62,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
 
+
 async def _compat_run_middleware(
     self: FastMCP,
     context: Any,
@@ -84,6 +82,7 @@ async def _compat_run_middleware(
 
         chain = wrapped
     return await chain(context)
+
 
 _fastmcp_server_mod.FastMCP._run_middleware = _compat_run_middleware  # type: ignore[method-assign]
 # ---------------------------------------------------------------------------
@@ -145,9 +144,7 @@ def _setup_caching_middleware(mcp: FastMCP) -> None:
 
 def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
     """Apply server-level exclusion transform for tools and resources."""
-    exclusion_config = load_exclusion_config(
-        getattr(config, "exclude_config_path", None)
-    )
+    exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
     if not exclusion_config["exclude"] and not exclusion_config["include"]:
         return
     tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""
@@ -272,8 +269,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        raw_spec, extensions = await load_and_convert_spec(gitea_client, config)
-        openapi_spec: OpenAPISpec = cast("OpenAPISpec", raw_spec)
+        openapi_spec, extensions = await load_and_convert_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:

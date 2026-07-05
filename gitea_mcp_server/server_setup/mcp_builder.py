@@ -235,10 +235,18 @@ class _ToolWrappingTransform(Transform):
         except ValidationError as e:
             raise ValueError(str(e)) from e
         result = await _run_with_error_handling(
-            kwargs, tool, self._openapi_spec, route_path, route_method,
+            kwargs,
+            tool,
+            self._openapi_spec,
+            route_path,
+            route_method,
         )
 
-        if is_text_response and isinstance(result, ToolResult) and result.structured_content is None:
+        if (
+            is_text_response
+            and isinstance(result, ToolResult)
+            and result.structured_content is None
+        ):
             text = next(
                 (c.text for c in result.content if isinstance(c, TextContent)),
                 "",
@@ -248,7 +256,11 @@ class _ToolWrappingTransform(Transform):
                 structured_content={"result": text},
             )
 
-        if _is_array_response(output_schema) and isinstance(result, ToolResult) and result.structured_content is not None:
+        if (
+            _is_array_response(output_schema)
+            and isinstance(result, ToolResult)
+            and result.structured_content is not None
+        ):
             result_data = result.structured_content.get("result")
             if isinstance(result_data, list):
                 page = kwargs.get("page", 1)
@@ -271,16 +283,25 @@ class _ToolWrappingTransform(Transform):
 # Deprecated route filtering
 # ---------------------------------------------------------------------------
 
-_HTTP_METHODS = frozenset({
-    "get", "post", "put", "delete", "patch", "options", "head", "trace",
-})
+_HTTP_METHODS = frozenset(
+    {
+        "get",
+        "post",
+        "put",
+        "delete",
+        "patch",
+        "options",
+        "head",
+        "trace",
+    }
+)
 
 
 def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
     """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations."""
     deprecated: set[tuple[str, str]] = set()
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    if not isinstance(paths, dict):  # runtime guard for malformed spec
+    if not isinstance(paths, dict):  # defense-in-depth for malformed runtime input
         return deprecated  # type: ignore[unreachable]
     for path, path_item in paths.items():
         if not isinstance(path_item, dict):
@@ -321,9 +342,7 @@ def create_openapi_provider(
     """
     deprecated_routes = _get_deprecated_routes(openapi_spec)
 
-    def _deprecated_route_filter(
-        route: Any, _mcp_type: MCPType
-    ) -> MCPType | None:
+    def _deprecated_route_filter(route: Any, _mcp_type: MCPType) -> MCPType | None:
         if (route.path, route.method) in deprecated_routes:
             logger.debug("Excluding deprecated endpoint: %s %s", route.method, route.path)
             return MCPType.EXCLUDE

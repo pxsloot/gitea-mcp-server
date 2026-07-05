@@ -745,7 +745,6 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
-    { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -760,6 +759,7 @@ dev = [
     { name = "jsonschema" },
     { name = "mypy" },
     { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -770,6 +770,7 @@ dev = [
 ]
 otel = [
     { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -777,6 +778,7 @@ dev = [
     { name = "hatch" },
     { name = "jsonschema" },
     { name = "mypy" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -795,7 +797,8 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.1.0" },
     { name = "opentelemetry-exporter-otlp", marker = "extra == 'dev'", specifier = ">=1.30.0" },
     { name = "opentelemetry-exporter-otlp", marker = "extra == 'otel'", specifier = ">=1.30.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.30.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
@@ -817,6 +820,7 @@ dev = [
     { name = "hatch", specifier = ">=1.16.5" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "mypy", specifier = ">=2.1.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },

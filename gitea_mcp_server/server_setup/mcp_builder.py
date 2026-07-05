@@ -238,9 +238,12 @@ class _ToolWrappingTransform(Transform):
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 
-            with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
+            if has_labels:
+                with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
+                    await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+                    span.set_attribute("labels.has_labels", True)
+            else:
                 await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
-                span.set_attribute("labels.has_labels", has_labels)
         except ValidationError as e:
             raise ValueError(str(e)) from e
 

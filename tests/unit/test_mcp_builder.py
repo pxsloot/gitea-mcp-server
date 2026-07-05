@@ -649,14 +649,20 @@ class TestGetDeprecatedRoutes:
 # _ToolWrappingTransform — OpenTelemetry spans
 # ---------------------------------------------------------------------------
 
-# Shared InMemorySpanExporter for all telemetry tests in this module.
 # OpenTelemetry 1.43+ enforces a set-once guard on the global
-# TracerProvider, so we set it once at module load time.
+# TracerProvider, so we use a session-scoped autouse fixture to
+# install the InMemorySpanExporter once for the whole test run.
 _TRACE_EXPORTER: Any = None
 
 
-def _init_shared_exporter() -> None:
-    """Set the global TracerProvider with an InMemorySpanExporter (once)."""
+@pytest.fixture(scope="session", autouse=True)
+def _init_otel_exporter() -> None:
+    """Set the global TracerProvider with an InMemorySpanExporter (once).
+
+    OpenTelemetry 1.43+ enforces a set-once guard on
+    ``set_tracer_provider()``, so we must do this once per session
+    rather than in a per-test fixture that saves/restores.
+    """
     global _TRACE_EXPORTER  # noqa: PLW0603
     from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
@@ -669,9 +675,6 @@ def _init_shared_exporter() -> None:
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(_TRACE_EXPORTER))
     trace.set_tracer_provider(provider)
-
-
-_init_shared_exporter()
 
 
 @pytest.fixture
@@ -749,6 +752,10 @@ class TestToolWrappingTransformTelemetry:
         assert "test_tool.execute" in span_names, (
             f"Expected 'test_tool.execute' in span names: {span_names}"
         )
+        # When has_labels=False (default from make_tool), no convert_labels span is created
+        assert "test_tool.convert_labels" not in span_names, (
+            f"Expected no 'convert_labels' when has_labels=False, got: {span_names}"
+        )
 
     @pytest.mark.asyncio
     async def test_pipeline_emits_convert_labels_span(self, trace_exporter):
@@ -823,6 +830,84 @@ class TestToolWrappingTransformTelemetry:
             if span.name == "attr_tool.execute":
                 assert span.attributes.get("http.route") == "/test"
                 assert span.attributes.get("http.method") == "GET"
+
+    @pytest.mark.asyncio
+    async def test_no_convert_labels_span_when_has_labels_false(self, trace_exporter):
+        """When ``has_labels=False``, no ``convert_labels`` span is emitted."""
+        transform = self.make_transform()
+        tool = self.make_tool("no_labels_tool")
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=False,
+            ),
+        ):
+            from fastmcp.tools.base import ToolResult
+
+            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(arguments={})
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "no_labels_tool.convert_labels" not in span_names, (
+            f"Expected no 'convert_labels' span, got: {span_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_validation_error_stops_pipeline(self, trace_exporter):
+        """When validation fails, only the ``validate`` span is emitted."""
+        from gitea_mcp_server.exceptions import ValidationError
+
+        transform = self.make_transform()
+        tool = self.make_tool("fail_tool")
+
+        with (
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                side_effect=ValidationError("missing required: owner"),
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            with pytest.raises(ValueError, match="missing required: owner"):
+                await wrapped.run(arguments={})
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        # validate span should exist (started before the error)
+        assert "fail_tool.validate" in span_names, (
+            f"Expected 'fail_tool.validate' in span names: {span_names}"
+        )
+        # convert_labels and execute should NOT appear (pipeline aborted)
+        assert "fail_tool.convert_labels" not in span_names, (
+            f"Expected no 'fail_tool.convert_labels', got: {span_names}"
+        )
+        assert "fail_tool.execute" not in span_names, (
+            f"Expected no 'fail_tool.execute', got: {span_names}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
 
-from typing import Any
+from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -643,6 +643,186 @@ class TestGetDeprecatedRoutes:
         expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
         assert result == expected
         assert len(result) == 8
+
+
+# ---------------------------------------------------------------------------
+# _ToolWrappingTransform — OpenTelemetry spans
+# ---------------------------------------------------------------------------
+
+# Shared InMemorySpanExporter for all telemetry tests in this module.
+# OpenTelemetry 1.43+ enforces a set-once guard on the global
+# TracerProvider, so we set it once at module load time.
+_TRACE_EXPORTER: Any = None
+
+
+def _init_shared_exporter() -> None:
+    """Set the global TracerProvider with an InMemorySpanExporter (once)."""
+    global _TRACE_EXPORTER  # noqa: PLW0603
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    _TRACE_EXPORTER = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(_TRACE_EXPORTER))
+    trace.set_tracer_provider(provider)
+
+
+_init_shared_exporter()
+
+
+@pytest.fixture
+def trace_exporter() -> Generator[Any, None, None]:
+    """Yield the shared InMemorySpanExporter, cleared between tests."""
+    _TRACE_EXPORTER.clear()
+    yield _TRACE_EXPORTER
+
+
+class TestToolWrappingTransformTelemetry:
+    """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
+
+    def make_transform(self, openapi_spec=None):
+        from gitea_mcp_server.label_manager import LabelManager
+
+        return _ToolWrappingTransform(
+            label_manager=LabelManager(),
+            openapi_spec=openapi_spec or {},
+        )
+
+    def make_tool(self, name: str = "test_tool") -> Tool:
+        return Tool(
+            name=name,
+            tags={"test"},
+            description="Test tool",
+            parameters={"properties": {}, "required": []},
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "route_path": "/test",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="Test"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_pipeline_emits_validate_span(self, trace_exporter):
+        """Pipeline emits a ``{tool}.validate`` span with arg_count attribute."""
+        transform = self.make_transform()
+        tool = self.make_tool("test_tool")
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=False,
+            ),
+        ):
+            from fastmcp.tools.base import ToolResult
+
+            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(arguments={"key": "value"})
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "test_tool.validate" in span_names, (
+            f"Expected 'test_tool.validate' in span names: {span_names}"
+        )
+        assert "test_tool.execute" in span_names, (
+            f"Expected 'test_tool.execute' in span names: {span_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pipeline_emits_convert_labels_span(self, trace_exporter):
+        """Pipeline emits a ``{tool}.convert_labels`` span when labels are present."""
+        transform = self.make_transform()
+        tool = self.make_tool("labels_tool")
+        tool.meta["_customization"]["has_labels"] = True
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=False,
+            ),
+        ):
+            from fastmcp.tools.base import ToolResult
+
+            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(arguments={})
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "labels_tool.convert_labels" in span_names, (
+            f"Expected 'labels_tool.convert_labels' in span names: {span_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_spans_carry_tool_name_attribute(self, trace_exporter):
+        """Validate and execute spans carry ``tool.name`` attribute."""
+        transform = self.make_transform()
+        tool = self.make_tool("attr_tool")
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=False,
+            ),
+        ):
+            from fastmcp.tools.base import ToolResult
+
+            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(arguments={})
+
+        spans = trace_exporter.get_finished_spans()
+        for span in spans:
+            if span.name == "attr_tool.validate":
+                assert span.attributes.get("tool.name") == "attr_tool"
+            if span.name == "attr_tool.execute":
+                assert span.attributes.get("http.route") == "/test"
+                assert span.attributes.get("http.method") == "GET"
 
 
 # ---------------------------------------------------------------------------

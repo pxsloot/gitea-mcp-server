@@ -107,13 +107,15 @@ Agent calls a tool:
     │     └─▶ ctx.fastmcp.call_tool(name, args)
     │
     ├─▶ CacheInvalidationMiddleware
-    │     ├─▶ executes the tool
+    │     ├─▶ executes the tool (auto OTEL span: tools/call gitea_*)
     │     └─▶ on success: invalidate cached resources
     │
     ├─▶ ExclusionTransform       — reject if excluded
     ├─▶ GiteaNamespace            — strip gitea_ prefix
-    ├─▶ _ToolWrappingTransform    — validate → convert labels
-    │                                → run → wrap result
+    ├─▶ _ToolWrappingTransform    — validate (OTEL: .validate span)
+    │                              → convert labels (.convert_labels span)
+    │                              → run (.execute span)
+    │                              → wrap result
     └─▶ OpenAPITool.run()        — httpx → Gitea API
                                      → {"result": data}
 
@@ -248,7 +250,15 @@ The customization layers as applied during server startup:
    occur if `server.py` imported `tool_filter.py` directly.  Same pattern:
    `resources/scope.py` re-exports from flat `scope.py`.
 
- 8. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
+ 8. **OpenTelemetry instrumentation** -- FastMCP 3.x includes native OTEL
+    instrumentation that auto-generates spans for all MCP operations (tool
+    calls, resource reads, prompt renders) with zero configuration. The
+    ``_ToolWrappingTransform._run_transform_pipeline()`` adds three custom
+    child spans (``{tool}.validate``, ``{tool}.convert_labels``,
+    ``{tool}.execute``) to provide per-stage latency visibility. Spans are
+    no-ops unless an OpenTelemetry SDK + exporter are configured.
+
+ 9. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
     and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
     definitions into `constants.py`, the single source of truth for all magic values.
 

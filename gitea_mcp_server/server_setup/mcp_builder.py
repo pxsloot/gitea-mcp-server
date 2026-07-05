@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
+from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
@@ -225,22 +226,35 @@ class _ToolWrappingTransform(Transform):
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema
 
+        tracer = get_tracer()
+
         try:
-            _run_validation(
-                kwargs,
-                tool.parameters.get("required"),
-                tool.parameters.get("properties"),
-            )
-            await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+            with tracer.start_as_current_span(f"{tool.name}.validate") as span:
+                _run_validation(
+                    kwargs,
+                    tool.parameters.get("required"),
+                    tool.parameters.get("properties"),
+                )
+                span.set_attribute("tool.name", tool.name)
+                span.set_attribute("validation.arg_count", len(kwargs))
+
+            with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
+                await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+                span.set_attribute("labels.has_labels", has_labels)
         except ValidationError as e:
             raise ValueError(str(e)) from e
-        result = await _run_with_error_handling(
-            kwargs,
-            tool,
-            self._openapi_spec,
-            route_path,
-            route_method,
-        )
+
+        with tracer.start_as_current_span(f"{tool.name}.execute") as span:
+            span.set_attribute("tool.name", tool.name)
+            span.set_attribute("http.route", route_path)
+            span.set_attribute("http.method", route_method)
+            result = await _run_with_error_handling(
+                kwargs,
+                tool,
+                self._openapi_spec,
+                route_path,
+                route_method,
+            )
 
         if (
             is_text_response

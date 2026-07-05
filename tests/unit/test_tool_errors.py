@@ -1,5 +1,6 @@
 """Unit tests for HTTP error translation."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -523,6 +524,105 @@ class TestRunValidationParamProperties:
         """When param_properties is empty dict, validators should run."""
         with pytest.raises(ValidationError, match="must be a list"):
             _run_validation({"labels": True}, param_properties={})
+
+
+@pytest.mark.asyncio
+class TestCatchAllErrorHandler:
+    """Tests for the catch-all ``(KeyError, TypeError, AttributeError, RuntimeError)`` handler."""
+
+    @pytest.mark.parametrize(
+        ("exception", "exc_name"),
+        [
+            pytest.param(KeyError("missing_key"), "KeyError", id="KeyError"),
+            pytest.param(TypeError("unsupported operand"), "TypeError", id="TypeError"),
+            pytest.param(AttributeError("no such attr"), "AttributeError", id="AttributeError"),
+            pytest.param(RuntimeError("boom"), "RuntimeError", id="RuntimeError"),
+        ],
+    )
+    async def test_all_exception_types_are_caught(self, exception, exc_name, caplog):
+        """All four exception types produce a user-friendly ValueError."""
+        caplog.set_level(logging.ERROR)
+
+        from gitea_mcp_server.tools.errors import _run_with_error_handling
+
+        tool = MagicMock()
+        tool.name = "my_tool"
+
+        async def failing_run(kwargs):
+            raise exception
+
+        tool.run = failing_run
+
+        with pytest.raises(ValueError) as exc_info:
+            await _run_with_error_handling(
+                kwargs={"owner": "me"},
+                component=tool,
+                openapi_spec=None,
+                route_path="/repos/{owner}",
+                route_method="GET",
+            )
+
+        error_msg = str(exc_info.value)
+        assert "unexpected error" in error_msg.lower()
+        assert exc_name not in error_msg
+
+    @pytest.mark.parametrize("exc_type", [KeyError, TypeError, AttributeError, RuntimeError])
+    async def test_log_contains_tool_context(self, exc_type, caplog):
+        """Log message includes tool name, HTTP method, route, and arg keys."""
+        caplog.set_level(logging.ERROR)
+
+        from gitea_mcp_server.tools.errors import _run_with_error_handling
+
+        tool = MagicMock()
+        tool.name = "context_tool"
+
+        async def failing_run(kwargs):
+            raise exc_type("fail")
+
+        tool.run = failing_run
+
+        with pytest.raises(ValueError):
+            await _run_with_error_handling(
+                kwargs={"owner": "me", "repo": "my-repo"},
+                component=tool,
+                openapi_spec=None,
+                route_path="/repos/{owner}/{repo}",
+                route_method="POST",
+            )
+
+        assert any("context_tool" in r.message for r in caplog.records)
+        assert any("POST" in r.message for r in caplog.records)
+        assert any("/repos/{owner}/{repo}" in r.message for r in caplog.records)
+        assert any("owner" in r.message for r in caplog.records)
+
+    async def test_component_without_name_falls_back(self, caplog):
+        """When component has no ``name`` attribute, logs 'unknown'."""
+        caplog.set_level(logging.ERROR)
+
+        from gitea_mcp_server.tools.errors import _run_with_error_handling
+
+        # MagicMock auto-creates any accessed attribute, so we must
+        # set then delete ``.name`` to simulate a component without one
+        # and exercise the ``getattr(component, "name", "unknown")`` fallback.
+        tool = MagicMock(spec=[])
+        tool.name = "nameless"
+        del tool.name
+
+        async def failing_run(kwargs):
+            raise RuntimeError("fail")
+
+        tool.run = failing_run
+
+        with pytest.raises(ValueError):
+            await _run_with_error_handling(
+                kwargs={},
+                component=tool,
+                openapi_spec=None,
+                route_path="/test",
+                route_method="GET",
+            )
+
+        assert any("unknown" in r.message for r in caplog.records)
 
 
 class TestErrorHandlingNonJson:

@@ -74,8 +74,8 @@ class Config(BaseSettings):
         alias="TRANSPORT_TYPE",
     )
     http_host: str = Field(
-        default="0.0.0.0",  # noqa: S104 -- intentional default for HTTP server
-        description="HTTP bind host",
+        default="127.0.0.1",
+        description="HTTP bind host (override with HTTP_HOST=0.0.0.0 for remote access)",
         alias="HTTP_HOST",
     )
     http_port: int = Field(

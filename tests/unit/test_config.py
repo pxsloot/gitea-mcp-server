@@ -156,7 +156,7 @@ class TestConfig:
             Config.get()
 
     def test_http_host_default(self):
-        """Test default http_host is 0.0.0.0."""
+        """Test default http_host is 127.0.0.1."""
         with patch.dict(
             os.environ,
             {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"},
@@ -164,17 +164,17 @@ class TestConfig:
         ):
             Config._instance = None
             config = Config.get()
-            assert config.http_host == "0.0.0.0"
+            assert config.http_host == "127.0.0.1"
 
     def test_http_host_custom(self, monkeypatch):
-        """Test custom http_host."""
+        """Test custom http_host override."""
         monkeypatch.setenv("GITEA_URL", "https://git.example.com")
         monkeypatch.setenv("GITEA_TOKEN", "test_token")
-        monkeypatch.setenv("HTTP_HOST", "127.0.0.1")
+        monkeypatch.setenv("HTTP_HOST", "0.0.0.0")
 
         Config._instance = None
         config = Config.get()
-        assert config.http_host == "127.0.0.1"
+        assert config.http_host == "0.0.0.0"
 
     def test_http_port_default(self):
         """Test default http_port is 8080."""

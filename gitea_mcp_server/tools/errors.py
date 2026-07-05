@@ -167,7 +167,14 @@ async def _run_with_error_handling(
         formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
         _raise_value_error_from(formatted, e)
     except (KeyError, TypeError, AttributeError, RuntimeError):
-        logger.exception("Unexpected error during tool execution")
+        tool_name = getattr(component, "name", "unknown")
+        logger.exception(
+            "Unexpected error in tool %s (%s %s) with args: %s",
+            tool_name,
+            route_method,
+            route_path,
+            sorted(kwargs.keys()),
+        )
         _raise_value_error(
             "An unexpected error occurred. Please check the server logs for details."
         )

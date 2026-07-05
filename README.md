@@ -27,8 +27,9 @@ See [docs/](docs/) for setup details and [DEVELOPMENT.md](docs/DEVELOPMENT.md) f
 | `TRANSPORT_TYPE` | `stdio` | `stdio` or `http` |
 | `TOOL_PREFIX` | `gitea_` | Prefix for all tool names |
 
-HTTP transport settings (`TRANSPORT_TYPE=http`): `HTTP_HOST`, `HTTP_PORT` (default 8080),
+HTTP transport settings (`TRANSPORT_TYPE=http`): `HTTP_HOST` (default `127.0.0.1`), `HTTP_PORT` (default 8080),
 `HTTP_PATH` (default `/mcp`), `HTTP_CORS` (defaults to origin from `GITEA_URL`).
+Override `HTTP_HOST=0.0.0.0` to bind on all interfaces for remote access.
 
 ## Usage
 

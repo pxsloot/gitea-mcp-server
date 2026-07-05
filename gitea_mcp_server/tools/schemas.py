@@ -23,7 +23,7 @@ def _deep_resolve_schema(
                 result[key] = value
                 continue
             _seen.add(value)
-            resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), value)
+            resolved = _resolve_ref(openapi_spec, value)
             if isinstance(resolved, dict):
                 deep = _deep_resolve_schema(resolved, openapi_spec, _seen)
                 result.update(deep)
@@ -92,7 +92,7 @@ def _get_success_schema(
             continue
 
         if "$ref" in response:
-            resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), response["$ref"])
+            resolved = _resolve_ref(openapi_spec, response["$ref"])
             if not isinstance(resolved, dict):
                 continue
             response = resolved

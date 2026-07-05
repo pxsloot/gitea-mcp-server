@@ -13,7 +13,7 @@ from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, l
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
     from gitea_mcp_server.config import Config
-    from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tu
         raise SpecError(msg) from e
 
     try:
-        raw_spec = convert_swagger_to_openapi_v3(spec)
+        raw_spec = convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", spec))
         openapi_spec: OpenAPISpec = cast("OpenAPISpec", raw_spec)
     except Exception as e:
         msg = f"Failed to convert OpenAPI spec: {e}"

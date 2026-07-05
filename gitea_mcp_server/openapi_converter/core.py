@@ -11,6 +11,7 @@ from copy import deepcopy
 from typing import Any, cast
 
 from gitea_mcp_server.exceptions import SpecError
+from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 from .schema import (
     OptionalPropertyTransformer,
@@ -373,7 +374,7 @@ class PathsConverter:
         return new_paths
 
 
-def _add_nullable_for_optional_refs(spec: dict[str, Any]) -> None:
+def _add_nullable_for_optional_refs(spec: OpenAPISpec) -> None:
     """Apply nullable transformations to all component schemas."""
     components = spec.get("components", {})
     schemas = components.get("schemas", {})
@@ -601,7 +602,7 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
-def _resolve_spec_ref(spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec."""
     parts = ref.lstrip("#/").split("/")
     current: Any = spec
@@ -613,7 +614,7 @@ def _resolve_spec_ref(spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
     return current if isinstance(current, dict) else None
 
 
-def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> None:
+def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     """Wrap a response schema in ``result`` so output_schema matches runtime shape.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
@@ -655,7 +656,7 @@ def _wrap_response_schema(response: dict[str, Any], spec: dict[str, Any]) -> Non
     }
 
 
-def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
+def _wrap_success_response_schemas(spec: OpenAPISpec) -> None:
     """Wrap all success response schemas in a ``result`` object container.
 
     FastMCP 3.x requires ``output_schema`` to be ``type: object`` at runtime.
@@ -672,7 +673,7 @@ def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
     Args:
          spec: The OpenAPI 3.x specification (mutated in place).
     """
-    paths = spec.get("paths", {})
+    paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths", {}))
     for path_item in paths.values():
         if not isinstance(path_item, dict):
             continue
@@ -693,7 +694,7 @@ def _wrap_success_response_schemas(spec: dict[str, Any]) -> None:
             _wrap_response_schema(response, spec)
 
 
-def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
+def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     """Convert Swagger 2.0 spec to OpenAPI 3.1.
 
     Args:
@@ -706,29 +707,29 @@ def convert_swagger_to_openapi_v3(spec: dict[str, Any]) -> dict[str, Any]:
         SpecError: If conversion fails due to invalid input
     """
     _validate_spec(spec)
-    spec = dict(spec)
+    result: dict[str, Any] = dict(spec)
 
-    swagger_version = spec.get("swagger")
+    swagger_version = result.get("swagger")
     logger.info("Starting OpenAPI conversion", extra={"swagger_version": swagger_version})
 
-    SpecVersionUpdater().update(spec)
-    _update_info_version(spec)
-    BasePathToServerConverter().convert(spec)
+    SpecVersionUpdater().update(result)
+    _update_info_version(result)
+    BasePathToServerConverter().convert(result)
 
-    components = _convert_components(spec)
+    components = _convert_components(result)
     if components:
-        spec["components"] = components
+        result["components"] = components
 
-    if "paths" in spec:
-        spec["paths"] = convert_paths(spec["paths"])
+    if "paths" in result:
+        result["paths"] = convert_paths(result["paths"])
 
-    remove_swagger_fields(spec, ["consumes", "produces", "schemes"])
-    spec = ReferenceFixer().fix(spec)
-    _add_nullable_for_optional_refs(spec)
-    _wrap_success_response_schemas(spec)
+    remove_swagger_fields(result, ["consumes", "produces", "schemes"])
+    result = ReferenceFixer().fix(result)
+    _add_nullable_for_optional_refs(cast("OpenAPISpec", result))
+    _wrap_success_response_schemas(cast("OpenAPISpec", result))
 
     logger.info("OpenAPI conversion completed successfully")
-    return spec
+    return result
 
 
 __all__ = [

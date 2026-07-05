@@ -68,7 +68,7 @@ def _lookup_response_description(
                 elif "description" in response_def:
                     result = str(response_def["description"])
                 elif "$ref" in response_def:
-                    resolved = _resolve_ref(cast("dict[str, Any]", openapi_spec), response_def["$ref"])
+                    resolved = _resolve_ref(openapi_spec, response_def["$ref"])
                     if isinstance(resolved, dict):
                         desc = resolved.get("description")
                         result = str(desc) if desc else fallback

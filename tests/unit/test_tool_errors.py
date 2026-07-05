@@ -1,5 +1,6 @@
 """Unit tests for HTTP error translation."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -540,8 +541,6 @@ class TestCatchAllErrorHandler:
     )
     async def test_all_exception_types_are_caught(self, exception, exc_name, caplog):
         """All four exception types produce a user-friendly ValueError."""
-        import logging
-
         caplog.set_level(logging.ERROR)
 
         from gitea_mcp_server.tools.errors import _run_with_error_handling
@@ -570,8 +569,6 @@ class TestCatchAllErrorHandler:
     @pytest.mark.parametrize("exc_type", [KeyError, TypeError, AttributeError, RuntimeError])
     async def test_log_contains_tool_context(self, exc_type, caplog):
         """Log message includes tool name, HTTP method, route, and arg keys."""
-        import logging
-
         caplog.set_level(logging.ERROR)
 
         from gitea_mcp_server.tools.errors import _run_with_error_handling
@@ -600,14 +597,15 @@ class TestCatchAllErrorHandler:
 
     async def test_component_without_name_falls_back(self, caplog):
         """When component has no ``name`` attribute, logs 'unknown'."""
-        import logging
-
         caplog.set_level(logging.ERROR)
 
         from gitea_mcp_server.tools.errors import _run_with_error_handling
 
-        tool = MagicMock(spec=[])  # no name attribute
-        tool.name = "nameless"  # won't be visible via getattr with default
+        # MagicMock auto-creates any accessed attribute, so we must
+        # set then delete ``.name`` to simulate a component without one
+        # and exercise the ``getattr(component, "name", "unknown")`` fallback.
+        tool = MagicMock(spec=[])
+        tool.name = "nameless"
         del tool.name
 
         async def failing_run(kwargs):

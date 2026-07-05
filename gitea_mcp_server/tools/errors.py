@@ -1,10 +1,11 @@
 """Error handling utilities for tool execution."""
 
 import logging
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import httpx
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.schemas import _resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
@@ -31,7 +32,7 @@ def _raise_validation_error(message: str, field: str, cause: Exception) -> NoRet
 
 
 def _lookup_response_description(
-    openapi_spec: dict[str, Any],
+    openapi_spec: OpenAPISpec,
     path: str,
     method: str,
     status_code: int,
@@ -39,7 +40,7 @@ def _lookup_response_description(
     """Look up the response description from the OpenAPI spec for error formatting.
 
     Args:
-        openapi_spec: The full OpenAPI 3.1 spec dict.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
         path: The request path template (e.g. /repos/{owner}/{repo}).
         method: HTTP method (case-insensitive; normalized to lowercase internally).
         status_code: The HTTP status code returned.
@@ -50,7 +51,7 @@ def _lookup_response_description(
     fallback = f"HTTP error {status_code}"
     result = fallback
     try:
-        paths = openapi_spec.get("paths", {})
+        paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         path_item = paths.get(path)
         if not path_item:
             result = fallback
@@ -126,7 +127,7 @@ def _run_validation(
 async def _run_with_error_handling(
     kwargs: dict[str, Any],
     component: Any,
-    openapi_spec: dict[str, Any] | None,
+    openapi_spec: OpenAPISpec | None,
     route_path: str,
     route_method: str,
 ) -> Any:
@@ -139,8 +140,8 @@ async def _run_with_error_handling(
     Args:
         kwargs: The validated tool arguments.
         component: The tool component (must have a ``.run()`` method).
-        openapi_spec: OpenAPI spec for response description lookups, or ``None``
-            to skip spec-based enrichment.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as
+            ``OpenAPISpec``), or ``None`` to skip spec-based enrichment.
         route_path: Request path template for error message context
             (e.g. ``/repos/{owner}/{repo}``).
         route_method: HTTP method for error message context (e.g. ``GET``, ``POST``).

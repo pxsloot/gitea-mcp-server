@@ -11,6 +11,7 @@ from fastmcp.exceptions import ResourceError
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.format import _format_as_markdown, _format_datetime
+from gitea_mcp_server.openapi_types import OpenAPISpec
 
 # Type alias for resource return values
 ResourceResult = str
@@ -128,7 +129,7 @@ def _handle_not_found(
         ) from e
 
 
-def _build_server_info_markdown(openapi_spec: dict[str, Any]) -> ResourceResult:
+def _build_server_info_markdown(openapi_spec: OpenAPISpec) -> ResourceResult:
     """Build server info markdown from OpenAPI spec info block."""
     info = openapi_spec.get("info", {})
     title = info.get("title", "Unknown")

@@ -11,6 +11,8 @@ from typing import Any, cast
 
 import yaml
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
+
 logger = logging.getLogger(__name__)
 
 # Default filename for extensions configuration
@@ -130,7 +132,7 @@ def _apply_operation_extension(
     operation.pop("x-mcp", None)
 
 
-def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any]) -> None:
+def apply_mcp_extensions(openapi_spec: OpenAPISpec, extensions: dict[str, Any]) -> None:
     """Apply MCP customizations from extensions to the OpenAPI spec.
 
     This function mutates the openapi_spec in-place by:
@@ -155,7 +157,8 @@ def apply_mcp_extensions(openapi_spec: dict[str, Any], extensions: dict[str, Any
     )
 
     valid_methods = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
-    for path, path_item in openapi_spec.get("paths", {}).items():
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    for path, path_item in paths.items():
         if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():

@@ -1,14 +1,19 @@
 """OpenAPI spec loading and conversion utilities."""
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.config import Config
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.client import GiteaClient
+    from gitea_mcp_server.config import Config
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +58,13 @@ async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[s
         return cast("dict[str, Any]", remote_spec)
 
 
-async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tuple[dict[str, Any], dict[str, Any]]:
+async def load_and_convert_spec(
+    gitea_client: GiteaClient, config: Config
+) -> tuple[OpenAPISpec, dict[str, Any]]:
     """Load Swagger spec, convert to OpenAPI v3, and load extensions.
+
+    The raw spec is cast to ``SwaggerV2Spec`` before conversion, and the
+    result is cast to ``OpenAPISpec`` after conversion.
 
     Args:
         gitea_client: GiteaClient for fetching the spec
@@ -76,7 +86,8 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tu
         raise SpecError(msg) from e
 
     try:
-        openapi_spec = convert_swagger_to_openapi_v3(spec)
+        raw_spec = convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", spec))
+        openapi_spec: OpenAPISpec = cast("OpenAPISpec", raw_spec)
     except Exception as e:
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
@@ -92,7 +103,7 @@ async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tu
             extra={"error": str(e)},
         )
 
-    return openapi_spec, extensions
+    return (openapi_spec, extensions)
 
 
 __all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

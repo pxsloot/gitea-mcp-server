@@ -1,5 +1,7 @@
 """Gitea MCP Server implementation."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import importlib.resources as pkg_resources
@@ -60,6 +62,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
 
+
 async def _compat_run_middleware(
     self: FastMCP,
     context: Any,
@@ -79,6 +82,7 @@ async def _compat_run_middleware(
 
         chain = wrapped
     return await chain(context)
+
 
 _fastmcp_server_mod.FastMCP._run_middleware = _compat_run_middleware  # type: ignore[method-assign]
 # ---------------------------------------------------------------------------
@@ -140,9 +144,7 @@ def _setup_caching_middleware(mcp: FastMCP) -> None:
 
 def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
     """Apply server-level exclusion transform for tools and resources."""
-    exclusion_config = load_exclusion_config(
-        getattr(config, "exclude_config_path", None)
-    )
+    exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
     if not exclusion_config["exclude"] and not exclusion_config["include"]:
         return
     tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""

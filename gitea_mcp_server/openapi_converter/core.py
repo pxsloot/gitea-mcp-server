@@ -375,7 +375,12 @@ class PathsConverter:
 
 
 def _add_nullable_for_optional_refs(spec: OpenAPISpec) -> None:
-    """Apply nullable transformations to all component schemas."""
+    """Apply nullable transformations to all component schemas.
+
+    Args:
+        spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
+              Only ``components/schemas`` is accessed.
+    """
     components = spec.get("components", {})
     schemas = components.get("schemas", {})
     walker = SchemaWalker(OptionalPropertyTransformer())
@@ -603,7 +608,18 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
-    """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec."""
+    """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec.
+
+    Walks the spec tree using string path segments.  Returns ``None`` if
+    any segment is missing (handles malformed refs gracefully).
+
+    Args:
+        spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
+        ref: The ``$ref`` string to resolve.
+
+    Returns:
+        The resolved schema dict, or ``None`` if resolution fails.
+    """
     parts = ref.lstrip("#/").split("/")
     current: Any = spec
     try:
@@ -628,6 +644,12 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     Note: response-level ``$ref`` never appears here because the Swagger 2.0
     to OpenAPI 3.x converter inlines all response references before this
     function runs.
+
+    Args:
+        response: A single response object from the spec (``dict[str, Any]``
+                  because status-code keys are dynamic).
+        spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``)
+              used for ``$ref`` resolution.
 
     Remove this when FastMCP adds native non-object ``output_schema`` support.
     """
@@ -668,10 +690,14 @@ def _wrap_success_response_schemas(spec: OpenAPISpec) -> None:
     Shared response components in ``components/responses`` are also wrapped
     for consistency.
 
+    ``paths`` and ``components`` sub-objects are cast to ``dict[str, Any]``
+    for dynamic-key access (URL paths, status codes).
+
     Remove this when FastMCP adds native non-object ``output_schema`` support.
 
     Args:
-         spec: The OpenAPI 3.x specification (mutated in place).
+         spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``,
+               mutated in place).
     """
     paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths", {}))
     for path_item in paths.values():
@@ -697,8 +723,12 @@ def _wrap_success_response_schemas(spec: OpenAPISpec) -> None:
 def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     """Convert Swagger 2.0 spec to OpenAPI 3.1.
 
+    Accepts a ``SwaggerV2Spec`` typed input, immediately creates a mutable
+    ``dict[str, Any]`` copy for the conversion pipeline, then casts to
+    ``OpenAPISpec`` for the final read-only wrapping steps.
+
     Args:
-        spec: Swagger 2.0 specification as a dictionary
+        spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)
 
     Returns:
         OpenAPI 3.1 specification as a dictionary

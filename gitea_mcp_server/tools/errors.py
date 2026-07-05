@@ -40,7 +40,7 @@ def _lookup_response_description(
     """Look up the response description from the OpenAPI spec for error formatting.
 
     Args:
-        openapi_spec: The full OpenAPI 3.1 spec dict.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
         path: The request path template (e.g. /repos/{owner}/{repo}).
         method: HTTP method (case-insensitive; normalized to lowercase internally).
         status_code: The HTTP status code returned.
@@ -140,8 +140,8 @@ async def _run_with_error_handling(
     Args:
         kwargs: The validated tool arguments.
         component: The tool component (must have a ``.run()`` method).
-        openapi_spec: OpenAPI spec for response description lookups, or ``None``
-            to skip spec-based enrichment.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as
+            ``OpenAPISpec``), or ``None`` to skip spec-based enrichment.
         route_path: Request path template for error message context
             (e.g. ``/repos/{owner}/{repo}``).
         route_method: HTTP method for error message context (e.g. ``GET``, ``POST``).

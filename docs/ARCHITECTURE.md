@@ -136,7 +136,8 @@ Agent reads a resource:
 |--------|------|------------|
 | `config.py` | Pydantic settings from env vars (GITEA_URL, GITEA_TOKEN, etc.) | `Config` |
 | `client.py` | httpx client with retry, rate-limit handling, SSL | `GiteaClient` |
-| `openapi_converter.py` | Swagger 2.0 → OpenAPI 3.1 | `convert_swagger_to_openapi_v3` |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 (split into `core.py` for conversion pipeline, `schema.py` for schema walker/transformers) | `convert_swagger_to_openapi_v3` |
+| `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, etc.) | 7 TypedDict types |
 | `spec_loader.py` | Fetch spec, convert, apply parameter extensions; load YAML overrides for transform | `load_and_convert_spec` |
 | `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; exclude deprecated endpoints via `route_map_fn` | `create_openapi_provider`, `_get_deprecated_routes` |
 | `server.py` | Assemble everything, serve via stdio or HTTP | `main()`, `create_mcp_server()` |
@@ -247,9 +248,23 @@ The customization layers as applied during server startup:
    occur if `server.py` imported `tool_filter.py` directly.  Same pattern:
    `resources/scope.py` re-exports from flat `scope.py`.
 
-8. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
-   and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
-   definitions into `constants.py`, the single source of truth for all magic values.
+ 8. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
+    and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
+    definitions into `constants.py`, the single source of truth for all magic values.
+
+ 9. **OpenAPI spec TypedDict migration** -- All pipeline layers accept typed
+    OpenAPI spec parameters instead of `dict[str, Any]`.  Seven TypedDict types
+    (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, `OpenAPIPathItem`,
+    `OpenAPIParameter`, `OpenAPIResponse`, `OpenAPIInfo`) define the navigation
+    spine of the spec, with deep/recursive parts (``$ref`` chains, nested schemas)
+    intentionally kept as ``dict[str, Any]`` since their keys are dynamic.
+    ``total=False`` matches existing ``.get()`` guard patterns, requiring no
+    logic changes.  ``cast()`` at FastMCP boundaries avoids coupling the type
+    system to FastMCP internals.  Two spec shapes are tracked: ``SwaggerV2Spec``
+    (pre-conversion input) and ``OpenAPISpec`` (post-conversion output, used by
+    tools, server_setup, and resources).  State-mutating converter functions
+    (``SpecVersionUpdater``, ``BasePathToServerConverter``) stay ``dict[str, Any]``
+    since TypedDict cannot express in-place shape transitions.
 
 ---
 
@@ -259,7 +274,7 @@ Gitea's API mixes content types: most endpoints return JSON, but some return
 plain text (diffs, patches), HTML (signing keys), or binary blobs (file
 downloads).  Handling this correctly requires coordination across four stages.
 
-### Stage 1 -- Spec Conversion (`openapi_converter.py`)
+### Stage 1 -- Spec Conversion (`openapi_converter/core.py`)
 
 Swagger 2.0 specifies response types via the `produces` field (per-operation or
 top-level).  `convert_responses()` uses `produces` to set the OpenAPI 3.1
@@ -270,7 +285,7 @@ If no `produces` is found, the converter defaults to `application/json`. This is
 correct for ~95% of endpoints, but silently wrong for the ~12 non-JSON
 endpoints if `produces` propagation is missed.
 
-### Stage 2 -- Schema Wrapping (`openapi_converter.py:_wrap_success_response_schemas`)
+### Stage 2 -- Schema Wrapping (`openapi_converter/core.py:_wrap_success_response_schemas`)
 
 All `application/json` response schemas are wrapped in:
 ```

@@ -61,6 +61,10 @@ async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[s
 async def load_and_convert_spec(gitea_client: GiteaClient, config: Config) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load Swagger spec, convert to OpenAPI v3, and load extensions.
 
+    The raw spec is cast to ``SwaggerV2Spec`` before conversion, and the
+    result is cast to ``OpenAPISpec`` after conversion.  The return type
+    stays ``tuple[dict[str, Any], ...]`` for FastMCP compatibility.
+
     Args:
         gitea_client: GiteaClient for fetching the spec
         config: Application configuration

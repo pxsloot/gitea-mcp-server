@@ -2,12 +2,20 @@
 
 Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
+
+Public functions:
+    format_result — reformat a ToolResult by format (json/markdown/raw).
 """
 
 import json as json_module
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
+
+from fastmcp.tools.base import ToolResult
+from mcp.types import TextContent
+
+from gitea_mcp_server.pagination import PAGINATION_KEYS
 
 # Length bounds for auto-detecting ISO datetime strings without schema hint
 _ISO_DT_MIN_LEN = 20
@@ -256,6 +264,51 @@ def _format_as_markdown(
     return "\n".join(lines)
 
 
+def format_result(
+    result: ToolResult,
+    fmt: str,
+    output_schema: dict[str, Any] | None = None,
+) -> ToolResult:
+    """Reformat a ``ToolResult`` content by ``fmt`` (``json`` / ``markdown`` / ``raw``).
+
+    ``structured_content`` is always preserved as raw data.
+    For non-JSON or binary results, all formats return unchanged.
+    """
+    if fmt == "raw" or not result.structured_content:
+        return result
+
+    data = result.structured_content.get("result")
+    if data is None:
+        return result
+
+    content: str | None = None
+
+    if fmt == "json":
+        content = json_module.dumps(data, indent=2)
+
+    elif fmt == "markdown" and isinstance(data, (dict, list)):
+        inner = output_schema.get("properties", {}).get("result", {}) if output_schema else None
+        content = _format_as_markdown(data, inner)
+
+        pagination = {
+            k: result.structured_content[k]
+            for k in PAGINATION_KEYS
+            if k in result.structured_content
+        }
+        if pagination:
+            content += "\n\n---\n"
+            content += _format_as_markdown(pagination, None)
+
+    if content is not None:
+        return ToolResult(
+            content=[TextContent(type="text", text=content)],
+            structured_content=result.structured_content,
+            meta=result.meta,
+        )
+
+    return result
+
+
 __all__ = [
     "_format_as_markdown",
     "_format_datetime",
@@ -263,4 +316,5 @@ __all__ = [
     "_format_simple_value",
     "_resolve_anyof_schema",
     "_snake_to_title",
+    "format_result",
 ]

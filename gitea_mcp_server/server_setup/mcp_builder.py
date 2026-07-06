@@ -20,6 +20,8 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.config import Config
+from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -36,6 +38,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
+from gitea_mcp_server.tools.virtual_params import apply_to, extract_from, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -152,8 +155,9 @@ class _ToolWrappingTransform(Transform):
     """Provider-level transform that wraps OpenAPITools with runtime behaviour.
 
     Accessed via ``provider.add_transform()`` — part of FastMCP's public API.
-    Handles: argument validation, label conversion, error handling,
-    text-response wrapping, and pagination metadata injection.
+    Handles: virtual parameter inject/extract, argument validation, label
+    conversion, error handling, text-response wrapping, and pagination
+    metadata injection.
     """
 
     def __init__(
@@ -195,8 +199,38 @@ class _ToolWrappingTransform(Transform):
                 _META_CUSTOMIZED,
             )
 
+        # Inject any future virtual params into the tool schema.  The
+        # ``format`` parameter is handled explicitly below, not here.
+        inject_into(tool.parameters)
+
+        # Inject ``format`` as a first-class parameter (promoted — not a
+        # generic virtual param).  The default is server-wide configuration.
+        fmt_default = Config.get().response_format
+        props = tool.parameters.setdefault("properties", {})
+        if "format" not in props:
+            props["format"] = {
+                "type": "string",
+                "enum": ["json", "markdown", "raw"],
+                "default": fmt_default,
+                "description": (
+                    "Response format control.  "
+                    f'"json" — raw JSON (default: {fmt_default}).  '
+                    '"markdown" — formatted tables for human/agent reading.  '
+                    '"raw" — unprocessed API response.'
+                ),
+            }
+
         async def transform_fn(**kwargs: Any) -> Any:
-            return await self._run_transform_pipeline(kwargs, tool)
+            # Pop virtual params before the HTTP execution path — they are
+            # not real API parameters and must not reach the Gitea API.
+            virtual_values = extract_from(kwargs)
+
+            # Pop ``format`` explicitly (promoted from virtual params) and
+            # apply the shared ``format_result`` utility from format.py.
+            fmt = kwargs.pop("format", fmt_default)
+            result = await self._run_transform_pipeline(kwargs, tool)
+            result = apply_to(result, virtual_values)
+            return format_result(result, fmt)
 
         return Tool.from_tool(
             tool,
@@ -233,13 +267,25 @@ class _ToolWrappingTransform(Transform):
         try:
             async with CurrentContext() as ctx:
                 return await self._pipeline_with_context(
-                    kwargs, tool, ctx,
-                    route_path, route_method, has_labels, is_text_response, output_schema,
+                    kwargs,
+                    tool,
+                    ctx,
+                    route_path,
+                    route_method,
+                    has_labels,
+                    is_text_response,
+                    output_schema,
                 )
         except RuntimeError:
             return await self._pipeline_with_context(
-                kwargs, tool, None,
-                route_path, route_method, has_labels, is_text_response, output_schema,
+                kwargs,
+                tool,
+                None,
+                route_path,
+                route_method,
+                has_labels,
+                is_text_response,
+                output_schema,
             )
 
     async def _pipeline_with_context(  # noqa: PLR0913, PLR0912

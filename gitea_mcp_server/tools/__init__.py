@@ -7,6 +7,8 @@ All tool-related runtime concerns live here:
 - labels: Label name→ID conversion
 - examples: Schema-to-example generation, tool schema serialization
 - search: BM25 search engine + TolerantSearchTransform + synthetic tools
+- virtual_params: Virtual parameter registry (params that live in the schema
+  but are handled before the API call)
 - namespace: GiteaNamespace transform (prefix tools, pass resources through)
 """
 
@@ -21,15 +23,19 @@ from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransfor
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.schemas import derive_output_schema
 from gitea_mcp_server.tools.search import TolerantSearchTransform
+from gitea_mcp_server.tools.virtual_params import apply_to, extract_from, inject_into
 
 __all__ = [
     "ExtensionMetadataTransform",
     "GiteaNamespace",
     "TolerantSearchTransform",
     "add_inferred_hints",
+    "apply_to",
     "categorize_tool",
     "compute_invalidation_patterns",
     "derive_output_schema",
     "derive_required_scope",
+    "extract_from",
     "generate_tool_title",
+    "inject_into",
 ]

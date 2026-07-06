@@ -280,7 +280,7 @@ class _ToolWrappingTransform(Transform):
             if ctx is not None:
                 await ctx.info(
                     f"Validated {tool.name}",
-                    extra={"args": list(kwargs.keys()), "valid": True},
+                    extra={"arg_keys": list(kwargs.keys()), "valid": True},
                 )
 
             if has_labels:
@@ -306,7 +306,7 @@ class _ToolWrappingTransform(Transform):
             raise ValueError(str(e)) from e
 
         if ctx is not None:
-            await ctx.report_progress(0.5, f"Executing {tool.name}")
+            await ctx.report_progress(progress=0.5)
 
         with tracer.start_as_current_span(f"{tool.name}.execute") as span:
             span.set_attribute("tool.name", tool.name)
@@ -358,10 +358,7 @@ class _ToolWrappingTransform(Transform):
                 )
 
                 if ctx is not None and len(result_data) > 0:
-                    await ctx.report_progress(
-                        1.0,
-                        f"Fetched page {page} ({len(result_data)} items)",
-                    )
+                    await ctx.report_progress(progress=1.0, total=1.0)
 
                 return ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
@@ -369,7 +366,7 @@ class _ToolWrappingTransform(Transform):
                 )
 
         if ctx is not None:
-            await ctx.report_progress(1.0, f"Completed {tool.name}")
+            await ctx.report_progress(progress=1.0)
 
         return result
 

@@ -23,7 +23,7 @@ from gitea_mcp_server.constants import (
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import _format_as_markdown, format_result
-from gitea_mcp_server.models import ToolSearchEntry
+from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.errors import (
@@ -374,8 +374,9 @@ async def _tool_info_impl(
         candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
         if tool.name in candidates:
+            schema: ToolSchemaResult = _serialize_tool_schema(tool)
             return format_result(
-                ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format
+                ToolResult(structured_content={"result": schema}), format
             )
     msg = f"Tool '{name}' not found"
     raise ValueError(msg) from None

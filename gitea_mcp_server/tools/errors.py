@@ -4,6 +4,7 @@ import logging
 from typing import Any, NoReturn, cast
 
 import httpx
+from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.schemas import _resolve_ref
@@ -130,7 +131,7 @@ async def _run_with_error_handling(
     openapi_spec: OpenAPISpec | None,
     route_path: str,
     route_method: str,
-) -> Any:
+) -> ToolResult:
     """Execute a tool run with comprehensive error translation.
 
     Catches HTTP status errors, network errors, and unexpected exceptions,
@@ -147,7 +148,7 @@ async def _run_with_error_handling(
         route_method: HTTP method for error message context (e.g. ``GET``, ``POST``).
     """
     try:
-        return await component.run(kwargs)
+        return cast("ToolResult", await component.run(kwargs))
     except ValueError as e:
         cause = e.__cause__
         if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:

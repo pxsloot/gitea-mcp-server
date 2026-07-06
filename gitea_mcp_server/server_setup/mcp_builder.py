@@ -220,7 +220,7 @@ class _ToolWrappingTransform(Transform):
                 ),
             }
 
-        async def transform_fn(**kwargs: Any) -> Any:
+        async def transform_fn(**kwargs: Any) -> ToolResult:
             # Pop virtual params before the HTTP execution path — they are
             # not real API parameters and must not reach the Gitea API.
             virtual_values = extract_from(kwargs)
@@ -246,7 +246,7 @@ class _ToolWrappingTransform(Transform):
         self,
         kwargs: dict[str, Any],
         tool: Tool,
-    ) -> ToolResult | Any:
+    ) -> ToolResult:
         """Run the full tool execution pipeline: validate, convert labels, execute, wrap result.
 
         Args:
@@ -304,7 +304,7 @@ class _ToolWrappingTransform(Transform):
         has_labels: bool,
         is_text_response: bool,
         output_schema: dict[str, Any] | None,
-    ) -> ToolResult | Any:
+    ) -> ToolResult:
         """Run the tool execution pipeline with an optional Context.
 
         Separated from _run_transform_pipeline so the CurrentContext() async

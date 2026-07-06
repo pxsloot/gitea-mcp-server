@@ -113,9 +113,14 @@ Agent calls a tool:
     ├─▶ ExclusionTransform       — reject if excluded
     ├─▶ GiteaNamespace            — strip gitea_ prefix
     ├─▶ _ToolWrappingTransform    — validate (OTEL: .validate span)
+    │                              → log context (ctx.info)
     │                              → convert labels (.convert_labels span)
+    │                              → log context (ctx.info)
+    │                              → report progress (ctx.report_progress)
     │                              → run (.execute span)
+    │                              → log context (ctx.info)
     │                              → wrap result
+    │                              → report progress (ctx.report_progress)
     └─▶ OpenAPITool.run()        — httpx → Gitea API
                                      → {"result": data}
 
@@ -322,7 +327,35 @@ The customization layers as applied during server startup:
     server-level ``gitea_`` form, which is the stable interface regardless of
     how the host names the server.
 
+13. **Lifespan lifecycle and Context injection** — The server uses FastMCP's
+    built-in ``lifespan`` mechanism for proper resource lifecycle management.
+
+    - **Lifespan**: ``create_mcp_server()`` accepts an optional ``lifespan``
+      callback.  ``main_async()`` defines a closure ``app_lifespan`` that yields
+      ``{"gitea_client": client}`` on startup and closes the client on teardown.
+      This replaced the manual ``gitea_client.close()`` in the old ``finally``
+      block — lifespan handles successful shutdown; the error path preserves its
+      own close in the ``except`` block since lifespan is never entered on init
+      failure.
+
+    - **Context injection**: ``_ToolWrappingTransform._run_transform_pipeline()``
+      uses ``CurrentContext()`` (an async context manager) to obtain the MCP
+      ``Context`` object inside the request scope.  The core pipeline was
+      extracted to ``_pipeline_with_context(ctx)``, letting ``_run_transform_pipeline``
+      handle the ``CurrentContext()`` boilerplate and gracefully degrade when
+      called outside a request (e.g., unit tests — ``CurrentContext()`` raises
+      ``RuntimeError``, caught and passed as ``ctx=None``).
+
+    - **Agent observability**: ``ctx.info()`` calls log validation results, label
+      processing, and execution completion with structured ``extra`` dicts.
+      ``ctx.report_progress()`` signals progress at execution start (50%),
+      paginated fetches (100%), and completion (100%).  This gives agent hosts
+      visibility into long-running operations without relying solely on OTEL
+      spans or stdout.
+
 ---
+
+
 
 ## Response Content-Type Handling
 
@@ -432,9 +465,14 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   │
   └─▶ Tool (from tools/customize.py)
         ├─▶ validate arguments (validation.py)
+        ├─▶ log validation result (ctx.info in _ToolWrappingTransform)
         ├─▶ convert label strings→IDs (label_manager)
+        ├─▶ log label result (ctx.info in _ToolWrappingTransform)
+        ├─▶ report execution progress (ctx.report_progress)
         ├─▶ OpenAPITool.run() → httpx request to Gitea API
+        ├─▶ log completion (ctx.info in _ToolWrappingTransform)
         ├─▶ wrap response in {"result": ...}
+        ├─▶ report progress for paginated fetches (ctx.report_progress)
         └─▶ on error: translate httpx errors to agent-friendly messages
 ```
 

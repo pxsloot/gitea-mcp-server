@@ -105,7 +105,11 @@ The customization pipeline has two phases:
 2. **`_ToolWrappingTransform._run_transform_pipeline()`** in
    `server_setup/mcp_builder.py` — runtime wrapping (validation, label
    conversion, error handling, text wrapping, pagination) applied via a
-   provider-level ``Transform`` at query time.
+   provider-level ``Transform`` at query time.  The pipeline now also
+   injects the MCP ``Context`` object (via ``CurrentContext()``) for
+   ``ctx.info()`` logging and ``ctx.report_progress()`` calls at key
+   stages, and extracts the core logic into ``_pipeline_with_context(ctx)``
+   for clean separation.
 
 Common customizations:
 
@@ -264,7 +268,7 @@ include:
 
 1. Token scope filter (`tool_filter.py`) — removes tools the token can't use
 2. Exclusion config (new) — removes excluded, re-adds included
-3. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling
+3. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, progress reporting
 
 ---
 
@@ -355,5 +359,9 @@ This project uses FastMCP 3.x.  Key APIs:
 - `BM25SearchTransform` -- lazy loading with BM25 search
 - `Transform` -- modify tool lists, intercept tool lookups
 - `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior
+- `FastMCP(name=..., lifespan=lifespan)` -- async context manager for resource lifecycle (startup/teardown)
+- `CurrentContext()` -- async context manager that resolves the current MCP ``Context`` inside a request scope
+- `ctx.info()` / `ctx.warning()` / `ctx.error()` / `ctx.debug()` -- client-side structured logging
+- `ctx.report_progress(progress=..., total=...)` -- send progress updates to the agent host (both floats)
 
 For up-to-date FastMCP docs: https://gofastmcp.com/llms.txt

@@ -12,6 +12,7 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
+from fastmcp.dependencies import CurrentContext
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
 from fastmcp.telemetry import get_tracer
@@ -226,6 +227,44 @@ class _ToolWrappingTransform(Transform):
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema
 
+        # Resolve the current MCP Context if inside a request.
+        # CurrentContext() is an async context manager — outside a request
+        # context it raises RuntimeError, which we catch gracefully.
+        try:
+            async with CurrentContext() as ctx:
+                return await self._pipeline_with_context(
+                    kwargs, tool, ctx,
+                    route_path, route_method, has_labels, is_text_response, output_schema,
+                )
+        except RuntimeError:
+            return await self._pipeline_with_context(
+                kwargs, tool, None,
+                route_path, route_method, has_labels, is_text_response, output_schema,
+            )
+
+    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912
+        # PLR0913: all pipeline state passed explicitly — avoids mutable
+        # instance state threading bugs; extracted to keep _run_transform_pipeline
+        # free of CurrentContext() boilerplate.
+        # PLR0912: each branch corresponds to a distinct pipeline stage
+        # (validation, labels, execution, pagination) — splitting would add
+        # indirection without benefit since all branches share kwargs/result.
+        self,
+        kwargs: dict[str, Any],
+        tool: Tool,
+        ctx: Any,
+        route_path: str,
+        route_method: str,
+        has_labels: bool,
+        is_text_response: bool,
+        output_schema: dict[str, Any] | None,
+    ) -> ToolResult | Any:
+        """Run the tool execution pipeline with an optional Context.
+
+        Separated from _run_transform_pipeline so the CurrentContext() async
+        context manager is entered before any pipeline work (which may itself
+        be async).  ``ctx`` is ``None`` when no request context is active.
+        """
         tracer = get_tracer()
 
         try:
@@ -238,6 +277,12 @@ class _ToolWrappingTransform(Transform):
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 
+            if ctx is not None:
+                await ctx.info(
+                    f"Validated {tool.name}",
+                    extra={"arg_keys": list(kwargs.keys()), "valid": True},
+                )
+
             if has_labels:
                 with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
                     await _convert_labels(
@@ -246,8 +291,22 @@ class _ToolWrappingTransform(Transform):
                     span.set_attribute("labels.has_labels", True)
             else:
                 await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+
+            if ctx is not None:
+                await ctx.info(
+                    f"Labels processed for {tool.name}",
+                    extra={"has_labels": has_labels},
+                )
         except ValidationError as e:
+            if ctx is not None:
+                await ctx.info(
+                    f"Validation failed for {tool.name}: {e}",
+                    extra={"error": str(e)},
+                )
             raise ValueError(str(e)) from e
+
+        if ctx is not None:
+            await ctx.report_progress(progress=0.5)
 
         with tracer.start_as_current_span(f"{tool.name}.execute") as span:
             span.set_attribute("tool.name", tool.name)
@@ -259,6 +318,12 @@ class _ToolWrappingTransform(Transform):
                 self._openapi_spec,
                 route_path,
                 route_method,
+            )
+
+        if ctx is not None:
+            await ctx.info(
+                f"Executed {tool.name}: {route_method} {route_path}",
+                extra={"route": f"{route_method} {route_path}"},
             )
 
         if (
@@ -291,10 +356,17 @@ class _ToolWrappingTransform(Transform):
                     per_page,
                     total_count=total_count,
                 )
+
+                if ctx is not None and len(result_data) > 0:
+                    await ctx.report_progress(progress=1.0, total=1.0)
+
                 return ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
                     structured_content=enhanced,
                 )
+
+        if ctx is not None:
+            await ctx.report_progress(progress=1.0)
 
         return result
 

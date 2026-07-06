@@ -54,6 +54,7 @@ coverage.xml
 
 # Temporary files
 tmp/
+scratch/
 temp/
 .gitea-mcp-cli-history
 mcp_filter.yaml

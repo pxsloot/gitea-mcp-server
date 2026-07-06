@@ -25,6 +25,7 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.examples import _schema_to_example
 
@@ -44,7 +45,7 @@ def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
     return str(content)
 
 
-async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
+async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     """Implementation of list_resources.
 
     Uses FastMCP Context to list registered resources and templates.
@@ -63,9 +64,9 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         templates = await ctx.fastmcp.list_resource_templates()
 
         def _build_resource_entry(
-            base: dict[str, Any],
+            base: ResourceEntry,
             meta: dict[str, Any] | None,
-        ) -> dict[str, Any]:
+        ) -> ResourceEntry:
             """Add required_scope to a resource entry from its metadata."""
             if meta:
                 scope = meta.get("fastmcp", {}).get("_internal", {}).get("required_scope")
@@ -80,16 +81,16 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         # @mcp.resource("uri://bar", name="custom") -> name="custom"
         for resource in resources:
             entry = _build_resource_entry(
-                {
-                    "uri": str(resource.uri),
-                    "name": resource.name,
-                    "description": resource.description or "",
-                    "mimeType": resource.mime_type or "text/plain",
-                    "type": "resource",
-                    "tags": list(resource.tags)
+                ResourceEntry(
+                    uri=str(resource.uri),
+                    name=resource.name,
+                    description=resource.description or "",
+                    mimeType=resource.mime_type or "text/plain",
+                    type="resource",
+                    tags=list(resource.tags)
                     if hasattr(resource, "tags") and resource.tags
                     else [],
-                },
+                ),
                 getattr(resource, "meta", None),
             )
             resources_list.append(entry)
@@ -97,24 +98,24 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         # Process resource templates
         for template in templates:
             entry = _build_resource_entry(
-                {
-                    "uri": str(template.uri_template),
-                    "name": template.name,
-                    "description": template.description or "",
-                    "mimeType": template.mime_type or "text/plain",
-                    "type": "template",
-                    "tags": list(template.tags)
+                ResourceEntry(
+                    uri=str(template.uri_template),
+                    name=template.name,
+                    description=template.description or "",
+                    mimeType=template.mime_type or "text/plain",
+                    type="template",
+                    tags=list(template.tags)
                     if hasattr(template, "tags") and template.tags
                     else [],
-                },
+                ),
                 getattr(template, "meta", None),
             )
             resources_list.append(entry)
     except (AttributeError, TypeError):
         logger.exception("Error listing resources")
-        return {"resources": [], "count": 0}
+        return ResourceListing(resources=[], count=0)
 
-    return {"resources": resources_list, "count": len(resources_list)}
+    return ResourceListing(resources=resources_list, count=len(resources_list))
 
 
 def _format_resource_content(raw: str, fmt: str) -> str:

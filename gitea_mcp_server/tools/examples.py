@@ -4,6 +4,8 @@ from typing import Any
 
 from fastmcp.tools.base import Tool
 
+from gitea_mcp_server.models import ToolSchemaResult
+
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
     "title": "Example Title",
@@ -164,9 +166,9 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
     return None
 
 
-def _serialize_tool_schema(tool: Tool) -> dict[str, Any]:
+def _serialize_tool_schema(tool: Tool) -> ToolSchemaResult:
     """Serialize a Tool to a compact dict (name, description, parameters, examples, annotations)."""
-    data: dict[str, Any] = {
+    data: ToolSchemaResult = {
         "name": tool.name,
         "description": tool.description or "",
         "parameters": tool.parameters,

@@ -18,6 +18,7 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 
 if TYPE_CHECKING:
@@ -36,6 +37,25 @@ _FRONTMATTER_SPLIT_LIMIT = 2
 
 _VALID_FORMATS = frozenset({"markdown", "raw", "json"})
 """Accepted format parameter values for doc tools."""
+
+_SEARCH_DOCS_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "result": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            "description": "Matching guide definitions ranked by relevance",
+        },
+    },
+}
 
 
 class DocGuide:
@@ -162,7 +182,12 @@ class DocManager:
             ]
         indices = self._search_engine.search(self._search_texts, query, max_results)
         return [
-            {"name": self._guides[i].name, "title": self._guides[i].title, "description": self._guides[i].description, "tags": self._guides[i].tags}
+            {
+                "name": self._guides[i].name,
+                "title": self._guides[i].title,
+                "description": self._guides[i].description,
+                "tags": self._guides[i].tags,
+            }
             for i in indices
         ]
 
@@ -179,18 +204,24 @@ class DocManager:
             "|-------|-------------|",
         ]
         for g in self._guides:
-            desc = (g.description[:_DESC_TRUNCATE - 3] + "...") if len(g.description) > _DESC_TRUNCATE else g.description
+            desc = (
+                (g.description[: _DESC_TRUNCATE - 3] + "...")
+                if len(g.description) > _DESC_TRUNCATE
+                else g.description
+            )
             lines.append(f"| `{g.name}` | {desc} |")
-        lines.extend([
-            "",
-            "Use `search_docs(query)` to find guides by topic, or `read_doc(topic)` to read one.",
-            "Guides are also available as resources at `gitea://docs/guide/{{topic}}`.",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "Use `search_docs(query)` to find guides by topic, or `read_doc(topic)` to read one.",
+                "Guides are also available as resources at `gitea://docs/guide/{{topic}}`.",
+                "",
+            ]
+        )
         return "\n".join(lines)
 
 
-def register_doc_tools(
+def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with inline closures
     mcp: FastMCP,
     doc_manager: DocManager,
 ) -> None:
@@ -204,28 +235,13 @@ def register_doc_tools(
     @mcp.tool(
         tags={"synthetic"},
         annotations=ToolAnnotations(openWorldHint=False),
-        output_schema={
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "tags": {"type": "array", "items": {"type": "string"}},
-                        },
-                    },
-                    "description": "Matching guide definitions ranked by relevance",
-                },
-            },
-        },
+        output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
     async def search_docs(
         query: str,
         format: str = "markdown",
+        page: int = 1,
+        limit: int = 10,
     ) -> ToolResult:
         """Search workflow guides by natural language query.
 
@@ -255,41 +271,72 @@ def register_doc_tools(
         Args:
             query: Natural language query to search for guides
             format: Output format: markdown (default), json, or raw
+            page: Page number (1-based, default 1)
+            limit: Maximum results per page (1-100, default 10)
 
         Returns:
             Ranked list of matching guide metadata
         """
-        results = doc_manager.search(query)
+        all_results = doc_manager.search(
+            query, max_results=len(doc_manager.guides) if doc_manager.guides else 0
+        )
+        total_count = len(all_results)
+
+        # Slice
+        start = (page - 1) * limit
+        end = start + limit
+        page_items = all_results[start:end]
+
+        if total_count == 0:
+            content = (
+                f"No workflow guides found for '{query}'.\n\n"
+                "**Cross-linking hints:**\n"
+                "- For API tools: `search_tools(query)`\n"
+                "- For data resources: `search_resources(query)`"
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=content)],
+                structured_content={"result": [], "_hint": content},
+            )
+
+        if not page_items:
+            content = f"Page {page} is out of range (total results: {total_count})."
+            return ToolResult(
+                content=[TextContent(type="text", text=content)],
+                structured_content={"result": [], "_hint": content},
+            )
+
+        structured = {"result": page_items}
         if format == "raw":
-            return ToolResult(structured_content={"result": results})
+            enhanced = add_pagination_metadata(structured, page, limit, total_count)
+            return ToolResult(structured_content=enhanced)
+
         if format == "json":
-            content = json.dumps(results, indent=2)
+            content = json.dumps(page_items, indent=2)
         elif format == "markdown":
-            content = _format_as_markdown(results, None)
-            if results:
-                content += (
-                    "\n\n---\n"
-                    "**Cross-linking hints:**\n"
-                    "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
-                    "- For API tools: `search_tools(query)`\n"
-                    "- For data resources: `search_resources(query)`"
-                )
-            else:
-                content = (
-                    f"No workflow guides found for '{query}'.\n\n"
-                    "**Cross-linking hints:**\n"
-                    "- For API tools: `search_tools(query)`\n"
-                    "- For data resources: `search_resources(query)`"
-                )
+            content = _format_as_markdown(page_items, None)
+            content += (
+                "\n\n---\n"
+                "**Cross-linking hints:**\n"
+                "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
+                "- For API tools: `search_tools(query)`\n"
+                "- For data resources: `search_resources(query)`"
+            )
+            pagination_info = {
+                k: v
+                for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
+                if k in PAGINATION_KEYS
+            }
+            content += "\n\n---\n"
+            content += _format_as_markdown(pagination_info, None)
         else:
             msg = f"Unsupported format '{format}'. Use 'markdown', 'json', or 'raw'."
             raise ValueError(msg)
-        structured: dict[str, Any] = {"result": results}
-        if not results:
-            structured["_hint"] = content
+
+        enhanced = add_pagination_metadata(structured, page, limit, total_count)
         return ToolResult(
             content=[TextContent(type="text", text=content)],
-            structured_content=structured,
+            structured_content=enhanced,
         )
 
     @mcp.tool(

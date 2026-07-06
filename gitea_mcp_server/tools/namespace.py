@@ -35,9 +35,7 @@ class GiteaNamespace(Namespace):
     # Resources -- pass through unchanged (already namespaced via scheme)
     # ------------------------------------------------------------------ #
 
-    async def list_resources(
-        self, resources: Sequence[Resource]
-    ) -> Sequence[Resource]:
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         return resources
 
     async def get_resource(

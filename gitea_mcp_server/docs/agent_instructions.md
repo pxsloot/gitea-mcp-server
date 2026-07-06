@@ -215,7 +215,7 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 `issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `topic_`, `search_`
 
 ## Pagination
-Most list operations accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary (often 30-50). Always paginate to avoid overwhelming responses.
+Most list operations — both API tools and synthetic tools — accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary: API tools often default to 30-50, synthetic tools default to 10 (max 100). Always paginate to avoid overwhelming responses. Pagination metadata (`has_more`, `next_offset`, `total_count`) is included in every list response's `structured_content`.
 
 ## Workflow Guides
 

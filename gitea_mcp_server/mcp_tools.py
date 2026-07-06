@@ -25,6 +25,7 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.examples import _schema_to_example
 
 logger = logging.getLogger(__name__)
@@ -179,10 +180,13 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
-async def _list_resources_tool(
+
+async def _list_resources_tool(  # noqa: PLR0913 — ctx is FastMCP DI plumbing
     format: str = "markdown",
     tag: str = "",
     type: str = "",
+    page: int = 1,
+    limit: int = 10,
     ctx: Context = CurrentContext(),
 ) -> ToolResult:
     """List all available MCP resources.
@@ -203,6 +207,8 @@ async def _list_resources_tool(
     - ``format``: Output format -- ``markdown`` (default), ``json``, or ``raw``.
     - ``tag``: Optional. Filter by tag name (e.g., ``"wrapper"``, ``"repository"``, ``"issue"``).
     - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
+    - ``page``: Page number (1-based, default 1).
+    - ``limit``: Maximum results per page (1-100, default 10).
 
     ## Return Structure
 
@@ -267,17 +273,39 @@ async def _list_resources_tool(
         ]
     """
     raw = await _mcp_list_resources_impl(ctx)
+
+    # Apply filters
     if tag:
         raw["resources"] = [r for r in raw["resources"] if tag in r.get("tags", [])]
     if type:
         raw["resources"] = [r for r in raw["resources"] if r.get("type", "") == type]
-    raw["count"] = len(raw["resources"])
+
+    # Paginate
+    all_resources = raw["resources"]
+    total_count = len(all_resources)
+    start = (page - 1) * limit
+    end = start + limit
+    page_items = all_resources[start:end]
+    raw_page = {"resources": page_items, "count": len(page_items)}
+
+    structured = {"result": raw_page}
+    enhanced = add_pagination_metadata(structured, page, limit, total_count)
+
     if format == "raw":
-        return ToolResult(structured_content={"result": raw})
-    content = json.dumps(raw, indent=2) if format == "json" else _format_as_markdown(raw, None)
+        return ToolResult(structured_content=enhanced)
+
+    content = (
+        json.dumps(raw_page, indent=2) if format == "json" else _format_as_markdown(raw_page, None)
+    )
+
+    if format == "markdown":
+        pagination_info = {k: v for k, v in enhanced.items() if k in PAGINATION_KEYS}
+        content += "\n\n---\n"
+        content += _format_as_markdown(pagination_info, None)
+
     return ToolResult(
         content=[TextContent(type="text", text=content)],
-        structured_content={"result": raw},
+        structured_content=enhanced,
     )
 
 
@@ -463,7 +491,9 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         mime_type="application/json",
     )(_tool_schema_resource)
 
-    logger.info("Registered MCP resource tools: list_resources, read_resource, tool_schema_resource")
+    logger.info(
+        "Registered MCP resource tools: list_resources, read_resource, tool_schema_resource"
+    )
 
 
 __all__ = [

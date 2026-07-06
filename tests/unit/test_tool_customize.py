@@ -522,8 +522,9 @@ class TestPaginationMetadata:
                 output = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
                 assert output.structured_content["total_count"] == 42
-                assert output.structured_content["has_more"] is False
-                assert output.structured_content["next_offset"] is None
+                # total_count=42, page=1, per_page=10 → more pages exist
+                assert output.structured_content["has_more"] is True
+                assert output.structured_content["next_offset"] == 2
         finally:
             pagination_ctx.set({})
 

@@ -79,9 +79,7 @@ class _BM25Index:
         for token in query_tokens:
             if token not in self._df:
                 continue
-            idf = math.log(
-                (self._n - self._df[token] + 0.5) / (self._df[token] + 0.5) + 1.0
-            )
+            idf = math.log((self._n - self._df[token] + 0.5) / (self._df[token] + 0.5) + 1.0)
             for i in range(self._n):
                 tf = self._tf[i].get(token, 0)
                 if tf == 0:

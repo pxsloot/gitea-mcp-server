@@ -31,7 +31,9 @@ def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
         result = ""
         for i, char in enumerate(name):
             if char.isupper():
-                if i > 0 and (name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())):
+                if i > 0 and (
+                    name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())
+                ):
                     result += "_"
                 result += char.lower()
             else:
@@ -46,7 +48,10 @@ def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
 
 
 def _make_resource_func(
-    path: str, method: str, operation: dict[str, Any], gitea_client: GiteaClient,
+    path: str,
+    method: str,
+    operation: dict[str, Any],
+    gitea_client: GiteaClient,
     resource_name: str | None = None,
 ) -> Callable[..., Awaitable[str]]:
     """Create a resource function for a given OpenAPI operation."""
@@ -172,7 +177,10 @@ def register_auto_generated_resources(
                 required_scope = derive_required_scope(swagger_tags, "GET")
 
                 resource_func = _make_resource_func(
-                    path, method.upper(), operation, gitea_client,
+                    path,
+                    method.upper(),
+                    operation,
+                    gitea_client,
                     resource_name=resource_name,
                 )
 

@@ -20,20 +20,16 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     SEARCH_CATEGORY_ALIASES,
-    SEARCH_MAX_RESULTS,
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import _format_as_markdown
-from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
     _raise_value_error_from,
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
-
-PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
-"""Keys in structured_content that carry pagination metadata."""
 
 
 def _format_result(
@@ -59,11 +55,7 @@ def _format_result(
         content = json.dumps(data, indent=2)
 
     elif fmt == "markdown" and isinstance(data, (dict, list)):
-        inner = (
-            output_schema.get("properties", {}).get("result", {})
-            if output_schema
-            else None
-        )
+        inner = output_schema.get("properties", {}).get("result", {}) if output_schema else None
         content = _format_as_markdown(data, inner)
 
         pagination = {
@@ -100,72 +92,36 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
     return text
 
 
-def _search_and_format(  # noqa: PLR0913 — 6 params for a well-documented internal helper
+def _search_and_slice(
     items: list[dict[str, Any]],
     texts: list[str],
     query: str,
-    fmt: str,
-    max_results: int = SEARCH_MAX_RESULTS,
-    *,
-    cross_link_hints: dict[str, str] | None = None,
-) -> ToolResult:
-    """BM25 search → format → ToolResult.
+    page: int,
+    limit: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """BM25 rank items, then slice by page/limit.
 
-    Shared pipeline used by both ``_search_tools_impl`` and
-    ``_search_resources_impl``.  Receives pre-serialized items (dicts) and
-    their searchable text strings, runs BM25 ranking, formats the output
-    (markdown/json/raw), appends a cross-linking footer, and returns a
-    ``ToolResult`` with both display content and structured data.
+    Returns ``(page_items, total_count)`` where ``total_count`` is the total
+    number of items that matched the query (before slicing), and
+    ``page_items`` are the items on the requested page.
 
-    Args:
-        items: Serialized item dicts (aligned with ``texts`` by index).
-        texts: Searchable text strings, one per item.
-        query: Natural language query.
-        fmt: Output format — ``"markdown"``, ``"json"``, or ``"raw"``.
-        max_results: Maximum number of results to return.
-        cross_link_hints: Mapping of label → tool name for the footer,
-            e.g. ``{"workflow guides": "search_docs"}``.
-
-    Returns:
-        ToolResult with formatted content and ``structured_content["result"]``
-        containing the ranked items.
+    When ``items`` or ``texts`` is empty, returns ``([], 0)``.
+    When the page is out of range, returns an empty list with the correct
+    ``total_count``.
     """
     if not items or not texts:
-        text = _empty_results_message(query, cross_link_hints)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
+        return [], 0
 
     engine = BM25SearchEngine()
-    indices = engine.search(texts, query, max_results)
-    results = [items[i] for i in indices]
+    # Score everything (len(items) is small — ~200 tools, ~35 resources)
+    indices = engine.search(texts, query, len(items))
+    total_count = len(indices)
 
-    if not results:
-        text = _empty_results_message(query, cross_link_hints)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
-
-    if fmt == "raw":
-        return ToolResult(structured_content={"result": results})
-
-    serialized: str = (
-        json.dumps(results, indent=2)
-        if fmt == "json"
-        else _format_as_markdown(results, None)
-    )
-
-    if fmt == "markdown" and cross_link_hints:
-        serialized += "\n\n---\n**Cross-linking hints:**\n"
-        for label, tool in cross_link_hints.items():
-            serialized += f"- For {label}: `{tool}(query)`\n"
-
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized)],
-        structured_content={"result": results},
-    )
+    start = (page - 1) * limit
+    end = start + limit
+    page_indices = indices[start:end]
+    page_items = [items[i] for i in page_indices]
+    return page_items, total_count
 
 
 # ============================================================================
@@ -360,18 +316,28 @@ async def _call_tool_impl(
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
 
-async def _search_tools_impl(
+async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framework plumbing
     query: str,
     category: str | None,
     format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
+    page: int = 1,
+    limit: int = 10,
 ) -> ToolResult:
     """Core search_tools implementation.
 
     Fetches the tool catalog via the transform, optionally filters by
-    category, then delegates to ``_search_and_format`` for BM25 ranking
-    and output formatting.
+    category, then BM25 ranks and returns a paginated, formatted result.
+
+    Args:
+        query: Natural language query.
+        category: Optional category filter.
+        format: Output format.
+        ctx: FastMCP context.
+        transform: Search transform for tool catalog access.
+        page: Page number (1-based).
+        limit: Results per page.
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -383,15 +349,55 @@ async def _search_tools_impl(
 
     texts = [_extract_searchable_text_enhanced(t) for t in tools]
     serialized = _compact_search_serializer(tools)
-    return _search_and_format(
-        items=serialized,
-        texts=texts,
-        query=query,
-        fmt=format,
-        cross_link_hints={
-            "workflow guides": "search_docs",
-            "data resources": "search_resources",
-        },
+    page_items, total_count = _search_and_slice(serialized, texts, query, page, limit)
+
+    cross_link_hints = {
+        "workflow guides": "search_docs",
+        "data resources": "search_resources",
+    }
+
+    if total_count == 0:
+        text = _empty_results_message(query, cross_link_hints)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    if not page_items:
+        text = f"Page {page} is out of range (total results: {total_count})."
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    structured = {"result": page_items}
+    if format == "raw":
+        enhanced = add_pagination_metadata(structured, page, limit, total_count)
+        return ToolResult(structured_content=enhanced)
+
+    serialized_out: str = (
+        json.dumps(page_items, indent=2)
+        if format == "json"
+        else _format_as_markdown(page_items, None)
+    )
+
+    if format == "markdown":
+        if cross_link_hints:
+            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            for label, tool in cross_link_hints.items():
+                serialized_out += f"- For {label}: `{tool}(query)`\n"
+        pagination_info = {
+            k: v
+            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
+            if k in PAGINATION_KEYS
+        }
+        serialized_out += "\n\n---\n"
+        serialized_out += _format_as_markdown(pagination_info, None)
+
+    enhanced = add_pagination_metadata(structured, page, limit, total_count)
+    return ToolResult(
+        content=[TextContent(type="text", text=serialized_out)],
+        structured_content=enhanced,
     )
 
 
@@ -413,7 +419,9 @@ async def _tool_info_impl(
         candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
         if tool.name in candidates:
-            return _format_result(ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format)
+            return _format_result(
+                ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format
+            )
     msg = f"Tool '{name}' not found"
     raise ValueError(msg) from None
 
@@ -445,24 +453,77 @@ async def _search_resources_impl(
     query: str,
     format: str,
     ctx: Context,
+    page: int = 1,
+    limit: int = 10,
 ) -> ToolResult:
     """Core search_resources implementation.
 
     Fetches all registered MCP resources via ``_mcp_list_resources_impl``,
-    runs BM25 ranking, and returns formatted results via ``_search_and_format``.
+    runs BM25 ranking, and returns a paginated, formatted result.
+
+    Args:
+        query: Natural language query.
+        format: Output format.
+        ctx: FastMCP context.
+        page: Page number (1-based).
+        limit: Results per page.
     """
+    # Deferred import to avoid circular chain:
+    # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
+    from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 — deferred to break circular import
+
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
     texts = [_extract_resource_text(r) for r in resources]
-    return _search_and_format(
-        items=resources,
-        texts=texts,
-        query=query,
-        fmt=format,
-        cross_link_hints={
-            "workflow guides": "search_docs",
-            "API tools": "search_tools",
-        },
+    page_items, total_count = _search_and_slice(resources, texts, query, page, limit)
+
+    cross_link_hints = {
+        "workflow guides": "search_docs",
+        "API tools": "search_tools",
+    }
+
+    if total_count == 0:
+        text = _empty_results_message(query, cross_link_hints)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    if not page_items:
+        text = f"Page {page} is out of range (total results: {total_count})."
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": [], "_hint": text},
+        )
+
+    structured = {"result": page_items}
+    if format == "raw":
+        enhanced = add_pagination_metadata(structured, page, limit, total_count)
+        return ToolResult(structured_content=enhanced)
+
+    serialized_out: str = (
+        json.dumps(page_items, indent=2)
+        if format == "json"
+        else _format_as_markdown(page_items, None)
+    )
+
+    if format == "markdown":
+        if cross_link_hints:
+            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            for label, tool in cross_link_hints.items():
+                serialized_out += f"- For {label}: `{tool}(query)`\n"
+        pagination_info = {
+            k: v
+            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
+            if k in PAGINATION_KEYS
+        }
+        serialized_out += "\n\n---\n"
+        serialized_out += _format_as_markdown(pagination_info, None)
+
+    enhanced = add_pagination_metadata(structured, page, limit, total_count)
+    return ToolResult(
+        content=[TextContent(type="text", text=serialized_out)],
+        structured_content=enhanced,
     )
 
 
@@ -488,13 +549,20 @@ def register_synthetic_tools(
             (unprefixed) tool names by trying the prefixed variant as a fallback.
     """
 
-    async def search_tools_fn(
+    async def search_tools_fn(  # noqa: PLR0913 — ctx is FastMCP DI plumbing
         query: Annotated[str, "Natural language query to search for tools"],
-        category: Annotated[str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"] = None,
-        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        category: Annotated[
+            str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"
+        ] = None,
+        format: Annotated[
+            str,
+            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
+        ] = "markdown",
+        page: Annotated[int, "Page number (1-based, default 1)"] = 1,
+        limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_tools_impl(query, category, format, ctx, transform)
+        return await _search_tools_impl(query, category, format, ctx, transform, page, limit)
 
     mcp.tool(
         name="search_tools",
@@ -532,7 +600,10 @@ def register_synthetic_tools(
     async def call_tool_fn(
         name: Annotated[str, "The name of the tool to call"],
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        format: Annotated[
+            str,
+            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
+        ] = "markdown",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _call_tool_impl(name, arguments, format, ctx, tool_prefix)
@@ -554,7 +625,10 @@ def register_synthetic_tools(
 
     async def tool_info_fn(
         name: Annotated[str, "The exact name of the tool to inspect"],
-        format: Annotated[str, "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)"] = "markdown",
+        format: Annotated[
+            str,
+            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
+        ] = "markdown",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _tool_info_impl(name, format, ctx, transform, tool_prefix)
@@ -573,7 +647,9 @@ def register_synthetic_tools(
                         "name": {"type": "string"},
                         "description": {"type": "string"},
                         "parameters": {"type": "object"},
-                        "output_example": {"description": "Example return value (may be object, array, etc.)"},
+                        "output_example": {
+                            "description": "Example return value (may be object, array, etc.)"
+                        },
                         "annotations": {"type": "object"},
                         "tags": {"type": "array"},
                         "version": {"type": "string"},
@@ -587,9 +663,11 @@ def register_synthetic_tools(
     async def search_resources_fn(
         query: Annotated[str, "Natural language query to search for resources"],
         format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
+        page: Annotated[int, "Page number (1-based, default 1)"] = 1,
+        limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_resources_impl(query, format, ctx)
+        return await _search_resources_impl(query, format, ctx, page, limit)
 
     mcp.tool(
         name="search_resources",
@@ -612,7 +690,7 @@ __all__ = [
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
     "_resolve_tool_name",
-    "_search_and_format",
+    "_search_and_slice",
     "_search_resources_impl",
     "_search_tools_impl",
     "_tool_info_impl",

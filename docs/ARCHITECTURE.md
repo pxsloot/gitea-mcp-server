@@ -210,6 +210,7 @@ The customization layers as applied during server startup:
 |--------|------|
 | `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/` |
 | `search.py` | BM25 search engine infrastructure (`BM25SearchEngine`) — generic text indexing and ranking, used by `tools/search.py` |
+| `pagination.py` | Pagination metadata injection: `capture_pagination_headers()` httpx event hook, `add_pagination_metadata()` shared helper for adding `has_more`/`next_offset`/`total_count` to structured content, used by both API tools (`_ToolWrappingTransform`) and synthetic tools (search, list, docs) |
 
 ---
 

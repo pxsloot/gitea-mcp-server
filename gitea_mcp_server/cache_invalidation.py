@@ -167,7 +167,7 @@ def compute_uris_to_invalidate(tool_name: str, arguments: dict[str, Any]) -> lis
     """
     if tool_name not in TOOL_INVALIDATION_MAP:
         if tool_name.startswith(_GITEA_TOOL_PREFIX):
-            stripped = tool_name[len(_GITEA_TOOL_PREFIX):]
+            stripped = tool_name[len(_GITEA_TOOL_PREFIX) :]
             if stripped in TOOL_INVALIDATION_MAP:
                 tool_name = stripped
             else:

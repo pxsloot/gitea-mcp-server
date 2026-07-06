@@ -5,6 +5,7 @@ import pytest
 
 from gitea_mcp_server.pagination import (
     PAGINATION_HEADERS,
+    add_pagination_metadata,
     capture_pagination_headers,
     pagination_ctx,
 )
@@ -96,3 +97,72 @@ class TestPaginationHeadersConstant:
     def test_order(self):
         """X-Total-Count should be checked before X-Total."""
         assert PAGINATION_HEADERS == ("X-Total-Count", "X-Total")
+
+
+class TestAddPaginationMetadata:
+    """Tests for add_pagination_metadata helper."""
+
+    def test_with_total_count_has_more_true(self):
+        """When total_count is known and there are more pages, has_more=True."""
+        result = add_pagination_metadata({"result": [1, 2, 3]}, page=1, limit=10, total_count=42)
+        assert result["has_more"] is True
+        assert result["next_offset"] == 2
+        assert result["total_count"] == 42
+
+    def test_with_total_count_has_more_false(self):
+        """When total_count is known and we're past the last page, has_more=False."""
+        result = add_pagination_metadata({"result": [1, 2]}, page=5, limit=10, total_count=42)
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] == 42
+
+    def test_with_total_count_exact_last_page(self):
+        """When page*limit == total_count, has_more=False."""
+        result = add_pagination_metadata({"result": [1, 2]}, page=5, limit=10, total_count=50)
+        # page=5, limit=10 → page*limit = 50 which equals total_count → no more
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] == 50
+
+    def test_no_total_count_heuristic_true(self):
+        """Without total_count, has_more=True when len(result) == limit."""
+        result = add_pagination_metadata({"result": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}, page=1, limit=10)
+        assert result["has_more"] is True
+        assert result["next_offset"] == 2
+        assert result["total_count"] is None
+
+    def test_no_total_count_heuristic_false(self):
+        """Without total_count, has_more=False when len(result) < limit."""
+        result = add_pagination_metadata({"result": [1, 2, 3]}, page=1, limit=10)
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] is None
+
+    def test_non_list_result_no_total_count(self):
+        """When result is not a list and total_count is None, has_more=False."""
+        result = add_pagination_metadata({"result": {"id": 1}}, page=1, limit=10)
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] is None
+
+    def test_preserves_existing_keys(self):
+        """Existing keys in structured_content should be preserved."""
+        result = add_pagination_metadata({"result": [1], "foo": "bar"}, page=1, limit=10, total_count=1)
+        assert result["foo"] == "bar"
+        assert result["has_more"] is False
+
+    def test_zero_total_count(self):
+        """When total_count is 0, has_more=False and next_offset=None."""
+        result = add_pagination_metadata({"result": []}, page=1, limit=10, total_count=0)
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] == 0
+
+    def test_missing_result_key(self):
+        """When result key is missing, should still add pagination fields."""
+        result = add_pagination_metadata({"foo": "bar"}, page=1, limit=10, total_count=5)
+        # page=1, limit=10 → 1*10=10 > total_count=5 → has_more=False
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] == 5
+        assert result["foo"] == "bar"

@@ -137,7 +137,9 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
         if isinstance(options, list):
             for opt in options:
                 if isinstance(opt, dict) and opt.get("type") != "null":
-                    return _schema_to_example(opt, depth, max_depth, max_properties, prop_name=prop_name)
+                    return _schema_to_example(
+                        opt, depth, max_depth, max_properties, prop_name=prop_name
+                    )
 
     schema_type = schema.get("type")
     if isinstance(schema_type, list):

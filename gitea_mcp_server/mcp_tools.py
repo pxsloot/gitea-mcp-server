@@ -25,6 +25,7 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.examples import _schema_to_example
 
@@ -44,7 +45,7 @@ def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
     return str(content)
 
 
-async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
+async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     """Implementation of list_resources.
 
     Uses FastMCP Context to list registered resources and templates.
@@ -63,9 +64,9 @@ async def _mcp_list_resources_impl(ctx: Context) -> dict[str, Any]:
         templates = await ctx.fastmcp.list_resource_templates()
 
         def _build_resource_entry(
-            base: dict[str, Any],
+            base: ResourceEntry,
             meta: dict[str, Any] | None,
-        ) -> dict[str, Any]:
+        ) -> ResourceEntry:
             """Add required_scope to a resource entry from its metadata."""
             if meta:
                 scope = meta.get("fastmcp", {}).get("_internal", {}).get("required_scope")

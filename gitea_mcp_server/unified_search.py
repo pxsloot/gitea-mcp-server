@@ -13,7 +13,9 @@ import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
+
+    from gitea_mcp_server.models import UnifiedSearchItem
 
 from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
@@ -35,7 +37,7 @@ from gitea_mcp_server.tools.search import (
 logger = logging.getLogger(__name__)
 
 
-def _extract_doc_search_text(doc: dict[str, Any]) -> str:
+def _extract_doc_search_text(doc: Mapping[str, Any]) -> str:
     """Build searchable text from a doc entry."""
     parts = [doc["name"]] * 3
     if doc.get("title"):
@@ -86,7 +88,7 @@ def register_unified_search(
         )
 
         # Build unified corpus with type discriminator
-        all_items: list[dict[str, Any]] = []
+        all_items: list[UnifiedSearchItem] = []
         all_texts: list[str] = []
 
         # Use _extract_searchable_text_enhanced on raw Tool objects for richer signal

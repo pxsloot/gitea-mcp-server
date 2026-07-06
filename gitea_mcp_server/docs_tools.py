@@ -24,6 +24,8 @@ from gitea_mcp_server.search import BM25SearchEngine
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+    from gitea_mcp_server.models import DocEntry
+
 logger = logging.getLogger(__name__)
 
 SEARCH_MAX_RESULTS = 10
@@ -168,7 +170,7 @@ class DocManager:
                 return guide
         return None
 
-    def search(self, query: str, max_results: int = SEARCH_MAX_RESULTS) -> list[dict[str, Any]]:
+    def search(self, query: str, max_results: int = SEARCH_MAX_RESULTS) -> list[DocEntry]:
         """Search guides by natural language query.
 
         Returns ranked list of guide metadata dicts (name, title, description, tags).

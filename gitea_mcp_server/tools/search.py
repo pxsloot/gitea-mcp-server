@@ -6,7 +6,7 @@ and the shared BM25+format pipeline used by both search_tools and search_resourc
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any
 
 from fastmcp.dependencies import CurrentContext
@@ -23,6 +23,7 @@ from gitea_mcp_server.constants import (
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import _format_as_markdown, format_result
+from gitea_mcp_server.models import ToolSearchEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.errors import (
@@ -47,12 +48,12 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
 
 
 def _search_and_slice(
-    items: list[dict[str, Any]],
+    items: list[Any],
     texts: list[str],
     query: str,
     page: int,
     limit: int,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[Any], int]:
     """BM25 rank items, then slice by page/limit.
 
     Returns ``(page_items, total_count)`` where ``total_count`` is the total
@@ -112,7 +113,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     return " ".join(parts)
 
 
-def _extract_resource_text(entry: dict[str, Any]) -> str:
+def _extract_resource_text(entry: Mapping[str, Any]) -> str:
     """Build searchable text from a resource entry dict."""
     parts = [entry.get("name", "")]
     uri = entry.get("uri", "")
@@ -149,7 +150,7 @@ class TolerantBM25Search:
 # ============================================================================
 
 
-def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+def _compact_search_serializer(tools: Sequence[Tool]) -> list[ToolSearchEntry]:
     """Serialize tools to compact dicts (name, description, tags, annotations) for search display."""
     result = []
     for tool in tools:
@@ -166,11 +167,11 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[dict[str, Any]]:
                 }.items()
                 if v is not None
             }
-        item: dict[str, Any] = {
-            "name": tool.name,
-            "description": tool.description or "",
-            "tags": list(tool.tags) if tool.tags else [],
-        }
+        item = ToolSearchEntry(
+            name=tool.name,
+            description=tool.description or "",
+            tags=list(tool.tags) if tool.tags else [],
+        )
         if annotations:
             item["annotations"] = annotations
         result.append(item)

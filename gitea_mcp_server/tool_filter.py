@@ -89,11 +89,12 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
     return False
 
 
-def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | None:
+def _match_active_token(tokens_data: list[Any], raw_token: str) -> set[str] | None:
     """Match the active token and return its scopes.
 
     Args:
-        tokens_data: List of token dicts from the API.
+        tokens_data: List of token entries from the API. Entries are expected
+            to be dicts but may be malformed (non-dict); those are skipped.
         raw_token: The raw GITEA_TOKEN value from config.
 
     Returns:

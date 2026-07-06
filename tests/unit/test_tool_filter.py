@@ -140,6 +140,14 @@ class TestHasSufficientScope:
         assert _has_sufficient_scope("write:issue", {"sudo"}) is True
         assert _has_sufficient_scope("sudo", {"sudo"}) is True
 
+    def test_all_grants_any_scope(self):
+        # Gitea's "full access" shortcut returns the literal scope "all"
+        # (the UI displays it as "[all]"). It must grant every required scope.
+        assert _has_sufficient_scope("read:repository", {"all"}) is True
+        assert _has_sufficient_scope("write:issue", {"all"}) is True
+        assert _has_sufficient_scope("sudo", {"all"}) is True
+        assert _has_sufficient_scope(None, {"all"}) is True
+
     def test_exact_read_scope_match(self):
         assert _has_sufficient_scope("read:repository", {"read:repository"}) is True
 
@@ -250,6 +258,22 @@ class TestFetchTokenScopes:
         result = await fetch_token_scopes(mock_client, token_val)
         assert result == {"read:repo", "write:issue"}
 
+    @pytest.mark.asyncio
+    async def test_successful_fetch_all_scope(self):
+        """Regression for #223: a token with the 'all' shortcut returns {'all'}."""
+        token_val = "all-scope-token"
+        last_eight = token_val[-8:]
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["all"]}],
+            ]
+        )
+
+        result = await fetch_token_scopes(mock_client, token_val)
+        assert result == {"all"}
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # PermissionFilterTransform — tools
@@ -286,6 +310,19 @@ class TestPermissionFilterTransformTools:
         ]
         result = await transform.list_tools(tools)
         assert len(result) == 3
+
+    async def test_list_tools_all_sees_all(self):
+        # Regression for #223: a token created with the "all" shortcut
+        # (API scope "all", UI "[all]") must not filter out scoped tools.
+        transform = self._transform({"all"})
+        tools = [
+            _make_tool("admin_op", required_scope="sudo"),
+            _make_tool("repo_op", required_scope="read:repository"),
+            _make_tool("issue_op", required_scope="write:issue"),
+            _make_tool("version"),
+        ]
+        result = await transform.list_tools(tools)
+        assert len(result) == 4
 
     async def test_list_tools_write_covers_read(self):
         transform = self._transform({"write:repository"})
@@ -375,6 +412,17 @@ class TestPermissionFilterTransformResources:
         ]
         result = await transform.list_resources(resources)
         assert len(result) == 2
+
+    async def test_list_resources_all_sees_all(self):
+        # Regression for #223: "all" scope must not filter out scoped resources.
+        transform = self._transform({"all"})
+        resources = [
+            _make_resource("admin", required_scope="sudo"),
+            _make_resource("repo", required_scope="read:repository"),
+            _make_resource("issue", required_scope="read:issue"),
+        ]
+        result = await transform.list_resources(resources)
+        assert len(result) == 3
 
     async def test_list_resources_empty_input(self):
         transform = self._transform({"read:repository"})

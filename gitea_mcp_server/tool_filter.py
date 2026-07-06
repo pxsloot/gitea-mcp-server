@@ -61,6 +61,9 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
     Rules:
     - None required (no scope needed) always passes.
     - ``sudo`` in available grants everything.
+    - ``all`` in available grants everything (Gitea's "full access" shortcut,
+      returned by the API as the literal scope ``"all"``; the UI displays it as
+      ``[all]``).
     - Exact match passes.
     - ``write:xxx`` implies ``read:xxx``.
 
@@ -74,6 +77,8 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
     if required is None:
         return True
     if "sudo" in available:
+        return True
+    if "all" in available:
         return True
     if required in available:
         return True

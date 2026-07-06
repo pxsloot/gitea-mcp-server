@@ -61,11 +61,13 @@ removed when FastMCP catches up.
 │                          │  │    for common URIs       │
 │  Phase 2: _ToolWrapping  │  │    (override auto)       │
 │  _Transform:             │  │                          │
-│  • validate args         │  │  • mcp resource tools    │
-│  • label string→ID conv  │  │    list/read_resource    │
-│  • error translation     │  └───────────┬──────────────┘
+│  • inject virtual params │  │  • mcp resource tools    │
+│  • validate args         │  │    list/read_resource    │
+│  • label string→ID conv  │  └───────────┬──────────────┘
+│  • error translation     │              │
 │  • text result wrapping  │              │
 │  • pagination metadata   │              │
+│  • apply virtual params  │              │
 └─────────────┬────────────┘              │
               │                           │
               └──────────┬────────────────┘
@@ -168,6 +170,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
+| `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_to``) — adds agent-facing params like ``format`` that are stripped before the HTTP call |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
 
 The customization layers as applied during server startup:
@@ -464,6 +467,8 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   │     └─▶ on success: compute URIs to invalidate → clear cache
   │
   └─▶ Tool (from tools/customize.py)
+        ├─▶ inject virtual params into schema (tools/virtual_params.py)
+        ├─▶ extract virtual params from kwargs → stash
         ├─▶ validate arguments (validation.py)
         ├─▶ log validation result (ctx.info in _ToolWrappingTransform)
         ├─▶ convert label strings→IDs (label_manager)
@@ -473,7 +478,8 @@ Agent: call_tool("gitea_issue_create_issue", {...})
         ├─▶ log completion (ctx.info in _ToolWrappingTransform)
         ├─▶ wrap response in {"result": ...}
         ├─▶ report progress for paginated fetches (ctx.report_progress)
-        └─▶ on error: translate httpx errors to agent-friendly messages
+        ├─▶ on error: translate httpx errors to agent-friendly messages
+        └─▶ apply virtual param post-hooks to result (tools/virtual_params.py)
 ```
 
 ---

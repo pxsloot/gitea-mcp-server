@@ -39,9 +39,10 @@ call_tool("gitea_tool_info", {"name": "gitea_issue_get_issue"})
 call_tool("gitea_read_resource", {"uri": "gitea://repos/org/repo"})
 call_tool("gitea_list_resources", {"tag": "repository"})
 
-call_tool("gitea_user_get_current")
+call_tool("gitea_user_get_current")                         # default: JSON
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
+call_tool("gitea_repo_list_branches", {"owner": "org", "repo": "repo"}, format="markdown")  # formatted
 ```
 
 The synthetic `call_tool` tool (e.g., `call_tool("gitea_search_tools", ...)`) is a proxy that dispatches to other tools. Both prefixed and unprefixed names work with it — it automatically resolves unprefixed names (e.g., `search_tools`) to their prefixed form. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
@@ -230,36 +231,39 @@ work -- token scopes, branch protection, permission models, labels, etc.
 
 ## Output Format (`format` parameter)
 
-All synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) accept a `format` parameter to control how results are presented:
+**Every tool** — both synthetic tools and auto-generated API tools — accepts a
+``format`` parameter to control how results are presented:
 
 | Format | When to use |
 |--------|-------------|
-| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
-| `raw` | Return the result exactly as received from the underlying API or resource. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
-| `json` | Pretty-printed JSON. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. More compact and parseable than markdown. |
+| `json` | **Default.** Raw JSON structure. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. This is the default behaviour. |
+| `markdown` | Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
+| `raw` | Return the result exactly as received from the underlying API. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
 
 Examples:
 
 ```python
-# Default markdown -- human-readable tables
+# Default: raw JSON (works on every tool)
 call_tool("gitea_user_get_current")
-search("issue")                # unified: tools + docs + resources
-search_tools("issue")
-list_resources()
-search_resources("pull request")
+call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 42})
 
-# JSON -- for programmatic access
+# Markdown -- human-readable tables
+call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 42}, format="markdown")
+search("create pr", format="markdown")
+search_tools("issue", format="markdown")
+
+# JSON -- explicitly request JSON (same as default)
 call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
-search("create pr", format="json")
-search_tools("issue", format="json")
-search_resources("issue labels", format="json")
 
 # Raw API output -- for debugging
 read_resource("gitea://repos/org/repo", format="raw")
 ```
 
+Synthetic tools also default to ``json`` output.  ``markdown`` is available
+on both synthetic and API tools whenever you want a formatted overview.
+
 ## Resources vs Tools
-- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All synthetic tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
+- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
 - **Resources**: Cached, efficient reads. `list_resources`, `read_resource`, and `search_resources` accept a `format` parameter and are called directly (not via `call_tool`).
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

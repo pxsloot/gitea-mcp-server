@@ -36,6 +36,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
+from gitea_mcp_server.tools.virtual_params import apply_to, extract_from, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -152,8 +153,9 @@ class _ToolWrappingTransform(Transform):
     """Provider-level transform that wraps OpenAPITools with runtime behaviour.
 
     Accessed via ``provider.add_transform()`` — part of FastMCP's public API.
-    Handles: argument validation, label conversion, error handling,
-    text-response wrapping, and pagination metadata injection.
+    Handles: virtual parameter inject/extract, argument validation, label
+    conversion, error handling, text-response wrapping, and pagination
+    metadata injection.
     """
 
     def __init__(
@@ -195,8 +197,16 @@ class _ToolWrappingTransform(Transform):
                 _META_CUSTOMIZED,
             )
 
+        # Inject virtual parameters (e.g., ``format``) into the tool schema
+        # so agents see them.  They are extracted before the HTTP call.
+        inject_into(tool.parameters)
+
         async def transform_fn(**kwargs: Any) -> Any:
-            return await self._run_transform_pipeline(kwargs, tool)
+            # Pop virtual params before the HTTP execution path — they are
+            # not real API parameters and must not reach the Gitea API.
+            virtual_values = extract_from(kwargs)
+            result = await self._run_transform_pipeline(kwargs, tool)
+            return apply_to(result, virtual_values)
 
         return Tool.from_tool(
             tool,
@@ -233,13 +243,25 @@ class _ToolWrappingTransform(Transform):
         try:
             async with CurrentContext() as ctx:
                 return await self._pipeline_with_context(
-                    kwargs, tool, ctx,
-                    route_path, route_method, has_labels, is_text_response, output_schema,
+                    kwargs,
+                    tool,
+                    ctx,
+                    route_path,
+                    route_method,
+                    has_labels,
+                    is_text_response,
+                    output_schema,
                 )
         except RuntimeError:
             return await self._pipeline_with_context(
-                kwargs, tool, None,
-                route_path, route_method, has_labels, is_text_response, output_schema,
+                kwargs,
+                tool,
+                None,
+                route_path,
+                route_method,
+                has_labels,
+                is_text_response,
+                output_schema,
             )
 
     async def _pipeline_with_context(  # noqa: PLR0913, PLR0912

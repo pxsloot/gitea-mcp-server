@@ -71,7 +71,7 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | Directory | Contains |
 |-----------|----------|
 | `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_manager`, `format` |
-| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusion, search, namespace |
+| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusion, search, virtual_params, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, resource registration |
 | `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
@@ -92,6 +92,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic tools |
+| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — add agent-facing params stripped before HTTP call |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
 Scope derivation (`derive_required_scope`) lives in `resources/scope.py` -- it is
@@ -152,6 +153,36 @@ TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
     # ...
 ]
 ```
+
+### 5. Add a virtual parameter
+
+Virtual parameters appear in the tool schema so agents know about them, but are
+stripped from ``kwargs`` before the HTTP call and can transform the result after.
+They are a single-registry-entry addition in ``virtual_params.py``:
+
+```python
+# gitea_mcp_server/tools/virtual_params.py
+
+_VIRTUAL_PARAMS: dict[str, VirtualParam] = {
+    "format": VirtualParam(
+        schema={"type": "string", "enum": ["json", "markdown", "raw"]},
+        default="json",
+        description="Response format control.",
+        post_hook=_apply_format,
+    ),
+    # New entry:
+    "my_param": VirtualParam(
+        schema={"type": "string"},
+        default="default_value",
+        description="Description shown in schema.",
+        post_hook=_my_post_hook,  # Optional: (result, value) -> result
+    ),
+}
+```
+
+The three lifecycle functions (``inject_into``, ``extract_from``, ``apply_to``)
+in ``_wrap()`` automatically handle all registered virtual params — no other
+changes needed.
 
 ---
 

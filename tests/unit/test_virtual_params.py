@@ -124,8 +124,11 @@ class TestApplyTo:
     def test_runs_post_hook_with_value(self):
         """Calls the post_hook with (result, value)."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
+        transformed = ToolResult(
+            content=[TextContent(type="text", text="transformed")]
+        )
 
-        hook = MagicMock(return_value="transformed")
+        hook = MagicMock(return_value=transformed)
         extracted = {"format": "markdown"}
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
@@ -138,7 +141,7 @@ class TestApplyTo:
             output = apply_to(result, extracted)
 
         hook.assert_called_once_with(result, "markdown")
-        assert output == "transformed"
+        assert output is transformed
 
     def test_returns_result_when_no_extracted_params(self):
         """Returns result unchanged when extracted is empty."""

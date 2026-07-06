@@ -26,7 +26,12 @@ no other file changes needed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from fastmcp.tools.base import ToolResult
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -48,7 +53,7 @@ class VirtualParam:
     schema: dict[str, Any]
     default: Any
     description: str
-    post_hook: Any | None = None
+    post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
 
 
 # Single source of truth for every virtual parameter.
@@ -93,9 +98,9 @@ def extract_from(kwargs: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_to(
-    result: Any,
+    result: ToolResult,
     extracted: dict[str, Any],
-) -> Any:
+) -> ToolResult:
     """Run registered post-hooks for every extracted virtual parameter.
 
     Hooks are called in registration order (the same order as

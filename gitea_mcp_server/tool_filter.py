@@ -101,9 +101,14 @@ def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | N
     """
     last_eight = raw_token[-8:]
     for token in tokens_data:
+        if not isinstance(token, dict):
+            logger.debug(
+                "Skipping non-dict token entry", extra={"type": type(token).__name__}
+            )
+            continue
         logt = token.get("token_last_eight")
         logger.debug("Testing token match", extra={"token_last_eight": logt})
-        if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
+        if token.get("token_last_eight") == last_eight:
             scopes = token.get("scopes")
             if scopes and isinstance(scopes, list):
                 return set(scopes)

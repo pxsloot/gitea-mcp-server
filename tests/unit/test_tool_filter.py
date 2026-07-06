@@ -96,6 +96,51 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result is None
 
+    def test_skips_non_dict_token_entries(self):
+        # A malformed API response may contain non-dict entries; they must be
+        # skipped without raising, and a valid sibling token still matches.
+        token_val = "mix-token"
+        last_eight = token_val[-8:]
+        tokens = [
+            "not-a-dict",
+            None,
+            {"id": 1, "name": "active", "token_last_eight": last_eight, "scopes": ["read:repo"]},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result == {"read:repo"}
+
+    def test_scopes_not_a_list_returns_none(self):
+        # Gitea returns scopes as a list; a non-list (e.g. a bare string) is
+        # malformed and must not be trusted -> no scopes.
+        token_val = "str-scopes"
+        last_eight = token_val[-8:]
+        tokens = [
+            {"id": 1, "name": "t", "token_last_eight": last_eight, "scopes": "all"},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result is None
+
+    def test_empty_scopes_list_returns_none(self):
+        # An empty scopes list is falsy -> treated as no scopes.
+        token_val = "empty-sco"
+        last_eight = token_val[-8:]
+        tokens = [
+            {"id": 1, "name": "t", "token_last_eight": last_eight, "scopes": []},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result is None
+
+    def test_matches_all_scope(self):
+        # The "all" shortcut (API scope "all") is matched like any other scope
+        # at this layer; the wildcard semantics live in _has_sufficient_scope.
+        token_val = "all-token-"
+        last_eight = token_val[-8:]
+        tokens = [
+            {"id": 1, "name": "t", "token_last_eight": last_eight, "scopes": ["all"]},
+        ]
+        result = _match_active_token(tokens, token_val)
+        assert result == {"all"}
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # _get_required_scope
@@ -125,6 +170,18 @@ class TestGetRequiredScope:
     def test_returns_none_when_scope_key_absent(self):
         tool = MagicMock()
         tool.meta = {"other": {}}
+        assert _get_required_scope(tool) is None
+
+    def test_returns_none_when_meta_not_a_dict(self):
+        # Defensive: a corrupted/non-dict meta must not raise; the tool is
+        # treated as having no required scope (fail-open upstream).
+        tool = MagicMock()
+        tool.meta = "corrupted"
+        assert _get_required_scope(tool) is None
+
+    def test_returns_none_when_meta_missing_attribute(self):
+        # Defensive: an item without a `meta` attribute must not raise.
+        tool = MagicMock(spec=[])
         assert _get_required_scope(tool) is None
 
 
@@ -274,6 +331,36 @@ class TestFetchTokenScopes:
         result = await fetch_token_scopes(mock_client, token_val)
         assert result == {"all"}
 
+    @pytest.mark.asyncio
+    async def test_tokens_fetch_exception_returns_none(self):
+        """An exception while fetching tokens is handled gracefully (None)."""
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"login": "testuser"},
+                Exception("tokens API error"),
+            ]
+        )
+
+        result = await fetch_token_scopes(mock_client, "test-token")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_user_missing_login_uses_unknown(self):
+        """A user response without 'login' falls back to 'unknown' and, with no
+        matching token, returns None rather than raising."""
+        token_val = "no-match-token"
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(
+            side_effect=[
+                {"id": 1},  # no "login" key -> falls back to "unknown"
+                [{"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["sudo"]}],
+            ]
+        )
+
+        result = await fetch_token_scopes(mock_client, token_val)
+        assert result is None
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # PermissionFilterTransform — tools
@@ -323,6 +410,19 @@ class TestPermissionFilterTransformTools:
         ]
         result = await transform.list_tools(tools)
         assert len(result) == 4
+
+    async def test_list_tools_broken_meta_still_allowed(self):
+        # Safety/fail-open: a tool whose meta is corrupted (non-dict) cannot
+        # declare a required scope, so it must NOT be hidden by the filter.
+        transform = self._transform({"read:repository"})
+        broken = MagicMock()
+        broken.name = "broken_tool"
+        broken.key = "broken_tool"
+        broken.tags = set()
+        broken.meta = "corrupted"
+        result = await transform.list_tools([broken])
+        assert len(result) == 1
+        assert result[0].name == "broken_tool"
 
     async def test_list_tools_write_covers_read(self):
         transform = self._transform({"write:repository"})

@@ -263,7 +263,7 @@ The customization layers as applied during server startup:
     and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
     definitions into `constants.py`, the single source of truth for all magic values.
 
- 9. **OpenAPI spec TypedDict migration** -- All pipeline layers accept typed
+10. **OpenAPI spec TypedDict migration** -- All pipeline layers accept typed
     OpenAPI spec parameters instead of `dict[str, Any]`.  Seven TypedDict types
     (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, `OpenAPIPathItem`,
     `OpenAPIParameter`, `OpenAPIResponse`, `OpenAPIInfo`) define the navigation
@@ -276,6 +276,51 @@ The customization layers as applied during server startup:
     tools, server_setup, and resources).  State-mutating converter functions
     (``SpecVersionUpdater``, ``BasePathToServerConverter``) stay ``dict[str, Any]``
     since TypedDict cannot express in-place shape transitions.
+
+11. **Auto-generated tool descriptions over hand-crafting** --
+    The server generates ~200 tools from the OpenAPI spec at startup.
+    Hand-crafting descriptions for all of them would be impractical and
+    brittle (they'd drift from the spec).  Instead:
+
+    - **Primary**: tool descriptions come from the OpenAPI `summary` field of
+      each endpoint.  This keeps them in sync with the Gitea API spec.
+    - **Overrides**: `mcp_extensions.yaml` allows manual description
+      replacements on a per-tool basis for cases where the `summary` is unhelpful.
+    - **Supplemental**: rich server instructions (`agent_instructions.md` +
+      workflow guide manifest) give agents higher-level context about how to
+      discover and compose tools, reducing reliance on per-tool descriptions.
+    - **Inline guidance**: tools with a `labels` parameter get a description
+      appendix explaining how to discover valid label values.
+
+    In practice, agents discover and use tools correctly through the search
+    mechanisms (`search_tools` / `search` / `tool_info`) without needing
+    bespoke descriptions for every endpoint.
+
+12. **Server naming: two independent prefix sources** --
+    Tool names in this server are the concatenation of **two independent
+    prefixes** applied by different layers:
+
+    - **Server-level tool prefix**: The `GiteaNamespace` transform (see
+      :ref:`module-map`) prepends the string ``gitea_`` to every tool name.
+      This prefix is configurable but is treated as fixed throughout the
+      codebase — all docs, server instructions, and user-facing strings
+      reference tools by their ``gitea_*`` names.
+
+    - **Host-level MCP server name**: The MCP client or host (e.g., agent
+      framework, gateway) assigns an identifier to this server in its own
+      configuration.  The host prepends this identifier to every tool name
+      at the protocol level.  In this deployment that identifier happens to be
+      ``gitea_mcp``, producing full protocol names like
+      ``gitea_mcp_gitea_create_issue``.  Another deployment might use a
+      different identifier (e.g., ``forgejo`` → ``forgejo_gitea_create_issue``).
+
+    The two prefixes serve different purposes: ``gitea_`` is a namespace the
+    server owns and uses internally to avoid collisions with tools from other
+    MCP servers.  The host-level identifier is a deployment concern — it lets
+    the agent environment route calls to the correct server and is outside the
+    server's control.  Documentation and code consistently use the
+    server-level ``gitea_`` form, which is the stable interface regardless of
+    how the host names the server.
 
 ---
 

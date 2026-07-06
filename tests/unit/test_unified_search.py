@@ -315,5 +315,32 @@ class TestUnifiedSearch:
         items = result.structured_content["result"]
         assert items == []
 
+    @pytest.mark.asyncio
+    async def test_pagination_metadata_present(self) -> None:
+        """Unified search should include has_more/next_offset/total_count."""
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        doc_manager = MagicMock(spec=DocManager)
+        doc_manager.search.return_value = []
+
+        search_transform = _make_search_transform([
+            _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+            _make_tool("gitea_issue_get_issue", "Get issue", ["issue"]),
+        ])
+
+        mcp, decorator = _setup_mcp()
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        registered_fn = decorator.call_args[0][0]
+        result = await registered_fn(query="issue", format="raw", ctx=ctx)
+
+        assert result.structured_content is not None
+        assert "has_more" in result.structured_content
+        assert "next_offset" in result.structured_content
+        assert "total_count" in result.structured_content
+        assert result.structured_content["total_count"] >= 1
+
 
 __all__ = []

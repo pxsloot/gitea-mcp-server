@@ -20,27 +20,63 @@ ResourceResult = str
 # These ensure resources display the same fields (in the same order)
 # that the equivalent tool output would, for consistency.
 _ISSUE_FIELDS: Sequence[str] = [
-    "number", "title", "state", "user", "created_at",
-    "comments", "labels", "html_url",
+    "number",
+    "title",
+    "state",
+    "user",
+    "created_at",
+    "comments",
+    "labels",
+    "html_url",
 ]
 _PULL_FIELDS: Sequence[str] = [
-    "number", "title", "state", "user", "created_at",
-    "base", "head", "comments", "html_url",
+    "number",
+    "title",
+    "state",
+    "user",
+    "created_at",
+    "base",
+    "head",
+    "comments",
+    "html_url",
 ]
 _REPO_FIELDS: Sequence[str] = [
-    "name", "full_name", "description", "owner", "html_url",
-    "default_branch", "stargazers_count", "forks_count",
-    "open_issues_count", "size", "created_at", "updated_at",
-    "topics", "license",
+    "name",
+    "full_name",
+    "description",
+    "owner",
+    "html_url",
+    "default_branch",
+    "stargazers_count",
+    "forks_count",
+    "open_issues_count",
+    "size",
+    "created_at",
+    "updated_at",
+    "topics",
+    "license",
 ]
 _USER_FIELDS: Sequence[str] = [
-    "login", "full_name", "type", "html_url",
-    "public_repos", "followers_count", "following_count",
-    "created_at", "bio", "location", "website",
+    "login",
+    "full_name",
+    "type",
+    "html_url",
+    "public_repos",
+    "followers_count",
+    "following_count",
+    "created_at",
+    "bio",
+    "location",
+    "website",
 ]
 _RELEASE_FIELDS: Sequence[str] = [
-    "tag_name", "name", "draft", "prerelease",
-    "created_at", "published_at", "body",
+    "tag_name",
+    "name",
+    "draft",
+    "prerelease",
+    "created_at",
+    "published_at",
+    "body",
 ]
 
 

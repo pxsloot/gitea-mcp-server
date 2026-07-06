@@ -23,17 +23,16 @@ from mcp.types import TextContent
 from gitea_mcp_server.docs_tools import DocManager  # noqa: TC001 — runtime use via get_type_hints
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
-from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _compact_search_serializer,
     _extract_resource_text,
     _extract_searchable_text_enhanced,
+    _search_and_slice,
 )
 
 logger = logging.getLogger(__name__)
-
-_UNIFIED_SEARCH_MAX_RESULTS = 10
 
 
 def _extract_doc_search_text(doc: dict[str, Any]) -> str:
@@ -65,9 +64,10 @@ def register_unified_search(
         query: Annotated[str, "Natural language query to search for tools, docs, and resources"],
         format: Annotated[
             str,
-            "Output format: markdown (default, human-readable), "
-            "json (structured data), or raw",
+            "Output format: markdown (default, human-readable), json (structured data), or raw",
         ] = "markdown",
+        page: Annotated[int, "Page number (1-based, default 1)"] = 1,
+        limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         ctx: Context | None = None,
     ) -> ToolResult:
         if ctx is None:
@@ -81,7 +81,9 @@ def register_unified_search(
         raw_resources = await _mcp_list_resources_impl(ctx)
         resource_entries = raw_resources.get("resources", [])
 
-        doc_entries = doc_manager.search(query, _UNIFIED_SEARCH_MAX_RESULTS)
+        doc_entries = doc_manager.search(
+            query, max_results=len(doc_manager.guides) if doc_manager.guides else 0
+        )
 
         # Build unified corpus with type discriminator
         all_items: list[dict[str, Any]] = []
@@ -93,50 +95,47 @@ def register_unified_search(
         tool_search_texts = [_extract_searchable_text_enhanced(t) for t in raw_tools]
 
         for i, t in enumerate(tool_entries):
-            all_items.append({
-                "type": "tool",
-                "name": t["name"],
-                "description": t.get("description", ""),
-                "tags": t.get("tags", []),
-                "access_uri": t["name"],
-            })
+            all_items.append(
+                {
+                    "type": "tool",
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "tags": t.get("tags", []),
+                    "access_uri": t["name"],
+                }
+            )
             all_texts.append(tool_search_texts[i])
 
         for r in resource_entries:
-            all_items.append({
-                "type": "resource",
-                "name": r.get("name", ""),
-                "description": r.get("description", ""),
-                "tags": r.get("tags", []),
-                "uri": r.get("uri", ""),
-                "access_uri": r.get("uri", ""),
-            })
+            all_items.append(
+                {
+                    "type": "resource",
+                    "name": r.get("name", ""),
+                    "description": r.get("description", ""),
+                    "tags": r.get("tags", []),
+                    "uri": r.get("uri", ""),
+                    "access_uri": r.get("uri", ""),
+                }
+            )
             all_texts.append(_extract_resource_text(r))
 
         for d in doc_entries:
             topic = d["name"]
-            all_items.append({
-                "type": "doc",
-                "name": topic,
-                "title": d.get("title", ""),
-                "description": d.get("description", ""),
-                "tags": d.get("tags", []),
-                "access_uri": f"gitea://docs/guide/{topic}",
-            })
+            all_items.append(
+                {
+                    "type": "doc",
+                    "name": topic,
+                    "title": d.get("title", ""),
+                    "description": d.get("description", ""),
+                    "tags": d.get("tags", []),
+                    "access_uri": f"gitea://docs/guide/{topic}",
+                }
+            )
             all_texts.append(_extract_doc_search_text(d))
 
-        if not all_texts:
-            return ToolResult(structured_content={"result": [], "_hint": f"No results found for '{query}'. Try search_tools, search_docs, or search_resources for more targeted searches."})
+        page_items, total_count = _search_and_slice(all_items, all_texts, query, page, limit)
 
-        # BM25 rank across combined corpus
-        engine = BM25SearchEngine()
-        indices = engine.search(all_texts, query, _UNIFIED_SEARCH_MAX_RESULTS)
-        results = [all_items[i] for i in indices]
-
-        if format == "raw":
-            return ToolResult(structured_content={"result": results})
-
-        if not results:
+        if total_count == 0:
             hint = (
                 f"No results found for '{query}'.\n\n"
                 "**Cross-linking hints:**\n"
@@ -149,14 +148,37 @@ def register_unified_search(
                 structured_content={"result": [], "_hint": hint},
             )
 
+        if not page_items:
+            hint = f"Page {page} is out of range (total results: {total_count})."
+            return ToolResult(
+                content=[TextContent(type="text", text=hint)],
+                structured_content={"result": [], "_hint": hint},
+            )
+
+        structured = {"result": page_items}
+        if format == "raw":
+            enhanced = add_pagination_metadata(structured, page, limit, total_count)
+            return ToolResult(structured_content=enhanced)
+
         serialized = (
-            json.dumps(results, indent=2)
+            json.dumps(page_items, indent=2)
             if format == "json"
-            else _format_as_markdown(results, None)
+            else _format_as_markdown(page_items, None)
         )
+
+        if format == "markdown":
+            pagination_info = {
+                k: v
+                for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
+                if k in PAGINATION_KEYS
+            }
+            serialized += "\n\n---\n"
+            serialized += _format_as_markdown(pagination_info, None)
+
+        enhanced = add_pagination_metadata(structured, page, limit, total_count)
         return ToolResult(
             content=[TextContent(type="text", text=serialized)],
-            structured_content={"result": results},
+            structured_content=enhanced,
         )
 
     mcp.tool(
@@ -165,26 +187,39 @@ def register_unified_search(
         tags={"synthetic"},
         annotations=ToolAnnotations(openWorldHint=False),
         output_schema={
-        "type": "object",
-        "properties": {
-            "result": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "type": {"type": "string", "description": "One of: tool, doc, resource"},
-                        "name": {"type": "string"},
-                        "description": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "access_uri": {"type": "string", "description": "How to access this item"},
-                        "uri": {"type": "string", "description": "Resource URI (resource results only)"},
-                        "title": {"type": "string", "description": "Doc title (doc results only)"},
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "description": "One of: tool, doc, resource",
+                            },
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                            "access_uri": {
+                                "type": "string",
+                                "description": "How to access this item",
+                            },
+                            "uri": {
+                                "type": "string",
+                                "description": "Resource URI (resource results only)",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Doc title (doc results only)",
+                            },
+                        },
                     },
+                    "description": "Merged results across tools, docs, and resources",
                 },
-                "description": "Merged results across tools, docs, and resources",
             },
         },
-    })(search)
+    )(search)
 
     logger.info("Registered unified search tool")
 

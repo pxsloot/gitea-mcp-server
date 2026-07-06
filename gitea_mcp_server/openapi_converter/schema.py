@@ -38,9 +38,7 @@ class SchemaWalker:
     def __init__(self, callback: SchemaCallback):
         self.callback = callback
 
-    def _push_child_schemas(
-        self, stack: list, current_schema: dict[str, Any]
-    ) -> None:
+    def _push_child_schemas(self, stack: list, current_schema: dict[str, Any]) -> None:
         """Push all child schemas onto the stack for further processing."""
         for key in self._DICT_ITER_KEYS:
             children = current_schema.get(key)
@@ -122,9 +120,7 @@ class OptionalPropertyTransformer:
         required = parent.get("required", [])
         return key not in required
 
-    def _transform_special_format(
-        self, schema: dict[str, Any], optional: bool
-    ) -> None:
+    def _transform_special_format(self, schema: dict[str, Any], optional: bool) -> None:
         """Handle special formats (e.g., email) - transform to anyOf."""
         fmt = schema.get("format", "email")
         format_branch = {"type": "string", "format": fmt}

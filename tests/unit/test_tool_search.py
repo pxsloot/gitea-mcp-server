@@ -9,12 +9,14 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_NAME_BOOST
+from gitea_mcp_server.pagination import add_pagination_metadata
 from gitea_mcp_server.tools.search import (
     _call_tool_impl,
     _compact_search_serializer,
     _extract_resource_text,
     _extract_searchable_text_enhanced,
     _format_result,
+    _search_and_slice,
     _search_resources_impl,
     _search_tools_impl,
     _tool_info_impl,
@@ -1028,3 +1030,230 @@ class TestSearchResourcesSyntheticTool:
         assert result.structured_content is not None
         assert len(result.structured_content["result"]) == 1
         assert result.structured_content["result"][0]["uri"] == "gitea://version"
+
+
+class TestSearchAndSlice:
+    """Tests for _search_and_slice pagination helper."""
+
+    def _make_items(self, count: int) -> list[dict]:
+        return [{"id": i, "name": f"item_{i}"} for i in range(count)]
+
+    def _make_texts(self, count: int) -> list[str]:
+        return [f"item_{i} description" for i in range(count)]
+
+    def test_first_page(self):
+        """First page should return the first `limit` items."""
+        page_items, total = _search_and_slice(
+            self._make_items(50), self._make_texts(50), "description", page=1, limit=10
+        )
+        assert total == 50
+        assert len(page_items) == 10
+        assert page_items[0]["name"] == "item_0"
+
+    def test_second_page(self):
+        """Second page should return items 10-19."""
+        page_items, total = _search_and_slice(
+            self._make_items(50), self._make_texts(50), "description", page=2, limit=10
+        )
+        assert total == 50
+        assert len(page_items) == 10
+        assert page_items[0]["name"] == "item_10"
+
+    def test_last_partial_page(self):
+        """Last page with fewer than limit items should still work."""
+        page_items, total = _search_and_slice(
+            self._make_items(25), self._make_texts(25), "description", page=3, limit=10
+        )
+        assert total == 25
+        assert len(page_items) == 5
+
+    def test_page_out_of_range(self):
+        """Page beyond available results returns empty list with correct total."""
+        page_items, total = _search_and_slice(
+            self._make_items(5), self._make_texts(5), "description", page=10, limit=10
+        )
+        assert total == 5
+        assert page_items == []
+
+    def test_empty_items(self):
+        """Empty items list returns ([], 0)."""
+        page_items, total = _search_and_slice([], [], "query", page=1, limit=10)
+        assert total == 0
+        assert page_items == []
+
+    def test_query_ranks_by_relevance(self):
+        """Items matching the query should be ranked above non-matching."""
+        items = [
+            {"id": 1, "name": "alpha"},
+            {"id": 2, "name": "beta"},
+            {"id": 3, "name": "gamma"},
+        ]
+        texts = ["alpha word", "beta word", "gamma word"]
+        # Search for "alpha" — only item 0 should rank high
+        page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
+        assert total >= 1
+        assert page_items[0]["name"] == "alpha"
+
+    def test_limit_one(self):
+        """limit=1 should return exactly one item per page."""
+        items = self._make_items(5)
+        texts = self._make_texts(5)
+        page_items, total = _search_and_slice(items, texts, "description", page=1, limit=1)
+        assert total == 5
+        assert len(page_items) == 1
+        assert page_items[0]["name"] == "item_0"
+
+    def test_mismatched_items_and_texts(self):
+        """Mismatched items/texts should not crash (BM25 will handle gracefully)."""
+        items = self._make_items(3)
+        texts = self._make_texts(3) + ["extra"]  # more texts than items
+        # Should not raise
+        page_items, total = _search_and_slice(items, texts, "description", page=1, limit=10)
+        assert total == 3
+        assert len(page_items) == 3
+
+
+class TestSearchToolsPagination:
+    """Pagination metadata assertions for search_tools."""
+
+    @pytest.mark.asyncio
+    async def test_search_tools_pagination_metadata_present(self):
+        """search_tools result should include has_more/next_offset/total_count."""
+        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_tools = [
+            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            for i in range(25)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
+
+        result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=1, limit=10)
+        sc = result.structured_content
+        assert "has_more" in sc
+        assert "next_offset" in sc
+        assert "total_count" in sc
+        assert sc["has_more"] is True  # 25 items, page 1, limit 10 → more
+        assert sc["next_offset"] == 2
+        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_search_tools_pagination_last_page(self):
+        """Last page of search_tools should have has_more=False."""
+        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_tools = [
+            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            for i in range(25)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
+
+        result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=3, limit=10)
+        sc = result.structured_content
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_search_tools_page_out_of_range_message(self):
+        """Out-of-range page should return a helpful message."""
+        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_tools = [
+            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            for i in range(5)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
+
+        result = await _search_tools_impl("test", None, "markdown", mock_ctx, transform, page=10, limit=10)
+        assert result.content is not None
+        text = result.content[0].text
+        assert "Page 10 is out of range" in text
+        assert "total results: 5" in text
+
+
+class TestSearchResourcesPagination:
+    """Pagination metadata assertions for search_resources."""
+
+    @pytest.mark.asyncio
+    async def test_search_resources_pagination_metadata_present(self):
+        """search_resources result should include has_more/next_offset/total_count."""
+        ctx = MagicMock(spec=Context)
+        resources = []
+        for i in range(25):
+            r = MagicMock()
+            r.uri = f"gitea://resource_{i}"
+            r.name = f"Resource {i}"
+            r.description = f"Test resource {i}"
+            r.mime_type = "text/markdown"
+            r.tags = {"test"}
+            r.meta = None
+            resources.append(r)
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=1, limit=10)
+        sc = result.structured_content
+        assert "has_more" in sc
+        assert "next_offset" in sc
+        assert "total_count" in sc
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 2
+        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_search_resources_pagination_last_page(self):
+        """Last page of search_resources should have has_more=False."""
+        ctx = MagicMock(spec=Context)
+        resources = []
+        for i in range(25):
+            r = MagicMock()
+            r.uri = f"gitea://resource_{i}"
+            r.name = f"Resource {i}"
+            r.description = f"Test resource {i}"
+            r.mime_type = "text/markdown"
+            r.tags = {"test"}
+            r.meta = None
+            resources.append(r)
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=3, limit=10)
+        sc = result.structured_content
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_search_resources_page_out_of_range_message(self):
+        """Out-of-range page should return a helpful message."""
+        ctx = MagicMock(spec=Context)
+        resources = []
+        for i in range(5):
+            r = MagicMock()
+            r.uri = f"gitea://resource_{i}"
+            r.name = f"Resource {i}"
+            r.description = f"Test resource {i}"
+            r.mime_type = "text/markdown"
+            r.tags = {"test"}
+            r.meta = None
+            resources.append(r)
+
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await _search_resources_impl(query="test", format="markdown", ctx=ctx, page=10, limit=10)
+        assert result.content is not None
+        text = result.content[0].text
+        assert "Page 10 is out of range" in text
+        assert "total results: 5" in text

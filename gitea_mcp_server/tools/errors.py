@@ -153,7 +153,10 @@ async def _run_with_error_handling(
         if isinstance(cause, httpx.HTTPStatusError) and openapi_spec is not None:
             status_code = cause.response.status_code
             description = _lookup_response_description(
-                openapi_spec, route_path, route_method, status_code,
+                openapi_spec,
+                route_path,
+                route_method,
+                status_code,
             )
             try:
                 error_body = cause.response.json()

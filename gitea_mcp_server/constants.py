@@ -260,5 +260,3 @@ TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
     ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
     ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
 ]
-
-

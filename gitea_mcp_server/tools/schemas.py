@@ -46,7 +46,11 @@ def _deep_resolve_schema(
                 for k, v in value.items()
             }
         elif key in ("items", "additionalProperties"):
-            result[key] = _deep_resolve_schema(value, openapi_spec, _seen) if isinstance(value, dict) else value
+            result[key] = (
+                _deep_resolve_schema(value, openapi_spec, _seen)
+                if isinstance(value, dict)
+                else value
+            )
         elif key in ("allOf", "oneOf", "anyOf"):
             result[key] = [
                 _deep_resolve_schema(item, openapi_spec, _seen) if isinstance(item, dict) else item
@@ -81,9 +85,7 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     content_types = operation.get("x-original-content-types")
     if not isinstance(content_types, list):
         return False
-    return any(
-        ct.lower().strip() != "application/json" for ct in content_types
-    )
+    return any(ct.lower().strip() != "application/json" for ct in content_types)
 
 
 def _get_success_schema(

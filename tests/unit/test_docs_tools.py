@@ -516,3 +516,44 @@ class TestDocResource:
         from fastmcp.exceptions import ResourceError
         with pytest.raises(ResourceError):
             await fn(topic="unknown")
+
+
+class TestSearchDocsPagination:
+    """Pagination metadata assertions for search_docs."""
+
+    @pytest.mark.asyncio
+    async def test_search_docs_pagination_metadata_present(self):
+        """search_docs result should include has_more/next_offset/total_count."""
+        from gitea_mcp_server.docs_tools import DocGuide, DocManager, register_doc_tools
+
+        mgr = DocManager.__new__(DocManager)
+        guides = [
+            DocGuide(f"guide-{i}", f"Guide {i}", f"Test guide number {i}", ["test"], f"# {i}", f"Body {i}")
+            for i in range(25)
+        ]
+        mgr._guides = guides
+        mgr._search_texts = [g.search_text() for g in guides]
+        mgr._search_engine = BM25SearchEngine()
+
+        mcp = MagicMock()
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+
+        mcp.tool = tool_decorator
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, mgr)
+        fn = captured["search_docs"]
+
+        result = await fn(query="test", format="raw", page=1, limit=10)
+        sc = result.structured_content
+        assert "has_more" in sc
+        assert "next_offset" in sc
+        assert "total_count" in sc
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 2
+        assert sc["total_count"] == 25

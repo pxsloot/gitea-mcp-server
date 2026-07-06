@@ -109,9 +109,7 @@ def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | N
     return None
 
 
-async def fetch_token_scopes(
-    gitea_client: GiteaClient, token: str
-) -> set[str] | None:
+async def fetch_token_scopes(gitea_client: GiteaClient, token: str) -> set[str] | None:
     """Fetch user info and match active token scopes.
 
     Args:
@@ -204,9 +202,7 @@ class PermissionFilterTransform(Transform):
 
     # ── resources ──────────────────────────────────────────────────────
 
-    async def list_resources(
-        self, resources: Sequence[Resource]
-    ) -> Sequence[Resource]:
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         """Filter out resources whose required scope is not available."""
         return [r for r in resources if self._is_allowed(r)]
 

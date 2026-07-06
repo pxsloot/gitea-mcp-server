@@ -21,7 +21,7 @@ from mcp.types import TextContent
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import pagination_ctx
+from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
     _is_array_response,
@@ -240,7 +240,9 @@ class _ToolWrappingTransform(Transform):
 
             if has_labels:
                 with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
-                    await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+                    await _convert_labels(
+                        kwargs, has_labels, self._label_manager, self._gitea_client
+                    )
                     span.set_attribute("labels.has_labels", True)
             else:
                 await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
@@ -282,12 +284,13 @@ class _ToolWrappingTransform(Transform):
             if isinstance(result_data, list):
                 page = kwargs.get("page", 1)
                 per_page = kwargs.get("per_page") or kwargs.get("limit", 100)
-                has_more = len(result_data) == per_page if per_page else False
-                next_offset = page + 1 if has_more else None
-                enhanced = dict(result.structured_content)
-                enhanced["has_more"] = has_more
-                enhanced["next_offset"] = next_offset
-                enhanced["total_count"] = pagination_ctx.get().get("total_count")
+                total_count = pagination_ctx.get().get("total_count")
+                enhanced = add_pagination_metadata(
+                    result.structured_content,
+                    page,
+                    per_page,
+                    total_count=total_count,
+                )
                 return ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
                     structured_content=enhanced,

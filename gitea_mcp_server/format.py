@@ -90,7 +90,11 @@ def _format_list_as_markdown(
             if title is None:
                 title = f"Item {i + 1}"
             sub = _format_as_markdown(
-                item, item_schema, title=title, _depth=0, field_filter=field_filter,
+                item,
+                item_schema,
+                title=title,
+                _depth=0,
+                field_filter=field_filter,
             )
             lines.append(sub)
     elif item_schema and item_schema.get("type") in ("string", "number", "integer", "boolean"):
@@ -128,9 +132,7 @@ def _resolve_anyof_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
     return schema
 
 
-def _render_flat_table(
-    lines: list[str], flat: list[tuple[str, str]], indent: str
-) -> None:
+def _render_flat_table(lines: list[str], flat: list[tuple[str, str]], indent: str) -> None:
     lines.append(f"{indent}| Property | Value |")
     lines.append(f"{indent}|----------|-------|")
     for label, val in flat:
@@ -193,7 +195,9 @@ def _format_dict_as_markdown(
                 # Don't propagate field_filter into nested sub-objects —
                 # the parent's field names don't apply to child objects.
                 sub = _format_as_markdown(
-                    raw_val, effective or prop_schema, _depth=_depth + 1,
+                    raw_val,
+                    effective or prop_schema,
+                    _depth=_depth + 1,
                 )
                 if sub.strip():
                     nested.append((label, sub))
@@ -204,7 +208,9 @@ def _format_dict_as_markdown(
         _render_flat_table(lines, flat, indent)
         _render_nested_sections(lines, nested, indent, _depth)
     else:
-        _render_flat_table(lines, [(key, _format_simple_value(val)) for key, val in data.items()], indent)
+        _render_flat_table(
+            lines, [(key, _format_simple_value(val)) for key, val in data.items()], indent
+        )
 
     return "\n".join(lines)
 
@@ -230,7 +236,11 @@ def _format_as_markdown(
 
     if isinstance(data, list):
         result = _format_list_as_markdown(
-            data, schema, indent, field_filter=field_filter, item_title_key=item_title_key,
+            data,
+            schema,
+            indent,
+            field_filter=field_filter,
+            item_title_key=item_title_key,
         )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"

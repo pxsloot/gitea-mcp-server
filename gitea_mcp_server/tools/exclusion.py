@@ -35,20 +35,16 @@ def _is_tag_pattern(pattern: str) -> bool:
     return pattern.startswith(_TAG_PREFIX)
 
 
-def _matches_pattern(
-    name: str, tags: set[str], pattern: str, tool_prefix: str = ""
-) -> bool:
+def _matches_pattern(name: str, tags: set[str], pattern: str, tool_prefix: str = "") -> bool:
     if _is_tag_pattern(pattern):
-        tag_name = pattern[len(_TAG_PREFIX):]
+        tag_name = pattern[len(_TAG_PREFIX) :]
         return tag_name in tags
     if tool_prefix and fnmatch(f"{tool_prefix}{name}", pattern):
         return True
     return fnmatch(name, pattern)
 
 
-def _matches_any(
-    name: str, tags: set[str], patterns: list[str], tool_prefix: str = ""
-) -> bool:
+def _matches_any(name: str, tags: set[str], patterns: list[str], tool_prefix: str = "") -> bool:
     return any(_matches_pattern(name, tags, p, tool_prefix) for p in patterns)
 
 
@@ -108,9 +104,8 @@ class ExclusionTransform(Transform):
 
     def _is_allowed(self, name: str, tags: set[str] | None = None) -> bool:
         tags = tags or set()
-        return (
-            _matches_any(name, tags, self._include, self._tool_prefix)
-            or not _matches_any(name, tags, self._exclude, self._tool_prefix)
+        return _matches_any(name, tags, self._include, self._tool_prefix) or not _matches_any(
+            name, tags, self._exclude, self._tool_prefix
         )
 
     # -- tools --------------------------------------------------------------
@@ -118,9 +113,7 @@ class ExclusionTransform(Transform):
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t for t in tools if self._is_allowed(t.name, t.tags)]
 
-    async def get_tool(
-        self, name: str, call_next: Any, *, version: Any = None
-    ) -> Tool | None:
+    async def get_tool(self, name: str, call_next: Any, *, version: Any = None) -> Tool | None:
         tool = cast("Tool | None", await call_next(name, version=version))
         if tool is None:
             return None

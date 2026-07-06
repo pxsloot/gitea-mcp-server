@@ -250,12 +250,17 @@ async def _apply_permission_filter(
         )
 
 
-async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = None) -> FastMCP:
+async def create_mcp_server(
+    gitea_client: GiteaClient,
+    config: Config | None = None,
+    lifespan: Any = None,
+) -> FastMCP:
     """Create the Gitea MCP server from OpenAPI spec.
 
     Args:
         gitea_client: Initialized GiteaClient to use for API calls
         config: Application configuration (defaults to gitea_client.config)
+        lifespan: FastMCP lifespan context manager (optional)
 
     Returns:
         Configured FastMCP server instance
@@ -291,6 +296,7 @@ async def create_mcp_server(gitea_client: GiteaClient, config: Config | None = N
         name="Gitea MCP Server",
         providers=[provider],
         instructions=instructions,
+        lifespan=lifespan,
     )
 
     register_doc_tools(mcp, doc_manager)
@@ -316,11 +322,18 @@ async def main_async() -> None:
 
     gitea_client = GiteaClient(config)
 
+    @contextlib.asynccontextmanager
+    async def app_lifespan(_server: Any) -> Any:
+        """FastMCP lifespan: provides GiteaClient to tools via lifespan context."""
+        yield {"gitea_client": gitea_client}
+        await gitea_client.close()
+
     try:
-        mcp = await create_mcp_server(gitea_client)
+        mcp = await create_mcp_server(gitea_client, lifespan=app_lifespan)
     except Exception:
         logger.exception("Failed to initialize server")
-        await gitea_client.close()
+        with contextlib.suppress(Exception):
+            await gitea_client.close()
         sys.exit(1)
 
     try:
@@ -335,8 +348,6 @@ async def main_async() -> None:
         logger.exception("Server crashed")
         sys.exit(1)
     finally:
-        with contextlib.suppress(Exception):
-            await gitea_client.close()
         logging.shutdown()
 
 

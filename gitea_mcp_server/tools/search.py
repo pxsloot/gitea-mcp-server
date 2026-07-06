@@ -31,7 +31,6 @@ from gitea_mcp_server.tools.errors import (
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
-
 # ============================================================================
 # Shared BM25 + format pipeline (used by search_tools and search_resources)
 # ============================================================================

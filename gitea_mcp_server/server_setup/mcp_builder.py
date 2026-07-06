@@ -20,6 +20,8 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.config import Config
+from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -33,8 +35,6 @@ from gitea_mcp_server.tools.customize import (
     compute_invalidation_patterns,
     generate_tool_title,
 )
-from gitea_mcp_server.config import Config
-from gitea_mcp_server.format import format_result
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema

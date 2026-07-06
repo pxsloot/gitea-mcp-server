@@ -310,11 +310,11 @@ def format_result(
 
 
 __all__ = [
-    "format_result",
     "_format_as_markdown",
     "_format_datetime",
     "_format_scalar",
     "_format_simple_value",
     "_resolve_anyof_schema",
     "_snake_to_title",
+    "format_result",
 ]

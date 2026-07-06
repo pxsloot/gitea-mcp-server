@@ -39,7 +39,7 @@ call_tool("gitea_tool_info", {"name": "gitea_issue_get_issue"})
 call_tool("gitea_read_resource", {"uri": "gitea://repos/org/repo"})
 call_tool("gitea_list_resources", {"tag": "repository"})
 
-call_tool("gitea_user_get_current")                         # default: JSON
+call_tool("gitea_user_get_current")
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 call_tool("gitea_repo_list_branches", {"owner": "org", "repo": "repo"}, format="markdown")  # formatted

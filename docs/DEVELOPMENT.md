@@ -362,6 +362,6 @@ This project uses FastMCP 3.x.  Key APIs:
 - `FastMCP(name=..., lifespan=lifespan)` -- async context manager for resource lifecycle (startup/teardown)
 - `CurrentContext()` -- async context manager that resolves the current MCP ``Context`` inside a request scope
 - `ctx.info()` / `ctx.warning()` / `ctx.error()` / `ctx.debug()` -- client-side structured logging
-- `ctx.report_progress(progress, message)` -- send progress updates to the agent host
+- `ctx.report_progress(progress=..., total=...)` -- send progress updates to the agent host (both floats)
 
 For up-to-date FastMCP docs: https://gofastmcp.com/llms.txt

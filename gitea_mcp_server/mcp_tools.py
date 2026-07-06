@@ -81,16 +81,16 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         # @mcp.resource("uri://bar", name="custom") -> name="custom"
         for resource in resources:
             entry = _build_resource_entry(
-                {
-                    "uri": str(resource.uri),
-                    "name": resource.name,
-                    "description": resource.description or "",
-                    "mimeType": resource.mime_type or "text/plain",
-                    "type": "resource",
-                    "tags": list(resource.tags)
+                ResourceEntry(
+                    uri=str(resource.uri),
+                    name=resource.name,
+                    description=resource.description or "",
+                    mimeType=resource.mime_type or "text/plain",
+                    type="resource",
+                    tags=list(resource.tags)
                     if hasattr(resource, "tags") and resource.tags
                     else [],
-                },
+                ),
                 getattr(resource, "meta", None),
             )
             resources_list.append(entry)
@@ -98,24 +98,24 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         # Process resource templates
         for template in templates:
             entry = _build_resource_entry(
-                {
-                    "uri": str(template.uri_template),
-                    "name": template.name,
-                    "description": template.description or "",
-                    "mimeType": template.mime_type or "text/plain",
-                    "type": "template",
-                    "tags": list(template.tags)
+                ResourceEntry(
+                    uri=str(template.uri_template),
+                    name=template.name,
+                    description=template.description or "",
+                    mimeType=template.mime_type or "text/plain",
+                    type="template",
+                    tags=list(template.tags)
                     if hasattr(template, "tags") and template.tags
                     else [],
-                },
+                ),
                 getattr(template, "meta", None),
             )
             resources_list.append(entry)
     except (AttributeError, TypeError):
         logger.exception("Error listing resources")
-        return {"resources": [], "count": 0}
+        return ResourceListing(resources=[], count=0)
 
-    return {"resources": resources_list, "count": len(resources_list)}
+    return ResourceListing(resources=resources_list, count=len(resources_list))
 
 
 def _format_resource_content(raw: str, fmt: str) -> str:

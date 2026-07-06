@@ -18,13 +18,12 @@ from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
-
-    from gitea_mcp_server.models import DocEntry
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +172,13 @@ class DocManager:
     def search(self, query: str, max_results: int = SEARCH_MAX_RESULTS) -> list[DocEntry]:
         """Search guides by natural language query.
 
-        Returns ranked list of guide metadata dicts (name, title, description, tags).
+        Returns ranked list of DocEntry objects.
         """
         if not self._search_texts:
             return []
         if not query.strip():
             return [
-                {"name": g.name, "title": g.title, "description": g.description, "tags": g.tags}
+                DocEntry(name=g.name, title=g.title, description=g.description, tags=g.tags)
                 for g in self._guides[:max_results]
             ]
         indices = self._search_engine.search(self._search_texts, query, max_results)

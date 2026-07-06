@@ -15,16 +15,16 @@ from typing import TYPE_CHECKING, Annotated, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from gitea_mcp_server.models import UnifiedSearchItem
+    from gitea_mcp_server.docs_tools import DocManager
 
 from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
-from gitea_mcp_server.docs_tools import DocManager  # noqa: TC001 — runtime use via get_type_hints
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
+from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
@@ -98,40 +98,40 @@ def register_unified_search(
 
         for i, t in enumerate(tool_entries):
             all_items.append(
-                {
-                    "type": "tool",
-                    "name": t["name"],
-                    "description": t.get("description", ""),
-                    "tags": t.get("tags", []),
-                    "access_uri": t["name"],
-                }
+                UnifiedSearchItem(
+                    type="tool",
+                    name=t["name"],
+                    description=t.get("description", ""),
+                    tags=t.get("tags", []),
+                    access_uri=t["name"],
+                )
             )
             all_texts.append(tool_search_texts[i])
 
         for r in resource_entries:
             all_items.append(
-                {
-                    "type": "resource",
-                    "name": r.get("name", ""),
-                    "description": r.get("description", ""),
-                    "tags": r.get("tags", []),
-                    "uri": r.get("uri", ""),
-                    "access_uri": r.get("uri", ""),
-                }
+                UnifiedSearchItem(
+                    type="resource",
+                    name=r.get("name", ""),
+                    description=r.get("description", ""),
+                    tags=r.get("tags", []),
+                    uri=r.get("uri", ""),
+                    access_uri=r.get("uri", ""),
+                )
             )
             all_texts.append(_extract_resource_text(r))
 
         for d in doc_entries:
             topic = d["name"]
             all_items.append(
-                {
-                    "type": "doc",
-                    "name": topic,
-                    "title": d.get("title", ""),
-                    "description": d.get("description", ""),
-                    "tags": d.get("tags", []),
-                    "access_uri": f"gitea://docs/guide/{topic}",
-                }
+                UnifiedSearchItem(
+                    type="doc",
+                    name=topic,
+                    title=d.get("title", ""),
+                    description=d.get("description", ""),
+                    tags=d.get("tags", []),
+                    access_uri=f"gitea://docs/guide/{topic}",
+                )
             )
             all_texts.append(_extract_doc_search_text(d))
 

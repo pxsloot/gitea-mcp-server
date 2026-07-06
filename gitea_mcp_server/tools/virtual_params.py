@@ -15,31 +15,18 @@ no other file changes needed.
 
 .. note::
 
-    Gitea's API does **not** currently have a ``format`` parameter on any
-    endpoint.  If a future Gitea version adds one, the guard ``if name not
-    in props`` inside :func:`inject_into` will refuse to overwrite it, and
-    the parameter will be a real API parameter instead of a virtual one.
-    Remove the entry from ``_VIRTUAL_PARAMS`` at that point.
+    The ``format`` parameter is **not** implemented as a virtual param.
+    It is promoted to a first-class concept handled directly in
+    :func:`~gitea_mcp_server.server_setup.mcp_builder._ToolWrappingTransform._wrap`
+    and reads its default from :attr:`Config.response_format
+    <gitea_mcp_server.config.Config.response_format>`.
+    See ``gitea_mcp_server/format.py`` for the shared utility.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-
-from gitea_mcp_server.tools.search import _format_result
-
-
-def _apply_format(result: Any, fmt: str) -> Any:
-    """Apply format transformation; ``"json"`` is a pass-through.
-
-    The ``"json"`` mode matches the current default behaviour — the result's
-    ``content`` already carries a JSON text rendering produced by FastMCP.
-    Only non-default modes (``"markdown"``, ``"raw"``) change the content.
-    """
-    if fmt == "json":
-        return result
-    return _format_result(result, fmt)
 
 
 # ---------------------------------------------------------------------------
@@ -68,19 +55,7 @@ class VirtualParam:
 # Single source of truth for every virtual parameter.
 # To add one: append an entry here.  inject_into / extract_from / apply_to
 # pick it up automatically.
-_VIRTUAL_PARAMS: dict[str, VirtualParam] = {
-    "format": VirtualParam(
-        schema={"type": "string", "enum": ["json", "markdown", "raw"]},
-        default="json",
-        description=(
-            "Response format control.  "
-            '"json" — raw JSON (default).  '
-            '"markdown" — formatted tables for human/agent reading.  '
-            '"raw" — unprocessed API response.'
-        ),
-        post_hook=_apply_format,
-    ),
-}
+_VIRTUAL_PARAMS: dict[str, VirtualParam] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -92,8 +67,7 @@ def inject_into(parameters: dict[str, Any]) -> None:
     """Add every virtual parameter to *parameters* (a tool's parameter schema).
 
     Idempotent — skips any parameter name that already exists, which also
-    guards against shadowing a real API parameter if Gitea ever adds a
-    ``format`` field.
+    guards against shadowing a real API parameter.
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():

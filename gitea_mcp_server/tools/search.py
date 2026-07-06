@@ -22,7 +22,7 @@ from gitea_mcp_server.constants import (
     SEARCH_CATEGORY_ALIASES,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown, format_result
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.errors import (
@@ -30,51 +30,6 @@ from gitea_mcp_server.tools.errors import (
     _raise_value_error_from,
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
-
-
-def _format_result(
-    result: ToolResult,
-    fmt: str,
-    output_schema: dict[str, Any] | None = None,
-) -> ToolResult:
-    """Reformat ToolResult content by format.
-
-    ``structured_content`` is always preserved as raw data.
-    For non-JSON or binary results, all formats return unchanged.
-    """
-    if fmt == "raw" or not result.structured_content:
-        return result
-
-    data = result.structured_content.get("result")
-    if data is None:
-        return result
-
-    content: str | None = None
-
-    if fmt == "json":
-        content = json.dumps(data, indent=2)
-
-    elif fmt == "markdown" and isinstance(data, (dict, list)):
-        inner = output_schema.get("properties", {}).get("result", {}) if output_schema else None
-        content = _format_as_markdown(data, inner)
-
-        pagination = {
-            k: result.structured_content[k]
-            for k in PAGINATION_KEYS
-            if k in result.structured_content
-        }
-        if pagination:
-            content += "\n\n---\n"
-            content += _format_as_markdown(pagination, None)
-
-    if content is not None:
-        return ToolResult(
-            content=[TextContent(type="text", text=content)],
-            structured_content=result.structured_content,
-            meta=result.meta,
-        )
-
-    return result
 
 
 # ============================================================================
@@ -310,7 +265,7 @@ async def _call_tool_impl(
         tool_obj = await ctx.fastmcp.get_tool(resolved)
         if tool_obj is not None:
             output_schema = tool_obj.output_schema
-    return _format_result(result, format, output_schema)
+    return format_result(result, format, output_schema)
 
 
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
@@ -419,7 +374,7 @@ async def _tool_info_impl(
         candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
         if tool.name in candidates:
-            return _format_result(
+            return format_result(
                 ToolResult(structured_content={"result": _serialize_tool_schema(tool)}), format
             )
     msg = f"Tool '{name}' not found"

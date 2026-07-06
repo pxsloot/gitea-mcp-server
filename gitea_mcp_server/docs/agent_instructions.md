@@ -236,31 +236,29 @@ work -- token scopes, branch protection, permission models, labels, etc.
 
 | Format | When to use |
 |--------|-------------|
-| `json` | **Default.** Raw JSON structure. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. This is the default behaviour. |
-| `markdown` | Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
+| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
+| `json` | Raw JSON structure. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. |
 | `raw` | Return the result exactly as received from the underlying API. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
+
+The default response format (**``markdown``**) is configured server-wide via
+``DEFAULT_RESPONSE_FORMAT`` in ``config.py`` and can be overridden via the
+``DEFAULT_RESPONSE_FORMAT`` environment variable.
 
 Examples:
 
 ```python
-# Default: raw JSON (works on every tool)
+# Default: markdown (human-readable tables on every tool)
 call_tool("gitea_user_get_current")
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 42})
 
-# Markdown -- human-readable tables
-call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 42}, format="markdown")
-search("create pr", format="markdown")
-search_tools("issue", format="markdown")
-
-# JSON -- explicitly request JSON (same as default)
+# JSON -- for programmatic extraction
 call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
+search("create pr", format="json")
+search_tools("issue", format="json")
 
 # Raw API output -- for debugging
 read_resource("gitea://repos/org/repo", format="raw")
 ```
-
-Synthetic tools also default to ``json`` output.  ``markdown`` is available
-on both synthetic and API tools whenever you want a formatted overview.
 
 ## Resources vs Tools
 - **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.

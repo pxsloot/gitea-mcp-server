@@ -19,6 +19,13 @@ from gitea_mcp_server.tools.virtual_params import (
     inject_into,
 )
 
+# A minimal VirtualParam entry used by lifecycle tests that patch _VIRTUAL_PARAMS.
+_FORMAT_VP = VirtualParam(
+    schema={"type": "string", "enum": ["json", "markdown", "raw"]},
+    default="markdown",
+    description="Response format control.",
+)
+
 
 # ---------------------------------------------------------------------------
 # inject_into
@@ -26,37 +33,46 @@ from gitea_mcp_server.tools.virtual_params import (
 
 
 class TestInjectInto:
-    """Tests for inject_into — schema augmentation."""
+    """Tests for inject_into — schema augmentation (mechanism, not format)."""
 
-    def test_adds_format_param_when_missing(self):
-        """Adds the format parameter when not already in properties."""
+    def test_adds_patched_entry_when_missing(self):
+        """Adds a patched virtual param when not already in properties."""
         params: dict = {"properties": {}}
-        inject_into(params)
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"test_param": _FORMAT_VP},
+        ):
+            inject_into(params)
         props = params["properties"]
-        assert "format" in props
-        assert props["format"]["type"] == "string"
-        assert props["format"]["default"] == "json"
-        assert "description" in props["format"]
+        assert "test_param" in props
+        assert props["test_param"]["type"] == "string"
+        assert props["test_param"]["default"] == "markdown"
 
     def test_does_not_overwrite_existing_param(self):
         """Skips virtual param if tool already has a parameter with that name."""
-        params: dict = {"properties": {"format": {"type": "integer"}}}
-        inject_into(params)
-        assert params["properties"]["format"] == {"type": "integer"}
+        params: dict = {"properties": {"test_param": {"type": "integer"}}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"test_param": _FORMAT_VP},
+        ):
+            inject_into(params)
+        assert params["properties"]["test_param"] == {"type": "integer"}
 
-    def test_idempotent_multiple_calls(self):
-        """Calling inject_into multiple times produces the same result."""
+    def test_no_op_when_empty_registry(self):
+        """Does nothing when _VIRTUAL_PARAMS is empty."""
         params: dict = {"properties": {}}
         inject_into(params)
-        first = dict(params["properties"]["format"])
-        inject_into(params)
-        assert params["properties"]["format"] == first
+        assert params["properties"] == {}
 
     def test_handles_empty_parameters(self):
-        """Works with an empty parameters dict."""
+        """Works with an empty parameters dict, creating properties."""
         params: dict = {}
-        inject_into(params)
-        assert "format" in params["properties"]
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"test_param": _FORMAT_VP},
+        ):
+            inject_into(params)
+        assert "test_param" in params["properties"]
 
 
 # ---------------------------------------------------------------------------
@@ -65,21 +81,18 @@ class TestInjectInto:
 
 
 class TestExtractFrom:
-    """Tests for extract_from — pre-call parameter extraction."""
+    """Tests for extract_from — pre-call parameter extraction (mechanism)."""
 
-    def test_pops_format_and_returns_value(self):
+    def test_pops_patched_param_and_returns_value(self):
         """Pops 'format' from kwargs and returns {name: value}."""
-        kwargs = {"owner": "test", "repo": "r", "format": "markdown"}
-        extracted = extract_from(kwargs)
+        kwargs = {"owner": "test", "format": "markdown"}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"format": _FORMAT_VP},
+        ):
+            extracted = extract_from(kwargs)
         assert extracted == {"format": "markdown"}
-        assert "format" not in kwargs  # mutated in place
-
-    def test_default_json_when_omitted(self):
-        """Returns nothing when format is omitted."""
-        kwargs = {"owner": "test"}
-        extracted = extract_from(kwargs)
-        assert extracted == {}
-        assert kwargs == {"owner": "test"}
+        assert "format" not in kwargs
 
     def test_returns_empty_dict_no_virtual_params(self):
         """Returns {} when no virtual params are present."""
@@ -87,10 +100,14 @@ class TestExtractFrom:
         extracted = extract_from(kwargs)
         assert extracted == {}
 
-    def test_removes_all_virtual_params(self):
+    def test_removes_only_known_virtual_params(self):
         """Pops every known virtual param from kwargs."""
         kwargs = {"owner": "test", "format": "json"}
-        extracted = extract_from(kwargs)
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"format": _FORMAT_VP},
+        ):
+            extracted = extract_from(kwargs)
         assert "format" not in kwargs
         assert len(kwargs) == 1
         assert "owner" in kwargs
@@ -149,7 +166,7 @@ class TestApplyTo:
 
 
 class TestWrapIntegration:
-    """Tests that _ToolWrappingTransform._wrap() correctly integrates virtual params."""
+    """Tests that _ToolWrappingTransform._wrap() injects/extracts format."""
 
     def _make_tool(self) -> Tool:
         """Minimal Tool with _customization_applied flag."""
@@ -170,7 +187,7 @@ class TestWrapIntegration:
 
     @pytest.mark.asyncio
     async def test_injects_format_into_parameters(self):
-        """_wrap() adds the format parameter to tool schema."""
+        """_wrap() adds the format parameter to tool schema (promoted)."""
         from gitea_mcp_server.label_manager import LabelManager
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
@@ -184,7 +201,7 @@ class TestWrapIntegration:
         assert "format" in wrapped.parameters.get("properties", {})
         fmt_schema = wrapped.parameters["properties"]["format"]
         assert fmt_schema["type"] == "string"
-        assert fmt_schema["default"] == "json"
+        assert fmt_schema["default"] == "markdown"
         assert "markdown" in fmt_schema["enum"]
 
     @pytest.mark.asyncio
@@ -221,8 +238,8 @@ class TestWrapIntegration:
             assert call_kwargs == {"owner": "test"}
 
     @pytest.mark.asyncio
-    async def test_default_json_no_format_supplied(self):
-        """Default behavior when format is not supplied."""
+    async def test_default_markdown_no_format_supplied(self):
+        """Default markdown when format is not supplied."""
         from gitea_mcp_server.label_manager import LabelManager
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
@@ -239,7 +256,7 @@ class TestWrapIntegration:
             new_callable=AsyncMock,
         ) as mock_run:
             expected_result = ToolResult(
-                content=[TextContent(type="text", text='[{"id": 1}]')],
+                content=[TextContent(type="text", text="markdown output")],
                 structured_content={"result": [{"id": 1}]},
             )
             mock_run.return_value = expected_result

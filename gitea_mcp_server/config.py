@@ -98,6 +98,11 @@ class Config(BaseSettings):
         description="Path to YAML config file with tool/resource exclude/include patterns",
         alias="EXCLUDE_CONFIG_PATH",
     )
+    response_format: str = Field(
+        default="markdown",
+        description="Default response format: json, markdown, or raw",
+        alias="DEFAULT_RESPONSE_FORMAT",
+    )
 
     @field_validator("url")
     @classmethod

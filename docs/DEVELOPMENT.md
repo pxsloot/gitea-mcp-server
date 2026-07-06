@@ -92,7 +92,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic tools |
-| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — add agent-facing params stripped before HTTP call |
+| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call (currently empty; ``format`` is promoted to a first-class concept) |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
 Scope derivation (`derive_required_scope`) lives in `resources/scope.py` -- it is
@@ -164,18 +164,11 @@ They are a single-registry-entry addition in ``virtual_params.py``:
 # gitea_mcp_server/tools/virtual_params.py
 
 _VIRTUAL_PARAMS: dict[str, VirtualParam] = {
-    "format": VirtualParam(
-        schema={"type": "string", "enum": ["json", "markdown", "raw"]},
-        default="json",
-        description="Response format control.",
-        post_hook=_apply_format,
-    ),
-    # New entry:
-    "my_param": VirtualParam(
-        schema={"type": "string"},
-        default="default_value",
-        description="Description shown in schema.",
-        post_hook=_my_post_hook,  # Optional: (result, value) -> result
+    "verbose": VirtualParam(
+        schema={"type": "boolean"},
+        default=False,
+        description="Enable verbose output.",
+        post_hook=_apply_verbose,  # Optional: (result, value) -> result
     ),
 }
 ```
@@ -183,6 +176,13 @@ _VIRTUAL_PARAMS: dict[str, VirtualParam] = {
 The three lifecycle functions (``inject_into``, ``extract_from``, ``apply_to``)
 in ``_wrap()`` automatically handle all registered virtual params — no other
 changes needed.
+
+.. note::
+
+    The ``format`` parameter is **not** implemented as a virtual param.
+    It is a promoted, first-class concept handled directly in
+    ``mcp_builder._ToolWrappingTransform._wrap()`` and reads its default
+    from ``Config.response_format``.
 
 ---
 

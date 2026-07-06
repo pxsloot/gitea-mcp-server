@@ -33,6 +33,8 @@ from gitea_mcp_server.tools.customize import (
     compute_invalidation_patterns,
     generate_tool_title,
 )
+from gitea_mcp_server.config import Config
+from gitea_mcp_server.format import format_result
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
@@ -197,16 +199,38 @@ class _ToolWrappingTransform(Transform):
                 _META_CUSTOMIZED,
             )
 
-        # Inject virtual parameters (e.g., ``format``) into the tool schema
-        # so agents see them.  They are extracted before the HTTP call.
+        # Inject any future virtual params into the tool schema.  The
+        # ``format`` parameter is handled explicitly below, not here.
         inject_into(tool.parameters)
+
+        # Inject ``format`` as a first-class parameter (promoted — not a
+        # generic virtual param).  The default is server-wide configuration.
+        fmt_default = Config.get().response_format
+        props = tool.parameters.setdefault("properties", {})
+        if "format" not in props:
+            props["format"] = {
+                "type": "string",
+                "enum": ["json", "markdown", "raw"],
+                "default": fmt_default,
+                "description": (
+                    "Response format control.  "
+                    f'"json" — raw JSON (default: {fmt_default}).  '
+                    '"markdown" — formatted tables for human/agent reading.  '
+                    '"raw" — unprocessed API response.'
+                ),
+            }
 
         async def transform_fn(**kwargs: Any) -> Any:
             # Pop virtual params before the HTTP execution path — they are
             # not real API parameters and must not reach the Gitea API.
             virtual_values = extract_from(kwargs)
+
+            # Pop ``format`` explicitly (promoted from virtual params) and
+            # apply the shared ``format_result`` utility from format.py.
+            fmt = kwargs.pop("format", fmt_default)
             result = await self._run_transform_pipeline(kwargs, tool)
-            return apply_to(result, virtual_values)
+            result = apply_to(result, virtual_values)
+            return format_result(result, fmt)
 
         return Tool.from_tool(
             tool,

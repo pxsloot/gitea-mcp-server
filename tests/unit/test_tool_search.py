@@ -10,12 +10,12 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_NAME_BOOST
 from gitea_mcp_server.pagination import add_pagination_metadata
+from gitea_mcp_server.format import format_result
 from gitea_mcp_server.tools.search import (
     _call_tool_impl,
     _compact_search_serializer,
     _extract_resource_text,
     _extract_searchable_text_enhanced,
-    _format_result,
     _search_and_slice,
     _search_resources_impl,
     _search_tools_impl,
@@ -98,7 +98,7 @@ class TestCallToolOutputSchema:
 
 
 class TestFormatResult:
-    """Tests for _format_result helper that formats ToolResult content by format.
+    """Tests for format_result helper that formats ToolResult content by format.
 
     This helper is used by call_tool, search_tools, and tool_info to handle
     the ``format`` parameter (markdown/json/raw). It always preserves
@@ -107,21 +107,21 @@ class TestFormatResult:
 
     def test_raw_format_returns_same_object(self):
         """format=raw should return the ToolResult unchanged."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         inner = ToolResult(structured_content={"result": {"key": "value"}})
-        result = _format_result(inner, "raw")
+        result = format_result(inner, "raw")
         assert result is inner
 
     def test_json_format_with_dict_data(self):
         """format=json with dict data should produce pretty-printed JSON in content."""
         import json as json_module
 
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = {"key": "value", "num": 42}
         inner = ToolResult(structured_content={"result": data})
-        result = _format_result(inner, "json")
+        result = format_result(inner, "json")
         assert result.structured_content == {"result": data}
         assert len(result.content) == 1
         parsed = json_module.loads(result.content[0].text)
@@ -131,11 +131,11 @@ class TestFormatResult:
         """format=json with list data should produce pretty-printed JSON in content."""
         import json as json_module
 
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = [{"name": "tool_a"}, {"name": "tool_b"}]
         inner = ToolResult(structured_content={"result": data})
-        result = _format_result(inner, "json")
+        result = format_result(inner, "json")
         assert result.structured_content == {"result": data}
         assert len(result.content) == 1
         parsed = json_module.loads(result.content[0].text)
@@ -143,11 +143,11 @@ class TestFormatResult:
 
     def test_markdown_format_with_dict_data(self):
         """format=markdown with dict data should produce markdown in content."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = {"name": "test_tool", "description": "A test tool"}
         inner = ToolResult(structured_content={"result": data})
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result.structured_content == {"result": data}
         assert len(result.content) == 1
         assert "|" in result.content[0].text
@@ -155,11 +155,11 @@ class TestFormatResult:
 
     def test_markdown_format_with_list_data(self):
         """format=markdown with list data should produce markdown in content."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = [{"name": "tool_a", "description": "First"}]
         inner = ToolResult(structured_content={"result": data})
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result.structured_content == {"result": data}
         assert len(result.content) == 1
         assert "|" in result.content[0].text
@@ -167,26 +167,26 @@ class TestFormatResult:
 
     def test_markdown_with_scalar_data_returns_unchanged(self):
         """format=markdown with scalar (non-dict/list) data should return ToolResult unchanged."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         inner = ToolResult(structured_content={"result": "just a string"})
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result is inner
 
     def test_no_structured_content_returns_unchanged(self):
         """ToolResult without structured_content should be returned unchanged."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         inner = ToolResult(content=[TextContent(type="text", text="hello")], structured_content=None)
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result is inner
 
     def test_missing_result_key_returns_unchanged(self):
         """structured_content without result key should be returned unchanged."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         inner = ToolResult(structured_content={"other": "data"})
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result is inner
 
 
@@ -513,11 +513,11 @@ class TestCompactSearchSerializer:
 
 
 class TestFormatResultExtended:
-    """Extended tests for _format_result helper."""
+    """Extended tests for format_result helper."""
 
     def test_markdown_with_pagination(self):
         """format=markdown should append pagination metadata when present."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = [{"name": "tool_a"}, {"name": "tool_b"}]
         inner = ToolResult(
@@ -528,7 +528,7 @@ class TestFormatResultExtended:
                 "total_count": 42,
             }
         )
-        result = _format_result(inner, "markdown")
+        result = format_result(inner, "markdown")
         assert result.structured_content == inner.structured_content
         assert len(result.content) == 1
         text = result.content[0].text
@@ -538,7 +538,7 @@ class TestFormatResultExtended:
 
     def test_markdown_with_output_schema(self):
         """format=markdown should use output_schema for better column layout."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = {"id": 1, "name": "test"}
         inner = ToolResult(structured_content={"result": data})
@@ -553,7 +553,7 @@ class TestFormatResultExtended:
                 },
             },
         }
-        result = _format_result(inner, "markdown", output_schema=output_schema)
+        result = format_result(inner, "markdown", output_schema=output_schema)
         assert result.structured_content == inner.structured_content
         assert len(result.content) == 1
         # output_schema restricts columns to those defined in the schema
@@ -563,11 +563,11 @@ class TestFormatResultExtended:
 
     def test_unknown_format_returns_unchanged(self):
         """An unrecognized format string should return the ToolResult unchanged."""
-        from gitea_mcp_server.tools.search import _format_result
+        from gitea_mcp_server.format import format_result
 
         data = {"key": "value"}
         inner = ToolResult(structured_content={"result": data})
-        result = _format_result(inner, "xml")
+        result = format_result(inner, "xml")
         assert result is inner
 
 

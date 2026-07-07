@@ -20,6 +20,7 @@ class ToolSearchEntry(TypedDict, total=False):
     description: str
     tags: list[str]
     annotations: dict[str, Any]
+    score: float
 
 
 class ResourceEntry(TypedDict, total=False):
@@ -70,6 +71,7 @@ class UnifiedSearchItem(TypedDict, total=False):
     access_uri: str
     uri: str
     title: str
+    score: float
 
 
 class ToolSchemaResult(TypedDict, total=False):

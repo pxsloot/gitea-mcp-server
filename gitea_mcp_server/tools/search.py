@@ -80,13 +80,15 @@ def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent con
 
     engine = BM25SearchEngine()
     # Score everything (len(items) is small — ~200 tools, ~35 resources)
-    indices = engine.search(texts, query, len(items), min_score=min_score)
-    total_count = len(indices)
+    ranked = engine.search_with_scores(texts, query, len(items), min_score=min_score)
+    total_count = len(ranked)
 
     start = (page - 1) * limit
     end = start + limit
-    page_indices = indices[start:end]
-    page_items = [items[i] for i in page_indices]
+    page_ranked = ranked[start:end]
+    # Attach the normalized score to each result item so agents can apply
+    # their own relevance threshold instead of relying solely on min_score.
+    page_items = [{**items[i], "score": round(score, 4)} for i, score in page_ranked]
     return page_items, total_count
 
 
@@ -408,6 +410,11 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                     "mimeType": {"type": "string"},
                     "type": {"type": "string"},
                     "tags": {"type": "array"},
+                    "score": {
+                        "type": "number",
+                        "description": "Normalized relevance score (0.0-1.0). "
+                        "1.0 is the top match for this query.",
+                    },
                     "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
                 },
             },
@@ -560,6 +567,11 @@ def register_synthetic_tools(
                             "name": {"type": "string"},
                             "description": {"type": "string"},
                             "tags": {"type": "array", "items": {"type": "string"}},
+                            "score": {
+                                "type": "number",
+                                "description": "Normalized relevance score (0.0-1.0). "
+                                "1.0 is the top match for this query.",
+                            },
                             "annotations": {
                                 "type": "object",
                                 "properties": {

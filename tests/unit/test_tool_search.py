@@ -1232,6 +1232,26 @@ class TestSearchAndSlice:
         assert total == 3
         assert len(page_items) == 3
 
+    def test_attaches_normalized_score(self):
+        """Each result item carries a normalized `score` (0.0-1.0, top == 1.0)."""
+        items = [
+            {"id": 1, "name": "alpha"},
+            {"id": 2, "name": "beta"},
+            {"id": 3, "name": "gamma"},
+        ]
+        texts = ["alpha alpha word", "beta word", "gamma word"]
+        page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
+        assert total >= 1
+        # Top match gets score 1.0
+        assert page_items[0]["score"] == 1.0
+        # Every item has a numeric score in [0, 1]
+        for item in page_items:
+            assert "score" in item
+            assert isinstance(item["score"], float)
+            assert 0.0 <= item["score"] <= 1.0
+        # Original item dicts are not mutated (score is attached to a copy)
+        assert "score" not in items[0]
+
 
 class TestSearchToolsPagination:
     """Pagination metadata assertions for search_tools."""

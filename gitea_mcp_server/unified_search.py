@@ -212,6 +212,11 @@ def register_unified_search(
                             "name": {"type": "string"},
                             "description": {"type": "string"},
                             "tags": {"type": "array", "items": {"type": "string"}},
+                            "score": {
+                                "type": "number",
+                                "description": "Normalized relevance score (0.0-1.0). "
+                                "1.0 is the top match for this query.",
+                            },
                             "access_uri": {
                                 "type": "string",
                                 "description": "How to access this item",
@@ -229,7 +234,8 @@ def register_unified_search(
                             "type": "tool",
                             "name": "gitea_issue_create_issue",
                             "description": "Create a new issue in a repository",
-                            "tags": ["issue", "synthetic"],
+                            "tags": ["issue"],
+                            "score": 1.0,
                             "access_uri": "gitea_issue_create_issue",
                         },
                     },

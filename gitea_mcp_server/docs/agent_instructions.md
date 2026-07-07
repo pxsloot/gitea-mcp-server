@@ -61,9 +61,9 @@ results = search_tools("create", category="admin")  # narrow by category: admin,
 results = search_tools("webhook", min_score=0.8)    # tighten relevance threshold
 ```
 
-All search tools (`search`, `search_tools`, `search_resources`) accept a `min_score` parameter (0.0–1.0, default 0.1) to control relevance. A value of 0.0 returns everything with any overlap; 1.0 returns only the single best match. Raise `min_score` to reduce noise from broad queries.
+All search tools (`search`, `search_tools`, `search_resources`) accept a `min_score` parameter (0.0-1.0, default 0.1) to control relevance. A value of 0.0 returns everything with any overlap; 1.0 returns only the single best match. Raise `min_score` to reduce noise from broad queries.
 
-Each result includes `tags` (category labels) and `annotations` (readOnlyHint, destructiveHint, idempotentHint, title) alongside `name` and `description`.
+Each result includes `tags` (category labels), `annotations` (readOnlyHint, destructiveHint, idempotentHint, title), and a `score` (normalized relevance, 0.0-1.0 where 1.0 is the top match for that query) alongside `name` and `description`. Use `score` to apply your own relevance threshold when `min_score` is too coarse.
 
 Once you have a tool name, inspect its parameters with `tool_info`:
 

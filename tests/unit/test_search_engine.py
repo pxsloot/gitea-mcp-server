@@ -196,6 +196,36 @@ class TestBM25Index:
         results = index.query("apple", top_k=2, min_score=1.0)
         assert len(results) == 1
 
+    def test_query_with_scores_returns_normalized_scores(self):
+        """query_with_scores returns (index, score) with top score == 1.0."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple apple cherry"])
+        ranked = index.query_with_scores("apple", 10, min_score=0.0)
+        assert [i for i, _ in ranked] == [1, 0]
+        scores = [s for _, s in ranked]
+        assert scores[0] == 1.0  # top match normalized to 1.0
+        assert 0.0 < scores[1] < 1.0  # weaker match below 1.0
+
+    def test_query_with_scores_out_of_range_raises(self):
+        """min_score outside [0.0, 1.0] raises ValueError."""
+        index = _BM25Index()
+        index.build(["apple banana"])
+        import pytest
+
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query_with_scores("apple", 10, min_score=1.5)
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query_with_scores("apple", 10, min_score=-0.1)
+
+    def test_query_bounds_check_raises(self):
+        """The list[int] query() also enforces the min_score bounds."""
+        import pytest
+
+        index = _BM25Index()
+        index.build(["apple banana"])
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query("apple", 10, min_score=2.0)
+
 
 class TestBM25IndexLen2:
     """Tests for _BM25IndexLen2."""
@@ -264,3 +294,21 @@ class TestBM25SearchEngine:
 
         results_high = engine.search(texts, "apple", 10, min_score=1.0)
         assert len(results_high) < len(results_default)
+
+    def test_search_with_scores_returns_scores(self):
+        """search_with_scores returns (index, score) pairs."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple cherry"]
+        ranked = engine.search_with_scores(texts, "apple", 10, min_score=0.0)
+        assert [i for i, _ in ranked] == [1, 0]
+        assert [s for _, s in ranked][0] == 1.0
+
+    def test_search_bounds_check_raises(self):
+        """min_score outside [0.0, 1.0] raises ValueError."""
+        import pytest
+
+        engine = BM25SearchEngine()
+        with pytest.raises(ValueError, match="min_score must be in"):
+            engine.search(["apple banana"], "apple", 10, min_score=1.2)
+        with pytest.raises(ValueError, match="min_score must be in"):
+            engine.search(["apple banana"], "apple", 10, min_score=-1.0)

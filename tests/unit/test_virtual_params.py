@@ -14,6 +14,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.tools.virtual_params import (
     VirtualParam,
+    apply_pre_hooks,
     apply_to,
     extract_from,
     inject_into,
@@ -61,7 +62,12 @@ class TestInjectInto:
     def test_no_op_when_empty_registry(self):
         """Does nothing when _VIRTUAL_PARAMS is empty."""
         params: dict = {"properties": {}}
-        inject_into(params)
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {},
+            clear=True,
+        ):
+            inject_into(params)
         assert params["properties"] == {}
 
     def test_handles_empty_parameters(self):
@@ -73,6 +79,246 @@ class TestInjectInto:
         ):
             inject_into(params)
         assert "test_param" in params["properties"]
+
+
+# ---------------------------------------------------------------------------
+# apply_pre_hooks
+# ---------------------------------------------------------------------------
+
+
+class TestApplyPreHooks:
+    """Tests for apply_pre_hooks — pre-call side effects."""
+
+    def test_runs_pre_hook_with_value(self):
+        """Calls the pre_hook with the extracted value."""
+        mock_hook = MagicMock()
+        extracted = {"my_param": "hello"}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "my_param": VirtualParam(
+                    schema={}, default=None, description="", pre_hook=mock_hook
+                ),
+            },
+        ):
+            apply_pre_hooks(extracted)
+        mock_hook.assert_called_once_with("hello")
+
+    def test_no_op_when_no_extracted_params(self):
+        """Does nothing when extracted is empty."""
+        mock_hook = MagicMock()
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "my_param": VirtualParam(
+                    schema={}, default=None, description="", pre_hook=mock_hook
+                ),
+            },
+        ):
+            apply_pre_hooks({})
+        mock_hook.assert_not_called()
+
+    def test_handles_none_pre_hook(self):
+        """VirtualParam with pre_hook=None is a no-op."""
+        extracted = {"my_param": "value"}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "my_param": VirtualParam(
+                    schema={}, default=None, description="", pre_hook=None
+                ),
+            },
+        ):
+            # Should not raise
+            apply_pre_hooks(extracted)
+
+    def test_runs_all_pre_hooks_in_order(self):
+        """Calls multiple pre_hooks in registration order."""
+        calls: list[str] = []
+
+        def hook_a(_v: object) -> None:
+            calls.append("a")
+
+        def hook_b(_v: object) -> None:
+            calls.append("b")
+
+        extracted = {"a": 1, "b": 2}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "a": VirtualParam(
+                    schema={}, default=None, description="", pre_hook=hook_a
+                ),
+                "b": VirtualParam(
+                    schema={}, default=None, description="", pre_hook=hook_b
+                ),
+            },
+        ):
+            apply_pre_hooks(extracted)
+        assert calls == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# sudo — context var lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestSudoHooks:
+    """Tests that the sudo pre/post hooks manage the context var correctly."""
+
+    def test_sudo_pre_hook_sets_context(self):
+        """_sudo_pre_hook sets sudo_context to the string value."""
+        from gitea_mcp_server.tools.virtual_params import (
+            _sudo_pre_hook,
+            sudo_context,
+        )
+
+        assert sudo_context.get() is None
+        _sudo_pre_hook("alice")
+        assert sudo_context.get() == "alice"
+
+    def test_sudo_pre_hook_skips_none(self):
+        """_sudo_pre_hook does not set context when value is None."""
+        from gitea_mcp_server.tools.virtual_params import (
+            _sudo_pre_hook,
+            sudo_context,
+        )
+
+        sudo_context.set("previous")
+        _sudo_pre_hook(None)
+        assert sudo_context.get() == "previous"
+
+    def test_sudo_post_hook_clears_context(self):
+        """_sudo_post_hook clears sudo_context."""
+        from gitea_mcp_server.tools.virtual_params import (
+            _sudo_post_hook,
+            sudo_context,
+        )
+
+        sudo_context.set("bob")
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        returned = _sudo_post_hook(result, "bob")
+        assert sudo_context.get() is None
+        assert returned is result  # Passthrough
+
+    def test_sudo_in_virtual_params_is_registered(self):
+        """sudo is registered in _VIRTUAL_PARAMS with pre and post hooks."""
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert "sudo" in _VIRTUAL_PARAMS
+        vp = _VIRTUAL_PARAMS["sudo"]
+        assert vp.pre_hook is not None
+        assert vp.post_hook is not None
+        assert vp.schema == {"type": "string", "minLength": 1}
+        assert vp.default is None
+
+
+# ---------------------------------------------------------------------------
+# sudo — scope-gated visibility
+# ---------------------------------------------------------------------------
+
+
+class TestSudoVisibility:
+    """Tests that the sudo param is hidden/shown based on _sudo_visible flag."""
+
+    def _restore_sudo(self) -> None:
+        """Restore sudo visibility to True after test."""
+        from gitea_mcp_server.tools.virtual_params import set_sudo_visible
+
+        set_sudo_visible(True)
+
+    def test_inject_into_skips_sudo_when_hidden(self):
+        """sudo not added to tool schema when _sudo_visible is False."""
+        from gitea_mcp_server.tools.virtual_params import (
+            inject_into,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(False)
+        params: dict = {"properties": {}}
+        inject_into(params)
+        assert "sudo" not in params["properties"]
+        self._restore_sudo()
+
+    def test_inject_into_includes_sudo_when_visible(self):
+        """sudo added to tool schema when _sudo_visible is True (default)."""
+        from gitea_mcp_server.tools.virtual_params import (
+            inject_into,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(True)
+        params: dict = {"properties": {}}
+        inject_into(params)
+        assert "sudo" in params["properties"]
+        assert params["properties"]["sudo"]["type"] == "string"
+        assert params["properties"]["sudo"]["minLength"] == 1
+
+
+class TestSudoErrorPaths:
+    """Error/safety path tests for sudo lifecycle."""
+
+    def test_extract_and_pre_hook_clear_post_hook_restores(self):
+        """Full lifecycle: extract sets context, apply_to clears it."""
+        from gitea_mcp_server.tools.virtual_params import (
+            apply_pre_hooks,
+            apply_to,
+            extract_from,
+            sudo_context,
+        )
+
+        kwargs = {"owner": "test", "repo": "x", "sudo": "alice"}
+        assert sudo_context.get() is None
+
+        # 1. extract — pops sudo from kwargs
+        extracted = extract_from(kwargs)
+        assert "sudo" not in kwargs
+        assert extracted == {"sudo": "alice"}
+
+        # 2. pre-hook — sets context var
+        apply_pre_hooks(extracted)
+        assert sudo_context.get() == "alice"
+
+        # 3. post-hook — clears context var
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        final = apply_to(result, extracted)
+        assert sudo_context.get() is None
+        assert final is result  # passthrough
+
+    def test_extract_from_still_pops_sudo_when_hidden(self):
+        """extract_from pops sudo from kwargs even when _sudo_visible is False."""
+        from gitea_mcp_server.tools.virtual_params import (
+            extract_from,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(False)
+        kwargs = {"owner": "test", "sudo": "cheater"}
+        extracted = extract_from(kwargs)
+        assert "sudo" not in kwargs  # still popped from kwargs
+        assert extracted == {"sudo": "cheater"}
+        set_sudo_visible(True)
+
+    def test_post_hook_double_clear_is_safe(self):
+        """Calling post_hook when context is already None is safe (no-op)."""
+        from gitea_mcp_server.tools.virtual_params import (
+            _sudo_post_hook,
+            sudo_context,
+        )
+
+        sudo_context.set(None)
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        returned = _sudo_post_hook(result, "alice")
+        assert sudo_context.get() is None
+        assert returned is result  # passthrough
+
+    def test_extract_from_unknown_param_ignored(self):
+        """Unknown params in _VIRTUAL_PARAMS are ignored by extract_from."""
+        from gitea_mcp_server.tools.virtual_params import extract_from
+
+        kwargs = {"owner": "test", "nobody_home": "x"}
+        extracted = extract_from(kwargs)
+        assert extracted == {}
 
 
 # ---------------------------------------------------------------------------

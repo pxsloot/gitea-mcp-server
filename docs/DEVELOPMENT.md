@@ -92,7 +92,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic tools |
-| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call (currently empty; ``format`` is promoted to a first-class concept) |
+| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo`` (user impersonation, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
 Scope derivation (`derive_required_scope`) lives in `resources/scope.py` -- it is
@@ -158,24 +158,39 @@ TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
 
 Virtual parameters appear in the tool schema so agents know about them, but are
 stripped from ``kwargs`` before the HTTP call and can transform the result after.
-They are a single-registry-entry addition in ``virtual_params.py``:
+They are registered by appending to the ``_VIRTUAL_PARAMS`` dict in
+``virtual_params.py``:
 
 ```python
 # gitea_mcp_server/tools/virtual_params.py
 
-_VIRTUAL_PARAMS: dict[str, VirtualParam] = {
-    "verbose": VirtualParam(
-        schema={"type": "boolean"},
-        default=False,
-        description="Enable verbose output.",
-        post_hook=_apply_verbose,  # Optional: (result, value) -> result
-    ),
-}
+_VIRTUAL_PARAMS["verbose"] = VirtualParam(
+    schema={"type": "boolean"},
+    default=False,
+    description="Enable verbose output.",
+    # Optional: pre-hook runs after extraction, before the HTTP call.
+    # Use for side effects like setting a context variable.
+    pre_hook=_prepare_verbose,
+    # Optional: post-hook transforms the result after the API call.
+    post_hook=_apply_verbose,  # (result, value) -> result
+)
 ```
 
-The three lifecycle functions (``inject_into``, ``extract_from``, ``apply_to``)
-in ``_wrap()`` automatically handle all registered virtual params — no other
-changes needed.
+The lifecycle functions are called automatically in ``_wrap()``:
+
+1. ``inject_into(tool.parameters)`` — adds the param to every tool's schema
+2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
+3. ``apply_pre_hooks(extracted)`` — runs pre-hooks (e.g. set ContextVar via
+   ``_sudo_pre_hook``)
+4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
+
+**Scope-gating**: If a param only makes sense when the active token has a
+particular scope (like ``sudo``), set ``visible=False`` on its
+``VirtualParam`` entry.  The helper ``set_sudo_visible(visible)`` in
+``virtual_params.py`` does this — call it from ``server.py``'s
+``_apply_permission_filter()`` after fetching token scopes.
+``inject_into`` checks ``vp.visible`` generically, so agents never
+discover a param they can't use.
 
 .. note::
 

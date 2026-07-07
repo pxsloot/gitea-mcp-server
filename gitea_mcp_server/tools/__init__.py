@@ -23,13 +23,20 @@ from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransfor
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.schemas import derive_output_schema
 from gitea_mcp_server.tools.search import TolerantSearchTransform
-from gitea_mcp_server.tools.virtual_params import apply_to, extract_from, inject_into
+from gitea_mcp_server.tools.virtual_params import (
+    apply_pre_hooks,
+    apply_to,
+    extract_from,
+    inject_into,
+    set_sudo_visible,
+)
 
 __all__ = [
     "ExtensionMetadataTransform",
     "GiteaNamespace",
     "TolerantSearchTransform",
     "add_inferred_hints",
+    "apply_pre_hooks",
     "apply_to",
     "categorize_tool",
     "compute_invalidation_patterns",
@@ -38,4 +45,5 @@ __all__ = [
     "extract_from",
     "generate_tool_title",
     "inject_into",
+    "set_sudo_visible",
 ]

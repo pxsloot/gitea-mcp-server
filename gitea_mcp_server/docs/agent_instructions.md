@@ -211,6 +211,7 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 - **Need to see all tools**: There is no way to list all tools directly due to lazy loading. Use broad search queries like "repo" to surface most repository-related tools.
 - **Need full tool schema**: Use `tool_info("name")` to get parameters, output_example, annotations, and tags. Or read the `gitea://tool/{name}/schema` resource.
 - **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin.
+- **"Only administrators allowed to sudo"**: The ``sudo`` parameter impersonates a user and requires an admin token with ``sudo`` or ``all`` scope. If this error appears, your token lacks the necessary scope — the ``sudo`` parameter should not be visible on your tools. Use ``gitea_user_get_current`` to verify your identity and scope.
 
 ## Tool Prefixes (for search)
 `issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `topic_`, `search_`

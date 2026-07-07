@@ -43,6 +43,7 @@ from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+from gitea_mcp_server.tools.virtual_params import set_sudo_visible
 from gitea_mcp_server.unified_search import register_unified_search
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,15 @@ async def _apply_permission_filter(
         return
 
     try:
+        # Scope-gated virtual params (sudo) — only show when the token
+        # has the scope to use them.
+        sudo_available = "sudo" in available_scopes or "all" in available_scopes
+        set_sudo_visible(sudo_available)
+        logger.info(
+            "Sudo visibility set",
+            extra={"sudo_visible": sudo_available, "scopes": sorted(available_scopes)},
+        )
+
         logger.info(
             "Adding PermissionFilterTransform",
             extra={"scopes": sorted(available_scopes)},

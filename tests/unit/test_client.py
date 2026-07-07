@@ -8,6 +8,7 @@ import respx
 
 from gitea_mcp_server.client import (
     GiteaClient,
+    _inject_sudo,
     _should_retry,
     _wait_retry,
 )
@@ -358,3 +359,72 @@ class TestGiteaClient:
         """Test _should_retry with GiteaAPIError having no __cause__."""
         error = GiteaAPIError("Client error", status_code=400)
         assert _should_retry(error) is False
+
+
+# ---------------------------------------------------------------------------
+# _inject_sudo request hook
+# ---------------------------------------------------------------------------
+
+
+class TestInjectSudo:
+    """Tests for the _inject_sudo httpx request hook."""
+
+    @pytest.mark.asyncio
+    async def test_injects_sudo_query_param(self):
+        """Adds ?sudo=<username> when sudo_context is set."""
+        from gitea_mcp_server.tools.virtual_params import sudo_context
+
+        sudo_context.set("alice")
+        request = httpx.Request("GET", "https://git.example.com/api/v1/user")
+        assert "sudo" not in dict(request.url.params)
+
+        await _inject_sudo(request)
+
+        params = dict(request.url.params)
+        assert params["sudo"] == "alice"
+        sudo_context.set(None)
+
+    @pytest.mark.asyncio
+    async def test_preserves_existing_query_params(self):
+        """Appends sudo= to existing query params, preserving them."""
+        from gitea_mcp_server.tools.virtual_params import sudo_context
+
+        sudo_context.set("bob")
+        request = httpx.Request(
+            "GET",
+            "https://git.example.com/api/v1/repos/owner/repo/issues?page=1&limit=10",
+        )
+        assert dict(request.url.params) == {"page": "1", "limit": "10"}
+
+        await _inject_sudo(request)
+
+        params = dict(request.url.params)
+        assert params["sudo"] == "bob"
+        assert params["page"] == "1"
+        assert params["limit"] == "10"
+        sudo_context.set(None)
+
+    @pytest.mark.asyncio
+    async def test_no_op_when_sudo_not_set(self):
+        """Does not modify URL when sudo_context is None."""
+        from gitea_mcp_server.tools.virtual_params import sudo_context
+
+        sudo_context.set(None)
+        request = httpx.Request("GET", "https://git.example.com/api/v1/user")
+
+        await _inject_sudo(request)
+
+        assert "sudo" not in dict(request.url.params)
+
+    @pytest.mark.asyncio
+    async def test_empty_string_is_no_op(self):
+        """Empty string sudo is treated as unset (does not inject ?sudo=)."""
+        from gitea_mcp_server.tools.virtual_params import sudo_context
+
+        sudo_context.set("")
+        request = httpx.Request("GET", "https://git.example.com/api/v1/user")
+
+        await _inject_sudo(request)
+
+        assert "sudo" not in dict(request.url.params)
+        sudo_context.set(None)

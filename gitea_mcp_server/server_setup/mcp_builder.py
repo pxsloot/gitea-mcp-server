@@ -38,7 +38,12 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
-from gitea_mcp_server.tools.virtual_params import apply_to, extract_from, inject_into
+from gitea_mcp_server.tools.virtual_params import (
+    apply_pre_hooks,
+    apply_to,
+    extract_from,
+    inject_into,
+)
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -224,6 +229,12 @@ class _ToolWrappingTransform(Transform):
             # Pop virtual params before the HTTP execution path — they are
             # not real API parameters and must not reach the Gitea API.
             virtual_values = extract_from(kwargs)
+
+            # Run pre-hooks for extracted virtual params.  The ``sudo``
+            # pre-hook stores the target username in an async context var
+            # so the HTTP request hook (in client.py) can inject the
+            # ``?sudo=<username>`` query parameter.
+            apply_pre_hooks(virtual_values)
 
             # Pop ``format`` explicitly (promoted from virtual params) and
             # apply the shared ``format_result`` utility from format.py.

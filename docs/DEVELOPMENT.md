@@ -185,10 +185,12 @@ The lifecycle functions are called automatically in ``_wrap()``:
 4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
 
 **Scope-gating**: If a param only makes sense when the active token has a
-particular scope (like ``sudo``), use ``set_sudo_visible(visible)`` in
-``server.py``'s ``_apply_permission_filter()`` after fetching token scopes.
-The flag is checked in ``inject_into``, so agents never discover a param
-they can't use. See ``_sudo_visible`` / ``set_sudo_visible()`` for the pattern.
+particular scope (like ``sudo``), set ``visible=False`` on its
+``VirtualParam`` entry.  The helper ``set_sudo_visible(visible)`` in
+``virtual_params.py`` does this — call it from ``server.py``'s
+``_apply_permission_filter()`` after fetching token scopes.
+``inject_into`` checks ``vp.visible`` generically, so agents never
+discover a param they can't use.
 
 .. note::
 

@@ -19,13 +19,13 @@ if TYPE_CHECKING:
 
 from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _compact_search_serializer,
@@ -187,7 +187,7 @@ def register_unified_search(
         name="search",
         description="Unified search across tools, workflow docs, and data resources. Returns merged BM25-ranked results with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {

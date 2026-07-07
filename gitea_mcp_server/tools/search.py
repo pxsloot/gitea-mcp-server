@@ -14,7 +14,6 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
@@ -26,6 +25,7 @@ from gitea_mcp_server.format import _format_as_markdown, format_result
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
     _raise_value_error_from,
@@ -158,14 +158,11 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[ToolSearchEntry]:
         if tool.annotations:
             a = tool.annotations
             annotations = {
-                k: v
-                for k, v in {
-                    "title": a.title,
-                    "readOnlyHint": a.readOnlyHint,
-                    "destructiveHint": a.destructiveHint,
-                    "idempotentHint": a.idempotentHint,
-                }.items()
-                if v is not None
+                "title": a.title,
+                "readOnlyHint": a.readOnlyHint,
+                "destructiveHint": a.destructiveHint,
+                "idempotentHint": a.idempotentHint,
+                "openWorldHint": a.openWorldHint,
             }
         item = ToolSearchEntry(
             name=tool.name,
@@ -524,7 +521,7 @@ def register_synthetic_tools(
         name="search_tools",
         description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -568,7 +565,7 @@ def register_synthetic_tools(
         name="call_tool",
         description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=True),
+        annotations=synthetic_annotations(read_only=False, open_world=True),
         output_schema={
             "type": "object",
             "properties": {
@@ -593,7 +590,7 @@ def register_synthetic_tools(
         name="tool_info",
         description="Get the full schema for a registered tool by exact name. Returns parameter details, output example, annotations, and tags. Use after search_tools to inspect a specific tool before calling it.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -633,7 +630,7 @@ def register_synthetic_tools(
         "Use this when you know what kind of information you want but not the "
         "exact resource URI. For an exhaustive listing, use list_resources instead.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
     )(search_resources_fn)
 

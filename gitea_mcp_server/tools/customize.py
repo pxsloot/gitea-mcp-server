@@ -81,6 +81,48 @@ def add_inferred_hints(route: Any, annotations: ToolAnnotations) -> None:
         annotations.openWorldHint = True
 
 
+def synthetic_annotations(
+    *,
+    read_only: bool = True,
+    open_world: bool = False,
+) -> ToolAnnotations:
+    """Create ToolAnnotations with all 4 hints explicitly set.
+
+    Synthetic tools are registered directly via ``mcp.tool(annotations=...)``
+    and don't go through ``add_inferred_hints()``.  This helper ensures every
+    hint field is populated consistently at all registration sites.
+
+    Hint derivation:
+        - ``readOnlyHint`` = *read_only*
+        - ``destructiveHint`` = always ``False`` (synthetic tools never delete)
+        - ``idempotentHint`` = *read_only* (read-only operations are idempotent)
+        - ``openWorldHint`` = *open_world*
+
+    .. caution::
+       ``read_only=False`` is for proxy tools like ``call_tool`` that delegate
+       to arbitrary API tools.  Even though ``call_tool`` itself does nothing
+       destructive, its *results* can be — agents should not assume safety.
+
+    Args:
+        read_only: Tool only reads/transforms in-memory data without side
+                   effects.  Set to ``False`` for proxy tools that delegate
+                   to arbitrary operations.
+        open_world: Tool makes external API calls.  Local synthetic tools
+                    (``search``, ``search_tools``, ``tool_info``, etc.)
+                    operate entirely in-memory — pass ``False``.
+
+    Returns:
+        ToolAnnotations with all four hint fields explicitly set
+        (never ``None``).
+    """
+    return ToolAnnotations(
+        readOnlyHint=read_only,
+        destructiveHint=False,
+        idempotentHint=read_only,
+        openWorldHint=open_world,
+    )
+
+
 def compute_invalidation_patterns(path: str, method: str) -> list[str]:
     """Return cache invalidation URI patterns for the given path and HTTP method."""
     if method.upper() in ("GET", "HEAD", "OPTIONS"):
@@ -140,4 +182,5 @@ __all__ = [
     "categorize_tool",
     "compute_invalidation_patterns",
     "generate_tool_title",
+    "synthetic_annotations",
 ]

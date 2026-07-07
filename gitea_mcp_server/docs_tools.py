@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from fastmcp.exceptions import ResourceError
 from fastmcp.tools.base import ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.tools.customize import synthetic_annotations
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -235,7 +235,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
 
     @mcp.tool(
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
     async def search_docs(
@@ -342,7 +342,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
 
     @mcp.tool(
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {

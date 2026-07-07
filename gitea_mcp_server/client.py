@@ -31,6 +31,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.exceptions import GiteaAPIError
 from gitea_mcp_server.pagination import capture_pagination_headers
+from gitea_mcp_server.tools.virtual_params import sudo_context
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,21 @@ def _should_retry(exception: BaseException) -> bool:
     return bool(isinstance(exception, httpx.HTTPError))  # Ensure bool return
 
 
+async def _inject_sudo(request: httpx.Request) -> None:
+    """Request hook: inject ``?sudo=<username>`` query parameter when set.
+
+    Reads the ``sudo_context`` :class:`~contextvars.ContextVar` that the
+    virtual-param pre-hook sets before each tool call.  When a sudo target
+    is active, the query parameter is appended to every request made through
+    the shared HTTP client, so the Gitea API executes the call as that user.
+    """
+    sudo_user = sudo_context.get()
+    if sudo_user:
+        params = dict(request.url.params)
+        params["sudo"] = sudo_user
+        request.url = request.url.copy_with(params=params)
+
+
 class HTTPTransport:
     """HTTP transport layer handling low-level client creation and retry logic."""
 
@@ -149,7 +165,10 @@ class HTTPTransport:
                     max_connections=HTTP_MAX_CONNECTIONS,
                 ),
                 follow_redirects=True,
-                event_hooks={"response": [capture_pagination_headers]},
+                event_hooks={
+                    "request": [_inject_sudo],
+                    "response": [capture_pagination_headers],
+                },
             )
         return self._client
 

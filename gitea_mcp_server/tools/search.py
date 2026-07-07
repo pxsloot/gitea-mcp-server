@@ -19,6 +19,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     SEARCH_CATEGORY_ALIASES,
+    SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import _format_as_markdown, format_result
@@ -47,12 +48,13 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
     return text
 
 
-def _search_and_slice(
+def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent config axes
     items: list[Any],
     texts: list[str],
     query: str,
     page: int,
     limit: int,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> tuple[list[Any], int]:
     """BM25 rank items, then slice by page/limit.
 
@@ -63,13 +65,22 @@ def _search_and_slice(
     When ``items`` or ``texts`` is empty, returns ``([], 0)``.
     When the page is out of range, returns an empty list with the correct
     ``total_count``.
+
+    Args:
+        items: The items to search over.
+        texts: Searchable text for each item.
+        query: Natural language query.
+        page: Page number (1-based).
+        limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).  Defaults to
+            ``SEARCH_MIN_SCORE``.
     """
     if not items or not texts:
         return [], 0
 
     engine = BM25SearchEngine()
     # Score everything (len(items) is small — ~200 tools, ~35 resources)
-    indices = engine.search(texts, query, len(items))
+    indices = engine.search(texts, query, len(items), min_score=min_score)
     total_count = len(indices)
 
     start = (page - 1) * limit
@@ -268,7 +279,7 @@ async def _call_tool_impl(
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
 
-async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framework plumbing
+async def _search_tools_impl(  # noqa: PLR0913 — ctx, transform, min_score are framework plumbing
     query: str,
     category: str | None,
     format: str,
@@ -276,6 +287,7 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
     transform: TolerantSearchTransform,
     page: int = 1,
     limit: int = 10,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> ToolResult:
     """Core search_tools implementation.
 
@@ -290,6 +302,7 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
         transform: Search transform for tool catalog access.
         page: Page number (1-based).
         limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -301,7 +314,9 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
 
     texts = [_extract_searchable_text_enhanced(t) for t in tools]
     serialized = _compact_search_serializer(tools)
-    page_items, total_count = _search_and_slice(serialized, texts, query, page, limit)
+    page_items, total_count = _search_and_slice(
+        serialized, texts, query, page, limit, min_score=min_score
+    )
 
     cross_link_hints = {
         "workflow guides": "search_docs",
@@ -402,12 +417,13 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _search_resources_impl(
+async def _search_resources_impl(  # noqa: PLR0913 — ctx and min_score are framework plumbing
     query: str,
     format: str,
     ctx: Context,
     page: int = 1,
     limit: int = 10,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> ToolResult:
     """Core search_resources implementation.
 
@@ -420,6 +436,7 @@ async def _search_resources_impl(
         ctx: FastMCP context.
         page: Page number (1-based).
         limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -428,7 +445,9 @@ async def _search_resources_impl(
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
     texts = [_extract_resource_text(r) for r in resources]
-    page_items, total_count = _search_and_slice(resources, texts, query, page, limit)
+    page_items, total_count = _search_and_slice(
+        resources, texts, query, page, limit, min_score=min_score
+    )
 
     cross_link_hints = {
         "workflow guides": "search_docs",
@@ -513,9 +532,17 @@ def register_synthetic_tools(
         ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_tools_impl(query, category, format, ctx, transform, page, limit)
+        return await _search_tools_impl(
+            query, category, format, ctx, transform, page, limit, min_score=min_score
+        )
 
     mcp.tool(
         name="search_tools",
@@ -613,14 +640,22 @@ def register_synthetic_tools(
         },
     )(tool_info_fn)
 
-    async def search_resources_fn(
+    async def search_resources_fn(  # noqa: PLR0913 — min_score is a new config axis
         query: Annotated[str, "Natural language query to search for resources"],
         format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_resources_impl(query, format, ctx, page, limit)
+        return await _search_resources_impl(
+            query, format, ctx, page, limit, min_score=min_score
+        )
 
     mcp.tool(
         name="search_resources",

@@ -206,6 +206,14 @@ SEARCH_MIN_TOKEN_LENGTH = 2
 SEARCH_NAME_BOOST = 3
 """Number of times tool name is included in searchable text to boost relevance."""
 
+SEARCH_MIN_SCORE = 0.1
+"""Minimum normalized BM25 score (0.0-1.0) for a document to be considered a match.
+
+A score of 0.0 means any positive overlap counts; 0.1 means at least 10% as
+relevant as the top result; 1.0 means only perfect matches.  Agents can
+override this per-query via the ``min_score`` parameter on search tools.
+"""
+
 SEARCH_CATEGORY_ALIASES: dict[str, str] = {
     "pull_request": "pull request pr",
     "issue": "issue issues bug",

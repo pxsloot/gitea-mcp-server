@@ -21,6 +21,7 @@ from fastmcp.server.context import Context  # noqa: TC002 — runtime use via ge
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
+from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
@@ -62,7 +63,7 @@ def register_unified_search(
         search_transform: TolerantSearchTransform for tool catalog access
     """
 
-    async def search(
+    async def search(  # noqa: PLR0913 — min_score is a new config axis
         query: Annotated[str, "Natural language query to search for tools, docs, and resources"],
         format: Annotated[
             str,
@@ -70,6 +71,12 @@ def register_unified_search(
         ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context | None = None,
     ) -> ToolResult:
         if ctx is None:
@@ -135,7 +142,9 @@ def register_unified_search(
             )
             all_texts.append(_extract_doc_search_text(d))
 
-        page_items, total_count = _search_and_slice(all_items, all_texts, query, page, limit)
+        page_items, total_count = _search_and_slice(
+            all_items, all_texts, query, page, limit, min_score=min_score
+        )
 
         if total_count == 0:
             hint = (

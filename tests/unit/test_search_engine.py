@@ -156,6 +156,46 @@ class TestBM25Index:
         results = index.query("zzzzzzz", 10)
         assert results == []
 
+    def test_min_score_zero_returns_all_matches(self):
+        """min_score=0.0 returns every document with any overlap."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple cherry", "orange grape"])
+        results = index.query("apple", 10, min_score=0.0)
+        # docs 0 and 1 both contain "apple"
+        assert 0 in results
+        assert 1 in results
+        # doc 2 has no match for "apple"
+        assert 2 not in results
+
+    def test_min_score_filters_weak_matches(self):
+        """High min_score filters out lower-ranked documents."""
+        index = _BM25Index()
+        # doc 1 has "apple" twice — stronger match
+        index.build(["apple banana", "apple apple cherry"])
+        results = index.query("apple", 10, min_score=0.0)
+        assert len(results) == 2  # both docs match at min_score=0
+
+        # doc 0 has fewer occurrences: its normalized score will be < 1.0
+        # At min_score=1.0 only the top doc passes
+        top_only = index.query("apple", 10, min_score=1.0)
+        assert top_only == [1]  # only the strongest match
+
+    def test_min_score_one_returns_only_top(self):
+        """min_score=1.0 returns only the top-ranked document."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple apple", "orange grape"])
+        results = index.query("apple", 10, min_score=1.0)
+        assert len(results) == 1
+        assert results[0] == 1  # doc 1 has highest TF for "apple"
+
+    def test_min_score_with_top_k(self):
+        """min_score and top_k interact correctly."""
+        index = _BM25Index()
+        index.build(["apple", "apple apple", "apple apple apple", "orange"])
+        # top_k=2 should return at most 2, but min_score=1.0 only keeps top 1
+        results = index.query("apple", top_k=2, min_score=1.0)
+        assert len(results) == 1
+
 
 class TestBM25IndexLen2:
     """Tests for _BM25IndexLen2."""
@@ -198,3 +238,29 @@ class TestBM25SearchEngine:
 
         r2 = engine.search(["foo bar"], "hello", 10)
         assert r2 == []
+
+    def test_search_with_min_score_zero(self):
+        """min_score=0.0 returns all matches."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple cherry", "orange grape"]
+        results = engine.search(texts, "apple", 10, min_score=0.0)
+        assert 0 in results
+        assert 1 in results
+        assert 2 not in results
+
+    def test_search_with_min_score_one(self):
+        """min_score=1.0 returns only top match."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple", "orange"]
+        results = engine.search(texts, "apple", 10, min_score=1.0)
+        assert results == [1]
+
+    def test_search_with_high_min_score_filters(self):
+        """High min_score filters weak matches."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple apple", "apple cherry"]
+        results_default = engine.search(texts, "apple", 10)  # uses default min_score=0.0
+        assert len(results_default) >= 2
+
+        results_high = engine.search(texts, "apple", 10, min_score=1.0)
+        assert len(results_high) < len(results_default)

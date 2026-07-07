@@ -70,7 +70,24 @@ class _BM25Index:
                     seen.add(token)
             self._tf.append(tf)
 
-    def query(self, text: str, top_k: int) -> list[int]:
+    def query(self, text: str, top_k: int, min_score: float = 0.0) -> list[int]:
+        """Query the BM25 index, returning ranked document indices.
+
+        Scores are normalized to [0.0, 1.0] so that ``min_score`` is a
+        predictable dial for agents regardless of corpus size or document
+        length.
+
+        Args:
+            text: Query text.
+            top_k: Maximum number of results to return.
+            min_score: Minimum normalized score (0.0-1.0).  A result must
+                score at least this fraction of the top result to be
+                returned.
+
+        Returns:
+            Ranked list of document indices matching the threshold, most
+            relevant first.
+        """
         query_tokens = _tokenize_len2(text)
         if not query_tokens or not self._n:
             return []
@@ -89,8 +106,13 @@ class _BM25Index:
                 denominator = tf + self.k1 * (1 - self.b + self.b * dl / self._avg_dl)
                 scores[i] += idf * numerator / denominator
 
-        ranked = sorted(range(self._n), key=lambda i: scores[i], reverse=True)
-        return [i for i in ranked[:top_k] if scores[i] > 0]
+        # Normalize to [0.0, 1.0] for a predictable agent-facing dial
+        max_score = max(scores) if scores else 0.0
+        normalized = [s / max_score for s in scores] if max_score > 0 else [0.0] * len(scores)
+
+        ranked = sorted(range(self._n), key=lambda i: normalized[i], reverse=True)
+        # Keep only docs with non-zero raw score, then apply the min_score dial
+        return [i for i in ranked[:top_k] if scores[i] > 0 and normalized[i] >= min_score]
 
 
 class _BM25IndexLen2(_BM25Index):
@@ -137,13 +159,20 @@ class BM25SearchEngine:
         self._index: _BM25IndexLen2 = _BM25IndexLen2(k1, b)
         self._last_texts_hash: str = ""
 
-    def search(self, texts: list[str], query: str, max_results: int = 10) -> list[int]:
+    def search(
+        self,
+        texts: list[str],
+        query: str,
+        max_results: int = 10,
+        min_score: float = 0.0,
+    ) -> list[int]:
         """Search texts by BM25 relevance ranking.
 
         Args:
             texts: Searchable text strings for each document.
             query: Natural language query.
             max_results: Maximum number of results.
+            min_score: Minimum normalized score (0.0-1.0).
 
         Returns:
             Ranked list of indices into the original texts list.
@@ -155,7 +184,7 @@ class BM25SearchEngine:
             self._index, self._last_texts_hash = new_index, current_hash
 
         expanded_query = _expand_word_aliases(query)
-        return list(self._index.query(expanded_query, max_results))
+        return list(self._index.query(expanded_query, max_results, min_score))
 
 
 __all__ = [

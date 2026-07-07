@@ -90,7 +90,7 @@ def _sudo_pre_hook(value: Any) -> None:
         sudo_context.set(str(value))
 
 
-def _sudo_post_hook(result: ToolResult, value: Any) -> ToolResult:
+def _sudo_post_hook(result: ToolResult, _value: Any) -> ToolResult:
     """Clear sudo target from context after the request completes."""
     sudo_context.set(None)
     return result
@@ -113,7 +113,18 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 # Scope-based visibility control
 # ---------------------------------------------------------------------------
 
-_sudo_visible: bool = True
+class _SudoFlag:
+    """Mutable boolean flag for scope-gating the sudo param.
+
+    A simple boxed boolean avoids the ``global`` statement in
+    :func:`set_sudo_visible` while keeping the flag accessible as
+    a module-level name for fast reads in :func:`inject_into`.
+    """
+
+    visible: bool = True
+
+
+_sudo_flag = _SudoFlag()
 """Whether the ``sudo`` virtual param is injected into tool schemas.
 
 Set to ``False`` at startup when the active token lacks the ``sudo`` or
@@ -133,8 +144,7 @@ def set_sudo_visible(visible: bool) -> None:
     Args:
         visible: ``True`` to show sudo (default), ``False`` to hide it.
     """
-    global _sudo_visible
-    _sudo_visible = visible
+    _sudo_flag.visible = visible
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +165,7 @@ def inject_into(parameters: dict[str, Any]) -> None:
     for name, vp in _VIRTUAL_PARAMS.items():
         if name not in props:
             # Skip scope-gated params when their scope is not available.
-            if name == "sudo" and not _sudo_visible:
+            if name == "sudo" and not _sudo_flag.visible:
                 continue
             props[name] = {
                 **vp.schema,

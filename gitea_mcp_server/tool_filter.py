@@ -61,6 +61,9 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
     Rules:
     - None required (no scope needed) always passes.
     - ``sudo`` in available grants everything.
+    - ``all`` in available grants everything (Gitea's "full access" shortcut,
+      returned by the API as the literal scope ``"all"``; the UI displays it as
+      ``[all]``).
     - Exact match passes.
     - ``write:xxx`` implies ``read:xxx``.
 
@@ -75,6 +78,8 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
         return True
     if "sudo" in available:
         return True
+    if "all" in available:
+        return True
     if required in available:
         return True
     if required.startswith("read:"):
@@ -84,11 +89,12 @@ def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
     return False
 
 
-def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | None:
+def _match_active_token(tokens_data: list[Any], raw_token: str) -> set[str] | None:
     """Match the active token and return its scopes.
 
     Args:
-        tokens_data: List of token dicts from the API.
+        tokens_data: List of token entries from the API. Entries are expected
+            to be dicts but may be malformed (non-dict); those are skipped.
         raw_token: The raw GITEA_TOKEN value from config.
 
     Returns:
@@ -96,9 +102,14 @@ def _match_active_token(tokens_data: list[dict], raw_token: str) -> set[str] | N
     """
     last_eight = raw_token[-8:]
     for token in tokens_data:
+        if not isinstance(token, dict):
+            logger.debug(
+                "Skipping non-dict token entry", extra={"type": type(token).__name__}
+            )
+            continue
         logt = token.get("token_last_eight")
         logger.debug("Testing token match", extra={"token_last_eight": logt})
-        if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
+        if token.get("token_last_eight") == last_eight:
             scopes = token.get("scopes")
             if scopes and isinstance(scopes, list):
                 return set(scopes)

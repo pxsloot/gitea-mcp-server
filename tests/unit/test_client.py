@@ -369,7 +369,8 @@ class TestGiteaClient:
 class TestInjectSudo:
     """Tests for the _inject_sudo httpx request hook."""
 
-    def test_injects_sudo_query_param(self):
+    @pytest.mark.asyncio
+    async def test_injects_sudo_query_param(self):
         """Adds ?sudo=<username> when sudo_context is set."""
         from gitea_mcp_server.tools.virtual_params import sudo_context
 
@@ -377,14 +378,14 @@ class TestInjectSudo:
         request = httpx.Request("GET", "https://git.example.com/api/v1/user")
         assert "sudo" not in dict(request.url.params)
 
-        import asyncio
-        asyncio.run(_inject_sudo(request))
+        await _inject_sudo(request)
 
         params = dict(request.url.params)
         assert params["sudo"] == "alice"
         sudo_context.set(None)
 
-    def test_preserves_existing_query_params(self):
+    @pytest.mark.asyncio
+    async def test_preserves_existing_query_params(self):
         """Appends sudo= to existing query params, preserving them."""
         from gitea_mcp_server.tools.virtual_params import sudo_context
 
@@ -395,8 +396,7 @@ class TestInjectSudo:
         )
         assert dict(request.url.params) == {"page": "1", "limit": "10"}
 
-        import asyncio
-        asyncio.run(_inject_sudo(request))
+        await _inject_sudo(request)
 
         params = dict(request.url.params)
         assert params["sudo"] == "bob"
@@ -404,27 +404,27 @@ class TestInjectSudo:
         assert params["limit"] == "10"
         sudo_context.set(None)
 
-    def test_no_op_when_sudo_not_set(self):
+    @pytest.mark.asyncio
+    async def test_no_op_when_sudo_not_set(self):
         """Does not modify URL when sudo_context is None."""
         from gitea_mcp_server.tools.virtual_params import sudo_context
 
         sudo_context.set(None)
         request = httpx.Request("GET", "https://git.example.com/api/v1/user")
 
-        import asyncio
-        asyncio.run(_inject_sudo(request))
+        await _inject_sudo(request)
 
         assert "sudo" not in dict(request.url.params)
 
-    def test_empty_string_is_no_op(self):
+    @pytest.mark.asyncio
+    async def test_empty_string_is_no_op(self):
         """Empty string sudo is treated as unset (does not inject ?sudo=)."""
         from gitea_mcp_server.tools.virtual_params import sudo_context
 
         sudo_context.set("")
         request = httpx.Request("GET", "https://git.example.com/api/v1/user")
 
-        import asyncio
-        asyncio.run(_inject_sudo(request))
+        await _inject_sudo(request)
 
         assert "sudo" not in dict(request.url.params)
         sudo_context.set(None)

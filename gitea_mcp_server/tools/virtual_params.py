@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass
 class VirtualParam:
     """A parameter that lives in the tool schema but is handled pre-call.
 
@@ -49,6 +49,9 @@ class VirtualParam:
         schema: JSON Schema fragment for the parameter (type, enum, etc.).
         default: Default value used when the agent omits the parameter.
         description: Description shown to agents in the tool schema.
+        visible: Whether to include this param in tool schemas.
+            Set to ``False`` at startup for scope-gated params like
+            ``sudo`` when the active token lacks the required scope.
         pre_hook: Optional ``(value) → None`` callback invoked **after**
             the parameter is extracted from kwargs but **before** the HTTP
             request is made.  Useful for storing the value in a context
@@ -61,6 +64,7 @@ class VirtualParam:
     schema: dict[str, Any]
     default: Any
     description: str
+    visible: bool = True
     pre_hook: Callable[[Any], None] | None = None
     post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
 
@@ -113,27 +117,6 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 # Scope-based visibility control
 # ---------------------------------------------------------------------------
 
-class _SudoFlag:
-    """Mutable boolean flag for scope-gating the sudo param.
-
-    A simple boxed boolean avoids the ``global`` statement in
-    :func:`set_sudo_visible` while keeping the flag accessible as
-    a module-level name for fast reads in :func:`inject_into`.
-    """
-
-    visible: bool = True
-
-
-_sudo_flag = _SudoFlag()
-"""Whether the ``sudo`` virtual param is injected into tool schemas.
-
-Set to ``False`` at startup when the active token lacks the ``sudo`` or
-``all`` scope.  When ``False``, agents never see the parameter and cannot
-use it — which is the correct UX for a token that would be rejected by
-the Gitea API anyway.
-"""
-
-
 def set_sudo_visible(visible: bool) -> None:
     """Set whether the ``sudo`` parameter appears in tool schemas.
 
@@ -144,7 +127,7 @@ def set_sudo_visible(visible: bool) -> None:
     Args:
         visible: ``True`` to show sudo (default), ``False`` to hide it.
     """
-    _sudo_flag.visible = visible
+    _VIRTUAL_PARAMS["sudo"].visible = visible
 
 
 # ---------------------------------------------------------------------------
@@ -164,8 +147,9 @@ def inject_into(parameters: dict[str, Any]) -> None:
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
         if name not in props:
-            # Skip scope-gated params when their scope is not available.
-            if name == "sudo" and not _sudo_flag.visible:
+            # Skip params whose scope is not available (e.g. ``sudo``
+            # when the active token lacks the ``sudo`` or ``all`` scope).
+            if not vp.visible:
                 continue
             props[name] = {
                 **vp.schema,

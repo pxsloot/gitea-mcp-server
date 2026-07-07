@@ -216,6 +216,13 @@ def register_unified_search(
                                 "description": "Doc title (doc results only)",
                             },
                         },
+                        "example": {
+                            "type": "tool",
+                            "name": "gitea_issue_create_issue",
+                            "description": "Create a new issue in a repository",
+                            "tags": ["issue", "synthetic"],
+                            "access_uri": "gitea_issue_create_issue",
+                        },
                     },
                     "description": "Merged results across tools, docs, and resources",
                 },

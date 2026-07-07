@@ -109,6 +109,33 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
     post_hook=_sudo_post_hook,
 )
 
+# ---------------------------------------------------------------------------
+# Scope-based visibility control
+# ---------------------------------------------------------------------------
+
+_sudo_visible: bool = True
+"""Whether the ``sudo`` virtual param is injected into tool schemas.
+
+Set to ``False`` at startup when the active token lacks the ``sudo`` or
+``all`` scope.  When ``False``, agents never see the parameter and cannot
+use it — which is the correct UX for a token that would be rejected by
+the Gitea API anyway.
+"""
+
+
+def set_sudo_visible(visible: bool) -> None:
+    """Set whether the ``sudo`` parameter appears in tool schemas.
+
+    Call once at startup after determining the active token's scopes.
+    When set to ``False``, ``inject_into`` will skip adding the ``sudo``
+    virtual param to every tool's schema, so agents never discover it.
+
+    Args:
+        visible: ``True`` to show sudo (default), ``False`` to hide it.
+    """
+    global _sudo_visible
+    _sudo_visible = visible
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle functions
@@ -120,10 +147,16 @@ def inject_into(parameters: dict[str, Any]) -> None:
 
     Idempotent — skips any parameter name that already exists, which also
     guards against shadowing a real API parameter.
+
+    Scope-gated params (like ``sudo``) are only injected when the active
+    token has the required scope — see :func:`set_sudo_visible`.
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
         if name not in props:
+            # Skip scope-gated params when their scope is not available.
+            if name == "sudo" and not _sudo_visible:
+                continue
             props[name] = {
                 **vp.schema,
                 "default": vp.default,
@@ -180,5 +213,6 @@ __all__ = [
     "apply_to",
     "extract_from",
     "inject_into",
+    "set_sudo_visible",
     "sudo_context",
 ]

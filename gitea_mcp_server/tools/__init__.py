@@ -28,6 +28,7 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_to,
     extract_from,
     inject_into,
+    set_sudo_visible,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "extract_from",
     "generate_tool_title",
     "inject_into",
+    "set_sudo_visible",
 ]

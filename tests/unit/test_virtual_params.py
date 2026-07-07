@@ -214,6 +214,48 @@ class TestSudoHooks:
 
 
 # ---------------------------------------------------------------------------
+# sudo — scope-gated visibility
+# ---------------------------------------------------------------------------
+
+
+class TestSudoVisibility:
+    """Tests that the sudo param is hidden/shown based on _sudo_visible flag."""
+
+    def _restore_sudo(self) -> None:
+        """Restore sudo visibility to True after test."""
+        from gitea_mcp_server.tools.virtual_params import set_sudo_visible
+
+        set_sudo_visible(True)
+
+    def test_inject_into_skips_sudo_when_hidden(self):
+        """sudo not added to tool schema when _sudo_visible is False."""
+        from gitea_mcp_server.tools.virtual_params import (
+            inject_into,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(False)
+        params: dict = {"properties": {}}
+        inject_into(params)
+        assert "sudo" not in params["properties"]
+        self._restore_sudo()
+
+    def test_inject_into_includes_sudo_when_visible(self):
+        """sudo added to tool schema when _sudo_visible is True (default)."""
+        from gitea_mcp_server.tools.virtual_params import (
+            inject_into,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(True)
+        params: dict = {"properties": {}}
+        inject_into(params)
+        assert "sudo" in params["properties"]
+        assert params["properties"]["sudo"]["type"] == "string"
+        assert params["properties"]["sudo"]["minLength"] == 1
+
+
+# ---------------------------------------------------------------------------
 # extract_from
 # ---------------------------------------------------------------------------
 

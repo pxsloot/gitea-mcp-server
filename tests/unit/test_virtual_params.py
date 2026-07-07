@@ -255,6 +255,72 @@ class TestSudoVisibility:
         assert params["properties"]["sudo"]["minLength"] == 1
 
 
+class TestSudoErrorPaths:
+    """Error/safety path tests for sudo lifecycle."""
+
+    def test_extract_and_pre_hook_clear_post_hook_restores(self):
+        """Full lifecycle: extract sets context, apply_to clears it."""
+        from gitea_mcp_server.tools.virtual_params import (
+            apply_pre_hooks,
+            apply_to,
+            extract_from,
+            sudo_context,
+        )
+
+        kwargs = {"owner": "test", "repo": "x", "sudo": "alice"}
+        assert sudo_context.get() is None
+
+        # 1. extract — pops sudo from kwargs
+        extracted = extract_from(kwargs)
+        assert "sudo" not in kwargs
+        assert extracted == {"sudo": "alice"}
+
+        # 2. pre-hook — sets context var
+        apply_pre_hooks(extracted)
+        assert sudo_context.get() == "alice"
+
+        # 3. post-hook — clears context var
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        final = apply_to(result, extracted)
+        assert sudo_context.get() is None
+        assert final is result  # passthrough
+
+    def test_extract_from_still_pops_sudo_when_hidden(self):
+        """extract_from pops sudo from kwargs even when _sudo_visible is False."""
+        from gitea_mcp_server.tools.virtual_params import (
+            extract_from,
+            set_sudo_visible,
+        )
+
+        set_sudo_visible(False)
+        kwargs = {"owner": "test", "sudo": "cheater"}
+        extracted = extract_from(kwargs)
+        assert "sudo" not in kwargs  # still popped from kwargs
+        assert extracted == {"sudo": "cheater"}
+        set_sudo_visible(True)
+
+    def test_post_hook_double_clear_is_safe(self):
+        """Calling post_hook when context is already None is safe (no-op)."""
+        from gitea_mcp_server.tools.virtual_params import (
+            _sudo_post_hook,
+            sudo_context,
+        )
+
+        sudo_context.set(None)
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        returned = _sudo_post_hook(result, "alice")
+        assert sudo_context.get() is None
+        assert returned is result  # passthrough
+
+    def test_extract_from_unknown_param_ignored(self):
+        """Unknown params in _VIRTUAL_PARAMS are ignored by extract_from."""
+        from gitea_mcp_server.tools.virtual_params import extract_from
+
+        kwargs = {"owner": "test", "nobody_home": "x"}
+        extracted = extract_from(kwargs)
+        assert extracted == {}
+
+
 # ---------------------------------------------------------------------------
 # extract_from
 # ---------------------------------------------------------------------------

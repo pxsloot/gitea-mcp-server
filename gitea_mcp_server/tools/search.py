@@ -582,6 +582,7 @@ def register_synthetic_tools(
                                     "readOnlyHint": {"type": "boolean"},
                                     "destructiveHint": {"type": "boolean"},
                                     "idempotentHint": {"type": "boolean"},
+                                    "openWorldHint": {"type": "boolean"},
                                 },
                             },
                         },

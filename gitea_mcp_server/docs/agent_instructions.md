@@ -43,7 +43,7 @@ call_tool("gitea_list_resources", {"tag": "repository"})
 call_tool("gitea_user_get_current")
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
-call_tool("gitea_repo_list_branches", {"owner": "org", "repo": "repo"}, format="markdown")  # formatted
+call_tool("gitea_repo_list_branches", {"owner": "org", "repo": "repo", "format": "markdown"})  # formatted
 ```
 
 The synthetic `call_tool` tool (e.g., `call_tool("gitea_search_tools", ...)`) is a proxy that dispatches to other tools. Both prefixed and unprefixed names work with it — it automatically resolves unprefixed names (e.g., `search_tools`) to their prefixed form. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
@@ -236,8 +236,10 @@ work -- token scopes, branch protection, permission models, labels, etc.
 
 ## Output Format (`format` parameter)
 
-**Every tool** — both synthetic tools and auto-generated API tools — accepts a
-``format`` parameter to control how results are presented:
+**Every tool except ``call_tool``** (which is a transparent proxy) accepts a
+``format`` parameter to control how results are presented.  For API tools,
+include ``format`` in the arguments dict; for synthetic tools, pass it as a
+direct parameter (e.g. ``search(query, format="json")``):
 
 | Format | When to use |
 |--------|-------------|
@@ -257,7 +259,7 @@ call_tool("gitea_user_get_current")
 call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 42})
 
 # JSON -- for programmatic extraction
-call_tool("gitea_repo_get", {"owner": "org", "repo": "repo"}, format="json")
+call_tool("gitea_repo_get", {"owner": "org", "repo": "repo", "format": "json"})
 search("create pr", format="json")
 search_tools("issue", format="json")
 
@@ -266,7 +268,7 @@ read_resource("gitea://repos/org/repo", format="raw")
 ```
 
 ## Resources vs Tools
-- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. All tools accept a `format` parameter. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results.
+- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results. To control output format on any tool except `call_tool` (which is a transparent proxy), include `format` in its arguments — see the **Output Format** section below.
 - **Resources**: Cached, efficient reads. `list_resources`, `read_resource`, and `search_resources` accept a `format` parameter and are called directly (not via `call_tool`).
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

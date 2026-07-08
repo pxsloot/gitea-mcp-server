@@ -242,7 +242,7 @@ class TestCallToolRuntimeBehavior:
 
     @pytest.mark.asyncio
     async def test_call_tool_passes_toolresult_through(self):
-        """call_tool should reformat result with markdown by default, preserving structured_content."""
+        """call_tool is a transparent proxy that returns the inner result unchanged."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
         inner_result = ToolResult(
@@ -254,40 +254,33 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, "markdown", mock_ctx)
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
-        assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
-        assert len(result.content) == 1
-        assert "| Id | 1 |" in result.content[0].text
+        assert result is inner_result
 
     @pytest.mark.asyncio
-    async def test_call_tool_json_format(self):
-        """call_tool with format=json should produce pretty-printed JSON in content."""
-        import json as json_module
-
+    async def test_call_tool_passes_through_json_format(self):
+        """call_tool passes through a JSON-formatted result unchanged (format handled by inner tool)."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
-        data = [{"id": 1}, {"id": 2}]
-
+        data = {"result": [{"id": 1}, {"id": 2}]}
         inner_result = ToolResult(
-            content=[],
-            structured_content={"result": data},
+            content=[TextContent(type="text", text='[{"id": 1}, {"id": 2}]')],
+            structured_content=data,
             meta={"fastmcp": {"wrap_result": True}},
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, "json", mock_ctx)
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
-        assert result.structured_content == {"result": data}
-        assert len(result.content) == 1
-        parsed = json_module.loads(result.content[0].text)
-        assert parsed == data
+        assert result is inner_result
+        assert result.structured_content == data
 
     @pytest.mark.asyncio
-    async def test_call_tool_raw_format(self):
-        """call_tool with format=raw should return the inner ToolResult unchanged."""
+    async def test_call_tool_passes_through_raw_result(self):
+        """call_tool passes through a raw-formatted result unchanged (format handled by inner tool)."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
         inner_result = ToolResult(
@@ -299,7 +292,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, "raw", mock_ctx)
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
         assert result is inner_result
 
@@ -317,7 +310,8 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, "markdown", mock_ctx)
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+        assert result is inner_result
         assert result.structured_content == {"result": {"items": [1, 2, 3], "count": 3}}
         inner = result.structured_content["result"]
         assert "result" not in inner, (
@@ -339,7 +333,8 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, "markdown", mock_ctx)
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+        assert result is inner_result
         assert result.meta == inner_meta
 
     @pytest.mark.asyncio
@@ -350,7 +345,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx = MagicMock()
 
         with pytest.raises(ValueError, match="cannot call itself"):
-            await _call_tool_impl("call_tool", {}, "markdown", mock_ctx)
+            await _call_tool_impl("call_tool", {}, mock_ctx)
 
     @pytest.mark.asyncio
     async def test_call_tool_parses_json_string_arguments(self):
@@ -362,7 +357,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', "markdown", mock_ctx)
+        await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with(
             "gitea_test_tool", {"key": "val", "num": 42}
         )
@@ -375,10 +370,10 @@ class TestCallToolRuntimeBehavior:
         mock_ctx = MagicMock()
 
         with pytest.raises(ValueError, match="Arguments must be a dict"):
-            await _call_tool_impl("gitea_test_tool", [1, 2, 3], "markdown", mock_ctx)
+            await _call_tool_impl("gitea_test_tool", [1, 2, 3], mock_ctx)
 
         with pytest.raises(ValueError, match="Arguments must be a dict"):
-            await _call_tool_impl("gitea_test_tool", 42, "markdown", mock_ctx)
+            await _call_tool_impl("gitea_test_tool", 42, mock_ctx)
 
     @pytest.mark.asyncio
     async def test_call_tool_rejects_invalid_json(self):
@@ -388,7 +383,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx = MagicMock()
 
         with pytest.raises(ValueError, match="Invalid JSON"):
-            await _call_tool_impl("gitea_test_tool", "{bad json}", "markdown", mock_ctx)
+            await _call_tool_impl("gitea_test_tool", "{bad json}", mock_ctx)
 
     @pytest.mark.asyncio
     async def test_call_tool_handles_none_arguments(self):
@@ -400,7 +395,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        await _call_tool_impl("gitea_test_tool", None, "markdown", mock_ctx)
+        await _call_tool_impl("gitea_test_tool", None, mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
 
     @pytest.mark.asyncio
@@ -417,8 +412,8 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        final = await _call_tool_impl("gitea_array_tool", None, "markdown", mock_ctx)
-        assert final.structured_content == {"result": [{"id": "a"}, {"id": "b"}]}
+        final = await _call_tool_impl("gitea_array_tool", None, mock_ctx)
+        assert final is inner_result
 
 
 class TestCompactSearchSerializer:
@@ -684,8 +679,8 @@ class TestCallToolRuntimeBehaviorExtended:
     """Extended tests for call_tool runtime behavior."""
 
     @pytest.mark.asyncio
-    async def test_call_tool_markdown_with_output_schema(self):
-        """call_tool with format=markdown should use tool's output_schema for formatting."""
+    async def test_call_tool_passes_through_regardless_of_output_schema(self):
+        """call_tool ignores the tool's output_schema — the inner tool handles its own formatting."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
         data = {"id": 1, "name": "test"}
@@ -696,23 +691,10 @@ class TestCallToolRuntimeBehaviorExtended:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
 
-        schema_tool = MagicMock()
-        schema_tool.output_schema = {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "object",
-                    "properties": {"id": {"type": "integer"}},
-                },
-            },
-        }
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=schema_tool)
-
-        result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, "markdown", mock_ctx)
-        assert result.structured_content == {"result": data}
-        assert len(result.content) == 1
-        assert "| Id |" in result.content[0].text
+        result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, mock_ctx)
+        assert result is inner_result
 
 
 class TestToolInfo:
@@ -1041,7 +1023,6 @@ class TestSyntheticToolAnnotations:
             await _call_tool_impl(
                 name="nonexistent",
                 arguments="not-json",
-                format="markdown",
                 ctx=ctx,
             )
 

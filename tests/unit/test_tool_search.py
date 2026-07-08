@@ -50,51 +50,93 @@ class TestSearchableText:
 
 
 class TestCallToolOutputSchema:
-    """Tests for call_tool output_schema."""
+    """Tests for call_tool output_schema (via actual registration)."""
 
-    def test_call_tool_has_output_schema(self):
+    @pytest.mark.asyncio
+    async def _get_call_tool(self) -> Tool:
+        """Helper: register synthetic tools and return the call_tool."""
+        from fastmcp import FastMCP
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        return tool_map.get("call_tool")
+
+    @pytest.mark.asyncio
+    async def test_call_tool_has_output_schema(self):
         """call_tool should have an output_schema set with type object and result property."""
-        from gitea_mcp_server.tools.search import _call_tool_impl
-        from fastmcp.tools.base import Tool
-
-        tool = Tool.from_function(
-            fn=_call_tool_impl,
-            name="call_tool",
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "description": "Result of the tool call, wrapped in result for consistency",
-                    },
-                },
-            },
-        )
+        tool = await self._get_call_tool()
+        assert tool is not None, "call_tool not registered"
         assert tool.output_schema is not None
         assert tool.output_schema["type"] == "object"
         assert "result" in tool.output_schema["properties"]
         assert "x-fastmcp-wrap-result" not in tool.output_schema
 
-    def test_call_tool_result_property_accepts_any_type(self):
-        """The 'result' property must not have a 'type' constraint (accepts arrays, etc.)."""
-        from gitea_mcp_server.tools.search import _call_tool_impl
-        from fastmcp.tools.base import Tool
-
-        tool = Tool.from_function(
-            fn=_call_tool_impl,
-            name="call_tool",
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "description": "Result of the tool call",
-                    },
-                },
-            },
-        )
+    @pytest.mark.asyncio
+    async def test_call_tool_result_property_accepts_any_type(self):
+        """The 'result' property must not have a restrictive type constraint
+        (accepts both objects and arrays since it proxies any tool)."""
+        tool = await self._get_call_tool()
+        assert tool is not None, "call_tool not registered"
         result_schema = tool.output_schema["properties"]["result"]
-        assert "type" not in result_schema, (
-            f"Expected result to accept any type, got 'type': {result_schema.get('type')!r}"
+        # Must not have a bare "type": "object" that rejects arrays
+        has_any_of = "anyOf" in result_schema
+        no_type = "type" not in result_schema
+        assert has_any_of or no_type, (
+            f"call_tool.result has a bare type constraint: {result_schema!r}"
         )
+        if has_any_of:
+            types = {entry.get("type") for entry in result_schema["anyOf"]}
+            assert "object" in types, f"anyOf should accept objects, got {types}"
+            assert "array" in types, f"anyOf should accept arrays, got {types}"
+
+
+class TestToolInfoOutputSchema:
+    """Tests for tool_info output_schema (via actual registration)."""
+
+    @pytest.mark.asyncio
+    async def _get_tool_info(self) -> Tool:
+        """Helper: register synthetic tools and return the tool_info tool."""
+        from fastmcp import FastMCP
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        return tool_map.get("tool_info")
+
+    @pytest.mark.asyncio
+    async def test_tool_info_has_output_schema(self):
+        """tool_info should have an output_schema set with type object and result property."""
+        tool = await self._get_tool_info()
+        assert tool is not None, "tool_info not registered"
+        assert tool.output_schema is not None
+        assert tool.output_schema["type"] == "object"
+        assert "result" in tool.output_schema["properties"]
+
+    @pytest.mark.asyncio
+    async def test_tool_info_output_example_accepts_array(self):
+        """tool_info's output_example property must accept arrays (tool schemas return list examples)."""
+        tool = await self._get_tool_info()
+        assert tool is not None, "tool_info not registered"
+        result_schema = tool.output_schema["properties"]["result"]
+        output_example_schema = result_schema.get("properties", {}).get("output_example", {})
+        assert output_example_schema, "output_example missing from tool_info.result.properties"
+        # Must accept both object and array (via anyOf or no type constraint)
+        has_any_of = "anyOf" in output_example_schema
+        no_type = "type" not in output_example_schema
+        assert has_any_of or no_type, (
+            f"output_example has a bare type constraint: {output_example_schema!r}"
+        )
+        if has_any_of:
+            types = {entry.get("type") for entry in output_example_schema["anyOf"]}
+            assert "object" in types, f"anyOf should accept objects, got {types}"
+            assert "array" in types, f"anyOf should accept arrays, got {types}"
 
 
 class TestFormatResult:

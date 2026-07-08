@@ -588,7 +588,13 @@ def register_synthetic_tools(
                             "annotations": {
                                 "type": "object",
                                 "properties": {
-                                    "title": {"type": "string"},
+                                    "title": {
+                                        "anyOf": [
+                                            {"type": "string"},
+                                            {"type": "null"},
+                                        ],
+                                        "description": "Tool title (may be null if not explicitly set)",
+                                    },
                                     "readOnlyHint": {"type": "boolean"},
                                     "destructiveHint": {"type": "boolean"},
                                     "idempotentHint": {"type": "boolean"},
@@ -636,7 +642,10 @@ def register_synthetic_tools(
             "type": "object",
             "properties": {
                 "result": {
-                    "type": "object",
+                    "anyOf": [
+                        {"type": "object"},
+                        {"type": "array"},
+                    ],
                     "description": "Result of the tool call, wrapped in result for consistency",
                     "example": {"id": 1, "name": "example-repo", "description": "Example output"},
                 },
@@ -669,13 +678,22 @@ def register_synthetic_tools(
                         "description": {"type": "string"},
                         "parameters": {"type": "object"},
                         "output_example": {
-                            "type": "object",
+                            "anyOf": [
+                                {"type": "object"},
+                                {"type": "array"},
+                            ],
                             "description": "Example return value (may be object, array, etc.)",
                         },
-                        "annotations": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"},
+                            "annotations": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {
+                                        "anyOf": [
+                                            {"type": "string"},
+                                            {"type": "null"},
+                                        ],
+                                        "description": "Tool title (may be null if not explicitly set)",
+                                    },
                                 "readOnlyHint": {"type": "boolean"},
                                 "destructiveHint": {"type": "boolean"},
                                 "idempotentHint": {"type": "boolean"},

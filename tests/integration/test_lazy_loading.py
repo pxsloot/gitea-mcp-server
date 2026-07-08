@@ -4,6 +4,7 @@ import pytest
 import respx
 
 from fastmcp.exceptions import ToolError
+from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
@@ -459,3 +460,144 @@ class TestLazyLoading:
                     f"{prefix}call_tool",
                     {"name": "call_tool"},
                 )
+
+
+class TestLowLevelProtocolValidation:
+    """Exercises the MCP low-level protocol handler to catch output schema
+    validation errors that only surface at the protocol transport layer.
+
+    Regression tests for issue #412: synthetic tools with array-typed results
+    were rejected by ``jsonschema.validate()`` because their ``output_schema``
+    declared ``"type": "object"`` on properties that could also return arrays.
+    """
+
+    @pytest.mark.asyncio
+    async def test_synthetic_tools_pass_low_level_validation(self):
+        """All visible synthetic tools called through the MCP low-level handler
+        must produce ``structuredContent`` that validates against their
+        ``outputSchema`` (no ``ValidationError``)."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+        prefix = config.tool_prefix or ""
+
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/repos/{owner}/{repo}/issues": {
+                    "get": {
+                        "operationId": "issueListIssues",
+                        "summary": "List issues",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get(f"{config.url}/swagger.v1.json").respond(200, json=spec)
+            # Mock the Gitea API endpoint used by the version resource
+            mock_http.get(f"{config.url}/api/v1/version").respond(
+                200, json={"version": "1.22.0"}
+            )
+            mcp = await create_mcp_server(gitea_client)
+
+            # Access the low-level MCP server (private, but needed for protocol-level tests)
+            lowlevel = mcp._mcp_server
+            list_handler = lowlevel.request_handlers[ListToolsRequest]
+            call_handler = lowlevel.request_handlers[CallToolRequest]
+
+            # Step 1: list_tools to populate the tool cache
+            list_req = ListToolsRequest(method="tools/list")
+            await list_handler(list_req)
+
+            # Step 2: call each synthetic tool through the low-level handler
+            synthetic_tests = [
+                # (name, arguments)
+                (f"{prefix}search_tools", {"query": "issue"}),
+                (f"{prefix}tool_info", {"name": f"{prefix}search_tools"}),
+                (f"{prefix}search_resources", {"query": "repo"}),
+                (f"{prefix}list_resources", {}),
+                (f"{prefix}read_resource", {"uri": "gitea://version"}),
+            ]
+
+            for tool_name, arguments in synthetic_tests:
+                req = CallToolRequest(
+                    method="tools/call",
+                    params=CallToolRequestParams(name=tool_name, arguments=arguments),
+                )
+                result = await call_handler(req)
+
+                assert not result.root.isError, (
+                    f"{tool_name} raised low-level error: "
+                    f"{result.root.content[0].text if result.root.content else 'no content'}"
+                )
+                # structured_content must be present and contain "result"
+                assert result.root.structuredContent is not None, (
+                    f"{tool_name} has no structuredContent"
+                )
+                assert "result" in result.root.structuredContent, (
+                    f"{tool_name}.structuredContent missing 'result' key"
+                )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_via_low_level_passes_validation(self):
+        """call_tool (the proxy) called through the low-level handler must
+        validate for both object-returning and array-returning proxied tools."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+        prefix = config.tool_prefix or ""
+
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {},
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get(f"{config.url}/swagger.v1.json").respond(200, json=spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            lowlevel = mcp._mcp_server
+            list_handler = lowlevel.request_handlers[ListToolsRequest]
+            call_handler = lowlevel.request_handlers[CallToolRequest]
+
+            list_req = ListToolsRequest(method="tools/list")
+            await list_handler(list_req)
+
+            # call_tool proxying tool_info (returns an object)
+            import json as json_module
+
+            req = CallToolRequest(
+                method="tools/call",
+                params=CallToolRequestParams(
+                    name=f"{prefix}call_tool",
+                    arguments={
+                        "name": f"{prefix}tool_info",
+                        "arguments": json_module.dumps({"name": f"{prefix}search_tools"}),
+                    },
+                ),
+            )
+            result = await call_handler(req)
+            assert not result.root.isError, (
+                f"call_tool -> tool_info failed: "
+                f"{result.root.content[0].text if result.root.content else 'no content'}"
+            )
+            result_value = result.root.structuredContent.get("result", {})
+            assert isinstance(result_value, dict), (
+                f"Expected dict from call_tool -> tool_info, got {type(result_value)}"
+            )

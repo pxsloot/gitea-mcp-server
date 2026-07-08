@@ -11,6 +11,7 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/332
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import respx
@@ -464,20 +465,59 @@ class TestToolInfoAnnotations:
     ``enable_lazy_loading=True``.
     """
 
-    async def test_synthetic_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
-        """tool_info returns correct annotations for a synthetic tool."""
-        # The GiteaNamespace prefixes all tool names, so the namespaced
-        # tool name is ``gitea_tool_info``, not ``tool_info``.
-        result = await search_mcp_server.call_tool(
+    async def _assert_tool_annotations(
+        self,
+        server: Any,
+        tool_name: str,
+        *,
+        read_only: bool,
+        open_world: bool,
+    ) -> dict:
+        """Fetch tool annotations via tool_info and verify all 4 hints are correct."""
+        result = await server.call_tool(
             "gitea_tool_info",
-            {"name": "gitea_search_tools", "format": "json"},
+            {"name": tool_name, "format": "json"},
         )
         assert result.structured_content is not None
         data = result.structured_content["result"]
         assert isinstance(data, dict)
         annotations = data.get("annotations", {})
-        assert annotations.get("openWorldHint") is False, (
-            f"Expected openWorldHint=False via tool_info, got {annotations}"
+        assert annotations.get("readOnlyHint") is read_only, (
+            f"{tool_name}.readOnlyHint: expected {read_only}, got {annotations}"
+        )
+        assert annotations.get("destructiveHint") is False, (
+            f"{tool_name}.destructiveHint: expected False, got {annotations}"
+        )
+        assert annotations.get("idempotentHint") is read_only, (
+            f"{tool_name}.idempotentHint: expected {read_only}, got {annotations}"
+        )
+        assert annotations.get("openWorldHint") is open_world, (
+            f"{tool_name}.openWorldHint: expected {open_world}, got {annotations}"
+        )
+        return annotations
+
+    async def test_synthetic_local_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+        """Local synthetic tool (search_tools): read_only=True, open_world=False."""
+        await self._assert_tool_annotations(
+            search_mcp_server, "gitea_search_tools", read_only=True, open_world=False
+        )
+
+    async def test_call_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+        """call_tool: read_only=False, open_world=True."""
+        await self._assert_tool_annotations(
+            search_mcp_server, "gitea_call_tool", read_only=False, open_world=True
+        )
+
+    async def test_read_resource_annotations_via_tool_info(self, search_mcp_server) -> None:
+        """read_resource: read_only=True, open_world=True."""
+        await self._assert_tool_annotations(
+            search_mcp_server, "gitea_read_resource", read_only=True, open_world=True
+        )
+
+    async def test_list_resources_annotations_via_tool_info(self, search_mcp_server) -> None:
+        """list_resources: read_only=True, open_world=False."""
+        await self._assert_tool_annotations(
+            search_mcp_server, "gitea_list_resources", read_only=True, open_world=False
         )
 
     async def test_api_tool_annotations_via_tool_info(self, search_mcp_server) -> None:

@@ -2,7 +2,6 @@
 
 from gitea_mcp_server.search import (
     _BM25Index,
-    _BM25IndexLen2,
     _expand_word_aliases,
     _texts_hash,
     _tokenize_len2,
@@ -156,19 +155,83 @@ class TestBM25Index:
         results = index.query("zzzzzzz", 10)
         assert results == []
 
+    def test_min_score_zero_returns_all_matches(self):
+        """min_score=0.0 returns every document with any overlap."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple cherry", "orange grape"])
+        results = index.query("apple", 10, min_score=0.0)
+        # docs 0 and 1 both contain "apple"
+        assert 0 in results
+        assert 1 in results
+        # doc 2 has no match for "apple"
+        assert 2 not in results
 
-class TestBM25IndexLen2:
-    """Tests for _BM25IndexLen2."""
+    def test_min_score_filters_weak_matches(self):
+        """High min_score filters out lower-ranked documents."""
+        index = _BM25Index()
+        # doc 1 has "apple" twice — stronger match
+        index.build(["apple banana", "apple apple cherry"])
+        results = index.query("apple", 10, min_score=0.0)
+        assert len(results) == 2  # both docs match at min_score=0
 
-    def test_inherits_query_from_base(self):
-        """_BM25IndexLen2 inherits query() from _BM25Index."""
-        index = _BM25IndexLen2()
-        index.build(["hello world"])
-        assert index.query("hello", 10) == [0]
+        # doc 0 has fewer occurrences: its normalized score will be < 1.0
+        # At min_score=1.0 only the top doc passes
+        top_only = index.query("apple", 10, min_score=1.0)
+        assert top_only == [1]  # only the strongest match
+
+    def test_min_score_one_returns_only_top(self):
+        """min_score=1.0 returns only the top-ranked document."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple apple", "orange grape"])
+        results = index.query("apple", 10, min_score=1.0)
+        assert len(results) == 1
+        assert results[0] == 1  # doc 1 has highest TF for "apple"
+
+    def test_min_score_with_top_k(self):
+        """min_score and top_k interact correctly."""
+        index = _BM25Index()
+        index.build(["apple", "apple apple", "apple apple apple", "orange"])
+        # top_k=2 should return at most 2, but min_score=1.0 only keeps top 1
+        results = index.query("apple", top_k=2, min_score=1.0)
+        assert len(results) == 1
+
+    def test_query_with_scores_returns_normalized_scores(self):
+        """query_with_scores returns (index, score) with top score == 1.0."""
+        index = _BM25Index()
+        index.build(["apple banana", "apple apple cherry"])
+        ranked = index.query_with_scores("apple", 10, min_score=0.0)
+        assert [i for i, _ in ranked] == [1, 0]
+        scores = [s for _, s in ranked]
+        assert scores[0] == 1.0  # top match normalized to 1.0
+        assert 0.0 < scores[1] < 1.0  # weaker match below 1.0
+
+    def test_query_with_scores_out_of_range_raises(self):
+        """min_score outside [0.0, 1.0] raises ValueError."""
+        index = _BM25Index()
+        index.build(["apple banana"])
+        import pytest
+
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query_with_scores("apple", 10, min_score=1.5)
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query_with_scores("apple", 10, min_score=-0.1)
+
+    def test_query_bounds_check_raises(self):
+        """The list[int] query() also enforces the min_score bounds."""
+        import pytest
+
+        index = _BM25Index()
+        index.build(["apple banana"])
+        with pytest.raises(ValueError, match="min_score must be in"):
+            index.query("apple", 10, min_score=2.0)
+
+
+class TestBM25IndexTwoCharTokens:
+    """Tests that _BM25Index supports 2-character tokens."""
 
     def test_two_char_tokens_supported(self):
         """2-char tokens like 'pr' are indexed and searchable."""
-        index = _BM25IndexLen2()
+        index = _BM25Index()
         index.build(["create pr", "create pull request"])
         results = index.query("pr", 10)
         assert 0 in results
@@ -198,3 +261,47 @@ class TestBM25SearchEngine:
 
         r2 = engine.search(["foo bar"], "hello", 10)
         assert r2 == []
+
+    def test_search_with_min_score_zero(self):
+        """min_score=0.0 returns all matches."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple cherry", "orange grape"]
+        results = engine.search(texts, "apple", 10, min_score=0.0)
+        assert 0 in results
+        assert 1 in results
+        assert 2 not in results
+
+    def test_search_with_min_score_one(self):
+        """min_score=1.0 returns only top match."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple", "orange"]
+        results = engine.search(texts, "apple", 10, min_score=1.0)
+        assert results == [1]
+
+    def test_search_with_high_min_score_filters(self):
+        """High min_score filters weak matches."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple apple", "apple cherry"]
+        results_default = engine.search(texts, "apple", 10)  # uses default min_score=0.0
+        assert len(results_default) >= 2
+
+        results_high = engine.search(texts, "apple", 10, min_score=1.0)
+        assert len(results_high) < len(results_default)
+
+    def test_search_with_scores_returns_scores(self):
+        """search_with_scores returns (index, score) pairs."""
+        engine = BM25SearchEngine()
+        texts = ["apple banana", "apple apple cherry"]
+        ranked = engine.search_with_scores(texts, "apple", 10, min_score=0.0)
+        assert [i for i, _ in ranked] == [1, 0]
+        assert [s for _, s in ranked][0] == 1.0
+
+    def test_search_bounds_check_raises(self):
+        """min_score outside [0.0, 1.0] raises ValueError."""
+        import pytest
+
+        engine = BM25SearchEngine()
+        with pytest.raises(ValueError, match="min_score must be in"):
+            engine.search(["apple banana"], "apple", 10, min_score=1.2)
+        with pytest.raises(ValueError, match="min_score must be in"):
+            engine.search(["apple banana"], "apple", 10, min_score=-1.0)

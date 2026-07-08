@@ -14,18 +14,19 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     SEARCH_CATEGORY_ALIASES,
+    SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import _format_as_markdown, format_result
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
     _raise_value_error,
     _raise_value_error_from,
@@ -47,35 +48,50 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
     return text
 
 
-def _search_and_slice(
+def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent config axes
     items: list[Any],
     texts: list[str],
     query: str,
     page: int,
     limit: int,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> tuple[list[Any], int]:
     """BM25 rank items, then slice by page/limit.
 
     Returns ``(page_items, total_count)`` where ``total_count`` is the total
     number of items that matched the query (before slicing), and
-    ``page_items`` are the items on the requested page.
+    ``page_items`` are the items on the requested page.  Each item in
+    ``page_items`` is a shallow copy of the corresponding input item with an
+    extra ``score`` key (normalized 0.0-1.0, where 1.0 is the top match for
+    this query) so callers/agents can apply their own relevance threshold.
 
     When ``items`` or ``texts`` is empty, returns ``([], 0)``.
     When the page is out of range, returns an empty list with the correct
     ``total_count``.
+
+    Args:
+        items: The items to search over.
+        texts: Searchable text for each item.
+        query: Natural language query.
+        page: Page number (1-based).
+        limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).  Defaults to
+            ``SEARCH_MIN_SCORE``.
     """
     if not items or not texts:
         return [], 0
 
     engine = BM25SearchEngine()
     # Score everything (len(items) is small — ~200 tools, ~35 resources)
-    indices = engine.search(texts, query, len(items))
-    total_count = len(indices)
+    ranked = engine.search_with_scores(texts, query, len(items), min_score=min_score)
+    total_count = len(ranked)
 
     start = (page - 1) * limit
     end = start + limit
-    page_indices = indices[start:end]
-    page_items = [items[i] for i in page_indices]
+    page_ranked = ranked[start:end]
+    # Attach the normalized score to each result item so agents can apply
+    # their own relevance threshold instead of relying solely on min_score.
+    page_items = [{**items[i], "score": round(score, 4)} for i, score in page_ranked]
     return page_items, total_count
 
 
@@ -158,14 +174,11 @@ def _compact_search_serializer(tools: Sequence[Tool]) -> list[ToolSearchEntry]:
         if tool.annotations:
             a = tool.annotations
             annotations = {
-                k: v
-                for k, v in {
-                    "title": a.title,
-                    "readOnlyHint": a.readOnlyHint,
-                    "destructiveHint": a.destructiveHint,
-                    "idempotentHint": a.idempotentHint,
-                }.items()
-                if v is not None
+                "title": a.title,
+                "readOnlyHint": a.readOnlyHint,
+                "destructiveHint": a.destructiveHint,
+                "idempotentHint": a.idempotentHint,
+                "openWorldHint": a.openWorldHint,
             }
         item = ToolSearchEntry(
             name=tool.name,
@@ -271,7 +284,7 @@ async def _call_tool_impl(
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
 
-async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framework plumbing
+async def _search_tools_impl(  # noqa: PLR0913 — ctx, transform, min_score are framework plumbing
     query: str,
     category: str | None,
     format: str,
@@ -279,6 +292,7 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
     transform: TolerantSearchTransform,
     page: int = 1,
     limit: int = 10,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> ToolResult:
     """Core search_tools implementation.
 
@@ -293,6 +307,7 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
         transform: Search transform for tool catalog access.
         page: Page number (1-based).
         limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -304,7 +319,9 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx and transform are framewo
 
     texts = [_extract_searchable_text_enhanced(t) for t in tools]
     serialized = _compact_search_serializer(tools)
-    page_items, total_count = _search_and_slice(serialized, texts, query, page, limit)
+    page_items, total_count = _search_and_slice(
+        serialized, texts, query, page, limit, min_score=min_score
+    )
 
     cross_link_hints = {
         "workflow guides": "search_docs",
@@ -396,7 +413,22 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                     "mimeType": {"type": "string"},
                     "type": {"type": "string"},
                     "tags": {"type": "array"},
+                    "score": {
+                        "type": "number",
+                        "description": "Normalized relevance score (0.0-1.0). "
+                        "1.0 is the top match for this query.",
+                    },
                     "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                },
+                "example": {
+                    "uri": "gitea://repos/{owner}/{repo}",
+                    "name": "Repository",
+                    "description": "Get full repository metadata",
+                    "mimeType": "text/markdown",
+                    "type": "template",
+                    "tags": ["wrapper", "repository"],
+                    "score": 1.0,
+                    "required_scope": "read:repository",
                 },
             },
             "description": "Matching resource definitions ranked by relevance",
@@ -405,12 +437,13 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _search_resources_impl(
+async def _search_resources_impl(  # noqa: PLR0913 — ctx and min_score are framework plumbing
     query: str,
     format: str,
     ctx: Context,
     page: int = 1,
     limit: int = 10,
+    min_score: float = SEARCH_MIN_SCORE,
 ) -> ToolResult:
     """Core search_resources implementation.
 
@@ -423,6 +456,7 @@ async def _search_resources_impl(
         ctx: FastMCP context.
         page: Page number (1-based).
         limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -431,7 +465,9 @@ async def _search_resources_impl(
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
     texts = [_extract_resource_text(r) for r in resources]
-    page_items, total_count = _search_and_slice(resources, texts, query, page, limit)
+    page_items, total_count = _search_and_slice(
+        resources, texts, query, page, limit, min_score=min_score
+    )
 
     cross_link_hints = {
         "workflow guides": "search_docs",
@@ -516,15 +552,23 @@ def register_synthetic_tools(
         ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_tools_impl(query, category, format, ctx, transform, page, limit)
+        return await _search_tools_impl(
+            query, category, format, ctx, transform, page, limit, min_score=min_score
+        )
 
     mcp.tool(
         name="search_tools",
         description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -536,6 +580,11 @@ def register_synthetic_tools(
                             "name": {"type": "string"},
                             "description": {"type": "string"},
                             "tags": {"type": "array", "items": {"type": "string"}},
+                            "score": {
+                                "type": "number",
+                                "description": "Normalized relevance score (0.0-1.0). "
+                                "1.0 is the top match for this query.",
+                            },
                             "annotations": {
                                 "type": "object",
                                 "properties": {
@@ -543,7 +592,21 @@ def register_synthetic_tools(
                                     "readOnlyHint": {"type": "boolean"},
                                     "destructiveHint": {"type": "boolean"},
                                     "idempotentHint": {"type": "boolean"},
+                                    "openWorldHint": {"type": "boolean"},
                                 },
+                            },
+                        },
+                        "example": {
+                            "name": "gitea_issue_list_issues",
+                            "description": "List issues in a repository",
+                            "tags": ["issue"],
+                            "score": 1.0,
+                            "annotations": {
+                                "title": "List Issues",
+                                "readOnlyHint": True,
+                                "destructiveHint": False,
+                                "idempotentHint": True,
+                                "openWorldHint": True,
                             },
                         },
                     },
@@ -568,12 +631,14 @@ def register_synthetic_tools(
         name="call_tool",
         description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=True),
+        annotations=synthetic_annotations(read_only=False, open_world=True),
         output_schema={
             "type": "object",
             "properties": {
                 "result": {
+                    "type": "object",
                     "description": "Result of the tool call, wrapped in result for consistency",
+                    "example": {"id": 1, "name": "example-repo", "description": "Example output"},
                 },
             },
         },
@@ -593,7 +658,7 @@ def register_synthetic_tools(
         name="tool_info",
         description="Get the full schema for a registered tool by exact name. Returns parameter details, output example, annotations, and tags. Use after search_tools to inspect a specific tool before calling it.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -604,26 +669,70 @@ def register_synthetic_tools(
                         "description": {"type": "string"},
                         "parameters": {"type": "object"},
                         "output_example": {
-                            "description": "Example return value (may be object, array, etc.)"
+                            "type": "object",
+                            "description": "Example return value (may be object, array, etc.)",
                         },
-                        "annotations": {"type": "object"},
-                        "tags": {"type": "array"},
+                        "annotations": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "readOnlyHint": {"type": "boolean"},
+                                "destructiveHint": {"type": "boolean"},
+                                "idempotentHint": {"type": "boolean"},
+                                "openWorldHint": {"type": "boolean"},
+                            },
+                        },
+                        "tags": {"type": "array", "items": {"type": "string"}},
                         "version": {"type": "string"},
                     },
                     "description": "Full tool schema",
+                    "example": {
+                        "name": "gitea_issue_get_issue",
+                        "description": "Get a single issue by index",
+                        "parameters": {
+                            "properties": {
+                                "owner": {"type": "string", "description": "owner of the repo"},
+                                "repo": {"type": "string", "description": "name of the repo"},
+                                "index": {"type": "integer", "description": "index of the issue"},
+                            },
+                        },
+                        "output_example": {
+                            "id": 1,
+                            "title": "Example Issue",
+                            "state": "open",
+                            "body": "Issue description",
+                        },
+                        "annotations": {
+                            "title": "Get An Issue",
+                            "readOnlyHint": True,
+                            "destructiveHint": False,
+                            "idempotentHint": True,
+                            "openWorldHint": True,
+                        },
+                        "tags": ["issue"],
+                        "version": "1.0",
+                    },
                 },
             },
         },
     )(tool_info_fn)
 
-    async def search_resources_fn(
+    async def search_resources_fn(  # noqa: PLR0913 — min_score is a new config axis
         query: Annotated[str, "Natural language query to search for resources"],
         format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _search_resources_impl(query, format, ctx, page, limit)
+        return await _search_resources_impl(
+            query, format, ctx, page, limit, min_score=min_score
+        )
 
     mcp.tool(
         name="search_resources",
@@ -633,7 +742,7 @@ def register_synthetic_tools(
         "Use this when you know what kind of information you want but not the "
         "exact resource URI. For an exhaustive listing, use list_resources instead.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
     )(search_resources_fn)
 

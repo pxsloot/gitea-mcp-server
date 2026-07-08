@@ -10,6 +10,7 @@ The `search` tool searches across **tools, workflow docs, and resources** in a s
 result = search("issue")                     # default: markdown output
 result = search("create pull request")       # natural language works
 result = search("branch protection", format="json")
+result = search("webhook", min_score=0.5)    # only highly relevant results
 ```
 
 Each result item:
@@ -57,9 +58,12 @@ The full tool list is **not** available via `list_tools()` (lazy loading). Use `
 results = search_tools("issue")      # returns name + description + tags + annotations for issue tools
 results = search_tools("list repo")  # natural-language queries work
 results = search_tools("create", category="admin")  # narrow by category: admin, organization, user, issue, pull_request, repository, misc
+results = search_tools("webhook", min_score=0.8)    # tighten relevance threshold
 ```
 
-Each result includes `tags` (category labels) and `annotations` (readOnlyHint, destructiveHint, idempotentHint, title) alongside `name` and `description`.
+All search tools (`search`, `search_tools`, `search_resources`, `search_docs`) accept a `min_score` parameter (0.0-1.0, default 0.1) to control relevance. A value of 0.0 returns everything with any overlap; 1.0 returns only the single best match. Raise `min_score` to reduce noise from broad queries.
+
+Each result includes `tags` (category labels), `annotations` (readOnlyHint, destructiveHint, idempotentHint, openWorldHint, title), and a `score` (normalized relevance, 0.0-1.0 where 1.0 is the top match for that query) alongside `name` and `description`. Use `score` to apply your own relevance threshold when `min_score` is too coarse.
 
 Once you have a tool name, inspect its parameters with `tool_info`:
 
@@ -132,7 +136,7 @@ All tools — both API tools and synthetic tools — are prefixed with `gitea_` 
 Resources provide cached, read-only access. Use them for efficient data retrieval when you know the URI pattern. **For any read-only operation, prefer `read_resource()` over calling a tool** -- resources are cached, pre-formatted, and consistently structured.
 
 **List resources**: `list_resources(format="markdown", tag="", type="")` supports `markdown`/`raw`/`json` output. Filter by `tag` (e.g. `"wrapper"`, `"repository"`, `"issue"`) or `type` (`"resource"` or `"template"`) to narrow results.
-**Search resources**: `search_resources(query, format="markdown")` finds resources by natural language (BM25 ranking).
+**Search resources**: `search_resources(query, format="markdown", min_score=0.1)` finds resources by natural language (BM25 ranking). Adjust `min_score` to control relevance strictness.
 **Read resource**: `read_resource(uri, format="markdown")` accepts the same `format` parameter (``markdown`` / ``raw`` / ``json``). Common URIs:
 - `gitea://repos/{owner}/{repo}` → repository summary (Markdown)
 - `gitea://repos/{owner}/{repo}/issues` → all issues (Markdown)

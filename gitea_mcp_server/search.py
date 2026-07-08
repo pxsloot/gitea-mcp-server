@@ -70,7 +70,49 @@ class _BM25Index:
                     seen.add(token)
             self._tf.append(tf)
 
-    def query(self, text: str, top_k: int) -> list[int]:
+    def query(self, text: str, top_k: int, min_score: float = 0.0) -> list[int]:
+        """Query the BM25 index, returning ranked document indices.
+
+        Scores are normalized to [0.0, 1.0] so that ``min_score`` is a
+        predictable dial for agents regardless of corpus size or document
+        length.
+
+        Args:
+            text: Query text.
+            top_k: Maximum number of results to return.
+            min_score: Minimum normalized score (0.0-1.0).  A result must
+                score at least this fraction of the top result to be
+                returned.
+
+        Returns:
+            Ranked list of document indices matching the threshold, most
+            relevant first.
+        """
+        return [i for i, _ in self.query_with_scores(text, top_k, min_score)]
+
+    def query_with_scores(
+        self, text: str, top_k: int, min_score: float = 0.0
+    ) -> list[tuple[int, float]]:
+        """Query the BM25 index, returning ranked ``(index, normalized_score)`` pairs.
+
+        Like :meth:`query` but also returns the normalized score (0.0-1.0)
+        for each result so callers can surface relevance to agents.
+
+        Args:
+            text: Query text.
+            top_k: Maximum number of results to return.
+            min_score: Minimum normalized score (0.0-1.0).  A result must
+                score at least this fraction of the top result to be
+                returned.
+
+        Returns:
+            Ranked list of ``(index, normalized_score)`` tuples, most
+            relevant first.
+        """
+        if not 0.0 <= min_score <= 1.0:
+            msg = f"min_score must be in [0.0, 1.0], got {min_score!r}"
+            raise ValueError(msg)
+
         query_tokens = _tokenize_len2(text)
         if not query_tokens or not self._n:
             return []
@@ -89,33 +131,20 @@ class _BM25Index:
                 denominator = tf + self.k1 * (1 - self.b + self.b * dl / self._avg_dl)
                 scores[i] += idf * numerator / denominator
 
-        ranked = sorted(range(self._n), key=lambda i: scores[i], reverse=True)
-        return [i for i in ranked[:top_k] if scores[i] > 0]
+        # Normalize to [0.0, 1.0] for a predictable agent-facing dial
+        max_score = max(scores) if scores else 0.0
+        normalized = [s / max_score for s in scores] if max_score > 0 else [0.0] * len(scores)
+
+        ranked = sorted(range(self._n), key=lambda i: normalized[i], reverse=True)
+        # Keep only docs with non-zero raw score, then apply the min_score dial
+        return [
+            (i, normalized[i])
+            for i in ranked[:top_k]
+            if scores[i] > 0 and normalized[i] >= min_score
+        ]
 
 
-class _BM25IndexLen2(_BM25Index):
-    """BM25 index that supports 2-character tokens (inherits from local _BM25Index)."""
 
-    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
-        super().__init__(k1, b)
-
-    def build(self, documents: list[str]) -> None:
-        self._doc_tokens = [_tokenize_len2(doc) for doc in documents]
-        self._doc_lengths = [len(tokens) for tokens in self._doc_tokens]
-        self._n = len(documents)
-        self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
-
-        self._df: dict[str, int] = {}
-        self._tf = []
-        for tokens in self._doc_tokens:
-            tf: dict[str, int] = {}
-            seen: set[str] = set()
-            for token in tokens:
-                tf[token] = tf.get(token, 0) + 1
-                if token not in seen:
-                    self._df[token] = self._df.get(token, 0) + 1
-                    seen.add(token)
-            self._tf.append(tf)
 
 
 def _texts_hash(texts: list[str]) -> str:
@@ -134,34 +163,68 @@ class BM25SearchEngine:
     def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
         self._k1 = k1
         self._b = b
-        self._index: _BM25IndexLen2 = _BM25IndexLen2(k1, b)
+        self._index: _BM25Index = _BM25Index(k1, b)
         self._last_texts_hash: str = ""
 
-    def search(self, texts: list[str], query: str, max_results: int = 10) -> list[int]:
+    def search(
+        self,
+        texts: list[str],
+        query: str,
+        max_results: int = 10,
+        min_score: float = 0.0,
+    ) -> list[int]:
         """Search texts by BM25 relevance ranking.
 
         Args:
             texts: Searchable text strings for each document.
             query: Natural language query.
             max_results: Maximum number of results.
+            min_score: Minimum normalized score (0.0-1.0).
 
         Returns:
             Ranked list of indices into the original texts list.
         """
+        return [i for i, _ in self.search_with_scores(texts, query, max_results, min_score)]
+
+    def search_with_scores(
+        self,
+        texts: list[str],
+        query: str,
+        max_results: int = 10,
+        min_score: float = 0.0,
+    ) -> list[tuple[int, float]]:
+        """Search texts by BM25 relevance ranking, returning ``(index, score)`` pairs.
+
+        Like :meth:`search` but also returns the normalized score (0.0-1.0)
+        for each result so callers can surface relevance to agents.
+
+        Args:
+            texts: Searchable text strings for each document.
+            query: Natural language query.
+            max_results: Maximum number of results.
+            min_score: Minimum normalized score (0.0-1.0).
+
+        Returns:
+            Ranked list of ``(index, normalized_score)`` tuples into the
+            original texts list, most relevant first.
+        """
+        if not 0.0 <= min_score <= 1.0:
+            msg = f"min_score must be in [0.0, 1.0], got {min_score!r}"
+            raise ValueError(msg)
+
         current_hash = _texts_hash(texts)
         if current_hash != self._last_texts_hash:
-            new_index = _BM25IndexLen2(self._k1, self._b)
+            new_index = _BM25Index(self._k1, self._b)
             new_index.build(texts)
             self._index, self._last_texts_hash = new_index, current_hash
 
         expanded_query = _expand_word_aliases(query)
-        return list(self._index.query(expanded_query, max_results))
+        return list(self._index.query_with_scores(expanded_query, max_results, min_score))
 
 
 __all__ = [
     "BM25SearchEngine",
     "_BM25Index",
-    "_BM25IndexLen2",
     "_expand_word_aliases",
     "_texts_hash",
     "_tokenize_len2",

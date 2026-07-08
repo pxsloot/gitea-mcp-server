@@ -19,13 +19,14 @@ if TYPE_CHECKING:
 
 from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
+from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _compact_search_serializer,
@@ -62,7 +63,7 @@ def register_unified_search(
         search_transform: TolerantSearchTransform for tool catalog access
     """
 
-    async def search(
+    async def search(  # noqa: PLR0913 — min_score is a new config axis
         query: Annotated[str, "Natural language query to search for tools, docs, and resources"],
         format: Annotated[
             str,
@@ -70,6 +71,12 @@ def register_unified_search(
         ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        min_score: Annotated[
+            float,
+            "Minimum relevance score (0.0-1.0). 0.0 returns everything, "
+            "0.1 requires at least 10% as relevant as the top result, "
+            "1.0 requires perfect match.",
+        ] = SEARCH_MIN_SCORE,
         ctx: Context | None = None,
     ) -> ToolResult:
         if ctx is None:
@@ -135,7 +142,9 @@ def register_unified_search(
             )
             all_texts.append(_extract_doc_search_text(d))
 
-        page_items, total_count = _search_and_slice(all_items, all_texts, query, page, limit)
+        page_items, total_count = _search_and_slice(
+            all_items, all_texts, query, page, limit, min_score=min_score
+        )
 
         if total_count == 0:
             hint = (
@@ -187,7 +196,7 @@ def register_unified_search(
         name="search",
         description="Unified search across tools, workflow docs, and data resources. Returns merged BM25-ranked results with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -203,6 +212,11 @@ def register_unified_search(
                             "name": {"type": "string"},
                             "description": {"type": "string"},
                             "tags": {"type": "array", "items": {"type": "string"}},
+                            "score": {
+                                "type": "number",
+                                "description": "Normalized relevance score (0.0-1.0). "
+                                "1.0 is the top match for this query.",
+                            },
                             "access_uri": {
                                 "type": "string",
                                 "description": "How to access this item",
@@ -215,6 +229,14 @@ def register_unified_search(
                                 "type": "string",
                                 "description": "Doc title (doc results only)",
                             },
+                        },
+                        "example": {
+                            "type": "tool",
+                            "name": "gitea_issue_create_issue",
+                            "description": "Create a new issue in a repository",
+                            "tags": ["issue"],
+                            "score": 1.0,
+                            "access_uri": "gitea_issue_create_issue",
                         },
                     },
                     "description": "Merged results across tools, docs, and resources",

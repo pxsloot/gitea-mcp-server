@@ -14,13 +14,14 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from fastmcp.exceptions import ResourceError
 from fastmcp.tools.base import ToolResult
-from fastmcp.tools.tool import ToolAnnotations
 from mcp.types import TextContent
 
+from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.tools.customize import synthetic_annotations
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -51,6 +52,12 @@ _SEARCH_DOCS_OUTPUT_SCHEMA: dict[str, Any] = {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
+                },
+                "example": {
+                    "name": "token-scopes",
+                    "title": "Token Scopes",
+                    "description": "How Gitea/Forgejo API tokens work, the scope model, and repository access restrictions",
+                    "tags": ["auth", "security", "tokens"],
                 },
             },
             "description": "Matching guide definitions ranked by relevance",
@@ -169,10 +176,21 @@ class DocManager:
                 return guide
         return None
 
-    def search(self, query: str, max_results: int = SEARCH_MAX_RESULTS) -> list[DocEntry]:
+    def search(
+        self,
+        query: str,
+        max_results: int = SEARCH_MAX_RESULTS,
+        min_score: float = 0.0,
+    ) -> list[DocEntry]:
         """Search guides by natural language query.
 
         Returns ranked list of DocEntry objects.
+
+        Args:
+            query: Natural language query.
+            max_results: Maximum number of results to return.
+            min_score: Minimum normalized BM25 score (0.0-1.0).  A result must
+                score at least this fraction of the top result to be returned.
         """
         if not self._search_texts:
             return []
@@ -181,7 +199,9 @@ class DocManager:
                 DocEntry(name=g.name, title=g.title, description=g.description, tags=g.tags)
                 for g in self._guides[:max_results]
             ]
-        indices = self._search_engine.search(self._search_texts, query, max_results)
+        indices = self._search_engine.search(
+            self._search_texts, query, max_results, min_score=min_score
+        )
         return [
             {
                 "name": self._guides[i].name,
@@ -235,7 +255,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
 
     @mcp.tool(
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
     async def search_docs(
@@ -243,6 +263,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
         format: str = "markdown",
         page: int = 1,
         limit: int = 10,
+        min_score: float = SEARCH_MIN_SCORE,
     ) -> ToolResult:
         """Search workflow guides by natural language query.
 
@@ -257,6 +278,8 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
 
         - ``query``: Natural language query (e.g., "how do tokens work", "protect branches", "label scopes")
         - ``format``: Output format -- ``markdown`` (default, human-readable table), ``json`` (structured data), or ``raw``.
+        - ``min_score``: Minimum relevance score (0.0-1.0). 0.0 returns everything,
+          0.1 requires at least 10% as relevant as the top result, 1.0 requires perfect match.
 
         ## Return Value
 
@@ -274,12 +297,15 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
             format: Output format: markdown (default), json, or raw
             page: Page number (1-based, default 1)
             limit: Maximum results per page (1-100, default 10)
+            min_score: Minimum relevance score (0.0-1.0)
 
         Returns:
             Ranked list of matching guide metadata
         """
         all_results = doc_manager.search(
-            query, max_results=len(doc_manager.guides) if doc_manager.guides else 0
+            query,
+            max_results=len(doc_manager.guides) if doc_manager.guides else 0,
+            min_score=min_score,
         )
         total_count = len(all_results)
 
@@ -342,7 +368,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
 
     @mcp.tool(
         tags={"synthetic"},
-        annotations=ToolAnnotations(openWorldHint=False),
+        annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {

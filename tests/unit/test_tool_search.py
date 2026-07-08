@@ -477,7 +477,10 @@ class TestCompactSearchSerializer:
             ),
         )
         result = _compact_search_serializer([tool])
-        assert "annotations" not in result[0]
+        # Annotations are always included now (all 5 fields explicit)
+        ann = result[0].get("annotations", {})
+        assert ann.get("title") is None
+        assert ann.get("readOnlyHint") is None
 
     def test_includes_tags_when_present(self):
         """Should include tags key when tool has tags."""
@@ -832,91 +835,208 @@ class TestTolerantSearchTransform:
 
 
 class TestSyntheticToolAnnotations:
-    """Tests for openWorldHint annotations and descriptions on synthetic tools."""
+    """All 4 annotation hints are explicitly set on every synthetic tool."""
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _assert_all_hints(
+        tool: Tool,
+        *,
+        read_only: bool,
+        open_world: bool,
+    ) -> None:
+        """Assert all 4 hint fields are explicitly set (never None) on a synthetic tool."""
+        assert tool.annotations is not None, f"{tool.name}.annotations is None"
+        assert tool.annotations.readOnlyHint is read_only, (
+            f"{tool.name}.readOnlyHint: expected {read_only}, got {tool.annotations.readOnlyHint}"
+        )
+        assert tool.annotations.destructiveHint is False, (
+            f"{tool.name}.destructiveHint: expected False, got {tool.annotations.destructiveHint}"
+        )
+        assert tool.annotations.idempotentHint is read_only, (
+            f"{tool.name}.idempotentHint: expected {read_only}, "
+            f"got {tool.annotations.idempotentHint}"
+        )
+        assert tool.annotations.openWorldHint is open_world, (
+            f"{tool.name}.openWorldHint: expected {open_world}, got {tool.annotations.openWorldHint}"
+        )
+
+    # ── factory ──────────────────────────────────────────────────────────
+
+    def test_synthetic_annotations_factory(self) -> None:
+        """synthetic_annotations() returns correct ToolAnnotations for all combinations."""
+        from gitea_mcp_server.tools.customize import synthetic_annotations
+
+        # Read-only, local (e.g. search_tools)
+        a1 = synthetic_annotations(read_only=True, open_world=False)
+        assert a1.readOnlyHint is True
+        assert a1.destructiveHint is False
+        assert a1.idempotentHint is True
+        assert a1.openWorldHint is False
+
+        # Non-read-only, open-world (e.g. call_tool)
+        a2 = synthetic_annotations(read_only=False, open_world=True)
+        assert a2.readOnlyHint is False
+        assert a2.destructiveHint is False
+        assert a2.idempotentHint is False
+        assert a2.openWorldHint is True
+
+        # Read-only, open-world (e.g. read_resource)
+        a3 = synthetic_annotations(read_only=True, open_world=True)
+        assert a3.readOnlyHint is True
+        assert a3.destructiveHint is False
+        assert a3.idempotentHint is True
+        assert a3.openWorldHint is True
+
+        # Explicitly verify no None values
+        for a in (a1, a2, a3):
+            assert a.readOnlyHint is not None
+            assert a.destructiveHint is not None
+            assert a.idempotentHint is not None
+            assert a.openWorldHint is not None
+
+    # ── registration tests ───────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_synthetic_tools_have_descriptions(self):
-        """All synthetic tools (search_tools, call_tool, tool_info) must have non-empty descriptions."""
+    async def _get_tool_map(self) -> dict:
+        """Helper: register synthetic tools and return name→Tool dict."""
         from fastmcp import FastMCP
 
         mcp = FastMCP("test")
         transform = TolerantSearchTransform()
         register_synthetic_tools(mcp, transform)
-
         tools = await mcp.list_tools()
-        tool_map = {t.name: t for t in tools}
+        return {t.name: t for t in tools}
 
-        for name in ["search_tools", "call_tool", "tool_info"]:
+    @pytest.mark.asyncio
+    async def test_local_tools_all_hints(self) -> None:
+        """search_tools, tool_info, search_resources: read_only=True, open_world=False."""
+        tool_map = await self._get_tool_map()
+        for name in ("search_tools", "tool_info", "search_resources"):
             t = tool_map.get(name)
             assert t is not None, f"{name} not registered"
-            assert t.description, f"{name}.description should be non-empty, got: {t.description!r}"
+            assert t.description, f"{name}.description should be non-empty"
+            self._assert_all_hints(t, read_only=True, open_world=False)
 
     @pytest.mark.asyncio
-    async def test_local_synthetic_tools_openworld_false(self):
-        """Local synthetic tools should have openWorldHint=False."""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        transform = TolerantSearchTransform()
-        register_synthetic_tools(mcp, transform)
-
-        tools = await mcp.list_tools()
-        tool_map = {t.name: t for t in tools}
-
-        local_tools = ["search_tools", "tool_info"]
-        for name in local_tools:
-            t = tool_map.get(name)
-            assert t is not None, f"{name} not registered"
-            assert t.annotations is not None
-            assert t.annotations.openWorldHint is False, f"{name}.openWorldHint should be False"
-
-    @pytest.mark.asyncio
-    async def test_call_tool_openworld_true(self):
-        """call_tool should have openWorldHint=True (delegates to Gitea API tools)."""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        transform = TolerantSearchTransform()
-        register_synthetic_tools(mcp, transform)
-
-        tools = await mcp.list_tools()
-        tool_map = {t.name: t for t in tools}
-
+    async def test_call_tool_all_hints(self) -> None:
+        """call_tool: read_only=False, open_world=True."""
+        tool_map = await self._get_tool_map()
         t = tool_map.get("call_tool")
         assert t is not None, "call_tool not registered"
-        assert t.annotations is not None
-        assert t.annotations.openWorldHint is True
+        assert t.description, "call_tool.description should be non-empty"
+        self._assert_all_hints(t, read_only=False, open_world=True)
+
+    # ── serializer tests ──────────────────────────────────────────────────
+
+    def test_compact_serializer_all_fields_explicit(self) -> None:
+        """_compact_search_serializer includes all 5 annotation fields (no None filtering)."""
+        tool = Tool(
+            name="gitea_foo",
+            description="Some tool",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+                title="Foo Tool",
+            ),
+        )
+        result = _compact_search_serializer([tool])
+        item = result[0]
+        ann = item.get("annotations", {})
+        assert ann["readOnlyHint"] is True
+        assert ann["destructiveHint"] is False
+        assert ann["idempotentHint"] is True
+        assert ann["openWorldHint"] is True
+        assert ann["title"] == "Foo Tool"
+        # All 5 fields present
+        assert set(ann) == {"title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
+
+    def test_compact_serializer_no_annotations(self) -> None:
+        """_compact_search_serializer handles tools with annotations=None gracefully."""
+        tool = Tool(
+            name="gitea_bar",
+            description="No annotations",
+            parameters={"properties": {}},
+        )
+        result = _compact_search_serializer([tool])
+        item = result[0]
+        assert item["name"] == "gitea_bar"
+        assert "annotations" not in item
+
+    def test_compact_serializer_partial_title(self) -> None:
+        """_compact_search_serializer includes title even when other fields are None."""
+        tool = Tool(
+            name="gitea_baz",
+            description="Partial",
+            parameters={"properties": {}},
+            annotations=ToolAnnotations(title="Just a Title"),
+        )
+        result = _compact_search_serializer([tool])
+        item = result[0]
+        ann = item.get("annotations", {})
+        # None fields are still serialized explicitly (openWorldHint=None, etc.)
+        assert ann["title"] == "Just a Title"
+        assert "readOnlyHint" in ann
+
+    # ── error path tests ─────────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_search_resources_openworld_false(self):
-        """search_resources should have openWorldHint=False."""
+    async def test_annotations_survive_call_tool_error(self) -> None:
+        """After calling call_tool with invalid args, its annotations remain correct."""
         from fastmcp import FastMCP
 
         mcp = FastMCP("test")
         transform = TolerantSearchTransform()
         register_synthetic_tools(mcp, transform)
 
+        # Trigger error — call_tool with invalid JSON string
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            ctx = MagicMock(spec=Context)
+            await _call_tool_impl(
+                name="nonexistent",
+                arguments="not-json",
+                format="markdown",
+                ctx=ctx,
+            )
+
+        # Verify call_tool annotations are still correct
         tools = await mcp.list_tools()
         tool_map = {t.name: t for t in tools}
-        t = tool_map.get("search_resources")
-        assert t is not None, "search_resources not registered"
-        assert t.annotations is not None
-        assert t.annotations.openWorldHint is False
+        t = tool_map.get("call_tool")
+        assert t is not None
+        self._assert_all_hints(t, read_only=False, open_world=True)
 
     @pytest.mark.asyncio
-    async def test_search_resources_has_description(self):
-        """search_resources should have a non-empty description."""
+    async def test_tool_info_error_does_not_corrupt_catalog(self) -> None:
+        """After a tool_info error, the tool catalog's annotations are still correct."""
         from fastmcp import FastMCP
 
         mcp = FastMCP("test")
         transform = TolerantSearchTransform()
         register_synthetic_tools(mcp, transform)
 
+        # Simulate a failed lookup (will raise because magic mock can't call list_tools)
+        # The key assertion: the mcp instance's tool metadata is intact after the attempt
+        try:
+            await _tool_info_impl(
+                name="nonexistent",
+                format="markdown",
+                ctx=MagicMock(spec=Context),
+                transform=transform,
+                tool_prefix="",
+            )
+        except Exception:
+            pass  # Expected — we're testing post-error state
+
+        # Annotations on registered tools unchanged
         tools = await mcp.list_tools()
         tool_map = {t.name: t for t in tools}
-        t = tool_map.get("search_resources")
-        assert t is not None, "search_resources not registered"
-        assert t.description, "search_resources.description should be non-empty"
+        for name in ("search_tools", "tool_info"):
+            self._assert_all_hints(tool_map[name], read_only=True, open_world=False)
 
 
 class TestSearchResourcesSyntheticTool:
@@ -1111,6 +1231,26 @@ class TestSearchAndSlice:
         page_items, total = _search_and_slice(items, texts, "description", page=1, limit=10)
         assert total == 3
         assert len(page_items) == 3
+
+    def test_attaches_normalized_score(self):
+        """Each result item carries a normalized `score` (0.0-1.0, top == 1.0)."""
+        items = [
+            {"id": 1, "name": "alpha"},
+            {"id": 2, "name": "beta"},
+            {"id": 3, "name": "gamma"},
+        ]
+        texts = ["alpha alpha word", "beta word", "gamma word"]
+        page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
+        assert total >= 1
+        # Top match gets score 1.0
+        assert page_items[0]["score"] == 1.0
+        # Every item has a numeric score in [0, 1]
+        for item in page_items:
+            assert "score" in item
+            assert isinstance(item["score"], float)
+            assert 0.0 <= item["score"] <= 1.0
+        # Original item dicts are not mutated (score is attached to a copy)
+        assert "score" not in items[0]
 
 
 class TestSearchToolsPagination:

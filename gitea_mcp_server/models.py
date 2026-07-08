@@ -14,12 +14,17 @@ from typing import Any, TypedDict
 
 
 class ToolSearchEntry(TypedDict, total=False):
-    """A compact tool entry returned from ``search_tools`` and ``search``."""
+    """A compact tool entry returned from ``search_tools`` and ``search``.
+
+    ``score`` is the normalized relevance (0.0-1.0) for the query that
+    produced this entry; 1.0 is the top match.
+    """
 
     name: str
     description: str
     tags: list[str]
     annotations: dict[str, Any]
+    score: float
 
 
 class ResourceEntry(TypedDict, total=False):
@@ -61,6 +66,9 @@ class UnifiedSearchItem(TypedDict, total=False):
     The ``type`` field discriminates between ``"tool"``, ``"doc"``,
     and ``"resource"`` results.  It is accessed via ``entry["type"]``
     (same reasoning as ``ResourceEntry.type``).
+
+    ``score`` is the normalized relevance (0.0-1.0) for the query that
+    produced this item; 1.0 is the top match.
     """
 
     type: str  # "tool", "doc", or "resource"; accessed via ["type"]
@@ -70,6 +78,7 @@ class UnifiedSearchItem(TypedDict, total=False):
     access_uri: str
     uri: str
     title: str
+    score: float
 
 
 class ToolSchemaResult(TypedDict, total=False):

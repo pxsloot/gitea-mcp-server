@@ -254,11 +254,16 @@ async def _resolve_tool_name(
 async def _call_tool_impl(
     name: str,
     arguments: Any,
-    format: str,
     ctx: Context,
     tool_prefix: str = "",
 ) -> ToolResult:
-    """Core call_tool implementation."""
+    """Core call_tool implementation.
+
+    Acts as a transparent proxy: resolves the tool name, forwards
+    arguments, and returns the inner tool's result unchanged.
+    Every tool on this server handles its own ``format`` parameter
+    natively, so the proxy does not re-format.
+    """
     if name == "call_tool":
         msg = "'call_tool' cannot call itself — call it directly instead"
         _raise_value_error(msg)
@@ -272,13 +277,7 @@ async def _call_tool_impl(
         msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
         _raise_value_error(msg)
     resolved = await _resolve_tool_name(name, ctx, tool_prefix)
-    result = await ctx.fastmcp.call_tool(resolved, arguments)
-    output_schema = None
-    if format == "markdown":
-        tool_obj = await ctx.fastmcp.get_tool(resolved)
-        if tool_obj is not None:
-            output_schema = tool_obj.output_schema
-    return format_result(result, format, output_schema)
+    return await ctx.fastmcp.call_tool(resolved, arguments)
 
 
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
@@ -625,13 +624,9 @@ def register_synthetic_tools(
     async def call_tool_fn(
         name: Annotated[str, "The name of the tool to call"],
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
-        ] = "markdown",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, format, ctx, tool_prefix)
+        return await _call_tool_impl(name, arguments, ctx, tool_prefix)
 
     mcp.tool(
         name="call_tool",

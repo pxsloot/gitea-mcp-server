@@ -60,7 +60,10 @@ def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent con
 
     Returns ``(page_items, total_count)`` where ``total_count`` is the total
     number of items that matched the query (before slicing), and
-    ``page_items`` are the items on the requested page.
+    ``page_items`` are the items on the requested page.  Each item in
+    ``page_items`` is a shallow copy of the corresponding input item with an
+    extra ``score`` key (normalized 0.0-1.0, where 1.0 is the top match for
+    this query) so callers/agents can apply their own relevance threshold.
 
     When ``items`` or ``texts`` is empty, returns ``([], 0)``.
     When the page is out of range, returns an empty list with the correct

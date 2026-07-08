@@ -144,29 +144,7 @@ class _BM25Index:
         ]
 
 
-class _BM25IndexLen2(_BM25Index):
-    """BM25 index that supports 2-character tokens (inherits from local _BM25Index)."""
 
-    def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
-        super().__init__(k1, b)
-
-    def build(self, documents: list[str]) -> None:
-        self._doc_tokens = [_tokenize_len2(doc) for doc in documents]
-        self._doc_lengths = [len(tokens) for tokens in self._doc_tokens]
-        self._n = len(documents)
-        self._avg_dl = sum(self._doc_lengths) / self._n if self._n else 0.0
-
-        self._df: dict[str, int] = {}
-        self._tf = []
-        for tokens in self._doc_tokens:
-            tf: dict[str, int] = {}
-            seen: set[str] = set()
-            for token in tokens:
-                tf[token] = tf.get(token, 0) + 1
-                if token not in seen:
-                    self._df[token] = self._df.get(token, 0) + 1
-                    seen.add(token)
-            self._tf.append(tf)
 
 
 def _texts_hash(texts: list[str]) -> str:
@@ -185,7 +163,7 @@ class BM25SearchEngine:
     def __init__(self, k1: float = 1.5, b: float = 0.75) -> None:
         self._k1 = k1
         self._b = b
-        self._index: _BM25IndexLen2 = _BM25IndexLen2(k1, b)
+        self._index: _BM25Index = _BM25Index(k1, b)
         self._last_texts_hash: str = ""
 
     def search(
@@ -236,7 +214,7 @@ class BM25SearchEngine:
 
         current_hash = _texts_hash(texts)
         if current_hash != self._last_texts_hash:
-            new_index = _BM25IndexLen2(self._k1, self._b)
+            new_index = _BM25Index(self._k1, self._b)
             new_index.build(texts)
             self._index, self._last_texts_hash = new_index, current_hash
 
@@ -247,7 +225,6 @@ class BM25SearchEngine:
 __all__ = [
     "BM25SearchEngine",
     "_BM25Index",
-    "_BM25IndexLen2",
     "_expand_word_aliases",
     "_texts_hash",
     "_tokenize_len2",

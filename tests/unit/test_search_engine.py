@@ -2,7 +2,6 @@
 
 from gitea_mcp_server.search import (
     _BM25Index,
-    _BM25IndexLen2,
     _expand_word_aliases,
     _texts_hash,
     _tokenize_len2,
@@ -227,18 +226,12 @@ class TestBM25Index:
             index.query("apple", 10, min_score=2.0)
 
 
-class TestBM25IndexLen2:
-    """Tests for _BM25IndexLen2."""
-
-    def test_inherits_query_from_base(self):
-        """_BM25IndexLen2 inherits query() from _BM25Index."""
-        index = _BM25IndexLen2()
-        index.build(["hello world"])
-        assert index.query("hello", 10) == [0]
+class TestBM25IndexTwoCharTokens:
+    """Tests that _BM25Index supports 2-character tokens."""
 
     def test_two_char_tokens_supported(self):
         """2-char tokens like 'pr' are indexed and searchable."""
-        index = _BM25IndexLen2()
+        index = _BM25Index()
         index.build(["create pr", "create pull request"])
         results = index.query("pr", 10)
         assert 0 in results

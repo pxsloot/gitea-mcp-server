@@ -174,9 +174,57 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
         "result": {
             "type": "object",
             "properties": {
-                "resources": {"type": "array"},
-                "count": {"type": "integer"},
+                "resources": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "uri": {"type": "string", "description": "Resource URI (may be a template)"},
+                            "name": {"type": "string", "description": "Human-readable name"},
+                            "description": {"type": "string", "description": "Description of the resource"},
+                            "mimeType": {"type": "string", "description": "MIME type (e.g. text/markdown)"},
+                            "type": {"type": "string", "description": "resource or template"},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Categorization tags",
+                            },
+                            "required_scope": {
+                                "oneOf": [{"type": "string"}, {"type": "null"}],
+                                "description": "Required token scope or null",
+                            },
+                        },
+                    },
+                    "description": "List of resource metadata entries",
+                },
+                "count": {"type": "integer", "description": "Number of items on this page"},
             },
+            "example": {
+                "resources": [
+                    {
+                        "uri": "gitea://repos/{owner}/{repo}",
+                        "name": "Repository",
+                        "description": "Get full repository metadata",
+                        "mimeType": "text/markdown",
+                        "type": "template",
+                        "tags": ["wrapper", "repository"],
+                        "required_scope": "read:repository",
+                    },
+                ],
+                "count": 1,
+            },
+        },
+    },
+}
+
+
+_READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "result": {
+            "type": "string",
+            "description": "Resource content as text (markdown, JSON, or plain text)",
+            "example": '{\n  "id": 1,\n  "name": "example-repo",\n  "description": "A sample repository"\n}',
         },
     },
 }
@@ -482,6 +530,7 @@ def register_mcp_resource_tools(mcp: FastMCP) -> None:
         name="read_resource",
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=True),
+        output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
     )(_read_resource_tool)
 
     mcp.resource(

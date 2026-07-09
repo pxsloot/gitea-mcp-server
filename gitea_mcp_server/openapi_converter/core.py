@@ -406,16 +406,23 @@ def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]
         param_copy = dict(param)
 
         if "schema" in param_copy:
-            param_copy["schema"] = SchemaNormalizer().normalize(param_copy["schema"])
+            param_copy["schema"] = convert_schema(param_copy["schema"])
         else:
             schema_dict = {}
             for field in SCHEMA_FIELDS:
                 if field in param_copy:
                     schema_dict[field] = param_copy.pop(field)
             if schema_dict:
-                param_copy["schema"] = SchemaNormalizer().normalize(schema_dict)
+                param_copy["schema"] = convert_schema(schema_dict)
 
         param_copy.pop("collectionFormat", None)
+
+        # Strip vendor extensions from the parameter-level (defense-in-depth).
+        # Schema-level x-* are handled by convert_schema() above.
+        for key in list(param_copy.keys()):
+            if key.startswith("x-"):
+                del param_copy[key]
+
         new_params.append(param_copy)
 
     return new_params
@@ -503,10 +510,26 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
     schema.pop("readOnly", None)
     schema.pop("xml", None)
 
+    # Strip vendor extensions (x-*) — they leak Go struct internals
+    # (x-go-name, x-go-package) into agent-facing parameter schemas.
+    # Operation-level x-* fields like x-original-content-types live on
+    # operation objects, not schema objects, so they are unaffected.
+    for key in list(schema.keys()):
+        if key.startswith("x-"):
+            del schema[key]
+
     if "properties" in schema:
         props = schema.get("properties", {})
         if isinstance(props, dict):
             new_properties, required_fields = PropertyRequiredCollector().collect_required(props)
+            # Strip vendor extensions from each property schema.
+            # Top-level x-* already stripped above; property schemas
+            # are dict copies from collect_required() and need cleanup.
+            for prop_schema in new_properties.values():
+                if isinstance(prop_schema, dict):
+                    for key in list(prop_schema.keys()):
+                        if key.startswith("x-"):
+                            del prop_schema[key]
             schema["properties"] = new_properties
             if required_fields:
                 schema["required"] = required_fields

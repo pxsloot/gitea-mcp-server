@@ -369,3 +369,126 @@ class TestAddNullableForOptionalRefs:
         email_prop = spec["components"]["schemas"]["User"]["properties"]["email"]
         assert "anyOf" in email_prop
         assert email_prop["anyOf"][1]["type"] == "null"
+
+
+class TestVendorExtensionStripping:
+    """Tests for vendor extension (x-*) stripping in schema conversion."""
+
+    def test_convert_schema_strips_x_go_name(self):
+        """convert_schema should strip x-go-name from individual properties."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "body": {"type": "string", "x-go-name": "Body"},
+                "title": {"type": "string", "x-go-name": "Title"},
+            },
+        }
+        result = convert_schema(schema)
+        assert "x-go-name" not in result["properties"]["body"]
+        assert "x-go-name" not in result["properties"]["title"]
+        # Normal schema fields preserved
+        assert result["properties"]["body"]["type"] == "string"
+        assert result["properties"]["title"]["type"] == "string"
+
+    def test_convert_schema_strips_x_go_package(self):
+        """convert_schema should strip x-go-package from schema level."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": "object",
+            "x-go-package": "forgejo.org/modules/structs",
+            "properties": {
+                "name": {"type": "string", "x-go-name": "Name"},
+            },
+        }
+        result = convert_schema(schema)
+        assert "x-go-package" not in result
+        assert "x-go-name" not in result["properties"]["name"]
+        assert result["properties"]["name"]["type"] == "string"
+
+    def test_convert_schema_nested_strips_all_x_fields(self):
+        """convert_schema should strip x-* from nested schemas (items, allOf, etc.)."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": "array",
+            "x-go-package": "forgejo.org/modules/structs",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "labels": {
+                        "type": "array",
+                        "x-go-name": "Labels",
+                        "items": {"type": "integer", "format": "int64"},
+                    },
+                },
+                "x-go-package": "forgejo.org/modules/structs",
+            },
+        }
+        result = convert_schema(schema)
+        assert "x-go-package" not in result
+        assert "x-go-package" not in result["items"]
+        assert "x-go-name" not in result["items"]["properties"]["labels"]
+        assert result["items"]["properties"]["labels"]["type"] == "array"
+
+    def test_convert_schema_strips_x_from_allOf(self):
+        """convert_schema should strip x-* inside allOf/anyOf/oneOf combination schemas."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "allOf": [
+                {"type": "object", "x-go-package": "forgejo.org/modules/structs",
+                 "properties": {"id": {"type": "integer", "x-go-name": "Id"}}},
+                {"type": "object", "x-go-package": "forgejo.org/modules/structs",
+                 "properties": {"name": {"type": "string", "x-go-name": "Name"}}},
+            ],
+        }
+        result = convert_schema(schema)
+        for sub in result["allOf"]:
+            assert "x-go-package" not in sub, f"x-go-package found in allOf sub-schema: {sub}"
+            for prop in sub.get("properties", {}).values():
+                assert "x-go-name" not in prop, f"x-go-name found in allOf property: {prop}"
+
+    def test_convert_schema_preserves_non_x_fields(self):
+        """convert_schema should preserve fields not starting with x-."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
+        result = convert_schema(schema)
+        assert "type" in result
+        assert "properties" in result
+        assert "required" in result
+
+    def test_convert_definitions_strips_x_go_fields(self):
+        """convert_definitions should strip x-go-name and x-go-package."""
+        from gitea_mcp_server.openapi_converter import convert_definitions
+
+        definitions = {
+            "CreateIssueOption": {
+                "type": "object",
+                "x-go-package": "forgejo.org/modules/structs",
+                "properties": {
+                    "title": {"type": "string", "x-go-name": "Title"},
+                    "body": {"type": "string", "x-go-name": "Body"},
+                    "labels": {
+                        "type": "array",
+                        "x-go-name": "Labels",
+                        "items": {"type": "integer", "format": "int64"},
+                    },
+                },
+            },
+        }
+        result = convert_definitions(definitions)
+        schema = result["CreateIssueOption"]
+        assert "x-go-package" not in schema
+        assert "x-go-name" not in schema["properties"]["title"]
+        assert "x-go-name" not in schema["properties"]["body"]
+        assert "x-go-name" not in schema["properties"]["labels"]
+        assert schema["properties"]["title"]["type"] == "string"
+        assert schema["properties"]["labels"]["type"] == "array"

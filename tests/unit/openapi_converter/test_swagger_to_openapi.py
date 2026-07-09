@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import jsonschema
 import pytest
@@ -97,6 +98,77 @@ class TestConvertSwaggerToOpenAPI:
         assert result["openapi"] == "3.1.1"
         assert "paths" in result
         assert len(result["paths"]) > 0
+
+    def test_real_swagger_has_no_x_go_vendor_extensions(self):
+        """Converted real swagger spec should have no x-go-* vendor extensions.
+
+        Gitea's Swagger spec leaks Go struct internals (x-go-name,
+        x-go-package) into schema definitions. These are noise for agents
+        and must be stripped during conversion.
+        """
+
+        def _find_x_go(obj: Any, path: str = "") -> list[str]:
+            """Recursively find any x-go-* keys, returning their locations."""
+            found: list[str] = []
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k.startswith("x-go-"):
+                        found.append(f"{path}.{k}" if path else k)
+                    found.extend(_find_x_go(v, f"{path}.{k}" if path else k))
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    found.extend(_find_x_go(item, f"{path}[{i}]"))
+            return found
+
+        spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
+        with spec_path.open() as f:
+            spec = json.load(f)
+
+        result = convert_swagger_to_openapi_v3(spec)
+        leaks = _find_x_go(result)
+        assert not leaks, f"Found x-go-* vendor extensions in converted spec: {leaks}"
+
+    def test_real_swagger_preserves_operation_level_x_fields(self):
+        """Converted real swagger should preserve operation-level x-* fields.
+
+        Operation-level vendor extensions (x-original-content-types, x-mcp)
+        are not schema-level and must survive conversion.
+        """
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api",
+            "paths": {
+                "/diff": {
+                    "get": {
+                        "produces": ["text/plain"],
+                        "operationId": "getDiff",
+                        "responses": {
+                            "200": {"description": "OK", "schema": {"type": "string"}},
+                        },
+                    }
+                },
+                "/json": {
+                    "get": {
+                        "operationId": "getJson",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                            },
+                        },
+                    }
+                },
+            },
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        # x-original-content-types must survive on the text/plain operation
+        op = result["paths"]["/diff"]["get"]
+        assert op.get("x-original-content-types") == ["text/plain"], (
+            f"x-original-content-types was stripped! Got: {op.get('x-original-content-types')}"
+        )
+        # JSON endpoint should NOT have x-original-content-types (only non-JSON)
+        assert "x-original-content-types" not in result["paths"]["/json"]["get"]
 
     def test_valid_openapi_3_1_schema(self):
         """Test that the converted spec is valid against OpenAPI 3.1 schema."""

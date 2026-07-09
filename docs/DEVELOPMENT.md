@@ -330,7 +330,11 @@ include:
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't
    appear, check cache TTL or invalidate manually.
 6. **Schema changes** -- The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
-   If you add a new schema feature, ensure the converter preserves it.
+   If you add a new schema feature, ensure the converter preserves it.  Note:
+   the converter *intentionally* strips all `x-*` vendor extensions from
+   schema objects (Gitea leaks `x-go-name`/`x-go-package` Go internals) -- this
+   is by design, not a bug.  Operation-level `x-*` fields (`x-original-content-types`,
+   `x-mcp`) are preserved because the pipeline depends on them.
 
 ---
 

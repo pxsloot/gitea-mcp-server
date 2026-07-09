@@ -357,6 +357,25 @@ The customization layers as applied during server startup:
       visibility into long-running operations without relying solely on OTEL
       spans or stdout.
 
+ 14. **Vendor extension (``x-*``) stripping in the converter** -- Gitea's
+     Swagger 2.0 spec leaks Go struct internals as vendor extensions:
+     ``x-go-name`` on every schema property and ``x-go-package`` on schema
+     definitions.  These carry no meaning for LLM agents and only waste
+     context tokens in tool parameter schemas, so ``convert_schema()`` and
+     ``convert_parameters()`` strip all ``x-*`` keys during conversion
+     (alongside the existing ``readOnly``/``xml`` cleanup).
+
+     The strip is **surgical**: only schema-level ``x-*`` fields are removed.
+     Operation-level ``x-*`` fields are intentionally preserved because they
+     carry semantic meaning used elsewhere in the pipeline:
+     ``x-original-content-types`` (set by ``OperationTransformer`` and read by
+     ``tools/schemas.py:_is_text_response`` to distinguish non-JSON endpoints)
+     and ``x-mcp`` (consumed by ``server_setup/mcp_extensions.py``).  The
+     post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
+     schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
+     the strip to the whole spec -- that would silently break text/plain
+     response detection and MCP extension overrides.
+
 ---
 
 

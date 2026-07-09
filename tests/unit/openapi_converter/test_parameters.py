@@ -120,3 +120,60 @@ class TestConvertComponents:
         result = _convert_components(spec)
         assert "securitySchemes" in result
         assert "basicAuth" in result["securitySchemes"]
+
+
+class TestVendorExtensionStripping:
+    """Tests for vendor extension (x-*) stripping in parameter conversion."""
+
+    def test_parameter_level_x_fields_stripped(self):
+        """convert_parameters should strip x-* keys from parameter objects."""
+        params = [
+            {
+                "name": "owner",
+                "in": "path",
+                "type": "string",
+                "required": True,
+                "x-go-name": "Owner",
+                "description": "owner of the repo",
+            }
+        ]
+        result = convert_parameters(params)
+        assert len(result) == 1
+        assert "x-go-name" not in result[0]
+        # Non-x fields preserved
+        assert result[0]["name"] == "owner"
+        assert result[0]["description"] == "owner of the repo"
+        assert "schema" in result[0]
+
+    def test_parameter_schema_x_fields_stripped(self):
+        """convert_parameters should strip x-* keys from parameter schema sub-object."""
+        params = [
+            {
+                "name": "filter",
+                "in": "query",
+                "schema": {"type": "string", "x-go-name": "Filter"},
+            }
+        ]
+        result = convert_parameters(params)
+        assert len(result) == 1
+        assert "x-go-name" not in result[0]["schema"]
+        assert result[0]["schema"]["type"] == "string"
+
+    def test_parameter_schema_fields_from_type_stripped(self):
+        """convert_parameters should strip x-* when schema is built from type fields."""
+        params = [
+            {
+                "name": "page",
+                "in": "query",
+                "type": "integer",
+                "x-go-name": "Page",
+                "description": "Page number",
+            }
+        ]
+        result = convert_parameters(params)
+        assert len(result) == 1
+        assert "x-go-name" not in result[0]
+        # Schema should still be built correctly
+        assert result[0]["schema"]["type"] == "integer"
+        # Description stays at top level
+        assert result[0]["description"] == "Page number"

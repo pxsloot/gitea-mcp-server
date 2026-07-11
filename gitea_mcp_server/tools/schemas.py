@@ -88,7 +88,7 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     return any(ct.lower().strip() != "application/json" for ct in content_types)
 
 
-def _get_success_schema(
+def _get_success_schema(  # noqa: PLR0911 — many early returns for guard clauses
     openapi_spec: OpenAPISpec,
     path: str,
     method: str,

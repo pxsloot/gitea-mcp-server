@@ -42,16 +42,14 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_TOKEN_LENGTH,
     SEARCH_NAME_BOOST,
     TAG_TO_SCOPE,
-    TITLE_TRUNCATE_LIMIT,
     TOOL_INVALIDATION_PATTERNS,
 )
 
 
-class TestTitleAndFormatting:
-    """Tests for title and response formatting constants."""
+class TestFormatting:
+    """Tests for response formatting constants."""
 
-    def test_title_and_preview_limits_are_reasonable(self):
-        assert 1 <= TITLE_TRUNCATE_LIMIT <= 200
+    def test_preview_limit_is_reasonable(self):
         assert 1 <= RESPONSE_PREVIEW_LIMIT <= 10000
 
 

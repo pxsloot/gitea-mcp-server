@@ -5,11 +5,8 @@ maintainability and make configuration easier.
 """
 
 # ============================================================================
-# Title and Response Formatting
+# Response Formatting
 # ============================================================================
-
-TITLE_TRUNCATE_LIMIT = 50
-"""Maximum length for tool titles before truncation (characters)."""
 
 RESPONSE_PREVIEW_LIMIT = 100
 """Maximum length for error response previews in logs (characters)."""

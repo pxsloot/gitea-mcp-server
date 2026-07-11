@@ -7,7 +7,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.tool import ToolAnnotations
 
-from gitea_mcp_server.constants import TITLE_TRUNCATE_LIMIT
+
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -15,10 +15,11 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
 )
 from gitea_mcp_server.tools.customize import (
+    _is_array_response,
+    _snake_to_title,
     add_inferred_hints as _add_inferred_hints,
     categorize_tool as _categorize_tool,
     generate_tool_title as _generate_tool_title,
-    _is_array_response,
 )
 
 
@@ -73,46 +74,111 @@ class TestCategorizeTool:
 
 
 class TestGenerateToolTitle:
-    """Tests for the _generate_tool_title function."""
+    """Tests for generate_tool_title (uses operationId)."""
 
-    def test_uses_summary_when_short(self):
-        route = MagicMock(summary="List all users", operation_id="listUsers")
+    def test_with_summary_ignored(self):
+        """The summary field is no longer used for the title."""
+        route = MagicMock(summary="This is a long summary that would have been truncated before", operation_id="issue_create_issue")
         title = _generate_tool_title(route)
-        assert title == "List all users"
+        assert title == "Create Issue"
 
-    def test_long_summary_truncated(self):
-        route = MagicMock(
-            summary="This is a very long summary that exceeds fifty characters and should be truncated",
-            operation_id="someOp",
-        )
+    def test_uses_operation_id(self):
+        route = MagicMock(summary="ignored", operation_id="issue_create_issue")
         title = _generate_tool_title(route)
-        assert len(title) <= TITLE_TRUNCATE_LIMIT
-        assert title.endswith("...")
+        assert title == "Create Issue"
 
-    def test_uses_operation_id_when_no_summary(self):
-        route = MagicMock(summary=None, operation_id="get_user_details")
+    def test_repo_list_pull_requests(self):
+        route = MagicMock(summary="ignored", operation_id="repo_list_pull_requests")
         title = _generate_tool_title(route)
-        assert title == "Get User Details"
+        assert title == "List Pull Requests"
 
-    def test_operation_id_title_case(self):
-        route = MagicMock(summary=None, operation_id="create_issue_comment")
+    def test_user_get_current(self):
+        route = MagicMock(summary="ignored", operation_id="user_get_current")
         title = _generate_tool_title(route)
-        assert title == "Create Issue Comment"
+        assert title == "Get Current"
 
-    def test_operation_id_with_numbers(self):
-        route = MagicMock(summary=None, operation_id="get_v1_users")
+    def test_domain_strip_verb_only(self):
+        """Single verb after domain strip appends domain noun."""
+        route = MagicMock(summary="ignored", operation_id="repo_edit")
         title = _generate_tool_title(route)
-        assert title == "Get V1 Users"
+        assert title == "Edit Repository"
 
-    def test_empty_strings(self):
+    def test_org_create(self):
+        route = MagicMock(summary="ignored", operation_id="org_create")
+        title = _generate_tool_title(route)
+        assert title == "Create Organization"
+
+    def test_activitypub_kept_prefix(self):
+        """activitypub domain is kept as the entity name."""
+        route = MagicMock(summary="ignored", operation_id="activitypub_person")
+        title = _generate_tool_title(route)
+        assert title == "Activitypub Person"
+
+    def test_empty_operation_id(self):
         route = MagicMock(summary="", operation_id="")
         title = _generate_tool_title(route)
         assert title == "Unnamed Tool"
 
-    def test_none_values(self):
+    def test_none_operation_id(self):
         route = MagicMock(summary=None, operation_id=None)
         title = _generate_tool_title(route)
         assert title == "Unnamed Tool"
+
+
+class TestSnakeToTitle:
+    """Tests for the _snake_to_title helper."""
+
+    def test_domain_verb_object(self):
+        assert _snake_to_title("issue_create_issue") == "Create Issue"
+
+    def test_domain_verb_object_compound(self):
+        assert _snake_to_title("repo_list_pull_requests") == "List Pull Requests"
+
+    def test_verb_only_appends_domain_noun(self):
+        assert _snake_to_title("repo_edit") == "Edit Repository"
+        assert _snake_to_title("issue_delete") == "Delete Issue"
+        assert _snake_to_title("org_create") == "Create Organization"
+        assert _snake_to_title("user_get") == "Get User"
+
+    def test_unknown_domain_kept(self):
+        assert _snake_to_title("render_markdown") == "Render Markdown"
+
+    def test_activitypub_kept(self):
+        assert _snake_to_title("activitypub_person") == "Activitypub Person"
+        assert _snake_to_title("activitypub_instance_actor_inbox") == "Activitypub Instance Actor Inbox"
+
+    def test_single_word(self):
+        assert _snake_to_title("version") == "Version"
+
+    def test_empty_string(self):
+        assert _snake_to_title("") == "Unnamed Tool"
+
+
+class TestDomainConstantsConsistency:
+    """Every strippable domain prefix must have a corresponding noun entry."""
+
+    def test_all_domain_prefixes_have_nouns(self):
+        from gitea_mcp_server.tools.customize import (
+            _DOMAIN_NOUNS as nouns,
+            _DOMAIN_PREFIXES as prefixes,
+            _KEEP_PREFIX as keep,
+        )
+        strippable = prefixes - keep
+        missing = strippable - set(nouns.keys())
+        assert not missing, (
+            f"Domain prefixes missing from _DOMAIN_NOUNS: {sorted(missing)}"
+        )
+
+    def test_no_orphan_nouns(self):
+        """Every _DOMAIN_NOUNS key should be in _DOMAIN_PREFIXES."""
+        from gitea_mcp_server.tools.customize import (
+            _DOMAIN_NOUNS as nouns,
+            _DOMAIN_PREFIXES as prefixes,
+        )
+        extra = set(nouns.keys()) - prefixes
+        assert not extra, (
+            f"_DOMAIN_NOUNS keys not in _DOMAIN_PREFIXES: {sorted(extra)}"
+        )
 
 
 class TestInferredHints:
@@ -232,7 +298,7 @@ class TestInferredHints:
 
     def test_all_hints_added_when_annotations_empty(self):
         """Mini-integration check: _customize_metadata sets all hints and title when annotations are empty."""
-        route = MagicMock(path="/test", method="POST", summary="Test POST")
+        route = MagicMock(path="/test", method="POST", summary="Test POST", operation_id="test_post")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "test_post"
         tool.annotations = ToolAnnotations()  # All fields None
@@ -249,7 +315,8 @@ class TestInferredHints:
         assert tool.annotations.destructiveHint is False
         assert tool.annotations.idempotentHint is False
         assert tool.annotations.openWorldHint is True
-        assert tool.annotations.title == "Test POST"  # Title uses summary as-is
+        # Title comes from operationId, not summary
+        assert tool.annotations.title == "Test Post"
 
 
 class TestIsArrayResponse:

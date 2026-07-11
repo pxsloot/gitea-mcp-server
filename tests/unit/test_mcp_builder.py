@@ -8,7 +8,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool import ToolAnnotations
 
-from gitea_mcp_server.constants import LABEL_GUIDANCE, TITLE_TRUNCATE_LIMIT
+from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _get_deprecated_routes,
@@ -31,7 +31,7 @@ class TestCustomizeMetadata:
         _customize_metadata(route, resource, openapi_spec={})
 
     def test_sets_title_and_annotations(self):
-        """Title and ToolAnnotations are set from route summary."""
+        """Title and ToolAnnotations are set from route operationId."""
         route = MagicMock(
             path="/test", summary="List items", operation_id="list_items", method="GET"
         )
@@ -47,55 +47,41 @@ class TestCustomizeMetadata:
         _customize_metadata(route, tool, openapi_spec={})
 
         assert tool.annotations is not None
-        assert tool.annotations.title == "List items"
+        assert tool.annotations.title == "List Items"
         assert tool.annotations.readOnlyHint is True
 
     def test_title_from_operation_id(self):
-        """Title is generated from operationId when summary is None."""
-        route = MagicMock(path="/test", summary=None, operation_id="get_user_by_id", method="GET")
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "get_user_by_id"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "Get user by ID"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec={})
-
-        assert tool.annotations.title == "Get User By Id"
-
-    def test_long_operation_id_truncated(self):
-        """Operation IDs longer than TITLE_TRUNCATE_LIMIT are truncated."""
-        long_op_id = (
-            "this_is_a_very_long_operation_id_that_exceeds_fifty_characters_and_needs_truncation"
+        """Title is generated from operationId (not summary)."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="Create an issue. If using deadline only the date will be taken into account...",
+            operation_id="issue_create_issue",
+            method="POST",
         )
-        route = MagicMock(path="/test", summary=None, operation_id=long_op_id, method="GET")
         tool = MagicMock(spec=OpenAPITool)
-        tool.name = "test"
+        tool.name = "issue_create_issue"
         tool.annotations = None
         tool.tags = set()
         tool.parameters = {"properties": {}}
         tool.output_schema = None
-        tool.description = "Test operation"
+        tool.description = "Create a new issue"
         tool.meta = {}
 
         _customize_metadata(route, tool, openapi_spec={})
 
-        assert len(tool.annotations.title) <= TITLE_TRUNCATE_LIMIT
-        assert tool.annotations.title.endswith("...")
+        assert tool.annotations.title == "Create Issue"
+        assert "..." not in tool.annotations.title
 
     def test_adds_annotations_from_dict(self):
         """Annotations dict is converted to ToolAnnotations."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
             summary="List issues",
-            operation_id="list_issues",
+            operation_id="issue_list_issues",
             method="GET",
         )
         tool = MagicMock(spec=OpenAPITool)
-        tool.name = "list_issues"
+        tool.name = "issue_list_issues"
         tool.annotations = {"title": "Old Title"}
         tool.tags = set()
         tool.parameters = {"properties": {}}
@@ -106,7 +92,7 @@ class TestCustomizeMetadata:
         _customize_metadata(route, tool, openapi_spec={})
 
         assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "List issues"
+        assert tool.annotations.title == "List Issues"
         assert "issue" in tool.tags
 
     def test_preserves_existing_toolannotations(self):
@@ -114,12 +100,12 @@ class TestCustomizeMetadata:
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}",
             summary="Get pull request",
-            operation_id="get_pull",
+            operation_id="repo_get_pull_request",
             method="GET",
         )
         existing = ToolAnnotations(title="Old Title", readOnlyHint=True)
         tool = MagicMock(spec=OpenAPITool)
-        tool.name = "get_pull"
+        tool.name = "repo_get_pull_request"
         tool.annotations = existing
         tool.tags = set()
         tool.parameters = {"properties": {}}
@@ -130,7 +116,7 @@ class TestCustomizeMetadata:
         _customize_metadata(route, tool, openapi_spec={})
 
         assert isinstance(tool.annotations, ToolAnnotations)
-        assert tool.annotations.title == "Get pull request"
+        assert tool.annotations.title == "Get Pull Request"
         assert tool.annotations.readOnlyHint is True
         assert "pull_request" in tool.tags
 

@@ -13,7 +13,6 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_IDEMPOTENT,
     HTTP_METHODS_SAFE,
     LABEL_GUIDANCE,
-    TITLE_TRUNCATE_LIMIT,
     TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.tools.schemas import _schema_type_is_array
@@ -32,25 +31,137 @@ _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
 ]
 
 
-def generate_tool_title(route: Any) -> str:
-    """Generate a human-readable title from the route's summary or operationId."""
-    summary = getattr(route, "summary", None)
-    operation_id = getattr(route, "operation_id", None)
+# Known domain prefixes that are redundant in titles (e.g., ``issue_create_issue``
+# should produce "Create Issue", not "Issue Create Issue").
+_DOMAIN_PREFIXES: set[str] = {
+    "issue",
+    "repo",
+    "user",
+    "org",
+    "admin",
+    "notification",
+    "package",
+    "settings",
+    "topic",
+    "team",
+}
 
-    title: str
+# Domains whose prefix should be kept — the prefix *is* the entity name.
+_KEEP_PREFIX: set[str] = {"activitypub"}
 
-    if summary and summary.strip():
-        title = str(summary).strip()
-    elif operation_id:
-        words = str(operation_id).replace("_", " ").title()
-        title = words
-    else:
+# Verbs that map to domain-level actions — when one of these remains after
+# stripping the domain prefix, the domain noun is appended as the object.
+_ACTION_VERBS: set[str] = {
+    "accept",
+    "add",
+    "adopt",
+    "cancel",
+    "check",
+    "clear",
+    "convert",
+    "create",
+    "delete",
+    "disable",
+    "dispatch",
+    "dismiss",
+    "edit",
+    "enable",
+    "fork",
+    "generate",
+    "get",
+    "link",
+    "list",
+    "merge",
+    "migrate",
+    "mirror",
+    "move",
+    "pin",
+    "post",
+    "publicize",
+    "register",
+    "reject",
+    "remove",
+    "rename",
+    "replace",
+    "reset",
+    "run",
+    "search",
+    "set",
+    "start",
+    "stop",
+    "submit",
+    "sync",
+    "test",
+    "transfer",
+    "unblock",
+    "unlink",
+    "unpin",
+    "update",
+    "validate",
+    "verify",
+}
+
+# Domain prefix → display noun for appending to single-verb titles.
+# Every key in _DOMAIN_PREFIXES (excluding _KEEP_PREFIX) must have
+# a corresponding entry here.
+_DOMAIN_NOUNS: dict[str, str] = {
+    "issue": "Issue",
+    "repo": "Repository",
+    "user": "User",
+    "org": "Organization",
+    "admin": "Admin",
+    "notification": "Notification",
+    "package": "Package",
+    "settings": "Settings",
+    "topic": "Topic",
+    "team": "Team",
+}
+
+
+def _snake_to_title(snake_op_id: str) -> str:
+    """Convert a snake_case operationId to a human-readable title.
+
+    Handles three patterns based on Gitea's naming convention
+    ``{domain}_{action}_{object}``:
+
+    1. **Domain + verb + object** (most common): ``issue_create_issue`` → ``"Create Issue"``
+       — the domain prefix is dropped, action parts are Title Cased.
+    2. **Verb-only after strip**: ``issue_delete`` → ``"Delete Issue"``
+       — the domain noun is appended as the object when only one verb remains.
+    3. **Kept-prefix domains**: ``activitypub_person`` → ``"Activitypub Person"``
+       — domains in ``_KEEP_PREFIX`` are retained because the prefix *is* the entity name.
+    """
+    if not snake_op_id:
         return "Unnamed Tool"
 
-    if len(title) > TITLE_TRUNCATE_LIMIT:
-        title = title[: TITLE_TRUNCATE_LIMIT - 3] + "..."
+    parts = snake_op_id.split("_")
+    domain = parts[0] if parts and parts[0] in _DOMAIN_PREFIXES | _KEEP_PREFIX else None
+    keep_prefix = domain in _KEEP_PREFIX if domain else False
+
+    action_parts = parts[1:] if domain and not keep_prefix and len(parts) > 1 else parts
+
+    title = " ".join(p.title() for p in action_parts)
+
+    if domain and not keep_prefix and len(action_parts) == 1:
+        word = action_parts[0].lower()
+        if word in _ACTION_VERBS:
+            title = f"{title} {_DOMAIN_NOUNS.get(domain, domain.title())}"
 
     return title
+
+
+def generate_tool_title(route: Any) -> str:
+    """Generate a human-readable title from the route's operationId.
+
+    Uses the ``operationId`` (already converted to snake_case by the
+    OpenAPI converter) as the sole source.  The OpenAPI ``summary``
+    lives on as the tool's MCP ``description`` — it is a description,
+    not a title.
+    """
+    operation_id = getattr(route, "operation_id", None)
+    if not operation_id:
+        return "Unnamed Tool"
+    return _snake_to_title(str(operation_id))
 
 
 def categorize_tool(path: str) -> str:
@@ -178,6 +289,7 @@ def _prepare_description(component: Any) -> tuple[str, bool]:
 
 
 __all__ = [
+    "_snake_to_title",
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",

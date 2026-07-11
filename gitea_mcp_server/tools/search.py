@@ -7,7 +7,7 @@ and the shared BM25+format pipeline used by both search_tools and search_resourc
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -372,17 +372,21 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx, transform, min_score are
     )
 
 
-async def _tool_info_impl(
+async def _tool_info_impl(  # noqa: PLR0913 — name, format, ctx, transform, tool_prefix, detail
     name: str,
     format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
+    detail: Literal["concise", "full"] = "concise",
 ) -> ToolResult:
     """Core tool_info implementation.
 
     Accepts both prefixed (``gitea_search_tools``) and bare (``search_tools``)
     tool names.  Tries bare name first, then prepends ``tool_prefix``.
+
+    When ``detail="full"``, the result includes the fully-resolved
+    ``output_schema`` alongside the compact ``output_example``.
     """
     tools = await transform.get_tool_catalog(ctx)
     candidates = {name}
@@ -391,6 +395,8 @@ async def _tool_info_impl(
     for tool in tools:
         if tool.name in candidates:
             schema: ToolSchemaResult = _serialize_tool_schema(tool)
+            if detail == "full" and tool.output_schema is not None:
+                schema["output_schema"] = tool.output_schema
             return format_result(
                 ToolResult(structured_content={"result": schema}), format
             )
@@ -654,9 +660,14 @@ def register_synthetic_tools(
             str,
             "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
         ] = "markdown",
+        detail: Annotated[
+            Literal["concise", "full"],
+            "Detail level: 'concise' (default) for compact type-summary output_example; "
+            "'full' to also include the resolved output_schema",
+        ] = "concise",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _tool_info_impl(name, format, ctx, transform, tool_prefix)
+        return await _tool_info_impl(name, format, ctx, transform, tool_prefix, detail=detail)
 
     mcp.tool(
         name="tool_info",
@@ -676,19 +687,24 @@ def register_synthetic_tools(
                             "anyOf": [
                                 {"type": "object"},
                                 {"type": "array"},
+                                {"type": "string"},
                             ],
-                            "description": "Example return value (may be object, array, etc.)",
+                            "description": "Compact type-summary example (fields with type names for refs)",
                         },
-                            "annotations": {
-                                "type": "object",
-                                "properties": {
-                                    "title": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "null"},
-                                        ],
-                                        "description": "Tool title (may be null if not explicitly set)",
-                                    },
+                        "output_schema": {
+                            "type": "object",
+                            "description": "Fully-resolved output JSON Schema (included only when detail='full')",
+                        },
+                        "annotations": {
+                            "type": "object",
+                            "properties": {
+                                "title": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {"type": "null"},
+                                    ],
+                                    "description": "Tool title (may be null if not explicitly set)",
+                                },
                                 "readOnlyHint": {"type": "boolean"},
                                 "destructiveHint": {"type": "boolean"},
                                 "idempotentHint": {"type": "boolean"},
@@ -710,10 +726,26 @@ def register_synthetic_tools(
                             },
                         },
                         "output_example": {
-                            "id": 1,
-                            "title": "Example Issue",
-                            "state": "open",
-                            "body": "Issue description",
+                            "id": 0,
+                            "title": "Example Title",
+                            "state": "StateType",
+                            "body": "Issue body content",
+                            "assignee": {"$ref": "User"},
+                            "labels": [{"$ref": "Label"}],
+                        },
+                        "output_schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "integer"},
+                                "title": {"type": "string"},
+                                "assignee": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "login": {"type": "string"},
+                                    },
+                                },
+                            },
                         },
                         "annotations": {
                             "title": "Get An Issue",

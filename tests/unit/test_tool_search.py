@@ -723,6 +723,72 @@ class TestToolInfo:
         assert schema["description"] == "A known tool"
 
     @pytest.mark.asyncio
+    async def test_tool_info_detail_full_includes_output_schema(self):
+        """tool_info with detail='full' should include output_schema."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_with_schema",
+            description="A tool",
+            parameters={"properties": {"x": {"type": "integer"}}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_with_schema", "json", mock_ctx, transform, detail="full"
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        assert schema["name"] == "gitea_tool_with_schema"
+        assert "output_example" in schema
+        assert "output_schema" in schema
+        assert schema["output_schema"]["type"] == "object"
+
+    @pytest.mark.asyncio
+    async def test_tool_info_detail_concise_excludes_output_schema(self):
+        """tool_info with detail='concise' (default) should NOT include output_schema."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_no_schema_included",
+            description="A tool",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "string"},
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_no_schema_included", "json", mock_ctx, transform, detail="concise"
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        assert "output_example" in schema
+        assert "output_schema" not in schema
+
+    @pytest.mark.asyncio
     async def test_tool_info_not_found(self):
         """tool_info should raise ValueError for unknown tool."""
         from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform

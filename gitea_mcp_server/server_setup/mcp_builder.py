@@ -37,7 +37,11 @@ from gitea_mcp_server.tools.customize import (
 )
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
-from gitea_mcp_server.tools.schemas import _is_text_response, derive_output_schema
+from gitea_mcp_server.tools.schemas import (
+    _get_success_schema,
+    _is_text_response,
+    derive_output_schema,
+)
 from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
     apply_to,
@@ -101,6 +105,16 @@ def _customize_metadata(
     output_schema = derive_output_schema(route, openapi_spec)
     component.output_schema = output_schema
 
+    # Store unresolved schema for compact example generation.
+    # Nested $ref pointers stay intact, so the example generator can
+    # emit type names instead of inlining entire referenced schemas.
+    raw_schema: dict[str, Any] | None = None
+    if output_schema is not None:
+        raw_schema = _get_success_schema(
+            openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower(),
+            resolve=False,
+        )
+
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
@@ -140,6 +154,9 @@ def _customize_metadata(
 
     component_meta = dict(component.meta) if component.meta else {}
     component_meta["required_scope"] = required_scope
+
+    if raw_schema is not None:
+        component_meta["output_schema_raw"] = raw_schema
 
     component_meta["_customization"] = {
         "has_labels": has_labels,

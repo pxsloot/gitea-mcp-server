@@ -962,3 +962,191 @@ class TestGetSuccessSchema:
         }
         result = _get_success_schema(spec, "/test", "get")
         assert result is not None
+
+
+class TestGetRawSuccessSchema:
+    """Tests for _get_success_schema with resolve=False."""
+
+    def test_inline_schema_keeps_ref_intact(self):
+        """resolve=False should return schema with $ref intact."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {"$ref": "#/components/schemas/User"},
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "login": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get", resolve=False)
+        assert result is not None
+        user_schema = result["properties"]["user"]
+        # $ref must survive — NOT deep-resolved
+        assert "$ref" in user_schema
+        assert user_schema["$ref"] == "#/components/schemas/User"
+
+    def test_resolve_true_expands_ref(self):
+        """resolve=True (default) should deep-resolve $ref."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {"$ref": "#/components/schemas/User"},
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "login": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get", resolve=True)
+        assert result is not None
+        user_schema = result["properties"]["user"]
+        # $ref must be resolved — not a $ref dict
+        assert "$ref" not in user_schema
+        assert user_schema["type"] == "object"
+        assert user_schema["properties"]["id"]["type"] == "integer"
+
+    def test_text_response_returns_none(self):
+        """Text responses should return None regardless of resolve flag."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "text/plain": {"schema": {"type": "string"}},
+                                },
+                            },
+                        },
+                        "x-original-content-types": ["text/plain"],
+                    },
+                },
+            },
+        }
+        assert _get_success_schema(spec, "/test", "get", resolve=False) is None
+        assert _get_success_schema(spec, "/test", "get", resolve=True) is None
+
+    def test_missing_path_returns_none(self):
+        """Missing path should return None."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {"openapi": "3.1.0", "paths": {}}
+        assert _get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
+
+    def test_missing_method_returns_none(self):
+        """Missing method should return None."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {"schema": {"type": "string"}},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        assert _get_success_schema(spec, "/test", "post", resolve=False) is None
+
+    def test_prefers_200_over_201(self):
+        """Should prefer 200 status code over 201."""
+        from gitea_mcp_server.tools.schemas import _get_success_schema
+
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_200": {"type": "string"}}},
+                                    },
+                                },
+                            },
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object", "properties": {"from_201": {"type": "string"}}},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        result = _get_success_schema(spec, "/test", "get", resolve=False)
+        assert result is not None
+        assert "from_200" in result["properties"]
+        assert "from_201" not in result["properties"]

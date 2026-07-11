@@ -88,20 +88,29 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     return any(ct.lower().strip() != "application/json" for ct in content_types)
 
 
-def _get_success_schema(
+def _get_success_schema(  # noqa: PLR0911 — many early returns for guard clauses
     openapi_spec: OpenAPISpec,
     path: str,
     method: str,
+    resolve: bool = True,
 ) -> dict[str, Any] | None:
-    """Extract the resolved 200/201 response schema for a path and method.
+    """Extract the 200/201 response schema for a path and method.
+
+    When ``resolve=True`` (default), all nested ``$ref`` pointers are
+    expanded via ``_deep_resolve_schema``.  When ``resolve=False``, the
+    schema is returned with ``$ref`` intact — used by the compact example
+    generator to emit type names instead of inlining referenced schemas.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
         path: The API path to inspect.
         method: The HTTP method to inspect.
+        resolve: If ``True`` (default), deep-resolve all ``$ref`` pointers.
+                 If ``False``, return the schema with ``$ref`` intact.
 
     Returns:
-        The resolved response schema, or ``None`` if no JSON response found.
+        The response schema (resolved or raw), or ``None`` if no JSON
+        response is found.
     """
     if _is_text_response(openapi_spec, path, method):
         return None
@@ -138,7 +147,9 @@ def _get_success_schema(
         if not isinstance(schema, dict):
             continue
 
-        return _deep_resolve_schema(schema, openapi_spec)
+        if resolve:
+            return _deep_resolve_schema(schema, openapi_spec)
+        return schema
 
     return None
 

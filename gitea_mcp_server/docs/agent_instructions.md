@@ -72,6 +72,28 @@ info = tool_info("gitea_issue_get_issue")
 # returns: parameters, output_example, annotations, tags
 ```
 
+The `output_example` is a **compact type-summary**. Nested `$ref` component
+types are shown as `{"$ref": "TypeName"}` (JSON) or ``$ref:TypeName``
+(markdown) instead of inlining the full schema — so you can see the data
+shape at a glance without wasting tokens.  For example:
+
+```
+$ref:User          → the field is a User object (expandable)
+$ref:Milestone     → the field is a Milestone object
+$ref:Label         → the field is a Label object
+"Example Title"    → literal string value
+```
+
+When you need the fully-resolved schema, use `detail="full"`:
+
+```
+info = tool_info("gitea_issue_get_issue", detail="full")
+# same compact output_example, plus: output_schema (full JSON Schema)
+```
+
+The `gitea://tool/{name}/schema` resource always includes both the compact
+example and the full schema in a single JSON document.
+
 ## Commonly Used Tools (known names, no search needed)
 
 | Tool | Description | Common args |

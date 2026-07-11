@@ -696,15 +696,15 @@ def register_synthetic_tools(
                             "description": "Fully-resolved output JSON Schema (included only when detail='full')",
                         },
                         "annotations": {
-                                "type": "object",
-                                "properties": {
-                                    "title": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "null"},
-                                        ],
-                                        "description": "Tool title (may be null if not explicitly set)",
-                                    },
+                            "type": "object",
+                            "properties": {
+                                "title": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {"type": "null"},
+                                    ],
+                                    "description": "Tool title (may be null if not explicitly set)",
+                                },
                                 "readOnlyHint": {"type": "boolean"},
                                 "destructiveHint": {"type": "boolean"},
                                 "idempotentHint": {"type": "boolean"},

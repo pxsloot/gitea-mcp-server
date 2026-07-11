@@ -154,6 +154,33 @@ class TestSnakeToTitle:
         assert _snake_to_title("") == "Unnamed Tool"
 
 
+class TestDomainConstantsConsistency:
+    """Every strippable domain prefix must have a corresponding noun entry."""
+
+    def test_all_domain_prefixes_have_nouns(self):
+        from gitea_mcp_server.tools.customize import (
+            _DOMAIN_NOUNS as nouns,
+            _DOMAIN_PREFIXES as prefixes,
+            _KEEP_PREFIX as keep,
+        )
+        strippable = prefixes - keep
+        missing = strippable - set(nouns.keys())
+        assert not missing, (
+            f"Domain prefixes missing from _DOMAIN_NOUNS: {sorted(missing)}"
+        )
+
+    def test_no_orphan_nouns(self):
+        """Every _DOMAIN_NOUNS key should be in _DOMAIN_PREFIXES."""
+        from gitea_mcp_server.tools.customize import (
+            _DOMAIN_NOUNS as nouns,
+            _DOMAIN_PREFIXES as prefixes,
+        )
+        extra = set(nouns.keys()) - prefixes
+        assert not extra, (
+            f"_DOMAIN_NOUNS keys not in _DOMAIN_PREFIXES: {sorted(extra)}"
+        )
+
+
 class TestInferredHints:
     """Tests for annotation hints inferred from HTTP method."""
 

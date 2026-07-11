@@ -102,6 +102,8 @@ _ACTION_VERBS: set[str] = {
 }
 
 # Domain prefix → display noun for appending to single-verb titles.
+# Every key in _DOMAIN_PREFIXES (excluding _KEEP_PREFIX) must have
+# a corresponding entry here.
 _DOMAIN_NOUNS: dict[str, str] = {
     "issue": "Issue",
     "repo": "Repository",

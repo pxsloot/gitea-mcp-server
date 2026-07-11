@@ -4,13 +4,11 @@ Immediate helpers for the customization pipeline (annotations, hint inference,
 categorization, title generation, scope derivation, invalidation computation).
 """
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.tools.tool import ToolAnnotations
-
-logger = logging.getLogger(__name__)
 
 from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,
@@ -20,6 +18,8 @@ from gitea_mcp_server.constants import (
     TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.tools.schemas import _schema_type_is_array
+
+logger = logging.getLogger(__name__)
 
 _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/admin", "admin", False),
@@ -161,6 +161,7 @@ def _snake_to_title(snake_op_id: str) -> str:
     if domain and not keep_prefix and len(action_parts) == 1:
         word = action_parts[0].lower()
         if word in _ACTION_VERBS:
+            assert config is not None  # domain truthy ⇒ config is set
             title = f"{title} {config.noun}"
 
     return title

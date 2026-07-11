@@ -154,31 +154,30 @@ class TestSnakeToTitle:
         assert _snake_to_title("") == "Unnamed Tool"
 
 
-class TestDomainConstantsConsistency:
-    """Every strippable domain prefix must have a corresponding noun entry."""
+class TestDomainConfigConsistency:
+    """All _DOMAINS entries are valid _DomainConfig instances (type-level guarantee).
 
-    def test_all_domain_prefixes_have_nouns(self):
-        from gitea_mcp_server.tools.customize import (
-            _DOMAIN_NOUNS as nouns,
-            _DOMAIN_PREFIXES as prefixes,
-            _KEEP_PREFIX as keep,
-        )
-        strippable = prefixes - keep
-        missing = strippable - set(nouns.keys())
-        assert not missing, (
-            f"Domain prefixes missing from _DOMAIN_NOUNS: {sorted(missing)}"
-        )
+    The single-dict design makes cross-collection sync errors impossible.
+    This test ensures the structural invariant holds at runtime.
+    """
 
-    def test_no_orphan_nouns(self):
-        """Every _DOMAIN_NOUNS key should be in _DOMAIN_PREFIXES."""
-        from gitea_mcp_server.tools.customize import (
-            _DOMAIN_NOUNS as nouns,
-            _DOMAIN_PREFIXES as prefixes,
-        )
-        extra = set(nouns.keys()) - prefixes
-        assert not extra, (
-            f"_DOMAIN_NOUNS keys not in _DOMAIN_PREFIXES: {sorted(extra)}"
-        )
+    def test_all_values_are_domain_config(self):
+        from gitea_mcp_server.tools.customize import _DOMAINS, _DomainConfig
+
+        for key, config in _DOMAINS.items():
+            assert isinstance(config, _DomainConfig), (
+                f"_DOMAINS['{key}'] is not a _DomainConfig instance"
+            )
+
+    def test_strip_true_entries_have_noun(self):
+        """Every strip=True entry must have a non-empty noun (structural, always true)."""
+        from gitea_mcp_server.tools.customize import _DOMAINS
+
+        for key, config in _DOMAINS.items():
+            if config.strip:
+                assert config.noun, (
+                    f"_DOMAINS['{key}'] has strip=True but empty noun"
+                )
 
 
 class TestInferredHints:

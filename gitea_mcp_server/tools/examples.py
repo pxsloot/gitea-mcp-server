@@ -174,9 +174,10 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
-    When encountering ``$ref``, emits the type name (e.g., ``"User"``) instead
-    of inlining the referenced schema.  All properties are included (no
-    ``max_properties`` truncation).  Leaf types use the same meaningful
+    When encountering ``$ref``, emits ``{"$ref": "TypeName"}`` instead of
+    inlining the referenced schema.  The markdown formatter recognises this
+    pattern and renders it as ``$ref:TypeName``.  All properties are included
+    (no ``max_properties`` truncation).  Leaf types use the same meaningful
     example values as ``_schema_to_example``.
 
     Designed to be called on the **raw** (unresolved) schema so that ``$ref``
@@ -189,12 +190,14 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         prop_name: Property name hint for string example generation.
 
     Returns:
-        A compact representation: type names for refs, example values for
-        leaf types, dicts/arrays with one level of nesting.
+        A compact representation: ``{"$ref": "TypeName"}`` for refs,
+        example values for leaf types, dicts/arrays with one level of nesting.
     """
-    # $ref — emit type name (tail of the ref path) and stop descending.
+    # $ref — emit {"$ref": "TypeName"} so the JSON output is structurally
+    # unambiguous.  The markdown formatter recognises this pattern and
+    # renders it as "$ref:TypeName".
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
-        return schema["$ref"].rsplit("/", 1)[-1]
+        return {"$ref": schema["$ref"].rsplit("/", 1)[-1]}
 
     if depth >= max_depth:
         return "{...}"
@@ -251,9 +254,9 @@ def _serialize_tool_schema(tool: Tool) -> ToolSchemaResult:
     """Serialize a Tool to a compact dict (name, description, parameters, examples, annotations).
 
     Generates a compact ``output_example`` using the unresolved schema stored
-    in ``tool.meta`` (if available) so nested ``$ref`` types show as type
-    names instead of inlined schemas.  Falls back to the resolved schema
-    behaviour when the raw schema is absent.
+    in ``tool.meta`` (if available) so nested ``$ref`` types show as
+    ``{"$ref": "TypeName"}`` instead of inlined schemas.  Falls back to the
+    resolved schema behaviour when the raw schema is absent.
     """
     data: ToolSchemaResult = {
         "name": tool.name,

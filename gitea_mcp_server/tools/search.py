@@ -728,10 +728,10 @@ def register_synthetic_tools(
                         "output_example": {
                             "id": 0,
                             "title": "Example Title",
-                            "state": "open",
+                            "state": "StateType",
                             "body": "Issue body content",
-                            "assignee": "User",
-                            "labels": ["Label"],
+                            "assignee": {"$ref": "User"},
+                            "labels": [{"$ref": "Label"}],
                         },
                         "output_schema": {
                             "type": "object",

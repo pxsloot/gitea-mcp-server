@@ -88,6 +88,11 @@ def _format_list_as_markdown(
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
         lines.append(f"{indent}*None*")
+    # Flatten lists of {"$ref": "Type"} — render as bulleted $ref:X items.
+    elif data and all(isinstance(v, dict) and set(v.keys()) == {"$ref"} for v in data):
+        items = [f"$ref:{v['$ref']}" for v in data]
+        for item in items:
+            lines.append(f"{indent}- {item}")
     elif data and isinstance(data[0], dict):
         for i, item in enumerate(data):
             title: str | None = None
@@ -198,6 +203,11 @@ def _format_dict_as_markdown(
             effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
             label = _snake_to_title(key)
             raw_val = data.get(key)
+            # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
+            # tables — keeps the display compact while signalling that the
+            # value is a component reference, not a literal string.
+            if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
+                raw_val = f"$ref:{raw_val['$ref']}"
             is_nested = isinstance(raw_val, (dict, list))
             if is_nested:
                 # Don't propagate field_filter into nested sub-objects —

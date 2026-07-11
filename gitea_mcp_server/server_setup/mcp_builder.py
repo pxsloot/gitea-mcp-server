@@ -38,7 +38,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
 from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
 from gitea_mcp_server.tools.schemas import (
-    _get_raw_success_schema,
+    _get_success_schema,
     _is_text_response,
     derive_output_schema,
 )
@@ -110,8 +110,9 @@ def _customize_metadata(
     # emit type names instead of inlining entire referenced schemas.
     raw_schema: dict[str, Any] | None = None
     if output_schema is not None:
-        raw_schema = _get_raw_success_schema(
-            openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower()
+        raw_schema = _get_success_schema(
+            openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower(),
+            resolve=False,
         )
 
     augment_schema_with_validation(component)

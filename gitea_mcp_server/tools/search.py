@@ -7,7 +7,7 @@ and the shared BM25+format pipeline used by both search_tools and search_resourc
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -378,7 +378,7 @@ async def _tool_info_impl(  # noqa: PLR0913 — name, format, ctx, transform, to
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
-    detail: str = "concise",
+    detail: Literal["concise", "full"] = "concise",
 ) -> ToolResult:
     """Core tool_info implementation.
 
@@ -661,7 +661,7 @@ def register_synthetic_tools(
             "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
         ] = "markdown",
         detail: Annotated[
-            str,
+            Literal["concise", "full"],
             "Detail level: 'concise' (default) for compact type-summary output_example; "
             "'full' to also include the resolved output_schema",
         ] = "concise",

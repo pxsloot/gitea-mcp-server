@@ -92,75 +92,24 @@ def _get_success_schema(
     openapi_spec: OpenAPISpec,
     path: str,
     method: str,
+    resolve: bool = True,
 ) -> dict[str, Any] | None:
-    """Extract the resolved 200/201 response schema for a path and method.
+    """Extract the 200/201 response schema for a path and method.
+
+    When ``resolve=True`` (default), all nested ``$ref`` pointers are
+    expanded via ``_deep_resolve_schema``.  When ``resolve=False``, the
+    schema is returned with ``$ref`` intact — used by the compact example
+    generator to emit type names instead of inlining referenced schemas.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
         path: The API path to inspect.
         method: The HTTP method to inspect.
+        resolve: If ``True`` (default), deep-resolve all ``$ref`` pointers.
+                 If ``False``, return the schema with ``$ref`` intact.
 
     Returns:
-        The resolved response schema, or ``None`` if no JSON response found.
-    """
-    if _is_text_response(openapi_spec, path, method):
-        return None
-
-    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    path_item = paths.get(path)
-    if not isinstance(path_item, dict):
-        return None
-    operation = path_item.get(method)
-    if not isinstance(operation, dict):
-        return None
-    responses = operation.get("responses", {})
-    if not isinstance(responses, dict):
-        return None
-
-    for code in ("200", "201"):
-        response = responses.get(code)
-        if not isinstance(response, dict):
-            continue
-
-        if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
-            if not isinstance(resolved, dict):
-                continue
-            response = resolved
-
-        content = response.get("content", {})
-        if not isinstance(content, dict):
-            continue
-        json_content = content.get("application/json", {})
-        if not isinstance(json_content, dict):
-            continue
-        schema = json_content.get("schema")
-        if not isinstance(schema, dict):
-            continue
-
-        return _deep_resolve_schema(schema, openapi_spec)
-
-    return None
-
-
-def _get_raw_success_schema(
-    openapi_spec: OpenAPISpec,
-    path: str,
-    method: str,
-) -> dict[str, Any] | None:
-    """Extract the raw (unresolved) 200/201 response schema for a path and method.
-
-    Same navigation as ``_get_success_schema`` but returns the schema
-    **without** calling ``_deep_resolve_schema``.  Nested ``$ref`` pointers
-    remain intact, which is the right input for compact example generation.
-
-    Args:
-        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
-        path: The API path to inspect.
-        method: The HTTP method to inspect.
-
-    Returns:
-        The raw response schema with ``$ref`` intact, or ``None`` if no JSON
+        The response schema (resolved or raw), or ``None`` if no JSON
         response is found.
     """
     if _is_text_response(openapi_spec, path, method):
@@ -198,7 +147,8 @@ def _get_raw_success_schema(
         if not isinstance(schema, dict):
             continue
 
-        # Return WITHOUT _deep_resolve_schema — keep $ref intact
+        if resolve:
+            return _deep_resolve_schema(schema, openapi_spec)
         return schema
 
     return None
@@ -238,7 +188,6 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
 
 __all__ = [
     "_deep_resolve_schema",
-    "_get_raw_success_schema",
     "_get_success_schema",
     "_is_text_response",
     "_resolve_ref",

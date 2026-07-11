@@ -88,6 +88,7 @@ class ToolSchemaResult(TypedDict, total=False):
     description: str
     parameters: dict[str, Any]
     output_example: Any
+    output_schema: dict[str, Any]
     annotations: dict[str, Any]
     tags: list[str]
     version: str

@@ -810,6 +810,8 @@ class TestToolSchemaResource:
         }
         tool.tags = {"issue"}
         tool.version = "1.0"
+        tool.annotations = None
+        tool.meta = {}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.get_tool = AsyncMock(return_value=tool)
@@ -848,6 +850,8 @@ class TestToolSchemaResource:
         tool.output_schema = None
         tool.tags = None
         tool.version = None
+        tool.annotations = None
+        tool.meta = {}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.get_tool = AsyncMock(return_value=tool)

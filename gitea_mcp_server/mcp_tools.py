@@ -27,7 +27,7 @@ from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.examples import _schema_to_example
+from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
 logger = logging.getLogger(__name__)
 
@@ -496,18 +496,14 @@ async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> s
     if tool is None:
         msg = f"Tool '{name}' not found"
         raise ValueError(msg)
-    data: dict[str, Any] = {
-        "name": tool.name,
-        "description": tool.description or "",
-        "parameters": tool.parameters,
-    }
+
+    # Compact example (type names for $ref, no inlined nesting).
+    data = dict(_serialize_tool_schema(tool))
+
+    # Resource always includes the fully-resolved output_schema.
     if tool.output_schema is not None:
-        inner = tool.output_schema.get("properties", {}).get("result", {})
-        data["output_example"] = _schema_to_example(inner)
-    if tool.tags:
-        data["tags"] = list(tool.tags)
-    if tool.version:
-        data["version"] = tool.version
+        data["output_schema"] = tool.output_schema
+
     return json.dumps(data, indent=2)
 
 

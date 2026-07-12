@@ -32,7 +32,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import SpecError
-from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
@@ -291,11 +291,11 @@ async def create_mcp_server(
         msg = f"Failed to load or convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
 
-    label_manager = LabelManager()
+    label_service = LabelService()
     provider = create_openapi_provider(
         openapi_spec=openapi_spec,
         client=gitea_client.client,
-        label_manager=label_manager,
+        label_service=label_service,
         gitea_client=gitea_client,
     )
     doc_manager = DocManager()

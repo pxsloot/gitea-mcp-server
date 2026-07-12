@@ -674,10 +674,10 @@ class TestToolWrappingTransformTelemetry:
     """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
 
     def make_transform(self, openapi_spec=None):
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
 
         return _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_service=LabelService(),
             openapi_spec=openapi_spec or {},
         )
 
@@ -927,14 +927,14 @@ class TestCreateOpenapiProvider:
             "components": {"schemas": {}},
         }
 
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
 
         client = MagicMock()
-        label_manager = LabelManager()
+        label_service = LabelService()
         provider = create_openapi_provider(
             openapi_spec=openapi_spec,
             client=client,
-            label_manager=label_manager,
+            label_service=label_service,
         )
 
         assert provider is not None
@@ -950,10 +950,10 @@ class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
     def make_transform(self, openapi_spec=None):
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
 
         return _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_service=LabelService(),
             openapi_spec=openapi_spec or {},
         )
 

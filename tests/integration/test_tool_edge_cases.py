@@ -213,9 +213,21 @@ class TestLabelConversion:
         sent = json.loads(api_route.calls[0].request.content)
         assert sent["labels"] == [1], f"Expected labels=[1], got {sent['labels']}"
 
-    async def test_preserves_integer_labels(self, mcp_server) -> None:
-        """Integer labels are passed through unchanged."""
-        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(200, json=[])
+    async def test_preserves_valid_integers(self, mcp_server) -> None:
+        """Valid integer IDs that exist in the label map pass through unchanged.
+
+        Unlike the old ``test_preserves_integer_labels`` (which returned an
+        empty label list and relied on the old short-circuit that skipped
+        validation for integers), this test verifies that integer IDs are
+        **validated** against the remote label map and accepted when found.
+        """
+        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
+            200,
+            json=[
+                {"id": 42, "name": "priority/high"},
+                {"id": 99, "name": "priority/low"},
+            ],
+        )
         api_route = respx.post(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/issues").respond(
             201, json={"id": 1, "title": "Test"},
         )
@@ -228,6 +240,18 @@ class TestLabelConversion:
         assert api_route.called
         sent = json.loads(api_route.calls[0].request.content)
         assert sent["labels"] == [42, 99]
+
+    async def test_unknown_integer_raises_validation_error(self, mcp_server) -> None:
+        """Unknown integer IDs produce a human-readable ValidationError."""
+        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
+            200, json=[{"id": 1, "name": "type/bug"}],
+        )
+
+        with pytest.raises(ToolError, match="Unknown label ID"):
+            await mcp_server.call_tool(
+                "gitea_create_issue",
+                {"owner": "owner", "repo": "repo", "title": "Test", "labels": [99999]},
+            )
 
     async def test_unknown_label_raises_validation_error(self, mcp_server) -> None:
         """Unknown label names produce a human-readable ValidationError."""

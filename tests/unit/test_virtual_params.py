@@ -437,11 +437,11 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_injects_format_into_parameters(self):
         """_wrap() adds the format parameter to tool schema (promoted)."""
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()
@@ -456,11 +456,11 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_format_extracted_before_execution(self):
         """Format is stripped from kwargs before the HTTP execution path."""
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()
@@ -489,11 +489,11 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_default_markdown_no_format_supplied(self):
         """Default markdown when format is not supplied."""
-        from gitea_mcp_server.label_manager import LabelManager
+        from gitea_mcp_server.label_service import LabelService
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()

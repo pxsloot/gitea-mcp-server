@@ -22,7 +22,7 @@ from mcp.types import TextContent
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.config import Config
 from gitea_mcp_server.format import format_result
-from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
@@ -184,11 +184,11 @@ class _ToolWrappingTransform(Transform):
 
     def __init__(
         self,
-        label_manager: LabelManager,
+        label_service: LabelService,
         openapi_spec: OpenAPISpec,
         gitea_client: "GiteaClient | None" = None,
     ) -> None:
-        self._label_manager = label_manager
+        self._label_service = label_service
         self._openapi_spec = openapi_spec
         self._gitea_client = gitea_client
 
@@ -360,11 +360,11 @@ class _ToolWrappingTransform(Transform):
             if has_labels:
                 with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
                     await _convert_labels(
-                        kwargs, has_labels, self._label_manager, self._gitea_client
+                        kwargs, has_labels, self._label_service, self._gitea_client
                     )
                     span.set_attribute("labels.has_labels", True)
             else:
-                await _convert_labels(kwargs, has_labels, self._label_manager, self._gitea_client)
+                await _convert_labels(kwargs, has_labels, self._label_service, self._gitea_client)
 
             if ctx is not None:
                 await ctx.info(
@@ -494,7 +494,7 @@ def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
 def create_openapi_provider(
     openapi_spec: OpenAPISpec,
     client: "AsyncClient",
-    label_manager: LabelManager,
+    label_service: LabelService,
     gitea_client: "GiteaClient | None" = None,
 ) -> OpenAPIProvider:
     """Create an ``OpenAPIProvider`` with customised metadata + runtime wrapping.
@@ -526,7 +526,7 @@ def create_openapi_provider(
     )
 
     transform = _ToolWrappingTransform(
-        label_manager=label_manager,
+        label_service=label_service,
         openapi_spec=openapi_spec,
         gitea_client=gitea_client,
     )

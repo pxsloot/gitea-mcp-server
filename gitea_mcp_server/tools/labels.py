@@ -24,6 +24,12 @@ async def _convert_labels(
 ) -> None:
     """Convert label strings/ints to validated integer IDs in-place.
 
+    .. deprecated::
+       Replaced by ``_convert_labels_inline`` in ``tools/label_transform.py``.
+       The ``has_labels`` guard is now handled upstream by
+       ``LabelTransform._should_wrap()``.  Kept for test backward
+       compatibility only; no production code imports this.
+
     Delegates all validation and conversion to ``LabelService.validate_and_convert``.
 
     Args:
@@ -83,6 +89,5 @@ def update_labels_schema(component: OpenAPITool) -> None:
 
 
 __all__ = [
-    "_convert_labels",
     "update_labels_schema",
 ]

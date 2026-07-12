@@ -59,16 +59,19 @@ removed when FastMCP catches up.
 │  • output/label schemas  │  │  • custom wrappers:      │
 │  • invalidation patterns │  │    Markdown formatters   │
 │                          │  │    for common URIs       │
-│  Phase 2: _ToolWrapping  │  │    (override auto)       │
-│  _Transform:             │  │                          │
-│  • inject virtual params │  │  • mcp resource tools    │
-│  • validate args         │  │    list/read_resource    │
-│  • label string→ID conv  │  └───────────┬──────────────┘
-│  • error translation     │              │
-│  • text result wrapping  │              │
-│  • pagination metadata   │              │
-│  • apply virtual params  │              │
-└─────────────┬────────────┘              │
+│  Phase 2: LabelTransform  │  │    (override auto)       │
+│  (innermost):             │  │                          │
+│  • label string→ID conv   │  └───────────┬──────────────┘
+│                           │              │
+│  Phase 3: _ToolWrapping   │              │
+│  _Transform (outermost):  │              │
+│  • inject virtual params  │              │
+│  • validate args          │              │
+│  • error translation      │              │
+│  • text result wrapping   │              │
+│  • pagination metadata    │              │
+│  • apply virtual params   │              │
+└─────────────┬─────────────┘              │
               │                           │
               └──────────┬────────────────┘
                          │
@@ -116,15 +119,15 @@ Agent calls a tool:
     ├─▶ GiteaNamespace            — strip gitea_ prefix
     ├─▶ _ToolWrappingTransform    — validate (OTEL: .validate span)
     │                              → log context (ctx.info)
-    │                              → convert labels (.convert_labels span)
-    │                              → log context (ctx.info)
     │                              → report progress (ctx.report_progress)
-    │                              → run (.execute span)
+    │                              → call inner tool's run()
+    │     └─▶ LabelTransform      — convert labels (.convert_labels span)
     │                              → log context (ctx.info)
-    │                              → wrap result
+    │                              → call original tool's run()
+    │           └─▶ OpenAPITool.run() — httpx → Gitea API
+    │                                    → {"result": data}
+    │                              → wrap result (pagination, text)
     │                              → report progress (ctx.report_progress)
-    └─▶ OpenAPITool.run()        — httpx → Gitea API
-                                     → {"result": data}
 
 Agent reads a resource:
 
@@ -165,7 +168,8 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/customize.py` | title/category generation, hint inference, annotation prep, invalidation helpers |
 | `tools/schemas.py` | `derive_output_schema`, `$ref` resolution, text/JSON response detection |
 | `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
-| `tools/labels.py` | string→ID label conversion, label schema updates |
+| `tools/labels.py` | string→ID label conversion, label schema updates (schema-time only) |
+| `tools/label_transform.py` | FastMCP `Transform` — runtime label validation and conversion, runs as innermost provider-level transform | `LabelTransform`, `_convert_labels_inline` |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
@@ -180,7 +184,7 @@ The customization layers as applied during server startup:
 | 0. Deprecated filter | `server_setup/mcp_builder.py` | exclude endpoints with `deprecated: true` via FastMCP `route_map_fn` before component creation |
 | 1. Annotations | `tools/customize.py` | title, category tag, readOnly/destructive/idempotent hints |
 | 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
-| 3. Label support | `tools/labels.py` | string-to-ID label conversion, schema updates |
+| 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
 | 6. Permissions | `tool_filter.py` | hide tools/resources that exceed token scopes |
@@ -190,6 +194,7 @@ The customization layers as applied during server startup:
 | 10. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
 | 11. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
 | 12. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
+| 13. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
 
 ### Resource System
 
@@ -486,16 +491,19 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   │     └─▶ executes tool
   │     └─▶ on success: compute URIs to invalidate → clear cache
   │
-  └─▶ Tool (from tools/customize.py)
+  └─▶ _ToolWrappingTransform (outermost)
         ├─▶ inject virtual params into schema (tools/virtual_params.py)
         ├─▶ extract virtual params from kwargs → stash
         ├─▶ validate arguments (validation.py)
-        ├─▶ log validation result (ctx.info in _ToolWrappingTransform)
-        ├─▶ convert label strings→IDs (label_service)
-        ├─▶ log label result (ctx.info in _ToolWrappingTransform)
+        ├─▶ log validation result (ctx.info)
         ├─▶ report execution progress (ctx.report_progress)
-        ├─▶ OpenAPITool.run() → httpx request to Gitea API
-        ├─▶ log completion (ctx.info in _ToolWrappingTransform)
+        ├─▶ call inner tool's run()
+        │  └─▶ LabelTransform (innermost)
+        │        ├─▶ convert label strings→IDs (label_service)
+        │        ├─▶ log label result (ctx.info)
+        │        └─▶ call original tool's run()
+        │           └─▶ OpenAPITool.run() → httpx request to Gitea API
+        ├─▶ log completion (ctx.info)
         ├─▶ wrap response in {"result": ...}
         ├─▶ report progress for paginated fetches (ctx.report_progress)
         ├─▶ on error: translate httpx errors to agent-friendly messages

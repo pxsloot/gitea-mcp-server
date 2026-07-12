@@ -207,7 +207,7 @@ The customization layers as applied during server startup:
 |--------|------|
 | `server_setup/__init__.py` | Package marker |
 | `server_setup/spec_loader.py` | Fetch, convert, extend |
-| `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_manager`) |
+| `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_service`) |
 | `server_setup/resource_setup.py` | Orchestrate resource registration |
 | `server_setup/permissions.py` | Re-exports from `tool_filter.py` (avoids circular import) |
 | `server_setup/mcp_extensions.py` | YAML-based parameter extensions (applied to spec before tool generation) |
@@ -491,7 +491,7 @@ Agent: call_tool("gitea_issue_create_issue", {...})
         ├─▶ extract virtual params from kwargs → stash
         ├─▶ validate arguments (validation.py)
         ├─▶ log validation result (ctx.info in _ToolWrappingTransform)
-        ├─▶ convert label strings→IDs (label_manager)
+        ├─▶ convert label strings→IDs (label_service)
         ├─▶ log label result (ctx.info in _ToolWrappingTransform)
         ├─▶ report execution progress (ctx.report_progress)
         ├─▶ OpenAPITool.run() → httpx request to Gitea API

@@ -430,7 +430,7 @@ class TestPaginationMetadata:
 
     def _make_transform(self):
         return _ToolWrappingTransform(
-            label_manager=LabelService(),
+            label_service=LabelService(),
             openapi_spec={},
         )
 
@@ -673,7 +673,7 @@ class TestCustomizeComponentTextResponse:
         from mcp.types import TextContent
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelService(),
+            label_service=LabelService(),
             openapi_spec={},
         )
 

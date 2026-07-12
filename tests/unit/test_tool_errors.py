@@ -22,7 +22,7 @@ from gitea_mcp_server.validation import ValidationError
 
 
 @pytest.fixture
-def label_manager():
+def label_service():
     """Return a fresh LabelService per test to avoid shared mutable state."""
     return LabelService()
 
@@ -31,7 +31,7 @@ class TestErrorHandlingEnhancement:
     """Tests for enhanced error handling using OpenAPI response schemas."""
 
     @pytest.mark.asyncio
-    async def test_formats_404_error_using_openapi_spec(self, label_manager):
+    async def test_formats_404_error_using_openapi_spec(self, label_service):
         """When component.run raises a 404, transform_fn should format a clean message using the OpenAPI spec's response description."""
         import httpx
 
@@ -99,7 +99,7 @@ class TestErrorHandlingEnhancement:
 
         # Apply metadata and wrap via transform (live pipeline path)
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
@@ -121,7 +121,7 @@ class TestErrorHandlingEnhancement:
         assert "HTTP error 404" not in error_msg
 
     @pytest.mark.asyncio
-    async def test_non_http_errors_unchanged(self, label_manager):
+    async def test_non_http_errors_unchanged(self, label_service):
         """Non-HTTP ValueErrors should be re-raised without modification."""
 
         openapi_spec = {"paths": {}}
@@ -144,7 +144,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=value_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
@@ -153,7 +153,7 @@ class TestErrorHandlingEnhancement:
         assert str(exc_info.value) == "Some unrelated validation error"
 
     @pytest.mark.asyncio
-    async def test_formats_network_error_cleanly(self, label_manager):
+    async def test_formats_network_error_cleanly(self, label_service):
         """httpx.NetworkError (without response) should be formatted as a network issue."""
         import httpx
 
@@ -177,7 +177,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=network_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
@@ -188,7 +188,7 @@ class TestErrorHandlingEnhancement:
         assert "Connection failed" in error_msg
 
     @pytest.mark.asyncio
-    async def test_formats_timeout_error_cleanly(self, label_manager):
+    async def test_formats_timeout_error_cleanly(self, label_service):
         """httpx.TimeoutException should be formatted as a timeout issue."""
         import httpx
 
@@ -211,7 +211,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=timeout_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
@@ -221,7 +221,7 @@ class TestErrorHandlingEnhancement:
         assert "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
 
     @pytest.mark.asyncio
-    async def test_formats_unexpected_exception_cleanly(self, label_manager):
+    async def test_formats_unexpected_exception_cleanly(self, label_service):
         """Unexpected exceptions (RuntimeError, etc.) should be caught and formatted."""
 
         openapi_spec = {"paths": {}}
@@ -244,7 +244,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=unexpected_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:
@@ -629,7 +629,7 @@ class TestErrorHandlingNonJson:
     """Tests for error handling with non-JSON response bodies."""
 
     @pytest.mark.asyncio
-    async def test_non_json_error_body_formatted_cleanly(self, label_manager):
+    async def test_non_json_error_body_formatted_cleanly(self, label_service):
         """When HTTP error response body is not valid JSON, should fall back to response.text."""
         openapi_spec = {
             "paths": {
@@ -670,7 +670,7 @@ class TestErrorHandlingNonJson:
         tool.run = AsyncMock(side_effect=value_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(label_manager=label_manager, openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(label_service=label_service, openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError) as exc_info:

@@ -441,7 +441,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelService(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()
@@ -460,7 +460,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelService(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()
@@ -493,7 +493,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelService(),
+            label_service=LabelService(),
             openapi_spec={},
         )
         tool = self._make_tool()

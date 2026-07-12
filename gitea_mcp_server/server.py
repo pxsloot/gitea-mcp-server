@@ -295,7 +295,7 @@ async def create_mcp_server(
     provider = create_openapi_provider(
         openapi_spec=openapi_spec,
         client=gitea_client.client,
-        label_manager=label_service,
+        label_service=label_service,
         gitea_client=gitea_client,
     )
     doc_manager = DocManager()

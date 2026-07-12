@@ -85,7 +85,7 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
     provider = create_openapi_provider(
         openapi_spec=minimal_spec,
         client=mock_client,
-        label_manager=MagicMock(),
+        label_service=MagicMock(),
     )
 
     # Get tools from provider
@@ -119,7 +119,7 @@ def test_label_guidance_appendage_when_labels_present(minimal_spec):
     provider = create_openapi_provider(
         openapi_spec=minimal_spec,
         client=MagicMock(),
-        label_manager=MagicMock(),
+        label_service=MagicMock(),
     )
     tools = list(provider._tools.values())
     tool_names = {t.name: t for t in tools}

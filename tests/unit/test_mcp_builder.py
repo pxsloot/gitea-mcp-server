@@ -674,10 +674,7 @@ class TestToolWrappingTransformTelemetry:
     """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
 
     def make_transform(self, openapi_spec=None):
-        from gitea_mcp_server.label_service import LabelService
-
         return _ToolWrappingTransform(
-            label_service=LabelService(),
             openapi_spec=openapi_spec or {},
         )
 
@@ -709,10 +706,6 @@ class TestToolWrappingTransformTelemetry:
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
-                new_callable=AsyncMock,
-            ),
-            patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
@@ -738,47 +731,6 @@ class TestToolWrappingTransformTelemetry:
         assert "test_tool.execute" in span_names, (
             f"Expected 'test_tool.execute' in span names: {span_names}"
         )
-        # When has_labels=False (default from make_tool), no convert_labels span is created
-        assert "test_tool.convert_labels" not in span_names, (
-            f"Expected no 'convert_labels' when has_labels=False, got: {span_names}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_pipeline_emits_convert_labels_span(self, trace_exporter):
-        """Pipeline emits a ``{tool}.convert_labels`` span when labels are present."""
-        transform = self.make_transform()
-        tool = self.make_tool("labels_tool")
-        tool.meta["_customization"]["has_labels"] = True
-
-        with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
-                return_value=False,
-            ),
-        ):
-            from fastmcp.tools.base import ToolResult
-
-            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
-
-            result = await transform.list_tools([tool])
-            wrapped = result[0]
-            await wrapped.run(arguments={})
-
-        spans = trace_exporter.get_finished_spans()
-        span_names = [s.name for s in spans]
-
-        assert "labels_tool.convert_labels" in span_names, (
-            f"Expected 'labels_tool.convert_labels' in span names: {span_names}"
-        )
 
     @pytest.mark.asyncio
     async def test_spans_carry_tool_name_attribute(self, trace_exporter):
@@ -788,10 +740,6 @@ class TestToolWrappingTransformTelemetry:
 
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
-                new_callable=AsyncMock,
-            ),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
                 new_callable=AsyncMock,
@@ -818,42 +766,6 @@ class TestToolWrappingTransformTelemetry:
                 assert span.attributes.get("http.method") == "GET"
 
     @pytest.mark.asyncio
-    async def test_no_convert_labels_span_when_has_labels_false(self, trace_exporter):
-        """When ``has_labels=False``, no ``convert_labels`` span is emitted."""
-        transform = self.make_transform()
-        tool = self.make_tool("no_labels_tool")
-
-        with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
-                return_value=False,
-            ),
-        ):
-            from fastmcp.tools.base import ToolResult
-
-            mock_run.return_value = ToolResult(structured_content={"result": "ok"})
-
-            result = await transform.list_tools([tool])
-            wrapped = result[0]
-            await wrapped.run(arguments={})
-
-        spans = trace_exporter.get_finished_spans()
-        span_names = [s.name for s in spans]
-
-        assert "no_labels_tool.convert_labels" not in span_names, (
-            f"Expected no 'convert_labels' span, got: {span_names}"
-        )
-
-    @pytest.mark.asyncio
     async def test_validation_error_stops_pipeline(self, trace_exporter):
         """When validation fails, only the ``validate`` span is emitted."""
         from gitea_mcp_server.exceptions import ValidationError
@@ -865,10 +777,6 @@ class TestToolWrappingTransformTelemetry:
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_validation",
                 side_effect=ValidationError("missing required: owner"),
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels",
-                new_callable=AsyncMock,
             ),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
@@ -887,10 +795,7 @@ class TestToolWrappingTransformTelemetry:
         assert "fail_tool.validate" in span_names, (
             f"Expected 'fail_tool.validate' in span names: {span_names}"
         )
-        # convert_labels and execute should NOT appear (pipeline aborted)
-        assert "fail_tool.convert_labels" not in span_names, (
-            f"Expected no 'fail_tool.convert_labels', got: {span_names}"
-        )
+        # execute should NOT appear (pipeline aborted)
         assert "fail_tool.execute" not in span_names, (
             f"Expected no 'fail_tool.execute', got: {span_names}"
         )
@@ -950,10 +855,7 @@ class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
     def make_transform(self, openapi_spec=None):
-        from gitea_mcp_server.label_service import LabelService
-
         return _ToolWrappingTransform(
-            label_service=LabelService(),
             openapi_spec=openapi_spec or {},
         )
 
@@ -1062,9 +964,6 @@ class TestToolWrappingTransform:
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation") as mock_validate,
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels", new_callable=AsyncMock
-            ) as mock_labels,
-            patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
@@ -1084,7 +983,6 @@ class TestToolWrappingTransform:
             output = await wrapped.run(arguments={"key": "value"})
 
             mock_validate.assert_called_once()
-            mock_labels.assert_called_once()
             mock_run.assert_called_once()
             assert output.structured_content == {"result": "ok"}
 
@@ -1106,29 +1004,6 @@ class TestToolWrappingTransform:
                 await wrapped.run(arguments={"name": ""})
 
     @pytest.mark.asyncio
-    async def test_label_conversion_error_to_value_error(self):
-        """ValidationError from _convert_labels is converted to ValueError."""
-        transform = self.make_transform()
-        tool = self.make_tool(customized=True)
-        tool.meta["_customization"]["has_labels"] = True
-
-        from gitea_mcp_server.validation import ValidationError
-
-        with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels", new_callable=AsyncMock
-            ) as mock_labels,
-        ):
-            mock_labels.side_effect = ValidationError("Unknown label: foo", field="labels")
-
-            result = await transform.list_tools([tool])
-            wrapped = result[0]
-
-            with pytest.raises(ValueError, match="Unknown label"):
-                await wrapped.run(arguments={"labels": ["foo"]})
-
-    @pytest.mark.asyncio
     async def test_text_response_wrapping(self):
         """is_text_response wraps unstructured content in result dict."""
         transform = self.make_transform()
@@ -1137,9 +1012,6 @@ class TestToolWrappingTransform:
 
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels", new_callable=AsyncMock
-            ),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
                 new_callable=AsyncMock,
@@ -1173,9 +1045,6 @@ class TestToolWrappingTransform:
 
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._convert_labels", new_callable=AsyncMock
-            ),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
                 new_callable=AsyncMock,

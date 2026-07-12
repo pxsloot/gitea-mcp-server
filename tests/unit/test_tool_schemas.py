@@ -7,7 +7,6 @@ import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import ToolResult
 
-from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _ToolWrappingTransform,
@@ -361,8 +360,6 @@ class TestDeriveOutputSchema:
         tool.serializer = None
 
         _customize_metadata(route, tool, openapi_spec=self.MINIMAL_SPEC)
-        label_service = LabelService()
-
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
             new_callable=AsyncMock,
@@ -373,7 +370,6 @@ class TestDeriveOutputSchema:
             )
 
             transform = _ToolWrappingTransform(
-                label_service=label_service,
                 openapi_spec=self.MINIMAL_SPEC,
             )
             [wrapped] = await transform.list_tools([tool])
@@ -402,7 +398,6 @@ class TestDeriveOutputSchema:
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
         assert "id" in tool.output_schema["properties"]
 
-        label_service = LabelService()
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
             new_callable=AsyncMock,
@@ -413,7 +408,6 @@ class TestDeriveOutputSchema:
             )
 
             transform = _ToolWrappingTransform(
-                label_service=label_service,
                 openapi_spec=self.MINIMAL_SPEC,
             )
             [wrapped] = await transform.list_tools([tool])
@@ -447,7 +441,6 @@ class TestDeriveOutputSchema:
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
         assert "result" in tool.output_schema["properties"]
 
-        label_service = LabelService()
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
             new_callable=AsyncMock,
@@ -458,7 +451,6 @@ class TestDeriveOutputSchema:
             )
 
             transform = _ToolWrappingTransform(
-                label_service=label_service,
                 openapi_spec=spec,
             )
             [wrapped] = await transform.list_tools([tool])

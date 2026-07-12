@@ -36,7 +36,8 @@ from gitea_mcp_server.tools.customize import (
     generate_tool_title,
 )
 from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
-from gitea_mcp_server.tools.labels import _convert_labels, update_labels_schema
+from gitea_mcp_server.tools.label_transform import LabelTransform
+from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.schemas import (
     _get_success_schema,
     _is_text_response,
@@ -111,7 +112,9 @@ def _customize_metadata(
     raw_schema: dict[str, Any] | None = None
     if output_schema is not None:
         raw_schema = _get_success_schema(
-            openapi_spec, getattr(route, "path", ""), getattr(route, "method", "").lower(),
+            openapi_spec,
+            getattr(route, "path", ""),
+            getattr(route, "method", "").lower(),
             resolve=False,
         )
 
@@ -177,20 +180,19 @@ class _ToolWrappingTransform(Transform):
     """Provider-level transform that wraps OpenAPITools with runtime behaviour.
 
     Accessed via ``provider.add_transform()`` — part of FastMCP's public API.
-    Handles: virtual parameter inject/extract, argument validation, label
-    conversion, error handling, text-response wrapping, and pagination
-    metadata injection.
+    Handles: virtual parameter inject/extract, argument validation, error
+    handling, text-response wrapping, and pagination metadata injection.
+
+    Label conversion is delegated to :class:`LabelTransform`, which is
+    registered as an *inner* transform so it runs after validation but
+    before the HTTP call.
     """
 
     def __init__(
         self,
-        label_service: LabelService,
         openapi_spec: OpenAPISpec,
-        gitea_client: "GiteaClient | None" = None,
     ) -> None:
-        self._label_service = label_service
         self._openapi_spec = openapi_spec
-        self._gitea_client = gitea_client
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [await self._wrap(t) for t in tools]
@@ -275,7 +277,10 @@ class _ToolWrappingTransform(Transform):
         kwargs: dict[str, Any],
         tool: Tool,
     ) -> ToolResult:
-        """Run the full tool execution pipeline: validate, convert labels, execute, wrap result.
+        """Run the full tool execution pipeline: validate, execute, wrap result.
+
+        Label conversion is handled by the inner :class:`LabelTransform`
+        that runs before this method is invoked via ``tool.run()``.
 
         Args:
             kwargs: The tool arguments from the agent.
@@ -285,7 +290,6 @@ class _ToolWrappingTransform(Transform):
         customization = meta.get("_customization", {})
         route_path: str = customization.get("route_path", "")
         route_method: str = customization.get("route_method", "")
-        has_labels = customization.get("has_labels", False)
         is_text_response = customization.get("is_text_response", False)
         output_schema = tool.output_schema
 
@@ -300,7 +304,6 @@ class _ToolWrappingTransform(Transform):
                     ctx,
                     route_path,
                     route_method,
-                    has_labels,
                     is_text_response,
                     output_schema,
                 )
@@ -311,25 +314,17 @@ class _ToolWrappingTransform(Transform):
                 None,
                 route_path,
                 route_method,
-                has_labels,
                 is_text_response,
                 output_schema,
             )
 
-    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912
-        # PLR0913: all pipeline state passed explicitly — avoids mutable
-        # instance state threading bugs; extracted to keep _run_transform_pipeline
-        # free of CurrentContext() boilerplate.
-        # PLR0912: each branch corresponds to a distinct pipeline stage
-        # (validation, labels, execution, pagination) — splitting would add
-        # indirection without benefit since all branches share kwargs/result.
+    async def _pipeline_with_context(  # noqa: PLR0913
         self,
         kwargs: dict[str, Any],
         tool: Tool,
         ctx: Any,
         route_path: str,
         route_method: str,
-        has_labels: bool,
         is_text_response: bool,
         output_schema: dict[str, Any] | None,
     ) -> ToolResult:
@@ -355,21 +350,6 @@ class _ToolWrappingTransform(Transform):
                 await ctx.info(
                     f"Validated {tool.name}",
                     extra={"arg_keys": list(kwargs.keys()), "valid": True},
-                )
-
-            if has_labels:
-                with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
-                    await _convert_labels(
-                        kwargs, has_labels, self._label_service, self._gitea_client
-                    )
-                    span.set_attribute("labels.has_labels", True)
-            else:
-                await _convert_labels(kwargs, has_labels, self._label_service, self._gitea_client)
-
-            if ctx is not None:
-                await ctx.info(
-                    f"Labels processed for {tool.name}",
-                    extra={"has_labels": has_labels},
                 )
         except ValidationError as e:
             if ctx is not None:
@@ -525,10 +505,17 @@ def create_openapi_provider(
         ),
     )
 
-    transform = _ToolWrappingTransform(
+    # Innermost transform: label conversion (after validation, before HTTP).
+    # Registered first so outer transforms pass through label-wrapped tools.
+    label_transform = LabelTransform(
         label_service=label_service,
-        openapi_spec=openapi_spec,
         gitea_client=gitea_client,
+    )
+    provider.add_transform(label_transform)
+
+    # Outer transform: virtual params, validation, error handling, wrapping.
+    transform = _ToolWrappingTransform(
+        openapi_spec=openapi_spec,
     )
     provider.add_transform(transform)
 

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 
 class SimpleConfig:

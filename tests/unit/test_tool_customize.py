@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 
 from gitea_mcp_server.label_manager import LabelManager
@@ -124,6 +124,19 @@ class TestGenerateToolTitle:
         title = _generate_tool_title(route)
         assert title == "Unnamed Tool"
 
+    def test_unknown_domain_logs_warning_via_generate_tool_title(self, caplog):
+        """Warning is emitted through the generate_tool_title → _snake_to_title path."""
+        import logging
+
+        route = MagicMock(summary="ignored", operation_id="deploy_create_environment")
+        caplog.set_level(logging.WARNING)
+        title = _generate_tool_title(route)
+        # Unknown domain is kept as-is — suboptimal title + warning signals drift
+        assert title == "Deploy Create Environment"
+        assert len(caplog.records) == 1
+        assert "Unknown operationId domain 'deploy'" in caplog.records[0].message
+        assert "deploy_create_environment" in caplog.records[0].message
+
 
 class TestSnakeToTitle:
     """Tests for the _snake_to_title helper."""
@@ -195,8 +208,8 @@ class TestDomainConfigConsistency:
 
         for key, config in _DOMAINS.items():
             if config.strip:
-                assert config.noun, (
-                    f"_DOMAINS['{key}'] has strip=True but empty noun"
+                assert config.noun.strip(), (
+                    f"_DOMAINS['{key}'] has strip=True but empty or whitespace-only noun"
                 )
 
 

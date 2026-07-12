@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.mcp_builder import (

@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, cast
 
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,

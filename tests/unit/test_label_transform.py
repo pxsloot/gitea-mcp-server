@@ -1,6 +1,7 @@
 """Unit tests for LabelTransform — FastMCP Transform wrapping label conversion."""
 
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, Any, Generator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp.server.transforms import Transform
@@ -13,6 +14,15 @@ from gitea_mcp_server.tools.label_transform import (
     LabelTransform,
     _convert_labels_inline,
 )
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+
+# The session-scoped ``_init_otel_exporter`` and ``trace_exporter`` fixture
+# are defined in ``tests/conftest.py`` (shared across all test modules).
 
 
 # ---------------------------------------------------------------------------
@@ -280,3 +290,152 @@ class TestConvertLabelsInline:
         kwargs = {"owner": "o", "repo": "r", "labels": ["bug", "feature"]}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         assert kwargs["labels"] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# LabelTransform — OpenTelemetry spans
+# ---------------------------------------------------------------------------
+
+
+class TestLabelTransformTelemetry:
+    """Tests for OTEL spans emitted from LabelTransform._wrap_tool."""
+
+    @pytest.fixture
+    def label_service(self):
+        return AsyncMock(spec=LabelService)
+
+    @pytest.fixture
+    def gitea_client(self):
+        return AsyncMock()
+
+    @pytest.fixture
+    def transform(self, label_service, gitea_client):
+        return LabelTransform(
+            label_service=label_service,
+            gitea_client=gitea_client,
+        )
+
+    def make_tool(
+        self,
+        name: str = "test_tool",
+        has_labels: bool = False,
+    ) -> Tool:
+        return Tool(
+            name=name,
+            parameters={"properties": {}, "required": []},
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": has_labels,
+                    "route_path": "/test",
+                    "route_method": "POST",
+                },
+            },
+            annotations=ToolAnnotations(title=name),
+        )
+
+    @pytest.mark.asyncio
+    async def test_emits_convert_labels_span(self, transform, label_service, trace_exporter):
+        """Wrapping a label tool emits a ``{tool}.convert_labels`` span."""
+        label_service.validate_and_convert.return_value = [1, 42]
+
+        tool = self.make_tool("labels_tool", has_labels=True)
+        run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
+        spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
+
+        async def call_next(name, *, version=None):
+            return spied_tool
+
+        wrapped = await transform.get_tool("labels_tool", call_next)
+        await wrapped.run(arguments={
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "labels": ["bug", 42],
+        })
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "labels_tool.convert_labels" in span_names, (
+            f"Expected 'labels_tool.convert_labels' in span names: {span_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_convert_labels_span_when_no_labels(
+        self, transform, trace_exporter
+    ):
+        """When has_labels is False, no convert_labels span is emitted."""
+        tool = self.make_tool("no_labels", has_labels=False)
+        async def call_next(name, *, version=None):
+            return tool
+
+        wrapped = await transform.get_tool("no_labels", call_next)
+        assert wrapped is tool  # not wrapped — passes through
+
+        spans = trace_exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "no_labels.convert_labels" not in span_names, (
+            f"Expected no 'convert_labels' span, got: {span_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_convert_labels_span_has_tool_name_attribute(
+        self, transform, label_service, trace_exporter
+    ):
+        """The convert_labels span carries a ``tool.name`` attribute."""
+        label_service.validate_and_convert.return_value = [1]
+
+        tool = self.make_tool("attr_tool", has_labels=True)
+        run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
+        spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
+
+        async def call_next(name, *, version=None):
+            return spied_tool
+
+        wrapped = await transform.get_tool("attr_tool", call_next)
+        await wrapped.run(arguments={
+            "owner": "o", "repo": "r", "labels": ["bug"],
+        })
+
+        spans = trace_exporter.get_finished_spans()
+        for span in spans:
+            if span.name == "attr_tool.convert_labels":
+                assert span.attributes.get("tool.name") == "attr_tool"
+                assert span.attributes.get("labels.has_labels") is True
+                break
+        else:
+            pytest.fail("No 'attr_tool.convert_labels' span found")
+
+    @pytest.mark.asyncio
+    async def test_convert_labels_span_sets_error_on_failure(
+        self, transform, label_service, trace_exporter
+    ):
+        """When label conversion fails, the span records an error attribute."""
+        label_service.validate_and_convert.side_effect = ValidationError(
+            message="Unknown label: bad", field="labels",
+        )
+
+        tool = self.make_tool("fail_tool", has_labels=True)
+        run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
+        spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
+
+        async def call_next(name, *, version=None):
+            return spied_tool
+
+        wrapped = await transform.get_tool("fail_tool", call_next)
+
+        with pytest.raises(ValueError, match="Unknown label"):
+            await wrapped.run(arguments={
+                "owner": "o", "repo": "r", "labels": ["bad"],
+            })
+
+        spans = trace_exporter.get_finished_spans()
+        for span in spans:
+            if span.name == "fail_tool.convert_labels":
+                assert span.attributes.get("error") is True
+                assert "Unknown label" in (span.attributes.get("error.message") or "")
+                break
+        else:
+            pytest.fail("No 'fail_tool.convert_labels' span found")

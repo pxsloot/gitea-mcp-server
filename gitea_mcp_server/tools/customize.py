@@ -4,9 +4,11 @@ Immediate helpers for the customization pipeline (annotations, hint inference,
 categorization, title generation, scope derivation, invalidation computation).
 """
 
-from typing import Any
+import logging
+from dataclasses import dataclass
+from typing import Any, cast
 
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,
@@ -16,6 +18,8 @@ from gitea_mcp_server.constants import (
     TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.tools.schemas import _schema_type_is_array
+
+logger = logging.getLogger(__name__)
 
 _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/admin", "admin", False),
@@ -30,24 +34,6 @@ _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
     ("/repos", "repository", False),
 ]
 
-
-# Known domain prefixes that are redundant in titles (e.g., ``issue_create_issue``
-# should produce "Create Issue", not "Issue Create Issue").
-_DOMAIN_PREFIXES: set[str] = {
-    "issue",
-    "repo",
-    "user",
-    "org",
-    "admin",
-    "notification",
-    "package",
-    "settings",
-    "topic",
-    "team",
-}
-
-# Domains whose prefix should be kept — the prefix *is* the entity name.
-_KEEP_PREFIX: set[str] = {"activitypub"}
 
 # Verbs that map to domain-level actions — when one of these remains after
 # stripping the domain prefix, the domain noun is appended as the object.
@@ -101,20 +87,37 @@ _ACTION_VERBS: set[str] = {
     "verify",
 }
 
-# Domain prefix → display noun for appending to single-verb titles.
-# Every key in _DOMAIN_PREFIXES (excluding _KEEP_PREFIX) must have
-# a corresponding entry here.
-_DOMAIN_NOUNS: dict[str, str] = {
-    "issue": "Issue",
-    "repo": "Repository",
-    "user": "User",
-    "org": "Organization",
-    "admin": "Admin",
-    "notification": "Notification",
-    "package": "Package",
-    "settings": "Settings",
-    "topic": "Topic",
-    "team": "Team",
+
+@dataclass
+class _DomainConfig:
+    """Configuration for an operationId domain prefix.
+
+    Attributes:
+        noun: Display noun for the domain (e.g., ``"Issue"``, ``"Repository"``).
+        strip: Whether to strip the domain prefix from the title.
+               Set to ``False`` when the prefix *is* the entity name
+               (e.g., ``activitypub``).
+    """
+
+    noun: str
+    strip: bool = True
+
+
+# Single source of truth for known operationId domain prefixes.
+# Every known domain has a noun and a strip flag — no more keeping
+# _DOMAIN_PREFIXES, _KEEP_PREFIX, and _DOMAIN_NOUNS in sync manually.
+_DOMAINS: dict[str, _DomainConfig] = {
+    "issue": _DomainConfig(noun="Issue"),
+    "repo": _DomainConfig(noun="Repository"),
+    "user": _DomainConfig(noun="User"),
+    "org": _DomainConfig(noun="Organization"),
+    "admin": _DomainConfig(noun="Admin"),
+    "notification": _DomainConfig(noun="Notification"),
+    "package": _DomainConfig(noun="Package"),
+    "settings": _DomainConfig(noun="Settings"),
+    "topic": _DomainConfig(noun="Topic"),
+    "team": _DomainConfig(noun="Team"),
+    "activitypub": _DomainConfig(noun="Activitypub", strip=False),
 }
 
 
@@ -129,14 +132,27 @@ def _snake_to_title(snake_op_id: str) -> str:
     2. **Verb-only after strip**: ``issue_delete`` → ``"Delete Issue"``
        — the domain noun is appended as the object when only one verb remains.
     3. **Kept-prefix domains**: ``activitypub_person`` → ``"Activitypub Person"``
-       — domains in ``_KEEP_PREFIX`` are retained because the prefix *is* the entity name.
+       — domains with ``strip=False`` are retained because the prefix *is* the entity name.
+
+    Logs a warning at startup when an unknown domain prefix is encountered,
+    surfacing drift when the Gitea API adds new operationId domains.
     """
     if not snake_op_id:
         return "Unnamed Tool"
 
     parts = snake_op_id.split("_")
-    domain = parts[0] if parts and parts[0] in _DOMAIN_PREFIXES | _KEEP_PREFIX else None
-    keep_prefix = domain in _KEEP_PREFIX if domain else False
+    config = _DOMAINS.get(parts[0]) if parts else None
+
+    if parts and config is None:
+        logger.warning(
+            "Unknown operationId domain '%s' in '%s' — title may be suboptimal. "
+            "Add entry to _DOMAINS if this is a recurring Gitea domain.",
+            parts[0],
+            snake_op_id,
+        )
+
+    domain = parts[0] if config else None
+    keep_prefix = not config.strip if config else False
 
     action_parts = parts[1:] if domain and not keep_prefix and len(parts) > 1 else parts
 
@@ -145,7 +161,8 @@ def _snake_to_title(snake_op_id: str) -> str:
     if domain and not keep_prefix and len(action_parts) == 1:
         word = action_parts[0].lower()
         if word in _ACTION_VERBS:
-            title = f"{title} {_DOMAIN_NOUNS.get(domain, domain.title())}"
+            # domain truthy ⇒ config is set (narrow for mypy)
+            title = f"{title} {cast('_DomainConfig', config).noun}"
 
     return title
 

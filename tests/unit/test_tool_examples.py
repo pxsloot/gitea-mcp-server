@@ -257,7 +257,7 @@ class TestSchemaToExample:
     def test_serialize_tool_schema_with_tags(self):
         """_serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
-        from fastmcp.tools.tool import ToolAnnotations
+        from mcp.types import ToolAnnotations
 
         from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
@@ -289,7 +289,7 @@ class TestSchemaToExample:
     def test_serialize_tool_schema_with_open_world_hint(self):
         """_serialize_tool_schema should include openWorldHint when True."""
         from fastmcp.tools.base import Tool
-        from fastmcp.tools.tool import ToolAnnotations
+        from mcp.types import ToolAnnotations
 
         from gitea_mcp_server.tools.examples import _serialize_tool_schema
 

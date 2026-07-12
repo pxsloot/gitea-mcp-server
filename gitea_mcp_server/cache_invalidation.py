@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import mcp
     from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-    from fastmcp.tools.tool import ToolResult
+    from fastmcp.tools.base import ToolResult
 
 from fastmcp.server.middleware.caching import (
     _get_auth_partition_key,

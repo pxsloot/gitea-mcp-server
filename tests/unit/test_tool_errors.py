@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.tool import ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.label_manager import LabelManager
 from gitea_mcp_server.server_setup.mcp_builder import (

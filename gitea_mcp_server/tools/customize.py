@@ -6,7 +6,7 @@ categorization, title generation, scope derivation, invalidation computation).
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fastmcp.tools.tool import ToolAnnotations
 
@@ -161,8 +161,8 @@ def _snake_to_title(snake_op_id: str) -> str:
     if domain and not keep_prefix and len(action_parts) == 1:
         word = action_parts[0].lower()
         if word in _ACTION_VERBS:
-            assert config is not None  # domain truthy ⇒ config is set
-            title = f"{title} {config.noun}"
+            # domain truthy ⇒ config is set (narrow for mypy)
+            title = f"{title} {cast('_DomainConfig', config).noun}"
 
     return title
 

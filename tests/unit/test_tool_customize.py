@@ -153,6 +153,26 @@ class TestSnakeToTitle:
     def test_empty_string(self):
         assert _snake_to_title("") == "Unnamed Tool"
 
+    def test_unknown_domain_logs_warning(self, caplog):
+        """Unknown domain prefixes should log a warning."""
+        import logging
+        from gitea_mcp_server.tools.customize import _snake_to_title
+
+        caplog.set_level(logging.WARNING)
+        _snake_to_title("render_markdown")
+        assert len(caplog.records) == 1
+        assert "Unknown operationId domain 'render'" in caplog.records[0].message
+        assert "render_markdown" in caplog.records[0].message
+
+    def test_known_domain_does_not_log_warning(self, caplog):
+        """Known domain prefixes should not log a warning."""
+        import logging
+        from gitea_mcp_server.tools.customize import _snake_to_title
+
+        caplog.set_level(logging.WARNING)
+        _snake_to_title("issue_create_issue")
+        assert len(caplog.records) == 0
+
 
 class TestDomainConfigConsistency:
     """All _DOMAINS entries are valid _DomainConfig instances (type-level guarantee).

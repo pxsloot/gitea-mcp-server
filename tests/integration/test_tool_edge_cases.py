@@ -214,7 +214,13 @@ class TestLabelConversion:
         assert sent["labels"] == [1], f"Expected labels=[1], got {sent['labels']}"
 
     async def test_preserves_valid_integers(self, mcp_server) -> None:
-        """Valid integer IDs that exist in the label map pass through unchanged."""
+        """Valid integer IDs that exist in the label map pass through unchanged.
+
+        Unlike the old ``test_preserves_integer_labels`` (which returned an
+        empty label list and relied on the old short-circuit that skipped
+        validation for integers), this test verifies that integer IDs are
+        **validated** against the remote label map and accepted when found.
+        """
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
             200,
             json=[

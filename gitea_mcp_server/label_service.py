@@ -30,6 +30,15 @@ class LabelService:
     caching with configurable TTL, validating both string names and integer
     IDs against the map, and formatting available labels for error messages.
 
+    .. note::
+
+       Every call to ``validate_and_convert`` — even for already-known
+       integer IDs — triggers a cache lookup (and on first use per repo, an
+       HTTP ``GET /repos/{owner}/{repo}/labels``).  Previously, integer-only
+       label lists skipped validation entirely.  The cost is intentional:
+       integer IDs from one repo are meaningless in another, and silent
+       failures confuse agents more than a cache miss.
+
     Usage::
 
         service = LabelService()
@@ -115,8 +124,9 @@ class LabelService:
         if not labels:
             return []
 
-        name_map = await self.get_label_map(owner, repo, client)
-        id_map = await self.get_id_map(owner, repo, client)
+        entry = await self._get_or_fetch(owner, repo, client)
+        name_map = entry["map"]
+        id_map = entry["id_map"]
 
         converted: list[int] = []
         unknown_names: list[str] = []

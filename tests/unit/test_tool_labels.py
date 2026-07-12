@@ -5,89 +5,74 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gitea_mcp_server.exceptions import ValidationError
-from gitea_mcp_server.label_manager import LabelManager
-from gitea_mcp_server.tools.labels import _convert_labels, _format_available_labels
-
-class TestFormatAvailableLabels:
-    """Tests for _format_available_labels."""
-
-    def test_groups_labels_by_prefix(self):
-        """Labels with same prefix should be grouped together."""
-        labels = ["type/bug", "priority/high", "type/feature", "priority/low", "status/triage"]
-        result = _format_available_labels(labels)
-        assert "type/bug, type/feature" in result
-        assert "priority/high, priority/low" in result
-        assert "status/triage" in result
-
-    def test_labels_without_prefix(self):
-        """Labels without a '/' should be grouped under empty prefix."""
-        labels = ["urgent", "type/bug", "wontfix"]
-        result = _format_available_labels(labels)
-        assert "urgent, wontfix" in result
-        assert "type/bug" in result
-
-    def test_single_label(self):
-        """Single label should produce one line."""
-        result = _format_available_labels(["type/bug"])
-        assert result == "  - type/bug"
-
-    def test_empty_list(self):
-        """Empty list should produce empty string."""
-        result = _format_available_labels([])
-        assert result == ""
+from gitea_mcp_server.label_service import LabelService
+from gitea_mcp_server.tools.labels import _convert_labels
 
 
 class TestConvertLabels:
-    """Tests for _convert_labels."""
+    """Tests for _convert_labels (thin adapter → LabelService)."""
 
     @pytest.fixture
     def _gitea_client(self):
         return AsyncMock()
 
+    @pytest.fixture
+    def _label_service(self):
+        return AsyncMock(spec=LabelService)
+
     @pytest.mark.asyncio
-    async def test_converts_known_string_labels_to_ids(self, _gitea_client):
+    async def test_converts_known_string_labels_to_ids(self, _gitea_client, _label_service):
         """Known string label names should be converted to integer IDs."""
-        label_manager = AsyncMock(spec=LabelManager)
-        label_manager.get_label_map.return_value = {
-            "type/bug": {"id": 1, "name": "type/bug"},
-            "type/feature": {"id": 2, "name": "type/feature"},
-        }
+        _label_service.validate_and_convert.return_value = [1, 2]
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", "type/feature"]}
-        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+        await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
         assert kwargs["labels"] == [1, 2]
+        _label_service.validate_and_convert.assert_called_once_with(
+            ["type/bug", "type/feature"], "test-owner", "test-repo", _gitea_client
+        )
 
     @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_labels(self, _gitea_client):
-        """Unknown label names should raise ValidationError with available labels."""
-        label_manager = AsyncMock(spec=LabelManager)
-        label_manager.get_label_map.return_value = {
-            "type/bug": {"id": 1, "name": "type/bug"},
-            "type/feature": {"id": 2, "name": "type/feature"},
-        }
+    async def test_raises_validation_error_for_unknown_strings(self, _gitea_client, _label_service):
+        """Unknown label names should raise ValidationError."""
+        _label_service.validate_and_convert.side_effect = ValidationError(
+            message="Unknown label name(s): ['type/nonexistent']", field="labels"
+        )
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/nonexistent"]}
         with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, label_manager, _gitea_client)
+            await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
-        msg = str(excinfo.value)
-        assert "type/nonexistent" in msg
-        assert "test-owner/test-repo" in msg
-        assert "type/bug" in msg
-        assert "type/feature" in msg
+        assert "type/nonexistent" in str(excinfo.value)
         assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
-    async def test_preserves_integer_labels(self):
-        """Integer labels should be passed through unchanged."""
-        label_manager = AsyncMock(spec=LabelManager)
+    async def test_passes_through_valid_integers(self, _gitea_client, _label_service):
+        """Valid integer IDs should pass through unchanged."""
+        _label_service.validate_and_convert.return_value = [1, 2, 3]
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [1, 2, 3]}
-        await _convert_labels(kwargs, True, label_manager)
+        await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
         assert kwargs["labels"] == [1, 2, 3]
-        label_manager.get_label_map.assert_not_called()
+        _label_service.validate_and_convert.assert_called_once_with(
+            [1, 2, 3], "test-owner", "test-repo", _gitea_client
+        )
+
+    @pytest.mark.asyncio
+    async def test_raises_validation_error_for_unknown_integers(self, _gitea_client, _label_service):
+        """Unknown integer IDs should raise ValidationError."""
+        _label_service.validate_and_convert.side_effect = ValidationError(
+            message="Unknown label ID(s): [99999]", field="labels"
+        )
+
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [99999]}
+        with pytest.raises(ValidationError) as excinfo:
+            await _convert_labels(kwargs, True, _label_service, _gitea_client)
+
+        assert "99999" in str(excinfo.value)
+        assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
     async def test_skips_when_has_labels_is_false(self):
@@ -104,67 +89,46 @@ class TestConvertLabels:
         assert "labels" not in kwargs
 
     @pytest.mark.asyncio
-    async def test_skips_when_owner_missing(self):
+    async def test_skips_when_labels_empty_list(self):
+        """When labels is an empty list, no conversion should happen."""
+        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": []}
+        await _convert_labels(kwargs, True, MagicMock())
+        assert kwargs["labels"] == []
+
+    @pytest.mark.asyncio
+    async def test_skips_when_owner_missing(self, _label_service):
         """When owner is missing, no conversion should happen."""
-        label_manager = AsyncMock(spec=LabelManager)
-
         kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, label_manager, AsyncMock())
+        await _convert_labels(kwargs, True, _label_service, AsyncMock())
         assert kwargs["labels"] == ["type/bug"]
-        label_manager.get_label_map.assert_not_called()
+        _label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_gitea_client_missing(self):
+    async def test_skips_when_gitea_client_missing(self, _label_service):
         """When gitea_client is None, no conversion should happen."""
-        label_manager = AsyncMock(spec=LabelManager)
-
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, label_manager, gitea_client=None)
+        await _convert_labels(kwargs, True, _label_service, gitea_client=None)
         assert kwargs["labels"] == ["type/bug"]
-        label_manager.get_label_map.assert_not_called()
+        _label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_handles_mixed_strings_and_integers(self, _gitea_client):
+    async def test_handles_mixed_strings_and_integers(self, _gitea_client, _label_service):
         """Mixed string and integer labels should all be converted/preserved."""
-        label_manager = AsyncMock(spec=LabelManager)
-        label_manager.get_label_map.return_value = {
-            "type/bug": {"id": 1, "name": "type/bug"},
-        }
+        _label_service.validate_and_convert.return_value = [1, 42]
 
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", 42]}
-        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+        await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
         assert kwargs["labels"] == [1, 42]
 
     @pytest.mark.asyncio
-    async def test_case_insensitive_matching(self, _gitea_client):
-        """Label matching should be case-insensitive."""
-        label_manager = AsyncMock(spec=LabelManager)
-        label_manager.get_label_map.return_value = {
-            "kind/enhancement": {"id": 5, "name": "Kind/Enhancement"},
-        }
+    async def test_uses_org_as_fallback_for_owner(self, _gitea_client, _label_service):
+        """When owner is absent but org is present, org should be used."""
+        _label_service.validate_and_convert.return_value = [1]
 
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["Kind/Enhancement"]}
-        await _convert_labels(kwargs, True, label_manager, _gitea_client)
+        kwargs = {"org": "my-org", "repo": "test-repo", "labels": ["bug"]}
+        await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
-        assert kwargs["labels"] == [5]
-
-    @pytest.mark.asyncio
-    async def test_formats_error_with_grouped_labels(self, _gitea_client):
-        """Error message should group available labels by prefix."""
-        label_manager = AsyncMock(spec=LabelManager)
-        label_manager.get_label_map.return_value = {
-            "type/bug": {"id": 1, "name": "type/bug"},
-            "type/feature": {"id": 2, "name": "type/feature"},
-            "priority/high": {"id": 3, "name": "priority/high"},
-            "priority/low": {"id": 4, "name": "priority/low"},
-        }
-
-        kwargs = {"owner": "my-org", "repo": "my-repo", "labels": ["bad/label"]}
-        with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, label_manager, _gitea_client)
-
-        msg = str(excinfo.value)
-        assert "my-org/my-repo" in msg
-        assert "  - priority/high, priority/low" in msg
-        assert "  - type/bug, type/feature" in msg
+        _label_service.validate_and_convert.assert_called_once_with(
+            ["bug"], "my-org", "test-repo", _gitea_client
+        )

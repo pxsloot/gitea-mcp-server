@@ -8,7 +8,7 @@ import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from mcp.types import ToolAnnotations
 
-from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _ToolWrappingTransform,
@@ -23,8 +23,8 @@ from gitea_mcp_server.validation import ValidationError
 
 @pytest.fixture
 def label_manager():
-    """Return a fresh LabelManager per test to avoid shared mutable state."""
-    return LabelManager()
+    """Return a fresh LabelService per test to avoid shared mutable state."""
+    return LabelService()
 
 
 class TestErrorHandlingEnhancement:

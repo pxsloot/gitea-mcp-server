@@ -1,0 +1,231 @@
+"""Unified label management, caching, and validation service.
+
+Consolidates all label business logic — fetching, caching, validation,
+and conversion — into a single ``LabelService`` class.  Replaces the
+previous ``LabelManager`` (caching only) and fragmented helpers in
+``tools/labels.py``.
+"""
+
+import logging
+from datetime import UTC, datetime
+from typing import Any, TypedDict
+
+from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.constants import LABEL_CACHE_TTL
+from gitea_mcp_server.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
+
+
+class _LabelCacheEntry(TypedDict):
+    map: dict[str, dict[str, Any]]
+    id_map: dict[int, dict[str, Any]]
+    timestamp: datetime
+
+
+class LabelService:
+    """Unified service for label caching, validation, and conversion.
+
+    Encapsulates all label business logic: fetching the remote label map,
+    caching with configurable TTL, validating both string names and integer
+    IDs against the map, and formatting available labels for error messages.
+
+    Usage::
+
+        service = LabelService()
+        converted = await service.validate_and_convert(
+            ["bug", 42], owner="org", repo="repo", client=gitea_client
+        )
+        # → [1, 42]  (assuming "bug" → id 1, and 42 exists)
+    """
+
+    def __init__(self, cache_ttl: int = LABEL_CACHE_TTL) -> None:
+        """Initialize LabelService.
+
+        Args:
+            cache_ttl: Cache TTL in seconds (default from constants).
+        """
+        self._cache_ttl = cache_ttl
+        self._label_cache: dict[tuple[str, str], _LabelCacheEntry] = {}
+
+    async def get_label_map(
+        self, owner: str, repo: str, client: GiteaClient
+    ) -> dict[str, dict[str, Any]]:
+        """Get or fetch the name→info label map for a repository.
+
+        The returned dict maps **lowercased** label names to
+        ``{"id": int, "name": str}``.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            client: GiteaClient for API calls on cache miss.
+
+        Returns:
+            Dict mapping lowercase label names to label info.
+        """
+        entry = await self._get_or_fetch(owner, repo, client)
+        return entry["map"]
+
+    async def get_id_map(
+        self, owner: str, repo: str, client: GiteaClient
+    ) -> dict[int, dict[str, Any]]:
+        """Get or fetch the id→info label map for a repository.
+
+        The returned dict maps integer label IDs to
+        ``{"id": int, "name": str}``.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            client: GiteaClient for API calls on cache miss.
+
+        Returns:
+            Dict mapping integer label IDs to label info.
+        """
+        entry = await self._get_or_fetch(owner, repo, client)
+        return entry["id_map"]
+
+    async def validate_and_convert(
+        self,
+        labels: list[str | int],
+        owner: str,
+        repo: str,
+        client: GiteaClient,
+    ) -> list[int]:
+        """Validate and convert labels, returning integer IDs.
+
+        This is the **single entry point** for label processing.  It validates
+        **both** string names and integer IDs against the remote label map,
+        collecting all unknowns before raising a single ``ValidationError``.
+
+        Args:
+            labels: List of label names (strings) or IDs (integers).
+            owner: Repository owner.
+            repo: Repository name.
+            client: GiteaClient for API calls on cache miss.
+
+        Returns:
+            List of validated integer label IDs.
+
+        Raises:
+            ValidationError: If any label is unknown (name not found or
+                ID not found in the repository's labels).
+        """
+        if not labels:
+            return []
+
+        name_map = await self.get_label_map(owner, repo, client)
+        id_map = await self.get_id_map(owner, repo, client)
+
+        converted: list[int] = []
+        unknown_names: list[str] = []
+        unknown_ids: list[int] = []
+
+        for label in labels:
+            if isinstance(label, str):
+                label_lower = label.lower()
+                if label_lower in name_map:
+                    converted.append(name_map[label_lower]["id"])
+                else:
+                    unknown_names.append(label)
+            elif isinstance(label, int):
+                if label in id_map:
+                    converted.append(label)
+                else:
+                    unknown_ids.append(label)
+
+        if unknown_names or unknown_ids:
+            available = await self.format_available(owner, repo, client)
+            parts: list[str] = []
+            if unknown_names:
+                parts.append(f"Unknown label name(s): {unknown_names}")
+            if unknown_ids:
+                parts.append(f"Unknown label ID(s): {unknown_ids}")
+            msg = (
+                f"{'; '.join(parts)}.\n\n"
+                f"Available labels for {owner}/{repo}:\n"
+                f"{available}\n\n"
+                f"Use list_labels({owner}, {repo}) or read "
+                f"gitea://repos/{owner}/{repo}/labels to see details."
+            )
+            raise ValidationError(message=msg, field="labels")
+
+        return converted
+
+    async def format_available(
+        self, owner: str, repo: str, client: GiteaClient
+    ) -> str:
+        """Return a human-readable, grouped listing of available labels.
+
+        Labels with a ``/`` prefix (e.g. ``Kind/Bug``) are grouped by their
+        prefix for readability.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            client: GiteaClient for API calls on cache miss.
+
+        Returns:
+            Grouped, formatted string of available label names.
+        """
+        name_map = await self.get_label_map(owner, repo, client)
+        label_names = sorted(v["name"] for v in name_map.values())
+        return self._format_label_names(label_names)
+
+    def clear_cache(self) -> None:
+        """Clear all cached label mappings."""
+        self._label_cache.clear()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    async def _get_or_fetch(
+        self, owner: str, repo: str, client: GiteaClient
+    ) -> _LabelCacheEntry:
+        """Return a cached entry or fetch + cache from the API."""
+        cache_key = (owner, repo)
+        now: datetime = datetime.now(UTC)
+
+        if cache_key in self._label_cache:
+            entry = self._label_cache[cache_key]
+            age = now - entry["timestamp"]
+            if age.total_seconds() < self._cache_ttl:
+                return entry
+
+        labels = await client.request("GET", f"/repos/{owner}/{repo}/labels")
+        name_map: dict[str, dict[str, Any]] = {}
+        id_map: dict[int, dict[str, Any]] = {}
+        for label in labels:
+            label_id = label["id"]
+            label_name = label.get("name", "")
+            info = {"id": label_id, "name": label_name}
+            if label_name:
+                name_map[label_name.lower()] = info
+            id_map[label_id] = info
+
+        entry = {
+            "map": name_map,
+            "id_map": id_map,
+            "timestamp": now,
+        }
+        self._label_cache[cache_key] = entry
+        return entry
+
+    @staticmethod
+    def _format_label_names(label_names: list[str]) -> str:
+        """Group label names by ``/`` prefix and format for display."""
+        groups: dict[str, list[str]] = {}
+        for name in label_names:
+            prefix = name.split("/", 1)[0] if "/" in name else ""
+            groups.setdefault(prefix, []).append(name)
+
+        lines: list[str] = []
+        for prefix in sorted(groups, key=lambda p: (p == "", p)):
+            label_list = sorted(groups[prefix])
+            lines.append(f"  - {', '.join(label_list)}")
+        return "\n".join(lines)
+
+
+__all__ = ["LabelService"]

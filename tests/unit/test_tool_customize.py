@@ -8,7 +8,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
 
-from gitea_mcp_server.label_manager import LabelManager
+from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -430,7 +430,7 @@ class TestPaginationMetadata:
 
     def _make_transform(self):
         return _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_manager=LabelService(),
             openapi_spec={},
         )
 
@@ -673,7 +673,7 @@ class TestCustomizeComponentTextResponse:
         from mcp.types import TextContent
 
         transform = _ToolWrappingTransform(
-            label_manager=LabelManager(),
+            label_manager=LabelService(),
             openapi_spec={},
         )
 

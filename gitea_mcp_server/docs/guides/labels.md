@@ -52,7 +52,7 @@ Via the web UI, open the issue/PR and click Labels. Via API, use label **names**
 Unknown values of either type raise a `ValidationError` listing available labels.
 String matching is case-insensitive.
 
-**Best practice**: Use integer label IDs for reliability — they are never affected by
+**Best practice**: Use integer label IDs for reliability - they are never affected by
 renames.
 
 ## Labels Resource

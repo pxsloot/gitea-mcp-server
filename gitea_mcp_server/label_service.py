@@ -1,7 +1,7 @@
 """Unified label management, caching, and validation service.
 
-Consolidates all label business logic — fetching, caching, validation,
-and conversion — into a single ``LabelService`` class.  Replaces the
+Consolidates all label business logic - fetching, caching, validation,
+and conversion - into a single ``LabelService`` class.  Replaces the
 previous ``LabelManager`` (caching only) and fragmented helpers in
 ``tools/labels.py``.
 """
@@ -41,8 +41,8 @@ class LabelService:
 
     .. note::
 
-       Every call to ``validate_and_convert`` — even for already-known
-       integer IDs — triggers a cache lookup (and on first use per repo, an
+       Every call to ``validate_and_convert`` - even for already-known
+       integer IDs - triggers a cache lookup (and on first use per repo, an
        HTTP ``GET /repos/{owner}/{repo}/labels``).  Previously, integer-only
        label lists skipped validation entirely.  The cost is intentional:
        integer IDs from one repo are meaningless in another, and silent

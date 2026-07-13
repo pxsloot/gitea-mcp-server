@@ -21,7 +21,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 
 
 class TestCustomizeMetadata:
-    """Tests for _customize_metadata — in-place metadata on OpenAPITools."""
+    """Tests for _customize_metadata - in-place metadata on OpenAPITools."""
 
     def test_skips_non_openapi_tool(self):
         """Non-OpenAPITool components are skipped."""
@@ -530,7 +530,7 @@ class TestCustomizeMetadata:
 
 
 class TestGetDeprecatedRoutes:
-    """Tests for _get_deprecated_routes — filtering deprecated operations from OpenAPI spec."""
+    """Tests for _get_deprecated_routes - filtering deprecated operations from OpenAPI spec."""
 
     def test_empty_paths(self):
         """Empty paths dict returns empty set."""
@@ -677,7 +677,7 @@ class TestGetDeprecatedRoutes:
 
 
 # ---------------------------------------------------------------------------
-# _ToolWrappingTransform — OpenTelemetry spans
+# _ToolWrappingTransform - OpenTelemetry spans
 # ---------------------------------------------------------------------------
 # The session-scoped ``_init_otel_exporter`` and ``trace_exporter`` fixture
 # are defined in ``tests/conftest.py`` (shared across all test modules).
@@ -820,7 +820,7 @@ class TestToolWrappingTransformTelemetry:
 
 
 class TestCreateOpenapiProvider:
-    """Tests for create_openapi_provider — provider creation and deprecated route filtering."""
+    """Tests for create_openapi_provider - provider creation and deprecated route filtering."""
 
     def test_deprecated_routes_are_filtered_out(self, caplog):
         """Deprecated routes are excluded via route_map_fn."""

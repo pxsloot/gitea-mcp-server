@@ -6,12 +6,12 @@ schemas, schema properties) stay ``dict[str, Any]`` since their keys are
 inherently dynamic.
 
 All TypedDicts use ``total=False`` to match the existing ``.get()`` guard
-patterns throughout the codebase.  No logic changes are needed — the
+patterns throughout the codebase.  No logic changes are needed - the
 type-checker validates all ``.get()`` and ``[]`` access against the known keys.
 
 Two spec shapes are defined:
-  * ``SwaggerV2Spec`` — pre-conversion Swagger 2.0 input
-  * ``OpenAPISpec`` — post-conversion OpenAPI 3.1 (used by tools,
+  * ``SwaggerV2Spec`` - pre-conversion Swagger 2.0 input
+  * ``OpenAPISpec`` - post-conversion OpenAPI 3.1 (used by tools,
     server_setup, and resources modules)
 """
 
@@ -19,7 +19,7 @@ from typing import Any, TypedDict
 
 
 class OpenAPIInfo(TypedDict, total=False):
-    """OpenAPI info object — ``title``, ``version``, ``description``."""
+    """OpenAPI info object - ``title``, ``version``, ``description``."""
 
     title: str
     version: str
@@ -40,7 +40,7 @@ class OpenAPIParameter(TypedDict, total=False):
 
 
 class OpenAPIResponse(TypedDict, total=False):
-    """OpenAPI response object — ``description``, ``content``."""
+    """OpenAPI response object - ``description``, ``content``."""
 
     description: str
     content: dict[str, Any]  # media-type keys are dynamic
@@ -50,10 +50,10 @@ class OpenAPIResponse(TypedDict, total=False):
 
 
 class SwaggerV2Spec(TypedDict, total=False):
-    """Swagger 2.0 input spec — used only in converter entry point.
+    """Swagger 2.0 input spec - used only in converter entry point.
 
     Has ``swagger``, ``basePath``, ``definitions``, ``securityDefinitions``
-    — no ``openapi``, ``components``, or ``servers``.
+    - no ``openapi``, ``components``, or ``servers``.
     """
 
     swagger: str
@@ -76,7 +76,7 @@ class SwaggerV2Spec(TypedDict, total=False):
 class OpenAPIOperation(TypedDict, total=False):
     """OpenAPI 3.1 operation object.
 
-    ``parameters`` is a mixed list — callers that need typed access should
+    ``parameters`` is a mixed list - callers that need typed access should
     narrow via ``isinstance(p, dict)``.  ``responses`` stays ``dict[str, Any]``
     because status-code keys are dynamic strings.
     """
@@ -93,7 +93,7 @@ class OpenAPIOperation(TypedDict, total=False):
 
 
 class OpenAPIPathItem(TypedDict, total=False):
-    """OpenAPI 3.1 path item — HTTP method keys point to operations.
+    """OpenAPI 3.1 path item - HTTP method keys point to operations.
 
     Path-level ``parameters`` are included for typed access where available.
     """
@@ -110,7 +110,7 @@ class OpenAPIPathItem(TypedDict, total=False):
 
 
 class OpenAPISpec(TypedDict, total=False):
-    """Post-conversion OpenAPI 3.1 spec — used by tools, server_setup, resources.
+    """Post-conversion OpenAPI 3.1 spec - used by tools, server_setup, resources.
 
     Has ``openapi``, ``info``, ``paths``, ``components``, ``servers``.
     ``paths`` values are ``OpenAPIPathItem``; path *keys* remain dynamic URL

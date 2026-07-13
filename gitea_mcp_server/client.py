@@ -230,9 +230,9 @@ class HTTPTransport:
                         retry_after_secs = int(retry_after)
                         error_msg += f" (retry after {retry_after_secs} seconds)"
                     except (ValueError, TypeError):
-                        error_msg += " (rate limited — retry after Retry-After duration)"
+                        error_msg += " (rate limited - retry after Retry-After duration)"
                 else:
-                    error_msg += " (rate limited — retry later)"
+                    error_msg += " (rate limited - retry later)"
 
             logger.exception(
                 "API request failed",

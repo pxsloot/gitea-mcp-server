@@ -88,7 +88,7 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     return any(ct.lower().strip() != "application/json" for ct in content_types)
 
 
-def _get_success_schema(  # noqa: PLR0911 — many early returns for guard clauses
+def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
     openapi_spec: OpenAPISpec,
     path: str,
     method: str,
@@ -98,7 +98,7 @@ def _get_success_schema(  # noqa: PLR0911 — many early returns for guard claus
 
     When ``resolve=True`` (default), all nested ``$ref`` pointers are
     expanded via ``_deep_resolve_schema``.  When ``resolve=False``, the
-    schema is returned with ``$ref`` intact — used by the compact example
+    schema is returned with ``$ref`` intact - used by the compact example
     generator to emit type names instead of inlining referenced schemas.
 
     Args:

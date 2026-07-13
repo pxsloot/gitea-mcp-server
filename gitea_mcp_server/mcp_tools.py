@@ -230,7 +230,7 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _list_resources_tool(  # noqa: PLR0913 — ctx is FastMCP DI plumbing
+async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     format: str = "markdown",
     tag: str = "",
     type: str = "",

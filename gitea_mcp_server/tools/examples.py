@@ -184,7 +184,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     pointers are encountered naturally and serve as stop-recursion markers.
 
     Args:
-        schema: A JSON Schema dict — ideally pre-resolution (``$ref`` intact).
+        schema: A JSON Schema dict - ideally pre-resolution (``$ref`` intact).
         depth: Current recursion depth.
         max_depth: Maximum recursion depth before returning ``"{...}"``.
         prop_name: Property name hint for string example generation.
@@ -193,7 +193,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         A compact representation: ``{"$ref": "TypeName"}`` for refs,
         example values for leaf types, dicts/arrays with one level of nesting.
     """
-    # $ref — emit {"$ref": "TypeName"} so the JSON output is structurally
+    # $ref - emit {"$ref": "TypeName"} so the JSON output is structurally
     # unambiguous.  The markdown formatter recognises this pattern and
     # renders it as "$ref:TypeName".
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
@@ -202,7 +202,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     if depth >= max_depth:
         return "{...}"
 
-    # anyOf/oneOf — pick first non-null option
+    # anyOf/oneOf - pick first non-null option
     for key in ("anyOf", "oneOf"):
         options = schema.get(key)
         if isinstance(options, list):

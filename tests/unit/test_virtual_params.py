@@ -34,7 +34,7 @@ _FORMAT_VP = VirtualParam(
 
 
 class TestInjectInto:
-    """Tests for inject_into — schema augmentation (mechanism, not format)."""
+    """Tests for inject_into - schema augmentation (mechanism, not format)."""
 
     def test_adds_patched_entry_when_missing(self):
         """Adds a patched virtual param when not already in properties."""
@@ -87,7 +87,7 @@ class TestInjectInto:
 
 
 class TestApplyPreHooks:
-    """Tests for apply_pre_hooks — pre-call side effects."""
+    """Tests for apply_pre_hooks - pre-call side effects."""
 
     def test_runs_pre_hook_with_value(self):
         """Calls the pre_hook with the extracted value."""
@@ -159,7 +159,7 @@ class TestApplyPreHooks:
 
 
 # ---------------------------------------------------------------------------
-# sudo — context var lifecycle
+# sudo - context var lifecycle
 # ---------------------------------------------------------------------------
 
 
@@ -214,7 +214,7 @@ class TestSudoHooks:
 
 
 # ---------------------------------------------------------------------------
-# sudo — scope-gated visibility
+# sudo - scope-gated visibility
 # ---------------------------------------------------------------------------
 
 
@@ -270,16 +270,16 @@ class TestSudoErrorPaths:
         kwargs = {"owner": "test", "repo": "x", "sudo": "alice"}
         assert sudo_context.get() is None
 
-        # 1. extract — pops sudo from kwargs
+        # 1. extract - pops sudo from kwargs
         extracted = extract_from(kwargs)
         assert "sudo" not in kwargs
         assert extracted == {"sudo": "alice"}
 
-        # 2. pre-hook — sets context var
+        # 2. pre-hook - sets context var
         apply_pre_hooks(extracted)
         assert sudo_context.get() == "alice"
 
-        # 3. post-hook — clears context var
+        # 3. post-hook - clears context var
         result = ToolResult(content=[TextContent(type="text", text="ok")])
         final = apply_to(result, extracted)
         assert sudo_context.get() is None
@@ -327,7 +327,7 @@ class TestSudoErrorPaths:
 
 
 class TestExtractFrom:
-    """Tests for extract_from — pre-call parameter extraction (mechanism)."""
+    """Tests for extract_from - pre-call parameter extraction (mechanism)."""
 
     def test_pops_patched_param_and_returns_value(self):
         """Pops 'format' from kwargs and returns {name: value}."""
@@ -365,7 +365,7 @@ class TestExtractFrom:
 
 
 class TestApplyTo:
-    """Tests for apply_to — post-call result transformation."""
+    """Tests for apply_to - post-call result transformation."""
 
     def test_runs_post_hook_with_value(self):
         """Calls the post_hook with (result, value)."""

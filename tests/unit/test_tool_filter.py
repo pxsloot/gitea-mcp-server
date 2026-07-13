@@ -363,7 +363,7 @@ class TestFetchTokenScopes:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# PermissionFilterTransform — tools
+# PermissionFilterTransform - tools
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestPermissionFilterTransformTools:
@@ -479,7 +479,7 @@ class TestPermissionFilterTransformTools:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# PermissionFilterTransform — resources
+# PermissionFilterTransform - resources
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestPermissionFilterTransformResources:

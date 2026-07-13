@@ -242,7 +242,7 @@ class DocManager:
         return "\n".join(lines)
 
 
-def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with inline closures
+def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with inline closures
     mcp: FastMCP,
     doc_manager: DocManager,
 ) -> None:
@@ -396,7 +396,7 @@ def register_doc_tools(  # noqa: PLR0915 — 3 tool/resource registrations with 
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
         - ``format``: Output format -- ``markdown`` (default, full content with
-          YAML frontmatter), ``raw`` (same as markdown — full content included).
+          YAML frontmatter), ``raw`` (same as markdown - full content included).
 
         ## Return Value
 

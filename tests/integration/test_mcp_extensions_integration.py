@@ -69,7 +69,7 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
     mock_client = MagicMock()
     mock_client.request.return_value = {}
 
-    # Apply extensions manually — only parameter overrides are spec-level
+    # Apply extensions manually - only parameter overrides are spec-level
     extensions = {
         "tool_names": {
             "issue_create_issue": {
@@ -93,7 +93,7 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
     tool_names = {t.name: t for t in tools}
 
     assert "issue_create_issue" in tool_names
-    # Description is NOT overridden at spec level — stays as original
+    # Description is NOT overridden at spec level - stays as original
     assert "Original description" in tool_names["issue_create_issue"].description
 
 

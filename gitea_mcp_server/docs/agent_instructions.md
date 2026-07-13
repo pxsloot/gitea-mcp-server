@@ -24,7 +24,7 @@ This is the recommended starting point for discovery. Use focused search tools (
 
 ## Calling Tools
 
-All tools are called via the MCP host's `call_tool` function. **Synthetic tools** (discovery helpers) and **API tools** both follow the same prefix convention — all tool names are prefixed with `gitea_`. The table below shows the conceptual names alongside their actual MCP protocol names:
+All tools are called via the MCP host's `call_tool` function. **Synthetic tools** (discovery helpers) and **API tools** both follow the same prefix convention - all tool names are prefixed with `gitea_`. The table below shows the conceptual names alongside their actual MCP protocol names:
 
 | Category | Conceptual name | Actual MCP name |
 |----------|----------------|-----------------|
@@ -46,7 +46,7 @@ call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": 
 call_tool("gitea_repo_list_branches", {"owner": "org", "repo": "repo", "format": "markdown"})  # formatted
 ```
 
-The synthetic `call_tool` tool (e.g., `call_tool("gitea_search_tools", ...)`) is a proxy that dispatches to other tools. Both prefixed and unprefixed names work with it — it automatically resolves unprefixed names (e.g., `search_tools`) to their prefixed form. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
+The synthetic `call_tool` tool (e.g., `call_tool("gitea_search_tools", ...)`) is a proxy that dispatches to other tools. Both prefixed and unprefixed names work with it - it automatically resolves unprefixed names (e.g., `search_tools`) to their prefixed form. The only exception: `call_tool("call_tool")` is blocked to prevent infinite recursion.
 
 Tools are lazy-loaded (not in `list_tools()`) but the host can still call them by name.
 
@@ -74,7 +74,7 @@ info = tool_info("gitea_issue_get_issue")
 
 The `output_example` is a **compact type-summary**. Nested `$ref` component
 types are shown as `{"$ref": "TypeName"}` (JSON) or ``$ref:TypeName``
-(markdown) instead of inlining the full schema — so you can see the data
+(markdown) instead of inlining the full schema - so you can see the data
 shape at a glance without wasting tokens.  For example:
 
 ```
@@ -137,20 +137,20 @@ Auth is configured via environment variables at server startup. You cannot chang
 
 ## Tool Naming Convention
 
-All tools — both API tools and synthetic tools — are prefixed with `gitea_` in the MCP protocol. This prefix is applied by the server at runtime, so every tool you call must include it.
+All tools - both API tools and synthetic tools - are prefixed with `gitea_` in the MCP protocol. This prefix is applied by the server at runtime, so every tool you call must include it.
 
 - **API tools**: Snake_case derived from Gitea API operationIds (camelCase → snake_case), prefixed with `gitea_` (e.g., `gitea_issue_create_issue`).
-  - `gitea_{domain}_{action}_{resource?}` — `gitea_issue_create_issue`, `gitea_repo_delete`, `gitea_user_get`
-  - `gitea_{domain}_list_{resource}` — `gitea_user_list_orgs`, `gitea_org_list_repos`
-  - `gitea_{domain}_search_{resource}` — `gitea_repo_search`, `gitea_issue_search_issues`
+  - `gitea_{domain}_{action}_{resource?}` - `gitea_issue_create_issue`, `gitea_repo_delete`, `gitea_user_get`
+  - `gitea_{domain}_list_{resource}` - `gitea_user_list_orgs`, `gitea_org_list_repos`
+  - `gitea_{domain}_search_{resource}` - `gitea_repo_search`, `gitea_issue_search_issues`
 - **Synthetic tools**: Lowercase, also prefixed with `gitea_` (e.g., `gitea_search`, `gitea_search_tools`, `gitea_call_tool`, `gitea_search_docs`, `gitea_read_doc`, `gitea_list_resources`, `gitea_read_resource`, `gitea_search_resources`, `gitea_tool_info`). They carry a `"synthetic"` tag in search results.
 
-**Note**: The conceptual names shown in documentation (e.g., `search_tools`, `tool_info`) omit the prefix for readability. Always use the `gitea_`-prefixed form when calling tools. When using the synthetic `call_tool` proxy, unprefixed names also work — it resolves them automatically.
+**Note**: The conceptual names shown in documentation (e.g., `search_tools`, `tool_info`) omit the prefix for readability. Always use the `gitea_`-prefixed form when calling tools. When using the synthetic `call_tool` proxy, unprefixed names also work - it resolves them automatically.
 
 ## Tool Discovery Tips
 - **Start with broad keywords**: "issue", "repo", "user", "pull", "org", "topic", "release", "admin", "milestone", "label", "comment", "webhook", "key", "branch", "tag", "team", "permission".
 - **If no results**: Simplify the query to one word. Search is case-insensitive and matches on tool name, description, and tags.
-- **Synthetic tools vs API tools**: Both appear in `search_tools` results — synthetic tools are tagged with `"synthetic"`. Both are called using the `gitea_`-prefixed name via the host's `call_tool`. The synthetic `call_tool` proxy also accepts unprefixed names.
+- **Synthetic tools vs API tools**: Both appear in `search_tools` results - synthetic tools are tagged with `"synthetic"`. Both are called using the `gitea_`-prefixed name via the host's `call_tool`. The synthetic `call_tool` proxy also accepts unprefixed names.
 - **Admin tools**: `admin_*` tools only appear in search results if you are an admin.
 - **Save a tool name** for reuse: Once you find a tool name, you can use it directly without searching again.
 
@@ -200,7 +200,7 @@ result = call_tool("gitea_issue_create_issue", {
     "labels": ["Kind/Bug", "Priority/High"],
 })
 
-# 3. Or use integer IDs (more reliable — never affected by rename)
+# 3. Or use integer IDs (more reliable - never affected by rename)
 result = call_tool("gitea_issue_create_issue", {
     "owner": "myorg",
     "repo": "myrepo",
@@ -209,7 +209,7 @@ result = call_tool("gitea_issue_create_issue", {
     "labels": [5, 12],  # label IDs, not names
 })
 
-# 4. Handle validation errors — the error message lists available labels
+# 4. Handle validation errors - the error message lists available labels
 #    e.g., "Unknown label name(s): ['nonexistent']. Available labels: ..."
 ```
 
@@ -272,13 +272,13 @@ call_tool("gitea_repo_delete_topic", {"owner": "org", "repo": "repo", "topic": "
 - **Need to see all tools**: There is no way to list all tools directly due to lazy loading. Use broad search queries like "repo" to surface most repository-related tools.
 - **Need full tool schema**: Use `tool_info("name")` to get parameters, output_example, annotations, and tags. Or read the `gitea://tool/{name}/schema` resource.
 - **Tool requires admin**: `admin_*` tools are hidden if you aren't an admin.
-- **"Only administrators allowed to sudo"**: The ``sudo`` parameter impersonates a user and requires an admin token with ``sudo`` or ``all`` scope. If this error appears, your token lacks the necessary scope — the ``sudo`` parameter should not be visible on your tools. Use ``gitea_user_get_current`` to verify your identity and scope.
+- **"Only administrators allowed to sudo"**: The ``sudo`` parameter impersonates a user and requires an admin token with ``sudo`` or ``all`` scope. If this error appears, your token lacks the necessary scope - the ``sudo`` parameter should not be visible on your tools. Use ``gitea_user_get_current`` to verify your identity and scope.
 
 ## Tool Prefixes (for search)
 `issue_`, `repo_`, `pull_request_`, `pr_`, `user_`, `org_`, `team_`, `milestone_`, `label_`, `comment_`, `release_`, `tag_`, `branch_`, `protected_branch_`, `protected_tag_`, `key_`, `webhook_`, `gpg_key_`, `gitea_`, `admin_`, `topic_`, `search_`
 
 ## Pagination
-Most list operations — both API tools and synthetic tools — accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary: API tools often default to 30-50, synthetic tools default to 10 (max 100). Always paginate to avoid overwhelming responses. Pagination metadata (`has_more`, `next_offset`, `total_count`) is included in every list response's `structured_content`.
+Most list operations - both API tools and synthetic tools - accept `page` (1-based) and `limit` (page size). Use these to paginate through large sets. Default limits vary: API tools often default to 30-50, synthetic tools default to 10 (max 100). Always paginate to avoid overwhelming responses. Pagination metadata (`has_more`, `next_offset`, `total_count`) is included in every list response's `structured_content`.
 
 ## Workflow Guides
 
@@ -300,7 +300,7 @@ direct parameter (e.g. ``search(query, format="json")``):
 
 | Format | When to use |
 |--------|-------------|
-| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources — the same data looks the same regardless of access pattern. |
+| `markdown` | **Default.** Schema-aware Markdown with tables and sections. Best for browsing, display, and human/agent reading. Nested objects render as `##` sections with their own tables. Consistent across tools and resources - the same data looks the same regardless of access pattern. |
 | `json` | Raw JSON structure. Best for **programmatic extraction**: get a specific field (`result["owner"]["id"]`), count results, or pass output to another computation. |
 | `raw` | Return the result exactly as received from the underlying API. Use when you need the exact data shape -- for example, to check undocumented response fields or debug. |
 
@@ -325,7 +325,7 @@ read_resource("gitea://repos/org/repo", format="raw")
 ```
 
 ## Resources vs Tools
-- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results. To control output format on any tool except `call_tool` (which is a transparent proxy), include `format` in its arguments — see the **Output Format** section below.
+- **Tools**: Two kinds: synthetic tools (`search`, `search_tools`, `search_docs`, `search_resources`, `tool_info`, `call_tool`, `list_resources`, `read_resource`, `read_doc`) are called directly; API tools (`gitea_*`) are called via `call_tool`. Use `search(...)` for unified discovery or `search_tools(...)` for tool-only results. To control output format on any tool except `call_tool` (which is a transparent proxy), include `format` in its arguments - see the **Output Format** section below.
 - **Resources**: Cached, efficient reads. `list_resources`, `read_resource`, and `search_resources` accept a `format` parameter and are called directly (not via `call_tool`).
 
 Combine both: use tools to find identifiers, then resources to read detailed cached summaries where available.

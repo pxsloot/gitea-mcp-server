@@ -131,7 +131,7 @@ class TestGenerateToolTitle:
         route = MagicMock(summary="ignored", operation_id="deploy_create_environment")
         caplog.set_level(logging.WARNING)
         title = _generate_tool_title(route)
-        # Unknown domain is kept as-is — suboptimal title + warning signals drift
+        # Unknown domain is kept as-is - suboptimal title + warning signals drift
         assert title == "Deploy Create Environment"
         assert len(caplog.records) == 1
         assert "Unknown operationId domain 'deploy'" in caplog.records[0].message

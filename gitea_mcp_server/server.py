@@ -249,7 +249,7 @@ async def _apply_permission_filter(
         return
 
     try:
-        # Scope-gated virtual params (sudo) — only show when the token
+        # Scope-gated virtual params (sudo) - only show when the token
         # has the scope to use them.
         sudo_available = "sudo" in available_scopes or "all" in available_scopes
         set_sudo_visible(sudo_available)

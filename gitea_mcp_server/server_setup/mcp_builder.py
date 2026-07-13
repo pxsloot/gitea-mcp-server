@@ -5,7 +5,7 @@ including OpenAPI provider creation with customized component handling.
 
 Metadata customization is done via OpenAPIProvider's public ``mcp_component_fn``.
 Runtime wrapping (validation, labels, error handling) is done via a provider-level
-:class:`Transform` (``provider.add_transform()``) — no private FastMCP APIs are used.
+:class:`Transform` (``provider.add_transform()``) - no private FastMCP APIs are used.
 """
 
 import logging
@@ -63,7 +63,7 @@ _META_CUSTOMIZED = "_customization_applied"
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — metadata customisation (in-place, called by mcp_component_fn)
+# Phase 1 - metadata customisation (in-place, called by mcp_component_fn)
 # ---------------------------------------------------------------------------
 
 
@@ -173,14 +173,14 @@ def _customize_metadata(
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — runtime wrapping (provider-level Transform, public API)
+# Phase 2 - runtime wrapping (provider-level Transform, public API)
 # ---------------------------------------------------------------------------
 
 
 class _ToolWrappingTransform(Transform):
     """Provider-level transform that wraps OpenAPITools with runtime behaviour.
 
-    Accessed via ``provider.add_transform()`` — part of FastMCP's public API.
+    Accessed via ``provider.add_transform()`` - part of FastMCP's public API.
     Handles: virtual parameter inject/extract, argument validation, error
     handling, text-response wrapping, and pagination metadata injection.
 
@@ -228,7 +228,7 @@ class _ToolWrappingTransform(Transform):
         # ``format`` parameter is handled explicitly below, not here.
         inject_into(tool.parameters)
 
-        # Inject ``format`` as a first-class parameter (promoted — not a
+        # Inject ``format`` as a first-class parameter (promoted - not a
         # generic virtual param).  The default is server-wide configuration.
         fmt_default = Config.get().response_format
         props = tool.parameters.setdefault("properties", {})
@@ -239,14 +239,14 @@ class _ToolWrappingTransform(Transform):
                 "default": fmt_default,
                 "description": (
                     "Response format control.  "
-                    f'"json" — raw JSON (default: {fmt_default}).  '
-                    '"markdown" — formatted tables for human/agent reading.  '
-                    '"raw" — unprocessed API response.'
+                    f'"json" - raw JSON (default: {fmt_default}).  '
+                    '"markdown" - formatted tables for human/agent reading.  '
+                    '"raw" - unprocessed API response.'
                 ),
             }
 
         async def transform_fn(**kwargs: Any) -> ToolResult:
-            # Pop virtual params before the HTTP execution path — they are
+            # Pop virtual params before the HTTP execution path - they are
             # not real API parameters and must not reach the Gitea API.
             virtual_values = extract_from(kwargs)
 
@@ -295,7 +295,7 @@ class _ToolWrappingTransform(Transform):
         output_schema = tool.output_schema
 
         # Resolve the current MCP Context if inside a request.
-        # CurrentContext() is an async context manager — outside a request
+        # CurrentContext() is an async context manager - outside a request
         # context it raises RuntimeError, which we catch gracefully.
         try:
             async with CurrentContext() as ctx:

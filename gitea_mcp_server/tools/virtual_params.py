@@ -1,4 +1,4 @@
-"""Virtual parameters — tool-level params handled before the API call.
+"""Virtual parameters - tool-level params handled before the API call.
 
 Virtual parameters appear in the tool schema so agents know they exist,
 but are extracted from arguments before the HTTP request is made.  After
@@ -12,7 +12,7 @@ Lifecycle for every tool call::
     3. apply_pre_hooks(extracted)     ← runs pre-hooks after extraction  (NEW)
     4. apply_to(result, extracted)    ← runs post-hooks after call
 
-Adding a new virtual parameter is a single registry entry —
+Adding a new virtual parameter is a single registry entry -
 no other file changes needed.
 
 .. note::
@@ -76,7 +76,7 @@ _VIRTUAL_PARAMS: dict[str, VirtualParam] = {}
 
 
 # ---------------------------------------------------------------------------
-# sudo — impersonate a user via ?sudo= query parameter
+# sudo - impersonate a user via ?sudo= query parameter
 # ---------------------------------------------------------------------------
 
 sudo_context: ContextVar[str | None] = ContextVar("sudo_context", default=None)
@@ -138,11 +138,11 @@ def set_sudo_visible(visible: bool) -> None:
 def inject_into(parameters: dict[str, Any]) -> None:
     """Add every virtual parameter to *parameters* (a tool's parameter schema).
 
-    Idempotent — skips any parameter name that already exists, which also
+    Idempotent - skips any parameter name that already exists, which also
     guards against shadowing a real API parameter.
 
     Scope-gated params (like ``sudo``) are only injected when the active
-    token has the required scope — see :func:`set_sudo_visible`.
+    token has the required scope - see :func:`set_sudo_visible`.
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():

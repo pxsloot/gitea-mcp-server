@@ -1,4 +1,4 @@
-"""Core conversion pipeline — Swagger 2.0 to OpenAPI 3.1.
+"""Core conversion pipeline - Swagger 2.0 to OpenAPI 3.1.
 
 Schema walker and transformation utilities live in ``.schema``.
 This module contains the converter classes and the public
@@ -510,7 +510,7 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
     schema.pop("readOnly", None)
     schema.pop("xml", None)
 
-    # Strip vendor extensions (x-*) — they leak Go struct internals
+    # Strip vendor extensions (x-*) - they leak Go struct internals
     # (x-go-name, x-go-package) into agent-facing parameter schemas.
     # Operation-level x-* fields like x-original-content-types live on
     # operation objects, not schema objects, so they are unaffected.

@@ -1,4 +1,4 @@
-"""Unit tests for LabelService — stats, cache clearing, and context logging."""
+"""Unit tests for LabelService - stats, cache clearing, and context logging."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -121,7 +121,7 @@ class TestLabelService:
         """Context logging is called on cache miss (outside request scope, no crash)."""
         # Should not raise even though no CurrentContext is active
         await label_service.get_label_map("owner", "repo", gitea_client)
-        # No assertion needed — we just verify no exception occurs
+        # No assertion needed - we just verify no exception occurs
 
     @pytest.mark.asyncio
     async def test_context_logging_on_cache_hit(self, label_service, gitea_client):
@@ -129,7 +129,7 @@ class TestLabelService:
         await label_service.get_label_map("owner", "repo", gitea_client)
         # Second call: cache hit
         await label_service.get_label_map("owner", "repo", gitea_client)
-        # No assertion needed — verify no exception
+        # No assertion needed - verify no exception
 
     @pytest.mark.asyncio
     async def test_context_logging_on_expiry(self, label_service, gitea_client):

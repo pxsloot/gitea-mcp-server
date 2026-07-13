@@ -1,4 +1,4 @@
-"""Extension metadata transform — applies YAML extension overrides to tool metadata at query time.
+"""Extension metadata transform - applies YAML extension overrides to tool metadata at query time.
 
 Works *with* FastMCP's transform pattern: intercepts ``list_tools`` and
 ``get_tool`` to patch tool descriptions, titles, tags, and annotation

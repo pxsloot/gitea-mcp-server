@@ -48,7 +48,7 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
     return text
 
 
-def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent config axes
+def _search_and_slice(  # noqa: PLR0913 - 6 params but all are independent config axes
     items: list[Any],
     texts: list[str],
     query: str,
@@ -82,7 +82,7 @@ def _search_and_slice(  # noqa: PLR0913 — 6 params but all are independent con
         return [], 0
 
     engine = BM25SearchEngine()
-    # Score everything (len(items) is small — ~200 tools, ~35 resources)
+    # Score everything (len(items) is small - ~200 tools, ~35 resources)
     ranked = engine.search_with_scores(texts, query, len(items), min_score=min_score)
     total_count = len(ranked)
 
@@ -195,7 +195,7 @@ class TolerantSearchTransform(BM25SearchTransform):
     """Search transform for lazy-loading tool discovery.
 
     Unlike the base class, this transform does NOT register synthetic tools
-    (search_tools, call_tool, tool_info) — those are normal ``mcp.tool()``
+    (search_tools, call_tool, tool_info) - those are normal ``mcp.tool()``
     registrations in ``register_synthetic_tools()``. The transform only
     controls which tools appear in ``list_tools()`` output (pinned set) and
     provides BM25 search over the catalog.
@@ -219,7 +219,7 @@ class TolerantSearchTransform(BM25SearchTransform):
     ) -> Tool | None:
         """Resolve all tools through normal provider lookup.
 
-        No special intercepts — synthetic tools are registered as normal
+        No special intercepts - synthetic tools are registered as normal
         tools on the provider via ``register_synthetic_tools()``.
         """
         return await call_next(name, version=version)
@@ -265,7 +265,7 @@ async def _call_tool_impl(
     natively, so the proxy does not re-format.
     """
     if name == "call_tool":
-        msg = "'call_tool' cannot call itself — call it directly instead"
+        msg = "'call_tool' cannot call itself - call it directly instead"
         _raise_value_error(msg)
     if isinstance(arguments, str):
         try:
@@ -283,7 +283,7 @@ async def _call_tool_impl(
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
 
-async def _search_tools_impl(  # noqa: PLR0913 — ctx, transform, min_score are framework plumbing
+async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are framework plumbing
     query: str,
     category: str | None,
     format: str,
@@ -372,7 +372,7 @@ async def _search_tools_impl(  # noqa: PLR0913 — ctx, transform, min_score are
     )
 
 
-async def _tool_info_impl(  # noqa: PLR0913 — name, format, ctx, transform, tool_prefix, detail
+async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool_prefix, detail
     name: str,
     format: str,
     ctx: Context,
@@ -442,7 +442,7 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _search_resources_impl(  # noqa: PLR0913 — ctx and min_score are framework plumbing
+async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are framework plumbing
     query: str,
     format: str,
     ctx: Context,
@@ -465,7 +465,7 @@ async def _search_resources_impl(  # noqa: PLR0913 — ctx and min_score are fra
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
-    from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 — deferred to break circular import
+    from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 - deferred to break circular import
 
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
@@ -546,7 +546,7 @@ def register_synthetic_tools(
             (unprefixed) tool names by trying the prefixed variant as a fallback.
     """
 
-    async def search_tools_fn(  # noqa: PLR0913 — ctx is FastMCP DI plumbing
+    async def search_tools_fn(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
         query: Annotated[str, "Natural language query to search for tools"],
         category: Annotated[
             str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"
@@ -762,7 +762,7 @@ def register_synthetic_tools(
         },
     )(tool_info_fn)
 
-    async def search_resources_fn(  # noqa: PLR0913 — min_score is a new config axis
+    async def search_resources_fn(  # noqa: PLR0913 - min_score is a new config axis
         query: Annotated[str, "Natural language query to search for resources"],
         format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,

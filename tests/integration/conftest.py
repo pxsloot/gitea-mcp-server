@@ -3,7 +3,7 @@
 Provides reusable fixtures that reduce boilerplate when writing behavioural
 integration tests.  Two patterns are supported:
 
-1. **Override ``base_spec`` per test class** — the most common pattern.
+1. **Override ``base_spec`` per test class** - the most common pattern.
    Define a class-level fixture that adds paths to the spec, then use the
    ``mcp_server`` fixture.  API mock routes are added inside the test body
    (the ``respx`` context from the fixture is still active).
@@ -31,7 +31,7 @@ integration tests.  Two patterns are supported:
                )
                assert "Bug" in result[0].text
 
-2. **Full manual control** — for tests that need custom config or mock setup
+2. **Full manual control** - for tests that need custom config or mock setup
    before ``create_mcp_server`` runs (e.g., permission filtering).  Use
    ``create_test_server`` inside your own ``respx`` context.
 
@@ -74,7 +74,7 @@ BASE_TEST_URL = "https://git.example.com"
 
 @pytest.fixture
 def simple_config() -> SimpleConfig:
-    """Standard test configuration — no tool filtering, no lazy loading.
+    """Standard test configuration - no tool filtering, no lazy loading.
 
     Override in a test class to customise (e.g. enable filtering).
     """
@@ -180,7 +180,7 @@ async def mcp_server(
 
     The swagger spec fetch is mocked from ``base_spec``.  Additional
     ``respx`` routes can be registered inside the test body via the
-    module-level ``respx.get()`` / ``respx.post()`` / etc. API —
+    module-level ``respx.get()`` / ``respx.post()`` / etc. API -
     the fixture activates the **global** ``respx.router`` so that
     module-level calls add routes to the same active router.
 

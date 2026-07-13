@@ -1,6 +1,6 @@
 """Smoke tests verifying the shared integration test fixtures work correctly.
 
-These tests are deliberately minimal — they verify the fixture plumbing,
+These tests are deliberately minimal - they verify the fixture plumbing,
 not specific server behaviour.  Real behavioural tests belong in
 ``test_tool_behaviour.py`` (Phase 2) or companion modules.
 """
@@ -56,7 +56,7 @@ class TestMcpServerFixture:
     async def test_respx_context_active_in_test(self, mcp_server: FastMCP) -> None:
         """respx routes registered in the test body should be active (the fixture's context is still open)."""
         respx.get(f"{BASE_TEST_URL}/api/v1/test-endpoint").respond(200, json={"ok": True})
-        # No assertion needed — if the route weren't active, calling a tool
+        # No assertion needed - if the route weren't active, calling a tool
         # that triggers this request would fail with a connection error.
         # This test merely proves the fixture design works.
 

@@ -8,14 +8,11 @@ previous ``LabelManager`` (caching only) and fragmented helpers in
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import Any, TypedDict
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import LABEL_CACHE_TTL
 from gitea_mcp_server.exceptions import ValidationError
-
-if TYPE_CHECKING:
-    from mcp import ServerSession
 
 logger = logging.getLogger(__name__)
 
@@ -251,12 +248,12 @@ class LabelService:
         """Log a message via MCP context if available, otherwise via stdlib."""
         logger.debug("%s | extra=%s", msg, extra)
         try:
-            from fastmcp.dependencies import CurrentContext
+            from fastmcp.dependencies import CurrentContext  # noqa: PLC0415
 
             async with CurrentContext() as ctx:
                 if ctx is not None:
                     await ctx.info(msg, extra=extra)
-        except (RuntimeError, ImportError):
+        except RuntimeError:
             pass
 
     async def _get_or_fetch(

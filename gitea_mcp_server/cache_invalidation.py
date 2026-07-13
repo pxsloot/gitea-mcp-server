@@ -277,7 +277,7 @@ class CacheInvalidationMiddleware(Middleware):
     def __init__(
         self,
         caching_middleware: ResponseCachingMiddleware,
-        label_service: "LabelService | None" = None,
+        label_service: LabelService | None = None,
     ):
         """Initialize with a reference to the caching middleware.
 

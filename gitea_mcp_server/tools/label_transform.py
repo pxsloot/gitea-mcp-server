@@ -124,8 +124,8 @@ class LabelTransform(Transform):
                 # Count label types for observability
                 raw_labels = kwargs.get("labels")
                 if isinstance(raw_labels, list):
-                    int_count = sum(1 for l in raw_labels if isinstance(l, int))
-                    str_count = sum(1 for l in raw_labels if isinstance(l, str))
+                    int_count = sum(1 for item in raw_labels if isinstance(item, int))
+                    str_count = sum(1 for item in raw_labels if isinstance(item, str))
                     span.set_attribute("label.count", len(raw_labels))
                     span.set_attribute("label.integers", int_count)
                     span.set_attribute("label.strings", str_count)

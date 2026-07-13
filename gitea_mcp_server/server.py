@@ -121,7 +121,7 @@ def _build_server_instructions(doc_manager: DocManager) -> str:
 
 def _setup_caching_middleware(
     mcp: FastMCP,
-    label_service: "LabelService | None" = None,
+    label_service: LabelService | None = None,
 ) -> None:
     """Add response caching and cache invalidation middleware.
 

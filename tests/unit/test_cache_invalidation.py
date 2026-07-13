@@ -199,6 +199,10 @@ class TestComputeUrisToInvalidate:
         await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
         assert "Failed to invalidate cache" in caplog.text
 
+
+class TestCacheInvalidationMiddleware:
+    """Tests for CacheInvalidationMiddleware behavior."""
+
     @pytest.mark.asyncio
     async def test_successful_tool_invalidates_cache(self):
         """Successful tool call triggers cache invalidation."""

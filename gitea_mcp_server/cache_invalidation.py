@@ -326,20 +326,30 @@ class CacheInvalidationMiddleware(Middleware):
         return result
 
     def _clear_label_service_cache(
-        self, uris: list[str], arguments: dict[str, Any]
+        self, uris: list[str], arguments: dict[str, Any]  # noqa: ARG002
     ) -> None:
         """Clear LabelService cache for any label resource URIs in the list.
 
+        Owner/repo are extracted from the URI path directly — the ``arguments``
+        parameter is accepted only for API consistency and is unused.
+
         Args:
             uris: List of resolved resource URIs that were invalidated.
-            arguments: Tool arguments used to resolve the URIs.
+            arguments: Tool arguments used to resolve the URIs (unused).
         """
         if self._label_service is None:
             return
-        label_uri_pattern = "//repos/{owner}/{repo}/labels"
+        # URIs follow the resolved pattern: gitea://repos/{owner}/{repo}/labels
+        # Parse directly from the path rather than trying to match templates
+        # with substituted parameters.
+        _MIN_LABEL_URI_PARTS = 6
         for uri in uris:
-            if label_uri_pattern.format(owner="", repo="") in uri:
-                owner = arguments.get("owner") or arguments.get("org")
-                repo = arguments.get("repo")
+            if not uri.endswith("/labels"):
+                continue
+            parts = uri.split("/")
+            # ['gitea:', '', 'repos', owner, repo, 'labels']
+            if len(parts) >= _MIN_LABEL_URI_PARTS and parts[1] == "" and parts[2] == "repos":
+                owner = parts[3]
+                repo = parts[4]
                 if owner and repo:
                     self._label_service.clear_cache_for(owner, repo)

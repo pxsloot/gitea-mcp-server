@@ -248,6 +248,10 @@ class LabelService:
         """Log a message via MCP context if available, otherwise via stdlib."""
         logger.debug("%s | extra=%s", msg, extra)
         try:
+            # Deferred import: CurrentContext only works inside an MCP
+            # request scope. Importing at the top level would fail when
+            # LabelService is used outside a request (e.g., unit tests).
+            # PLC0415 suppressed intentionally.
             from fastmcp.dependencies import CurrentContext  # noqa: PLC0415
 
             async with CurrentContext() as ctx:

@@ -8,11 +8,14 @@ previous ``LabelManager`` (caching only) and fragmented helpers in
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import LABEL_CACHE_TTL
 from gitea_mcp_server.exceptions import ValidationError
+
+if TYPE_CHECKING:
+    from mcp import ServerSession
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,15 @@ class _LabelCacheEntry(TypedDict):
     map: dict[str, dict[str, Any]]
     id_map: dict[int, dict[str, Any]]
     timestamp: datetime
+
+
+class _LabelCacheStats(TypedDict, total=False):
+    hit_ratio: float
+    entry_count: int
+    oldest_entry_age_seconds: float | None
+    total_hits: int
+    total_misses: int
+    total_fetches: int
 
 
 class LabelService:
@@ -56,6 +68,9 @@ class LabelService:
         """
         self._cache_ttl = cache_ttl
         self._label_cache: dict[tuple[str, str], _LabelCacheEntry] = {}
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+        self._cache_fetches: int = 0
 
     async def get_label_map(
         self, owner: str, repo: str, client: GiteaClient
@@ -187,9 +202,62 @@ class LabelService:
         """Clear all cached label mappings."""
         self._label_cache.clear()
 
+    def clear_cache_for(self, owner: str, repo: str) -> None:
+        """Clear the cached label mapping for a specific repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+        """
+        key = (owner, repo)
+        if key in self._label_cache:
+            del self._label_cache[key]
+            logger.debug("Cleared label cache for %s/%s", owner, repo)
+
+    def stats(self) -> _LabelCacheStats:
+        """Return operational statistics about the label cache.
+
+        Returns:
+            Dict with hit_ratio, entry_count, oldest_entry_age_seconds,
+            total_hits, total_misses, total_fetches.
+        """
+        total = self._cache_hits + self._cache_misses
+        now = datetime.now(UTC)
+        oldest_ts: datetime | None = None
+
+        for entry in self._label_cache.values():
+            ts = entry["timestamp"]
+            if oldest_ts is None or ts < oldest_ts:
+                oldest_ts = ts
+
+        oldest_age: float | None = None
+        if oldest_ts is not None:
+            oldest_age = (now - oldest_ts).total_seconds()
+
+        return {
+            "hit_ratio": self._cache_hits / max(total, 1),
+            "entry_count": len(self._label_cache),
+            "oldest_entry_age_seconds": oldest_age,
+            "total_hits": self._cache_hits,
+            "total_misses": self._cache_misses,
+            "total_fetches": self._cache_fetches,
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _log_ctx_info(self, msg: str, **extra: Any) -> None:
+        """Log a message via MCP context if available, otherwise via stdlib."""
+        logger.debug("%s | extra=%s", msg, extra)
+        try:
+            from fastmcp.dependencies import CurrentContext
+
+            async with CurrentContext() as ctx:
+                if ctx is not None:
+                    await ctx.info(msg, extra=extra)
+        except (RuntimeError, ImportError):
+            pass
 
     async def _get_or_fetch(
         self, owner: str, repo: str, client: GiteaClient
@@ -202,8 +270,30 @@ class LabelService:
             entry = self._label_cache[cache_key]
             age = now - entry["timestamp"]
             if age.total_seconds() < self._cache_ttl:
+                self._cache_hits += 1
+                await self._log_ctx_info(
+                    "LabelService cache hit for %s/%s",
+                    owner=owner,
+                    repo=repo,
+                    cache_age_seconds=age.total_seconds(),
+                )
                 return entry
+            self._cache_misses += 1
+            await self._log_ctx_info(
+                "LabelService cache expired for %s/%s",
+                owner=owner,
+                repo=repo,
+                cache_age_seconds=age.total_seconds(),
+            )
+        else:
+            self._cache_misses += 1
 
+        self._cache_fetches += 1
+        await self._log_ctx_info(
+            "LabelService fetching labels for %s/%s",
+            owner=owner,
+            repo=repo,
+        )
         labels = await client.request("GET", f"/repos/{owner}/{repo}/labels")
         name_map: dict[str, dict[str, Any]] = {}
         id_map: dict[int, dict[str, Any]] = {}
@@ -238,4 +328,7 @@ class LabelService:
         return "\n".join(lines)
 
 
-__all__ = ["LabelService"]
+__all__ = [
+    "LabelService",
+    "_LabelCacheStats",
+]

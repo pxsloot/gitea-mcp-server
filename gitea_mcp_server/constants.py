@@ -136,6 +136,7 @@ PATTERN_ISSUES_LIST = "issues_list"
 PATTERN_PULLS_LIST = "pulls_list"
 PATTERN_REPO = "repo"
 PATTERN_FILES = "files"
+PATTERN_LABELS = "labels"
 
 
 # ============================================================================
@@ -147,6 +148,7 @@ RESOURCE_PATTERN_ISSUES_LIST = "gitea://repos/{owner}/{repo}/issues"
 RESOURCE_PATTERN_PULLS_LIST = "gitea://repos/{owner}/{repo}/pulls"
 RESOURCE_PATTERN_REPO = "gitea://repos/{owner}/{repo}"
 RESOURCE_PATTERN_FILES = "gitea://repos/{owner}/{repo}/files/{filepath}"
+RESOURCE_PATTERN_LABELS = "gitea://repos/{owner}/{repo}/labels"
 
 
 # ============================================================================
@@ -263,7 +265,11 @@ TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
     ),
     ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
     ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),
-    ("/repos/{owner}/{repo}/labels", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
+    (
+        "/repos/{owner}/{repo}/labels",
+        None,
+        [PATTERN_LABELS, PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST],
+    ),
     ("/repos/{owner}/{repo}/milestones", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
     ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
     ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),

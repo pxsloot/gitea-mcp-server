@@ -340,14 +340,20 @@ class TestComputeToolInvalidationPatterns:
         # GET does not invalidate
         assert self.compute("/repos/{owner}/{repo}/contents/README.md", "GET") == []
 
-    def test_label_operations_invalidate_issues_and_pulls(self):
-        """Label CRUD affects both issues and pull requests."""
-        assert self.compute("/repos/{owner}/{repo}/labels", "POST") == ["issues_list", "pulls_list"]
+    def test_label_operations_invalidate_labels_issues_and_pulls(self):
+        """Label CRUD affects labels, issues, and pull requests."""
+        assert self.compute("/repos/{owner}/{repo}/labels", "POST") == [
+            "labels",
+            "issues_list",
+            "pulls_list",
+        ]
         assert self.compute("/repos/{owner}/{repo}/labels/bug", "DELETE") == [
+            "labels",
             "issues_list",
             "pulls_list",
         ]
         assert self.compute("/repos/{owner}/{repo}/labels", "PATCH") == [
+            "labels",
             "issues_list",
             "pulls_list",
         ]

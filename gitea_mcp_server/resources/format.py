@@ -148,9 +148,7 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
     )
 
 
-def _format_labels_markdown(
-    labels: list[dict[str, Any]], owner: str, repo: str
-) -> ResourceResult:
+def _format_labels_markdown(labels: list[dict[str, Any]], owner: str, repo: str) -> ResourceResult:
     """Format labels list as Markdown with format and validation hints.
 
     Args:
@@ -195,8 +193,6 @@ def _format_labels_markdown(
             if "/" in name:
                 scope = name.rsplit("/", 1)[0]
                 scope_info = f" (scope: `{scope}`)"
-                if exclusive:
-                    scope_info += " — exclusive"
 
             archived = label.get("is_archived", False)
             archived_tag = " *(archived)*" if archived else ""

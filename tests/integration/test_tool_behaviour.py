@@ -96,23 +96,42 @@ def _make_empty_spec() -> dict:
 
 
 def _make_diff_spec() -> dict:
-    """Return a Swagger spec with a text/plain diff download endpoint."""
+    """Return a Swagger spec with the real text/plain diff/patch download endpoint.
+
+    Mirrors the actual Gitea operation ``repoDownloadPullDiffOrPatch`` at
+    ``/repos/{owner}/{repo}/pulls/{index}.{diffType}``.  The previous
+    hand-crafted fixture used a non-existent ``repoDownloadPullRequestDiff``
+    operation with a static ``.diff`` path, which silently skipped the
+    interaction between the embedded ``{diffType}`` path parameter, URL
+    construction, and output validation.  See issue #442 (Finding 1).
+    """
     return {
         "swagger": "2.0",
         "info": {"title": "Gitea API", "version": "1.0"},
         "basePath": "/api/v1",
         "paths": {
-            "/repos/{owner}/{repo}/pulls/{index}.diff": {
+            "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
                 "get": {
-                    "operationId": "repoDownloadPullRequestDiff",
-                    "summary": "Download pull request diff",
+                    "operationId": "repoDownloadPullDiffOrPatch",
+                    "summary": "Download pull request diff or patch",
                     "produces": ["text/plain"],
                     "parameters": [
                         {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
                         {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
                         {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                        {
+                            "name": "diffType",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string", "enum": ["diff", "patch"]},
+                        },
                     ],
-                    "responses": {"200": {"description": "Success"}},
+                    "responses": {
+                        "200": {
+                            "description": "APIString is a string response",
+                            "schema": {"type": "string"},
+                        }
+                    },
                 }
             },
         },
@@ -346,13 +365,13 @@ class TestNonJsonEndpoint:
     """Scenario 6: Non-JSON (text/plain) endpoint does not trigger
     MCP SDK ``Output validation error``.
 
-    The ``produces: ["text/plain"]`` field in the Swagger spec triggers the
-    converter to set ``x-original-content-types``, which causes
-    ``_is_text_response()`` to return ``True``. The tool then has
-    ``output_schema`` set to ``None`` or a lightweight fallback, which
-    tells the MCP SDK to skip output validation. The
-    ``_ToolWrappingTransform`` fallback wraps the raw text in
-    ``{\"result\": text}``.
+    Uses the real Gitea operation ``repoDownloadPullDiffOrPatch`` at
+    ``/repos/{owner}/{repo}/pulls/{index}.{diffType}`` (see ``_make_diff_spec``).
+    The ``produces: ["text/plain"]`` field triggers the converter to set
+    ``x-original-content-types``, which makes ``_is_text_response()`` return
+    ``True``. The tool then gets a lightweight ``{"result": {"type": "string"}}``
+    fallback ``output_schema`` (introduced in #352), and the
+    ``_ToolWrappingTransform`` wraps the raw text in ``{"result": text}``.
     """
 
     @pytest.fixture
@@ -374,22 +393,22 @@ class TestNonJsonEndpoint:
         )
         # Must NOT raise ToolError or any other exception
         result = await mcp_server.call_tool(
-            "gitea_repo_download_pull_request_diff",
-            {"owner": "owner", "repo": "repo", "index": 1},
+            "gitea_repo_download_pull_diff_or_patch",
+            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
         )
         assert result is not None
 
     async def test_text_response_wrapped_in_result_key(
         self, mcp_server,
     ) -> None:
-        """Non-JSON response text is wrapped in ``{\"result\": text}``."""
+        """Non-JSON response text is wrapped in ``{"result": text}``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
             200,
             text="diff --git a/f b/f\n",
         )
         result = await mcp_server.call_tool(
-            "gitea_repo_download_pull_request_diff",
-            {"owner": "owner", "repo": "repo", "index": 1},
+            "gitea_repo_download_pull_diff_or_patch",
+            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
         )
         assert result.structured_content is not None
         assert "result" in result.structured_content
@@ -412,9 +431,54 @@ class TestNonJsonEndpoint:
             200, text=diff,
         )
         result = await mcp_server.call_tool(
-            "gitea_repo_download_pull_request_diff",
-            {"owner": "owner", "repo": "repo", "index": 1},
+            "gitea_repo_download_pull_diff_or_patch",
+            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
         )
         assert len(result.content) > 0
         text = result.content[0].text
         assert text == diff, f"Expected raw diff, got: {text[:100]}"
+
+    async def test_full_stack_text_validation_round_trip(
+        self, mcp_server,
+    ) -> None:
+        """Full round-trip through MCP SDK validation for a text/plain endpoint.
+
+        Exercises all four layers of the output pipeline with the real
+        ``repoDownloadPullDiffOrPatch`` spec (including the embedded
+        ``{diffType}`` path parameter):
+
+        1. ``OpenAPITool.run()`` — returns ``ToolResult(content=text)`` on a
+           text/plain body.
+        2. ``_ToolWrappingTransform._pipeline_with_context()`` — wraps the
+           text into ``{"result": text}`` when ``is_text_response=True``.
+        3. ``format_result()`` — passes strings through unchanged in markdown.
+        4. MCP SDK ``call_tool`` handler — validates ``structured_content``
+           against the lightweight ``output_schema``.
+
+        Regression guard for #437: a text/plain endpoint must not raise an
+        output validation error and must return ``{"result": <diff>}``.
+        """
+        diff = (
+            "diff --git a/README.md b/README.md\n"
+            "index 123..456 100644\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+            "@@ -1 +1 @@\n"
+            "-old line\n"
+            "+new line\n"
+        )
+        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
+            200, text=diff,
+        )
+        result = await mcp_server.call_tool(
+            "gitea_repo_download_pull_diff_or_patch",
+            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+        )
+        # Layer 4: no output validation error — a result is returned, not raised.
+        assert result is not None
+        # structured_content matches the lightweight output_schema shape.
+        assert result.structured_content is not None
+        assert result.structured_content == {"result": diff}
+        # The text content carries the raw diff.
+        assert len(result.content) > 0
+        assert result.content[0].text == diff

@@ -43,7 +43,7 @@ from tests.integration.conftest import BASE_TEST_URL
 def _make_annotation_spec() -> dict:
     """Comprehensive spec covering all HTTP methods and all 7 category paths.
 
-    There is intentionally **no response schema** on these endpoints —
+    There is intentionally **no response schema** on these endpoints -
     the tests only inspect tool *metadata* (annotations), never execute a tool
     call, so schemas are not needed.
     """
@@ -52,7 +52,7 @@ def _make_annotation_spec() -> dict:
         "info": {"title": "Gitea API", "version": "1.0"},
         "basePath": "/api/v1",
         "paths": {
-            # repository category — GET (read-only, idempotent)
+            # repository category - GET (read-only, idempotent)
             "/repos/{owner}/{repo}": {
                 "get": {
                     "operationId": "repoGet",
@@ -63,7 +63,7 @@ def _make_annotation_spec() -> dict:
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
-                # repository category — PUT (not read-only, idempotent)
+                # repository category - PUT (not read-only, idempotent)
                 "put": {
                     "operationId": "repoUpdate",
                     "summary": "Update a repository",
@@ -73,7 +73,7 @@ def _make_annotation_spec() -> dict:
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
-                # repository category — DELETE (destructive, idempotent)
+                # repository category - DELETE (destructive, idempotent)
                 "delete": {
                     "operationId": "repoDelete",
                     "summary": "Delete a repository",
@@ -84,7 +84,7 @@ def _make_annotation_spec() -> dict:
                     "responses": {"204": {"description": "No Content"}},
                 },
             },
-            # issue category — POST (not read-only, not idempotent, not destructive)
+            # issue category - POST (not read-only, not idempotent, not destructive)
             "/repos/{owner}/{repo}/issues": {
                 "post": {
                     "operationId": "issueCreateIssue",
@@ -164,7 +164,7 @@ def base_spec():
 
 
 # ===================================================================
-# Scenario 1 — readOnlyHint
+# Scenario 1 - readOnlyHint
 # ===================================================================
 
 
@@ -201,7 +201,7 @@ class TestReadOnlyHint:
 
 
 # ===================================================================
-# Scenario 2 & 3 — destructiveHint
+# Scenario 2 & 3 - destructiveHint
 # ===================================================================
 
 
@@ -231,7 +231,7 @@ class TestDestructiveHint:
 
 
 # ===================================================================
-# Scenario 4 & 5 — idempotentHint
+# Scenario 4 & 5 - idempotentHint
 # ===================================================================
 
 
@@ -268,7 +268,7 @@ class TestIdempotentHint:
 
 
 # ===================================================================
-# Scenario 6 — openWorldHint on API tools
+# Scenario 6 - openWorldHint on API tools
 # ===================================================================
 
 
@@ -308,7 +308,7 @@ class TestOpenWorldHintAPITools:
 
 
 # ===================================================================
-# Scenario 7 — openWorldHint on synthetic tools
+# Scenario 7 - openWorldHint on synthetic tools
 # ===================================================================
 
 
@@ -360,7 +360,7 @@ class TestOpenWorldHintSyntheticTools:
 
 
 # ===================================================================
-# Scenario 8 — Category tags
+# Scenario 8 - Category tags
 # ===================================================================
 
 
@@ -396,7 +396,7 @@ class TestCategoryTags:
 
 
 # ===================================================================
-# Scenario 9 — Hints persist through exclusion config
+# Scenario 9 - Hints persist through exclusion config
 # ===================================================================
 
 
@@ -453,7 +453,7 @@ class TestAnnotationsSurviveExclusion:
 
 
 # ===================================================================
-# Scenario 9b — tool_info returns correct annotations
+# Scenario 9b - tool_info returns correct annotations
 # ===================================================================
 
 

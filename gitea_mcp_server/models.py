@@ -4,7 +4,7 @@ All TypedDicts use ``total=False`` to match existing ``.get()`` guard
 patterns throughout the codebase.  This is consistent with the convention
 established in ``openapi_types.py``.
 
-These types provide static type annotations with zero runtime overhead —
+These types provide static type annotations with zero runtime overhead -
 TypedDict is a dict at runtime, so no serialization round-trip is needed.
 """
 

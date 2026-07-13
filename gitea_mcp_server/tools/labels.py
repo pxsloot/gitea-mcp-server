@@ -1,8 +1,8 @@
 """Label conversion utilities for tool arguments.
 
 This module is a thin adapter between the tool runtime pipeline and
-``LabelService``.  All label business logic — caching, validation,
-conversion — lives in ``label_service.py``.
+``LabelService``.  All label business logic - caching, validation,
+conversion - lives in ``label_service.py``.
 """
 
 from typing import TYPE_CHECKING, Any

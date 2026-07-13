@@ -680,7 +680,7 @@ class TestCallToolRuntimeBehaviorExtended:
 
     @pytest.mark.asyncio
     async def test_call_tool_passes_through_regardless_of_output_schema(self):
-        """call_tool ignores the tool's output_schema — the inner tool handles its own formatting."""
+        """call_tool ignores the tool's output_schema - the inner tool handles its own formatting."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
         data = {"id": 1, "name": "test"}
@@ -1083,7 +1083,7 @@ class TestSyntheticToolAnnotations:
         transform = TolerantSearchTransform()
         register_synthetic_tools(mcp, transform)
 
-        # Trigger error — call_tool with invalid JSON string
+        # Trigger error - call_tool with invalid JSON string
         with pytest.raises(ValueError, match="Invalid JSON"):
             ctx = MagicMock(spec=Context)
             await _call_tool_impl(
@@ -1119,7 +1119,7 @@ class TestSyntheticToolAnnotations:
                 tool_prefix="",
             )
         except Exception:
-            pass  # Expected — we're testing post-error state
+            pass  # Expected - we're testing post-error state
 
         # Annotations on registered tools unchanged
         tools = await mcp.list_tools()
@@ -1298,7 +1298,7 @@ class TestSearchAndSlice:
             {"id": 3, "name": "gamma"},
         ]
         texts = ["alpha word", "beta word", "gamma word"]
-        # Search for "alpha" — only item 0 should rank high
+        # Search for "alpha" - only item 0 should rank high
         page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
         assert total >= 1
         assert page_items[0]["name"] == "alpha"

@@ -1808,7 +1808,7 @@ class TestToolResourceConsistency:
         resource_result = _format_issues_markdown(issues)
         direct_result = _format_as_markdown(
             issues,
-            title="Issues — 1 issues",
+            title="Issues - 1 issues",
             field_filter=[
                 "number",
                 "title",

@@ -1,4 +1,4 @@
-"""Edge-case integration tests — labels, pagination, cache, deprecated.
+"""Edge-case integration tests - labels, pagination, cache, deprecated.
 
 Covers scenarios 1-4 from
 https://git.home.lan/mcp-server/gitea-mcp-server/issues/333
@@ -63,7 +63,7 @@ def _make_label_spec() -> dict:
 
 def _make_pagination_spec() -> dict:
     """Return a Swagger spec with a ``GET /items`` endpoint returning an array
-    response — exercises the pagination metadata injection path.
+    response - exercises the pagination metadata injection path.
     """
     return {
         "swagger": "2.0",
@@ -175,7 +175,7 @@ def _make_deprecated_spec() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1 — Label conversion end-to-end
+# Scenario 1 - Label conversion end-to-end
 # ---------------------------------------------------------------------------
 
 
@@ -267,7 +267,7 @@ class TestLabelConversion:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2 — Pagination metadata
+# Scenario 2 - Pagination metadata
 # ---------------------------------------------------------------------------
 
 
@@ -314,7 +314,7 @@ class TestPaginationMetadata:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3 — Cache invalidation end-to-end
+# Scenario 3 - Cache invalidation end-to-end
 # ---------------------------------------------------------------------------
 
 
@@ -342,30 +342,30 @@ class TestCacheInvalidationEndToEnd:
             200, json={"name": "updated", "owner": "owner"},
         )
 
-        # First read — should hit API (cache miss) → v1
+        # First read - should hit API (cache miss) → v1
         result1 = await mcp_server.read_resource("gitea://repos/owner/repo")
         assert result1 is not None
         assert "repo-v1" in str(result1), f"Expected v1, got {result1!r}"
 
-        # Second read — should come from cache → still v1 (no API call)
+        # Second read - should come from cache → still v1 (no API call)
         result2 = await mcp_server.read_resource("gitea://repos/owner/repo")
         assert result2 is not None
         assert "repo-v1" in str(result2), f"Expected cached v1, got {result2!r}"
 
-        # Write tool — should invalidate the repo cache
+        # Write tool - should invalidate the repo cache
         await mcp_server.call_tool(
             "gitea_repo_update",
             {"owner": "owner", "repo": "repo", "name": "updated"},
         )
 
-        # Third read — cache invalidated, should hit API again → v2
+        # Third read - cache invalidated, should hit API again → v2
         result3 = await mcp_server.read_resource("gitea://repos/owner/repo")
         assert result3 is not None
         assert "repo-v2" in str(result3), f"Expected v2 after invalidation, got {result3!r}"
 
 
 # ---------------------------------------------------------------------------
-# Scenario 4 — Deprecated endpoint exclusion
+# Scenario 4 - Deprecated endpoint exclusion
 # ---------------------------------------------------------------------------
 
 

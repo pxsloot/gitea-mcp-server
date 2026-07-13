@@ -149,7 +149,7 @@ def temp_workspace(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# OpenTelemetry — InMemorySpanExporter (session-scoped, shared across modules)
+# OpenTelemetry - InMemorySpanExporter (session-scoped, shared across modules)
 # ---------------------------------------------------------------------------
 
 # OpenTelemetry 1.43+ enforces a set-once guard on the global

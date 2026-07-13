@@ -28,11 +28,11 @@ class SchemaNormalizer:
 class SchemaWalker:
     """Iterative schema walker for applying transformations."""
 
-    # Schemas whose value is a dict — iterate over entries, push each sub-schema
+    # Schemas whose value is a dict - iterate over entries, push each sub-schema
     _DICT_ITER_KEYS = ("properties", "patternProperties")
-    # Schemas whose value is a single dict — push directly
+    # Schemas whose value is a single dict - push directly
     _SINGLE_DICT_KEYS = ("items", "additionalProperties")
-    # Schemas whose value is a list of schemas — iterate, push each
+    # Schemas whose value is a list of schemas - iterate, push each
     _LIST_ITER_KEYS = ("allOf", "anyOf", "oneOf")
 
     def __init__(self, callback: SchemaCallback):

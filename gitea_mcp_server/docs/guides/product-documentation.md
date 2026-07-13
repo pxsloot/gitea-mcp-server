@@ -1,6 +1,6 @@
 ---
 title: Product Documentation with the Wiki
-description: Use the repository wiki as a product documentation layer — holding vision, PRDs, design decisions, and cross-issue context that individual issues can reference.
+description: Use the repository wiki as a product documentation layer - holding vision, PRDs, design decisions, and cross-issue context that individual issues can reference.
 tags: [wiki, documentation, product, workflow, convention]
 ---
 
@@ -9,7 +9,7 @@ tags: [wiki, documentation, product, workflow, convention]
 ## The problem
 
 Issues describe individual tasks. Milestones group them. But neither carries
-rich context — the *why* behind a feature, the requirements that span multiple
+rich context - the *why* behind a feature, the requirements that span multiple
 issues, or the design decisions that shape implementation.
 
 When this context lives only in someone's head or in scattered discussions, it
@@ -28,7 +28,7 @@ This separates concerns cleanly:
 | `docs/` in repo | Developer docs: architecture, setup, API | Developers (PR workflow) |
 | Repository wiki | Product docs: vision, PRDs, design decisions | PM, product owners, anyone (no PR needed) |
 
-The wiki is a separate git repo — version controlled like code, but editable
+The wiki is a separate git repo - version controlled like code, but editable
 through the web UI without knowing git.
 
 ## Linking conventions
@@ -46,7 +46,7 @@ The `wiki/` prefix is relative to the repository root.
 ### From within the wiki
 
 Wiki pages link to each other using Gitea's bracket syntax or standard
-markdown — whichever fits:
+markdown - whichever fits:
 
 ```markdown
 [[Vision]]                       # Gitea wiki syntax (recommended)
@@ -63,13 +63,13 @@ See issue #42 for implementation details.
 
 ## Recommended page organization
 
-Use flat names with hyphens — the Gitea wiki API does not reliably support
+Use flat names with hyphens - the Gitea wiki API does not reliably support
 `/` in page names:
 
-- `Home` — landing page with navigation
-- `Vision` — project direction and principles
-- `PRD-Feature-Name` — product requirements for a feature
-- `Design-Component-Name` — design decisions and trade-offs
+- `Home` - landing page with navigation
+- `Vision` - project direction and principles
+- `PRD-Feature-Name` - product requirements for a feature
+- `Design-Component-Name` - design decisions and trade-offs
 
 ## Templates
 
@@ -92,8 +92,8 @@ What is explicitly NOT in scope for this work.
 Concrete examples of expected behaviour. These double as acceptance criteria.
 
 ## Linked issues
-- #XX — implementation task
-- #YY — related change
+- #XX - implementation task
+- #YY - related change
 
 ## Notes
 Context, prior art, discussions, links to related wiki pages.
@@ -123,7 +123,7 @@ When an issue references a wiki page, read it before implementing:
 wiki_page = read_resource("gitea://repos/{owner}/{repo}/wiki/page/{PageName}")
 ```
 
-This gives you the broader context — requirements, examples, linked issues —
+This gives you the broader context - requirements, examples, linked issues -
 that the issue alone may not capture.
 
 ## Adding pages

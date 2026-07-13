@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from gitea_mcp_server.docs_tools import DocManager
 
-from fastmcp.server.context import Context  # noqa: TC002 — runtime use via get_type_hints
+from fastmcp.server.context import Context  # noqa: TC002 - runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
@@ -63,7 +63,7 @@ def register_unified_search(
         search_transform: TolerantSearchTransform for tool catalog access
     """
 
-    async def search(  # noqa: PLR0913 — min_score is a new config axis
+    async def search(  # noqa: PLR0913 - min_score is a new config axis
         query: Annotated[str, "Natural language query to search for tools, docs, and resources"],
         format: Annotated[
             str,

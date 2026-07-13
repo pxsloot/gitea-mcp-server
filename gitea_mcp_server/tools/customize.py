@@ -35,7 +35,7 @@ _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
 ]
 
 
-# Verbs that map to domain-level actions — when one of these remains after
+# Verbs that map to domain-level actions - when one of these remains after
 # stripping the domain prefix, the domain noun is appended as the object.
 _ACTION_VERBS: set[str] = {
     "accept",
@@ -104,7 +104,7 @@ class _DomainConfig:
 
 
 # Single source of truth for known operationId domain prefixes.
-# Every known domain has a noun and a strip flag — no more keeping
+# Every known domain has a noun and a strip flag - no more keeping
 # _DOMAIN_PREFIXES, _KEEP_PREFIX, and _DOMAIN_NOUNS in sync manually.
 _DOMAINS: dict[str, _DomainConfig] = {
     "issue": _DomainConfig(noun="Issue"),
@@ -128,11 +128,11 @@ def _snake_to_title(snake_op_id: str) -> str:
     ``{domain}_{action}_{object}``:
 
     1. **Domain + verb + object** (most common): ``issue_create_issue`` → ``"Create Issue"``
-       — the domain prefix is dropped, action parts are Title Cased.
+       - the domain prefix is dropped, action parts are Title Cased.
     2. **Verb-only after strip**: ``issue_delete`` → ``"Delete Issue"``
-       — the domain noun is appended as the object when only one verb remains.
+       - the domain noun is appended as the object when only one verb remains.
     3. **Kept-prefix domains**: ``activitypub_person`` → ``"Activitypub Person"``
-       — domains with ``strip=False`` are retained because the prefix *is* the entity name.
+       - domains with ``strip=False`` are retained because the prefix *is* the entity name.
 
     Logs a warning at startup when an unknown domain prefix is encountered,
     surfacing drift when the Gitea API adds new operationId domains.
@@ -145,7 +145,7 @@ def _snake_to_title(snake_op_id: str) -> str:
 
     if parts and config is None:
         logger.warning(
-            "Unknown operationId domain '%s' in '%s' — title may be suboptimal. "
+            "Unknown operationId domain '%s' in '%s' - title may be suboptimal. "
             "Add entry to _DOMAINS if this is a recurring Gitea domain.",
             parts[0],
             snake_op_id,
@@ -172,7 +172,7 @@ def generate_tool_title(route: Any) -> str:
 
     Uses the ``operationId`` (already converted to snake_case by the
     OpenAPI converter) as the sole source.  The OpenAPI ``summary``
-    lives on as the tool's MCP ``description`` — it is a description,
+    lives on as the tool's MCP ``description`` - it is a description,
     not a title.
     """
     operation_id = getattr(route, "operation_id", None)
@@ -229,7 +229,7 @@ def synthetic_annotations(
     .. caution::
        ``read_only=False`` is for proxy tools like ``call_tool`` that delegate
        to arbitrary API tools.  Even though ``call_tool`` itself does nothing
-       destructive, its *results* can be — agents should not assume safety.
+       destructive, its *results* can be - agents should not assume safety.
 
     Args:
         read_only: Tool only reads/transforms in-memory data without side
@@ -237,7 +237,7 @@ def synthetic_annotations(
                    to arbitrary operations.
         open_world: Tool makes external API calls.  Local synthetic tools
                     (``search``, ``search_tools``, ``tool_info``, etc.)
-                    operate entirely in-memory — pass ``False``.
+                    operate entirely in-memory - pass ``False``.
 
     Returns:
         ToolAnnotations with all four hint fields explicitly set

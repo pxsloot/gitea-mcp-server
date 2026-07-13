@@ -1,7 +1,7 @@
 """Integration tests for server.py HTTP transport via main_async().
 
 Tests that main_async() correctly composes the HTTP app with CORS,
-health endpoint, and custom MCP path — exercising the actual entry
+health endpoint, and custom MCP path - exercising the actual entry
 point rather than manually wiring the ASGI app.
 
 Health endpoint requests use ASGI transport (no lifespan needed for
@@ -82,7 +82,7 @@ def captured_app(monkeypatch):
     """Capture the composed ASGI app from uvicorn.Config for route/middleware inspection.
 
     Yields a single-element list populated lazily by main_async().
-    Tests access via captured_app[0] — the wrapper is needed because
+    Tests access via captured_app[0] - the wrapper is needed because
     uvicorn.Config.__init__ hasn't been called yet at fixture yield time.
     """
     import uvicorn

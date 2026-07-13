@@ -101,7 +101,7 @@ def _compute_cache_key(uri: str, auth_key: str | None = None) -> str:
 
     This mirrors FastMCP's ``_make_read_resource_cache_key`` to ensure we
     compute the exact same key that the caching middleware uses.  The cache
-    key is ``sha256(f"{auth_key}:{uri}")`` — the auth partition prevents
+    key is ``sha256(f"{auth_key}:{uri}")`` - the auth partition prevents
     per-token response filtering from leaking across users.
 
     Args:
@@ -161,7 +161,7 @@ def compute_uris_to_invalidate(tool_name: str, arguments: dict[str, Any]) -> lis
     """Compute the list of concrete resource URIs to invalidate for a tool call.
 
     Lookup tries the exact name first, then strips the ``gitea_`` namespace
-    prefix if present — the map is keyed by bare ``operationId`` while the
+    prefix if present - the map is keyed by bare ``operationId`` while the
     middleware receives the namespaced name at runtime.
 
     Args:
@@ -330,7 +330,7 @@ class CacheInvalidationMiddleware(Middleware):
     ) -> None:
         """Clear LabelService cache for any label resource URIs in the list.
 
-        Owner/repo are extracted from the URI path directly — the ``arguments``
+        Owner/repo are extracted from the URI path directly - the ``arguments``
         parameter is accepted only for API consistency and is unused.
 
         Args:

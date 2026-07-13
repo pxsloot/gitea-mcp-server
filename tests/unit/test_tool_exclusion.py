@@ -1,4 +1,4 @@
-"""Unit tests for ExclusionTransform — tool/resource exclusion via config.
+"""Unit tests for ExclusionTransform - tool/resource exclusion via config.
 
 Tests verify that the transform correctly filters tools, resources, and
 resource templates based on exclude/include patterns from a config file.
@@ -104,7 +104,7 @@ def sample_templates() -> list[ResourceTemplate]:
 # ---------------------------------------------------------------------------
 
 class TestLoadExclusionConfig:
-    """Tests for load_exclusion_config — the YAML config file loader."""
+    """Tests for load_exclusion_config - the YAML config file loader."""
 
     def test_none_path_returns_empty(self):
         config = load_exclusion_config(None)
@@ -149,7 +149,7 @@ class TestLoadExclusionConfig:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — list_tools
+# ExclusionTransform - list_tools
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformListTools:
@@ -273,7 +273,7 @@ class TestExclusionTransformListTools:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — get_tool
+# ExclusionTransform - get_tool
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformGetTool:
@@ -332,7 +332,7 @@ class TestExclusionTransformGetTool:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — list_resources
+# ExclusionTransform - list_resources
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformListResources:
@@ -364,7 +364,7 @@ class TestExclusionTransformListResources:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — get_resource
+# ExclusionTransform - get_resource
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformGetResource:
@@ -392,7 +392,7 @@ class TestExclusionTransformGetResource:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — list_resource_templates
+# ExclusionTransform - list_resource_templates
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformListTemplates:
@@ -424,7 +424,7 @@ class TestExclusionTransformListTemplates:
 
 
 # ---------------------------------------------------------------------------
-# ExclusionTransform — get_resource_template
+# ExclusionTransform - get_resource_template
 # ---------------------------------------------------------------------------
 
 class TestExclusionTransformGetTemplate:

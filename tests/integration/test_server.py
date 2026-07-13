@@ -927,7 +927,7 @@ class TestServerEdgeCases:
             """A secret tool."""
             return "secret"
 
-        # Before disable — both tools visible
+        # Before disable - both tools visible
         tools_before = await server.list_tools()
         names_before = {t.name for t in tools_before}
         assert "public_tool" in names_before
@@ -936,7 +936,7 @@ class TestServerEdgeCases:
         # Disable secret_tool
         server.disable(keys={"tool:secret_tool@"})
 
-        # After disable — secret_tool hidden
+        # After disable - secret_tool hidden
         tools_after = await server.list_tools()
         names_after = {t.name for t in tools_after}
         assert "public_tool" in names_after
@@ -974,7 +974,7 @@ class TestServerEdgeCases:
         def secret_resource() -> str:
             return "secret"
 
-        # Before disable — both resources visible
+        # Before disable - both resources visible
         resources_before = await server.list_resources()
         uris_before = {str(r.uri) for r in resources_before}
         assert "data://public" in uris_before
@@ -983,7 +983,7 @@ class TestServerEdgeCases:
         # Disable secret resource
         server.disable(keys={"resource:data://secret@"})
 
-        # After disable — secret resource hidden
+        # After disable - secret resource hidden
         resources_after = await server.list_resources()
         uris_after = {str(r.uri) for r in resources_after}
         assert "data://public" in uris_after
@@ -1001,7 +1001,7 @@ class TestServerEdgeCases:
         def dynamic_resource(item: str) -> str:
             return f"data for {item}"
 
-        # Before disable — template visible
+        # Before disable - template visible
         templates_before = await server.list_resource_templates()
         uris_before = {t.uri_template for t in templates_before}
         assert "data://{item}" in uris_before
@@ -1009,7 +1009,7 @@ class TestServerEdgeCases:
         # Disable template
         server.disable(keys={"template:data://{item}@"})
 
-        # After disable — template hidden
+        # After disable - template hidden
         templates_after = await server.list_resource_templates()
         uris_after = {t.uri_template for t in templates_after}
         assert "data://{item}" not in uris_after

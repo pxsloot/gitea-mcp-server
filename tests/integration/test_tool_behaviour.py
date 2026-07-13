@@ -1,4 +1,4 @@
-"""Behavioural integration tests — error messages, output shape, resource errors.
+"""Behavioural integration tests - error messages, output shape, resource errors.
 
 Verifies the agent-facing contract: human-readable errors, consistent
 ``{"result": ...}`` wrapping, and correct handling of resource/network errors.
@@ -81,7 +81,7 @@ def _make_repo_spec() -> dict:
 def _make_empty_spec() -> dict:
     """Return a minimal Swagger spec with no endpoints at all.
 
-    Used by ``TestResourceErrors`` — resource tests don't need any tools,
+    Used by ``TestResourceErrors`` - resource tests don't need any tools,
     only the auto-generated resource for ``/repos/{owner}/{repo}``.
     Using ``_make_repo_spec()`` would register a ``repoGet`` tool that is
     not needed and could cause confusion.
@@ -140,7 +140,7 @@ def _make_diff_spec() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1 — Validation error messages
+# Scenario 1 - Validation error messages
 # ---------------------------------------------------------------------------
 
 
@@ -148,7 +148,7 @@ class TestValidationErrors:
     """Scenario 1: Validation errors produce human-readable messages.
 
     Validation fires *before* any HTTP call, so no respx mocking is needed
-    for the error path — the tool never reaches the API.
+    for the error path - the tool never reaches the API.
 
     Each test uses the ``mcp_server`` fixture with the repo spec, and the
     ``base_spec`` override provides the spec at the class level so the
@@ -185,7 +185,7 @@ class TestValidationErrors:
 
 
 # ---------------------------------------------------------------------------
-# Scenarios 2 & 3 — API error translation (404 / 403)
+# Scenarios 2 & 3 - API error translation (404 / 403)
 # ---------------------------------------------------------------------------
 
 
@@ -240,7 +240,7 @@ class TestAPIErrorTranslation:
     async def test_network_error_is_agent_friendly(self, mcp_server) -> None:
         """A connection-level error is reported as a network issue, not a crash.
 
-        No API route is registered for the call — respx raises a transport
+        No API route is registered for the call - respx raises a transport
         error that the error-handling layer translates to an agent-friendly
         message.
         """
@@ -256,7 +256,7 @@ class TestAPIErrorTranslation:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 4 — Result wrapping consistency
+# Scenario 4 - Result wrapping consistency
 # ---------------------------------------------------------------------------
 
 
@@ -303,13 +303,13 @@ class TestResultWrapping:
         assert "result" in result.structured_content
         # Pagination metadata (has_more, next_offset) is added by
         # _ToolWrappingTransform when the output schema is an array type.
-        # The test below is optional — it asserts current behaviour.
+        # The test below is optional - it asserts current behaviour.
         if "has_more" in result.structured_content:
             assert isinstance(result.structured_content["has_more"], bool)
 
 
 # ---------------------------------------------------------------------------
-# Scenario 5 — Resource 404 errors
+# Scenario 5 - Resource 404 errors
 # ---------------------------------------------------------------------------
 
 
@@ -318,7 +318,7 @@ class TestResourceErrors:
 
     Uses an empty spec (no endpoints) because these tests only exercise the
     resource system, not tool calls.  An empty spec is the cleanest fixture
-    — ``_make_repo_spec()`` would register a ``repoGet`` tool that is not
+    - ``_make_repo_spec()`` would register a ``repoGet`` tool that is not
     needed here.
     """
 
@@ -343,7 +343,7 @@ class TestResourceErrors:
         This works even with ``enable_lazy_loading=False`` (the default for
         ``mcp_server``) because ``TolerantSearchTransform`` intercepts
         ``call_tool("gitea_read_resource", ...)`` and resolves the tool
-        name from the full catalog — the synthetic tool does not need to
+        name from the full catalog - the synthetic tool does not need to
         be in the visible tool list.
         """
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/nonexistent/missing").respond(404)
@@ -357,7 +357,7 @@ class TestResourceErrors:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 6 — Non-JSON endpoint handling
+# Scenario 6 - Non-JSON endpoint handling
 # ---------------------------------------------------------------------------
 
 
@@ -447,12 +447,12 @@ class TestNonJsonEndpoint:
         ``repoDownloadPullDiffOrPatch`` spec (including the embedded
         ``{diffType}`` path parameter):
 
-        1. ``OpenAPITool.run()`` — returns ``ToolResult(content=text)`` on a
+        1. ``OpenAPITool.run()`` - returns ``ToolResult(content=text)`` on a
            text/plain body.
-        2. ``_ToolWrappingTransform._pipeline_with_context()`` — wraps the
+        2. ``_ToolWrappingTransform._pipeline_with_context()`` - wraps the
            text into ``{"result": text}`` when ``is_text_response=True``.
-        3. ``format_result()`` — passes strings through unchanged in markdown.
-        4. MCP SDK ``call_tool`` handler — validates ``structured_content``
+        3. ``format_result()`` - passes strings through unchanged in markdown.
+        4. MCP SDK ``call_tool`` handler - validates ``structured_content``
            against the lightweight ``output_schema``.
 
         Regression guard for #437: a text/plain endpoint must not raise an
@@ -474,7 +474,7 @@ class TestNonJsonEndpoint:
             "gitea_repo_download_pull_diff_or_patch",
             {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
         )
-        # Layer 4: no output validation error — a result is returned, not raised.
+        # Layer 4: no output validation error - a result is returned, not raised.
         assert result is not None
         # structured_content matches the lightweight output_schema shape.
         assert result.structured_content is not None

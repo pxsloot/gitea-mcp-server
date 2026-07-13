@@ -4,7 +4,7 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
-    format_result — reformat a ToolResult by format (json/markdown/raw).
+    format_result - reformat a ToolResult by format (json/markdown/raw).
 """
 
 import json as json_module
@@ -91,7 +91,7 @@ def _format_list_as_markdown(
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
         lines.append(f"{indent}*None*")
-    # Flatten lists of {"$ref": "Type"} — render as bulleted $ref:X items.
+    # Flatten lists of {"$ref": "Type"} - render as bulleted $ref:X items.
     elif data and all(isinstance(v, dict) and set(v.keys()) == {"$ref"} for v in data):
         items = [f"$ref:{v['$ref']}" for v in data]
         for item in items:
@@ -207,13 +207,13 @@ def _format_dict_as_markdown(
             label = _snake_to_title(key)
             raw_val = data.get(key)
             # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-            # tables — keeps the display compact while signalling that the
+            # tables - keeps the display compact while signalling that the
             # value is a component reference, not a literal string.
             if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
                 raw_val = f"$ref:{raw_val['$ref']}"
             is_nested = isinstance(raw_val, (dict, list))
             if is_nested:
-                # Don't propagate field_filter into nested sub-objects —
+                # Don't propagate field_filter into nested sub-objects -
                 # the parent's field names don't apply to child objects.
                 sub = _format_as_markdown(
                     raw_val,

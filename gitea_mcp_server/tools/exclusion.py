@@ -1,14 +1,14 @@
-"""Exclusion transform — exclude/include tools and resources via config patterns.
+"""Exclusion transform - exclude/include tools and resources via config patterns.
 
 Provides:
-- ``ExclusionTransform`` — server-level ``Transform`` that filters tools,
+- ``ExclusionTransform`` - server-level ``Transform`` that filters tools,
   resources, and resource templates based on exclude/include patterns.
-- ``load_exclusion_config`` — loads exclusion rules from a YAML config file.
+- ``load_exclusion_config`` - loads exclusion rules from a YAML config file.
 
 Pattern types (matched against component name or tags):
-    - ``exact_name``             — exact match on component name
-    - ``glob_pattern``           — fnmatch glob match on component name
-    - ``tag:tagname``            — match on component tags
+    - ``exact_name``             - exact match on component name
+    - ``glob_pattern``           - fnmatch glob match on component name
+    - ``tag:tagname``            - match on component tags
 
 Include overrides exclude: if a component matches any include pattern,
 it passes through even if it also matches an exclude pattern.
@@ -85,8 +85,8 @@ class ExclusionTransform(Transform):
     it passes through regardless of exclude patterns.
 
     Attributes:
-        exclude: List of patterns — components matching these are removed.
-        include: List of patterns — components matching these are kept
+        exclude: List of patterns - components matching these are removed.
+        include: List of patterns - components matching these are kept
             even if they match an exclude pattern.
     """
 

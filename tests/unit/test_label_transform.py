@@ -1,4 +1,4 @@
-"""Unit tests for LabelTransform — FastMCP Transform wrapping label conversion."""
+"""Unit tests for LabelTransform - FastMCP Transform wrapping label conversion."""
 
 from typing import TYPE_CHECKING, Any, Generator
 from unittest.mock import AsyncMock, patch
@@ -115,7 +115,7 @@ class TestLabelTransform:
             return tool
 
         result = await transform.get_tool("labels_tool", call_next)
-        assert result is not tool  # wrapped — new object
+        assert result is not tool  # wrapped - new object
         assert result.name == "labels_tool"
         assert result.meta == tool.meta  # metadata preserved
 
@@ -125,7 +125,7 @@ class TestLabelTransform:
         label_service.validate_and_convert.return_value = [1, 42]
 
         # Use Tool.from_tool to create a spy on the original run(). This is the
-        # FastMCP way to create a modified tool — LabelTransform will capture
+        # FastMCP way to create a modified tool - LabelTransform will capture
         # the spy's run() as original_run.
         tool = self.make_tool("labels_tool", has_labels=True)
         executed = False
@@ -293,7 +293,7 @@ class TestConvertLabelsInline:
 
 
 # ---------------------------------------------------------------------------
-# LabelTransform — OpenTelemetry spans
+# LabelTransform - OpenTelemetry spans
 # ---------------------------------------------------------------------------
 
 
@@ -371,7 +371,7 @@ class TestLabelTransformTelemetry:
             return tool
 
         wrapped = await transform.get_tool("no_labels", call_next)
-        assert wrapped is tool  # not wrapped — passes through
+        assert wrapped is tool  # not wrapped - passes through
 
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]

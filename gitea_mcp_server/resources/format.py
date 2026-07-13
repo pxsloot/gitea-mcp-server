@@ -16,7 +16,7 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 # Type alias for resource return values
 ResourceResult = str
 
-# Shared field filters — curated property subsets for each resource type.
+# Shared field filters - curated property subsets for each resource type.
 # These ensure resources display the same fields (in the same order)
 # that the equivalent tool output would, for consistency.
 _ISSUE_FIELDS: Sequence[str] = [
@@ -98,9 +98,9 @@ def _format_issues_markdown(
 
     display_title = title
     if total is not None:
-        display_title = f"{title} — {len(issues)} of {total} total"
+        display_title = f"{title} - {len(issues)} of {total} total"
     else:
-        display_title = f"{title} — {len(issues)} issues"
+        display_title = f"{title} - {len(issues)} issues"
 
     return _format_as_markdown(
         issues,
@@ -117,7 +117,7 @@ def _format_pulls_markdown(
     if not pulls:
         return _format_as_markdown(pulls, title=title, field_filter=_PULL_FIELDS)
 
-    display_title = f"{title} — {len(pulls)} pull requests"
+    display_title = f"{title} - {len(pulls)} pull requests"
     return _format_as_markdown(
         pulls,
         title=display_title,

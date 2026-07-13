@@ -53,7 +53,7 @@ class LabelTransform(Transform):
         self._gitea_client = gitea_client
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        """Pass through — metadata is already set during :func:`_customize_metadata`."""
+        """Pass through - metadata is already set during :func:`_customize_metadata`."""
         return tools
 
     async def get_tool(
@@ -142,8 +142,8 @@ class LabelTransform(Transform):
                     raise ValueError(str(e)) from e
             return await original_run(kwargs)
 
-        # Preserve all existing metadata — title, tags, description,
-        # output_schema, meta — so outer transforms see the same shape.
+        # Preserve all existing metadata - title, tags, description,
+        # output_schema, meta - so outer transforms see the same shape.
         return Tool.from_tool(
             tool,
             title=getattr(tool.annotations, "title", None) if tool.annotations else None,

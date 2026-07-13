@@ -1001,7 +1001,7 @@ class TestGetRawSuccessSchema:
         result = _get_success_schema(spec, "/test", "get", resolve=False)
         assert result is not None
         user_schema = result["properties"]["user"]
-        # $ref must survive — NOT deep-resolved
+        # $ref must survive - NOT deep-resolved
         assert "$ref" in user_schema
         assert user_schema["$ref"] == "#/components/schemas/User"
 
@@ -1047,7 +1047,7 @@ class TestGetRawSuccessSchema:
         result = _get_success_schema(spec, "/test", "get", resolve=True)
         assert result is not None
         user_schema = result["properties"]["user"]
-        # $ref must be resolved — not a $ref dict
+        # $ref must be resolved - not a $ref dict
         assert "$ref" not in user_schema
         assert user_schema["type"] == "object"
         assert user_schema["properties"]["id"]["type"] == "integer"

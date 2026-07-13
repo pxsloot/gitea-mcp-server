@@ -169,7 +169,7 @@ class TestBM25Index:
     def test_min_score_filters_weak_matches(self):
         """High min_score filters out lower-ranked documents."""
         index = _BM25Index()
-        # doc 1 has "apple" twice — stronger match
+        # doc 1 has "apple" twice - stronger match
         index.build(["apple banana", "apple apple cherry"])
         results = index.query("apple", 10, min_score=0.0)
         assert len(results) == 2  # both docs match at min_score=0

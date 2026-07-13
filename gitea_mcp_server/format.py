@@ -8,6 +8,7 @@ Public functions:
 """
 
 import json as json_module
+import logging
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
@@ -16,6 +17,8 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.pagination import PAGINATION_KEYS
+
+logger = logging.getLogger(__name__)
 
 # Length bounds for auto-detecting ISO datetime strings without schema hint
 _ISO_DT_MIN_LEN = 20
@@ -308,6 +311,17 @@ def format_result(
         if pagination:
             content += "\n\n---\n"
             content += _format_as_markdown(pagination, None)
+
+    else:
+        # Intentional pass-through: string results (e.g. diff/patch text) and
+        # other non-dict/list types are returned unchanged in markdown mode.
+        # Log so the no-op is observable during debugging (see #442 Finding 3).
+        logger.debug(
+            "format_result: skipping formatting for fmt=%s, data type=%s "
+            "(returned unchanged)",
+            fmt,
+            type(data).__name__,
+        )
 
     if content is not None:
         return ToolResult(

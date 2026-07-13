@@ -43,10 +43,28 @@ When a label is no longer useful but still attached to existing issues/PRs, arch
 
 ## Applying Labels
 
-Via the web UI, open the issue/PR and click Labels. Via API, use label IDs or names:
+Via the web UI, open the issue/PR and click Labels. Via API, use label **names** (strings) or **IDs** (integers):
 - `gitea_issue_create_issue` -- set labels at creation
 - `gitea_issue_edit_issue` -- update labels on existing issue
 - `gitea_issue_clear_labels` -- remove all labels
+
+**Both names and integer IDs are validated** against the repository's existing labels.
+Unknown values of either type raise a `ValidationError` listing available labels.
+String matching is case-insensitive.
+
+**Best practice**: Use integer label IDs for reliability — they are never affected by
+renames.
+
+## Labels Resource
+
+The `gitea://repos/{owner}/{repo}/labels` resource provides a formatted, cached view of
+all labels including:
+- Accepted format: `[string, integer][]`
+- Label names, IDs, colors, and descriptions
+- Scoped/exclusive flags
+- Archived status
+
+Use this resource before creating or editing issues/PRs to discover valid labels.
 
 ## Predefined Label Sets
 
@@ -59,4 +77,4 @@ When creating a repo/org, the `Issue Labels` option lets you choose from globall
 - `gitea_issue_delete_label` -- permanently delete
 - `gitea_issue_list_labels` -- list repo labels
 - `gitea_org_list_labels` -- list org labels
-- `gitea://repos/{owner}/{repo}/labels` -- labels resource (cached)
+- `gitea://repos/{owner}/{repo}/labels` -- labels resource (cached, formatted)

@@ -125,7 +125,7 @@ class TestResourcesIntegration:
         mock_client = AsyncMock()
 
         resources_pkg.register_custom_resources(mcp, mock_client)
-        assert mcp.resource.call_count == 11
+        assert mcp.resource.call_count == 12
 
     @pytest.mark.asyncio
     async def test_custom_resources_include_expected_uris(self):

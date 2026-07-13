@@ -27,6 +27,7 @@ from gitea_mcp_server.resources.format import (
     ResourceResult,
     _build_server_info_markdown,
     _format_issues_markdown,
+    _format_labels_markdown,
     _format_pulls_markdown,
     _format_release_markdown,
     _format_repo_markdown,
@@ -294,6 +295,26 @@ def register_custom_resources(  # noqa: PLR0915
             lines.append("")
 
         return "\n".join(lines)
+
+    # ── labels ──────────────────────────────────────────────────────────────
+
+    _meta = scope_meta("read:issue")
+
+    @_register(
+        "gitea://repos/{owner}/{repo}/labels",
+        mime_type="text/markdown",
+        tags={"wrapper", "labels"},
+        meta=_meta,
+    )
+    @resource_handler(
+        "labels", "{owner}/{repo}", "Labels not found for repository '{owner}/{repo}'."
+    )
+    async def list_repo_labels(owner: str, repo: str) -> ResourceResult:
+        """List labels for a repository with format and validation hints."""
+        labels = await gitea_client.request("GET", f"/repos/{owner}/{repo}/labels")
+        if isinstance(labels, str):
+            return labels
+        return _format_labels_markdown(labels, owner, repo)
 
     # ── user ────────────────────────────────────────────────────────────────
 

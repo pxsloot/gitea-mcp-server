@@ -272,6 +272,51 @@ class TestCustomizeMetadata:
 
         assert LABEL_GUIDANCE.strip() not in tool.description
 
+    def test_adds_labels_tag_for_label_tools(self):
+        """Verify 'labels' tag is added to tools with labels parameter."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="Create issue",
+            operation_id="create_issue",
+            method="POST",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_issue"
+        tool.annotations = None
+        tool.tags = {"issue"}
+        tool.parameters = {
+            "properties": {"labels": {"type": "array", "items": {"type": "integer"}}}
+        }
+        tool.output_schema = None
+        tool.description = "Create an issue"
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec={})
+
+        assert "labels" in tool.tags
+        assert "issue" in tool.tags  # original tag preserved
+
+    def test_does_not_add_labels_tag_without_labels(self):
+        """Verify 'labels' tag is NOT added when tool has no labels parameter."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            summary="List issues",
+            operation_id="list_issues",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = None
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "List issues"
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec={})
+
+        assert "labels" not in tool.tags
+
     def test_sets_meta_flags(self):
         """Meta dict contains _META_CUSTOMIZED and _customization."""
         route = MagicMock(

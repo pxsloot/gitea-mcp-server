@@ -363,12 +363,12 @@ class TestRegisterCustomResources:
     async def test_registers_all_custom_resources(self, mock_mcp, mock_gitea_client):
         """Test that all expected custom resources are registered."""
         register_custom_resources(mock_mcp, mock_gitea_client)
-        assert mock_mcp.resource.call_count == 11
+        assert mock_mcp.resource.call_count == 12
 
     async def test_custom_resources_have_expected_uris(
         self, mock_mcp, mock_gitea_client
     ):
-        """Test that the 11 custom resources have the expected URI templates."""
+        """Test that the 12 custom resources have the expected URI templates."""
         register_custom_resources(mock_mcp, mock_gitea_client)
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
         expected = [
@@ -378,6 +378,7 @@ class TestRegisterCustomResources:
             "gitea://repos/{owner}/{repo}/pulls{?state}",
             "gitea://repos/{owner}/{repo}/files/{path*}",
             "gitea://repos/{owner}/{repo}/releases",
+            "gitea://repos/{owner}/{repo}/labels",
             "gitea://users/{username}",
             "gitea://user",
             "gitea://orgs/{orgname}",
@@ -390,12 +391,12 @@ class TestRegisterCustomResources:
     async def test_registers_all_custom_resources_with_openapi_spec(
         self, mock_mcp, mock_gitea_client
     ):
-        """Test that 12 custom resources are registered when openapi_spec is provided."""
+        """Test that 13 custom resources are registered when openapi_spec is provided."""
         register_custom_resources(
             mock_mcp, mock_gitea_client,
             openapi_spec={"info": {"title": "test", "version": "1.0.0"}},
         )
-        assert mock_mcp.resource.call_count == 12
+        assert mock_mcp.resource.call_count == 13
 
     async def test_custom_resources_include_server_info_uri_with_openapi_spec(
         self, mock_mcp, mock_gitea_client
@@ -1661,6 +1662,43 @@ class TestCustomResourceStringResponsePaths:
         assert "# owner/repo" in result
         assert "owner" in result
 
+    # ── labels resource ──────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_list_repo_labels_string_response(self, captured_resources, mock_gitea_client_str):
+        """isinstance(data, str) returns string directly for labels."""
+        func = captured_resources["gitea://repos/{owner}/{repo}/labels"]
+        mock_gitea_client_str.request = AsyncMock(return_value="string labels")
+        result = await func("owner", "repo")
+        assert result == "string labels"
+
+    @pytest.mark.asyncio
+    async def test_list_repo_labels_dict_response(self, captured_resources, mock_gitea_client_str):
+        """Labels dict response is formatted as markdown with format hints."""
+        func = captured_resources["gitea://repos/{owner}/{repo}/labels"]
+        mock_gitea_client_str.request = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "bug", "color": "ff0000", "description": "Bug report", "exclusive": False},
+                {"id": 2, "name": "Kind/Feature", "color": "00ff00", "description": "New feature", "exclusive": True},
+            ]
+        )
+        result = await func("owner", "repo")
+        assert "# Labels for owner/repo" in result
+        assert "Accepted Format" in result
+        assert "bug" in result
+        assert "Kind/Feature" in result
+        assert "#ff0000" in result
+        assert "scope:" in result
+        assert "exclusive" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_list_repo_labels_empty(self, captured_resources, mock_gitea_client_str):
+        """Empty labels list shows 'No labels configured' message."""
+        func = captured_resources["gitea://repos/{owner}/{repo}/labels"]
+        mock_gitea_client_str.request = AsyncMock(return_value=[])
+        result = await func("owner", "repo")
+        assert "No labels configured" in result
+
 
 class TestToolResourceConsistency:
     """Verify that resource formatters and _format_as_markdown produce the same structure.
@@ -1780,3 +1818,24 @@ class TestToolResourceConsistency:
         assert "| Tag Name | v1.0.0 |" in resource_result
         assert "| Name | Version 1.0.0 |" in resource_result
         assert "| Body | Notes |" in resource_result
+
+    def test_labels_format_contains_hints_and_scope(self):
+        """_format_labels_markdown includes accepted format, scoped info, and validation hints."""
+        from gitea_mcp_server.resources.format import _format_labels_markdown
+
+        labels = [
+            {"id": 1, "name": "bug", "color": "ff0000", "description": "Bug reports", "exclusive": False},
+            {"id": 5, "name": "Kind/Feature", "color": "00ff00", "description": "New features", "exclusive": True},
+            {"id": 9, "name": "Kind/Bug", "color": "0000ff", "description": "Bug by kind", "exclusive": True},
+        ]
+        result = _format_labels_markdown(labels, "test-owner", "test-repo")
+        assert "# Labels for test-owner/test-repo" in result
+        assert "Accepted Format" in result
+        assert "Names" in result and "strings" in result
+        assert "IDs" in result and "integers" in result
+        assert "bug" in result
+        assert "Kind/Feature" in result
+        assert "(scope: " in result
+        assert "exclusive" in result.lower()
+        assert "validated" in result.lower()
+        assert "#ff0000" in result or "# 00ff00" in result or "# 0000ff" in result or "`#ff0000`" in result

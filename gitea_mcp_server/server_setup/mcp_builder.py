@@ -121,6 +121,7 @@ def _customize_metadata(
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
+        component.tags = set(component.tags) | {"labels"}
 
     is_text_response = _is_text_response(
         openapi_spec,

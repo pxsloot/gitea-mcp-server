@@ -176,24 +176,21 @@ When creating or editing issues or pull requests, you can specify labels using e
 - **Names** (strings): e.g., `"bug"`, `"Kind/Feature"`, `"Priority/High"`
 - **IDs** (integers): e.g., `1`, `42`, `184`
 
-⚠️ **Important**: Only existing repository labels are allowed. If you use a name that doesn't exist, you'll get an error with the list of available labels.
+**Both names and IDs are validated** against the repository's existing labels.
+Unknown values of either type produce an error listing available labels.
 
-### Best Practice: Discover labels first
+Scoped (exclusive) labels with `/` in their name (e.g., `Kind/Bug`, `Priority/High`)
+allow only one label per scope at a time. See the [`labels` workflow guide](gitea://docs/guide/labels)
+for details.
 
-Before creating an issue/PR with labels, fetch the available labels:
-
-```python
-# Option 1: Search then call
-search_tools("list labels")
-labels = call_tool("gitea_issue_list_labels", {"owner": "org", "repo": "repo"})
-
-# Option 2: Read the labels resource (faster, cached)
-read_resource("gitea://repos/org/repo/labels")
-```
-
-### Example: Create an issue with label names
+### Canonical Workflow: Discover → Pass → Handle Errors
 
 ```python
+# 1. Discover available labels (prefer the cached resource)
+labels_info = read_resource("gitea://repos/org/repo/labels")
+# Returns formatted list with label names, IDs, colors, and scoped info
+
+# 2. Create an issue with label names
 search_tools("create issue")
 result = call_tool("gitea_issue_create_issue", {
     "owner": "myorg",
@@ -202,7 +199,45 @@ result = call_tool("gitea_issue_create_issue", {
     "body": "Details...",
     "labels": ["Kind/Bug", "Priority/High"],
 })
+
+# 3. Or use integer IDs (more reliable — never affected by rename)
+result = call_tool("gitea_issue_create_issue", {
+    "owner": "myorg",
+    "repo": "myrepo",
+    "title": "Critical bug",
+    "body": "Urgent fix needed",
+    "labels": [5, 12],  # label IDs, not names
+})
+
+# 4. Handle validation errors — the error message lists available labels
+#    e.g., "Unknown label name(s): ['nonexistent']. Available labels: ..."
 ```
+
+### Validation Details
+
+- **String names**: case-insensitive matching (`"bug"` matches `"Bug"`, `"BUG"`)
+- **Integer IDs**: validated against the repository's label ID map
+- **Unknown values**: a `ValidationError` includes grouped available labels
+
+### Available Tools with Labels
+
+Use `search_tools("labels")` to find all tools that accept labels:
+
+| Tool | Purpose |
+|------|---------|
+| `gitea_issue_create_issue` | Create issue with labels |
+| `gitea_issue_edit_issue` | Update issue labels |
+| `gitea_issue_add_issue_labels` | Add labels to existing issue |
+| `gitea_issue_replace_labels` | Replace all labels on issue |
+| `gitea_repo_create_pull_request` | Create PR with labels |
+
+### Labels Resource
+
+The `gitea://repos/{owner}/{repo}/labels` resource (cached, Markdown) includes:
+- Accepted format: `[string, integer][]`
+- Label names, IDs, colors, descriptions
+- Scoped/exclusive flag for each label
+- Archived status
 
 ## Workflows
 

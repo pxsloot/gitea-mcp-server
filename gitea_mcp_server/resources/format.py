@@ -148,6 +148,68 @@ def _format_release_markdown(release: dict[str, Any]) -> ResourceResult:
     )
 
 
+def _format_labels_markdown(
+    labels: list[dict[str, Any]], owner: str, repo: str
+) -> ResourceResult:
+    """Format labels list as Markdown with format and validation hints.
+
+    Args:
+        labels: List of label objects from the Gitea API.
+        owner: Repository owner (for display).
+        repo: Repository name (for display).
+
+    Returns:
+        Markdown string with label details and usage hints.
+    """
+    lines = [
+        f"# Labels for {owner}/{repo}",
+        "",
+        f"**Total**: {len(labels)} labels",
+        "",
+        "## Accepted Format",
+        "",
+        "Labels can be specified as either:",
+        '- **Names** (strings): e.g. `"bug"`, `"Kind/Feature"`',
+        "- **IDs** (integers): e.g. `1`, `42`",
+        "",
+        "**Validation**: Both names and IDs are validated against the"
+        " repository's existing labels.",
+        " Unknown values produce an error listing available labels.",
+        "",
+    ]
+
+    if not labels:
+        lines.append("*No labels configured for this repository.*")
+        lines.append("")
+    else:
+        lines.append(f"## Labels ({len(labels)})")
+        lines.append("")
+        for label in labels:
+            label_id = label.get("id", "?")
+            name = label.get("name", "Unnamed")
+            color = label.get("color", "")
+            desc = label.get("description") or "(no description)"
+            exclusive = label.get("exclusive", False)
+
+            scope_info = ""
+            if "/" in name:
+                scope = name.rsplit("/", 1)[0]
+                scope_info = f" (scope: `{scope}`)"
+                if exclusive:
+                    scope_info += " — exclusive"
+
+            archived = label.get("is_archived", False)
+            archived_tag = " *(archived)*" if archived else ""
+
+            lines.append(f"### {name} (#{label_id}){archived_tag}")
+            lines.append(f"- **Color**: `#{color}`")
+            lines.append(f"- **Description**: {desc}")
+            lines.append(f"- **Exclusive**: {'Yes' if exclusive else 'No'}{scope_info}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
 def _handle_not_found(
     e: Exception, resource_type: str, resource_id: str, custom_message: str | None = None
 ) -> None:
@@ -191,6 +253,7 @@ __all__ = [
     "_build_server_info_markdown",
     "_format_datetime",
     "_format_issues_markdown",
+    "_format_labels_markdown",
     "_format_pulls_markdown",
     "_format_release_markdown",
     "_format_repo_markdown",

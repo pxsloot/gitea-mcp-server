@@ -173,6 +173,7 @@ AUTO_GENERATED_RESOURCE_SKIP_URIS = {
     "gitea://repos/{owner}/{repo}",
     "gitea://repos/{owner}/{repo}/readme",
     "gitea://repos/{owner}/{repo}/issues",
+    "gitea://repos/{owner}/{repo}/labels",
     "gitea://repos/{owner}/{repo}/pulls",
     "gitea://repos/{owner}/{repo}/files/{path*}",
     "gitea://repos/{owner}/{repo}/releases",

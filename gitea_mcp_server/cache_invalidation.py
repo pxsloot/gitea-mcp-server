@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     from fastmcp.server.middleware.caching import ResponseCachingMiddleware
     from fastmcp.tools.base import ToolResult
 
+    from gitea_mcp_server.label_service import LabelService
+
 from fastmcp.server.middleware.caching import (
     _get_auth_partition_key,
 )
@@ -38,10 +40,12 @@ from fastmcp.server.middleware.middleware import (
 from gitea_mcp_server.constants import (
     PATTERN_FILES,
     PATTERN_ISSUES_LIST,
+    PATTERN_LABELS,
     PATTERN_PULLS_LIST,
     PATTERN_REPO,
     RESOURCE_PATTERN_FILES,
     RESOURCE_PATTERN_ISSUES_LIST,
+    RESOURCE_PATTERN_LABELS,
     RESOURCE_PATTERN_PULLS_LIST,
     RESOURCE_PATTERN_REPO,
 )
@@ -60,6 +64,8 @@ RESOURCE_URI_PATTERNS: dict[str, str] = {
     PATTERN_REPO: RESOURCE_PATTERN_REPO,
     # File contents (using filepath as parameter name to match Gitea API)
     PATTERN_FILES: RESOURCE_PATTERN_FILES,
+    # Labels
+    PATTERN_LABELS: RESOURCE_PATTERN_LABELS,
 }
 
 # Global invalidation map populated at server startup.
@@ -268,14 +274,21 @@ class CacheInvalidationMiddleware(Middleware):
     it can access and modify the cache.
     """
 
-    def __init__(self, caching_middleware: ResponseCachingMiddleware):
+    def __init__(
+        self,
+        caching_middleware: ResponseCachingMiddleware,
+        label_service: LabelService | None = None,
+    ):
         """Initialize with a reference to the caching middleware.
 
         Args:
             caching_middleware: The ResponseCachingMiddleware instance whose
                                cache should be invalidated
+            label_service: Optional LabelService to clear label caches on
+                          label write operations.
         """
         self.caching_middleware = caching_middleware
+        self._label_service = label_service
 
     async def on_call_tool(
         self,
@@ -305,5 +318,38 @@ class CacheInvalidationMiddleware(Middleware):
                 await invalidate_cached_resources(
                     self.caching_middleware, uris_to_invalidate, tool_name
                 )
+                # If any URI targets the labels resource, also clear the
+                # LabelService's internal cache for this repo.
+                if self._label_service is not None:
+                    self._clear_label_service_cache(uris_to_invalidate, arguments)
 
         return result
+
+    def _clear_label_service_cache(
+        self, uris: list[str], arguments: dict[str, Any]  # noqa: ARG002
+    ) -> None:
+        """Clear LabelService cache for any label resource URIs in the list.
+
+        Owner/repo are extracted from the URI path directly — the ``arguments``
+        parameter is accepted only for API consistency and is unused.
+
+        Args:
+            uris: List of resolved resource URIs that were invalidated.
+            arguments: Tool arguments used to resolve the URIs (unused).
+        """
+        if self._label_service is None:
+            return
+        # URIs follow the resolved pattern: gitea://repos/{owner}/{repo}/labels
+        # Parse directly from the path rather than trying to match templates
+        # with substituted parameters.
+        _MIN_LABEL_URI_PARTS = 6
+        for uri in uris:
+            if not uri.endswith("/labels"):
+                continue
+            parts = uri.split("/")
+            # ['gitea:', '', 'repos', owner, repo, 'labels']
+            if len(parts) >= _MIN_LABEL_URI_PARTS and parts[1] == "" and parts[2] == "repos":
+                owner = parts[3]
+                repo = parts[4]
+                if owner and repo:
+                    self._label_service.clear_cache_for(owner, repo)

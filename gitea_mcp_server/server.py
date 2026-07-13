@@ -119,10 +119,17 @@ def _build_server_instructions(doc_manager: DocManager) -> str:
     return instructions
 
 
-def _setup_caching_middleware(mcp: FastMCP) -> None:
+def _setup_caching_middleware(
+    mcp: FastMCP,
+    label_service: LabelService | None = None,
+) -> None:
     """Add response caching and cache invalidation middleware.
 
     Invalidation middleware must be added after caching middleware.
+
+    Args:
+        mcp: The FastMCP server instance.
+        label_service: Optional LabelService for label cache invalidation.
     """
     logger.info("Adding response caching middleware...")
     caching_middleware = ResponseCachingMiddleware(
@@ -139,7 +146,10 @@ def _setup_caching_middleware(mcp: FastMCP) -> None:
     mcp.add_middleware(caching_middleware)
 
     logger.info("Adding cache invalidation middleware...")
-    invalidation_middleware = CacheInvalidationMiddleware(caching_middleware)
+    invalidation_middleware = CacheInvalidationMiddleware(
+        caching_middleware,
+        label_service=label_service,
+    )
     mcp.add_middleware(invalidation_middleware)
 
 
@@ -310,7 +320,7 @@ async def create_mcp_server(
     )
 
     register_doc_tools(mcp, doc_manager)
-    _setup_caching_middleware(mcp)
+    _setup_caching_middleware(mcp, label_service=label_service)
     _setup_tool_discovery(mcp, config, doc_manager, extensions)
     register_all_resources(mcp, gitea_client, openapi_spec)
     _setup_tool_exclusions(mcp, config)

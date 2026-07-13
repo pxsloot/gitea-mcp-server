@@ -88,12 +88,12 @@ class TestCacheInvalidationIntegration:
 
     @pytest.mark.asyncio
     async def test_label_operations_invalidation(self):
-        """Test label CRUD invalidates both issues and pulls."""
+        """Test label CRUD invalidates labels, issues, and pulls."""
         patterns = _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/labels", "POST")
-        assert set(patterns) == {"issues_list", "pulls_list"}
+        assert set(patterns) == {"labels", "issues_list", "pulls_list"}
 
         patterns = _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/labels/bug", "DELETE")
-        assert set(patterns) == {"issues_list", "pulls_list"}
+        assert set(patterns) == {"labels", "issues_list", "pulls_list"}
 
     @pytest.mark.asyncio
     async def test_path_based_pattern_mapping_coverage(self):
@@ -135,6 +135,7 @@ class TestCacheInvalidationIntegration:
 
         # Labels, Milestones, Releases, Topics
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/labels", "POST") == [
+            "labels",
             "issues_list",
             "pulls_list",
         ]

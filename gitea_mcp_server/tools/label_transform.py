@@ -117,9 +117,19 @@ class LabelTransform(Transform):
         tracer = get_tracer()
 
         async def label_transform_fn(**kwargs: Any) -> ToolResult:
-            with tracer.start_as_current_span(f"{tool.name}.convert_labels") as span:
+            with tracer.start_as_current_span(f"{tool.name}.validate_labels") as span:
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("labels.has_labels", True)
+
+                # Count label types for observability
+                raw_labels = kwargs.get("labels")
+                if isinstance(raw_labels, list):
+                    int_count = sum(1 for item in raw_labels if isinstance(item, int))
+                    str_count = sum(1 for item in raw_labels if isinstance(item, str))
+                    span.set_attribute("label.count", len(raw_labels))
+                    span.set_attribute("label.integers", int_count)
+                    span.set_attribute("label.strings", str_count)
+
                 try:
                     await _convert_labels_inline(
                         kwargs,

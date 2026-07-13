@@ -198,7 +198,10 @@ class TestComputeUrisToInvalidate:
 
         await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
         assert "Failed to invalidate cache" in caplog.text
-    """Tests for CacheInvalidationMiddleware."""
+
+
+class TestCacheInvalidationMiddleware:
+    """Tests for CacheInvalidationMiddleware behavior."""
 
     @pytest.mark.asyncio
     async def test_successful_tool_invalidates_cache(self):
@@ -340,14 +343,20 @@ class TestComputeToolInvalidationPatterns:
         # GET does not invalidate
         assert self.compute("/repos/{owner}/{repo}/contents/README.md", "GET") == []
 
-    def test_label_operations_invalidate_issues_and_pulls(self):
-        """Label CRUD affects both issues and pull requests."""
-        assert self.compute("/repos/{owner}/{repo}/labels", "POST") == ["issues_list", "pulls_list"]
+    def test_label_operations_invalidate_labels_issues_and_pulls(self):
+        """Label CRUD affects labels, issues, and pull requests."""
+        assert self.compute("/repos/{owner}/{repo}/labels", "POST") == [
+            "labels",
+            "issues_list",
+            "pulls_list",
+        ]
         assert self.compute("/repos/{owner}/{repo}/labels/bug", "DELETE") == [
+            "labels",
             "issues_list",
             "pulls_list",
         ]
         assert self.compute("/repos/{owner}/{repo}/labels", "PATCH") == [
+            "labels",
             "issues_list",
             "pulls_list",
         ]

@@ -349,7 +349,7 @@ with no code changes.
 ```
 tools/call gitea_issue_create_issue          (auto, by FastMCP)
 ├── gitea_issue_create_issue.validate        (custom, validation)
-├── gitea_issue_create_issue.convert_labels  (custom, label conversion)
+├── gitea_issue_create_issue.validate_labels  (custom, label conversion)
 └── gitea_issue_create_issue.execute         (custom, HTTP execution)
 ```
 

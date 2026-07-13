@@ -121,7 +121,7 @@ Agent calls a tool:
     │                              → log context (ctx.info)
     │                              → report progress (ctx.report_progress)
     │                              → call inner tool's run()
-    │     └─▶ LabelTransform      — convert labels (.convert_labels span)
+    │     └─▶ LabelTransform      — convert labels (.validate_labels span)
     │                              → log context (ctx.info)
     │                              → call original tool's run()
     │           └─▶ OpenAPITool.run() — httpx → Gitea API
@@ -269,7 +269,7 @@ The customization layers as applied during server startup:
     instrumentation that auto-generates spans for all MCP operations (tool
     calls, resource reads, prompt renders) with zero configuration. The
     ``_ToolWrappingTransform._run_transform_pipeline()`` adds three custom
-    child spans (``{tool}.validate``, ``{tool}.convert_labels``,
+    child spans (``{tool}.validate``, ``{tool}.validate_labels``,
     ``{tool}.execute``) to provide per-stage latency visibility. Spans are
     no-ops unless an OpenTelemetry SDK + exporter are configured.
 

@@ -69,7 +69,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         ) -> ResourceEntry:
             """Add required_scope to a resource entry from its metadata."""
             if meta:
-                scope = meta.get("fastmcp", {}).get("_internal", {}).get("required_scope")
+                scope = meta.get("required_scope")
             else:
                 scope = None
             base["required_scope"] = scope

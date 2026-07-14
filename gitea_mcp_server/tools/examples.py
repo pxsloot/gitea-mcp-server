@@ -217,7 +217,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
                 # be processed normally; nested $refs inside will hit depth >= 1
                 # and emit placeholders as usual.
                 return _schema_to_compact_example(
-                    resolved, depth, max_depth, openapi_spec=openapi_spec
+                    resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                 )
             # Fall through to placeholder if resolution fails
         return {"$ref": schema["$ref"].rsplit("/", 1)[-1]}
@@ -284,8 +284,9 @@ def _serialize_tool_schema(
 
     Generates a compact ``output_example`` using the unresolved schema stored
     in ``tool.meta`` (if available) so nested ``$ref`` types show as
-    ``{"$ref": "TypeName"}`` instead of inlined schemas.  Falls back to the
-    resolved schema behaviour when the raw schema is absent.
+    ``{"$ref": "TypeName"}`` instead of inlined schemas.  Falls back to
+    ``_schema_to_compact_example`` on the resolved schema when the raw
+    schema is absent (though this path is rarely taken in practice).
 
     When ``openapi_spec`` is provided, bare ``$ref`` at the top level of the
     schema will be resolved one level so agents see the type's actual fields
@@ -305,9 +306,14 @@ def _serialize_tool_schema(
                 inner, openapi_spec=openapi_spec
             )
         else:
-            # Fallback: generate from the resolved output schema
+            # Fallback: generate from the resolved output schema.
+            # The resolved schema has no $ref pointers, so openapi_spec
+            # won't trigger ref resolution, but passing it through keeps
+            # the code path consistent and future-proof.
             inner = tool.output_schema.get("properties", {}).get("result", {})
-            data["output_example"] = _schema_to_example(inner)
+            data["output_example"] = _schema_to_compact_example(
+                inner, openapi_spec=openapi_spec
+            )
     if tool.annotations:
         ann = tool.annotations
         data["annotations"] = {

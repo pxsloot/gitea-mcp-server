@@ -15,6 +15,7 @@ Note: ``search_resources`` is registered in ``tools/search.py`` alongside
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastmcp import FastMCP
@@ -29,13 +30,6 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
-
-# Module-level reference to the OpenAPI spec, injected by register_mcp_resource_tools().
-# Used by _tool_schema_resource to resolve bare $ref in output examples (issue #446).
-# Stored as a function attribute to avoid the `global` keyword while keeping
-# the registration function's signature clean.
-# Type: OpenAPISpec | None — set once at startup, never mutated after.
-_OPENAPI_SPEC_ATTR = "_openapi_spec"
 
 logger = logging.getLogger(__name__)
 
@@ -477,41 +471,58 @@ async def _read_resource_tool(
     )
 
 
-async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
-    """Get the full tool schema for a registered tool by name.
+def _make_tool_schema_resource_handler(
+    openapi_spec: OpenAPISpec | None = None,
+) -> Callable[..., Awaitable[str]]:
+    """Create the ``gitea://tool/{name}/schema`` resource handler.
 
-    Call this after search_tools when you need full parameter types,
-    an output example, annotations, or tags for a specific tool.
-
-    Typical workflow:
-    1. search_tools -- discover available tools (name + description)
-    2. tool/{name}/schema -- get full schema for a specific tool
-    3. call_tool -- execute the tool with proper arguments
+    Uses closure-based dependency injection for the OpenAPI spec so the
+    value is captured at registration time, avoiding runtime monkey-patching
+    on function attributes.
 
     Args:
-        name: The tool name (including any namespace prefix)
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
 
     Returns:
-        JSON string with the full tool schema (parameters, output_example, annotations, etc.)
-
-    Raises:
-        ValueError: If the tool is not found
+        Async resource handler callable ``(name, ctx) -> str``.
     """
-    tool = await ctx.fastmcp.get_tool(name)
-    if tool is None:
-        msg = f"Tool '{name}' not found"
-        raise ValueError(msg)
+    async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
+        """Get the full tool schema for a registered tool by name.
 
-    # Compact example (type names for $ref, no inlined nesting).
-    # Resolve bare $ref with the OpenAPI spec injected at registration time.
-    spec = getattr(_tool_schema_resource, _OPENAPI_SPEC_ATTR, None)
-    data = dict(_serialize_tool_schema(tool, openapi_spec=spec))
+        Call this after search_tools when you need full parameter types,
+        an output example, annotations, or tags for a specific tool.
 
-    # Resource always includes the fully-resolved output_schema.
-    if tool.output_schema is not None:
-        data["output_schema"] = tool.output_schema
+        Typical workflow:
+        1. search_tools -- discover available tools (name + description)
+        2. tool/{name}/schema -- get full schema for a specific tool
+        3. call_tool -- execute the tool with proper arguments
 
-    return json.dumps(data, indent=2)
+        Args:
+            name: The tool name (including any namespace prefix)
+
+        Returns:
+            JSON string with the full tool schema (parameters, output_example,
+            annotations, etc.)
+
+        Raises:
+            ValueError: If the tool is not found
+        """
+        tool = await ctx.fastmcp.get_tool(name)
+        if tool is None:
+            msg = f"Tool '{name}' not found"
+            raise ValueError(msg)
+
+        # Compact example (type names for $ref, no inlined nesting).
+        # Bare $ref resolved one level via openapi_spec captured in the closure.
+        data = dict(_serialize_tool_schema(tool, openapi_spec=openapi_spec))
+
+        # Resource always includes the fully-resolved output_schema.
+        if tool.output_schema is not None:
+            data["output_schema"] = tool.output_schema
+
+        return json.dumps(data, indent=2)
+
+    return _tool_schema_resource
 
 
 def register_mcp_resource_tools(
@@ -527,9 +538,6 @@ def register_mcp_resource_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve bare
             ``$ref`` in tool output examples.
     """
-    # Inject the spec for bare $ref resolution in tool schema resources.
-    setattr(_tool_schema_resource, _OPENAPI_SPEC_ATTR, openapi_spec)
-
     mcp.tool(
         name="list_resources",
         tags={"synthetic"},
@@ -550,7 +558,7 @@ def register_mcp_resource_tools(
         description="Get the full tool schema for a registered tool by name. "
         "Use after search_tools to inspect parameter details and see an output example.",
         mime_type="application/json",
-    )(_tool_schema_resource)
+    )(_make_tool_schema_resource_handler(openapi_spec))
 
     logger.info(
         "Registered MCP resource tools: list_resources, read_resource, tool_schema_resource"

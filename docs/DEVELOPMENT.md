@@ -221,7 +221,7 @@ discover a param they can't use.
    ```python
    custom_resources: list[tuple[str, Callable, str, set[str], dict | None]] = [
        ("gitea://my/{param}", my_resource, "text/markdown",
-        {"wrapper", "my_type"}, {"fastmcp": {"_internal": {"required_scope": "read:repository"}}}),
+        {"wrapper", "my_type"}, {"required_scope": "read:repository"}),
        # ...
    ]
    ```

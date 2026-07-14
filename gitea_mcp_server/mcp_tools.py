@@ -34,6 +34,7 @@ from gitea_mcp_server.tools.examples import _serialize_tool_schema
 # Used by _tool_schema_resource to resolve bare $ref in output examples (issue #446).
 # Stored as a function attribute to avoid the `global` keyword while keeping
 # the registration function's signature clean.
+# Type: OpenAPISpec | None — set once at startup, never mutated after.
 _OPENAPI_SPEC_ATTR = "_openapi_spec"
 
 logger = logging.getLogger(__name__)

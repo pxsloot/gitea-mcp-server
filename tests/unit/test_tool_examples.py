@@ -676,6 +676,16 @@ class TestSchemaToCompactExample:
         assert result["output_example"][0]["id"] == 0
         assert result["output_example"][0]["unread"] is True
 
+    def test_bare_ref_falls_back_on_resolution_failure(self):
+        """Bare $ref that cannot be resolved should fall through to placeholder."""
+        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+
+        # Spec without the referenced schema
+        spec = {"components": {"schemas": {}}}
+        schema = {"$ref": "#/components/schemas/MissingType"}
+        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        assert result == {"$ref": "MissingType"}
+
 
 class TestLookupStringExampleSuffix:
     """Tests for _lookup_string_example suffix pattern matching (line 66)."""

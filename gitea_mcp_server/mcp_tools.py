@@ -25,9 +25,16 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.format import _format_as_markdown
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+# Module-level reference to the OpenAPI spec, injected by register_mcp_resource_tools().
+# Used by _tool_schema_resource to resolve bare $ref in output examples (issue #446).
+# Stored as a function attribute to avoid the `global` keyword while keeping
+# the registration function's signature clean.
+_OPENAPI_SPEC_ATTR = "_openapi_spec"
 
 logger = logging.getLogger(__name__)
 
@@ -495,7 +502,9 @@ async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> s
         raise ValueError(msg)
 
     # Compact example (type names for $ref, no inlined nesting).
-    data = dict(_serialize_tool_schema(tool))
+    # Resolve bare $ref with the OpenAPI spec injected at registration time.
+    spec = getattr(_tool_schema_resource, _OPENAPI_SPEC_ATTR, None)
+    data = dict(_serialize_tool_schema(tool, openapi_spec=spec))
 
     # Resource always includes the fully-resolved output_schema.
     if tool.output_schema is not None:
@@ -504,14 +513,22 @@ async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> s
     return json.dumps(data, indent=2)
 
 
-def register_mcp_resource_tools(mcp: FastMCP) -> None:
+def register_mcp_resource_tools(
+    mcp: FastMCP,
+    openapi_spec: OpenAPISpec | None = None,
+) -> None:
     """Register MCP resource access tools with the server.
 
     These tools allow agents to interact with the MCP resource system directly.
 
     Args:
         mcp: The FastMCP server instance
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve bare
+            ``$ref`` in tool output examples.
     """
+    # Inject the spec for bare $ref resolution in tool schema resources.
+    setattr(_tool_schema_resource, _OPENAPI_SPEC_ATTR, openapi_spec)
+
     mcp.tool(
         name="list_resources",
         tags={"synthetic"},

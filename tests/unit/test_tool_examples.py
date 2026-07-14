@@ -530,6 +530,153 @@ class TestSchemaToCompactExample:
         assert result["output_example"]["name"] == "example-name"
 
 
+    # ── Bare $ref resolution tests (issue #446) ──────────────────────────
+
+    def test_bare_ref_resolved_at_depth_zero(self):
+        """Bare $ref at depth=0 with openapi_spec should resolve one level."""
+        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+
+        spec = {
+            "components": {
+                "schemas": {
+                    "NotificationThread": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "subject": {"$ref": "#/components/schemas/Subject"},
+                            "unread": {"type": "boolean"},
+                        },
+                    },
+                    "Subject": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {"$ref": "#/components/schemas/NotificationThread"}
+        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        # Should show actual fields, with nested $ref rendered as placeholder
+        assert result["id"] == 0
+        assert result["unread"] is True
+        # Nested $ref stays compact at depth >= 1
+        assert result["subject"] == {"$ref": "Subject"}
+
+    def test_bare_ref_not_resolved_without_spec(self):
+        """Bare $ref without openapi_spec should still emit placeholder."""
+        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+
+        schema = {"$ref": "#/components/schemas/NotificationThread"}
+        result = _schema_to_compact_example(schema)
+        assert result == {"$ref": "NotificationThread"}
+
+    def test_ref_not_resolved_at_depth_one(self):
+        """$ref at depth > 0 should still emit placeholder even with spec."""
+        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+
+        spec = {
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "login": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "author": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        # author is at depth 1, should stay as placeholder
+        assert result["author"] == {"$ref": "User"}
+
+    def test_array_of_ref_resolved_at_depth_zero(self):
+        """Array with $ref items at depth=0 should resolve items with spec."""
+        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+
+        spec = {
+            "components": {
+                "schemas": {
+                    "NotificationThread": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "unread": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/NotificationThread"},
+        }
+        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        # Array of resolved items
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["id"] == 0
+        assert result[0]["unread"] is True
+
+    def test_serialize_bare_ref_with_openapi_spec(self):
+        """_serialize_tool_schema with bare $ref output resolves with spec."""
+        from gitea_mcp_server.tools.examples import _serialize_tool_schema
+
+        spec = {
+            "components": {
+                "schemas": {
+                    "NotificationThread": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "unread": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
+        }
+        tool = Tool(
+            name="test_tool",
+            description="Test bare ref",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/NotificationThread"},
+                    },
+                },
+            },
+            meta={
+                "output_schema_raw": {
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/NotificationThread",
+                            },
+                        },
+                    },
+                },
+            },
+        )
+        result = _serialize_tool_schema(tool, openapi_spec=spec)
+        assert "output_example" in result
+        assert isinstance(result["output_example"], list)
+        assert result["output_example"][0]["id"] == 0
+        assert result["output_example"][0]["unread"] is True
+
+
 class TestLookupStringExampleSuffix:
     """Tests for _lookup_string_example suffix pattern matching (line 66)."""
 

@@ -20,7 +20,7 @@ def register_all_resources(
     """
     register_auto_generated_resources(mcp, gitea_client, openapi_spec)
     register_custom_resources(mcp, gitea_client, openapi_spec)
-    register_mcp_resource_tools(mcp)
+    register_mcp_resource_tools(mcp, openapi_spec=openapi_spec)
 
 
 __all__ = [

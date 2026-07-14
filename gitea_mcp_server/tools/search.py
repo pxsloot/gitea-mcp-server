@@ -24,6 +24,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.format import _format_as_markdown, format_result
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
@@ -379,6 +380,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
     detail: Literal["concise", "full"] = "concise",
+    openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
     """Core tool_info implementation.
 
@@ -394,7 +396,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
         candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
         if tool.name in candidates:
-            schema: ToolSchemaResult = _serialize_tool_schema(tool)
+            schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
                 schema["output_schema"] = tool.output_schema
             return format_result(
@@ -531,6 +533,7 @@ def register_synthetic_tools(
     mcp: Any,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
+    openapi_spec: OpenAPISpec | None = None,
 ) -> None:
     """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
@@ -667,7 +670,7 @@ def register_synthetic_tools(
         ] = "concise",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _tool_info_impl(name, format, ctx, transform, tool_prefix, detail=detail)
+        return await _tool_info_impl(name, format, ctx, transform, tool_prefix, detail=detail, openapi_spec=openapi_spec)
 
     mcp.tool(
         name="tool_info",

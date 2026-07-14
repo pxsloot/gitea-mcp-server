@@ -7,7 +7,7 @@ import contextlib
 import importlib.resources as pkg_resources
 import logging
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import fastmcp.server.server as _fastmcp_server_mod
 from fastmcp import FastMCP
@@ -35,6 +35,9 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
@@ -178,6 +181,7 @@ def _setup_tool_discovery(
     config: Config,
     doc_manager: DocManager,
     extensions: dict[str, Any] | None = None,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> None:
     """Setup lazy loading search transform, unified search, namespace, and extensions.
 
@@ -196,7 +200,9 @@ def _setup_tool_discovery(
         )
         mcp.add_transform(search_transform)
         logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
-        register_synthetic_tools(mcp, search_transform, tool_prefix=config.tool_prefix)
+        register_synthetic_tools(
+            mcp, search_transform, tool_prefix=config.tool_prefix, openapi_spec=openapi_spec
+        )
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
 
@@ -321,7 +327,7 @@ async def create_mcp_server(
 
     register_doc_tools(mcp, doc_manager)
     _setup_caching_middleware(mcp, label_service=label_service)
-    _setup_tool_discovery(mcp, config, doc_manager, extensions)
+    _setup_tool_discovery(mcp, config, doc_manager, extensions, openapi_spec=openapi_spec)
     register_all_resources(mcp, gitea_client, openapi_spec)
     _setup_tool_exclusions(mcp, config)
     await _apply_permission_filter(mcp, gitea_client, config)

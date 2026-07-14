@@ -84,6 +84,11 @@ $ref:Label         → the field is a Label object
 "Example Title"    → literal string value
 ```
 
+When the **entire** output is a single type (e.g., `user_get_current` returns
+just a `$ref:User`), the top-level `$ref` is resolved one level so you see
+actual field names instead of just a placeholder.  Nested `$ref` fields
+within that type still show as compact placeholders.
+
 When you need the fully-resolved schema, use `detail="full"`:
 
 ```

@@ -5,6 +5,8 @@ from typing import Any
 from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.models import ToolSchemaResult
+from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.tools.schemas import _resolve_ref
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
@@ -171,13 +173,20 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     depth: int = 0,
     max_depth: int = 2,
     prop_name: str | None = None,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
     When encountering ``$ref``, emits ``{"$ref": "TypeName"}`` instead of
-    inlining the referenced schema.  The markdown formatter recognises this
-    pattern and renders it as ``$ref:TypeName``.  All properties are included
-    (no ``max_properties`` truncation).  Leaf types use the same meaningful
+    inlining the referenced schema, **unless** ``depth == 0`` and
+    ``openapi_spec`` is provided — in that case the top-level ``$ref`` is
+    resolved one level so the agent sees actual field names instead of just
+    a type placeholder.  Nested ``$ref`` (depth >= 1) always emit the
+    compact placeholder.
+
+    The markdown formatter recognises the ``{"$ref": "TypeName"}`` pattern
+    and renders it as ``$ref:TypeName``.  All properties are included (no
+    ``max_properties`` truncation).  Leaf types use the same meaningful
     example values as ``_schema_to_example``.
 
     Designed to be called on the **raw** (unresolved) schema so that ``$ref``
@@ -188,15 +197,29 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         depth: Current recursion depth.
         max_depth: Maximum recursion depth before returning ``"{...}"``.
         prop_name: Property name hint for string example generation.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec. When provided and
+            ``depth == 0``, a bare ``$ref`` at the top level is resolved
+            one level so agents see the type's properties instead of just
+            a placeholder type name.
 
     Returns:
         A compact representation: ``{"$ref": "TypeName"}`` for refs,
         example values for leaf types, dicts/arrays with one level of nesting.
     """
-    # $ref - emit {"$ref": "TypeName"} so the JSON output is structurally
-    # unambiguous.  The markdown formatter recognises this pattern and
-    # renders it as "$ref:TypeName".
+    # $ref handling: at depth=0 with spec available, resolve one level so
+    # agents see actual fields instead of just a placeholder type name.
+    # At depth > 0, emit {"$ref": "TypeName"} as a compact placeholder.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
+        if depth == 0 and openapi_spec is not None:
+            resolved = _resolve_ref(openapi_spec, schema["$ref"])
+            if isinstance(resolved, dict):
+                # Recurse at same depth — the ref's resolved properties will
+                # be processed normally; nested $refs inside will hit depth >= 1
+                # and emit placeholders as usual.
+                return _schema_to_compact_example(
+                    resolved, depth, max_depth, openapi_spec=openapi_spec
+                )
+            # Fall through to placeholder if resolution fails
         return {"$ref": schema["$ref"].rsplit("/", 1)[-1]}
 
     if depth >= max_depth:
@@ -208,7 +231,9 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         if isinstance(options, list):
             for opt in options:
                 if isinstance(opt, dict) and opt.get("type") != "null":
-                    return _schema_to_compact_example(opt, depth, max_depth, prop_name=prop_name)
+                    return _schema_to_compact_example(
+                        opt, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
+                    )
 
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
@@ -232,14 +257,15 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         for prop_name_inner, prop_schema in properties.items():
             if isinstance(prop_schema, dict):
                 result[prop_name_inner] = _schema_to_compact_example(
-                    prop_schema, depth + 1, max_depth, prop_name=prop_name_inner
+                    prop_schema, depth + 1, max_depth, prop_name=prop_name_inner,
+                    openapi_spec=openapi_spec,
                 )
         return result
 
     if schema_type == "array":
         items = schema.get("items", {})
         if isinstance(items, dict) and items:
-            return [_schema_to_compact_example(items, depth, max_depth)]
+            return [_schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
         return []
 
     if schema_type == "string":
@@ -250,13 +276,20 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     return None
 
 
-def _serialize_tool_schema(tool: Tool) -> ToolSchemaResult:
+def _serialize_tool_schema(
+    tool: Tool,
+    openapi_spec: OpenAPISpec | None = None,
+) -> ToolSchemaResult:
     """Serialize a Tool to a compact dict (name, description, parameters, examples, annotations).
 
     Generates a compact ``output_example`` using the unresolved schema stored
     in ``tool.meta`` (if available) so nested ``$ref`` types show as
     ``{"$ref": "TypeName"}`` instead of inlined schemas.  Falls back to the
     resolved schema behaviour when the raw schema is absent.
+
+    When ``openapi_spec`` is provided, bare ``$ref`` at the top level of the
+    schema will be resolved one level so agents see the type's actual fields
+    instead of just a placeholder type name.
     """
     data: ToolSchemaResult = {
         "name": tool.name,
@@ -268,7 +301,9 @@ def _serialize_tool_schema(tool: Tool) -> ToolSchemaResult:
         raw = (tool.meta or {}).get("output_schema_raw")
         if raw is not None:
             inner = raw.get("properties", {}).get("result", {})
-            data["output_example"] = _schema_to_compact_example(inner)
+            data["output_example"] = _schema_to_compact_example(
+                inner, openapi_spec=openapi_spec
+            )
         else:
             # Fallback: generate from the resolved output schema
             inner = tool.output_schema.get("properties", {}).get("result", {})

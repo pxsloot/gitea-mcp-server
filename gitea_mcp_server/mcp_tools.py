@@ -68,10 +68,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             meta: dict[str, Any] | None,
         ) -> ResourceEntry:
             """Add required_scope to a resource entry from its metadata."""
-            if meta:
-                scope = meta.get("required_scope")
-            else:
-                scope = None
+            scope = meta.get("required_scope") if meta else None
             base["required_scope"] = scope
             return base
 

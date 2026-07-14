@@ -39,6 +39,7 @@ _CATEGORY_PREFIXES: list[tuple[str, str, bool]] = [
 # stripping the domain prefix, the domain noun is appended as the object.
 _ACTION_VERBS: set[str] = {
     "accept",
+    "action",
     "add",
     "adopt",
     "cancel",
@@ -61,6 +62,7 @@ _ACTION_VERBS: set[str] = {
     "migrate",
     "mirror",
     "move",
+    "notify",
     "pin",
     "post",
     "publicize",
@@ -68,6 +70,7 @@ _ACTION_VERBS: set[str] = {
     "reject",
     "remove",
     "rename",
+    "render",
     "replace",
     "reset",
     "run",
@@ -143,7 +146,7 @@ def _snake_to_title(snake_op_id: str) -> str:
     parts = snake_op_id.split("_")
     config = _DOMAINS.get(parts[0]) if parts else None
 
-    if parts and config is None:
+    if parts and config is None and parts[0] not in _ACTION_VERBS:
         logger.warning(
             "Unknown operationId domain '%s' in '%s' - title may be suboptimal. "
             "Add entry to _DOMAINS if this is a recurring Gitea domain.",

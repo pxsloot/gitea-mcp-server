@@ -172,10 +172,10 @@ class TestSnakeToTitle:
         from gitea_mcp_server.tools.customize import _snake_to_title
 
         caplog.set_level(logging.WARNING)
-        _snake_to_title("render_markdown")
+        _snake_to_title("deploy_create_environment")
         assert len(caplog.records) == 1
-        assert "Unknown operationId domain 'render'" in caplog.records[0].message
-        assert "render_markdown" in caplog.records[0].message
+        assert "Unknown operationId domain 'deploy'" in caplog.records[0].message
+        assert "deploy_create_environment" in caplog.records[0].message
 
     def test_known_domain_does_not_log_warning(self, caplog):
         """Known domain prefixes should not log a warning."""

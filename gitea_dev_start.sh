@@ -50,13 +50,13 @@ done
 
 [[ $status != "healthy" ]] && { echo "gitea not healthy: $status"; exit 1; }
 
-# create admin username: test-user
+# create admin username: admin-user
 # store its token in $ENV_FILE
 result=$(podman exec -i -u git gitea-test /bin/bash <<- OEF
 /usr/local/bin/gitea admin user create  \
   --password pass --admin  \
   --fullname "Gitea Admin"  \
-  --username test-user \
+  --username admin-user \
   --access-token \
   --email 'admin@local' 2>/dev/null
 exit
@@ -71,7 +71,7 @@ fi
 # test token
 result=$(source $ENV_FILE; curl -sL -H "Authorization: Bearer $GITEA_TOKEN"  $GITEA_URL/api/v1/user 2>/dev/null)
 
-[[ $(jq .username <<<$result) == "test-user" ]] && { echo "token invalid, check $ENV_FILE"; exit 1; }
-echo "token for test-user works. Stored in $ENV_FILE"
+[[ $(jq .username <<<$result) == "admin-user" ]] && { echo "token invalid, check $ENV_FILE"; exit 1; }
+echo "token for admin-user works. Stored in $ENV_FILE"
 
 #Access token was successfully created... 5e80f15f61e5ba898f5fc76067bd541155e71147

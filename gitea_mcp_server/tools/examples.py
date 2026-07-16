@@ -302,7 +302,7 @@ def _serialize_tool_schema(
         raw = (tool.meta or {}).get("output_schema_raw")
         if raw is not None:
             inner = raw.get("properties", {}).get("result", {})
-            data["output_example"] = _schema_to_compact_example(
+            example = _schema_to_compact_example(
                 inner, openapi_spec=openapi_spec
             )
         else:
@@ -311,9 +311,15 @@ def _serialize_tool_schema(
             # won't trigger ref resolution, but passing it through keeps
             # the code path consistent and future-proof.
             inner = tool.output_schema.get("properties", {}).get("result", {})
-            data["output_example"] = _schema_to_compact_example(
+            example = _schema_to_compact_example(
                 inner, openapi_spec=openapi_spec
             )
+        # Guard against null results (e.g. empty-body endpoints where the
+        # schema has ``type: null`` and ``_schema_to_compact_example``
+        # returns ``None``).  Silently omit the field — agents can infer
+        # from ``output_schema`` that the result is null.
+        if example is not None:
+            data["output_example"] = example
     if tool.annotations:
         ann = tool.annotations
         data["annotations"] = {

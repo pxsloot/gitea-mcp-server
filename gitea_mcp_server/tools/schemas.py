@@ -67,6 +67,8 @@ def _deep_resolve_schema(
 def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
     """Check if the response for a given path/method is non-JSON (text/plain, etc.).
 
+    The ``method`` parameter is normalised to lowercase internally.
+
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
         path: The API path to check.
@@ -79,13 +81,52 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     path_item = paths.get(path)
     if not isinstance(path_item, dict):
         return False
-    operation = path_item.get(method)
+    operation = path_item.get(method.lower())
     if not isinstance(operation, dict):
         return False
     content_types = operation.get("x-original-content-types")
     if not isinstance(content_types, list):
         return False
     return any(ct.lower().strip() != "application/json" for ct in content_types)
+
+
+def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
+    """Check if the endpoint's success response has no body content.
+
+    Returns ``True`` when the primary success response (2xx) has no ``content``
+    key — e.g. 204 No Content, 205 Reset Content, or 202 Accepted with no body.
+    The ``method`` parameter is normalised to lowercase internally.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``).
+        path: The API path to check.
+        method: The HTTP method to check.
+
+    Returns:
+        ``True`` if a 2xx response exists without a ``content`` entry.
+    """
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return False
+    operation = path_item.get(method.lower())
+    if not isinstance(operation, dict):
+        return False
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return False
+    # Only check success codes that legitimately have no body content.
+    # 200/201 responses always carry content in a well-formed spec; a
+    # missing content key for those codes means the spec is incomplete
+    # (e.g. a test fixture), not that the endpoint is an empty-body one.
+    for code in ("202", "204", "205"):
+        response = responses.get(code)
+        if not isinstance(response, dict):
+            continue
+        content = response.get("content", {})
+        if not content:
+            return True
+    return False
 
 
 def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
@@ -191,6 +232,7 @@ __all__ = [
     "_get_success_schema",
     "_is_text_response",
     "_resolve_ref",
+    "_response_has_no_content",
     "_schema_type_is_array",
     "derive_output_schema",
 ]

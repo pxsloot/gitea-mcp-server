@@ -119,6 +119,11 @@ def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) 
     # 200/201 responses always carry content in a well-formed spec; a
     # missing content key for those codes means the spec is incomplete
     # (e.g. a test fixture), not that the endpoint is an empty-body one.
+    #
+    # 203 (Non-Authoritative Information) and 206 (Partial Content)
+    # are intentionally excluded: 203 always mirrors a 200 body, and
+    # 206 only makes sense for range requests on endpoints that also
+    # define 200 — both would have ``content`` in practice.
     for code in ("202", "204", "205"):
         response = responses.get(code)
         if not isinstance(response, dict):
@@ -137,6 +142,10 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
 ) -> dict[str, Any] | None:
     """Extract the 200/201 response schema for a path and method.
 
+    The ``method`` parameter is normalised to lowercase internally,
+    consistent with :func:`_is_text_response` and
+    :func:`_response_has_no_content`.
+
     When ``resolve=True`` (default), all nested ``$ref`` pointers are
     expanded via ``_deep_resolve_schema``.  When ``resolve=False``, the
     schema is returned with ``$ref`` intact - used by the compact example
@@ -153,6 +162,7 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
         The response schema (resolved or raw), or ``None`` if no JSON
         response is found.
     """
+    method = method.lower()
     if _is_text_response(openapi_spec, path, method):
         return None
 

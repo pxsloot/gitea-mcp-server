@@ -530,6 +530,160 @@ class TestIsTextResponse:
         from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
+    def test_uppercase_method_normalized(self, text_spec):
+        """Uppercase method should be normalized to lowercase internally."""
+        from gitea_mcp_server.tools.schemas import _is_text_response
+        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
+
+    def test_uppercase_json_endpoint_not_text(self, text_spec):
+        """Uppercase method on JSON endpoint should still return False."""
+        from gitea_mcp_server.tools.schemas import _is_text_response
+        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
+
+
+class TestResponseHasNoContent:
+    """Tests for _response_has_no_content function."""
+
+    @pytest.fixture
+    def empty_body_spec(self):
+        return {
+            "openapi": "3.1.1",
+            "paths": {
+                "/repos/{owner}/{repo}/issues/{index}": {
+                    "delete": {
+                        "responses": {
+                            "204": {"description": "No Content"},
+                        }
+                    },
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/no-202": {
+                    "delete": {
+                        "responses": {
+                            "202": {"description": "Accepted, no body"},
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/no-205": {
+                    "delete": {
+                        "responses": {
+                            "205": {"description": "Reset Content"},
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/has-content": {
+                    "delete": {
+                        "responses": {
+                            "204": {
+                                "description": "No Content with body (edge case)",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                    }
+                                },
+                            },
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/json-endpoint": {
+                    "post": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                },
+                "/missing-path": {
+                    "get": {
+                        "responses": {
+                            "200": {"description": "OK"},
+                        }
+                    },
+                },
+            },
+        }
+
+    def test_204_no_content_detected(self, empty_body_spec):
+        """204 No Content response should return True."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
+
+    def test_202_no_content_detected(self, empty_body_spec):
+        """202 Accepted with no body should return True."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
+
+    def test_205_no_content_detected(self, empty_body_spec):
+        """205 Reset Content should return True."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
+
+    def test_json_endpoint_returns_false(self, empty_body_spec):
+        """JSON endpoint with 200 should return False."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
+
+    def test_get_with_200_returns_false(self, empty_body_spec):
+        """GET endpoint with 200 response should return False."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
+
+    def test_response_with_content_returns_false(self, empty_body_spec):
+        """204 with content body should NOT be flagged as empty."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
+
+    def test_missing_path_returns_false(self, empty_body_spec):
+        """Nonexistent path should return False."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
+
+    def test_uppercase_method_normalized(self, empty_body_spec):
+        """Uppercase method should be normalized to lowercase internally."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True
+
+    def test_non_dict_responses_returns_false(self):
+        """When responses is not a dict, should return False."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "delete": {
+                        "responses": "not a dict",
+                    }
+                }
+            },
+        }
+        assert _response_has_no_content(spec, "/test", "delete") is False
+
+    def test_non_dict_path_item_returns_false(self):
+        """When path_item is not a dict, should return False."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": "not a dict",
+            },
+        }
+        assert _response_has_no_content(spec, "/test", "delete") is False
+
 
 class TestTextResponseOutputSchema:
     """Tests that text/plain endpoints get no output_schema."""

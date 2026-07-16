@@ -27,9 +27,12 @@ no other file changes needed.
 
 from __future__ import annotations
 
+import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -50,8 +53,13 @@ class VirtualParam:
         default: Default value used when the agent omits the parameter.
         description: Description shown to agents in the tool schema.
         visible: Whether to include this param in tool schemas.
-            Set to ``False`` at startup for scope-gated params like
-            ``sudo`` when the active token lacks the required scope.
+            Set to ``False`` at startup for scope-gated params when the
+            active token lacks the required scope.
+        required_scope: Optional Gitea API scope string (e.g. ``"sudo"``)
+            required for this parameter to be visible.  ``None`` (default)
+            means no scope restriction — the parameter is always visible.
+            At startup, :func:`apply_scope_filter` checks the active
+            token's scopes and sets ``visible`` accordingly.
         pre_hook: Optional ``(value) → None`` callback invoked **after**
             the parameter is extracted from kwargs but **before** the HTTP
             request is made.  Useful for storing the value in a context
@@ -65,6 +73,7 @@ class VirtualParam:
     default: Any
     description: str
     visible: bool = True
+    required_scope: str | None = None
     pre_hook: Callable[[Any], None] | None = None
     post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
 
@@ -101,6 +110,8 @@ def _sudo_post_hook(result: ToolResult, _value: Any) -> ToolResult:
 
 
 # Register the sudo virtual param so it appears in every tool's schema.
+# ``required_scope="sudo"`` means this param is hidden unless the active
+# token has the ``sudo`` scope (or the ``all``-access token type).
 _VIRTUAL_PARAMS["sudo"] = VirtualParam(
     schema={"type": "string", "minLength": 1},
     default=None,
@@ -109,6 +120,7 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
         "When set to a valid username, the Gitea API executes "
         'the request as that user.  Example: "alice"'
     ),
+    required_scope="sudo",
     pre_hook=_sudo_pre_hook,
     post_hook=_sudo_post_hook,
 )
@@ -117,17 +129,37 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 # Scope-based visibility control
 # ---------------------------------------------------------------------------
 
-def set_sudo_visible(visible: bool) -> None:
-    """Set whether the ``sudo`` parameter appears in tool schemas.
+def apply_scope_filter(available_scopes: set[str]) -> None:
+    """Set visibility on every virtual param based on the active token's scopes.
 
-    Call once at startup after determining the active token's scopes.
-    When set to ``False``, ``inject_into`` will skip adding the ``sudo``
-    virtual param to every tool's schema, so agents never discover it.
+    Params with ``required_scope=None`` are always visible (left untouched).
+    Params with a ``required_scope`` are hidden unless the active token
+    has that scope or the ``"all"``-access shorthand (which implies every
+    scope at write level).
+
+    Call once at startup after fetching the active token's scopes, before
+    :func:`inject_into` runs.
+
+    Future extension: ``required_scope`` overrides could be sourced from
+    an ``mcp_extensions.yaml`` or ``mcp_filter.yaml`` config file, letting
+    operators adjust scope gating without code changes.
 
     Args:
-        visible: ``True`` to show sudo (default), ``False`` to hide it.
+        available_scopes: Set of scope strings from the active token.
     """
-    _VIRTUAL_PARAMS["sudo"].visible = visible
+    for name, vp in _VIRTUAL_PARAMS.items():
+        if vp.required_scope is None:
+            continue
+        vp.visible = (
+            vp.required_scope in available_scopes
+            or "all" in available_scopes
+        )
+        logger.info(
+            "Scope filter: param '%s' %s (required_scope=%s)",
+            name,
+            "visible" if vp.visible else "hidden",
+            vp.required_scope,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +173,9 @@ def inject_into(parameters: dict[str, Any]) -> None:
     Idempotent - skips any parameter name that already exists, which also
     guards against shadowing a real API parameter.
 
-    Scope-gated params (like ``sudo``) are only injected when the active
-    token has the required scope - see :func:`set_sudo_visible`.
+    Scope-gated params (those with a ``required_scope`` set) are only
+    injected when the active token has the required scope - see
+    :func:`apply_scope_filter`.
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
@@ -204,9 +237,9 @@ def apply_to(
 __all__ = [
     "VirtualParam",
     "apply_pre_hooks",
+    "apply_scope_filter",
     "apply_to",
     "extract_from",
     "inject_into",
-    "set_sudo_visible",
     "sudo_context",
 ]

@@ -188,12 +188,18 @@ The lifecycle functions are called automatically in ``_wrap()``:
 4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
 
 **Scope-gating**: If a param only makes sense when the active token has a
-particular scope (like ``sudo``), set ``visible=False`` on its
-``VirtualParam`` entry.  The helper ``set_sudo_visible(visible)`` in
-``virtual_params.py`` does this — call it from ``server.py``'s
-``_apply_permission_filter()`` after fetching token scopes.
-``inject_into`` checks ``vp.visible`` generically, so agents never
-discover a param they can't use.
+particular scope (e.g. ``sudo``), set ``required_scope`` on its
+``VirtualParam`` entry to the scope string (e.g. ``required_scope="sudo"``).
+At startup, call :func:`apply_scope_filter(available_scopes)
+<gitea_mcp_server.tools.virtual_params.apply_scope_filter>` — it sets
+``visible`` on each param based on whether the token has the required
+scope (or the ``"all"``-access shorthand).  ``inject_into`` checks
+``vp.visible`` generically, so agents never discover a param they can't
+use.
+
+To add a new scope-gated param: just add ``required_scope="scope_name"``
+to its ``VirtualParam(...)`` registration.  ``apply_scope_filter`` picks
+it up automatically — no other file changes needed.
 
 .. note::
 

@@ -49,7 +49,9 @@ if _env_path.exists():
 
 LIVE_URL: str | None = os.getenv("GITEA_URL")
 LIVE_TOKEN: str | None = os.getenv("GITEA_TOKEN")
-_LIVE_ADMIN: str = os.getenv("GITEA_ADMIN_USER", "admin-user")
+# Note: admin username is "admin-user" (defined in gitea_dev_start.sh).
+# The admin token from .env.dev.local has sudo scope so _create_test_data()
+# can act on behalf of the bot test user.
 
 # ---------------------------------------------------------------------------
 # Connectivity check (evaluated at collection time)

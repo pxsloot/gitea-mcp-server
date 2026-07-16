@@ -482,3 +482,53 @@ class TestNonJsonEndpoint:
         # The text content carries the raw diff.
         assert len(result.content) > 0
         assert result.content[0].text == diff
+
+    async def test_transport_level_text_output_validation(
+        self, mcp_server,
+    ) -> None:
+        """Drive a text/plain endpoint through real MCP transport to exercise
+        the SDK ``LowLevelServer.call_tool`` output validation gate.
+
+        Unlike ``test_full_stack_text_validation_round_trip`` which uses
+        ``mcp_server.call_tool()`` (bypasses the MCP SDK ``call_tool``
+        decorator and its ``jsonschema.validate()``), this test uses
+        ``fastmcp.Client(mcp_server)`` in-memory transport.  The Client
+        sends a real ``CallToolRequest`` through the transport layer,
+        which the SDK server's ``call_tool`` handler processes with full
+        input/output schema validation.
+
+        Regression guard for #437: the text/plain endpoint must not
+        trigger an ``Output validation error`` at the transport level.
+        """
+        from fastmcp import Client
+
+        diff = (
+            "diff --git a/README.md b/README.md\n"
+            "index 123..456 100644\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+            "@@ -1 +1 @@\n"
+            "-old line\n"
+            "+new line\n"
+        )
+        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
+            200, text=diff,
+        )
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool(
+                "gitea_repo_download_pull_diff_or_patch",
+                {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+                raise_on_error=False,
+            )
+
+        # If the SDK output validation rejects the response, is_error
+        # will be True with "Output validation error" in the message.
+        assert not result.is_error, (
+            f"Expected no output validation error, got: "
+            f"{result.content[0].text if result.content else 'empty'}"
+        )
+        # The client automatically unwraps ``{"result": <diff>}``.
+        assert result.data == diff, (
+            f"Expected diff text in result.data, got: {result.data!r}"
+        )

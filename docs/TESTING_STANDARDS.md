@@ -58,14 +58,19 @@ tests/
 │   ├── test_tool_search.py
 │   ├── test_unified_search.py
 │   └── test_validation.py
-└── integration/
-    ├── __init__.py
-    ├── test_cache_invalidation.py
-    ├── test_http_transport_server.py
-    ├── test_lazy_loading.py
-    ├── test_mcp_extensions_integration.py
-    ├── test_resources_integration.py
-    └── test_server.py
+├── integration/
+│   ├── __init__.py
+│   ├── test_cache_invalidation.py
+│   ├── test_http_transport_server.py
+│   ├── test_lazy_loading.py
+│   ├── test_mcp_extensions_integration.py
+│   ├── test_resources_integration.py
+│   ├── test_server.py
+│   └── ...
+├── live/
+│   ├── __init__.py
+│   ├── conftest.py         # Dotenv loading, skip-if-unreachable, test data lifecycle
+│   └── test_diff_endpoint.py
 ```
 
 ### Naming Conventions
@@ -159,6 +164,33 @@ async def test_server_creates_tools_from_spec(self):
     tool_names = [t.name for t in tools]
     assert "gitea_issue_list_issues" in tool_names
 ```
+
+### Zone 5: Live End-to-End (tests/live/)
+
+**What it tests**: The full production path — real Gitea instance, real MCP server
+binary over stdio, real MCP transport. Exercises transport-level output
+validation that in-memory ``server.call_tool()`` bypasses.
+
+**Pattern**: Tests in ``tests/live/`` connect to a real Gitea/Forgejo instance,
+launch the MCP server binary over stdio, and call tools through
+``fastmcp.Client`` or the raw MCP SDK. Test data (user, repo, branch, PR) is
+created via the admin API and cleaned up on teardown.
+
+**Prerequisite**: A running Gitea instance with credentials in
+``.env.dev.local`` (written by ``gitea_dev_start.sh``).
+
+**Skip behaviour**: Tests are marked with ``@pytest.mark.live`` and skip
+gracefully when no Gitea instance is reachable (checked at collection time).
+
+```bash
+# Requires .env.dev.local from gitea_dev_start.sh
+uv run pytest tests/live/ -v
+
+# Automatically skips when Gitea is not running
+uv run pytest tests/live/ -v    # → 3 skipped
+```
+
+**Coverage target**: Not enforced (requires external service).
 
 ## Testing Frameworks and Tools
 

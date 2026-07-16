@@ -159,6 +159,20 @@ scope-gated: it's only useful when the token actually has the `sudo` scope.
 scopes (or `"all"` is present). `inject_into()` then only adds visible params
 to tool schemas.
 
+To add a new scope-gated param:
+
+```python
+_VIRTUAL_PARAMS["admin_mode"] = VirtualParam(
+    schema={"type": "boolean"},
+    default=False,
+    description="Enable admin mode.",
+    required_scope="sudo",  # ← this is all you need
+)
+```
+
+That's it. `apply_scope_filter` picks it up automatically — no other file
+changes needed.
+
 ---
 
 ## Module Map

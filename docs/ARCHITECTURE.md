@@ -203,7 +203,7 @@ The customization layers as applied during server startup:
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON) |
 | `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs |
 | `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases, labels) |
-| `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources |
+| `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
 
 ### Server Setup Orchestration (startup-only)
@@ -222,7 +222,7 @@ The customization layers as applied during server startup:
 | Module | Role |
 |--------|------|
 | `models.py` | TypedDict models for structured output types (`ToolSearchEntry`, `ResourceEntry`, `ResourceListing`, `DocEntry`, `UnifiedSearchItem`, `ToolSchemaResult`, `SimpleStringResult`) — zero runtime overhead, pure annotation types |
-| `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/` |
+| `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/`; see `docs/SCOPE_MODEL.md` |
 | `search.py` | BM25 search engine infrastructure (`BM25SearchEngine`) — generic text indexing and ranking, used by `tools/search.py` |
 | `pagination.py` | Pagination metadata injection: `capture_pagination_headers()` httpx event hook, `add_pagination_metadata()` shared helper for adding `has_more`/`next_offset`/`total_count` to structured content, used by both API tools (`_ToolWrappingTransform`) and synthetic tools (search, list, docs) |
 

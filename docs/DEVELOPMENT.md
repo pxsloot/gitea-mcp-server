@@ -98,8 +98,8 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo`` (user impersonation, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
-Scope derivation (`derive_required_scope`) lives in `resources/scope.py` -- it is
-shared between tool customization and resource registration.
+Scope derivation — see `docs/SCOPE_MODEL.md` for the full scope model
+(derivation, filtering, and virtual-param gating).
 
 The customization pipeline has two phases:
 
@@ -187,19 +187,9 @@ The lifecycle functions are called automatically in ``_wrap()``:
    ``_sudo_pre_hook``)
 4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
 
-**Scope-gating**: If a param only makes sense when the active token has a
-particular scope (e.g. ``sudo``), set ``required_scope`` on its
-``VirtualParam`` entry to the scope string (e.g. ``required_scope="sudo"``).
-At startup, call :func:`apply_scope_filter(available_scopes)
-<gitea_mcp_server.tools.virtual_params.apply_scope_filter>` — it sets
-``visible`` on each param based on whether the token has the required
-scope (or the ``"all"``-access shorthand).  ``inject_into`` checks
-``vp.visible`` generically, so agents never discover a param they can't
-use.
-
-To add a new scope-gated param: just add ``required_scope="scope_name"``
-to its ``VirtualParam(...)`` registration.  ``apply_scope_filter`` picks
-it up automatically — no other file changes needed.
+**Scope-gating**: Virtual parameters can be gated behind token scopes.
+See `docs/SCOPE_MODEL.md` → "Virtual Parameter Scope Gating" for the
+mechanics and how to add a new scope-gated param.
 
 .. note::
 

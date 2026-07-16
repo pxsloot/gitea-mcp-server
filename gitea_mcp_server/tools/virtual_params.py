@@ -27,9 +27,12 @@ no other file changes needed.
 
 from __future__ import annotations
 
+import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -150,6 +153,12 @@ def apply_scope_filter(available_scopes: set[str]) -> None:
         vp.visible = (
             vp.required_scope in available_scopes
             or "all" in available_scopes
+        )
+        logger.info(
+            "Scope filter: param '%s' %s (required_scope=%s)",
+            name,
+            "visible" if vp.visible else "hidden",
+            vp.required_scope,
         )
 
 

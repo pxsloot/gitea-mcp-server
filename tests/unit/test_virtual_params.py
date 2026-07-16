@@ -222,11 +222,17 @@ class TestSudoHooks:
 class TestApplyScopeFilter:
     """Tests that apply_scope_filter sets visibility based on required_scope."""
 
-    def _set_sudo_visible(self, visible: bool) -> None:
-        """Directly set sudo's visible flag (test helper)."""
+    def setup_method(self) -> None:
+        """Save initial sudo visibility before each test."""
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
-        _VIRTUAL_PARAMS["sudo"].visible = visible
+        self._original_sudo_visible = _VIRTUAL_PARAMS["sudo"].visible
+
+    def teardown_method(self) -> None:
+        """Restore original sudo visibility after each test."""
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        _VIRTUAL_PARAMS["sudo"].visible = self._original_sudo_visible
 
     def test_hides_sudo_when_scope_missing(self):
         """sudo hidden when 'sudo' not in available scopes."""
@@ -234,7 +240,6 @@ class TestApplyScopeFilter:
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
         assert _VIRTUAL_PARAMS["sudo"].visible is False
-        self._set_sudo_visible(True)
 
     def test_shows_sudo_when_scope_present(self):
         """sudo shown when 'sudo' in available scopes."""
@@ -256,7 +261,6 @@ class TestApplyScopeFilter:
         params: dict = {"properties": {}}
         inject_into(params)
         assert "sudo" not in params["properties"]
-        self._set_sudo_visible(True)
 
     def test_inject_into_includes_sudo_when_visible(self):
         """sudo added to tool schema when visible (scope present)."""
@@ -271,12 +275,9 @@ class TestApplyScopeFilter:
         """Params with required_scope=None are not affected by scope filter."""
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
-        # A param with no scope restriction should keep its visible=True
         apply_scope_filter(set())
-        # (sudo has required_scope="sudo", it should be False now)
-
+        # sudo has required_scope="sudo", should be hidden with empty scopes
         assert _VIRTUAL_PARAMS["sudo"].visible is False
-        self._set_sudo_visible(True)
 
 
 class TestRequiredScope:

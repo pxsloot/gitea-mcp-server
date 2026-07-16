@@ -15,6 +15,7 @@ from mcp.types import TextContent
 from gitea_mcp_server.tools.virtual_params import (
     VirtualParam,
     apply_pre_hooks,
+    apply_scope_filter,
     apply_to,
     extract_from,
     inject_into,
@@ -218,41 +219,86 @@ class TestSudoHooks:
 # ---------------------------------------------------------------------------
 
 
-class TestSudoVisibility:
-    """Tests that the sudo param is hidden/shown based on _sudo_visible flag."""
+class TestApplyScopeFilter:
+    """Tests that apply_scope_filter sets visibility based on required_scope."""
 
-    def _restore_sudo(self) -> None:
-        """Restore sudo visibility to True after test."""
-        from gitea_mcp_server.tools.virtual_params import set_sudo_visible
+    def _set_sudo_visible(self, visible: bool) -> None:
+        """Directly set sudo's visible flag (test helper)."""
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
-        set_sudo_visible(True)
+        _VIRTUAL_PARAMS["sudo"].visible = visible
+
+    def test_hides_sudo_when_scope_missing(self):
+        """sudo hidden when 'sudo' not in available scopes."""
+        apply_scope_filter({"read:repository"})
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert _VIRTUAL_PARAMS["sudo"].visible is False
+        self._set_sudo_visible(True)
+
+    def test_shows_sudo_when_scope_present(self):
+        """sudo shown when 'sudo' in available scopes."""
+        apply_scope_filter({"sudo", "read:repository"})
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert _VIRTUAL_PARAMS["sudo"].visible is True
+
+    def test_shows_sudo_when_all_present(self):
+        """sudo shown when 'all' in available scopes (full-access token)."""
+        apply_scope_filter({"all"})
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert _VIRTUAL_PARAMS["sudo"].visible is True
 
     def test_inject_into_skips_sudo_when_hidden(self):
-        """sudo not added to tool schema when _sudo_visible is False."""
-        from gitea_mcp_server.tools.virtual_params import (
-            inject_into,
-            set_sudo_visible,
-        )
-
-        set_sudo_visible(False)
+        """sudo not added to tool schema when hidden by scope filter."""
+        apply_scope_filter({"read:repository"})
         params: dict = {"properties": {}}
         inject_into(params)
         assert "sudo" not in params["properties"]
-        self._restore_sudo()
+        self._set_sudo_visible(True)
 
     def test_inject_into_includes_sudo_when_visible(self):
-        """sudo added to tool schema when _sudo_visible is True (default)."""
-        from gitea_mcp_server.tools.virtual_params import (
-            inject_into,
-            set_sudo_visible,
-        )
-
-        set_sudo_visible(True)
+        """sudo added to tool schema when visible (scope present)."""
+        apply_scope_filter({"sudo"})
         params: dict = {"properties": {}}
         inject_into(params)
         assert "sudo" in params["properties"]
         assert params["properties"]["sudo"]["type"] == "string"
         assert params["properties"]["sudo"]["minLength"] == 1
+
+    def test_leaves_unrestricted_params_untouched(self):
+        """Params with required_scope=None are not affected by scope filter."""
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        # A param with no scope restriction should keep its visible=True
+        apply_scope_filter(set())
+        # (sudo has required_scope="sudo", it should be False now)
+
+        assert _VIRTUAL_PARAMS["sudo"].visible is False
+        self._set_sudo_visible(True)
+
+
+class TestRequiredScope:
+    """Tests for the required_scope field on VirtualParam."""
+
+    def test_default_is_none(self):
+        """required_scope defaults to None (no restriction)."""
+        vp = VirtualParam(schema={}, default=None, description="test")
+        assert vp.required_scope is None
+
+    def test_can_be_set(self):
+        """required_scope can be set to a scope string."""
+        vp = VirtualParam(
+            schema={}, default=None, description="test", required_scope="sudo"
+        )
+        assert vp.required_scope == "sudo"
+
+    def test_sudo_in_registry_has_required_scope(self):
+        """sudo virtual param has required_scope='sudo'."""
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert _VIRTUAL_PARAMS["sudo"].required_scope == "sudo"
 
 
 class TestSudoErrorPaths:
@@ -286,18 +332,18 @@ class TestSudoErrorPaths:
         assert final is result  # passthrough
 
     def test_extract_from_still_pops_sudo_when_hidden(self):
-        """extract_from pops sudo from kwargs even when _sudo_visible is False."""
+        """extract_from pops sudo from kwargs even when invisible."""
         from gitea_mcp_server.tools.virtual_params import (
+            _VIRTUAL_PARAMS,
             extract_from,
-            set_sudo_visible,
         )
 
-        set_sudo_visible(False)
+        _VIRTUAL_PARAMS["sudo"].visible = False
         kwargs = {"owner": "test", "sudo": "cheater"}
         extracted = extract_from(kwargs)
         assert "sudo" not in kwargs  # still popped from kwargs
         assert extracted == {"sudo": "cheater"}
-        set_sudo_visible(True)
+        _VIRTUAL_PARAMS["sudo"].visible = True
 
     def test_post_hook_double_clear_is_safe(self):
         """Calling post_hook when context is already None is safe (no-op)."""

@@ -49,8 +49,11 @@ uv run pytest tests/unit/test_tool_annotations.py -v
 # With coverage
 uv run pytest --cov=gitea_mcp_server
 
-# Integration tests (need running Gitea + .env)
+# Integration tests (respx-mocked, no external deps)
 uv run pytest tests/integration/
+
+# Live end-to-end tests (need real Gitea instance + .env.dev.local)
+uv run pytest tests/live/
 ```
 
 See `docs/TESTING_STANDARDS.md` for full details.

@@ -646,10 +646,6 @@ def register_synthetic_tools(
             "type": "object",
             "properties": {
                 "result": {
-                    "anyOf": [
-                        {"type": "object"},
-                        {"type": "array"},
-                    ],
                     "description": "Result of the tool call, wrapped in result for consistency",
                     "example": {"id": 1, "name": "example-repo", "description": "Example output"},
                 },

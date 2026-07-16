@@ -464,6 +464,34 @@ For non-JSON endpoints, this extension is absent (no wrapping was applied in
 Stage 2), so `output_schema = None` is paired with the
 `_ToolWrappingTransform` fallback to produce the same `{"result": text}` shape.
 
+### Empty-Body Responses (202, 204, 205)
+
+Some Gitea endpoints return success with no response body (204 No Content,
+205 Reset Content, or 202 Accepted without a body).  Like non-JSON endpoints,
+`_get_success_schema` finds nothing and returns `None` — but for a different
+reason: no `content` entry exists on the success response at all.
+
+The fix follows the same two-phase pattern as the text/plain handling:
+
+**Schema time** (`server_setup/mcp_builder.py:_customize_metadata`):
+`_response_has_no_content()` in `tools/schemas.py` checks the spec for a
+2xx response without a `content` key (only 202/204/205 are checked — 200/201
+always carry content in a well-formed spec).  When detected, a lightweight
+schema is set:
+```python
+{"type": "object", "properties": {"result": {"type": "null"}}}
+```
+This triggers `x-fastmcp-wrap-result: true` and tells the MCP SDK to expect
+structured output.
+
+**Runtime** (`_pipeline_with_context`): when `is_empty_response` is true and
+`structured_content` is still `None` (FastMCP had no JSON to unwrap), the
+wrapping handler returns `ToolResult(content=[""], structured_content={"result": None})`.
+
+The `_serialize_tool_schema` function guards against the `type: null` schema
+producing a `None` output_example — that field is simply omitted when the
+example would be null, since agents can infer the shape from `output_schema`.
+
 ---
 
 ## Data Flow: Agent Calls the Unified Search

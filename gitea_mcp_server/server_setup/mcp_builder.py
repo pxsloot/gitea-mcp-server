@@ -41,6 +41,7 @@ from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.schemas import (
     _get_success_schema,
     _is_text_response,
+    _response_has_no_content,
     derive_output_schema,
 )
 from gitea_mcp_server.tools.virtual_params import (
@@ -126,7 +127,7 @@ def _customize_metadata(
     is_text_response = _is_text_response(
         openapi_spec,
         getattr(route, "path", ""),
-        getattr(route, "method", "").lower(),
+        getattr(route, "method", ""),
     )
 
     # Lightweight fallback schema for text/plain endpoints so agents
@@ -137,6 +138,28 @@ def _customize_metadata(
             "properties": {"result": {"type": "string"}},
         }
         component.output_schema = output_schema
+
+    # Detect endpoints whose success response has no body content (e.g. 204
+    # No Content).  Set a minimal schema so the MCP transport layer has
+    # proper guidance, and store the flag for runtime wrapping.
+    has_no_content = False
+    if output_schema is None and not is_text_response:
+        has_no_content = _response_has_no_content(
+            openapi_spec,
+            getattr(route, "path", ""),
+            getattr(route, "method", ""),
+        )
+        if has_no_content:
+            output_schema = {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "null",
+                        "description": "No content returned. The operation completed successfully.",
+                    },
+                },
+            }
+            component.output_schema = output_schema
 
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
@@ -165,6 +188,7 @@ def _customize_metadata(
     component_meta["_customization"] = {
         "has_labels": has_labels,
         "is_text_response": is_text_response,
+        "is_empty_response": has_no_content,
         "route_path": getattr(route, "path", ""),
         "route_method": getattr(route, "method", ""),
     }
@@ -292,6 +316,7 @@ class _ToolWrappingTransform(Transform):
         route_path: str = customization.get("route_path", "")
         route_method: str = customization.get("route_method", "")
         is_text_response = customization.get("is_text_response", False)
+        is_empty_response = customization.get("is_empty_response", False)
         output_schema = tool.output_schema
 
         # Resolve the current MCP Context if inside a request.
@@ -306,6 +331,7 @@ class _ToolWrappingTransform(Transform):
                     route_path,
                     route_method,
                     is_text_response,
+                    is_empty_response,
                     output_schema,
                 )
         except RuntimeError:
@@ -316,6 +342,7 @@ class _ToolWrappingTransform(Transform):
                 route_path,
                 route_method,
                 is_text_response,
+                is_empty_response,
                 output_schema,
             )
 
@@ -327,6 +354,7 @@ class _ToolWrappingTransform(Transform):
         route_path: str,
         route_method: str,
         is_text_response: bool,
+        is_empty_response: bool,
         output_schema: dict[str, Any] | None,
     ) -> ToolResult:
         """Run the tool execution pipeline with an optional Context.
@@ -393,6 +421,18 @@ class _ToolWrappingTransform(Transform):
             return ToolResult(
                 content=[TextContent(type="text", text=text)],
                 structured_content={"result": text},
+            )
+
+        # Empty-body success responses (204 No Content, 205 Reset Content):
+        # wrap in {"result": None} so it matches the explicit output_schema.
+        if (
+            is_empty_response
+            and isinstance(result, ToolResult)
+            and result.structured_content is None
+        ):
+            return ToolResult(
+                content=[TextContent(type="text", text="")],
+                structured_content={"result": None},
             )
 
         if (

@@ -10,7 +10,7 @@ so you can pick the right one without reading everything.
 | Audience   | Who                                                                 | Primary docs            |
 |------------|---------------------------------------------------------------------|-------------------------|
 | `agent`    | An LLM agent using the tools at runtime (instructions injected on connect) | `agent_instructions.md` |
-| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS` |
+| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS` |
 | `enduser`  | The person installing and wiring the server into their agent software | `README.md`, `AGENTS.md` |
 
 ## How the docs fit together
@@ -37,6 +37,7 @@ mention is a one-line pointer, not a copy.
 | `docs/TESTING_STANDARDS.md` | developer | reference | Test layout, zones, fixtures, mocking rules, coverage targets | You are writing or reviewing tests |
 | `docs/SCOPE_MODEL.md` | developer, agent | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
 | `docs/TOOL_ANNOTATIONS.md` | developer, agent | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
+| `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
 
 ## Topic ownership (canonical home)
 
@@ -53,3 +54,4 @@ truth. Other mentions point here.
 | OpenTelemetry | `DEVELOPMENT.md` |
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |
 | Testing patterns | `TESTING_STANDARDS.md` |
+| Agent instructions intent / editing rules | `AGENT_INSTRUCTIONS_STANDARDS.md` |

@@ -1,3 +1,9 @@
+---
+audience: developer
+type: reference
+covers: Annotation fields (title, tags, hints), how they are inferred
+---
+
 # Tool Annotations in Gitea MCP Server
 
 ## Overview

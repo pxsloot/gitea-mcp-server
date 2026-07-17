@@ -1,3 +1,9 @@
+---
+audience: developer
+type: how-to
+covers: Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL
+---
+
 # Development Guide
 
 ## Environment Setup
@@ -188,8 +194,11 @@ The lifecycle functions are called automatically in ``_wrap()``:
 4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
-See `docs/SCOPE_MODEL.md` → "Virtual Parameter Scope Gating" for the
-mechanics and how to add a new scope-gated param.
+The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single
+`required_scope=` on a `VirtualParam` is picked up automatically) is the
+canonical reference in `docs/SCOPE_MODEL.md` → "Virtual Parameter Scope Gating".
+From this doc's how-to angle: to add a new scope-gated param, set
+`required_scope=` on the `VirtualParam` and nothing else changes.
 
 .. note::
 
@@ -309,7 +318,13 @@ include:
 - The exclusion is applied as a **server-level transform**, covering tools,
   resources, and resource templates from all providers.
 
-### Execution order
+### Startup customization order
+
+This is the *startup* axis: the sequence in which customization is wired into
+the server before it serves requests. It is distinct from the *query-time*
+transform chain (TolerantSearch → GiteaNamespace → ExtensionMetadata →
+Exclusion → PermissionFilter), which is documented once in
+`docs/ARCHITECTURE.md`. The startup order:
 
 1. Token scope filter (`tool_filter.py`) — removes tools the token can't use
 2. Exclusion config (new) — removes excluded, re-adds included
@@ -328,12 +343,13 @@ include:
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't
    appear, check cache TTL or invalidate manually.
-6. **Schema changes** -- The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
-   If you add a new schema feature, ensure the converter preserves it.  Note:
-   the converter *intentionally* strips all `x-*` vendor extensions from
-   schema objects (Gitea leaks `x-go-name`/`x-go-package` Go internals) -- this
-   is by design, not a bug.  Operation-level `x-*` fields (`x-original-content-types`,
-   `x-mcp`) are preserved because the pipeline depends on them.
+   6. **Schema changes** -- The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
+    If you add a new schema feature, ensure the converter preserves it.  Note:
+    the converter *intentionally* strips all `x-*` vendor extensions from
+    schema objects (Gitea leaks `x-go-name`/`x-go-package` Go internals) -- this
+    is by design, not a bug.  The surgical scope of that strip (schema-level only,
+    operation-level `x-*` preserved) and the rationale are in
+    `docs/ARCHITECTURE.md` → "Vendor extension (`x-*`) stripping in the converter".
 
 ---
 

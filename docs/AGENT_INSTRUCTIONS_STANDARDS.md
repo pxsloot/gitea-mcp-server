@@ -1,3 +1,9 @@
+---
+audience: developer
+type: reference
+covers: The intent/contract for agent_instructions.md -- voice, content rules, what the doc must not do
+---
+
 # Agent Instructions Standards
 
 This document captures the *intent* behind

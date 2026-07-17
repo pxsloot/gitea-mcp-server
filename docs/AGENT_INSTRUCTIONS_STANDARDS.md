@@ -90,6 +90,13 @@ not grep patterns.
   `tool_info` result, cut it and point there.
 - Leak metadata into agent context. The doc is loaded verbatim; it must stay
   free of YAML frontmatter and unresolved `{{}}` placeholders.
+- Reference repo paths. The agent doc is shipped as a package resource and
+  injected as the server instructions; the repo's `docs/` directory is NOT
+  available to a deployed server. Never point to `docs/...`, `gitea-mcp-server/...`,
+  or name this file by path. The agent reaches everything else through the
+  discovery tools (`search_tools`, `search`, `tool_info`) and the workflow
+  guides (`read_doc` / `gitea://docs/guide/{topic}`). Refer to this doc only as
+  "these server instructions", never by filename.
 - Claim completeness it does not have, or omit the filtering that explains
   absence.
 

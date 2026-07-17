@@ -137,8 +137,11 @@ tool to get a feel for the shape, then trust the compact example day to day.
 
 ## Tool annotations
 
-Every tool carries four hints. Inspect via `tool_info(name)`. Full semantics in
-`docs/TOOL_ANNOTATIONS.md`.
+Every tool carries four hints. Inspect them via `tool_info(name)` -- the
+response includes the annotations object. These server instructions are the
+only doc injected at connection; everything else you need is reachable through
+the discovery tools (`search_tools`, `search`, `tool_info`) and the workflow
+guides (`read_doc`).
 
 | Hint             | Meaning                                  | Use for |
 |------------------|------------------------------------------|---------|

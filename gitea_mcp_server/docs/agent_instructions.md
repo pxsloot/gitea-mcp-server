@@ -72,6 +72,41 @@ call_tool("gitea_issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
 call_tool("gitea_issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
 
+## Parameters: never guess, always confirm
+
+There are ~400 tools and the exact parameters differ per tool. **Do not guess a
+parameter name or type from memory.** The authoritative contract for any tool
+is one call away:
+
+```
+tool_info("gitea_issue_create_issue")
+```
+
+`tool_info` returns the full parameter list (types, which are required, enums,
+and validation patterns), a compact `output_example`, the tool's annotations,
+and its tags. Trust that over anything you assume. Use `tool_info(name,
+detail="full")` only when you need the complete JSON Schema -- it is hundreds of
+lines on large tools, so run it rarely (once on a small tool to learn the
+shape, then trust the compact example day to day).
+
+That said, a handful of parameters recur across almost every tool because they
+mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
+
+| Parameter   | Type    | Notes |
+|-------------|---------|-------|
+| `owner`     | string  | repo owner; pattern `^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$`, 1-50 chars |
+| `repo`      | string  | repo name; same pattern rules, 1-100 chars |
+| `index`/`id`| integer | the resource id (int64) -- `index` for issues/PRs, `id` elsewhere |
+| `page`      | integer | 1-based page number for list/search tools (minimum 1) |
+| `limit`     | integer | page size for list/search tools |
+| `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
+| `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
+
+If a tool takes `owner`/`repo`, it almost certainly takes them as required
+strings. If it lists or searches, it almost certainly takes `page`+`limit`.
+Confirm the rest -- especially optional fields, enums, and the exact resource
+id parameter name -- with `tool_info`.
+
 ## Resources
 
 Resources give cached, pre-formatted reads. For any read-only operation, prefer
@@ -135,6 +170,12 @@ call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
 large (hundreds of lines on big tools). Use it rarely; run it once on a small
 tool to get a feel for the shape, then trust the compact example day to day.
 
+Note on output shape: `output_example` and `format=json` results reference
+nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These
+are not inline -- the full object is returned by the live API, but the example
+uses references to stay compact. Don't expect a flat structure; read the nested
+fields from the actual response.
+
 ## Tool annotations
 
 Every tool carries four hints. Inspect them via `tool_info(name)` -- the
@@ -161,6 +202,49 @@ powerful, and ordinary in mechanism. If a tool or the `sudo` virtual param is
 not visible, your token lacks the relevant scope; `gitea_user_get_current`
 tells you who you are, and the absence of a tool tells you what you cannot reach.
 
+## Edge cases you will hit (and how they look)
+
+These are the real shapes returned by this server. Knowing them saves a round-
+trip of confusion:
+
+- **Empty list is `[]`, not an error.** A list/search tool that matches nothing
+  returns an empty JSON array (or an empty Markdown section). That means *no
+  matching items* -- it is different from a tool being hidden by scope. Don't
+  treat `[]` as "I'm filtered out."
+
+- **`APINotFound` means the target doesn't exist -- or is out of scope.**
+  Example:
+  ```
+  Error calling tool 'gitea_issue_get_issue': APINotFound is a not found error response
+  Details: The target couldn't be found.
+  ```
+  This same error fires for a non-existent repo, a wrong issue `index`, or a
+  repo your token cannot see. The error does **not** tell you which -- reason
+  about it: if `gitea_user_current_list_repos` shows the repo, the 404 is a bad
+  `index`; if the repo isn't listed there, it's scope/visibility.
+
+- **Bad label names fail loudly with a helpful message.** Creating an issue or
+  PR with a label that doesn't exist in the repo returns:
+  ```
+  Error calling tool 'gitea_issue_create_issue': Unknown label name(s): ['NonExistentLabelXYZ'].
+  Available labels for docker/docker_python:
+  <empty -- repo has no labels yet>
+  Use list_labels(docker, docker_python) or read gitea://repos/docker/docker_python/labels to see details.
+  ```
+  Prefer integer label **IDs** over names for reliability, and confirm valid
+  labels via `gitea_issue_list_labels` or the `gitea://repos/{owner}/{repo}/labels`
+  resource before creating.
+
+- **`search` returns typed, cross-cutting results.** Unlike `search_tools`,
+  `search("create issue")` returns a mixed list tagged `tool` / `doc` /
+  `resource`, each with an `Access Uri`. Route each hit to the right access
+  path: `call_tool` for tools, `read_doc` for guides, `read_resource` for data.
+
+- **Pagination is explicit.** List/search tools take `page` (1-based) and
+  `limit`. There is no auto-iteration; to read all pages, loop `page` upward
+  until you get `[]`. A short page is not necessarily the last one unless the
+  next page is empty.
+
 ## Troubleshooting
 
 - **"Unknown tool"** -> the name is wrong; `search_tools(...)` to find it.
@@ -169,3 +253,29 @@ tells you who you are, and the absence of a tool tells you what you cannot reach
 - **Empty resource** -> reflects permissions; use `gitea_user_current_list_repos` for private repos.
 - **"Only administrators allowed to sudo"** -> your token lacks the `sudo`/`all` scope; the `sudo` param is correctly hidden.
 - **Need full schema** -> `tool_info(name, detail="full")` or `read_resource("gitea://tool/{name}/schema")`.
+
+## Workflow Guides
+
+These guides explain Forgejo workflows and concepts beyond individual API tools:
+
+| Guide | Description |
+|-------|-------------|
+| `actions` | Forgejo Actions -- runner setup, workflow syntax, secrets, variables, OIDC se... |
+| `authentication` | Authentication methods in Gitea/Forgejo -- OAuth2 providers, LDAP, PAM, OIDC,... |
+| `branch-protection` | Branch protection rules (force push, approvals, merge restrictions), glob pat... |
+| `issue-tracking` | Issue tracking in Gitea/Forgejo -- creating and managing issues, milestones, ... |
+| `labels` | How Gitea/Forgejo labels work -- creating, archiving, scoped/exclusive labels... |
+| `organizations` | Managing organizations and teams in Gitea/Forgejo -- creating orgs, team type... |
+| `package-registry` | Package registry in Gitea/Forgejo -- supported formats, authentication, publi... |
+| `permissions` | Permission model for repositories -- collaborator roles, organization teams, ... |
+| `product-documentation` | Use the repository wiki as a product documentation layer - holding vision, PR... |
+| `pull-requests` | Pull request workflow in Gitea/Forgejo -- creating PRs, merge styles (merge/s... |
+| `repositories` | Repository lifecycle management -- creation, mirrors (push/pull), push-to-cre... |
+| `server-admin` | Gitea/Forgejo server administration -- configuration cheat sheet, moderation ... |
+| `templates` | Issue and pull request templates in Gitea/Forgejo -- YAML-based forms, markdo... |
+| `token-scopes` | How Gitea/Forgejo API tokens work, the scope model, repository access restric... |
+| `webhooks` | Webhooks in Gitea/Forgejo -- event types, payload structure, creation, and ma... |
+| `wiki` | Built-in wiki in Gitea/Forgejo -- git-backed storage, permissions, markdown c... |
+
+Use `search_docs(query)` to find guides by topic, or `read_doc(topic)` to read one.
+Guides are also available as resources at `gitea://docs/guide/{{topic}}`.

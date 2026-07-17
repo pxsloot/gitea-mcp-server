@@ -87,7 +87,7 @@ reference) and apply it **pragmatically**, not dogmatically:
 
 - We label docs with a `type` that reflects their dominant Diátaxis purpose.
 - We do **not** force a folder restructure into four quadrants for a small doc
-  set. A 5–6 doc project does not need the full quadrant machinery; the
+  set. A 5-6 doc project does not need the full quadrant machinery; the
   `audience` + `type` frontmatter plus `INDEX.md` gives the same navigability
   without the overhead.
 - A single doc may blend types (a how-to that links to an explanation). That is

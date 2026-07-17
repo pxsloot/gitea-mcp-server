@@ -35,8 +35,8 @@ mention is a one-line pointer, not a copy.
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content-type handling, runtime flows | You need to understand how the server is built |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
 | `docs/TESTING_STANDARDS.md` | developer | reference | Test layout, zones, fixtures, mocking rules, coverage targets | You are writing or reviewing tests |
-| `docs/SCOPE_MODEL.md` | developer, agent | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
-| `docs/TOOL_ANNOTATIONS.md` | developer, agent | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
+| `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
+| `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
 | `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
 
 ## Topic ownership (canonical home)

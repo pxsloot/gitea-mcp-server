@@ -41,7 +41,8 @@ Domains: `issue`, `repo`/`repository`, `pull_request`, `user`, `org`,
 
 Synthetic (discovery) tools are prefixed the same way: `gitea_search`,
 `gitea_search_tools`, `gitea_tool_info`, `gitea_call_tool`, `gitea_list_resources`,
-`gitea_read_resource`, `gitea_search_resources`, `gitea_read_doc`, `gitea_search_docs`.
+`gitea_read_resource`, `gitea_search_resources`, `gitea_read_doc`, `gitea_search_docs`,
+`gitea_resolve_type`.
 They carry the `synthetic` tag in search results.
 
 **Workflow**: form a guess from the grammar, then confirm with `search_tools`
@@ -120,6 +121,7 @@ Resources give cached, pre-formatted reads. For any read-only operation, prefer
 - `gitea://version`                         -> server version
 - `gitea://server/info`                     -> server metadata
 - `gitea://tool/{name}/schema`              -> full tool schema (JSON)
+- `gitea://types/{typeName}`                -> resolved type schema (JSON with full details)
 
 List with `list_resources(tag=..., type=...)`; search with `search_resources(query)`.
 
@@ -175,6 +177,12 @@ nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These
 are not inline -- the full object is returned by the live API, but the example
 uses references to stay compact. Don't expect a flat structure; read the nested
 fields from the actual response.
+
+When you see a ``$ref:TypeName`` marker and need to know what fields that type
+contains, use ``call_tool("gitea_resolve_type", {"name": "TypeName"})`` or
+read ``gitea://types/{TypeName}`` for a cached JSON read. The ``resolve_type``
+tool also shows which tools return or accept each type. Run
+``tool_info("gitea_resolve_type")`` for the full parameter and output schema.
 
 ## Tool annotations
 

@@ -46,6 +46,7 @@ from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+from gitea_mcp_server.tools.type_info import register_type_tools
 from gitea_mcp_server.tools.virtual_params import apply_scope_filter
 from gitea_mcp_server.unified_search import register_unified_search
 
@@ -328,6 +329,7 @@ async def create_mcp_server(
     _setup_caching_middleware(mcp, label_service=label_service)
     _setup_tool_discovery(mcp, config, doc_manager, extensions, openapi_spec=openapi_spec)
     register_all_resources(mcp, gitea_client, openapi_spec)
+    register_type_tools(mcp, openapi_spec=openapi_spec)
     _setup_tool_exclusions(mcp, config)
     await _apply_permission_filter(mcp, gitea_client, config)
 

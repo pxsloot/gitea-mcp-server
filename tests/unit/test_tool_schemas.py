@@ -1296,3 +1296,105 @@ class TestGetRawSuccessSchema:
         assert result is not None
         assert "from_200" in result["properties"]
         assert "from_201" not in result["properties"]
+
+
+class TestCollectRefs:
+    """Tests for _collect_refs."""
+
+    def test_empty_schema_returns_empty(self):
+        """Should return empty set for empty schema."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        assert _collect_refs({}) == set()
+
+    def test_no_refs_returns_empty(self):
+        """Should return empty set when no $ref present."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
+        assert _collect_refs(schema) == set()
+
+    def test_top_level_ref_extracts_type_name(self):
+        """Should extract type name from a top-level $ref."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {"$ref": "#/components/schemas/User"}
+        assert _collect_refs(schema) == {"User"}
+
+    def test_ref_in_property(self):
+        """Should find $ref in a property schema."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "assignee": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        assert _collect_refs(schema) == {"User"}
+
+    def test_ref_in_array_items(self):
+        """Should find $ref in array items."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Label"},
+        }
+        assert _collect_refs(schema) == {"Label"}
+
+    def test_ref_in_allOf(self):
+        """Should find $ref inside allOf."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "allOf": [
+                {"$ref": "#/components/schemas/Timestamps"},
+                {"type": "object", "properties": {"extra": {"type": "string"}}},
+            ]
+        }
+        assert _collect_refs(schema) == {"Timestamps"}
+
+    def test_multiple_refs(self):
+        """Should collect all distinct refs from a complex schema."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "user": {"$ref": "#/components/schemas/User"},
+                "labels": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/Label"},
+                },
+                "milestone": {"$ref": "#/components/schemas/Milestone"},
+            },
+        }
+        assert _collect_refs(schema) == {"User", "Label", "Milestone"}
+
+    def test_ref_in_not(self):
+        """Should find $ref inside a 'not' applicator."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "not": {"$ref": "#/components/schemas/ForbiddenType"},
+        }
+        assert _collect_refs(schema) == {"ForbiddenType"}
+
+    def test_ref_in_if_then_else(self):
+        """Should find $ref inside if/then/else applicators."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "if": {"$ref": "#/components/schemas/Condition"},
+            "then": {"$ref": "#/components/schemas/Positive"},
+            "else": {"$ref": "#/components/schemas/Negative"},
+        }
+        assert _collect_refs(schema) == {"Condition", "Positive", "Negative"}
+
+    def test_non_dict_input(self):
+        """Should handle non-dict input gracefully."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        assert _collect_refs("not_a_dict") == set()
+        assert _collect_refs([]) == set()

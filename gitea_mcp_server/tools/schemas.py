@@ -6,6 +6,59 @@ from gitea_mcp_server.openapi_converter import _resolve_spec_ref as _resolve_ref
 from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
+def _collect_refs(schema: Any) -> set[str]:
+    """Recursively collect all ``$ref`` type names referenced in a schema.
+
+    Walks ``properties``, ``items``, ``additionalProperties``,
+    ``allOf``/``oneOf``/``anyOf``, plus JSON Schema applicators
+    ``not``/``if``/``then``/``else``, to find every ``$ref`` pointer,
+    then extracts the simple type name from each (e.g. ``"User"``
+    from ``"#/components/schemas/User"``).
+
+    .. note::
+
+        This function is used by ``type_info.py`` for building the
+        type index, but lives here because it is a general-purpose
+        schema walking utility.
+
+    Args:
+        schema: A JSON Schema dict (may contain ``$ref`` pointers).
+
+    Returns:
+        Set of referenced type names.
+    """
+    refs: set[str] = set()
+    if not isinstance(schema, dict):
+        return refs
+
+    if "$ref" in schema and isinstance(schema.get("$ref"), str):
+        refs.add(schema["$ref"].rsplit("/", 1)[-1])
+
+    # properties: values are individual property schemas
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        for prop_schema in props.values():
+            if isinstance(prop_schema, dict):
+                refs |= _collect_refs(prop_schema)
+
+    # items/additionalProperties + JSON Schema applicator keywords:
+    # not, if, then, else all take a single schema object (which may contain $ref).
+    for key in ("items", "additionalProperties", "not", "if", "then", "else"):
+        val = schema.get(key)
+        if isinstance(val, dict):
+            refs |= _collect_refs(val)
+
+    arr_keys: tuple[str, ...] = ("allOf", "oneOf", "anyOf")
+    for key in arr_keys:
+        items = schema.get(key)
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    refs |= _collect_refs(item)
+
+    return refs
+
+
 def _deep_resolve_schema(
     schema: Any,
     openapi_spec: OpenAPISpec,
@@ -238,6 +291,7 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
 
 
 __all__ = [
+    "_collect_refs",
     "_deep_resolve_schema",
     "_get_success_schema",
     "_is_text_response",

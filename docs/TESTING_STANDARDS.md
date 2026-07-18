@@ -62,6 +62,7 @@ tests/
 │   ├── test_tool_namespace.py
 │   ├── test_tool_schemas.py
 │   ├── test_tool_search.py
+│   ├── test_type_info.py
 │   ├── test_unified_search.py
 │   └── test_validation.py
 ├── integration/
@@ -234,6 +235,7 @@ For each transform in the pipeline:
 - **namespace.py**: Prefix application (verify `gitea_` prefix), resource passthrough
 - **examples.py**: Schema → example generation for all types (arrays, objects, enums, type lists, anyOf)
 - **schemas.py**: `$ref` resolution, output schema derivation, array response detection
+- **type_info.py**: Type index building, `$ref` type name resolution, cross-reference tracking
 
 ### Resources
 

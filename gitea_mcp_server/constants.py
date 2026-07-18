@@ -109,6 +109,7 @@ SEARCH_ALWAYS_VISIBLE_TOOLS = [
     "search_resources",
     "search_docs",
     "read_doc",
+    "resolve_type",
 ]
 """Tool names that are always visible regardless of lazy loading settings."""
 

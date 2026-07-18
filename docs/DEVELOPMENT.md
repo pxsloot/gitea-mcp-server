@@ -241,6 +241,107 @@ From this doc's how-to angle: to add a new scope-gated param, set
 
 ---
 
+## How to Add a Synthetic Tool (and Optional Resource)
+
+Synthetic tools and resources are hand-written (not auto-generated from the
+OpenAPI spec). They live in the same codebase and register themselves via
+``mcp.tool()`` / ``mcp.resource()`` directly. Examples: ``resolve_type``,
+``search_tools``, ``tool_info``, ``gitea://types/{typeName}{?detail}``.
+
+### Pattern
+
+1. **Create a module** in ``gitea_mcp_server/tools/`` (e.g. ``tools/type_info.py``).
+
+2. **Core logic** goes in pure functions that accept typed inputs and return
+   plain dicts/lists — easy to unit test without mocking FastMCP.
+
+3. **Registration closure** is a ``register_*`` function that takes ``mcp: FastMCP``
+   (and any deps like ``openapi_spec``) and calls ``mcp.tool()`` / ``mcp.resource()``:
+
+   ```python
+   def register_my_tool(
+       mcp: FastMCP,
+       openapi_spec: OpenAPISpec | None = None,
+   ) -> None:
+       # Build index / cache at registration time
+       my_data = build_my_data(openapi_spec)
+
+       async def _my_tool_impl(
+           param: str,
+           ctx: Context,
+           format: str = "markdown",
+       ) -> ToolResult:
+           """Description for agents."""
+           if not my_data:
+               _raise_value_error("Not available")
+           await ctx.info(f"Processing '{param}'", ...)
+           result = do_the_work(my_data, param)
+           await ctx.report_progress(progress=1.0)
+           return format_result(ToolResult(structured_content={"result": result}), format)
+
+       mcp.tool(
+           name="my_tool",
+           description="...",
+           tags={"synthetic", "my-domain"},
+           annotations=synthetic_annotations(read_only=True, open_world=False),
+           output_schema={...},
+       )(_my_tool_impl)
+
+       # Optional companion resource
+       async def _my_resource(
+           param: str,
+           ctx: Context,
+           detail: str = "full",
+       ) -> str:
+           """Description."""
+           await ctx.info(...)
+           info = do_the_work(my_data, param)
+           return json.dumps(info, indent=2)
+
+       mcp.resource(
+           uri="gitea://my/{param}{?detail}",
+           mime_type="application/json",
+           annotations={"readOnlyHint": True, "idempotentHint": True},
+           meta=scope_meta(...),
+           tags={"synthetic", "my-domain"},
+       )(_my_resource)
+   ```
+
+4. **Wire into ``server.py``** by importing and calling `register_*` in
+   ``create_mcp_server()`` — see lines 330–332 for the canonical placement.
+
+5. **Export ``__all__``** with all functions (public and ``_``-prefixed helpers).
+
+### Key conventions
+
+| Concern | Convention |
+|---------|-----------|
+| Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
+| Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
+| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``format_result()`` |
+| ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — only meaningful for schema-depth resources |
+| Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
+| ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |
+| ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
+| URI templates | Use ``{?param}`` for optional query params — supported via RFC 6570 (FastMCP 2.13+) |
+| Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |
+| Error handling | ``_raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
+| Test pattern | Unit test the core logic; integration test the registration wiring. ``mcp.call_tool()`` returns ``ToolResult`` — access data via ``result.structured_content["result"]``. ``mcp.read_resource()`` returns ``ResourceResult`` — access JSON via ``json.loads(content.contents[0].content)``. Catch ``ToolError`` / ``ResourceError`` from FastMCP, not raw ``ValueError`` |
+
+### When to choose a synthetic tool vs. customizing an auto-generated one
+
+| Situation | Approach |
+|-----------|----------|
+| Wraps an existing API endpoint with formatting | Customize via ``_customize_metadata`` (see above) |
+| Computes new data from the spec / index | Synthetic tool |
+| Combines multiple API calls into one result | Synthetic tool |
+| Exposes server metadata or configuration | Synthetic tool + resource |
+| Adds a convenience alias for an existing endpoint | ``mcp_extensions.yaml`` or synthetic proxy |
+
+---
+
+
+
 ## Shared Formatters (`format.py`)
 
 General-purpose schema-aware formatting lives in `gitea_mcp_server/format.py`.

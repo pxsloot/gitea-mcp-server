@@ -15,21 +15,44 @@ Registration:
     FastMCP server instance.
 """
 
-from __future__ import annotations
-
 import json
-from typing import TYPE_CHECKING, Annotated, Any, cast
+import logging
+from typing import Annotated, Any, cast
 
+from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.resources.scope import scope_meta
 from gitea_mcp_server.tools.schemas import (
     _collect_refs,
     _deep_resolve_schema,
     _resolve_ref,
 )
 
-if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
+logger = logging.getLogger(__name__)
+
+
+async def _try_ctx_info(ctx: Context, message: str, **kwargs: Any) -> None:
+    """Call ``ctx.info()`` if the MCP session is available.
+
+    When called outside an active MCP request context (e.g. in unit tests
+    via ``mcp.call_tool()``), ``ctx.session`` raises ``RuntimeError``.
+    This helper silently degrades so observability is best-effort.
+    """
+    try:
+        await ctx.info(message, **kwargs)
+    except (RuntimeError, Exception):  # noqa: BLE001
+        logger.debug("ctx.info() skipped (session not available)")
+
+
+async def _try_ctx_report_progress(ctx: Context, progress: float) -> None:
+    """Call ``ctx.report_progress()`` if the MCP session is available."""
+    try:
+        await ctx.report_progress(progress=progress)
+    except (RuntimeError, Exception):  # noqa: BLE001
+        logger.debug("ctx.report_progress() skipped (session not available)")
+
 
 # ============================================================================
 # Core: type index building
@@ -295,6 +318,7 @@ def register_type_tools(
             "Case-sensitive. Use search_tools or list_resources to find tools "
             "that reference types.",
         ],
+        ctx: Context,
         format: Annotated[
             str,
             "Output format: markdown (default, human-readable), "
@@ -309,7 +333,14 @@ def register_type_tools(
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
+            await _try_ctx_info(ctx, "Type index empty — spec not available at registration")
             _raise_value_error(msg)
+
+        await _try_ctx_info(
+            ctx,
+            f"Resolving type '{name}' (detail={detail})",
+            extra={"type_name": name, "detail": detail},
+        )
 
         # Guard above guarantees openapi_spec was available at registration.
         spec = cast("OpenAPISpec", openapi_spec)
@@ -325,7 +356,17 @@ def register_type_tools(
                 "Use search_resources('type') or "
                 "call resolve_type with one of the tool's $ref:TypeName markers."
             )
+            await _try_ctx_info(
+                ctx,
+                f"Type '{name}' not found",
+                extra={"type_name": name, "found": False},
+            )
             _raise_value_error(msg)
+
+        await _try_ctx_report_progress(ctx, progress=1.0)
+        logger.debug(
+            "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
+        )
 
         return format_result(
             ToolResult(structured_content={"result": info}),
@@ -406,23 +447,41 @@ def register_type_tools(
         },
     )(_resolve_type_impl)
 
-    # ── gitea://types/{typeName} resource ───────────────────────────────
+    # ── gitea://types/{typeName}{?detail} resource ─────────────────────
 
-    async def _type_resource(typeName: str) -> str:
-        """Get the full type schema for a $ref type by name.
+    async def _type_resource(
+        typeName: str,
+        ctx: Context,
+        detail: str = "full",
+    ) -> str:
+        """Get a type schema for a $ref type by name.
 
-        Returns the type's compact schema, cross-references, and resolved
-        schema — identical to ``resolve_type(name, detail="full")`` but
-        available as a cached resource.
+        Returns the type's compact schema, cross-references, and (when
+        ``detail="full"``) resolved schema — identical to
+        ``resolve_type(name, detail)`` but available as a cached resource.
+
+        Use ``?detail=concise`` for compact output without the resolved
+        schema.  Defaults to ``detail=full`` for maximum context.
 
         Args:
             typeName: Type name (e.g. "User", "Milestone", "Label").
+            detail: ``"full"`` (default) for resolved schema included,
+                    ``"concise"`` for compact summary with ``$ref`` placeholders.
 
         Returns:
-            JSON string with type info (schema, cross-references, resolved schema).
+            JSON string with type info (schema, cross-references).
         """
+        await _try_ctx_info(
+            ctx,
+            f"Reading type resource '{typeName}' (detail={detail})",
+            extra={"type_name": typeName, "detail": detail},
+        )
+
         if not type_index or typeName not in type_index:
-            msg = f"Type '{typeName}' not found. Use search_resources('type') to discover valid type names."
+            msg = (
+                f"Type '{typeName}' not found. "
+                "Use search_resources('type') to discover valid type names."
+            )
             raise ValueError(msg)
 
         # Same invariant: non-empty type_index means spec was available.
@@ -431,12 +490,19 @@ def register_type_tools(
             spec,
             type_index,
             typeName,
-            detail="full",
+            detail=detail,
         )
         return json.dumps(info, indent=2) if info else "{}"
 
+    # No required_scope: the type index is built from the OpenAPI spec
+    # which is fetched from a public endpoint — reading it is scope-free.
+    # Tools and resources outside the agent's token scope are filtered by
+    # PermissionFilterTransform at query time, so the type index cannot
+    # leak data from unreachable endpoints.
+    _type_meta = scope_meta(None)
+
     mcp.resource(
-        uri="gitea://types/{typeName}",
+        uri="gitea://types/{typeName}{?detail}",
         name="Type Schema",
         description=(
             "Get the full schema for a $ref type by name. "
@@ -455,6 +521,7 @@ def register_type_tools(
             "readOnlyHint": True,
             "idempotentHint": True,
         },
+        meta=_type_meta,
         tags={"synthetic", "type-schema", "schema"},
     )(_type_resource)
 

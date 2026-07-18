@@ -38,6 +38,7 @@ mention is a one-line pointer, not a copy.
 | `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
 | `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
 | `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
+| `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |
 
 ## Topic ownership (canonical home)
 
@@ -55,3 +56,4 @@ truth. Other mentions point here.
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |
 | Testing patterns | `TESTING_STANDARDS.md` |
 | Agent instructions intent / editing rules | `AGENT_INSTRUCTIONS_STANDARDS.md` |
+| Documentation-set principles (audience, de-dup, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |

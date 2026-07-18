@@ -1,3 +1,9 @@
+---
+audience: developer
+type: reference
+covers: Test layout, zones, fixtures, mocking rules, coverage targets
+---
+
 # Testing Standards
 
 This document defines the testing standards and best practices for the Gitea MCP Server project.

@@ -1,3 +1,9 @@
+---
+audience: developer
+type: reference
+covers: Token scope -> tool/resource visibility, virtual param gating, scope derivation
+---
+
 # Scope Model
 
 > How Gitea token scopes control tool/resource visibility and virtual parameter
@@ -192,7 +198,15 @@ changes needed.
 
 ### Transform execution order
 
-When the client lists tools or resources, transforms run in this order:
+The query-time transform chain (TolerantSearch → GiteaNamespace →
+ExtensionMetadata → Exclusion → PermissionFilter) is the canonical server
+pipeline and is documented once in `docs/ARCHITECTURE.md` (the "FastMCP Server"
+transform list). `PermissionFilterTransform` is always last, so it sees the
+fully resolved set of visible tools and can filter them by scope.
+
+From the perspective of this doc, the only addition to that chain is step 5
+below — scope filtering is the mechanism that makes tools/resources disappear
+for a token that lacks the required scope:
 
 1. **TolerantSearchTransform** — lazy-loading search
 2. **GiteaNamespace** — adds `gitea_` prefix

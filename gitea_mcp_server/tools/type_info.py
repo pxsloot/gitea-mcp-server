@@ -282,8 +282,6 @@ def register_type_tools(
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
     from gitea_mcp_server.tools.errors import _raise_value_error  # noqa: PLC0415
 
-    # Constants for display limits
-    _MAX_TYPES_IN_HINT = 20
     _MAX_TYPES_IN_RESOURCE_DESC = 10
 
     # Build the type index once at registration time.
@@ -324,13 +322,11 @@ def register_type_tools(
             detail=detail,
         )
         if info is None:
-            hints = ""
-            if available_types:
-                hints = f"\nAvailable types: {', '.join(available_types[:_MAX_TYPES_IN_HINT])}"
-                if len(available_types) > _MAX_TYPES_IN_HINT:
-                    extra = len(available_types) - _MAX_TYPES_IN_HINT
-                    hints += f" and {extra} more."
-            msg = f"Type '{name}' not found.{hints}"
+            msg = (
+                f"Type '{name}' not found. "
+                "Use search_resources('type') or "
+                "call resolve_type with one of the tool's $ref:TypeName markers."
+            )
             _raise_value_error(msg)
 
         return format_result(
@@ -428,10 +424,8 @@ def register_type_tools(
             JSON string with type info (schema, cross-references, resolved schema).
         """
         if not type_index or typeName not in type_index:
-            raise ValueError(
-                f"Type '{typeName}' not found."
-                + (f" Available types: {', '.join(available_types)}" if available_types else "")
-            )
+            msg = f"Type '{typeName}' not found. Use search_resources('type') to discover valid type names."
+            raise ValueError(msg)
 
         info = resolve_type_info(
             openapi_spec,  # type: ignore[arg-type]

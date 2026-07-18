@@ -10,9 +10,10 @@ def _collect_refs(schema: Any) -> set[str]:
     """Recursively collect all ``$ref`` type names referenced in a schema.
 
     Walks ``properties``, ``items``, ``additionalProperties``,
-    ``allOf``/``oneOf``/``anyOf`` to find every ``$ref`` pointer, then
-    extracts the simple type name from each (e.g. ``"User"`` from
-    ``"#/components/schemas/User"``).
+    ``allOf``/``oneOf``/``anyOf``, plus JSON Schema applicators
+    ``not``/``if``/``then``/``else``, to find every ``$ref`` pointer,
+    then extracts the simple type name from each (e.g. ``"User"``
+    from ``"#/components/schemas/User"``).
 
     .. note::
 
@@ -40,8 +41,9 @@ def _collect_refs(schema: Any) -> set[str]:
             if isinstance(prop_schema, dict):
                 refs |= _collect_refs(prop_schema)
 
-    # items/additionalProperties: single schema values
-    for key in ("items", "additionalProperties"):
+    # items/additionalProperties + JSON Schema applicator keywords:
+    # not, if, then, else all take a single schema object (which may contain $ref).
+    for key in ("items", "additionalProperties", "not", "if", "then", "else"):
         val = schema.get(key)
         if isinstance(val, dict):
             refs |= _collect_refs(val)

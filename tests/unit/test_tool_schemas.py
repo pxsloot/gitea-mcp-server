@@ -1372,6 +1372,26 @@ class TestCollectRefs:
         }
         assert _collect_refs(schema) == {"User", "Label", "Milestone"}
 
+    def test_ref_in_not(self):
+        """Should find $ref inside a 'not' applicator."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "not": {"$ref": "#/components/schemas/ForbiddenType"},
+        }
+        assert _collect_refs(schema) == {"ForbiddenType"}
+
+    def test_ref_in_if_then_else(self):
+        """Should find $ref inside if/then/else applicators."""
+        from gitea_mcp_server.tools.schemas import _collect_refs
+
+        schema = {
+            "if": {"$ref": "#/components/schemas/Condition"},
+            "then": {"$ref": "#/components/schemas/Positive"},
+            "else": {"$ref": "#/components/schemas/Negative"},
+        }
+        assert _collect_refs(schema) == {"Condition", "Positive", "Negative"}
+
     def test_non_dict_input(self):
         """Should handle non-dict input gracefully."""
         from gitea_mcp_server.tools.schemas import _collect_refs

@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
-from fastmcp.dependencies import CurrentContext
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.schemas import (
@@ -30,8 +29,6 @@ from gitea_mcp_server.tools.schemas import (
 )
 
 if TYPE_CHECKING:
-    from fastmcp.server.context import Context
-
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 # ============================================================================
@@ -308,15 +305,16 @@ def register_type_tools(
             "Detail level: 'concise' (default) for compact type-summary with "
             "$ref placeholders; 'full' to also include the resolved JSON Schema",
         ] = "concise",
-        _ctx: Context = CurrentContext(),  # injected by FastMCP DI, unused
     ) -> ToolResult:
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
             _raise_value_error(msg)
 
+        # Guard above guarantees openapi_spec was available at registration.
+        spec = cast("OpenAPISpec", openapi_spec)
         info = resolve_type_info(
-            openapi_spec,  # type: ignore[arg-type]
+            spec,
             type_index,
             name,
             detail=detail,
@@ -427,8 +425,10 @@ def register_type_tools(
             msg = f"Type '{typeName}' not found. Use search_resources('type') to discover valid type names."
             raise ValueError(msg)
 
+        # Same invariant: non-empty type_index means spec was available.
+        spec = cast("OpenAPISpec", openapi_spec)
         info = resolve_type_info(
-            openapi_spec,  # type: ignore[arg-type]
+            spec,
             type_index,
             typeName,
             detail="full",
@@ -451,6 +451,10 @@ def register_type_tools(
             )
         ),
         mime_type="application/json",
+        annotations={
+            "readOnlyHint": True,
+            "idempotentHint": True,
+        },
         tags={"synthetic", "type-schema", "schema"},
     )(_type_resource)
 

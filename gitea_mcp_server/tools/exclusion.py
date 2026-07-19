@@ -154,4 +154,4 @@ class ExclusionTransform(Transform):
         return template
 
 
-__all__ = ["ExclusionTransform", "load_exclusion_config"]
+__all__ = ["ExclusionTransform", "_matches_any", "_matches_pattern", "load_exclusion_config"]

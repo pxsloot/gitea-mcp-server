@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Any, cast
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
+from gitea_mcp_server.tool_filter import fetch_token_scopes
+from gitea_mcp_server.tools.exclusion import load_exclusion_config
+from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
@@ -60,8 +63,8 @@ async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[s
 
 async def load_and_convert_spec(
     gitea_client: GiteaClient, config: Config
-) -> tuple[OpenAPISpec, dict[str, Any]]:
-    """Load Swagger spec, convert to OpenAPI v3, and load extensions.
+) -> tuple[OpenAPISpec, dict[str, Any], dict[str, Any]]:
+    """Load Swagger spec, convert to OpenAPI v3, load extensions, compute filter info.
 
     The raw spec is cast to ``SwaggerV2Spec`` before conversion, and the
     result is cast to ``OpenAPISpec`` after conversion.
@@ -71,8 +74,10 @@ async def load_and_convert_spec(
         config: Application configuration
 
     Returns:
-        Tuple of (openapi_v3_spec, extensions_dict).
+        Tuple of (openapi_v3_spec, extensions_dict, filtered_tools_info).
         ``extensions_dict`` is the raw YAML content (may be empty).
+        ``filtered_tools_info`` is the filter-prediction data
+        (may be empty dict if no filtering information was computed).
 
     Raises:
         SpecError: If spec loading or conversion fails
@@ -103,7 +108,37 @@ async def load_and_convert_spec(
             extra={"error": str(e)},
         )
 
-    return (openapi_spec, extensions)
+    # ── Compute filter-prediction data ─────────────────────────────────
+    # Fetch token scopes and exclusion config to determine which
+    # operations would be filtered.  The result is returned alongside the
+    # spec so synthetic tools (tool_info, call_tool, search_tools) can
+    # give helpful messages about filtered tools.
+    # In Phase 1, filtering itself is still done by runtime transforms;
+    # the prediction data is purely for richer error messages.
+    try:
+        exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to load exclusion config, proceeding without it")
+        exclusion_config = {"exclude": [], "include": []}
+
+    try:
+        available_scopes = await fetch_token_scopes(gitea_client, config.token)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to fetch token scopes for filtering info, proceeding without")
+        available_scopes = None
+
+    if available_scopes is not None or exclusion_config.get("exclude") or exclusion_config.get("include"):
+        tool_prefix = (config.tool_prefix or "").rstrip("_")
+        filtered_tools_info = compute_filtered_tools_info(
+            openapi_spec,
+            available_scopes=available_scopes,
+            exclusion_config=exclusion_config,
+            tool_prefix=tool_prefix,
+        )
+    else:
+        filtered_tools_info = {}
+
+    return (openapi_spec, extensions, filtered_tools_info)
 
 
 __all__ = ["convert_swagger_to_openapi_v3", "load_and_convert_spec", "load_openapi_spec"]

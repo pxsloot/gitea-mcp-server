@@ -33,6 +33,10 @@ from gitea_mcp_server.tools.errors import (
     _raise_value_error_from,
 )
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
+from gitea_mcp_server.tools.filter_info import (
+    build_filtered_tools_message,
+    get_filtered_tool_info,
+)
 
 # ============================================================================
 # Shared BM25 + format pipeline (used by search_tools and search_resources)
@@ -261,6 +265,7 @@ async def _call_tool_impl(
     arguments: Any,
     ctx: Context,
     tool_prefix: str = "",
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Core call_tool implementation.
 
@@ -268,6 +273,10 @@ async def _call_tool_impl(
     arguments, and returns the inner tool's result unchanged.
     Every tool on this server handles its own ``format`` parameter
     natively, so the proxy does not re-format.
+
+    If the tool is not found but appears in the filter-prediction data
+    (scope-restricted, config-excluded, or deprecated), a helpful
+    error message is returned instead of a generic "not found".
     """
     if name == "call_tool":
         msg = "'call_tool' cannot call itself - call it directly instead"
@@ -281,11 +290,62 @@ async def _call_tool_impl(
     if arguments is not None and not isinstance(arguments, dict):
         msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
         _raise_value_error(msg)
+
     resolved = await _resolve_tool_name(name, ctx, tool_prefix)
+
+    # If the resolved tool is not found, check whether it's a filtered
+    # tool (scope-restricted, config-excluded, or deprecated) and give
+    # a helpful message.
+    tool = await ctx.fastmcp.get_tool(resolved)
+    if tool is None:
+        # Try the resolved name first, then the original name
+        filter_info = get_filtered_tool_info(resolved, filtered_tools_info, tool_prefix)
+        if filter_info is None and resolved != name:
+            filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
+        if filter_info is not None:
+            msg = build_filtered_tools_message(
+                name, filter_info, filtered_tools_info
+            )
+        else:
+            msg = (
+                f"Tool '{name}' not found. "
+                "Use `search_tools()` to discover available tools."
+            )
+        _raise_value_error(msg)
+
     return await ctx.fastmcp.call_tool(resolved, arguments)
 
 
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
+
+
+def _format_filtered_tools_note(filtered_tools_info: dict[str, Any] | None) -> str:
+    """Return a note about filtered (hidden) tools, or empty string."""
+    if not filtered_tools_info:
+        return ""
+    filtered: dict[str, Any] = filtered_tools_info.get("filtered", {}) or {}
+    if not filtered:
+        return ""
+
+    counts: dict[str, int] = {"scope": 0, "excluded": 0, "deprecated": 0}
+    for info in filtered.values():
+        reason: str = info.get("reason", "unknown")
+        if reason in counts:
+            counts[reason] += 1
+    parts: list[str] = []
+    if counts["scope"]:
+        parts.append(f"{counts['scope']} scope-restricted")
+    if counts["excluded"]:
+        parts.append(f"{counts['excluded']} config-excluded")
+    if counts["deprecated"]:
+        parts.append(f"{counts['deprecated']} deprecated")
+    if not parts:
+        return ""
+    return (
+        "\n\n**Note:** " + ", ".join(parts)
+        + " tools are hidden from this listing "
+        + "(use `tool_info(name)` to check a specific tool)."
+    )
 
 
 async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are framework plumbing
@@ -297,6 +357,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     page: int = 1,
     limit: int = 10,
     min_score: float = SEARCH_MIN_SCORE,
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Core search_tools implementation.
 
@@ -312,6 +373,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         page: Page number (1-based).
         limit: Results per page.
         min_score: Minimum normalized BM25 score (0.0-1.0).
+        filtered_tools_info: Filter-prediction data for hidden-tool note.
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -362,6 +424,13 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
             serialized_out += "\n\n---\n**Cross-linking hints:**\n"
             for label, tool in cross_link_hints.items():
                 serialized_out += f"- For {label}: `{tool}(query)`\n"
+
+        # Append a note about filtered (hidden) tools so agents are
+        # aware that some tools exist but are not visible to their token.
+        note = _format_filtered_tools_note(filtered_tools_info)
+        if note:
+            serialized_out += note
+
         pagination_info = {
             k: v
             for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
@@ -385,6 +454,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     tool_prefix: str = "",
     detail: Literal["concise", "full"] = "concise",
     openapi_spec: OpenAPISpec | None = None,
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Core tool_info implementation.
 
@@ -393,6 +463,10 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
 
     When ``detail="full"``, the result includes the fully-resolved
     ``output_schema`` alongside the compact ``output_example``.
+
+    Args:
+        openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
+        filtered_tools_info: Filter-prediction data for filtered-tool messages.
     """
     tools = await transform.get_tool_catalog(ctx)
     candidates = {name}
@@ -406,7 +480,15 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
             return format_result(
                 ToolResult(structured_content={"result": schema}), format
             )
-    msg = f"Tool '{name}' not found"
+
+    # Tool not found in the post-filter catalog — check if it's a
+    # filtered tool (scope-restricted, config-excluded, or deprecated).
+    filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
+    if filter_info is not None:
+        msg = build_filtered_tools_message(name, filter_info, filtered_tools_info)
+        raise ValueError(msg) from None
+
+    msg = f"Tool '{name}' not found. Use `search_tools()` to discover available tools."
     raise ValueError(msg) from None
 
 
@@ -538,6 +620,7 @@ def register_synthetic_tools(
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
     openapi_spec: OpenAPISpec | None = None,
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> None:
     """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
@@ -551,6 +634,8 @@ def register_synthetic_tools(
         tool_prefix: Optional prefix used by GiteaNamespace (e.g. ``"gitea_"``).
             When provided, ``call_tool`` and ``tool_info`` will also accept bare
             (unprefixed) tool names by trying the prefixed variant as a fallback.
+        openapi_spec: The OpenAPI spec (for ``$ref`` resolution).
+        filtered_tools_info: Filter-prediction data for filtered-tool messages.
     """
 
     async def search_tools_fn(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
@@ -573,7 +658,8 @@ def register_synthetic_tools(
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_tools_impl(
-            query, category, format, ctx, transform, page, limit, min_score=min_score
+            query, category, format, ctx, transform, page, limit,
+            min_score=min_score, filtered_tools_info=filtered_tools_info,
         )
 
     mcp.tool(
@@ -639,7 +725,7 @@ def register_synthetic_tools(
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, ctx, tool_prefix)
+        return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
 
     mcp.tool(
         name="call_tool",
@@ -670,7 +756,11 @@ def register_synthetic_tools(
         ] = "concise",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _tool_info_impl(name, format, ctx, transform, tool_prefix, detail=detail, openapi_spec=openapi_spec)
+        return await _tool_info_impl(
+            name, format, ctx, transform, tool_prefix,
+            detail=detail, openapi_spec=openapi_spec,
+            filtered_tools_info=filtered_tools_info,
+        )
 
     mcp.tool(
         name="tool_info",

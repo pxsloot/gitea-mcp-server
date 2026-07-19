@@ -252,7 +252,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -271,7 +271,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -290,7 +290,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -308,7 +308,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -331,7 +331,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -355,7 +355,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": {}})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with(
@@ -393,7 +393,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": []})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         await _call_tool_impl("gitea_test_tool", None, mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
@@ -410,7 +410,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         final = await _call_tool_impl("gitea_array_tool", None, mock_ctx)
         assert final is inner_result
@@ -691,7 +691,7 @@ class TestCallToolRuntimeBehaviorExtended:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
 
         result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, mock_ctx)
         assert result is inner_result

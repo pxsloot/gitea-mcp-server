@@ -29,6 +29,7 @@ from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.scope import has_sufficient_scope
 
 logger = logging.getLogger(__name__)
 
@@ -53,40 +54,6 @@ def _get_required_scope(item: Any) -> str | None:
         return cast("str | None", item.meta["required_scope"])
     except (KeyError, TypeError, AttributeError):
         return None
-
-
-def _has_sufficient_scope(required: str | None, available: set[str]) -> bool:
-    """Check if available Gitea token scopes satisfy a required scope.
-
-    Rules:
-    - None required (no scope needed) always passes.
-    - ``sudo`` in available grants everything.
-    - ``all`` in available grants everything (Gitea's "full access" shortcut,
-      returned by the API as the literal scope ``"all"``; the UI displays it as
-      ``[all]``).
-    - Exact match passes.
-    - ``write:xxx`` implies ``read:xxx``.
-
-    Args:
-        required: Required scope string or None.
-        available: Set of scope strings the user's token possesses.
-
-    Returns:
-        True if the required scope is covered by available scopes.
-    """
-    if required is None:
-        return True
-    if "sudo" in available:
-        return True
-    if "all" in available:
-        return True
-    if required in available:
-        return True
-    if required.startswith("read:"):
-        resource = required.split(":", 1)[1]
-        if f"write:{resource}" in available:
-            return True
-    return False
 
 
 def _match_active_token(tokens_data: list[Any], raw_token: str) -> set[str] | None:
@@ -183,7 +150,7 @@ class PermissionFilterTransform(Transform):
     def _is_allowed(self, item: Any) -> bool:
         """Check whether an item (tool or resource) is allowed by the token scope."""
         required = _get_required_scope(item)
-        allowed = _has_sufficient_scope(required, self._available)
+        allowed = has_sufficient_scope(required, self._available)
         if not allowed:
             name = getattr(item, "name", str(item))
             logger.info(

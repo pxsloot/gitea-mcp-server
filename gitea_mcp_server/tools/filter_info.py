@@ -20,24 +20,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.scope import derive_required_scope, has_sufficient_scope
-from gitea_mcp_server.tools.exclusion import _matches_any
+from gitea_mcp_server.tools.exclusion import matches_any
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
-
-_HTTP_METHODS = frozenset({
-    "get",
-    "post",
-    "put",
-    "delete",
-    "patch",
-    "options",
-    "head",
-    "trace",
-})
 
 
 def _is_excluded(
@@ -55,8 +45,8 @@ def _is_excluded(
     include = exclusion_config.get("include", [])
     if not exclude and not include:
         return False
-    is_included = _matches_any(op_id, tags, include, tool_prefix)
-    is_excluded = _matches_any(op_id, tags, exclude, tool_prefix)
+    is_included = matches_any(op_id, tags, include, tool_prefix)
+    is_excluded = matches_any(op_id, tags, exclude, tool_prefix)
     return is_excluded and not is_included
 
 
@@ -161,7 +151,7 @@ def compute_filtered_tools_info(
         if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method not in _HTTP_METHODS or not isinstance(operation, dict):
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
 
             op_id: str = operation.get("operationId", "")

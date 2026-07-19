@@ -35,7 +35,7 @@ def _is_tag_pattern(pattern: str) -> bool:
     return pattern.startswith(_TAG_PREFIX)
 
 
-def _matches_pattern(name: str, tags: set[str], pattern: str, tool_prefix: str = "") -> bool:
+def matches_pattern(name: str, tags: set[str], pattern: str, tool_prefix: str = "") -> bool:
     if _is_tag_pattern(pattern):
         tag_name = pattern[len(_TAG_PREFIX) :]
         return tag_name in tags
@@ -44,8 +44,8 @@ def _matches_pattern(name: str, tags: set[str], pattern: str, tool_prefix: str =
     return fnmatch(name, pattern)
 
 
-def _matches_any(name: str, tags: set[str], patterns: list[str], tool_prefix: str = "") -> bool:
-    return any(_matches_pattern(name, tags, p, tool_prefix) for p in patterns)
+def matches_any(name: str, tags: set[str], patterns: list[str], tool_prefix: str = "") -> bool:
+    return any(matches_pattern(name, tags, p, tool_prefix) for p in patterns)
 
 
 def load_exclusion_config(config_path: str | None) -> dict[str, list[str]]:
@@ -104,7 +104,7 @@ class ExclusionTransform(Transform):
 
     def _is_allowed(self, name: str, tags: set[str] | None = None) -> bool:
         tags = tags or set()
-        return _matches_any(name, tags, self._include, self._tool_prefix) or not _matches_any(
+        return matches_any(name, tags, self._include, self._tool_prefix) or not matches_any(
             name, tags, self._exclude, self._tool_prefix
         )
 
@@ -154,4 +154,4 @@ class ExclusionTransform(Transform):
         return template
 
 
-__all__ = ["ExclusionTransform", "_matches_any", "_matches_pattern", "load_exclusion_config"]
+__all__ = ["ExclusionTransform", "load_exclusion_config", "matches_any", "matches_pattern"]

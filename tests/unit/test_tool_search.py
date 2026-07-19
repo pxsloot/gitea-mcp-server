@@ -909,19 +909,27 @@ class TestTolerantSearchTransform:
     """Tests for TolerantSearchTransform."""
 
     @pytest.mark.asyncio
-    async def test_transform_tools_pins_only_always_visible(self):
-        """transform_tools should only pin tools matching always_visible."""
+    async def test_transform_tools_pins_synthetic_tagged_tools(self):
+        """transform_tools should only pin tools with the synthetic tag."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
-        known_tool = Tool(
+        plain_tool = Tool(
             name="gitea_test",
             description="A test tool",
             parameters={"properties": {}},
+            tags=[],
         )
-        result = await transform.transform_tools([known_tool])
-        # Without always_visible set, no tools should be pinned
-        assert list(result) == []
+        synthetic_tool = Tool(
+            name="gitea_search_tools",
+            description="Search tools",
+            parameters={"properties": {}},
+            tags={"synthetic"},
+        )
+        result = await transform.transform_tools([plain_tool, synthetic_tool])
+        names = [t.name for t in result]
+        assert "gitea_search_tools" in names
+        assert "gitea_test" not in names
 
 
 class TestSyntheticToolAnnotations:

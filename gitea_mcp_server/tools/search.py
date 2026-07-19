@@ -200,6 +200,10 @@ class TolerantSearchTransform(BM25SearchTransform):
     registrations in ``register_synthetic_tools()``. The transform only
     controls which tools appear in ``list_tools()`` output (pinned set) and
     provides BM25 search over the catalog.
+
+    Tools tagged ``synthetic`` are always pinned in ``list_tools()`` so
+    agents can call them without searching — that is the invariant: all
+    synthetic tools are always visible.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -209,7 +213,7 @@ class TolerantSearchTransform(BM25SearchTransform):
         self._searcher = TolerantBM25Search()
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        pinned = [t for t in tools if t.name in self._always_visible]
+        pinned = [t for t in tools if "synthetic" in (t.tags or [])]
         return [*pinned]
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:

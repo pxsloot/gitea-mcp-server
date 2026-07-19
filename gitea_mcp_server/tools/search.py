@@ -237,27 +237,31 @@ class TolerantSearchTransform(BM25SearchTransform):
 # ── Synthetic tool implementations (exported for testing) ──────────────
 
 
-async def _resolve_tool_name(
+async def _find_tool_by_name(
     name: str,
     ctx: Context,
     tool_prefix: str = "",
-) -> str:
-    """Resolve a tool name, trying it both as-is and with the configured prefix.
+) -> Tool | None:
+    """Find a tool by name, trying both bare and prefixed forms.
 
     The GiteaNamespace transform prefixes all tool names (e.g. ``search_tools``
     becomes ``gitea_search_tools``).  When agents pass an unprefixed name to
-    ``call_tool`` or ``tool_info``, the lookup fails because the catalog only
-    contains prefixed names.  This helper tries both forms.
+    ``call_tool``, the lookup fails because the catalog only contains prefixed
+    names.  This helper tries both forms and returns the ``Tool`` directly,
+    avoiding a redundant second lookup by the caller.
+
+    Returns:
+        The ``Tool`` if found, or ``None`` if not found in the registry.
     """
     tool = await ctx.fastmcp.get_tool(name)
     if tool is not None:
-        return name
+        return tool
     if tool_prefix:
         prefixed = f"{tool_prefix}{name}"
         tool = await ctx.fastmcp.get_tool(prefixed)
         if tool is not None:
-            return prefixed
-    return name
+            return tool
+    return None
 
 
 async def _call_tool_impl(
@@ -291,17 +295,13 @@ async def _call_tool_impl(
         msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
         _raise_value_error(msg)
 
-    resolved = await _resolve_tool_name(name, ctx, tool_prefix)
+    tool = await _find_tool_by_name(name, ctx, tool_prefix)
 
-    # If the resolved tool is not found, check whether it's a filtered
-    # tool (scope-restricted, config-excluded, or deprecated) and give
-    # a helpful message.
-    tool = await ctx.fastmcp.get_tool(resolved)
     if tool is None:
-        # Try the resolved name first, then the original name
-        filter_info = get_filtered_tool_info(resolved, filtered_tools_info, tool_prefix)
-        if filter_info is None and resolved != name:
-            filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
+        # Tool not found in the registry — check whether it's a filtered
+        # tool (scope-restricted, config-excluded, or deprecated) and give
+        # a helpful message.
+        filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
         if filter_info is not None:
             msg = build_filtered_tools_message(
                 name, filter_info, filtered_tools_info
@@ -313,14 +313,23 @@ async def _call_tool_impl(
             )
         _raise_value_error(msg)
 
-    return await ctx.fastmcp.call_tool(resolved, arguments)
+    return await ctx.fastmcp.call_tool(tool.name, arguments)
 
 
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
 
 
 def _format_filtered_tools_note(filtered_tools_info: dict[str, Any] | None) -> str:
-    """Return a note about filtered (hidden) tools, or empty string."""
+    """Return a note about filtered (hidden) tools, or empty string.
+
+    .. note::
+        This note reveals enumeration data about tools the agent's token
+        cannot reach (scope-restricted, config-excluded, deprecated counts).
+        If this becomes a security concern for certain deployments, gate the
+        note behind a config flag (e.g. ``show_hidden_tool_counts`` in
+        ``mcp_filter.yaml``) rather than removing it — the information is
+        valuable for agent UX.
+    """
     if not filtered_tools_info:
         return ""
     filtered: dict[str, Any] = filtered_tools_info.get("filtered", {}) or {}
@@ -892,7 +901,7 @@ __all__ = [
     "_compact_search_serializer",
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
-    "_resolve_tool_name",
+    "_find_tool_by_name",
     "_search_and_slice",
     "_search_resources_impl",
     "_search_tools_impl",

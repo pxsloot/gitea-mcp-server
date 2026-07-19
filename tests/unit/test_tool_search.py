@@ -252,7 +252,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -271,7 +271,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -290,7 +290,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -308,7 +308,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -331,7 +331,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -355,7 +355,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": {}})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with(
@@ -393,7 +393,7 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": []})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         await _call_tool_impl("gitea_test_tool", None, mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
@@ -410,7 +410,7 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         final = await _call_tool_impl("gitea_array_tool", None, mock_ctx)
         assert final is inner_result
@@ -691,7 +691,7 @@ class TestCallToolRuntimeBehaviorExtended:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock())
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
 
         result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, mock_ctx)
         assert result is inner_result
@@ -799,6 +799,171 @@ class TestToolInfo:
 
         with pytest.raises(ValueError, match="not found"):
             await _tool_info_impl("gitea_nonexistent_tool", "markdown", mock_ctx, transform)
+
+
+class TestFilterInfoIntegration:
+    """Integration tests for the tool_info/call_tool → filter_info wiring.
+
+    Verifies that synthetic tools produce rich filtered-tool messages
+    (scope-restricted, config-excluded, deprecated) instead of generic
+    "not found" when ``filtered_tools_info`` is provided.
+    """
+
+    @pytest.fixture
+    def scope_filter_info(self) -> dict:
+        """``filtered_tools_info`` with one scope-restricted tool."""
+        return {
+            "available_scopes": ["read:repository"],
+            "exclusion_config": {"exclude": [], "include": []},
+            "filtered": {
+                "admin_create_user": {
+                    "reason": "scope",
+                    "required_scope": "sudo",
+                },
+            },
+        }
+
+    @pytest.fixture
+    def exclude_filter_info(self) -> dict:
+        """``filtered_tools_info`` with one config-excluded tool."""
+        return {
+            "available_scopes": ["read:repository", "write:issue"],
+            "exclusion_config": {"exclude": ["admin_*"], "include": []},
+            "filtered": {
+                "admin_create_user": {
+                    "reason": "excluded",
+                },
+            },
+        }
+
+    @pytest.fixture
+    def deprecated_filter_info(self) -> dict:
+        """``filtered_tools_info`` with one deprecated tool."""
+        return {
+            "available_scopes": ["read:repository"],
+            "exclusion_config": {"exclude": [], "include": []},
+            "filtered": {
+                "some_deprecated_tool": {
+                    "reason": "deprecated",
+                },
+            },
+        }
+
+    # ── tool_info → filter_info ──────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_tool_info_scope_filtered(self, scope_filter_info):
+        """tool_info for scope-restricted tool returns scope message."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="restricted by your token scopes"):
+            await _tool_info_impl(
+                "gitea_admin_create_user", "markdown", mock_ctx, transform,
+                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_tool_info_exclude_filtered(self, exclude_filter_info):
+        """tool_info for config-excluded tool returns exclusion message."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="excluded by server configuration"):
+            await _tool_info_impl(
+                "gitea_admin_create_user", "markdown", mock_ctx, transform,
+                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info):
+        """tool_info for deprecated tool returns deprecation message."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="has been deprecated"):
+            await _tool_info_impl(
+                "gitea_some_deprecated_tool", "markdown", mock_ctx, transform,
+                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_tool_info_filtered_falls_back_to_not_found(self):
+        """Without filter info, tool_info still gives generic 'not found'."""
+        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="not found"):
+            await _tool_info_impl(
+                "gitea_admin_create_user", "markdown", mock_ctx, transform,
+                tool_prefix="gitea_", filtered_tools_info=None,
+            )
+
+    # ── call_tool → filter_info ──────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_call_tool_scope_filtered(self, scope_filter_info):
+        """call_tool for scope-restricted tool raises scope error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="restricted by your token scopes"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_exclude_filtered(self, exclude_filter_info):
+        """call_tool for config-excluded tool raises exclusion error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="excluded by server configuration"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info):
+        """call_tool for deprecated tool raises deprecation error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="has been deprecated"):
+            await _call_tool_impl(
+                "gitea_some_deprecated_tool", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_filtered_falls_back_to_not_found(self):
+        """Without filter info, call_tool still gives generic 'not found'."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="not found"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=None,
+            )
 
 
 class TestSearchToolsSyntheticTool:

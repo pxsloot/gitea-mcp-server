@@ -61,6 +61,16 @@ def _get_filter_reason(  # noqa: PLR0913 - all params needed for the check
 ) -> dict[str, Any] | None:
     """Determine why an operation is filtered, or None if visible.
 
+    Checks are evaluated in this priority order — the first match wins:
+        1. Deprecated  (strongest signal — API-level)
+        2. Excluded    (server config)
+        3. Scope       (token capability)
+
+    A tool that is both deprecated AND scope-restricted is reported as
+    "deprecated" rather than "scope".  This ordering means that cleaning
+    up deprecated endpoints (removing them from the spec) can reveal
+    scope restrictions that were previously masked.
+
     Args:
         op_id: The operationId (snake_case tool name w/o prefix).
         tags: Tags from the operation.
@@ -106,6 +116,12 @@ def compute_filtered_tools_info(
     Iterates every operation in the spec and determines if it would be
     filtered by deprecation, scope, or exclusion config.  Returns the
     structured dict used by synthetic tools and for Phase 2 filtering.
+
+    Note for Phase 2 (#467):
+        ``_get_deprecated_routes()`` in ``mcp_builder.py`` independently
+        iterates the spec for deprecated operations.  Phase 2 can pass
+        the deprecated set from this function directly instead of
+        re-iterating — making that function redundant.
 
     Args:
         openapi_spec: The OpenAPI 3.1 spec (post-conversion, pre-provider).

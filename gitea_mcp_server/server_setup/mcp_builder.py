@@ -473,7 +473,14 @@ class _ToolWrappingTransform(Transform):
 
 
 def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
-    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations."""
+    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations.
+
+    Note for Phase 2 (#467):
+        ``compute_filtered_tools_info()`` in ``filter_info.py`` already
+        inventories all operations (including deprecated ones).  Phase 2
+        can pass the deprecated set directly here instead of re-iterating
+        the spec — making this function redundant.
+    """
     deprecated: set[tuple[str, str]] = set()
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     if not isinstance(paths, dict):  # defense-in-depth for malformed runtime input

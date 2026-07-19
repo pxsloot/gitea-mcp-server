@@ -1,17 +1,17 @@
 """Unit tests for tool permission filtering.
 
 Tests for ``PermissionFilterTransform``, ``fetch_token_scopes``, and their
-supporting helpers (``_get_required_scope``, ``_has_sufficient_scope``, etc.).
+supporting helpers (``_get_required_scope``, ``has_sufficient_scope``, etc.).
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.tool_filter import (
     PermissionFilterTransform,
     _get_required_scope,
-    _has_sufficient_scope,
     _match_active_token,
     fetch_token_scopes,
 )
@@ -132,7 +132,7 @@ class TestMatchActiveToken:
 
     def test_matches_all_scope(self):
         # The "all" shortcut (API scope "all") is matched like any other scope
-        # at this layer; the wildcard semantics live in _has_sufficient_scope.
+        # at this layer; the wildcard semantics live in has_sufficient_scope.
         token_val = "all-token-"
         last_eight = token_val[-8:]
         tokens = [
@@ -186,46 +186,46 @@ class TestGetRequiredScope:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _has_sufficient_scope
+# has_sufficient_scope
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestHasSufficientScope:
-    """Tests for the _has_sufficient_scope helper function."""
+    """Tests for the has_sufficient_scope helper function."""
 
     def test_sudo_grants_any_scope(self):
-        assert _has_sufficient_scope("read:repository", {"sudo"}) is True
-        assert _has_sufficient_scope("write:issue", {"sudo"}) is True
-        assert _has_sufficient_scope("sudo", {"sudo"}) is True
+        assert has_sufficient_scope("read:repository", {"sudo"}) is True
+        assert has_sufficient_scope("write:issue", {"sudo"}) is True
+        assert has_sufficient_scope("sudo", {"sudo"}) is True
 
     def test_all_grants_any_scope(self):
         # Gitea's "full access" shortcut returns the literal scope "all"
         # (the UI displays it as "[all]"). It must grant every required scope.
-        assert _has_sufficient_scope("read:repository", {"all"}) is True
-        assert _has_sufficient_scope("write:issue", {"all"}) is True
-        assert _has_sufficient_scope("sudo", {"all"}) is True
-        assert _has_sufficient_scope(None, {"all"}) is True
+        assert has_sufficient_scope("read:repository", {"all"}) is True
+        assert has_sufficient_scope("write:issue", {"all"}) is True
+        assert has_sufficient_scope("sudo", {"all"}) is True
+        assert has_sufficient_scope(None, {"all"}) is True
 
     def test_exact_read_scope_match(self):
-        assert _has_sufficient_scope("read:repository", {"read:repository"}) is True
+        assert has_sufficient_scope("read:repository", {"read:repository"}) is True
 
     def test_exact_write_scope_match(self):
-        assert _has_sufficient_scope("write:issue", {"write:issue"}) is True
+        assert has_sufficient_scope("write:issue", {"write:issue"}) is True
 
     def test_write_scope_grants_read(self):
-        assert _has_sufficient_scope("read:repository", {"write:repository"}) is True
+        assert has_sufficient_scope("read:repository", {"write:repository"}) is True
 
     def test_read_scope_does_not_grant_write(self):
-        assert _has_sufficient_scope("write:repository", {"read:repository"}) is False
+        assert has_sufficient_scope("write:repository", {"read:repository"}) is False
 
     def test_unrelated_scope_does_not_suffice(self):
-        assert _has_sufficient_scope("write:issue", {"read:repository"}) is False
+        assert has_sufficient_scope("write:issue", {"read:repository"}) is False
 
     def test_none_required_always_sufficient(self):
-        assert _has_sufficient_scope(None, set()) is True
-        assert _has_sufficient_scope(None, {"read:repository"}) is True
+        assert has_sufficient_scope(None, set()) is True
+        assert has_sufficient_scope(None, {"read:repository"}) is True
 
     def test_empty_available_is_insufficient(self):
-        assert _has_sufficient_scope("read:repository", set()) is False
+        assert has_sufficient_scope("read:repository", set()) is False
 
 
 # ═══════════════════════════════════════════════════════════════════════

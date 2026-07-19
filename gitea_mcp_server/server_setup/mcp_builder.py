@@ -21,6 +21,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.config import Config
+from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -470,22 +471,16 @@ class _ToolWrappingTransform(Transform):
 # Deprecated route filtering
 # ---------------------------------------------------------------------------
 
-_HTTP_METHODS = frozenset(
-    {
-        "get",
-        "post",
-        "put",
-        "delete",
-        "patch",
-        "options",
-        "head",
-        "trace",
-    }
-)
-
 
 def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
-    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations."""
+    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations.
+
+    Note for Phase 2 (#467):
+        ``compute_filtered_tools_info()`` in ``filter_info.py`` already
+        inventories all operations (including deprecated ones).  Phase 2
+        can pass the deprecated set directly here instead of re-iterating
+        the spec — making this function redundant.
+    """
     deprecated: set[tuple[str, str]] = set()
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     if not isinstance(paths, dict):  # defense-in-depth for malformed runtime input
@@ -494,7 +489,7 @@ def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
         if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method not in _HTTP_METHODS or not isinstance(operation, dict):
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
             if operation.get("deprecated", False):
                 deprecated.add((path, method.upper()))

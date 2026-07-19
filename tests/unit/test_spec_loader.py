@@ -104,7 +104,7 @@ class TestLoadAndConvertSpec:
                 lambda spec, ext: None,
             )
 
-            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            spec, *_ = await load_and_convert_spec(gitea_client, test_config)
             assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
@@ -145,7 +145,7 @@ class TestLoadAndConvertSpec:
                 failing_apply,
             )
 
-            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            spec, *_ = await load_and_convert_spec(gitea_client, test_config)
             assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
@@ -169,7 +169,7 @@ class TestLoadAndConvertSpec:
                 lambda: None,
             )
 
-            spec, _ = await load_and_convert_spec(gitea_client, test_config)
+            spec, *_ = await load_and_convert_spec(gitea_client, test_config)
             assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio

@@ -70,6 +70,7 @@ def patch_spec_loader(monkeypatch):
                 "definitions": {},
             },
             {},  # no extensions
+            {},  # no filtered-tools info
         )
 
     # Patch where it's used, not where it's defined

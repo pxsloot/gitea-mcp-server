@@ -176,12 +176,13 @@ def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
     )
 
 
-def _setup_tool_discovery(
+def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this orchestration function
     mcp: FastMCP,
     config: Config,
     doc_manager: DocManager,
     extensions: dict[str, Any] | None = None,
     openapi_spec: OpenAPISpec | None = None,
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> None:
     """Setup lazy loading search transform, unified search, namespace, and extensions.
 
@@ -200,7 +201,10 @@ def _setup_tool_discovery(
         mcp.add_transform(search_transform)
         logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
         register_synthetic_tools(
-            mcp, search_transform, tool_prefix=config.tool_prefix, openapi_spec=openapi_spec
+            mcp, search_transform,
+            tool_prefix=config.tool_prefix,
+            openapi_spec=openapi_spec,
+            filtered_tools_info=filtered_tools_info,
         )
     else:
         logger.info("Lazy loading disabled via config; all tools will be listed directly")
@@ -298,7 +302,7 @@ async def create_mcp_server(
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        openapi_spec, extensions = await load_and_convert_spec(gitea_client, config)
+        openapi_spec, extensions, filtered_tools_info = await load_and_convert_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:
@@ -325,7 +329,11 @@ async def create_mcp_server(
 
     register_doc_tools(mcp, doc_manager)
     _setup_caching_middleware(mcp, label_service=label_service)
-    _setup_tool_discovery(mcp, config, doc_manager, extensions, openapi_spec=openapi_spec)
+    _setup_tool_discovery(
+        mcp, config, doc_manager, extensions,
+        openapi_spec=openapi_spec,
+        filtered_tools_info=filtered_tools_info,
+    )
     register_all_resources(mcp, gitea_client, openapi_spec)
     register_type_tools(mcp, openapi_spec=openapi_spec)
     _setup_tool_exclusions(mcp, config)

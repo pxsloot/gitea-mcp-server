@@ -151,6 +151,11 @@ HTTP_METHODS_DESTRUCTIVE = {"DELETE"}
 HTTP_METHODS_IDEMPOTENT = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
 """HTTP methods that are idempotent (can be repeated safely)."""
 
+HTTP_METHODS_ALL = frozenset({
+    "get", "post", "put", "delete", "patch", "options", "head", "trace",
+})
+"""All standard HTTP methods (lowercase) used for spec iteration."""
+
 
 # ============================================================================
 # Resource Registration Skips

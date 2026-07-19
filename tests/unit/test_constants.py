@@ -36,7 +36,6 @@ from gitea_mcp_server.constants import (
     RETRY_WAIT_MAX,
     RETRY_WAIT_MIN,
     RETRY_WAIT_MULTIPLIER,
-    SEARCH_ALWAYS_VISIBLE_TOOLS,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MAX_RESULTS,
     SEARCH_MIN_TOKEN_LENGTH,
@@ -98,10 +97,6 @@ class TestSearchConfig:
         assert 1 <= SEARCH_MAX_RESULTS <= 1000
         assert 1 <= SEARCH_MIN_TOKEN_LENGTH <= 10
         assert 0 < SEARCH_NAME_BOOST <= 100
-
-    def test_always_visible_tools_contains_core_tools(self):
-        for tool in ("search", "read_resource", "list_resources"):
-            assert tool in SEARCH_ALWAYS_VISIBLE_TOOLS
 
     def test_category_aliases_contains_expected_keys(self):
         assert "pull_request" in SEARCH_CATEGORY_ALIASES

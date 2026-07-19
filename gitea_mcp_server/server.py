@@ -27,7 +27,6 @@ from gitea_mcp_server.constants import (
     CACHE_MAX_ITEM_SIZE,
     CACHE_TTL_DEFAULT,
     CACHE_TTL_RESOURCE_LIST,
-    SEARCH_ALWAYS_VISIBLE_TOOLS,
     SEARCH_MAX_RESULTS,
 )
 from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
@@ -197,7 +196,6 @@ def _setup_tool_discovery(
         logger.info("Adding search transform for lazy loading...")
         search_transform = TolerantSearchTransform(
             max_results=SEARCH_MAX_RESULTS,
-            always_visible=SEARCH_ALWAYS_VISIBLE_TOOLS,
         )
         mcp.add_transform(search_transform)
         logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")

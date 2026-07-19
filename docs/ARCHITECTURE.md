@@ -244,8 +244,8 @@ The customization layers as applied during server startup:
 
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
    `search_tools` (BM25). This prevents context pollution from ~200 tools being
-   listed at once.  Four synthetic tools (`search`, `search_tools`, `call_tool`,
-   `tool_info`) are always visible.
+   listed at once.  All tools tagged `synthetic` are always pinned in
+   `list_tools()` so agents can call them without searching.
 
 3. **Resources pass through namespace** -- Resources use the `gitea://` scheme
    directly.  FastMCP's built-in `Namespace` would double-namespace them to

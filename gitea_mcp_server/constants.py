@@ -93,25 +93,11 @@ LABEL_CACHE_TTL = 300
 
 
 # ============================================================================
-# Search Configuration (TolerantSearchTransform)
+# Search Configuration
 # ============================================================================
 
 SEARCH_MAX_RESULTS = 10
 """Maximum number of search results to return."""
-
-SEARCH_ALWAYS_VISIBLE_TOOLS = [
-    "search",
-    "search_tools",
-    "call_tool",
-    "tool_info",
-    "read_resource",
-    "list_resources",
-    "search_resources",
-    "search_docs",
-    "read_doc",
-    "resolve_type",
-]
-"""Tool names that are always visible regardless of lazy loading settings."""
 
 
 # ============================================================================

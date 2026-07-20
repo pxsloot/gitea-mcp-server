@@ -157,7 +157,7 @@ builds a tool or resource for it.
 
 The same `compute_filtered_tools_info()` call that produces the excluded set
 also produces the `x-mcp-filtered-tools` prediction data used by synthetic
-tools (`tool_info`, `call_tool`, `search_tools`) to give rich error messages.
+tools (`tool_info`, `search_tools`) and the `FilteredToolMiddleware` to give rich error messages.
 Both the *visibility* decision and the *error message* data come from one
 source, so they can never diverge.
 

@@ -59,7 +59,7 @@ Tool annotations provide machine-readable metadata about MCP tools, enabling bet
 - **Type**: `boolean`
 - **Description**: Indicates whether the tool interacts with the external world (outside the MCP server)
 - **Values**:
-  - `true` - API tools and the `read_resource`/`call_tool` synthetic tools (they call the Gitea API)
+  - `true` - API tools and the `read_resource` synthetic tool (they call the Gitea API)
   - `false` - Local synthetic tools (`search`, `search_tools`, `tool_info`, `list_resources`, `search_resources`, `search_docs`, `read_doc`) that operate entirely on in-memory data
 - **Use case**: Helps clients understand which tools have side effects beyond the conversation
 

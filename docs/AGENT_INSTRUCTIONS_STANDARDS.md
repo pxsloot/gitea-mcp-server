@@ -72,11 +72,10 @@ not grep patterns.
    this.
 
 5. **Invite the agent to use its own tools.** Rather than over-explaining
-   mechanics (e.g. how `call_tool` resolves names), tell the agent to run
-   `tool_info("{{TOOL_PREFIX}}call_tool")` and try both prefixed and
-   unprefixed names. The doc should model the discovery behavior it preaches:
-   the agent learns the UX by using the tools, not by reading prose about
-   them.
+   mechanics (e.g. how tool naming works), tell the agent to run
+   `tool_info("{{TOOL_PREFIX}}search_tools")` and inspect the schema.
+   The doc should model the discovery behavior it preaches: the agent learns
+   the UX by using the tools, not by reading prose about them.
 
 6. **Workflows are narratives, not CRUD menus.** Show a real sequence the agent
    will actually run -- e.g. plan creates issue + labels -> research reads and

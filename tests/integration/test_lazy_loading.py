@@ -58,7 +58,6 @@ class TestLazyLoading:
 
             # Should have synthetic tools
             assert f"{prefix}search_tools" in tool_names, f"Expected {prefix}search_tools, got: {tool_names}"
-            assert f"{prefix}call_tool" in tool_names, f"Expected {prefix}call_tool, got: {tool_names}"
 
             # Should have pinned resource tools
             assert f"{prefix}list_resources" in tool_names
@@ -107,7 +106,7 @@ class TestLazyLoading:
         with respx.mock() as mock_http:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             # User is non-admin
-            mock_http.get("/api/v1/user").respond(200, json={"login": "user", "admin": False})
+            mock_http.get("https://git.example.com/api/v1/user").respond(200, json={"login": "user", "admin": False})
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -116,7 +115,6 @@ class TestLazyLoading:
 
             # Should have synthetic tools
             assert f"{prefix}search_tools" in tool_names
-            assert f"{prefix}call_tool" in tool_names
             # Should have pinned resource tools
             assert f"{prefix}list_resources" in tool_names
             assert f"{prefix}read_resource" in tool_names
@@ -402,8 +400,8 @@ class TestLazyLoading:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_proxy_dispatches_synthetic_tools(self):
-        """Test that call_tool can dispatch search_tools and tool_info, but blocks self-call."""
+    async def test_synthetic_tools_work_directly(self):
+        """Test that synthetic tools (search_tools, tool_info) work when called directly."""
         config = SimpleConfig(
             url="https://git.example.com",
             token="test_token",
@@ -434,32 +432,25 @@ class TestLazyLoading:
 
             prefix = config.tool_prefix or ""
 
-            # 1. call_tool can dispatch search_tools
+            # 1. search_tools works directly
             result = await mcp.call_tool(
-                f"{prefix}call_tool",
-                {"name": f"{prefix}search_tools", "arguments": {"query": "issue"}},
+                f"{prefix}search_tools",
+                {"query": "issue"},
             )
             tools = result.structured_content.get("result", [])
             names = [t["name"] for t in tools if isinstance(t, dict)]
             assert f"{prefix}issue_list_issues" in names, (
-                f"Expected {prefix}issue_list_issues via call_tool proxy, got: {names}"
+                f"Expected {prefix}issue_list_issues via search_tools, got: {names}"
             )
 
-            # 2. call_tool can dispatch tool_info
+            # 2. tool_info works directly
             info_result = await mcp.call_tool(
-                f"{prefix}call_tool",
-                {"name": f"{prefix}tool_info", "arguments": {"name": f"{prefix}search_tools"}},
+                f"{prefix}tool_info",
+                {"name": f"{prefix}search_tools"},
             )
             info = info_result.structured_content.get("result", {})
             assert isinstance(info, dict), f"Expected dict from tool_info, got: {type(info)}"
             assert info.get("name") == f"{prefix}search_tools"
-
-            # 3. call_tool blocks self-call
-            with pytest.raises(ToolError, match="cannot call itself"):
-                await mcp.call_tool(
-                    f"{prefix}call_tool",
-                    {"name": "call_tool"},
-                )
 
 
 class TestLowLevelProtocolValidation:
@@ -548,9 +539,9 @@ class TestLowLevelProtocolValidation:
                 )
 
     @pytest.mark.asyncio
-    async def test_call_tool_via_low_level_passes_validation(self):
-        """call_tool (the proxy) called through the low-level handler must
-        validate for both object-returning and array-returning proxied tools."""
+    async def test_synthetic_tools_via_low_level_return_structured_content(self):
+        """All synthetic tools called through the low-level handler must
+        return structured content with a 'result' key."""
         config = SimpleConfig(
             url="https://git.example.com",
             token="test_token",
@@ -579,25 +570,22 @@ class TestLowLevelProtocolValidation:
             list_req = ListToolsRequest(method="tools/list")
             await list_handler(list_req)
 
-            # call_tool proxying tool_info (returns an object)
+            # tool_info should return structured content
             import json as json_module
 
             req = CallToolRequest(
                 method="tools/call",
                 params=CallToolRequestParams(
-                    name=f"{prefix}call_tool",
-                    arguments={
-                        "name": f"{prefix}tool_info",
-                        "arguments": json_module.dumps({"name": f"{prefix}search_tools"}),
-                    },
+                    name=f"{prefix}tool_info",
+                    arguments={"name": f"{prefix}search_tools"},
                 ),
             )
             result = await call_handler(req)
             assert not result.root.isError, (
-                f"call_tool -> tool_info failed: "
+                f"tool_info failed: "
                 f"{result.root.content[0].text if result.root.content else 'no content'}"
             )
             result_value = result.root.structuredContent.get("result", {})
             assert isinstance(result_value, dict), (
-                f"Expected dict from call_tool -> tool_info, got {type(result_value)}"
+                f"Expected dict from tool_info, got {type(result_value)}"
             )

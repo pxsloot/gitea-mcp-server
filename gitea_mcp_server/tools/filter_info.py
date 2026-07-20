@@ -1,9 +1,11 @@
 """Filter info computation — predicts which tools are filtered and why.
 
 Computes the ``x-mcp-filtered-tools`` extension data during spec
-preparation. Synthetic tools (search_tools, tool_info, call_tool) use
+preparation. Synthetic tools (search_tools, tool_info) use
 this data to give agents actionable error messages instead of generic
-"not found".
+"not found".  The :class:`FilteredToolMiddleware` intercepts direct tool
+calls at the MCP protocol level to provide the same helpful messages
+when an agent calls a filtered tool directly.
 
 Filtering happens at spec-prep time, not via runtime transforms.  The logic
 here mirrors the spec-level filtering applied via ``route_map_fn`` (see
@@ -18,6 +20,9 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.scope import derive_required_scope, has_sufficient_scope
@@ -289,7 +294,57 @@ def build_filtered_tools_message(
     )
 
 
+class FilteredToolMiddleware(Middleware):
+    """Middleware that intercepts tool calls to filtered tools and returns
+    helpful error messages explaining *why* the tool is hidden.
+
+    Before the tool call pipeline runs, this middleware checks whether the
+    requested tool name matches a filtered tool (scope-restricted,
+    config-excluded, or deprecated).  If it does, a ``ToolError`` with a
+    descriptive message is raised instead of a generic "tool not found".
+
+    This replaces the filtered-tool error handling that was previously only
+    available through the ``call_tool`` proxy.  Now every call path — direct
+    MCP calls and proxy calls — gets the same helpful message.
+
+    Args:
+        filtered_tools_info: The filter-prediction data dict as returned by
+            :func:`compute_filtered_tools_info`, or ``None`` (in which case
+            the middleware passes through without checking).
+        tool_prefix: The namespace prefix (e.g. ``"gitea_"``) used to strip
+            prefixed tool names before looking them up in the filter data.
+    """
+
+    def __init__(
+        self,
+        filtered_tools_info: dict[str, Any] | None = None,
+        tool_prefix: str = "",
+    ) -> None:
+        self._filtered_tools_info = filtered_tools_info
+        self._tool_prefix = tool_prefix
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext,
+        call_next: Any,
+    ) -> Any:
+        """Intercept tool calls and check for filtered tools."""
+        tool_name: str = context.message.name
+
+        filter_info = get_filtered_tool_info(
+            tool_name, self._filtered_tools_info, self._tool_prefix
+        )
+        if filter_info is not None:
+            msg = build_filtered_tools_message(
+                tool_name, filter_info, self._filtered_tools_info
+            )
+            raise ToolError(msg)
+
+        return await call_next(context)
+
+
 __all__ = [
+    "FilteredToolMiddleware",
     "build_filtered_tools_message",
     "compute_filtered_tools_info",
     "get_filtered_tool_info",

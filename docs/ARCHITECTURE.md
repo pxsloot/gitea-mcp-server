@@ -54,14 +54,15 @@ removed when FastMCP catches up.
 │       mcp_builder         │  │      resource_setup      │
 │  create_openapi_provider  │  │  register_all_resources  │
 │                           │  │                          │
-│  Phase 0: _get_deprecated │  │  • auto_generated:       │
-│  _routes → exclude        │  │    every GET endpoint    │
-│  deprecated endpoints     │  │    → raw JSON resource   │
-│                           │  │                          │
-│  Phase 1: _customize      │  │  • custom wrappers:      │
-│  _metadata (per tool):    │  │    Markdown formatters   │
-│  • title, category        │  │    for common URIs       │
-│  • annotations, hints     │  │    (override auto)       │
+│  Phase 0: route_map_fn    │  │  • auto_generated:       │
+│  drops excluded routes    │  │    every GET endpoint    │
+│  (deprecated + scope +    │  │    → raw JSON resource   │
+│  config-excluded)         │  │                          │
+│                           │  │  • custom wrappers:      │
+│  Phase 1: _customize      │  │    Markdown formatters   │
+│  _metadata (per tool):    │  │    for common URIs       │
+│  • title, category        │  │    (override auto)       │
+│  • annotations, hints     │  │                          │
 │  • output/label schemas   │  │                          │
 │  • invalidation patterns  │  │                          │
 │                           │  │                          │
@@ -155,7 +156,7 @@ Agent reads a resource:
 | `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 (split into `core.py` for conversion pipeline, `schema.py` for schema walker/transformers) | `convert_swagger_to_openapi_v3` |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, etc.) | 7 TypedDict types |
 | `spec_loader.py` | Fetch spec, convert, apply parameter extensions; load YAML overrides for transform | `load_and_convert_spec` |
-| `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; exclude deprecated endpoints via `route_map_fn` | `create_openapi_provider`, `_get_deprecated_routes` |
+| `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; apply route filtering (deprecated + scope + config-excluded) via `route_map_fn`; customize per-tool metadata via `mcp_component_fn` | `create_openapi_provider` |
 | `server.py` | Assemble everything, serve via stdio or HTTP | `main()`, `create_mcp_server()` |
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
@@ -186,19 +187,18 @@ The customization layers as applied during server startup:
 
 | Layer | Module | What it does |
 |-------|--------|--------------|
-| 0. Deprecated filter | `server_setup/mcp_builder.py` | exclude endpoints with `deprecated: true` via FastMCP `route_map_fn` before component creation |
+| 0. Route filtering | `server_setup/spec_loader.py` + `server_setup/mcp_builder.py` | `_compute_excluded_routes` in spec_loader computes the excluded set; `route_map_fn` in mcp_builder drops them (deprecated + scope + config-excluded) before FastMCP builds the tool |
 | 1. Annotations | `tools/customize.py` | title, category tag, readOnly/destructive/idempotent hints |
 | 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
 | 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
-| 6. Permissions | `spec_loader.py` (route_map_fn) | drop operations that exceed token scopes or match exclusion config, before provider creation |
-| 8. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
-| 9. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
-| 10. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
-| 11. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
-| 12. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
-| 13. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
+| 6. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
+| 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
+| 8. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
+| 9. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
+| 10. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
+| 11. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
 
 ### Resource System
 
@@ -215,10 +215,9 @@ The customization layers as applied during server startup:
 | Module | Role |
 |--------|------|
 | `server_setup/__init__.py` | Package marker |
-| `server_setup/spec_loader.py` | Fetch, convert, extend |
-| `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_service`) |
+| `server_setup/spec_loader.py` | Fetch, convert, extend; compute excluded routes (deprecated + scope + config-excluded) |
+| `server_setup/mcp_builder.py` | Create provider + wire tools; apply excluded routes via `route_map_fn` |
 | `server_setup/resource_setup.py` | Orchestrate resource registration |
-| `server_setup/permissions.py` | Re-exports scope-filtering helpers (avoids circular import) |
 | `server_setup/mcp_extensions.py` | YAML-based parameter extensions (applied to spec before tool generation) |
 
 ### Flat Infrastructure Modules (shared, not domain-specific)

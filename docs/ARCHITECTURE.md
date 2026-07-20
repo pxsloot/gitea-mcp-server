@@ -154,12 +154,13 @@ Key invariants:
 ## Runtime: Tool Call & Resource Read Flows
 
 ```
-Agent calls a tool:
+Agent calls a tool directly (e.g. gitea_issue_create_issue({...})):
 
-  call_tool("gitea_create_issue", {...})
     │
-    ├─▶ TolerantSearchTransform (synthetic handler)
-    │     └─▶ ctx.fastmcp.call_tool(name, args)
+    ├─▶ FilteredToolMiddleware    — check if tool is filtered
+    │                              (scope/excluded/deprecated)
+    │                              → if filtered: raise ToolError
+    │                              → if visible: pass through
     │
     ├─▶ CacheInvalidationMiddleware
     │     ├─▶ executes the tool (auto OTEL span: tools/call gitea_*)
@@ -222,7 +223,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
-| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
+| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
@@ -559,10 +560,12 @@ Agent: search("create issue")
 ## Data Flow: Agent Calls a Tool
 
 ```
-Agent: call_tool("gitea_issue_create_issue", {...})
+Agent calls a tool directly (e.g. gitea_issue_create_issue({...}))
   │
-  ├─▶ TolerantSearchTransform intercepts "call_tool"
-  │     └─▶ ctx.fastmcp.call_tool(name, arguments)
+  ├─▶ FilteredToolMiddleware.on_call_tool()
+  │     └─▶ checks if tool is filtered (scope/excluded/deprecated)
+  │     └─▶ if filtered: raise ToolError with helpful message
+  │     └─▶ if visible: pass through
   │
   ├─▶ CacheInvalidationMiddleware.on_call_tool()
   │     └─▶ executes tool

@@ -5,9 +5,9 @@ visibility is decided. It fetches token scopes and the exclusion config,
 then computes both:
 
 * ``filtered_tools_info`` — the ``x-mcp-filtered-tools`` prediction data used by
-  synthetic tools (``tool_info``, ``call_tool``, ``search_tools``) to give
-  agents rich, actionable error messages, and by resource registration to skip
-  filtered operations.
+  the ``FilteredToolMiddleware`` and ``tool_info`` to give agents rich,
+  actionable error messages, and by resource registration to skip filtered
+  operations.
 * ``excluded_routes`` — the set of ``(path, UPPER_METHOD)`` tuples that must
   never reach FastMCP.  This is passed to ``create_openapi_provider`` and
   applied via ``route_map_fn``, so filtered operations are excluded *before*

@@ -13,8 +13,8 @@ privately — **do not open a public issue**.
 
 **Report via email**: gitea-mcp-server@pxsloot.nl
 
-You can also use GitHub's private vulnerability reporting if the repo is
-on GitHub: go to the repository's "Security" tab → "Report a vulnerability".
+You can also use GitHub's private vulnerability reporting:
+go to the repository's "Security" tab → "Report a vulnerability".
 
 ### What to include
 

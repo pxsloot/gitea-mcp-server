@@ -278,7 +278,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
            await ctx.info(f"Processing '{param}'", ...)
            result = do_the_work(my_data, param)
            await ctx.report_progress(progress=1.0)
-           return format_result(ToolResult(structured_content={"result": result}), format)
+            return apply_format(result, format)
 
        mcp.tool(
            name="my_tool",
@@ -319,7 +319,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
-| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``format_result()`` |
+| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated results, compose with ``apply_pagination()`` |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — only meaningful for schema-depth resources |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |

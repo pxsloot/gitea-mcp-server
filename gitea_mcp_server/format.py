@@ -6,6 +6,8 @@ Kept at the flat level so neither domain depends on the other.
 Public functions:
     apply_format - format data for output (raw/json/markdown), no pagination.
     format_result - reformat a ToolResult by format (json/markdown/raw).
+        Prefer ``apply_format`` for new code; ``format_result`` is kept for
+        backward compatibility.
 """
 
 import json as json_module

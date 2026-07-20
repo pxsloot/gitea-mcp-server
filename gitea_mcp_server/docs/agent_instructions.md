@@ -83,12 +83,13 @@ is one call away:
 tool_info("{{TOOL_PREFIX}}issue_create_issue")
 ```
 
-`tool_info` returns the full parameter list (types, which are required, enums,
-and validation patterns), a compact `output_example`, the tool's annotations,
-and its tags. Trust that over anything you assume. Use `tool_info(name,
-detail="full")` only when you need the complete JSON Schema -- it is hundreds of
-lines on large tools, so run it rarely (once on a small tool to learn the
-shape, then trust the compact example day to day).
+`tool_info` returns a parseable markdown structure with a consistent
+parameter table (``Parameter | Type | Required | Description``), a compact
+``output_example``, annotations, and tags. The markdown output is designed
+to be parsed reliably -- you do not need ``format="json"`` for structured
+extraction. Use ``tool_info(name, detail="full")`` when you need the complete
+JSON Schema; it can be paginated with ``pagination=(page, limit)`` for large
+schemas.
 
 That said, a handful of parameters recur across almost every tool because they
 mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
@@ -169,8 +170,9 @@ Every tool except `call_tool` accepts a `format` parameter, and so do
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
-large (hundreds of lines on big tools). Use it rarely; run it once on a small
-tool to get a feel for the shape, then trust the compact example day to day.
+large (hundreds of lines on big tools). Use `pagination=(page, limit)` to page
+through large schemas. Run `tool_info` once on a small tool to get a feel for
+the shape, then trust the compact example day to day.
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These

@@ -34,7 +34,7 @@ from gitea_mcp_server.resources.format import (
     _format_user_markdown,
     _handle_not_found,
 )
-from gitea_mcp_server.resources.scope import scope_meta
+from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,7 @@ def register_custom_resources(  # noqa: PLR0915
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None = None,
+    available_scopes: set[str] | None = None,
 ) -> None:
     """Register custom-formatted and custom resources.
 
@@ -101,6 +102,13 @@ def register_custom_resources(  # noqa: PLR0915
     captures ``gitea_client`` (and ``openapi_spec`` where needed),
     so function signatures expose only URI-relevant parameters.
     Uses FastMCP's last-registration-wins ordering.
+
+    Args:
+        mcp: The FastMCP server instance.
+        gitea_client: GiteaClient for API calls.
+        openapi_spec: Optional OpenAPI spec for server info resource.
+        available_scopes: Set of scopes the token has, or None (no filtering).
+            Resources whose ``required_scope`` is not satisfied are skipped.
     """
 
     def _register(
@@ -108,6 +116,35 @@ def register_custom_resources(  # noqa: PLR0915
     ) -> Callable[
         [Callable[..., Awaitable[ResourceResult]]], Callable[..., Awaitable[ResourceResult]]
     ]:
+        # Check scope before registering: skip if the token lacks the
+        # required scope for this resource.
+        required_scope = (meta or {}).get("required_scope")
+        if (
+            required_scope is not None
+            and available_scopes is not None
+            and not has_sufficient_scope(required_scope, available_scopes)
+        ):
+            logger.debug(
+                "Skipping custom resource %s: requires %s",
+                uri,
+                required_scope,
+            )
+
+            # Return a no-op passthrough instead of registering with
+            # mcp.resource().  Since _register is used as a decorator
+            # (outermost on each resource handler), returning passthrough
+            # means the decorated function is returned unmodified — it
+            # simply never gets wired into FastMCP.  The inner decorator
+            # (resource_handler) is still applied for error handling, but
+            # without an mcp.resource() call, the URI template is never
+            # exposed to clients.
+            def passthrough(
+                func: Callable[..., Awaitable[ResourceResult]],
+            ) -> Callable[..., Awaitable[ResourceResult]]:
+                return func
+
+            return passthrough
+
         def deco(
             func: Callable[..., Awaitable[ResourceResult]],
         ) -> Callable[..., Awaitable[ResourceResult]]:

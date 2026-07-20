@@ -4,17 +4,18 @@ Tests verify that ``load_exclusion_config`` loads exclude/include patterns
 correctly, and that the spec-level filtering path (``compute_filtered_tools_info``
 + ``_compute_excluded_routes``) drops the right operations via ``route_map_fn``.
 
-The old ``ExclusionTransform`` runtime transform was removed in Phase 2 of the
-Spec-Level Filtering milestone (#472); filtering now happens at spec-prep time.
+Filtering happens at spec-prep time — no runtime transform applies exclusion.
 """
 
 from pathlib import Path
 
 import pytest
 
-from gitea_mcp_server.server_setup.spec_loader import _compute_excluded_routes
-from gitea_mcp_server.tools.exclusion import (
+from gitea_mcp_server.server_setup.spec_loader import (
+    _compute_excluded_routes,
     load_exclusion_config,
+)
+from gitea_mcp_server.tools.exclusion import (
     matches_any,
     matches_pattern,
 )

@@ -2,7 +2,7 @@
 
 These tests are deliberately minimal - they verify the fixture plumbing,
 not specific server behaviour.  Real behavioural tests belong in
-``test_tool_behaviour.py`` (Phase 2) or companion modules.
+``test_tool_behaviour.py`` or companion modules.
 """
 
 from __future__ import annotations

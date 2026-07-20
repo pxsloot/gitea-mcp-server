@@ -64,7 +64,7 @@ _META_CUSTOMIZED = "_customization_applied"
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 - metadata customisation (in-place, called by mcp_component_fn)
+# Metadata customisation (in-place, called by mcp_component_fn)
 # ---------------------------------------------------------------------------
 
 
@@ -197,7 +197,7 @@ def _customize_metadata(
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 - runtime wrapping (provider-level Transform, public API)
+# Runtime wrapping (provider-level Transform, public API)
 # ---------------------------------------------------------------------------
 
 

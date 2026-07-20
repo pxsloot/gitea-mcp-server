@@ -54,23 +54,23 @@ removed when FastMCP catches up.
 │       mcp_builder         │  │      resource_setup      │
 │  create_openapi_provider  │  │  register_all_resources  │
 │                           │  │                          │
-│  Phase 0: route_map_fn    │  │  • auto_generated:       │
+│  route_map_fn             │  │  • auto_generated:       │
 │  drops excluded routes    │  │    every GET endpoint    │
 │  (deprecated + scope +    │  │    → raw JSON resource   │
 │  config-excluded)         │  │                          │
 │                           │  │  • custom wrappers:      │
-│  Phase 1: _customize      │  │    Markdown formatters   │
+│  _customize               │  │    Markdown formatters   │
 │  _metadata (per tool):    │  │    for common URIs       │
 │  • title, category        │  │    (override auto)       │
 │  • annotations, hints     │  │                          │
 │  • output/label schemas   │  │                          │
 │  • invalidation patterns  │  │                          │
 │                           │  │                          │
-│  Phase 2: LabelTransform  │  │                          │
+│  LabelTransform           │  │                          │
 │  (innermost):             │  │                          │
 │  • label string→ID conv   │  └───────────┬──────────────┘
 │                           │              │
-│  Phase 3: _ToolWrapping   │              │
+│  _ToolWrapping            │              │
 │  _Transform (outermost):  │              │
 │  • inject virtual params  │              │
 │  • validate args          │              │
@@ -97,15 +97,59 @@ removed when FastMCP catches up.
 │       unprefixed names                                  │
 │                                                         │
 │  Spec-prep filtering (before FastMCP sees the spec):    │
-│    • route_map_fn — drops operations that are           │
+│    • route_map_fn — drops tool operations that are       │
 │      deprecated, scope-filtered, or config-excluded     │
-│      (see Spec-Level Filtering milestone, Phase 2)      │
+│      (see Spec-Level Filtering)                         │
+│    • register_all_resources — skips resources whose     │
+│      operationId is filtered (auto) or whose            │
+│      required_scope is unavailable (custom)             │
+│      (see Spec-Level Filtering)                         │
 │                                                         │
 │  Middleware:                                            │
 │    • ResponseCaching          — TTL for resources       │
 │    • CacheInvalidationOnWrite — clear on write tools    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## Spec-Level Filtering
+
+All filtering (scope, deprecation, config exclusion) is decided once at
+spec-prep time, before FastMCP ever sees tools or resources.  The same
+``filtered_tools_info`` data structure drives both registration decisions
+and agent-facing error messages.
+
+```
+Server startup
+  │
+  ├─ 1. load_and_convert_spec(...)
+  │      → openapi_spec (converted)
+  │      → filtered_tools_info (scope + deprecation + config exclusion)
+  │      → excluded_routes (tools to drop via route_map_fn)
+  │      → available_scopes (for custom resources + virtual params)
+  │
+  ├─ 2. create_openapi_provider(..., excluded_routes=...)
+  │      → route_map_fn drops filtered tool operations
+  │
+  ├─ 3. register_all_resources(..., filtered_tools_info=...,
+  │      │                       available_scopes=...)
+  │      ├─ auto resources: skip if operationId in filtered_tools_info
+  │      │   (covers scope + deprecation + config exclusion)
+  │      └─ custom resources: skip if has_sufficient_scope() fails
+  │          (scope-only — hand-written resources)
+  │
+  └─ 4. apply_scope_filter(available_scopes)
+         → gates virtual params (e.g. sudo)
+```
+
+Key invariants:
+- ``filtered_tools_info`` is the **single source of truth** for auto-generated
+  resource visibility — the same data used for tool filtering and error messages.
+- Custom resources declare their scope via ``scope_meta()``; they are gated by
+  ``available_scopes`` directly since they have no operationId to look up.
+- ``load_exclusion_config`` lives in ``spec_loader.py`` alongside its only
+  consumer (``load_and_convert_spec``).  ``tools/exclusion.py`` retains only
+  the pattern-matching helpers (``matches_any``, ``matches_pattern``) used by
+  ``filter_info.py``.
 
 ## Runtime: Tool Call & Resource Read Flows
 
@@ -177,7 +221,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/label_transform.py` | FastMCP `Transform` — runtime label validation and conversion, runs as innermost provider-level transform | `LabelTransform`, `_convert_labels_inline` |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
-| `tools/exclusion.py` | `load_exclusion_config` + `matches_any`/`matches_pattern` — exclusion config loading and pattern matching, consumed by spec-level `route_map_fn` filtering |
+| `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
@@ -204,8 +248,8 @@ The customization layers as applied during server startup:
 
 | Module | Role |
 |--------|------|
-| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON) |
-| `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs |
+| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time |
+| `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs; scope-filtered via `available_scopes` at registration time |
 | `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases, labels) |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |

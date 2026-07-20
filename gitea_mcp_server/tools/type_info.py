@@ -179,7 +179,7 @@ def build_type_index(openapi_spec: OpenAPISpec) -> dict[str, dict[str, Any]]:
 
     type_index: dict[str, dict[str, Any]] = {}
 
-    # Phase 1: register all types and their nested refs
+    # First pass: register all types and their nested refs
     for type_name, schema in schemas.items():
         if not isinstance(schema, dict):
             continue
@@ -191,7 +191,7 @@ def build_type_index(openapi_spec: OpenAPISpec) -> dict[str, dict[str, Any]]:
             "accepted_by": [],
         }
 
-    # Phase 2: walk all operations for cross-references
+    # Second pass: walk all operations for cross-references
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     for path, path_item in paths.items():
         if not isinstance(path_item, dict):

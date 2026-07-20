@@ -5,9 +5,8 @@ preparation. Synthetic tools (search_tools, tool_info, call_tool) use
 this data to give agents actionable error messages instead of generic
 "not found".
 
-As of Phase 2 of the Spec-Level Filtering milestone (#472), filtering
-happens at spec-prep time, not via runtime transforms.  The logic here
-mirrors the spec-level filtering applied via ``route_map_fn`` (see
+Filtering happens at spec-prep time, not via runtime transforms.  The logic
+here mirrors the spec-level filtering applied via ``route_map_fn`` (see
 ``spec_loader.load_and_convert_spec`` and
 ``mcp_builder.create_openapi_provider``):
     - deprecated endpoints
@@ -122,7 +121,7 @@ def compute_filtered_tools_info(
 
     Iterates every operation in the spec and determines if it would be
     filtered by deprecation, scope, or exclusion config.  Returns the
-    structured dict used by synthetic tools and for Phase 2 filtering.
+    structured dict used by synthetic tools and for spec-level filtering.
 
     Args:
         openapi_spec: The OpenAPI 3.1 spec (post-conversion, pre-provider).

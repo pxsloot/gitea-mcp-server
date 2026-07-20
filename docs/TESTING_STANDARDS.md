@@ -520,7 +520,7 @@ exclude_also = [
 | Area | Minimum | Notes |
 |------|---------|-------|
 | `openapi_converter.py` | 95% | Core schema transformation — all branches matter |
-| `tools/exclusion.py` | 90% | Exclusion pattern matching + config loading (consumed by spec-level filtering) |
+| `tools/exclusion.py` | 90% | Exclusion pattern matching (consumed by spec-level filtering); config loading moved to `spec_loader.py` |
 | `validation.py` | 95% | Security-sensitive input validation |
 | `resources/*.py` (each) | 85% | Formatters, resource registration, scope derivation |
 | `resources/custom.py` | 80% | Error paths matter; some formatting is visual |

@@ -1,7 +1,6 @@
-"""Exclusion config loading and pattern matching.
+"""Exclusion pattern matching utilities.
 
 Provides:
-- ``load_exclusion_config`` - loads exclusion rules from a YAML config file.
 - ``matches_pattern`` / ``matches_any`` - match a component name or tags
   against exclude/include patterns.
 
@@ -14,19 +13,14 @@ Include overrides exclude: if a component matches any include pattern,
 it passes through even if it also matches an exclude pattern.
 
 Note:
-    The actual *filtering* of tools/resources now happens at spec-prep time
-    via ``route_map_fn`` (see ``spec_loader.load_and_convert_spec`` and
-    ``mcp_builder.create_openapi_provider``).  This module only supplies the
-    config-loading and matching primitives consumed by that spec-level step.
-    The old ``ExclusionTransform`` runtime transform was removed in Phase 2 of
-    the Spec-Level Filtering milestone (#472).
+    This module only supplies the matching primitives.  Config loading lives
+    in ``spec_loader.py`` (``load_exclusion_config``).  Filtering happens at
+    spec-prep time via ``route_map_fn`` — see ``spec_loader.load_and_convert_spec``
+    and ``mcp_builder.create_openapi_provider``.
 """
 
 import logging
 from fnmatch import fnmatch
-from pathlib import Path
-
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -50,34 +44,4 @@ def matches_any(name: str, tags: set[str], patterns: list[str], tool_prefix: str
     return any(matches_pattern(name, tags, p, tool_prefix) for p in patterns)
 
 
-def load_exclusion_config(config_path: str | None) -> dict[str, list[str]]:
-    """Load exclusion rules from a YAML config file.
-
-    Args:
-        config_path: Path to the YAML config file, or None to skip.
-
-    Returns:
-        Dict with ``exclude`` and ``include`` keys, each a list of pattern strings.
-        Returns empty lists on any error or missing file.
-    """
-    if config_path is None:
-        return {"exclude": [], "include": []}
-
-    path = Path(config_path)
-    if not path.exists():
-        logger.info("Exclusion config not found: %s", config_path)
-        return {"exclude": [], "include": []}
-
-    try:
-        with path.open() as f:
-            data = yaml.safe_load(f) or {}
-        return {
-            "exclude": data.get("exclude", []) or [],
-            "include": data.get("include", []) or [],
-        }
-    except Exception:
-        logger.exception("Failed to load exclusion config from %s", config_path)
-        return {"exclude": [], "include": []}
-
-
-__all__ = ["load_exclusion_config", "matches_any", "matches_pattern"]
+__all__ = ["matches_any", "matches_pattern"]

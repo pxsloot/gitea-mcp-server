@@ -6,7 +6,6 @@ Guides are markdown files in gitea_mcp_server/docs/guides/.
 
 from __future__ import annotations
 
-import json
 import logging
 from importlib.resources import files as pkg_files
 from typing import TYPE_CHECKING, Any
@@ -17,9 +16,9 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown, apply_format
 from gitea_mcp_server.models import DocEntry
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 
@@ -242,7 +241,7 @@ class DocManager:
         return "\n".join(lines)
 
 
-def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with inline closures
+def register_doc_tools(
     mcp: FastMCP,
     doc_manager: DocManager,
 ) -> None:
@@ -333,37 +332,25 @@ def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with in
                 structured_content={"result": [], "_hint": content},
             )
 
-        structured = {"result": page_items}
-        if format == "raw":
-            enhanced = add_pagination_metadata(structured, page, limit, total_count)
-            return ToolResult(structured_content=enhanced)
-
-        if format == "json":
-            content = json.dumps(page_items, indent=2)
-        elif format == "markdown":
-            content = _format_as_markdown(page_items, None)
-            content += (
-                "\n\n---\n"
+        extras: list[str] = []
+        if format == "markdown":
+            extras.append(
                 "**Cross-linking hints:**\n"
                 "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
                 "- For API tools: `search_tools(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            pagination_info = {
-                k: v
-                for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-                if k in PAGINATION_KEYS
-            }
-            content += "\n\n---\n"
-            content += _format_as_markdown(pagination_info, None)
-        else:
-            msg = f"Unsupported format '{format}'. Use 'markdown', 'json', or 'raw'."
-            raise ValueError(msg)
+            pagination_table = _format_as_markdown(
+                {k: v for k, v in add_pagination_metadata(
+                    {"result": page_items}, page, limit, total_count
+                ).items() if k in PAGINATION_KEYS},
+                None,
+            )
+            extras.append(pagination_table)
 
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(
-            content=[TextContent(type="text", text=content)],
-            structured_content=enhanced,
+        return apply_pagination(
+            apply_format(page_items, format, markdown_extras=extras or None),
+            page, limit, total_count,
         )
 
     @mcp.tool(
@@ -382,6 +369,8 @@ def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with in
     async def read_doc(
         topic: str,
         format: str = "markdown",
+        page: int = 1,
+        limit: int = 50,
     ) -> ToolResult:
         """Read a workflow guide by topic name.
 
@@ -396,11 +385,18 @@ def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with in
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
         - ``format``: Output format -- ``markdown`` (default, full content with
-          YAML frontmatter), ``raw`` (same as markdown - full content included).
+          YAML frontmatter), ``json`` (structured JSON with content in
+          ``{"result": "..."}``), or ``raw`` (same as markdown - full content
+          included).
+        - ``page``: Page number (1-based, default 1). Each page is ``limit`` lines.
+        - ``limit``: Lines per page (default 50, max 200). Use a larger limit
+          to read more of the guide at once.
 
         ## Return Value
 
-        The full guide content in Markdown format.
+        The guide content (sliced by page/limit) in the requested format.
+        Pagination metadata (``has_more``, ``next_offset``, ``total_count``)
+        is available in the structured content.
 
         ## Error Handling
 
@@ -408,10 +404,12 @@ def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with in
 
         Args:
             topic: The guide topic name (case-insensitive)
-            format: Output format: markdown (default) or raw
+            format: Output format: markdown (default), json, or raw
+            page: Page number (1-based, default 1)
+            limit: Lines per page (default 50, max 200)
 
         Returns:
-            The full guide content
+            The guide content (sliced by page/limit)
 
         Raises:
             ValueError: If the topic is not found
@@ -426,15 +424,20 @@ def register_doc_tools(  # noqa: PLR0915 - 3 tool/resource registrations with in
             )
             raise ValueError(msg)
 
-        if format in ("raw", "markdown"):
-            content = guide.full_content
-        else:
-            msg = f"Unsupported format '{format}'. Use 'markdown' or 'raw'."
-            raise ValueError(msg)
-        return ToolResult(
-            content=[TextContent(type="text", text=content)],
-            structured_content={"result": content},
+        # Slice guide content by lines for paginated reading
+        all_lines = guide.full_content.splitlines(keepends=True)
+        total_lines = len(all_lines)
+        start = (page - 1) * limit
+        end = start + limit
+        page_lines = all_lines[start:end]
+        page_content = "".join(page_lines)
+
+        result = apply_format(
+            page_content,
+            format,
+            markdown_formatter=lambda d: d,
         )
+        return apply_pagination(result, page, limit, total_lines)
 
     # Compute dynamic tags and description from all loaded guides
     # so resource discovery aligns with guide frontmatter content

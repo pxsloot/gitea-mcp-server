@@ -4,19 +4,34 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
+    apply_format - format data for output (raw/json/markdown), no pagination.
     format_result - reformat a ToolResult by format (json/markdown/raw).
+        Prefer ``apply_format`` for new code; ``format_result`` is kept for
+        backward compatibility (used by the API tool wrapping transform which
+        needs to preserve pagination metadata and ``meta`` from the original
+        ``ToolResult``).
+    _format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
+    _format_parameter_table - render a JSON Schema parameter table.
+    _format_annotations_table - render an annotations table.
+    _format_json_section - render a JSON code block section.
 """
+
+from __future__ import annotations
 
 import json as json_module
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.pagination import PAGINATION_KEYS
+if TYPE_CHECKING:
+    from gitea_mcp_server.models import ToolSchemaResult
+
+# Note: PAGINATION_KEYS is imported lazily inside format_result() to avoid
+# a module-level coupling that only the deprecated function needs.
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +292,147 @@ def _format_as_markdown(
     return "\n".join(lines)
 
 
+# ============================================================================
+# Tool info markdown formatters (used by tool_info synthetic tool)
+# ============================================================================
+
+
+def _format_parameter_table(properties: dict[str, Any], required: list[str]) -> str:
+    """Render a parameter table from JSON Schema properties."""
+    lines = [
+        "## Parameters",
+        "",
+        "| Parameter | Type | Required | Description |",
+        "|-----------|------|----------|-------------|",
+    ]
+    for param_name, prop in properties.items():
+        if not isinstance(prop, dict):
+            continue
+        ptype = prop.get("type", "any")
+        preq = "yes" if param_name in required else "no"
+        pdesc = prop.get("description", "").replace("|", "\\|")
+        lines.append(f"| {param_name} | {ptype} | {preq} | {pdesc} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_annotations_table(annotations: dict[str, Any]) -> str:
+    """Render an annotations table."""
+    lines = ["## Annotations", "", "| Hint | Value |", "|------|-------|"]
+    for key in ("title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
+        val = annotations.get(key)
+        if val is not None:
+            lines.append(f"| {key} | {json_module.dumps(val)} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_json_section(title: str, data: Any) -> str:
+    """Render a JSON code block section."""
+    return f"## {title}\n\n```json\n{json_module.dumps(data, indent=2)}\n```\n"
+
+
+def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
+    """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
+
+    Produces a predictable structure with a parameter table that agents can
+    parse reliably:
+
+    - ``## Parameters`` — table with ``Parameter | Type | Required | Description``
+    - ``## Output Example`` — JSON code block
+    - ``## Annotations`` — table with ``Hint | Value``
+    - ``## Tags`` — comma-separated list
+    - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
+    """
+    lines: list[str] = []
+
+    name = schema.get("name", "")
+    if name:
+        lines.append(f"# {name}")
+        lines.append("")
+
+    desc = schema.get("description", "")
+    if desc:
+        lines.append(desc)
+        lines.append("")
+
+    params = schema.get("parameters", {})
+    if isinstance(params, dict):
+        properties = params.get("properties", {})
+        if properties:
+            lines.append(_format_parameter_table(properties, params.get("required", [])))
+
+    example = schema.get("output_example")
+    if example is not None:
+        lines.append(_format_json_section("Output Example", example))
+
+    annotations = schema.get("annotations")
+    if isinstance(annotations, dict):
+        lines.append(_format_annotations_table(annotations))
+
+    tags = schema.get("tags")
+    if tags:
+        lines.append("## Tags\n")
+        lines.append(", ".join(tags))
+        lines.append("")
+
+    output_schema = schema.get("output_schema")
+    if isinstance(output_schema, dict):
+        lines.append(_format_json_section("Output Schema", output_schema))
+
+    return "\n".join(lines).strip()
+
+
+def apply_format(
+    data: Any,
+    fmt: str,
+    *,
+    markdown_formatter: Callable[[Any], str] | None = None,
+    markdown_extras: list[str] | None = None,
+) -> ToolResult:
+    """Format data for output. No pagination involvement.
+
+    Produces a ``ToolResult`` with ``structured_content`` carrying the raw
+    data (``{"result": data}``) and ``content`` formatted per ``fmt``:
+
+    - ``raw``: structured_content only, no text content.
+    - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
+    - ``markdown``: text = ``markdown_formatter(data)`` or the generic
+      ``_format_as_markdown(data, None)``.  ``markdown_extras`` are appended
+      as additional sections after the main content.
+
+    Args:
+        data: The data to format (typically a dict or list).
+        fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
+        markdown_formatter: Optional custom markdown renderer.  When omitted,
+            the generic ``_format_as_markdown`` is used.
+        markdown_extras: Optional list of additional markdown sections to
+            append after the main content (only in markdown mode).
+
+    Returns:
+        A ``ToolResult`` with formatted content and raw structured data.
+    """
+    _VALID_FORMATS = frozenset({"raw", "json", "markdown"})
+    if fmt not in _VALID_FORMATS:
+        msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
+        raise ValueError(msg)
+
+    if fmt == "raw":
+        return ToolResult(structured_content={"result": data})
+
+    if fmt == "json":
+        text = json_module.dumps(data, indent=2)
+    else:
+        text = markdown_formatter(data) if markdown_formatter else _format_as_markdown(data, None)
+        if markdown_extras:
+            text += "\n\n---\n\n" + "\n\n---\n\n".join(markdown_extras)
+
+    return ToolResult(
+        content=[TextContent(type="text", text=text)],
+        structured_content={"result": data},
+    )
+
+
 def format_result(
     result: ToolResult,
     fmt: str,
@@ -286,7 +442,16 @@ def format_result(
 
     ``structured_content`` is always preserved as raw data.
     For non-JSON or binary results, all formats return unchanged.
+
+    .. note::
+        Prefer ``apply_format`` for new code. ``format_result`` is kept for
+        the API tool wrapping transform which needs to preserve pagination
+        metadata and ``meta`` from the original ``ToolResult``.
     """
+    # Deferred import to avoid module-level coupling: PAGINATION_KEYS is
+    # only needed by this function (not by apply_format).
+    from gitea_mcp_server.pagination import PAGINATION_KEYS  # noqa: PLC0415
+
     if fmt == "raw" or not result.structured_content:
         return result
 
@@ -334,11 +499,16 @@ def format_result(
 
 
 __all__ = [
+    "_format_annotations_table",
     "_format_as_markdown",
     "_format_datetime",
+    "_format_json_section",
+    "_format_parameter_table",
     "_format_scalar",
     "_format_simple_value",
+    "_format_tool_info_markdown",
     "_resolve_anyof_schema",
     "_snake_to_title",
+    "apply_format",
     "format_result",
 ]

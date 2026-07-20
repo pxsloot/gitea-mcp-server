@@ -24,10 +24,10 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown, apply_format
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
@@ -336,24 +336,19 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     page_items = all_resources[start:end]
     raw_page = {"resources": page_items, "count": len(page_items)}
 
-    structured = {"result": raw_page}
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-
-    if format == "raw":
-        return ToolResult(structured_content=enhanced)
-
-    content = (
-        json.dumps(raw_page, indent=2) if format == "json" else _format_as_markdown(raw_page, None)
-    )
-
+    extras: list[str] = []
     if format == "markdown":
-        pagination_info = {k: v for k, v in enhanced.items() if k in PAGINATION_KEYS}
-        content += "\n\n---\n"
-        content += _format_as_markdown(pagination_info, None)
+        pagination_table = _format_as_markdown(
+            {k: v for k, v in add_pagination_metadata(
+                {"result": raw_page}, page, limit, total_count
+            ).items() if k in PAGINATION_KEYS},
+            None,
+        )
+        extras.append(pagination_table)
 
-    return ToolResult(
-        content=[TextContent(type="text", text=content)],
-        structured_content=enhanced,
+    return apply_pagination(
+        apply_format(raw_page, format, markdown_extras=extras or None),
+        page, limit, total_count,
     )
 
 

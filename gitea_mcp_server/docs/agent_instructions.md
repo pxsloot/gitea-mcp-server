@@ -83,12 +83,13 @@ is one call away:
 tool_info("{{TOOL_PREFIX}}issue_create_issue")
 ```
 
-`tool_info` returns the full parameter list (types, which are required, enums,
-and validation patterns), a compact `output_example`, the tool's annotations,
-and its tags. Trust that over anything you assume. Use `tool_info(name,
-detail="full")` only when you need the complete JSON Schema -- it is hundreds of
-lines on large tools, so run it rarely (once on a small tool to learn the
-shape, then trust the compact example day to day).
+`tool_info` returns a parseable markdown structure with a consistent
+parameter table (``Parameter | Type | Required | Description``), a compact
+``output_example``, annotations, and tags. The markdown output is designed
+to be parsed reliably -- you do not need ``format="json"`` for structured
+extraction. Use ``tool_info(name, detail="full")`` when you need the complete
+JSON Schema; it can be paginated with ``pagination=(page, limit)`` for large
+schemas.
 
 That said, a handful of parameters recur across almost every tool because they
 mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
@@ -159,7 +160,8 @@ than trial and error.
 ## Output format
 
 Every tool except `call_tool` accepts a `format` parameter, and so do
-`read_resource` and `read_doc`:
+`read_resource` and `read_doc` (note: `read_doc` supports ``markdown``,
+``json``, and ``raw``):
 
 | Format    | When to use |
 |-----------|-------------|
@@ -169,8 +171,12 @@ Every tool except `call_tool` accepts a `format` parameter, and so do
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
-large (hundreds of lines on big tools). Use it rarely; run it once on a small
-tool to get a feel for the shape, then trust the compact example day to day.
+large (hundreds of lines on big tools). Use `page` and `limit` to page through
+large schemas. Run `tool_info` once on a small tool to get a feel for the
+shape, then trust the compact example day to day.
+
+`read_doc(topic)` also supports `page` and `limit` for line-based pagination
+through long guides. Each page is `limit` lines (default 50, max 200).
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These

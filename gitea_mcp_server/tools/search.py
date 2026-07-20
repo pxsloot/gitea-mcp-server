@@ -22,10 +22,10 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import _format_as_markdown, format_result
+from gitea_mcp_server.format import _format_as_markdown, _format_tool_info_markdown, apply_format
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -417,41 +417,29 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
             structured_content={"result": [], "_hint": text},
         )
 
-    structured = {"result": page_items}
-    if format == "raw":
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(structured_content=enhanced)
-
-    serialized_out: str = (
-        json.dumps(page_items, indent=2)
-        if format == "json"
-        else _format_as_markdown(page_items, None)
-    )
-
+    extras: list[str] = []
     if format == "markdown":
         if cross_link_hints:
-            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            hints = "**Cross-linking hints:**\n"
             for label, tool in cross_link_hints.items():
-                serialized_out += f"- For {label}: `{tool}(query)`\n"
+                hints += f"- For {label}: `{tool}(query)`\n"
+            extras.append(hints)
 
-        # Append a note about filtered (hidden) tools so agents are
-        # aware that some tools exist but are not visible to their token.
         note = _format_filtered_tools_note(filtered_tools_info)
         if note:
-            serialized_out += note
+            extras.append(note)
 
-        pagination_info = {
-            k: v
-            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-            if k in PAGINATION_KEYS
-        }
-        serialized_out += "\n\n---\n"
-        serialized_out += _format_as_markdown(pagination_info, None)
+        pagination_table = _format_as_markdown(
+            {k: v for k, v in add_pagination_metadata(
+                {"result": page_items}, page, limit, total_count
+            ).items() if k in PAGINATION_KEYS},
+            None,
+        )
+        extras.append(pagination_table)
 
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized_out)],
-        structured_content=enhanced,
+    return apply_pagination(
+        apply_format(page_items, format, markdown_extras=extras or None),
+        page, limit, total_count,
     )
 
 
@@ -462,6 +450,8 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
     detail: Literal["concise", "full"] = "concise",
+    page: int = 1,
+    limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
     filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
@@ -471,11 +461,15 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     tool names.  Tries bare name first, then prepends ``tool_prefix``.
 
     When ``detail="full"``, the result includes the fully-resolved
-    ``output_schema`` alongside the compact ``output_example``.
+    ``output_schema`` alongside the compact ``output_example``.  The
+    ``output_schema`` is paginated by its top-level properties when it
+    exceeds ``limit`` properties per page.
 
     Args:
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
         filtered_tools_info: Filter-prediction data for filtered-tool messages.
+        page: Page number for output_schema properties (1-based, detail=full only).
+        limit: Properties per page for output_schema (detail=full only).
     """
     tools = await transform.get_tool_catalog(ctx)
     candidates = {name}
@@ -485,10 +479,39 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
         if tool.name in candidates:
             schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
-                schema["output_schema"] = tool.output_schema
-            return format_result(
-                ToolResult(structured_content={"result": schema}), format
-            )
+                # FastMCP wraps API tool output_schemas in {"result": {...}}
+                # (x-fastmcp-wrap-result). The actual properties to paginate
+                # are under result.properties.
+                result_obj = tool.output_schema.get("properties", {}).get("result", {})
+                result_props = result_obj.get("properties", {})
+                total_props = len(result_props)
+                # Slice result properties by page/limit so agents can page
+                # through large schemas instead of receiving the full schema.
+                start = (page - 1) * limit
+                end = start + limit
+                prop_keys = list(result_props.keys())
+                sliced_keys = prop_keys[start:end]
+                sliced_schema = dict(tool.output_schema)
+                sliced_schema["properties"] = {
+                    "result": {
+                        "description": result_obj.get("description", ""),
+                        "type": "object",
+                        "properties": {
+                            k: result_props[k] for k in sliced_keys
+                        },
+                    }
+                }
+                schema["output_schema"] = sliced_schema
+
+                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+
+                # Add pagination metadata to structured_content so agents can
+                # discover total property count and navigate pages.
+                result = apply_pagination(result, page, limit, total_props)
+            else:
+                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+
+            return result
 
     # Tool not found in the post-filter catalog — check if it's a
     # filtered tool (scope-restricted, config-excluded, or deprecated).
@@ -590,34 +613,25 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
             structured_content={"result": [], "_hint": text},
         )
 
-    structured = {"result": page_items}
-    if format == "raw":
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(structured_content=enhanced)
-
-    serialized_out: str = (
-        json.dumps(page_items, indent=2)
-        if format == "json"
-        else _format_as_markdown(page_items, None)
-    )
-
+    extras: list[str] = []
     if format == "markdown":
         if cross_link_hints:
-            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            hints = "**Cross-linking hints:**\n"
             for label, tool in cross_link_hints.items():
-                serialized_out += f"- For {label}: `{tool}(query)`\n"
-        pagination_info = {
-            k: v
-            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-            if k in PAGINATION_KEYS
-        }
-        serialized_out += "\n\n---\n"
-        serialized_out += _format_as_markdown(pagination_info, None)
+                hints += f"- For {label}: `{tool}(query)`\n"
+            extras.append(hints)
 
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized_out)],
-        structured_content=enhanced,
+        pagination_table = _format_as_markdown(
+            {k: v for k, v in add_pagination_metadata(
+                {"result": page_items}, page, limit, total_count
+            ).items() if k in PAGINATION_KEYS},
+            None,
+        )
+        extras.append(pagination_table)
+
+    return apply_pagination(
+        apply_format(page_items, format, markdown_extras=extras or None),
+        page, limit, total_count,
     )
 
 
@@ -763,11 +777,20 @@ def register_synthetic_tools(
             "Detail level: 'concise' (default) for compact type-summary output_example; "
             "'full' to also include the resolved output_schema",
         ] = "concise",
+        page: Annotated[
+            int,
+            "Page number for output_schema properties (1-based). Only used when detail=full.",
+        ] = 1,
+        limit: Annotated[
+            int,
+            "Properties per page for output_schema. Only used when detail=full.",
+        ] = 10,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _tool_info_impl(
             name, format, ctx, transform, tool_prefix,
-            detail=detail, openapi_spec=openapi_spec,
+            detail=detail, page=page, limit=limit,
+            openapi_spec=openapi_spec,
             filtered_tools_info=filtered_tools_info,
         )
 

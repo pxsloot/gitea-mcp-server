@@ -8,7 +8,6 @@ to the appropriate access path.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -22,10 +21,10 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.format import _format_as_markdown, apply_format
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
@@ -166,30 +165,19 @@ def register_unified_search(
                 structured_content={"result": [], "_hint": hint},
             )
 
-        structured = {"result": page_items}
-        if format == "raw":
-            enhanced = add_pagination_metadata(structured, page, limit, total_count)
-            return ToolResult(structured_content=enhanced)
-
-        serialized = (
-            json.dumps(page_items, indent=2)
-            if format == "json"
-            else _format_as_markdown(page_items, None)
-        )
-
+        extras: list[str] = []
         if format == "markdown":
-            pagination_info = {
-                k: v
-                for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-                if k in PAGINATION_KEYS
-            }
-            serialized += "\n\n---\n"
-            serialized += _format_as_markdown(pagination_info, None)
+            pagination_table = _format_as_markdown(
+                {k: v for k, v in add_pagination_metadata(
+                    {"result": page_items}, page, limit, total_count
+                ).items() if k in PAGINATION_KEYS},
+                None,
+            )
+            extras.append(pagination_table)
 
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(
-            content=[TextContent(type="text", text=serialized)],
-            structured_content=enhanced,
+        return apply_pagination(
+            apply_format(page_items, format, markdown_extras=extras or None),
+            page, limit, total_count,
         )
 
     mcp.tool(

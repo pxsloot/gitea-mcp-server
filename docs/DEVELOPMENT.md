@@ -423,14 +423,13 @@ include:
 ### Startup customization order
 
 This is the *startup* axis: the sequence in which customization is wired into
-the server before it serves requests. It is distinct from the *query-time*
-transform chain (TolerantSearch → GiteaNamespace → ExtensionMetadata →
-Exclusion → PermissionFilter), which is documented once in
-`docs/ARCHITECTURE.md`. The startup order:
+the server before it serves requests. Tool/resource visibility filtering now
+happens at spec-prep time via `route_map_fn` (see `docs/SCOPE_MODEL.md` and
+`docs/ARCHITECTURE.md`), so it is no longer part of the query-time transform
+chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup order:
 
-1. Token scope filter (`tool_filter.py`) — removes tools the token can't use
-2. Exclusion config (new) — removes excluded, re-adds included
-3. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, progress reporting
+1. Spec-prep filtering (`spec_loader.py`) — computes excluded routes (deprecated + scope + config-excluded) applied via `route_map_fn`
+2. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, progress reporting
 
 ---
 

@@ -21,7 +21,6 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.config import Config
-from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -468,41 +467,6 @@ class _ToolWrappingTransform(Transform):
 
 
 # ---------------------------------------------------------------------------
-# Deprecated route filtering
-# ---------------------------------------------------------------------------
-
-
-def _get_deprecated_routes(openapi_spec: OpenAPISpec) -> set[tuple[str, str]]:
-    """Extract set of ``(path, UPPER_METHOD)`` for deprecated operations.
-
-    Note for Phase 2 (#467):
-        ``compute_filtered_tools_info()`` in ``filter_info.py`` already
-        inventories all operations (including deprecated ones).  Phase 2
-        can pass the deprecated set directly here instead of re-iterating
-        the spec — making this function redundant.
-    """
-    deprecated: set[tuple[str, str]] = set()
-    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    if not isinstance(paths, dict):  # defense-in-depth for malformed runtime input
-        return deprecated  # type: ignore[unreachable]
-    for path, path_item in paths.items():
-        if not isinstance(path_item, dict):
-            continue
-        for method, operation in path_item.items():
-            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
-                continue
-            if operation.get("deprecated", False):
-                deprecated.add((path, method.upper()))
-    if deprecated:
-        logger.info(
-            "Found %d deprecated operations to exclude",
-            len(deprecated),
-            extra={"deprecated_routes": sorted(deprecated)},
-        )
-    return deprecated
-
-
-# ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
@@ -512,28 +476,32 @@ def create_openapi_provider(
     client: "AsyncClient",
     label_service: LabelService,
     gitea_client: "GiteaClient | None" = None,
+    excluded_routes: "set[tuple[str, str]] | None" = None,
 ) -> OpenAPIProvider:
     """Create an ``OpenAPIProvider`` with customised metadata + runtime wrapping.
 
     Uses only public FastMCP APIs:
-    * ``route_map_fn`` -- exclude deprecated endpoints before component creation.
+    * ``route_map_fn`` -- exclude filtered operations (deprecated, scope-, and
+      config-excluded) before component creation.  Filtering is decided once at
+      spec-prep time (see ``spec_loader.load_and_convert_spec``) and passed in
+      as ``excluded_routes``.
     * ``mcp_component_fn`` -- in-place metadata customisation.
     * ``provider.add_transform(…)`` -- runtime behaviour wrapping.
 
     No private ``_tools``, ``_route``, or ``_read_resource_cache`` access.
     """
-    deprecated_routes = _get_deprecated_routes(openapi_spec)
+    excluded_routes = excluded_routes or set()
 
-    def _deprecated_route_filter(route: Any, _mcp_type: MCPType) -> MCPType | None:
-        if (route.path, route.method) in deprecated_routes:
-            logger.debug("Excluding deprecated endpoint: %s %s", route.method, route.path)
+    def _route_filter(route: Any, _mcp_type: MCPType) -> MCPType | None:
+        if (route.path, route.method) in excluded_routes:
+            logger.debug("Excluding filtered endpoint: %s %s", route.method, route.path)
             return MCPType.EXCLUDE
         return None
 
     provider = OpenAPIProvider(
         openapi_spec=cast("dict[str, Any]", openapi_spec),
         client=client,
-        route_map_fn=_deprecated_route_filter,
+        route_map_fn=_route_filter,
         mcp_component_fn=lambda route, component: _customize_metadata(
             route,
             component,

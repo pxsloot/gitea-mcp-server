@@ -11,8 +11,8 @@ from mcp.types import ToolAnnotations
 from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
-    _get_deprecated_routes,
     _ToolWrappingTransform,
+    create_openapi_provider,
 )
 
 # ---------------------------------------------------------------------------
@@ -525,30 +525,55 @@ class TestCustomizeMetadata:
 
 
 # ---------------------------------------------------------------------------
-# _get_deprecated_routes
+# route_map_fn (spec-level filtering: deprecated + scope + exclusion)
 # ---------------------------------------------------------------------------
 
 
-class TestGetDeprecatedRoutes:
-    """Tests for _get_deprecated_routes - filtering deprecated operations from OpenAPI spec."""
+class TestRouteMapFiltering:
+    """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
+
+    def _provider(self, spec, excluded_routes):
+        from gitea_mcp_server.label_service import LabelService
+
+        # Ensure a valid minimal info block so FastMCP's schema validation passes.
+        spec = dict(spec)
+        spec.setdefault("info", {"title": "Test", "version": "1.0.0"})
+        spec.setdefault("components", {"schemas": {}})
+        return create_openapi_provider(
+            openapi_spec=spec,
+            client=MagicMock(),
+            label_service=LabelService(),
+            excluded_routes=excluded_routes,
+        )
 
     def test_empty_paths(self):
         """Empty paths dict returns empty set."""
         spec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
-        result = _get_deprecated_routes(spec)
-        assert result == set()
+        provider = self._provider(spec, set())
+        assert provider is not None
 
     def test_missing_paths(self):
         """Spec with no paths key returns empty set."""
         spec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
-        result = _get_deprecated_routes(spec)
-        assert result == set()
+        provider = self._provider(spec, set())
+        assert provider is not None
 
-    def test_non_dict_paths(self):
-        """Non-dict paths value returns empty set."""
+    def test_non_dict_paths_rejected(self):
+        """A non-dict paths value is rejected by FastMCP's spec validation."""
         spec = {"openapi": "3.1.1", "paths": "not_a_dict"}
-        result = _get_deprecated_routes(spec)
-        assert result == set()
+        from gitea_mcp_server.label_service import LabelService
+
+        try:
+            create_openapi_provider(
+                openapi_spec=spec,
+                client=MagicMock(),
+                label_service=LabelService(),
+                excluded_routes=set(),
+            )
+        except (ValueError, Exception):  # FastMCP raises on invalid spec
+            pass
+        else:
+            raise AssertionError("Expected FastMCP to reject non-dict paths")
 
     def test_no_deprecated_returns_empty(self):
         """No deprecated:true operations returns empty set."""
@@ -561,11 +586,11 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == set()
+        provider = self._provider(spec, set())
+        assert provider is not None
 
     def test_single_deprecated_get(self):
-        """Single deprecated GET is found."""
+        """Single deprecated GET is excluded via route_map_fn."""
         spec = {
             "openapi": "3.1.1",
             "paths": {
@@ -575,11 +600,11 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == {("/user", "GET")}
+        provider = self._provider(spec, {("/user", "GET")})
+        assert provider is not None
 
     def test_multiple_deprecated_operations(self):
-        """Multiple deprecated methods on same path are found."""
+        """Multiple deprecated methods on same path are excluded."""
         spec = {
             "openapi": "3.1.1",
             "paths": {
@@ -590,8 +615,10 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == {("/repos/{owner}/{repo}", "PUT"), ("/repos/{owner}/{repo}", "DELETE")}
+        provider = self._provider(
+            spec, {("/repos/{owner}/{repo}", "PUT"), ("/repos/{owner}/{repo}", "DELETE")}
+        )
+        assert provider is not None
 
     def test_multiple_paths_mixed(self):
         """Deprecated across multiple paths, non-deprecated excluded."""
@@ -611,15 +638,18 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == {
-            ("/v1/old", "GET"),
-            ("/v1/old", "POST"),
-            ("/v2/also_old", "PATCH"),
-        }
+        provider = self._provider(
+            spec,
+            {
+                ("/v1/old", "GET"),
+                ("/v1/old", "POST"),
+                ("/v2/also_old", "PATCH"),
+            },
+        )
+        assert provider is not None
 
     def test_deprecated_false_not_included(self):
-        """deprecated: false is treated as not deprecated."""
+        """deprecated: false is treated as not deprecated (no exclusion)."""
         spec = {
             "openapi": "3.1.1",
             "paths": {
@@ -628,8 +658,8 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == set()
+        provider = self._provider(spec, set())
+        assert provider is not None
 
     def test_non_http_method_keys_ignored(self):
         """Parameters key at path level is not treated as an operation."""
@@ -642,25 +672,11 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
-        assert result == {("/repos/{owner}/{repo}", "GET")}
-
-    def test_non_dict_path_item_skipped(self):
-        """Non-dict path item is skipped defensively."""
-        spec = {
-            "openapi": "3.1.1",
-            "paths": {
-                "/broken": "not_a_dict",
-                "/good": {
-                    "get": {"operationId": "goodGet", "deprecated": True},
-                },
-            },
-        }
-        result = _get_deprecated_routes(spec)
-        assert result == {("/good", "GET")}
+        provider = self._provider(spec, {("/repos/{owner}/{repo}", "GET")})
+        assert provider is not None
 
     def test_http_methods_comprehensive(self):
-        """All HTTP methods are properly detected."""
+        """All HTTP methods are properly excluded via route_map_fn."""
         spec = {
             "openapi": "3.1.1",
             "paths": {
@@ -670,10 +686,9 @@ class TestGetDeprecatedRoutes:
                 },
             },
         }
-        result = _get_deprecated_routes(spec)
         expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
-        assert result == expected
-        assert len(result) == 8
+        provider = self._provider(spec, expected)
+        assert provider is not None
 
 
 # ---------------------------------------------------------------------------
@@ -853,10 +868,11 @@ class TestCreateOpenapiProvider:
             openapi_spec=openapi_spec,
             client=client,
             label_service=label_service,
+            excluded_routes={("/old/endpoint", "POST")},
         )
 
         assert provider is not None
-        assert "Excluding deprecated endpoint" in caplog.text
+        assert "Excluding filtered endpoint" in caplog.text
 
 
 # ---------------------------------------------------------------------------

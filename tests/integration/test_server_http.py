@@ -73,6 +73,7 @@ def common_patches(monkeypatch):
                 },
                 {},
                 {},
+                set(),
             )
         ),
     )

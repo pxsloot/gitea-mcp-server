@@ -5,14 +5,14 @@ preparation. Synthetic tools (search_tools, tool_info, call_tool) use
 this data to give agents actionable error messages instead of generic
 "not found".
 
-This module is the foundation for Phase 2 of the Spec-Level Filtering
-milestone, where filtering itself moves from runtime transforms to
-spec-level pre-processing.
-
-The logic here mirrors what the runtime transforms do:
-    - ``PermissionFilterTransform`` — scope-based filtering
-    - ``ExclusionTransform`` — config-based exclude/include
-    - ``_get_deprecated_routes`` — deprecated endpoint exclusion
+As of Phase 2 of the Spec-Level Filtering milestone (#472), filtering
+happens at spec-prep time, not via runtime transforms.  The logic here
+mirrors the spec-level filtering applied via ``route_map_fn`` (see
+``spec_loader.load_and_convert_spec`` and
+``mcp_builder.create_openapi_provider``):
+    - deprecated endpoints
+    - config-based exclude/include (exclusion config)
+    - scope-based filtering (token scopes)
 """
 
 from __future__ import annotations
@@ -45,8 +45,15 @@ def _is_excluded(
     include = exclusion_config.get("include", [])
     if not exclude and not include:
         return False
-    is_included = matches_any(op_id, tags, include, tool_prefix)
-    is_excluded = matches_any(op_id, tags, exclude, tool_prefix)
+    # Exclusion patterns are written against the *final* (prefixed) tool name
+    # (e.g. ``gitea_admin_*``).  At spec-prep time the operationId is still bare
+    # (``admin_get_users``), so match the prefixed form.  This mirrors the old
+    # runtime exclusion, where the tool name was already prefixed when the
+    # ExclusionTransform ran.  Passing an empty tool_prefix to ``matches_any``
+    # avoids double-prefixing.
+    prefixed_id = f"{tool_prefix}{op_id}"
+    is_included = matches_any(prefixed_id, tags, include, "")
+    is_excluded = matches_any(prefixed_id, tags, exclude, "")
     return is_excluded and not is_included
 
 
@@ -116,12 +123,6 @@ def compute_filtered_tools_info(
     Iterates every operation in the spec and determines if it would be
     filtered by deprecation, scope, or exclusion config.  Returns the
     structured dict used by synthetic tools and for Phase 2 filtering.
-
-    Note for Phase 2 (#467):
-        ``_get_deprecated_routes()`` in ``mcp_builder.py`` independently
-        iterates the spec for deprecated operations.  Phase 2 can pass
-        the deprecated set from this function directly instead of
-        re-iterating — making that function redundant.
 
     Args:
         openapi_spec: The OpenAPI 3.1 spec (post-conversion, pre-provider).

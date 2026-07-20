@@ -124,8 +124,15 @@ class TestExclusionIntegration:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
 
-            assert tool_names == ["gitea_admin_get_users"], (
-                f"Expected only gitea_admin_get_users but got: {tool_names}"
+            # Synthetic discovery tools (search_docs, read_doc, ...) are
+            # registered separately from the OpenAPI spec and are never subject
+            # to spec-level exclusion, so they remain.  The spec-level filter
+            # must keep the whitelisted admin tool and drop everything else.
+            assert "gitea_admin_get_users" in tool_names, (
+                f"Expected gitea_admin_get_users to be present but got: {tool_names}"
+            )
+            assert "gitea_get_repo_issues" not in tool_names, (
+                f"Expected gitea_get_repo_issues to be excluded but got: {tool_names}"
             )
 
     @pytest.mark.asyncio

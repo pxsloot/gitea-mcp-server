@@ -56,8 +56,10 @@ serves a distinct reader or goal. Examples from this repo:
 
 - **Transform execution order** has two *different* axes, not one duplicated:
   - The *query-time* transform chain (TolerantSearch → GiteaNamespace →
-    ExtensionMetadata → Exclusion → PermissionFilter) — one canonical home in
-    `ARCHITECTURE.md`. `SCOPE_MODEL.md` points there rather than repeating it.
+    ExtensionMetadata) — one canonical home in `ARCHITECTURE.md`. Filtering
+    (deprecated + scope + config-excluded) now happens at spec-prep time via
+    `route_map_fn`; `SCOPE_MODEL.md` covers that and points to `ARCHITECTURE.md`
+    rather than repeating the chain.
   - The *startup customization* order (scope filter → exclusion → runtime
     wrap) — documented only in `DEVELOPMENT.md`, because it answers "what
     happens when I add a customization," a contributor concern with no other

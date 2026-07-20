@@ -17,7 +17,7 @@ This server translates those scopes into three distinct control mechanisms:
 
 | Mechanism | Controls | Module |
 |-----------|----------|--------|
-| Tool/resource filtering | Which tools and resources are visible to the agent | `tool_filter.py` (PermissionFilterTransform) |
+| Tool/resource filtering | Which tools and resources are visible to the agent | `spec_loader.py` (route_map_fn, Phase 2 spec-level filtering) |
 | Virtual param gating | Whether agent-facing virtual params (e.g. `sudo`) appear in tool schemas | `tools/virtual_params.py` (`apply_scope_filter`) |
 | Scope derivation | How a required scope is computed from Swagger tags + HTTP method | `scope.py` (`derive_required_scope`) |
 
@@ -30,21 +30,29 @@ the server process.
 ## Startup Flow
 
 ```
-Server startup
+Server startup (spec prep — Phase 2)
   │
-  ├─ 1. fetch_token_scopes(gitea_client, token)
-  │      ├─ GET /user              → find current username
-  │      └─ GET /users/{name}/tokens → match token by last 8 chars
+  ├─ 1. load_and_convert_spec(gitea_client, config)
+  │      ├─ fetch_token_scopes(gitea_client, token)
+  │      │    ├─ GET /user                → find current username
+  │      │    └─ GET /users/{name}/tokens → match token by last 8 chars
+  │      ├─ load_exclusion_config(...)    → exclude/include patterns
+  │      ├─ compute_filtered_tools_info(...)  → prediction data
+  │      │    (drives rich error messages for synthetic tools)
+  │      └─ _compute_excluded_routes(...)    → set of (path, METHOD)
+  │           to drop via route_map_fn
   │
-  ├─ 2. apply_scope_filter(available_scopes)
-  │      → sets .visible on each VirtualParam (e.g. sudo)
+  ├─ 2. create_openapi_provider(..., excluded_routes=...)
+  │      → route_map_fn drops filtered operations BEFORE FastMCP
+  │        builds the tools (deprecated + scope + config-excluded)
   │
-  └─ 3. mcp.add_transform(PermissionFilterTransform(available_scopes))
-         → filters tools/resources at query time
+  └─ 3. apply_scope_filter(available_scopes)
+         → sets .visible on each VirtualParam (e.g. sudo)
 ```
 
-Step 1 is in `server.py:_apply_permission_filter()`. Steps 2 and 3 happen
-immediately after, in the same function.
+Steps 1–2 happen in `spec_loader.load_and_convert_spec()` and
+`mcp_builder.create_openapi_provider()`. Step 3 (virtual-param gating) runs
+in `server.py:_apply_virtual_param_scope_filter()`.
 
 If the token's scopes cannot be fetched (auth failure, network error), no
 filtering is applied and **all tools remain visible**. This is fail-open by
@@ -126,18 +134,30 @@ create cyclic dependencies between the `tools/` and `resources/` packages.
 
 ---
 
-## Permission Filtering (tools and resources)
+## Spec-Level Filtering (tools and resources)
 
-**Module**: `gitea_mcp_server/tool_filter.py`
+**Module**: `gitea_mcp_server/server_setup/spec_loader.py` +
+`gitea_mcp_server/server_setup/mcp_builder.py`
 
-**Class**: `PermissionFilterTransform(Transform)`
+As of Phase 2 of the Spec-Level Filtering milestone (#472), tool/resource
+visibility is decided **once at spec-prep time**, not at query time via a
+runtime transform. `load_and_convert_spec()` fetches token scopes and the
+exclusion config, then computes the set of `(path, UPPER_METHOD)` tuples to
+exclude (`_compute_excluded_routes`). `create_openapi_provider()` receives
+that set and applies it through FastMCP's public `route_map_fn`, which returns
+`MCPType.EXCLUDE` for each filtered operation — so FastMCP never builds a tool
+or resource for it.
 
-A FastMCP `Transform` that intercepts `list_tools`, `get_tool`,
-`list_resources`, `list_resource_templates`, `get_resource`, and
-`get_resource_template`. For each item it reads `item.meta["required_scope"]`
-and checks `_has_sufficient_scope(required, available)`.
+The same `compute_filtered_tools_info()` call that produces the excluded set
+also produces the `x-mcp-filtered-tools` prediction data used by synthetic
+tools (`tool_info`, `call_tool`, `search_tools`) to give rich error messages.
+Both the *visibility* decision and the *error message* data come from one
+source, so they can never diverge.
 
 ### Scope sufficiency rules
+
+These rules (in `scope.has_sufficient_scope`) determine whether an operation
+is excluded by scope:
 
 | Required | Available | Result |
 |----------|-----------|--------|
@@ -185,44 +205,33 @@ changes needed.
 
 | File | Responsibility |
 |------|---------------|
-| `scope.py` | `derive_required_scope()` + `scope_meta()` — the two core utilities |
+| `scope.py` | `derive_required_scope()` + `scope_meta()` + `has_sufficient_scope()` — the core utilities |
 | `resources/scope.py` | Re-exports from `scope.py` for package-internal consumers |
 | `constants.py` | `TAG_TO_SCOPE` mapping table |
-| `tool_filter.py` | `PermissionFilterTransform` + `fetch_token_scopes()` + `_has_sufficient_scope()` |
+| `server_setup/spec_loader.py` | `fetch_token_scopes()` + `_compute_excluded_routes()` — spec-prep filtering |
 | `tools/virtual_params.py` | `apply_scope_filter()` — virtual param visibility |
-| `tools/exclusion.py` | `ExclusionTransform` — separate concern (exclude/include by YAML pattern), runs before scope filtering |
-| `server.py` | Orchestration in `_apply_permission_filter()` |
-| `mcp_builder.py` | Stores derived scope in `component.meta["required_scope"]` at customization time |
+| `tools/exclusion.py` | `load_exclusion_config()` + `matches_any()`/`matches_pattern()` — exclusion config loading & matching |
+| `server.py` | Orchestration in `create_mcp_server()` + `_apply_virtual_param_scope_filter()` |
+| `mcp_builder.py` | `create_openapi_provider()` applies `excluded_routes` via `route_map_fn`; stores derived scope in `component.meta["required_scope"]` |
 | `resources/auto.py` | Uses `derive_required_scope()` + `scope_meta()` for auto-generated resources |
 | `resources/custom.py` | Uses `scope_meta()` for custom wrapper resources |
 
-### Transform execution order
+### Filtering happens at spec-prep time
 
-The query-time transform chain (TolerantSearch → GiteaNamespace →
-ExtensionMetadata → Exclusion → PermissionFilter) is the canonical server
-pipeline and is documented once in `docs/ARCHITECTURE.md` (the "FastMCP Server"
-transform list). `PermissionFilterTransform` is always last, so it sees the
-fully resolved set of visible tools and can filter them by scope.
-
-From the perspective of this doc, the only addition to that chain is step 5
-below — scope filtering is the mechanism that makes tools/resources disappear
-for a token that lacks the required scope:
-
-1. **TolerantSearchTransform** — lazy-loading search
-2. **GiteaNamespace** — adds `gitea_` prefix
-3. **ExtensionMetadataTransform** — YAML overrides
-4. **ExclusionTransform** — exclude/include by config
-5. **PermissionFilterTransform** — scope filtering (always last, so it sees
-   the fully resolved set of visible tools and can filter them by scope)
+Tool/resource visibility is no longer a query-time transform. The canonical
+server transform chain (documented in `docs/ARCHITECTURE.md`) is now just
+TolerantSearch → GiteaNamespace → ExtensionMetadata. Filtering is applied
+earlier, in `route_map_fn` during provider creation, so filtered operations
+never become tools/resources.
 
 ---
 
 ## References
 
-- `gitea_mcp_server/scope.py` — derivation + scope_meta
-- `gitea_mcp_server/tool_filter.py` — PermissionFilterTransform, fetch_token_scopes, scope matching
+- `gitea_mcp_server/scope.py` — derivation + scope_meta + sufficiency check
+- `gitea_mcp_server/server_setup/spec_loader.py` — fetch_token_scopes, excluded-routes computation
 - `gitea_mcp_server/tools/virtual_params.py` — apply_scope_filter
 - `gitea_mcp_server/constants.py` — TAG_TO_SCOPE
-- `gitea_mcp_server/server.py`::`_apply_permission_filter` — startup orchestration
+- `gitea_mcp_server/server.py`::`_apply_virtual_param_scope_filter` — startup orchestration
 - `docs/ARCHITECTURE.md` — design decision #7 (circular-import breaker), module map
 - `docs/DEVELOPMENT.md` — "Scope-gating" section under virtual params

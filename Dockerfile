@@ -73,6 +73,3 @@ COPY --from=builder /app /app
 
 # Install dev dependencies using the lock file
 RUN uv sync --locked --no-editable
-
-ENV GITEA_TOKEN=test
-ENV GITEA_URL=https://test.example.com

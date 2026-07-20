@@ -341,7 +341,7 @@ class TestComputeExcludedRoutes:
 class TestProviderRouteMapFiltering:
     """Integration-level unit tests: filtered routes never become tools."""
 
-    def _make_provider(self, excluded_routes) -> MagicMock:
+    def _make_provider(self, excluded_routes, response_format="markdown") -> MagicMock:
         from gitea_mcp_server.label_service import LabelService
 
         spec = {
@@ -357,11 +357,14 @@ class TestProviderRouteMapFiltering:
             },
             "components": {"schemas": {}},
         }
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         return create_openapi_provider(
             openapi_spec=spec,
-            client=MagicMock(),
+            gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
+            response_format=response_format,
         )
 
     def test_no_exclusions_keeps_all(self, caplog):

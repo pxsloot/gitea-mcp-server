@@ -17,30 +17,14 @@ from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
 from gitea_mcp_server.server import main_async
+from tests.conftest import SimpleConfig
 
 
-class SimpleHTTPConfig:
-    def __init__(self, **overrides):
-        self.url = "https://git.example.com"
-        self.token = "test_token"
-        self.verify_ssl = False
-        self.ssl_cert_file = None
-        self.log_level = "ERROR"
-        self.log_format = "text"
-        self.tool_filtering_enabled = False
-        self.enable_lazy_loading = False
-        self.tool_prefix = "gitea_"
-        self.transport_type = "http"
-        self.http_host = "127.0.0.1"
-        self.http_port = 0
-        self.http_path = "/mcp"
-        self.http_cors = None
-        for k, v in overrides.items():
-            setattr(self, k, v)
-
-    @property
-    def base_url(self):
-        return f"{self.url}/api/v1"
+def _http_config(**overrides):
+    """Create a SimpleConfig with HTTP transport defaults."""
+    defaults = {"transport_type": "http", "http_port": 0}
+    defaults.update(overrides)
+    return SimpleConfig(**defaults)
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +33,7 @@ def common_patches(monkeypatch):
 
     monkeypatch.setattr(
         "gitea_mcp_server.server.Config.get",
-        lambda: SimpleHTTPConfig(),
+        lambda: _http_config(),
     )
 
     monkeypatch.setattr(
@@ -110,7 +94,7 @@ def captured_app(monkeypatch):
 class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_returns_ok(self, captured_app, monkeypatch):
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
         await main_async()
         app = captured_app[0]
         async with httpx.AsyncClient(
@@ -123,7 +107,7 @@ class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_content_type(self, captured_app, monkeypatch):
         """Health endpoint should return application/json content type."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
         await main_async()
         app = captured_app[0]
         async with httpx.AsyncClient(
@@ -143,28 +127,28 @@ class TestRouteConfiguration:
     @pytest.mark.asyncio
     async def test_mcp_route_at_default_path(self, captured_app, monkeypatch):
         """MCP route should be registered at the default /mcp path."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig(http_path="/mcp"))
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config(http_path="/mcp"))
         await main_async()
         assert self._find_route(captured_app[0], "/mcp") is not None
 
     @pytest.mark.asyncio
     async def test_mcp_route_at_custom_path(self, captured_app, monkeypatch):
         """MCP route should be registered at a custom /api/mcp path when configured."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig(http_path="/api/mcp"))
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config(http_path="/api/mcp"))
         await main_async()
         assert self._find_route(captured_app[0], "/api/mcp") is not None
 
     @pytest.mark.asyncio
     async def test_health_route_exists(self, captured_app, monkeypatch):
         """Health route should be present in the app routes."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
         await main_async()
         assert self._find_route(captured_app[0], "/health") is not None
 
     @pytest.mark.asyncio
     async def test_both_health_and_mcp_routes_present(self, captured_app, monkeypatch):
         """Both health and MCP routes should be registered simultaneously."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
         await main_async()
         assert self._find_route(captured_app[0], "/health") is not None
         assert self._find_route(captured_app[0], "/mcp") is not None
@@ -184,7 +168,7 @@ class TestCORSConfiguration:
         """CORS middleware should be present when http_cors is configured."""
         monkeypatch.setattr(
             "gitea_mcp_server.server.Config.get",
-            lambda: SimpleHTTPConfig(http_cors=["https://example.com"]),
+            lambda: _http_config(http_cors=["https://example.com"]),
         )
         await main_async()
         _, cors = self._get_middleware(captured_app[0])
@@ -193,7 +177,7 @@ class TestCORSConfiguration:
     @pytest.mark.asyncio
     async def test_no_cors_middleware_when_not_configured(self, captured_app, monkeypatch):
         """CORS middleware should be absent when http_cors is not configured."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig(http_cors=None))
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config(http_cors=None))
         await main_async()
         _, cors = self._get_middleware(captured_app[0])
         assert cors is None, "Expected no CORSMiddleware on mcp_app"
@@ -203,7 +187,7 @@ class TestCORSConfiguration:
         """CORS configuration should propagate allowed origins and methods."""
         monkeypatch.setattr(
             "gitea_mcp_server.server.Config.get",
-            lambda: SimpleHTTPConfig(http_cors=["https://example.com"]),
+            lambda: _http_config(http_cors=["https://example.com"]),
         )
         await main_async()
         user_mw, cors = self._get_middleware(captured_app[0])
@@ -219,7 +203,7 @@ class TestCORSConfiguration:
         """Test that /health returns CORS headers when CORS is configured."""
         monkeypatch.setattr(
             "gitea_mcp_server.server.Config.get",
-            lambda: SimpleHTTPConfig(http_cors=["https://example.com"]),
+            lambda: _http_config(http_cors=["https://example.com"]),
         )
         await main_async()
         app = captured_app[0]
@@ -233,7 +217,7 @@ class TestCORSConfiguration:
     @pytest.mark.asyncio
     async def test_health_no_cors_when_not_configured(self, captured_app, monkeypatch):
         """Test that /health has no CORS headers when CORS is not configured."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: SimpleHTTPConfig(http_cors=None))
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config(http_cors=None))
         await main_async()
         app = captured_app[0]
         async with httpx.AsyncClient(

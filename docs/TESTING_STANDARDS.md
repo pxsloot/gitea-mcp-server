@@ -398,7 +398,7 @@ Keep fixtures close to where they're used. Define them in the test class or file
 
 The canonical `SimpleConfig` lives in `tests/conftest.py` and supports all config fields.
 Import it in tests that need a standard config. If a test file needs unique defaults
-(e.g., HTTP transport tests), define an inline subclass.
+(e.g., HTTP transport tests), pass keyword arguments at construction time.
 
 ```python
 # Good — canonical fixture from conftest.py
@@ -489,7 +489,7 @@ These fail code review. Don't do them.
 | Deep dict comparison of full conversion output | Brittle — breaks on any schema change. Assert specific keys/paths only. |
 | Testing internals instead of behavior | Testing `_wrap_success_response_schemas` directly is fine. Testing `_private_helper` that's an implementation detail is not. Public API changes slower. |
 | Shared mutable fixtures | If one test mutates a fixture, other tests see it. Use factory fixtures or `copy.deepcopy`. |
-| Copy-pasting `SimpleConfig` | Was duplicated in 4 files; now consolidated to canonical `tests/conftest.py`. Don't reintroduce copies. |
+| Copy-pasting `SimpleConfig` | Was duplicated in 4 files; now consolidated to canonical `tests/conftest.py`. All test files import from conftest — don't reintroduce copies. |
 | Skipped tests without explanation | Use `pytest.mark.skip(reason="...")`, not bare `pytest.skip()`. Always document why. |
 | `asyncio_mode = "auto"` without await | If a test is `async def` but forgets `await`, it passes trivially. Always await async calls. |
 | Tests that import from other test files | Each test file should be independently runnable. No shared import chains between test files. |

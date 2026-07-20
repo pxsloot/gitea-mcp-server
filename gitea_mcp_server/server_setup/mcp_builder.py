@@ -20,7 +20,6 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
-from gitea_mcp_server.config import Config
 from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -53,7 +52,6 @@ from gitea_mcp_server.tools.virtual_params import (
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
-    from httpx import AsyncClient
 
     from gitea_mcp_server.client import GiteaClient
 
@@ -216,8 +214,10 @@ class _ToolWrappingTransform(Transform):
     def __init__(
         self,
         openapi_spec: OpenAPISpec,
+        response_format: str = "markdown",
     ) -> None:
         self._openapi_spec = openapi_spec
+        self._response_format = response_format
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [await self._wrap(t) for t in tools]
@@ -254,7 +254,7 @@ class _ToolWrappingTransform(Transform):
 
         # Inject ``format`` as a first-class parameter (promoted - not a
         # generic virtual param).  The default is server-wide configuration.
-        fmt_default = Config.get().response_format
+        fmt_default = self._response_format
         props = tool.parameters.setdefault("properties", {})
         if "format" not in props:
             props["format"] = {
@@ -473,10 +473,10 @@ class _ToolWrappingTransform(Transform):
 
 def create_openapi_provider(
     openapi_spec: OpenAPISpec,
-    client: "AsyncClient",
+    gitea_client: "GiteaClient",
     label_service: LabelService,
-    gitea_client: "GiteaClient | None" = None,
     excluded_routes: "set[tuple[str, str]] | None" = None,
+    response_format: str = "markdown",
 ) -> OpenAPIProvider:
     """Create an ``OpenAPIProvider`` with customised metadata + runtime wrapping.
 
@@ -489,8 +489,15 @@ def create_openapi_provider(
     * ``provider.add_transform(…)`` -- runtime behaviour wrapping.
 
     No private ``_tools``, ``_route``, or ``_read_resource_cache`` access.
+
+    Args:
+        response_format: Default response format for tool output
+            ("markdown", "json", or "raw").  Passed to
+            ``_ToolWrappingTransform`` so it never needs to call
+            ``Config.get()`` at wrap time.
     """
     excluded_routes = excluded_routes or set()
+    client = gitea_client.client
 
     def _route_filter(route: Any, _mcp_type: MCPType) -> MCPType | None:
         if (route.path, route.method) in excluded_routes:
@@ -520,6 +527,7 @@ def create_openapi_provider(
     # Outer transform: virtual params, validation, error handling, wrapping.
     transform = _ToolWrappingTransform(
         openapi_spec=openapi_spec,
+        response_format=response_format,
     )
     provider.add_transform(transform)
 

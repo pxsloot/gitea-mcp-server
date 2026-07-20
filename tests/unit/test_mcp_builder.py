@@ -532,18 +532,21 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec, excluded_routes):
+    def _provider(self, spec, excluded_routes, response_format="markdown"):
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
         spec = dict(spec)
         spec.setdefault("info", {"title": "Test", "version": "1.0.0"})
         spec.setdefault("components", {"schemas": {}})
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         return create_openapi_provider(
             openapi_spec=spec,
-            client=MagicMock(),
+            gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
+            response_format=response_format,
         )
 
     def test_empty_paths(self):
@@ -564,9 +567,11 @@ class TestRouteMapFiltering:
         from gitea_mcp_server.label_service import LabelService
 
         try:
+            mock_gitea_client = MagicMock()
+            mock_gitea_client.client = MagicMock()
             create_openapi_provider(
                 openapi_spec=spec,
-                client=MagicMock(),
+                gitea_client=mock_gitea_client,
                 label_service=LabelService(),
                 excluded_routes=set(),
             )
@@ -862,17 +867,50 @@ class TestCreateOpenapiProvider:
 
         from gitea_mcp_server.label_service import LabelService
 
-        client = MagicMock()
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         label_service = LabelService()
         provider = create_openapi_provider(
             openapi_spec=openapi_spec,
-            client=client,
+            gitea_client=mock_gitea_client,
             label_service=label_service,
             excluded_routes={("/old/endpoint", "POST")},
+            response_format="markdown",
         )
 
         assert provider is not None
         assert "Excluding filtered endpoint" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_response_format_propagates_to_tool_schema(self):
+        """response_format should flow into the tool's format parameter default."""
+        from gitea_mcp_server.label_service import LabelService
+
+        spec = {
+            "openapi": "3.1.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser"},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
+
+        provider = create_openapi_provider(
+            openapi_spec=spec,
+            gitea_client=mock_gitea_client,
+            label_service=LabelService(),
+            response_format="json",
+        )
+        tools = await provider.list_tools()
+        tool = next(t for t in tools if t.name == "getUser")
+        fmt_param = tool.parameters["properties"]["format"]
+        assert fmt_param["default"] == "json"
+        assert fmt_param["type"] == "string"
+        assert "json" in fmt_param["enum"]
 
 
 # ---------------------------------------------------------------------------
@@ -883,9 +921,10 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec=None):
+    def make_transform(self, openapi_spec=None, response_format="markdown"):
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
+            response_format=response_format,
         )
 
     def make_tool(self, customized=True):

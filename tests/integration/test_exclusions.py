@@ -155,6 +155,69 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
+    async def test_excluded_tools_also_exclude_resources(self, tmp_path: Path):
+        """When a tool is excluded by config, its corresponding auto-generated
+        resource should also be excluded at registration time."""
+        # Use paths with {path_params} that are NOT in
+        # AUTO_GENERATED_RESOURCE_SKIP_URIS so they produce auto resources.
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/repos/{owner}/{repo}/branches": {
+                    "get": {
+                        "operationId": "repo_list_branches",
+                        "summary": "List repository branches",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/admin/users/{username}": {
+                    "get": {
+                        "operationId": "admin_get_user",
+                        "summary": "Get admin user",
+                        "tags": ["admin"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+        cfg = tmp_path / "exclude.yaml"
+        cfg.write_text("exclude:\n  - gitea_admin_*")
+        config = SimpleConfig(exclude_config_path=str(cfg))
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=spec)
+            mcp = await create_mcp_server(gitea_client)
+
+            # Excluded admin tools should not appear in the tool listing
+            tools = await mcp.list_tools()
+            tool_names = extract_tool_names(tools)
+            assert not any("admin" in t for t in tool_names), (
+                f"Expected no admin tools but found: {[t for t in tool_names if 'admin' in t]}"
+            )
+
+            # The corresponding auto-generated resources (registered as resource
+            # TEMPLATES, not concrete resources) should also be absent.
+            # The admin_get_user operation would produce gitea://admin/users/{username}
+            # but it's excluded by config, so the resource template should not appear.
+            templates = await mcp.list_resource_templates()
+            template_uris = {str(t.uri_template) for t in (templates or [])}
+            assert "gitea://admin/users/{username}" not in template_uris, (
+                f"Expected no admin resource template for excluded tool, "
+                f"got templates: {template_uris}"
+            )
+
+            # Non-admin auto-generated resource templates should still be present.
+            # repo_list_branches produces gitea://repos/{owner}/{repo}/branches
+            # which is NOT filtered (it has no admin tag).
+            assert "gitea://repos/{owner}/{repo}/branches" in template_uris, (
+                f"Expected non-excluded auto resource template, got: {template_uris}"
+            )
+
+    @pytest.mark.asyncio
     async def test_exclude_with_unprefixed_pattern(self, tmp_path: Path):
         """Unprefixed patterns match the unprefixed operationId of tools.
 

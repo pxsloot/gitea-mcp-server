@@ -760,7 +760,7 @@ class TestTextResponseOutputSchema:
 
         _customize_metadata(route, tool, openapi_spec=self.TEXT_SPEC)
 
-        # Phase 4 (#352): text/plain endpoints get a lightweight string fallback schema
+        # Text/plain endpoints get a lightweight string fallback schema
         assert tool.output_schema is not None, "Expected fallback schema for text/plain"
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["properties"]["result"]["type"] == "string"

@@ -143,10 +143,26 @@ def register_auto_generated_resources(
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec,
     skip_uris: set[str] | None = None,
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> None:
-    """Auto-generate resources from GET endpoints in OpenAPI spec."""
+    """Auto-generate resources from GET endpoints in OpenAPI spec.
+
+    Args:
+        mcp: The FastMCP server instance.
+        gitea_client: GiteaClient for API calls.
+        openapi_spec: The OpenAPI specification dictionary.
+        skip_uris: Set of URI templates to skip (custom resource overrides).
+        filtered_tools_info: Filter-prediction data from spec-level filtering.
+            When provided, resources whose operationId appears in the ``filtered``
+            dict are skipped — they are scope-filtered, deprecated, or excluded by
+            config.  ``None`` means no filtering is applied (all resources visible).
+    """
     if skip_uris is None:
         skip_uris = AUTO_GENERATED_RESOURCE_SKIP_URIS
+
+    filtered: dict[str, Any] = {}
+    if filtered_tools_info:
+        filtered = filtered_tools_info.get("filtered", {})
 
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
     count = 0
@@ -168,6 +184,18 @@ def register_auto_generated_resources(
                     logger.debug(
                         "Skipping auto-generated resource %s: will be provided by custom resource",
                         uri_template,
+                    )
+                    continue
+
+                # Spec-level filtering: skip if operationId is filtered
+                # (scope-restricted, deprecated, or config-excluded).
+                op_id: str = operation.get("operationId", "")
+                if op_id and op_id in filtered:
+                    reason = filtered[op_id].get("reason", "unknown")
+                    logger.debug(
+                        "Skipping auto-generated resource %s: filtered (%s)",
+                        uri_template,
+                        reason,
                     )
                     continue
 

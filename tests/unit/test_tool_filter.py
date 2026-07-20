@@ -1,7 +1,7 @@
-"""Unit tests for spec-level tool filtering (Phase 2, #472).
+"""Unit tests for spec-level tool filtering.
 
 Covers:
-- ``fetch_token_scopes`` (token matching) — relocated to ``spec_loader``.
+- ``fetch_token_scopes`` (token matching).
 - ``has_sufficient_scope`` — scope sufficiency rules.
 - ``_compute_excluded_routes`` — the spec-prep step that decides which
   ``(path, METHOD)`` pairs are dropped via ``route_map_fn``.

@@ -767,9 +767,9 @@ class TestServerEdgeCases:
     async def test_permission_filter_exception_fail_open(self):
         """Exception in fetch_token_scopes is caught; filtering fails open.
 
-        Scope filtering now happens at spec-prep time inside
-        ``load_and_convert_spec`` (Phase 2).  A token-scope fetch failure must
-        not raise — the server proceeds with no scope filtering applied.
+        Scope filtering happens at spec-prep time inside
+        ``load_and_convert_spec``.  A token-scope fetch failure must not raise
+        — the server proceeds with no scope filtering applied.
         """
         from unittest.mock import patch
 

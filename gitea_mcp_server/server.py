@@ -305,7 +305,13 @@ async def create_mcp_server(
         openapi_spec=openapi_spec,
         filtered_tools_info=filtered_tools_info,
     )
-    register_all_resources(mcp, gitea_client, openapi_spec)
+    register_all_resources(
+        mcp,
+        gitea_client,
+        openapi_spec,
+        filtered_tools_info=filtered_tools_info,
+        available_scopes=available_scopes,
+    )
     register_type_tools(mcp, openapi_spec=openapi_spec)
     await _apply_virtual_param_scope_filter(available_scopes)
 

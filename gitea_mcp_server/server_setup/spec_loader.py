@@ -1,17 +1,17 @@
 """OpenAPI spec loading and conversion utilities.
 
-Spec-level filtering (Phase 2 of the Spec-Level Filtering milestone):
-
-``load_and_convert_spec`` is the single place where tool visibility is decided.
-It fetches token scopes and the exclusion config, then computes both:
+``load_and_convert_spec`` is the single place where tool and resource
+visibility is decided. It fetches token scopes and the exclusion config,
+then computes both:
 
 * ``filtered_tools_info`` — the ``x-mcp-filtered-tools`` prediction data used by
   synthetic tools (``tool_info``, ``call_tool``, ``search_tools``) to give
-  agents rich, actionable error messages (established in Phase 1).
+  agents rich, actionable error messages, and by resource registration to skip
+  filtered operations.
 * ``excluded_routes`` — the set of ``(path, UPPER_METHOD)`` tuples that must
   never reach FastMCP.  This is passed to ``create_openapi_provider`` and
   applied via ``route_map_fn``, so filtered operations are excluded *before*
-  FastMCP builds the tool — not at query time via a runtime transform.
+  FastMCP builds the tool.
 
 Both are derived from the same ``compute_filtered_tools_info`` logic, so the
 visibility decision and the error-message data can never diverge.
@@ -21,13 +21,15 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+
+import yaml
 
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
-from gitea_mcp_server.tools.exclusion import load_exclusion_config
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
 if TYPE_CHECKING:
@@ -36,6 +38,41 @@ if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Exclusion config loading
+# ---------------------------------------------------------------------------
+
+
+def load_exclusion_config(config_path: str | None) -> dict[str, list[str]]:
+    """Load exclusion rules from a YAML config file.
+
+    Args:
+        config_path: Path to the YAML config file, or None to skip.
+
+    Returns:
+        Dict with ``exclude`` and ``include`` keys, each a list of pattern strings.
+        Returns empty lists on any error or missing file.
+    """
+    if config_path is None:
+        return {"exclude": [], "include": []}
+
+    path = Path(config_path)
+    if not path.exists():
+        logger.info("Exclusion config not found: %s", config_path)
+        return {"exclude": [], "include": []}
+
+    try:
+        with path.open() as f:
+            data = yaml.safe_load(f) or {}
+        return {
+            "exclude": data.get("exclude", []) or [],
+            "include": data.get("include", []) or [],
+        }
+    except Exception:
+        logger.exception("Failed to load exclusion config from %s", config_path)
+        return {"exclude": [], "include": []}
 
 
 # ---------------------------------------------------------------------------
@@ -329,5 +366,6 @@ __all__ = [
     "convert_swagger_to_openapi_v3",
     "fetch_token_scopes",
     "load_and_convert_spec",
+    "load_exclusion_config",
     "load_openapi_spec",
 ]

@@ -108,7 +108,19 @@ def _run_validation(
 ) -> None:
     missing = [p for p in (required_params or []) if p not in kwargs]
     if missing:
-        msg = f"Missing required parameter(s): {', '.join(missing)}"
+        parts: list[str] = []
+        for p in missing:
+            if param_properties and isinstance(param_properties.get(p), dict):
+                enum_vals = param_properties[p].get("enum")
+                if enum_vals:
+                    parts.append(
+                        f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})"
+                    )
+                else:
+                    parts.append(p)
+            else:
+                parts.append(p)
+        msg = f"Missing required parameter(s): {', '.join(parts)}"
         _raise_validation_error(msg, missing[0], ValueError(msg))
     for name, value in kwargs.items():
         if name in SINGLE_VALIDATORS:

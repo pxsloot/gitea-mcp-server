@@ -735,6 +735,47 @@ class TestRunValidation:
         assert "owner" in str(exc.value)
         assert "Missing required parameter(s): owner" in str(exc.value)
 
+    def test_missing_required_enum_param_includes_enum_values(self):
+        """Missing required enum param should include valid values in the error."""
+        from gitea_mcp_server.tools.errors import (
+            _run_validation,
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            _run_validation(
+                {"owner": "test", "repo": "test", "index": 1},
+                required_params=["diffType"],
+                param_properties={
+                    "diffType": {
+                        "type": "string",
+                        "enum": ["diff", "patch"],
+                    },
+                },
+            )
+        msg = str(exc.value)
+        assert "diffType" in msg
+        assert "expected one of:" in msg
+        assert "diff" in msg
+        assert "patch" in msg
+
+    def test_missing_required_param_without_enum_unchanged(self):
+        """Missing required param without enum should not add enum hint."""
+        from gitea_mcp_server.tools.errors import (
+            _run_validation,
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            _run_validation(
+                {"repo": "test"},
+                required_params=["owner"],
+                param_properties={
+                    "owner": {"type": "string"},
+                },
+            )
+        msg = str(exc.value)
+        assert "owner" in msg
+        assert "expected one of:" not in msg
+
     def test_validation_still_runs_on_present_params(self):
         """Existing validation for present params should still run alongside missing check."""
         from gitea_mcp_server.tools.errors import (

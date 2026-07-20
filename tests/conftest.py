@@ -38,6 +38,7 @@ class SimpleConfig:
         http_path="/mcp",
         http_cors=None,
         exclude_config_path=None,
+        response_format="markdown",
     ):
         self.url = url.rstrip("/")
         self.token = token
@@ -54,6 +55,7 @@ class SimpleConfig:
         self.http_path = http_path
         self.http_cors = http_cors
         self.exclude_config_path = exclude_config_path
+        self.response_format = response_format
 
     @property
     def base_url(self) -> str:

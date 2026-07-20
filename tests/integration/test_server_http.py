@@ -35,6 +35,7 @@ class SimpleHTTPConfig:
         self.http_port = 0
         self.http_path = "/mcp"
         self.http_cors = None
+        self.response_format = "markdown"
         for k, v in overrides.items():
             setattr(self, k, v)
 

@@ -539,9 +539,11 @@ class TestRouteMapFiltering:
         spec = dict(spec)
         spec.setdefault("info", {"title": "Test", "version": "1.0.0"})
         spec.setdefault("components", {"schemas": {}})
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         return create_openapi_provider(
             openapi_spec=spec,
-            client=MagicMock(),
+            gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
         )
@@ -564,9 +566,11 @@ class TestRouteMapFiltering:
         from gitea_mcp_server.label_service import LabelService
 
         try:
+            mock_gitea_client = MagicMock()
+            mock_gitea_client.client = MagicMock()
             create_openapi_provider(
                 openapi_spec=spec,
-                client=MagicMock(),
+                gitea_client=mock_gitea_client,
                 label_service=LabelService(),
                 excluded_routes=set(),
             )
@@ -862,11 +866,12 @@ class TestCreateOpenapiProvider:
 
         from gitea_mcp_server.label_service import LabelService
 
-        client = MagicMock()
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         label_service = LabelService()
         provider = create_openapi_provider(
             openapi_spec=openapi_spec,
-            client=client,
+            gitea_client=mock_gitea_client,
             label_service=label_service,
             excluded_routes={("/old/endpoint", "POST")},
         )

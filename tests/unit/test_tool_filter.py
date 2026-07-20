@@ -357,9 +357,11 @@ class TestProviderRouteMapFiltering:
             },
             "components": {"schemas": {}},
         }
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
         return create_openapi_provider(
             openapi_spec=spec,
-            client=MagicMock(),
+            gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
         )

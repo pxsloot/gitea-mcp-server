@@ -205,8 +205,9 @@ From this doc's how-to angle: to add a new scope-gated param, set
 
     The ``format`` parameter is **not** implemented as a virtual param.
     It is a promoted, first-class concept handled directly in
-    ``mcp_builder._ToolWrappingTransform._wrap()`` and reads its default
-    from ``Config.response_format``.
+    ``mcp_builder._ToolWrappingTransform._wrap()``.  Its default is
+    injected at construction time via ``response_format``, so the
+    transform never calls ``Config.get()`` at wrap time.
 
 ---
 

@@ -66,8 +66,9 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
     by ``ExtensionMetadataTransform`` at query time, not at the spec level.
     """
     # Create a fake Gitea client
-    mock_client = MagicMock()
-    mock_client.request.return_value = {}
+    mock_gitea_client = MagicMock()
+    mock_gitea_client.client = MagicMock()
+    mock_gitea_client.request.return_value = {}
 
     # Apply extensions manually - only parameter overrides are spec-level
     extensions = {
@@ -84,7 +85,7 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
     # Convert to OpenAPI v3 (the spec is already v3, but this simulates the pipeline)
     provider = create_openapi_provider(
         openapi_spec=minimal_spec,
-        client=mock_client,
+        gitea_client=mock_gitea_client,
         label_service=MagicMock(),
     )
 
@@ -116,9 +117,11 @@ tool_names:
 def test_label_guidance_appendage_when_labels_present(minimal_spec):
     """Test that LABEL_GUIDANCE is auto-appended to tools with labels parameter."""
     # No explicit description extension, rely on auto-guidance
+    mock_gitea_client = MagicMock()
+    mock_gitea_client.client = MagicMock()
     provider = create_openapi_provider(
         openapi_spec=minimal_spec,
-        client=MagicMock(),
+        gitea_client=mock_gitea_client,
         label_service=MagicMock(),
     )
     tools = list(provider._tools.values())

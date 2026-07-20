@@ -130,6 +130,14 @@ def register_custom_resources(  # noqa: PLR0915
                 required_scope,
             )
 
+            # Return a no-op passthrough instead of registering with
+            # mcp.resource().  Since _register is used as a decorator
+            # (outermost on each resource handler), returning passthrough
+            # means the decorated function is returned unmodified — it
+            # simply never gets wired into FastMCP.  The inner decorator
+            # (resource_handler) is still applied for error handling, but
+            # without an mcp.resource() call, the URI template is never
+            # exposed to clients.
             def passthrough(
                 func: Callable[..., Awaitable[ResourceResult]],
             ) -> Callable[..., Awaitable[ResourceResult]]:

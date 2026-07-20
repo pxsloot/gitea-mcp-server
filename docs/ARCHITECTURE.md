@@ -221,7 +221,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/label_transform.py` | FastMCP `Transform` — runtime label validation and conversion, runs as innermost provider-level transform | `LabelTransform`, `_convert_labels_inline` |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
-| `tools/exclusion.py` | `load_exclusion_config` + `matches_any`/`matches_pattern` — exclusion config loading and pattern matching, consumed by spec-level `route_map_fn` filtering |
+| `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |

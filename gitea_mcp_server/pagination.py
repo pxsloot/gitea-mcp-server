@@ -20,6 +20,7 @@ import contextvars
 from typing import Any
 
 import httpx
+from fastmcp.tools.base import ToolResult
 
 PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
 """Keys in structured_content that carry pagination metadata."""
@@ -92,10 +93,44 @@ def add_pagination_metadata(
     return enhanced
 
 
+def apply_pagination(
+    result: ToolResult,
+    page: int,
+    limit: int,
+    total_count: int | None = None,
+) -> ToolResult:
+    """Add pagination metadata to a ``ToolResult``'s ``structured_content``.
+
+    Does **not** modify the ``content`` (markdown/json text).  Agents read
+    pagination state from ``structured_content`` (``has_more``,
+    ``next_offset``, ``total_count``).
+
+    Args:
+        result: A ``ToolResult`` with ``structured_content`` containing
+            ``{"result": data}``.
+        page: Current page number (1-based).
+        limit: Items per page.
+        total_count: Total number of items, if known.  When ``None``, falls
+            back to a heuristic: ``has_more = len(result) == limit``.
+
+    Returns:
+        A new ``ToolResult`` with pagination keys added to
+        ``structured_content``.  ``content`` and ``meta`` are preserved.
+    """
+    structured = result.structured_content or {}
+    enhanced = add_pagination_metadata(structured, page, limit, total_count)
+    return ToolResult(
+        content=result.content,
+        structured_content=enhanced,
+        meta=result.meta,
+    )
+
+
 __all__ = [
     "PAGINATION_HEADERS",
     "PAGINATION_KEYS",
     "add_pagination_metadata",
+    "apply_pagination",
     "capture_pagination_headers",
     "pagination_ctx",
 ]

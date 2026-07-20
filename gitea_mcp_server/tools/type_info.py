@@ -298,7 +298,7 @@ def register_type_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None`` (tools
             will return a helpful error).
     """
-    from gitea_mcp_server.format import format_result  # noqa: PLC0415
+    from gitea_mcp_server.format import apply_format  # noqa: PLC0415
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
     from gitea_mcp_server.tools.errors import _raise_value_error  # noqa: PLC0415
 
@@ -368,10 +368,7 @@ def register_type_tools(
             "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
         )
 
-        return format_result(
-            ToolResult(structured_content={"result": info}),
-            format,
-        )
+        return apply_format(info, format)
 
     mcp.tool(
         name="resolve_type",

@@ -4,12 +4,13 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
+    apply_format - format data for output (raw/json/markdown), no pagination.
     format_result - reformat a ToolResult by format (json/markdown/raw).
 """
 
 import json as json_module
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -277,6 +278,56 @@ def _format_as_markdown(
     return "\n".join(lines)
 
 
+def apply_format(
+    data: Any,
+    fmt: str,
+    *,
+    markdown_formatter: Callable[[Any], str] | None = None,
+    markdown_extras: list[str] | None = None,
+) -> ToolResult:
+    """Format data for output. No pagination involvement.
+
+    Produces a ``ToolResult`` with ``structured_content`` carrying the raw
+    data (``{"result": data}``) and ``content`` formatted per ``fmt``:
+
+    - ``raw``: structured_content only, no text content.
+    - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
+    - ``markdown``: text = ``markdown_formatter(data)`` or the generic
+      ``_format_as_markdown(data, None)``.  ``markdown_extras`` are appended
+      as additional sections after the main content.
+
+    Args:
+        data: The data to format (typically a dict or list).
+        fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
+        markdown_formatter: Optional custom markdown renderer.  When omitted,
+            the generic ``_format_as_markdown`` is used.
+        markdown_extras: Optional list of additional markdown sections to
+            append after the main content (only in markdown mode).
+
+    Returns:
+        A ``ToolResult`` with formatted content and raw structured data.
+    """
+    _VALID_FORMATS = frozenset({"raw", "json", "markdown"})
+    if fmt not in _VALID_FORMATS:
+        msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
+        raise ValueError(msg)
+
+    if fmt == "raw":
+        return ToolResult(structured_content={"result": data})
+
+    if fmt == "json":
+        text = json_module.dumps(data, indent=2)
+    else:
+        text = markdown_formatter(data) if markdown_formatter else _format_as_markdown(data, None)
+        if markdown_extras:
+            text += "\n\n" + "\n\n".join(markdown_extras)
+
+    return ToolResult(
+        content=[TextContent(type="text", text=text)],
+        structured_content={"result": data},
+    )
+
+
 def format_result(
     result: ToolResult,
     fmt: str,
@@ -340,5 +391,6 @@ __all__ = [
     "_format_simple_value",
     "_resolve_anyof_schema",
     "_snake_to_title",
+    "apply_format",
     "format_result",
 ]

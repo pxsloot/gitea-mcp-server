@@ -22,10 +22,10 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import _format_as_markdown, format_result
+from gitea_mcp_server.format import _format_as_markdown, apply_format
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata
+from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -417,42 +417,112 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
             structured_content={"result": [], "_hint": text},
         )
 
-    structured = {"result": page_items}
-    if format == "raw":
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(structured_content=enhanced)
-
-    serialized_out: str = (
-        json.dumps(page_items, indent=2)
-        if format == "json"
-        else _format_as_markdown(page_items, None)
-    )
-
+    extras: list[str] = []
     if format == "markdown":
         if cross_link_hints:
-            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            hints = "**Cross-linking hints:**\n"
             for label, tool in cross_link_hints.items():
-                serialized_out += f"- For {label}: `{tool}(query)`\n"
+                hints += f"- For {label}: `{tool}(query)`\n"
+            extras.append(hints)
 
-        # Append a note about filtered (hidden) tools so agents are
-        # aware that some tools exist but are not visible to their token.
         note = _format_filtered_tools_note(filtered_tools_info)
         if note:
-            serialized_out += note
+            extras.append(note)
 
-        pagination_info = {
-            k: v
-            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-            if k in PAGINATION_KEYS
-        }
-        serialized_out += "\n\n---\n"
-        serialized_out += _format_as_markdown(pagination_info, None)
+        pagination_table = _format_as_markdown(
+            {k: v for k, v in add_pagination_metadata(
+                {"result": page_items}, page, limit, total_count
+            ).items() if k in PAGINATION_KEYS},
+            None,
+        )
+        extras.append(pagination_table)
 
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized_out)],
-        structured_content=enhanced,
+    return apply_pagination(
+        apply_format(page_items, format, markdown_extras=extras or None),
+        page, limit, total_count,
     )
+
+
+def _format_parameter_table(properties: dict[str, Any], required: list[str]) -> str:
+    """Render a parameter table from JSON Schema properties."""
+    lines = ["## Parameters", "", "| Parameter | Type | Required | Description |",
+             "|-----------|------|----------|-------------|"]
+    for param_name, prop in properties.items():
+        if not isinstance(prop, dict):
+            continue
+        ptype = prop.get("type", "any")
+        preq = "yes" if param_name in required else "no"
+        pdesc = prop.get("description", "").replace("|", "\\|")
+        lines.append(f"| {param_name} | {ptype} | {preq} | {pdesc} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_annotations_table(annotations: dict[str, Any]) -> str:
+    """Render an annotations table."""
+    lines = ["## Annotations", "", "| Hint | Value |", "|------|-------|"]
+    for key in ("title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
+        val = annotations.get(key)
+        if val is not None:
+            lines.append(f"| {key} | {json.dumps(val)} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_json_section(title: str, data: Any) -> str:
+    """Render a JSON code block section."""
+    return f"## {title}\n\n```json\n{json.dumps(data, indent=2)}\n```\n"
+
+
+def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
+    """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
+
+    Produces a predictable structure with a parameter table that agents can
+    parse reliably:
+
+    - ``## Parameters`` — table with ``Parameter | Type | Required | Description``
+    - ``## Output Example`` — JSON code block
+    - ``## Annotations`` — table with ``Hint | Value``
+    - ``## Tags`` — comma-separated list
+    - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
+    """
+    lines: list[str] = []
+
+    name = schema.get("name", "")
+    if name:
+        lines.append(f"# {name}")
+        lines.append("")
+
+    desc = schema.get("description", "")
+    if desc:
+        lines.append(desc)
+        lines.append("")
+
+    params = schema.get("parameters", {})
+    if isinstance(params, dict):
+        properties = params.get("properties", {})
+        if properties:
+            lines.append(_format_parameter_table(properties, params.get("required", [])))
+
+    example = schema.get("output_example")
+    if example is not None:
+        lines.append(_format_json_section("Output Example", example))
+
+    annotations = schema.get("annotations")
+    if isinstance(annotations, dict):
+        lines.append(_format_annotations_table(annotations))
+
+    tags = schema.get("tags")
+    if tags:
+        lines.append("## Tags\n")
+        lines.append(", ".join(tags))
+        lines.append("")
+
+    output_schema = schema.get("output_schema")
+    if isinstance(output_schema, dict):
+        lines.append(_format_json_section("Output Schema", output_schema))
+
+    return "\n".join(lines).strip()
 
 
 async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool_prefix, detail
@@ -462,6 +532,8 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
     detail: Literal["concise", "full"] = "concise",
+    page: int = 1,
+    limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
     filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
@@ -471,11 +543,15 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     tool names.  Tries bare name first, then prepends ``tool_prefix``.
 
     When ``detail="full"``, the result includes the fully-resolved
-    ``output_schema`` alongside the compact ``output_example``.
+    ``output_schema`` alongside the compact ``output_example``.  The
+    ``output_schema`` is paginated by its top-level properties when it
+    exceeds ``limit`` properties per page.
 
     Args:
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
         filtered_tools_info: Filter-prediction data for filtered-tool messages.
+        page: Page number for output_schema properties (1-based, detail=full only).
+        limit: Properties per page for output_schema (detail=full only).
     """
     tools = await transform.get_tool_catalog(ctx)
     candidates = {name}
@@ -486,9 +562,16 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
             schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
                 schema["output_schema"] = tool.output_schema
-            return format_result(
-                ToolResult(structured_content={"result": schema}), format
-            )
+
+            result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+
+            # Paginate output_schema when detail=full
+            if detail == "full" and tool.output_schema is not None:
+                os_props = tool.output_schema.get("properties", {})
+                total_props = len(os_props)
+                result = apply_pagination(result, page, limit, total_props)
+
+            return result
 
     # Tool not found in the post-filter catalog — check if it's a
     # filtered tool (scope-restricted, config-excluded, or deprecated).
@@ -590,34 +673,25 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
             structured_content={"result": [], "_hint": text},
         )
 
-    structured = {"result": page_items}
-    if format == "raw":
-        enhanced = add_pagination_metadata(structured, page, limit, total_count)
-        return ToolResult(structured_content=enhanced)
-
-    serialized_out: str = (
-        json.dumps(page_items, indent=2)
-        if format == "json"
-        else _format_as_markdown(page_items, None)
-    )
-
+    extras: list[str] = []
     if format == "markdown":
         if cross_link_hints:
-            serialized_out += "\n\n---\n**Cross-linking hints:**\n"
+            hints = "**Cross-linking hints:**\n"
             for label, tool in cross_link_hints.items():
-                serialized_out += f"- For {label}: `{tool}(query)`\n"
-        pagination_info = {
-            k: v
-            for k, v in add_pagination_metadata(structured, page, limit, total_count).items()
-            if k in PAGINATION_KEYS
-        }
-        serialized_out += "\n\n---\n"
-        serialized_out += _format_as_markdown(pagination_info, None)
+                hints += f"- For {label}: `{tool}(query)`\n"
+            extras.append(hints)
 
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-    return ToolResult(
-        content=[TextContent(type="text", text=serialized_out)],
-        structured_content=enhanced,
+        pagination_table = _format_as_markdown(
+            {k: v for k, v in add_pagination_metadata(
+                {"result": page_items}, page, limit, total_count
+            ).items() if k in PAGINATION_KEYS},
+            None,
+        )
+        extras.append(pagination_table)
+
+    return apply_pagination(
+        apply_format(page_items, format, markdown_extras=extras or None),
+        page, limit, total_count,
     )
 
 
@@ -763,11 +837,18 @@ def register_synthetic_tools(
             "Detail level: 'concise' (default) for compact type-summary output_example; "
             "'full' to also include the resolved output_schema",
         ] = "concise",
+        pagination: Annotated[
+            tuple[int, int] | None,
+            "(page, limit) for output_schema properties. Only used when detail=full. "
+            "Example: (2, 5) for page 2 with 5 properties per page.",
+        ] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
+        page, limit = (1, 10) if pagination is None else pagination
         return await _tool_info_impl(
             name, format, ctx, transform, tool_prefix,
-            detail=detail, openapi_spec=openapi_spec,
+            detail=detail, page=page, limit=limit,
+            openapi_spec=openapi_spec,
             filtered_tools_info=filtered_tools_info,
         )
 

@@ -571,8 +571,6 @@ class TestLowLevelProtocolValidation:
             await list_handler(list_req)
 
             # tool_info should return structured content
-            import json as json_module
-
             req = CallToolRequest(
                 method="tools/call",
                 params=CallToolRequestParams(
@@ -589,3 +587,112 @@ class TestLowLevelProtocolValidation:
             assert isinstance(result_value, dict), (
                 f"Expected dict from tool_info, got {type(result_value)}"
             )
+
+
+class TestFilteredToolMiddleware:
+    """Integration tests for FilteredToolMiddleware — intercepts tool calls
+    to filtered tools and returns helpful error messages."""
+
+    @pytest.mark.asyncio
+    async def test_filtered_tool_raises_tool_error(self):
+        """Calling a scope-filtered tool raises ToolError with scope message.
+
+        The middleware intercepts before any HTTP call, so no API mock is
+        needed for the filtered tool itself.
+        """
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=True,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/admin/users": {
+                    "get": {
+                        "operationId": "adminGetAllUsers",
+                        "summary": "List all users",
+                        "tags": ["admin"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200, json=swagger_spec
+            )
+            mock_http.get("https://git.example.com/api/v1/user").respond(
+                200, json={"login": "user", "admin": False}
+            )
+            mock_http.get("https://git.example.com/api/v1/users/user/tokens").respond(
+                200, json=[
+                    {
+                        "id": 1,
+                        "name": "test",
+                        "token_last_eight": "st_token",
+                        "scopes": ["read:repository", "write:issue"],
+                    }
+                ]
+            )
+            mcp = await create_mcp_server(gitea_client)
+            prefix = config.tool_prefix or ""
+
+            with pytest.raises(ToolError, match="restricted by your token scopes"):
+                await mcp.call_tool(
+                    f"{prefix}admin_get_all_users",
+                    {},
+                )
+
+    @pytest.mark.asyncio
+    async def test_visible_synthetic_tool_passes_through(self):
+        """Calling a visible synthetic tool passes through the middleware."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=True,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {},
+            "definitions": {},
+        }
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200, json=swagger_spec
+            )
+            mock_http.get("https://git.example.com/api/v1/user").respond(
+                200, json={"login": "user", "admin": False}
+            )
+            mock_http.get("https://git.example.com/api/v1/users/user/tokens").respond(
+                200, json=[
+                    {
+                        "id": 1,
+                        "name": "test",
+                        "token_last_eight": "st_token",
+                        "scopes": ["read:repository", "write:issue"],
+                    }
+                ]
+            )
+            mcp = await create_mcp_server(gitea_client)
+            prefix = config.tool_prefix or ""
+
+            # Synthetic tools (search_tools) don't make HTTP calls
+            result = await mcp.call_tool(
+                f"{prefix}search_tools",
+                {"query": "issue"},
+            )
+            assert result is not None

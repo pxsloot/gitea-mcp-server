@@ -235,7 +235,7 @@ class DocManager:
             [
                 "",
                 "Use `search_docs(query)` to find guides by topic, or `read_doc(topic)` to read one.",
-                "Guides are also available as resources at `gitea://docs/guide/{{topic}}`.",
+                "Guides are also available as resources at `gitea://docs/guide/{topic}`.",
                 "",
             ]
         )

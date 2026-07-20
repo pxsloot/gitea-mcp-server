@@ -30,7 +30,7 @@ from gitea_mcp_server.constants import (
     SEARCH_MAX_RESULTS,
 )
 from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
-from gitea_mcp_server.exceptions import SpecError
+from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
@@ -111,12 +111,45 @@ def load_instructions() -> str:
         )
 
 
-def _build_server_instructions(doc_manager: DocManager) -> str:
-    """Build server instructions by combining base instructions with doc manifest."""
+def substitute_placeholders(text: str, values: dict[str, str]) -> str:
+    """Replace ``{{PLACEHOLDER}}`` tokens with runtime values.
+
+    Unknown placeholders pass through unchanged so the raw doc still reads
+    sanely if substitution is skipped or a value is unavailable.
+
+    Args:
+        text: Text containing ``{{PLACEHOLDER}}`` tokens.
+        values: Mapping of placeholder name (without braces) to replacement
+            string.  All replacements are plain markdown strings.
+
+    Returns:
+        Text with known placeholders replaced.
+    """
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    return text
+
+
+def _build_server_instructions(
+    placeholder_values: dict[str, str] | None = None,
+) -> str:
+    """Build server instructions by substituting placeholders.
+
+    All dynamic content — tool prefix, user identity, token scopes, server
+    type, guide list — flows through ``{{PLACEHOLDER}}`` substitution rather
+    than hardcoded appends.  This keeps the doc structure in the markdown
+    file and the dynamic values in a single substitution pass.
+
+    Args:
+        placeholder_values: Mapping of placeholder name to markdown value.
+            ``None`` or empty skips substitution (placeholders pass through).
+
+    Returns:
+        Fully resolved server instructions markdown.
+    """
     instructions = load_instructions()
-    manifest = doc_manager.get_manifest_markdown()
-    if manifest:
-        instructions += "\n" + manifest
+    if placeholder_values:
+        instructions = substitute_placeholders(instructions, placeholder_values)
     return instructions
 
 
@@ -289,7 +322,52 @@ async def create_mcp_server(
     )
     doc_manager = DocManager()
 
-    instructions = _build_server_instructions(doc_manager)
+    # ── Build placeholder values for agent instructions ────────────────
+    # We use raw HTTP calls (gitea_client.request) rather than the
+    # generated tools because the instructions must be ready at server
+    # construction time — before FastMCP is initialised and tools exist.
+    # The gitea_client already has retry, error wrapping, and rate-limit
+    # handling built in, matching the pattern already established by
+    # fetch_token_scopes() in spec_loader.py.
+    placeholder_values: dict[str, str] = {
+        "TOOL_PREFIX": config.tool_prefix,
+    }
+
+    # User login — lightweight GET /user, same endpoint fetch_token_scopes
+    # already calls for scope filtering.
+    try:
+        user_data = await gitea_client.request("GET", "/user")
+        if isinstance(user_data, dict):
+            placeholder_values["USER_LOGIN"] = str(user_data.get("login", "unknown"))
+    except (OSError, GiteaAPIError):
+        logger.info("Could not fetch user login for instructions placeholder")
+
+    # Token scopes — already computed in filtered_tools_info.
+    scopes: list[str] = filtered_tools_info.get("available_scopes", [])
+    if scopes:
+        placeholder_values["TOKEN_SCOPES"] = ", ".join(
+            f"`{s}`" for s in scopes
+        )
+
+    # Server type (Gitea vs Forgejo) — detectable from the already-loaded
+    # OpenAPI spec info block; no extra API call needed.
+    server_title: str = (
+        str(openapi_spec.get("info", {}).get("title", ""))
+        if openapi_spec
+        else ""
+    )
+    if "forgejo" in server_title.lower():
+        placeholder_values["SERVER_TYPE"] = "Forgejo"
+    elif "gitea" in server_title.lower():
+        placeholder_values["SERVER_TYPE"] = "Gitea"
+    # else leave placeholder unresolved (passes through unchanged)
+
+    # Guide manifest — DocManager builds the markdown table.
+    guide_manifest = doc_manager.get_manifest_markdown()
+    if guide_manifest:
+        placeholder_values["GUIDES_LIST"] = guide_manifest
+
+    instructions = _build_server_instructions(placeholder_values)
 
     mcp = FastMCP(
         name="Gitea MCP Server",

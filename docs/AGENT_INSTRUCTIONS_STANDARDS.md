@@ -9,9 +9,9 @@ covers: The intent/contract for agent_instructions.md -- voice, content rules, w
 This document captures the *intent* behind
 `gitea_mcp_server/docs/agent_instructions.md` -- the doc injected into every
 agent session as server instructions. It is the contract for anyone editing
-that file. The machine-checkable invariants live as a test (see issue #462,
-which adds preprocessing); this file explains the *why* and the judgment calls
-that a test cannot catch.
+that file. The machine-checkable invariants live as tests in
+``test_server.py`` (see ``test_served_instructions_*``); this file explains
+the *why* and the judgment calls that a test cannot catch.
 
 Read this before changing `agent_instructions.md`. The review that shaped these
 rules is PR #461 (refs #460).
@@ -63,17 +63,20 @@ not grep patterns.
    mechanism. Never phrase scope filtering as an admin-only special case.
 
 4. **The prefix is configurable.** It defaults to `gitea_` but is set by
-   `TOOL_PREFIX`. Describe it as "the server's configured prefix (default
-   `gitea_`)". Do NOT hardcode the literal as the only form, and do NOT ship
-   unresolved `{{TOOL_PREFIX}}` placeholders in the served doc -- that confuses
-   agents and wastes tokens. Placeholder injection is a server feature (#462);
-   until it lands, use plain configurable wording.
+   `TOOL_PREFIX`. The doc uses `{{TOOL_PREFIX}}` placeholders which are
+   resolved at server startup by ``substitute_placeholders()`` in
+   ``server.py``. Do NOT hardcode the literal as the only form, and do NOT
+   ship unresolved `{{TOOL_PREFIX}}` placeholders in the served doc -- that
+   confuses agents and wastes tokens. The invariant test
+   ``test_served_instructions_no_unresolved_placeholders`` guards against
+   this.
 
 5. **Invite the agent to use its own tools.** Rather than over-explaining
    mechanics (e.g. how `call_tool` resolves names), tell the agent to run
-   `tool_info("gitea_call_tool")` and try both prefixed and unprefixed names.
-   The doc should model the discovery behavior it preaches: the agent learns
-   the UX by using the tools, not by reading prose about them.
+   `tool_info("{{TOOL_PREFIX}}call_tool")` and try both prefixed and
+   unprefixed names. The doc should model the discovery behavior it preaches:
+   the agent learns the UX by using the tools, not by reading prose about
+   them.
 
 6. **Workflows are narratives, not CRUD menus.** Show a real sequence the agent
    will actually run -- e.g. plan creates issue + labels -> research reads and
@@ -117,7 +120,16 @@ not grep patterns.
 
 ## Enforcement
 
-The assertable invariants (no frontmatter, no `{{}}`, line budget, key anchor
-phrases) are guarded by a test added alongside the #462 preprocessing work, so
-a regression fails `make test`. This file guards the *intent* that a test
-cannot express. Both must be updated together when the bar changes.
+The assertable invariants are guarded by these tests in
+``tests/integration/test_server.py``:
+
+| Test | Guards |
+|------|--------|
+| ``test_served_instructions_no_unresolved_placeholders`` | No ``{{}}`` remains after substitution |
+| ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
+| ``test_served_instructions_line_budget`` | ≤ 300 lines (see budget history in test) |
+| ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
+
+A regression in any of these fails ``make test``. This file guards the
+*intent* that a test cannot express. Both must be updated together when
+the bar changes.

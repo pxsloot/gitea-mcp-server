@@ -851,13 +851,154 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_build_server_instructions_without_manifest(self):
         """_build_server_instructions works when manifest is empty."""
-        from gitea_mcp_server.docs_tools import DocManager
-        from gitea_mcp_server.server import _build_server_instructions, load_instructions
+        from gitea_mcp_server.server import _build_server_instructions
 
-        dm = DocManager.__new__(DocManager)
-        dm._guides = []
-        result = _build_server_instructions(dm)
+        result = _build_server_instructions()
         assert "Gitea MCP Server" in result
+
+    # ------------------------------------------------------------------
+    # Placeholder substitution tests
+    # ------------------------------------------------------------------
+
+    def test_substitute_placeholders_known(self):
+        """Known placeholders are replaced."""
+        from gitea_mcp_server.server import substitute_placeholders
+
+        result = substitute_placeholders(
+            "Hello {{NAME}}, prefix is {{TOOL_PREFIX}}",
+            {"NAME": "Agent", "TOOL_PREFIX": "gitea_"},
+        )
+        assert result == "Hello Agent, prefix is gitea_"
+
+    def test_substitute_placeholders_unknown(self):
+        """Unknown placeholders pass through unchanged."""
+        from gitea_mcp_server.server import substitute_placeholders
+
+        result = substitute_placeholders(
+            "Hello {{NAME}}, {{UNKNOWN}} stays",
+            {"NAME": "Agent"},
+        )
+        assert result == "Hello Agent, {{UNKNOWN}} stays"
+
+    def test_substitute_placeholders_empty_values(self):
+        """Empty values dict returns text unchanged."""
+        from gitea_mcp_server.server import substitute_placeholders
+
+        text = "Hello {{NAME}}"
+        result = substitute_placeholders(text, {})
+        assert result == text
+
+    def test_substitute_placeholders_no_placeholders(self):
+        """Text with no placeholders is returned unchanged."""
+        from gitea_mcp_server.server import substitute_placeholders
+
+        text = "Hello world"
+        result = substitute_placeholders(text, {"NAME": "Agent"})
+        assert result == text
+
+    def test_substitute_placeholders_multiple_same(self):
+        """Same placeholder appearing multiple times is replaced everywhere."""
+        from gitea_mcp_server.server import substitute_placeholders
+
+        result = substitute_placeholders(
+            "{{P}}a {{P}}b {{P}}c",
+            {"P": "x"},
+        )
+        assert result == "xa xb xc"
+
+    @pytest.mark.asyncio
+    async def test_build_server_instructions_with_placeholders(self):
+        """_build_server_instructions substitutes placeholders before returning."""
+        from gitea_mcp_server.server import _build_server_instructions
+
+        result = _build_server_instructions(
+            placeholder_values={
+                "TOOL_PREFIX": "custom_",
+                "USER_LOGIN": "testuser",
+            },
+        )
+        assert "custom_" in result
+        assert "testuser" in result
+        assert "{{TOOL_PREFIX}}" not in result
+        assert "{{USER_LOGIN}}" not in result
+
+    @pytest.mark.asyncio
+    async def test_served_instructions_no_unresolved_placeholders(self):
+        """Served instructions contain NO unresolved {{}} placeholders.
+
+        After substitution, every ``{{PLACEHOLDER}}`` must be resolved.
+        This guards against a placeholder being added to the doc without
+        a corresponding entry in the substitution values.
+        """
+        from gitea_mcp_server.server import _build_server_instructions
+
+        result = _build_server_instructions(
+            placeholder_values={
+                "TOOL_PREFIX": "gitea_",
+                "USER_LOGIN": "agent",
+                "TOKEN_SCOPES": "`read:repository`",
+                "SERVER_TYPE": "Gitea",
+                "GUIDES_LIST": "",
+            },
+        )
+        assert "{{" not in result, f"Unresolved placeholder found in: {result}"
+
+    @pytest.mark.asyncio
+    async def test_served_instructions_no_frontmatter(self):
+        """Served instructions start with '#', not YAML frontmatter."""
+        from gitea_mcp_server.server import _build_server_instructions
+
+        result = _build_server_instructions()
+        assert result.startswith("#"), (
+            f"Instructions must start with '#', got: {result[:50]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_served_instructions_line_budget(self):
+        """Served instructions respect the line-count budget (<= 300 lines).
+
+        The budget protects the agent-context economy. Raise it deliberately
+        with a comment, not by 'tidying'.
+
+        Budget history:
+        - 200 lines: initial contract from #462 (proved too tight)
+        - 300 lines: raised 2026-07-20 to accommodate the full doc with
+          placeholders, workflow guide manifest, and edge-case catalog.
+          The doc is intentionally comprehensive because it is the *only*
+          context injected at connection time — every other resource is
+          discovered on demand.
+        """
+        from gitea_mcp_server.server import _build_server_instructions
+
+        result = _build_server_instructions()
+        line_count = len(result.splitlines())
+        assert line_count <= 300, (
+            f"Instructions are {line_count} lines (budget: 300). "
+            "Increase the budget deliberately, not by trimming."
+        )
+
+    @pytest.mark.asyncio
+    async def test_served_instructions_key_anchors(self):
+        """Served instructions contain key anchor phrases from the #461 review."""
+        from gitea_mcp_server.server import _build_server_instructions
+
+        result = _build_server_instructions()
+
+        anchors = [
+            # Filter explanation: spec -> scope -> config
+            "generated directly from",
+            "Swagger/OpenAPI spec",
+            # Universal scope filtering (not admin-only)
+            "tool and resource is scope",
+            # Configurable prefix wording
+            "configured prefix",
+            # tool_info self-inspection invite
+            "tool_info",
+        ]
+        for anchor in anchors:
+            assert anchor.lower() in result.lower(), (
+                f"Missing anchor phrase: '{anchor}'"
+            )
 
     @pytest.mark.asyncio
     async def test_exclusion_noop_when_no_config(self):

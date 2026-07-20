@@ -71,6 +71,7 @@ def patch_spec_loader(monkeypatch):
             },
             {},  # no extensions
             {},  # no filtered-tools info
+            set(),  # no excluded routes
         )
 
     # Patch where it's used, not where it's defined

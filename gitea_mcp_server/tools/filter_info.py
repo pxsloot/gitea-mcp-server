@@ -9,10 +9,12 @@ This module is the foundation for Phase 2 of the Spec-Level Filtering
 milestone, where filtering itself moves from runtime transforms to
 spec-level pre-processing.
 
-The logic here mirrors what the runtime transforms do:
-    - ``PermissionFilterTransform`` — scope-based filtering
-    - ``ExclusionTransform`` — config-based exclude/include
-    - ``_get_deprecated_routes`` — deprecated endpoint exclusion
+The logic here mirrors the spec-level filtering applied via ``route_map_fn``
+(see ``spec_loader.load_and_convert_spec`` and
+``mcp_builder.create_openapi_provider``):
+    - deprecated endpoints
+    - config-based exclude/include (``ExclusionTransform`` config)
+    - scope-based filtering (token scopes)
 """
 
 from __future__ import annotations
@@ -45,8 +47,15 @@ def _is_excluded(
     include = exclusion_config.get("include", [])
     if not exclude and not include:
         return False
-    is_included = matches_any(op_id, tags, include, tool_prefix)
-    is_excluded = matches_any(op_id, tags, exclude, tool_prefix)
+    # Exclusion patterns are written against the *final* (prefixed) tool name
+    # (e.g. ``gitea_admin_*``).  At spec-prep time the operationId is still bare
+    # (``admin_get_users``), so match the prefixed form.  This mirrors the old
+    # runtime transform, where the tool name was already prefixed when the
+    # ExclusionTransform ran.  Passing an empty tool_prefix to ``matches_any``
+    # avoids double-prefixing.
+    prefixed_id = f"{tool_prefix}{op_id}"
+    is_included = matches_any(prefixed_id, tags, include, "")
+    is_excluded = matches_any(prefixed_id, tags, exclude, "")
     return is_excluded and not is_included
 
 

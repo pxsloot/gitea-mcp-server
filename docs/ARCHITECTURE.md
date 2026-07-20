@@ -34,38 +34,38 @@ removed when FastMCP catches up.
 └──────┬───────┘
        │
        ▼
-┌────────────────────────────────────────────────┐
-│             spec_loader                        │
-│  load_and_convert_spec()                       │
-│  ┌───────────┐   ┌──────────────────────────┐  │
-│  │ fetch +   │──▶│ openapi_converter        │  │
-│  │ parse     │   │  Swagger 2.0 → OpenAPI   │  │
-│  └───────────┘   │  3.1                     │  │
-│                  │  + wrap response schemas │  │
-│                  │  + apply param extensions│  │
-│                  └───────────┬──────────────┘  │
-└──────────────────────────────┼─────────────────┘
+┌───────────────────────────────────────────────────┐
+│             spec_loader                           │
+│  load_and_convert_spec()                          │
+│  ┌───────────┐   ┌─────────────────────────────┐  │
+│  │ fetch +   │──▶│ openapi_converter           │  │
+│  │ parse     │   │  Swagger 2.0 → OpenAPI 3.1  │  │
+│  └───────────┘   │  + wrap response schemas    │  │
+│                  │  + apply param extensions   │  │
+│                  └───────────┬─────────────────┘  │
+└──────────────────────────────┼────────────────────┘
+                               │
                                │ OpenAPI 3.1 spec
+                               │
                     ┌──────────┴──────────┐
                     │                     │
                     ▼                     ▼
-┌──────────────────────────┐  ┌──────────────────────────┐
-│       mcp_builder        │  │      resource_setup      │
-│  create_openapi_provider │  │  register_all_resources  │
-│                          │  │                          │
-│  Phase 0: _get_deprecated│  │  • auto_generated:       │
-│  _routes → exclude       │  │    every GET endpoint    │
-│  deprecated endpoints    │  │    → raw JSON resource   │
-│                          │  │                          │
-│  Phase 1: _customize     │  │  • custom wrappers:      │
-│  _metadata (per tool):   │  │    Markdown formatters   │
-│  • title, category       │  │    every GET endpoint    │
-│  • title, category       │  │    → raw JSON resource   │
-│  • annotations, hints    │  │                          │
-│  • output/label schemas  │  │  • custom wrappers:      │
-│  • invalidation patterns │  │    Markdown formatters   │
-│                          │  │    for common URIs       │
-│  Phase 2: LabelTransform  │  │    (override auto)       │
+┌───────────────────────────┐  ┌──────────────────────────┐
+│       mcp_builder         │  │      resource_setup      │
+│  create_openapi_provider  │  │  register_all_resources  │
+│                           │  │                          │
+│  Phase 0: _get_deprecated │  │  • auto_generated:       │
+│  _routes → exclude        │  │    every GET endpoint    │
+│  deprecated endpoints     │  │    → raw JSON resource   │
+│                           │  │                          │
+│  Phase 1: _customize      │  │  • custom wrappers:      │
+│  _metadata (per tool):    │  │    Markdown formatters   │
+│  • title, category        │  │    for common URIs       │
+│  • annotations, hints     │  │    (override auto)       │
+│  • output/label schemas   │  │                          │
+│  • invalidation patterns  │  │                          │
+│                           │  │                          │
+│  Phase 2: LabelTransform  │  │                          │
 │  (innermost):             │  │                          │
 │  • label string→ID conv   │  └───────────┬──────────────┘
 │                           │              │
@@ -78,28 +78,27 @@ removed when FastMCP catches up.
 │  • pagination metadata    │              │
 │  • apply virtual params   │              │
 └─────────────┬─────────────┘              │
-              │                           │
-              └──────────┬────────────────┘
+              │                            │
+              └──────────┬─────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   FastMCP Server                        │
 │                                                         │
 │  Server transforms (applied in order on list_tools):    │
-│    1. TolerantSearchTransform — hides all but 4         │
-│       synthetic tools (search_tools, call_tool,         │
-│       tool_info, unified_search)                        │
+│    1. TolerantSearchTransform — hides all except        │
+│       synthetic tools needed for discovery              │
 │    2. GiteaNamespace — prefixes tool names with         │
 │       gitea_; resources pass through unchanged          │
 │    3. ExtensionMetadataTransform — applies YAML         │
 │       overrides (title, description, tags, hints)       │
 │       to matching tools; matches both prefixed and      │
 │       unprefixed names                                  │
-│    4. ExclusionTransform — hides tools/resources        │
-│       matching YAML config patterns                     │
 │                                                         │
-│  Post-transform:                                        │
-│    • Permission filtering  — hide by token scopes       │
+│  Spec-prep filtering (before FastMCP sees the spec):    │
+│    • route_map_fn — drops operations that are           │
+│      deprecated, scope-filtered, or config-excluded     │
+│      (see Spec-Level Filtering milestone, Phase 2)      │
 │                                                         │
 │  Middleware:                                            │
 │    • ResponseCaching          — TTL for resources       │
@@ -121,8 +120,7 @@ Agent calls a tool:
     │     ├─▶ executes the tool (auto OTEL span: tools/call gitea_*)
     │     └─▶ on success: invalidate cached resources
     │
-    ├─▶ ExclusionTransform       — reject if excluded
-    ├─▶ GiteaNamespace            — strip gitea_ prefix
+    ├─▶ GiteaNamespace            - strip gitea_ prefix
     ├─▶ _ToolWrappingTransform    — validate (OTEL: .validate span)
     │                              → log context (ctx.info)
     │                              → report progress (ctx.report_progress)
@@ -178,7 +176,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/label_transform.py` | FastMCP `Transform` — runtime label validation and conversion, runs as innermost provider-level transform | `LabelTransform`, `_convert_labels_inline` |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
-| `tools/exclusion.py` | `ExclusionTransform` + `load_exclusion_config` — exclude/include tools, resources, and resource templates via YAML config patterns |
+| `tools/exclusion.py` | `load_exclusion_config` + `matches_any`/`matches_pattern` — exclusion config loading and pattern matching, consumed by spec-level `route_map_fn` filtering |
 | `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
@@ -194,8 +192,7 @@ The customization layers as applied during server startup:
 | 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
-| 6. Permissions | `tool_filter.py` | hide tools/resources that exceed token scopes |
-| 7. Exclusion config | `tools/exclusion.py` | exclude/include tools, resources, and templates by name, glob, or tag pattern (YAML config) |
+| 6. Permissions | `spec_loader.py` (route_map_fn) | drop operations that exceed token scopes or match exclusion config, before provider creation |
 | 8. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
 | 9. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 10. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
@@ -221,7 +218,7 @@ The customization layers as applied during server startup:
 | `server_setup/spec_loader.py` | Fetch, convert, extend |
 | `server_setup/mcp_builder.py` | Create provider + wire tools (imports from `tools/` and `label_service`) |
 | `server_setup/resource_setup.py` | Orchestrate resource registration |
-| `server_setup/permissions.py` | Re-exports from `tool_filter.py` (avoids circular import) |
+| `server_setup/permissions.py` | Re-exports scope-filtering helpers (avoids circular import) |
 | `server_setup/mcp_extensions.py` | YAML-based parameter extensions (applied to spec before tool generation) |
 
 ### Flat Infrastructure Modules (shared, not domain-specific)
@@ -267,10 +264,10 @@ The customization layers as applied during server startup:
    URIs from tool arguments and clears them from the response cache after
    successful writes.
 
-7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
-   re-export from flat `tool_filter.py`, avoiding a circular import that would
-   occur if `server.py` imported `tool_filter.py` directly.  Same pattern:
-   `resources/scope.py` re-exports from flat `scope.py`.
+ 7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
+    re-export of scope-filtering helpers, avoiding a circular import that would
+    occur if `server.py` imported those helpers directly.  Same pattern:
+    `resources/scope.py` re-exports from flat `scope.py`.
 
   8. **OpenTelemetry instrumentation** -- FastMCP 3.x includes native OTEL
      instrumentation that auto-generates spans for all MCP operations (tool

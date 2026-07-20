@@ -496,9 +496,9 @@ def register_type_tools(
 
     # No required_scope: the type index is built from the OpenAPI spec
     # which is fetched from a public endpoint — reading it is scope-free.
-    # Tools and resources outside the agent's token scope are filtered by
-    # PermissionFilterTransform at query time, so the type index cannot
-    # leak data from unreachable endpoints.
+    # Tools and resources outside the agent's token scope are filtered at
+    # spec-prep time (route_map_fn), so the type index cannot leak data
+    # from unreachable endpoints.
     _type_meta = scope_meta(None)
 
     mcp.resource(

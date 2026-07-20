@@ -230,7 +230,7 @@ For each transform in the pipeline:
 - **labels.py**: String "bug" → integer 1 conversion, guidance text injection
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
 - **cache_invalidation.py**: URI pattern computation for each tool type
-- **tool_filter.py**: Permission matrix (sudo, read, write) for tools and resources
+- **spec_loader.py**: Spec-level filtering — excluded-routes computation (deprecated + scope + config-excluded) from the spec
 - **search.py**: Indexing, ranking, lazy loading, synthetic tool output schema
 - **namespace.py**: Prefix application (verify `gitea_` prefix), resource passthrough
 - **examples.py**: Schema → example generation for all types (arrays, objects, enums, type lists, anyOf)
@@ -520,7 +520,7 @@ exclude_also = [
 | Area | Minimum | Notes |
 |------|---------|-------|
 | `openapi_converter.py` | 95% | Core schema transformation — all branches matter |
-| `tools/exclusion.py` | 90% | Exclusion pattern matching + config loading |
+| `tools/exclusion.py` | 90% | Exclusion pattern matching + config loading (consumed by spec-level filtering) |
 | `validation.py` | 95% | Security-sensitive input validation |
 | `resources/*.py` (each) | 85% | Formatters, resource registration, scope derivation |
 | `resources/custom.py` | 80% | Error paths matter; some formatting is visual |

@@ -1,67 +1,32 @@
-"""Unit tests for tool permission filtering.
+"""Unit tests for spec-level tool filtering (Phase 2, #472).
 
-Tests for ``PermissionFilterTransform``, ``fetch_token_scopes``, and their
-supporting helpers (``_get_required_scope``, ``has_sufficient_scope``, etc.).
+Covers:
+- ``fetch_token_scopes`` (token matching) — relocated to ``spec_loader``.
+- ``has_sufficient_scope`` — scope sufficiency rules.
+- ``_compute_excluded_routes`` — the spec-prep step that decides which
+  ``(path, METHOD)`` pairs are dropped via ``route_map_fn``.
+- ``create_openapi_provider`` — filtered operations never become tools.
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastmcp.server.providers.openapi import MCPType
 
 from gitea_mcp_server.scope import has_sufficient_scope
-from gitea_mcp_server.tool_filter import (
-    PermissionFilterTransform,
-    _get_required_scope,
+from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
+from gitea_mcp_server.server_setup.spec_loader import (
+    _compute_excluded_routes,
     _match_active_token,
     fetch_token_scopes,
 )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════════════
-
-def _make_tool(name: str, required_scope: str | None = None) -> MagicMock:
-    """Create a mock Tool object with optional scope metadata."""
-    tool = MagicMock()
-    tool.name = name
-    tool.key = name
-    tool.tags = set()
-    tool.meta = {}
-    if required_scope is not None:
-        tool.meta["required_scope"] = required_scope
-    return tool
-
-
-def _make_resource(
-    name: str, uri: str = "", required_scope: str | None = None
-) -> MagicMock:
-    """Create a mock Resource object with optional scope metadata."""
-    resource = MagicMock()
-    resource.name = name
-    resource.uri = uri or f"gitea://{name}"
-    resource.meta = {}
-    if required_scope is not None:
-        resource.meta["required_scope"] = required_scope
-    return resource
-
-
-def _make_template(
-    name: str, uri_template: str = "", required_scope: str | None = None
-) -> MagicMock:
-    """Create a mock ResourceTemplate object with optional scope metadata."""
-    template = MagicMock()
-    template.name = name
-    template.uri_template = uri_template or f"gitea://{name}/{{param}}"
-    template.meta = {}
-    if required_scope is not None:
-        template.meta["required_scope"] = required_scope
-    return template
+from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # _match_active_token
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestMatchActiveToken:
     """Tests for the _match_active_token helper function."""
@@ -97,8 +62,6 @@ class TestMatchActiveToken:
         assert result is None
 
     def test_skips_non_dict_token_entries(self):
-        # A malformed API response may contain non-dict entries; they must be
-        # skipped without raising, and a valid sibling token still matches.
         token_val = "mix-token"
         last_eight = token_val[-8:]
         tokens = [
@@ -110,8 +73,6 @@ class TestMatchActiveToken:
         assert result == {"read:repo"}
 
     def test_scopes_not_a_list_returns_none(self):
-        # Gitea returns scopes as a list; a non-list (e.g. a bare string) is
-        # malformed and must not be trusted -> no scopes.
         token_val = "str-scopes"
         last_eight = token_val[-8:]
         tokens = [
@@ -121,7 +82,6 @@ class TestMatchActiveToken:
         assert result is None
 
     def test_empty_scopes_list_returns_none(self):
-        # An empty scopes list is falsy -> treated as no scopes.
         token_val = "empty-sco"
         last_eight = token_val[-8:]
         tokens = [
@@ -131,8 +91,6 @@ class TestMatchActiveToken:
         assert result is None
 
     def test_matches_all_scope(self):
-        # The "all" shortcut (API scope "all") is matched like any other scope
-        # at this layer; the wildcard semantics live in has_sufficient_scope.
         token_val = "all-token-"
         last_eight = token_val[-8:]
         tokens = [
@@ -143,51 +101,9 @@ class TestMatchActiveToken:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _get_required_scope
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestGetRequiredScope:
-    """Tests for the _get_required_scope helper function."""
-
-    def test_returns_scope_from_meta(self):
-        tool = _make_tool("test_tool", required_scope="read:repository")
-        assert _get_required_scope(tool) == "read:repository"
-
-    def test_returns_sudo_from_meta(self):
-        tool = _make_tool("test_tool", required_scope="sudo")
-        assert _get_required_scope(tool) == "sudo"
-
-    def test_returns_none_when_no_meta(self):
-        tool = MagicMock()
-        tool.meta = {}
-        assert _get_required_scope(tool) is None
-
-    def test_returns_none_when_meta_is_none(self):
-        tool = MagicMock()
-        tool.meta = None
-        assert _get_required_scope(tool) is None
-
-    def test_returns_none_when_scope_key_absent(self):
-        tool = MagicMock()
-        tool.meta = {"other": {}}
-        assert _get_required_scope(tool) is None
-
-    def test_returns_none_when_meta_not_a_dict(self):
-        # Defensive: a corrupted/non-dict meta must not raise; the tool is
-        # treated as having no required scope (fail-open upstream).
-        tool = MagicMock()
-        tool.meta = "corrupted"
-        assert _get_required_scope(tool) is None
-
-    def test_returns_none_when_meta_missing_attribute(self):
-        # Defensive: an item without a `meta` attribute must not raise.
-        tool = MagicMock(spec=[])
-        assert _get_required_scope(tool) is None
-
-
-# ═══════════════════════════════════════════════════════════════════════
 # has_sufficient_scope
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestHasSufficientScope:
     """Tests for the has_sufficient_scope helper function."""
@@ -198,8 +114,6 @@ class TestHasSufficientScope:
         assert has_sufficient_scope("sudo", {"sudo"}) is True
 
     def test_all_grants_any_scope(self):
-        # Gitea's "full access" shortcut returns the literal scope "all"
-        # (the UI displays it as "[all]"). It must grant every required scope.
         assert has_sufficient_scope("read:repository", {"all"}) is True
         assert has_sufficient_scope("write:issue", {"all"}) is True
         assert has_sufficient_scope("sudo", {"all"}) is True
@@ -229,38 +143,22 @@ class TestHasSufficientScope:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _validate_user_data
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestValidateUserData:
-    """Tests for _validate_user_data edge cases."""
-
-    def test_non_dict_raises_type_error(self):
-        from gitea_mcp_server.tool_filter import _validate_user_data
-
-        with pytest.raises(TypeError, match="Unexpected user data type"):
-            _validate_user_data("not a dict")
-
-
-# ═══════════════════════════════════════════════════════════════════════
 # fetch_token_scopes
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestFetchTokenScopes:
-    """Tests for fetch_token_scopes."""
+    """Tests for fetch_token_scopes (now in spec_loader)."""
 
     @pytest.mark.asyncio
     async def test_user_fetch_exception_returns_none(self):
-        """Exception fetching user returns None."""
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(side_effect=Exception("API error"))
-
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_tokens_not_a_list_returns_none(self):
-        """Tokens response that is not a list returns None."""
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -268,13 +166,11 @@ class TestFetchTokenScopes:
                 "not_a_list",
             ]
         )
-
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_token_match_none_returns_none(self):
-        """No matching token returns None."""
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -282,26 +178,18 @@ class TestFetchTokenScopes:
                 [{"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["sudo"]}],
             ]
         )
-
         result = await fetch_token_scopes(mock_client, "no-match-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_non_dict_user_data_returns_none(self):
-        """Non-dict user data is handled gracefully (returns None)."""
         mock_client = AsyncMock()
-        mock_client.request = AsyncMock(
-            side_effect=[
-                "not a dict",
-            ]
-        )
-
+        mock_client.request = AsyncMock(side_effect=["not a dict"])
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_successful_fetch_returns_scopes(self):
-        """Successful token fetch returns scopes."""
         token_val = "test-t-token----"
         last_eight = token_val[-8:]
         mock_client = AsyncMock()
@@ -311,13 +199,11 @@ class TestFetchTokenScopes:
                 [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["read:repo", "write:issue"]}],
             ]
         )
-
         result = await fetch_token_scopes(mock_client, token_val)
         assert result == {"read:repo", "write:issue"}
 
     @pytest.mark.asyncio
     async def test_successful_fetch_all_scope(self):
-        """Regression for #223: a token with the 'all' shortcut returns {'all'}."""
         token_val = "all-scope-token"
         last_eight = token_val[-8:]
         mock_client = AsyncMock()
@@ -327,13 +213,11 @@ class TestFetchTokenScopes:
                 [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["all"]}],
             ]
         )
-
         result = await fetch_token_scopes(mock_client, token_val)
         assert result == {"all"}
 
     @pytest.mark.asyncio
     async def test_tokens_fetch_exception_returns_none(self):
-        """An exception while fetching tokens is handled gracefully (None)."""
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -341,269 +225,165 @@ class TestFetchTokenScopes:
                 Exception("tokens API error"),
             ]
         )
-
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_user_missing_login_uses_unknown(self):
-        """A user response without 'login' falls back to 'unknown' and, with no
-        matching token, returns None rather than raising."""
         token_val = "no-match-token"
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
-                {"id": 1},  # no "login" key -> falls back to "unknown"
+                {"id": 1},
                 [{"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["sudo"]}],
             ]
         )
-
         result = await fetch_token_scopes(mock_client, token_val)
         assert result is None
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# PermissionFilterTransform - tools
+# _compute_excluded_routes (spec-prep filtering)
 # ═══════════════════════════════════════════════════════════════════════
 
-class TestPermissionFilterTransformTools:
-    """Tests for PermissionFilterTransform tool-related methods."""
 
-    def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
-        return PermissionFilterTransform(
-            available_scopes if available_scopes is not None else {"read:repository"},
+class TestComputeExcludedRoutes:
+    """Tests for _compute_excluded_routes — the spec-level filter decision."""
+
+    def _spec(self) -> dict:
+        return {
+            "openapi": "3.1.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "operationId": "repo_get",
+                        "tags": ["repository"],
+                    },
+                },
+                "/admin/users": {
+                    "get": {
+                        "operationId": "admin_list_users",
+                        "tags": ["admin"],
+                    },
+                },
+                "/old/endpoint": {
+                    "post": {
+                        "operationId": "oldEndpoint",
+                        "deprecated": True,
+                    },
+                },
+            },
+            "components": {"schemas": {}},
+        }
+
+    def test_empty_filtered_info_returns_empty(self):
+        excluded = _compute_excluded_routes(self._spec(), {})
+        assert excluded == set()
+
+    def test_excludes_scope_filtered_operation(self):
+        filtered = compute_filtered_tools_info(
+            self._spec(),
+            available_scopes={"read:repository"},  # admin_list_users needs read:admin
+            exclusion_config={"exclude": [], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(self._spec(), filtered)
+        assert ("/admin/users", "GET") in excluded
+        assert ("/repos/{owner}/{repo}", "GET") not in excluded
+
+    def test_excludes_deprecated_operation(self):
+        filtered = compute_filtered_tools_info(
+            self._spec(),
+            available_scopes={"sudo"},  # sees everything
+            exclusion_config={"exclude": [], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(self._spec(), filtered)
+        assert ("/old/endpoint", "POST") in excluded
+
+    def test_excludes_config_excluded_operation(self):
+        filtered = compute_filtered_tools_info(
+            self._spec(),
+            available_scopes={"sudo"},
+            exclusion_config={"exclude": ["repo_get"], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(self._spec(), filtered)
+        assert ("/repos/{owner}/{repo}", "GET") in excluded
+
+    def test_include_overrides_exclude(self):
+        filtered = compute_filtered_tools_info(
+            self._spec(),
+            available_scopes={"sudo"},
+            exclusion_config={"exclude": ["repo_get"], "include": ["repo_get"]},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(self._spec(), filtered)
+        assert ("/repos/{owner}/{repo}", "GET") not in excluded
+
+    def test_matches_prefixed_operation_id(self):
+        filtered = compute_filtered_tools_info(
+            self._spec(),
+            available_scopes={"sudo"},
+            exclusion_config={"exclude": ["gitea_repo_get"], "include": []},
+            tool_prefix="gitea_",
+        )
+        excluded = _compute_excluded_routes(self._spec(), filtered, tool_prefix="gitea_")
+        assert ("/repos/{owner}/{repo}", "GET") in excluded
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# create_openapi_provider — route_map_fn drops filtered operations
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestProviderRouteMapFiltering:
+    """Integration-level unit tests: filtered routes never become tools."""
+
+    def _make_provider(self, excluded_routes) -> MagicMock:
+        from gitea_mcp_server.label_service import LabelService
+
+        spec = {
+            "openapi": "3.1.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {"operationId": "repo_get", "tags": ["repository"]},
+                },
+                "/admin/users": {
+                    "get": {"operationId": "admin_list_users", "tags": ["admin"]},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+        return create_openapi_provider(
+            openapi_spec=spec,
+            client=MagicMock(),
+            label_service=LabelService(),
+            excluded_routes=excluded_routes,
         )
 
-    # ── list_tools ─────────────────────────────────────────────────
+    def test_no_exclusions_keeps_all(self, caplog):
+        import logging
 
-    async def test_list_tools_filters_by_scope(self):
-        transform = self._transform({"read:repository"})
-        tools = [
-            _make_tool("repo_list", required_scope="read:repository"),
-            _make_tool("issue_list", required_scope="read:issue"),
-            _make_tool("version"),
-        ]
-        result = await transform.list_tools(tools)
-        assert len(result) == 2
-        assert result[0].name == "repo_list"
-        assert result[1].name == "version"
+        caplog.set_level(logging.DEBUG)
+        provider = self._make_provider(set())
+        assert provider is not None
+        assert "Excluding filtered endpoint" not in caplog.text
 
-    async def test_list_tools_sudo_sees_all(self):
-        transform = self._transform({"sudo"})
-        tools = [
-            _make_tool("admin_op", required_scope="sudo"),
-            _make_tool("repo_op", required_scope="read:repository"),
-            _make_tool("version"),
-        ]
-        result = await transform.list_tools(tools)
-        assert len(result) == 3
+    def test_excluded_route_is_dropped(self, caplog):
+        import logging
 
-    async def test_list_tools_all_sees_all(self):
-        # Regression for #223: a token created with the "all" shortcut
-        # (API scope "all", UI "[all]") must not filter out scoped tools.
-        transform = self._transform({"all"})
-        tools = [
-            _make_tool("admin_op", required_scope="sudo"),
-            _make_tool("repo_op", required_scope="read:repository"),
-            _make_tool("issue_op", required_scope="write:issue"),
-            _make_tool("version"),
-        ]
-        result = await transform.list_tools(tools)
-        assert len(result) == 4
+        caplog.set_level(logging.DEBUG)
+        provider = self._make_provider({("/admin/users", "GET")})
+        assert provider is not None
+        assert "Excluding filtered endpoint" in caplog.text
 
-    async def test_list_tools_broken_meta_still_allowed(self):
-        # Safety/fail-open: a tool whose meta is corrupted (non-dict) cannot
-        # declare a required scope, so it must NOT be hidden by the filter.
-        transform = self._transform({"read:repository"})
-        broken = MagicMock()
-        broken.name = "broken_tool"
-        broken.key = "broken_tool"
-        broken.tags = set()
-        broken.meta = "corrupted"
-        result = await transform.list_tools([broken])
-        assert len(result) == 1
-        assert result[0].name == "broken_tool"
-
-    async def test_list_tools_write_covers_read(self):
-        transform = self._transform({"write:repository"})
-        tools = [
-            _make_tool("repo_list", required_scope="read:repository"),
-            _make_tool("repo_create", required_scope="write:repository"),
-        ]
-        result = await transform.list_tools(tools)
-        assert len(result) == 2
-
-    async def test_list_tools_all_filtered_when_no_scopes(self):
-        transform = self._transform(set())
-        tools = [
-            _make_tool("repo_list", required_scope="read:repository"),
-        ]
-        result = await transform.list_tools(tools)
-        assert len(result) == 0
-
-    async def test_list_tools_empty_input(self):
-        transform = self._transform({"read:repository"})
-        result = await transform.list_tools([])
-        assert result == []
-
-    # ── get_tool ───────────────────────────────────────────────────
-
-    async def test_get_tool_returns_allowed_tool(self):
-        transform = self._transform({"read:repository"})
-        repo_tool = _make_tool("repo_list", required_scope="read:repository")
-
-        async def call_next(name, *, version=None):
-            return repo_tool
-
-        result = await transform.get_tool("repo_list", call_next)
-        assert result is repo_tool
-
-    async def test_get_tool_returns_none_for_denied_tool(self):
-        transform = self._transform({"read:repository"})
-        issue_tool = _make_tool("issue_list", required_scope="read:issue")
-
-        async def call_next(name, *, version=None):
-            return issue_tool
-
-        result = await transform.get_tool("issue_list", call_next)
-        assert result is None
-
-    async def test_get_tool_returns_none_when_next_returns_none(self):
-        transform = self._transform({"read:repository"})
-
-        async def call_next(name, *, version=None):
-            return None
-
-        result = await transform.get_tool("nonexistent", call_next)
-        assert result is None
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# PermissionFilterTransform - resources
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestPermissionFilterTransformResources:
-    """Tests for PermissionFilterTransform resource-related methods."""
-
-    def _transform(self, available_scopes: set[str] | None = None) -> PermissionFilterTransform:
-        return PermissionFilterTransform(
-            available_scopes if available_scopes is not None else {"read:repository"},
-        )
-
-    # ── list_resources ─────────────────────────────────────────────
-
-    async def test_list_resources_filters_by_scope(self):
-        transform = self._transform({"read:repository"})
-        resources = [
-            _make_resource("repo", required_scope="read:repository"),
-            _make_resource("issue", required_scope="read:issue"),
-            _make_resource("version"),
-        ]
-        result = await transform.list_resources(resources)
-        assert len(result) == 2
-        assert result[0].name == "repo"
-        assert result[1].name == "version"
-
-    async def test_list_resources_sudo_sees_all(self):
-        transform = self._transform({"sudo"})
-        resources = [
-            _make_resource("admin", required_scope="sudo"),
-            _make_resource("repo", required_scope="read:repository"),
-        ]
-        result = await transform.list_resources(resources)
-        assert len(result) == 2
-
-    async def test_list_resources_all_sees_all(self):
-        # Regression for #223: "all" scope must not filter out scoped resources.
-        transform = self._transform({"all"})
-        resources = [
-            _make_resource("admin", required_scope="sudo"),
-            _make_resource("repo", required_scope="read:repository"),
-            _make_resource("issue", required_scope="read:issue"),
-        ]
-        result = await transform.list_resources(resources)
-        assert len(result) == 3
-
-    async def test_list_resources_empty_input(self):
-        transform = self._transform({"read:repository"})
-        result = await transform.list_resources([])
-        assert result == []
-
-    # ── list_resource_templates ────────────────────────────────────
-
-    async def test_list_resource_templates_filters_by_scope(self):
-        transform = self._transform({"read:repository"})
-        templates = [
-            _make_template("repo_tpl", required_scope="read:repository"),
-            _make_template("org_tpl", required_scope="read:organization"),
-        ]
-        result = await transform.list_resource_templates(templates)
-        assert len(result) == 1
-        assert result[0].name == "repo_tpl"
-
-    async def test_list_resource_templates_empty_input(self):
-        transform = self._transform({"read:repository"})
-        result = await transform.list_resource_templates([])
-        assert result == []
-
-    # ── get_resource ───────────────────────────────────────────────
-
-    async def test_get_resource_returns_allowed(self):
-        transform = self._transform({"read:repository"})
-        resource = _make_resource("repo", required_scope="read:repository")
-
-        async def call_next(uri, *, version=None):
-            return resource
-
-        result = await transform.get_resource("gitea://repo", call_next)
-        assert result is resource
-
-    async def test_get_resource_returns_none_for_denied(self):
-        transform = self._transform({"read:repository"})
-        resource = _make_resource("issue", required_scope="read:issue")
-
-        async def call_next(uri, *, version=None):
-            return resource
-
-        result = await transform.get_resource("gitea://issue", call_next)
-        assert result is None
-
-    async def test_get_resource_none_when_next_returns_none(self):
-        transform = self._transform({"read:repository"})
-
-        async def call_next(uri, *, version=None):
-            return None
-
-        result = await transform.get_resource("gitea://nonexistent", call_next)
-        assert result is None
-
-    # ── get_resource_template ──────────────────────────────────────
-
-    async def test_get_resource_template_returns_allowed(self):
-        transform = self._transform({"read:repository"})
-        template = _make_template("repo_tpl", required_scope="read:repository")
-
-        async def call_next(uri, *, version=None):
-            return template
-
-        result = await transform.get_resource_template("gitea://repo", call_next)
-        assert result is template
-
-    async def test_get_resource_template_returns_none_for_denied(self):
-        transform = self._transform({"read:repository"})
-        template = _make_template("org_tpl", required_scope="read:organization")
-
-        async def call_next(uri, *, version=None):
-            return template
-
-        result = await transform.get_resource_template("gitea://org", call_next)
-        assert result is None
-
-    async def test_get_resource_template_none_when_next_returns_none(self):
-        transform = self._transform({"read:repository"})
-
-        async def call_next(uri, *, version=None):
-            return None
-
-        result = await transform.get_resource_template("gitea://nonexistent", call_next)
-        assert result is None
+    @pytest.mark.asyncio
+    async def test_filtered_route_not_in_tool_list(self):
+        provider = self._make_provider({("/admin/users", "GET")})
+        tools = await provider.list_tools()
+        names = {t.name for t in tools}
+        assert "admin_list_users" not in names
+        assert "repo_get" in names

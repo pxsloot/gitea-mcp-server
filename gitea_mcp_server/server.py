@@ -40,8 +40,6 @@ if TYPE_CHECKING:
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
 from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
-from gitea_mcp_server.tool_filter import PermissionFilterTransform, fetch_token_scopes
-from gitea_mcp_server.tools.exclusion import ExclusionTransform, load_exclusion_config
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
@@ -156,26 +154,6 @@ def _setup_caching_middleware(
     mcp.add_middleware(invalidation_middleware)
 
 
-def _setup_tool_exclusions(mcp: FastMCP, config: Config) -> None:
-    """Apply server-level exclusion transform for tools and resources."""
-    exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
-    if not exclusion_config["exclude"] and not exclusion_config["include"]:
-        return
-    tool_prefix = config.tool_prefix.rstrip("_") if config.tool_prefix else ""
-    logger.info(
-        "Adding server-level exclusion transform: %d exclude, %d include patterns",
-        len(exclusion_config["exclude"]),
-        len(exclusion_config["include"]),
-    )
-    mcp.add_transform(
-        ExclusionTransform(
-            exclude=exclusion_config["exclude"],
-            include=exclusion_config["include"],
-            tool_prefix=tool_prefix,
-        )
-    )
-
-
 def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this orchestration function
     mcp: FastMCP,
     config: Config,
@@ -227,53 +205,32 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
         mcp.add_transform(ExtensionMetadataTransform(tool_names, prefix=prefix))
 
 
-async def _apply_permission_filter(
-    mcp: FastMCP,
-    gitea_client: GiteaClient,
-    config: Config,
+async def _apply_virtual_param_scope_filter(
+    available_scopes: set[str] | None,
 ) -> None:
-    """Add a PermissionFilterTransform if user permission filtering is enabled.
+    """Apply token scopes to scope-gated virtual params (e.g. ``sudo``).
 
-    Fetches the available token scopes once at startup and attaches them to a
-    ``Transform`` that filters tools/resources at query time.  If the token
-    scopes cannot be fetched (auth failure, network error, etc.), the transform
-    is simply not added and all tools remain visible.
+    Tool/resource *visibility* filtering now happens at spec-prep time via
+    ``route_map_fn`` (see ``spec_loader.load_and_convert_spec``).  This helper
+    only governs virtual-parameter visibility, which is a separate concern that
+    still requires the token's scopes at startup.
+
+    Args:
+        available_scopes: Set of scopes the token has, or None if scope data
+            could not be fetched (in which case no gating is applied).
     """
-    if not config.tool_filtering_enabled:
-        logger.info("Permission filtering is disabled")
-        return
-
-    try:
-        logger.info("Fetching token scopes for permission filtering")
-        available_scopes = await fetch_token_scopes(gitea_client, config.token)
-    except Exception as e:
-        logger.exception(
-            "Failed to fetch token scopes, proceeding without filtering",
-            extra={"error": str(e)},
-        )
-        return
-
     if available_scopes is None:
-        logger.warning("No token scopes available, proceeding without filtering")
+        logger.info("No token scopes available, skipping virtual param scope gating")
         return
-
     try:
-        # Scope-gated virtual params - visibility is derived from each
-        # param's ``required_scope`` field automatically.
         apply_scope_filter(available_scopes)
         logger.info(
             "Virtual param scope filter applied",
             extra={"scopes": sorted(available_scopes)},
         )
-
-        logger.info(
-            "Adding PermissionFilterTransform",
-            extra={"scopes": sorted(available_scopes)},
-        )
-        mcp.add_transform(PermissionFilterTransform(available_scopes))
     except Exception as e:
         logger.exception(
-            "Failed to add PermissionFilterTransform, proceeding without filtering",
+            "Failed to apply virtual param scope filter",
             extra={"error": str(e)},
         )
 
@@ -302,12 +259,25 @@ async def create_mcp_server(
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        openapi_spec, extensions, filtered_tools_info = await load_and_convert_spec(gitea_client, config)
+        openapi_spec, extensions, filtered_tools_info, excluded_routes = (
+            await load_and_convert_spec(gitea_client, config)
+        )
     except SpecError:
         raise
     except Exception as e:
         msg = f"Failed to load or convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
+
+    # ``excluded_routes`` already honours ``config.tool_filtering_enabled``
+    # (scope filtering is skipped when disabled, but deprecated-endpoint and
+    # config-exclusion filtering always apply — matching the old behaviour).
+    # The available scopes are only needed to gate scope-sensitive virtual
+    # params (e.g. ``sudo``); when filtering is disabled we leave them ungated.
+    available_scopes = (
+        set(filtered_tools_info.get("available_scopes", []))
+        if filtered_tools_info and config.tool_filtering_enabled
+        else None
+    )
 
     label_service = LabelService()
     provider = create_openapi_provider(
@@ -315,6 +285,7 @@ async def create_mcp_server(
         client=gitea_client.client,
         label_service=label_service,
         gitea_client=gitea_client,
+        excluded_routes=excluded_routes,
     )
     doc_manager = DocManager()
 
@@ -336,8 +307,7 @@ async def create_mcp_server(
     )
     register_all_resources(mcp, gitea_client, openapi_spec)
     register_type_tools(mcp, openapi_spec=openapi_spec)
-    _setup_tool_exclusions(mcp, config)
-    await _apply_permission_filter(mcp, gitea_client, config)
+    await _apply_virtual_param_scope_filter(available_scopes)
 
     logger.info("Gitea MCP Server initialized successfully")
     return mcp

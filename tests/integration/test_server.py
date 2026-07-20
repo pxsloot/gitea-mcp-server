@@ -764,36 +764,72 @@ class TestServerEdgeCases:
             assert mcp is not None
 
     @pytest.mark.asyncio
-    async def test_permission_filter_exception_logged(self):
-        """Exception in fetch_token_scopes is caught by _apply_permission_filter."""
-        from unittest.mock import AsyncMock, MagicMock
+    async def test_permission_filter_exception_fail_open(self):
+        """Exception in fetch_token_scopes is caught; filtering fails open.
 
-        from gitea_mcp_server.server import _apply_permission_filter
+        Scope filtering now happens at spec-prep time inside
+        ``load_and_convert_spec`` (Phase 2).  A token-scope fetch failure must
+        not raise — the server proceeds with no scope filtering applied.
+        """
+        from unittest.mock import patch
 
-        mcp = MagicMock()
-        gitea_client = AsyncMock()
-        gitea_client.request = AsyncMock(side_effect=Exception("API failure"))
-        gitea_client.config.token = "test-token"
-        config = MagicMock()
-        config.tool_filtering_enabled = True
-        config.token = "test-token"
+        from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 
-        await _apply_permission_filter(mcp, gitea_client, config)
-        # Should not raise - exception is caught and logged
+        config = SimpleConfig(tool_filtering_enabled=True, token="test-token")
+        gitea_client = GiteaClient(config)
+
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {},
+            "definitions": {},
+        }
+        with (
+            respx.mock() as mock,
+            patch(
+                "gitea_mcp_server.server_setup.spec_loader.fetch_token_scopes",
+                side_effect=Exception("API failure"),
+            ),
+        ):
+            mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
+            # Should not raise - exception is caught and filtering fails open.
+            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+                gitea_client, config
+            )
+            assert excluded_routes == set()
 
     @pytest.mark.asyncio
-    async def test_permission_filter_disabled_returns_early(self):
-        """_apply_permission_filter returns early when filtering is disabled."""
-        from unittest.mock import MagicMock
+    async def test_permission_filter_disabled_skips_scope_fetch(self):
+        """When filtering is disabled, token scopes are not fetched (no network)."""
+        from unittest.mock import patch
 
-        from gitea_mcp_server.server import _apply_permission_filter
+        from gitea_mcp_server.server_setup.spec_loader import (
+            fetch_token_scopes,
+            load_and_convert_spec,
+        )
 
-        mcp = MagicMock()
-        config = MagicMock()
-        config.tool_filtering_enabled = False
+        config = SimpleConfig(tool_filtering_enabled=False, token="test-token")
+        gitea_client = GiteaClient(config)
 
-        await _apply_permission_filter(mcp, None, config)
-        # No exception - early return
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {},
+            "definitions": {},
+        }
+        with (
+            respx.mock() as mock,
+            patch(
+                "gitea_mcp_server.server_setup.spec_loader.fetch_token_scopes",
+            ) as mock_fetch,
+        ):
+            mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
+            # No exception - scope fetch is skipped entirely when disabled.
+            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+                gitea_client, config
+            )
+            mock_fetch.assert_not_called()
+            assert excluded_routes == set()
 
     @pytest.mark.asyncio
     async def test_spec_loading_error_propagates(self):
@@ -824,39 +860,66 @@ class TestServerEdgeCases:
         assert "Gitea MCP Server" in result
 
     @pytest.mark.asyncio
-    async def test_setup_tool_exclusions_noop_when_no_config(self):
-        """_setup_tool_exclusions is a no-op when no exclude config is set."""
-        from unittest.mock import MagicMock, patch
+    async def test_exclusion_noop_when_no_config(self):
+        """No exclude config means no excluded routes from exclusion (spec-prep)."""
+        from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 
-        from gitea_mcp_server.server import _setup_tool_exclusions
+        config = SimpleConfig(exclude_config_path=None, tool_filtering_enabled=False)
+        gitea_client = GiteaClient(config)
 
-        mcp = MagicMock()
-        config = SimpleConfig(exclude_config_path=None)
-
-        with patch(
-            "gitea_mcp_server.server.load_exclusion_config",
-            return_value={"exclude": [], "include": []},
-        ) as mock_load:
-            _setup_tool_exclusions(mcp, config)
-            mock_load.assert_called_once()
-            mcp.add_transform.assert_not_called()
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/admin/settings": {
+                    "get": {"operationId": "admin_settings", "summary": "Get settings",
+                            "responses": {"200": {"description": "Success"}}},
+                },
+            },
+            "definitions": {},
+        }
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+                gitea_client, config
+            )
+            assert excluded_routes == set()
 
     @pytest.mark.asyncio
-    async def test_setup_tool_exclusions_with_config(self):
-        """_setup_tool_exclusions adds transform when exclusion config exists."""
-        from unittest.mock import MagicMock, patch
+    async def test_exclusion_with_config_excludes_routes(self):
+        """Exclusion config produces excluded routes at spec-prep time."""
+        from unittest.mock import patch
 
-        from gitea_mcp_server.server import _setup_tool_exclusions
+        from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 
-        mcp = MagicMock()
-        config = SimpleConfig(exclude_config_path="/fake/path.yaml")
+        config = SimpleConfig(
+            exclude_config_path="/fake/path.yaml", tool_filtering_enabled=False
+        )
+        gitea_client = GiteaClient(config)
 
-        with patch(
-            "gitea_mcp_server.server.load_exclusion_config",
-            return_value={"exclude": ["admin_*"], "include": []},
-        ):
-            _setup_tool_exclusions(mcp, config)
-            mcp.add_transform.assert_called_once()
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "paths": {
+                "/admin/settings": {
+                    "get": {"operationId": "admin_settings", "summary": "Get settings",
+                            "responses": {"200": {"description": "Success"}}},
+                },
+            },
+            "definitions": {},
+        }
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(
+                200, json=swagger_spec
+            )
+            with patch(
+                "gitea_mcp_server.server_setup.spec_loader.load_exclusion_config",
+                return_value={"exclude": ["gitea_admin_*"], "include": []},
+            ):
+                _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+                    gitea_client, config
+                )
+                assert ("/admin/settings", "GET") in excluded_routes
 
     @pytest.mark.asyncio
     async def test_setup_tool_discovery_with_lazy_loading(self):

@@ -881,6 +881,37 @@ class TestCreateOpenapiProvider:
         assert provider is not None
         assert "Excluding filtered endpoint" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_response_format_propagates_to_tool_schema(self):
+        """response_format should flow into the tool's format parameter default."""
+        from gitea_mcp_server.label_service import LabelService
+
+        spec = {
+            "openapi": "3.1.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/user": {
+                    "get": {"operationId": "getUser"},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+        mock_gitea_client = MagicMock()
+        mock_gitea_client.client = MagicMock()
+
+        provider = create_openapi_provider(
+            openapi_spec=spec,
+            gitea_client=mock_gitea_client,
+            label_service=LabelService(),
+            response_format="json",
+        )
+        tools = await provider.list_tools()
+        tool = next(t for t in tools if t.name == "getUser")
+        fmt_param = tool.parameters["properties"]["format"]
+        assert fmt_param["default"] == "json"
+        assert fmt_param["type"] == "string"
+        assert "json" in fmt_param["enum"]
+
 
 # ---------------------------------------------------------------------------
 # _ToolWrappingTransform

@@ -8,6 +8,11 @@ from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 
 
+def _tool_dict(tools):
+    """Extract tool name -> tool mapping from provider.list_tools() result."""
+    return {t.name: t for t in tools}
+
+
 @pytest.fixture
 def minimal_spec():
     """Minimal OpenAPI spec with two operations."""
@@ -59,7 +64,8 @@ def minimal_spec():
     }
 
 
-def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec):
+@pytest.mark.asyncio
+async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec):
     """Test that mcp_extensions.yaml parameter customizations propagate through spec to tools.
 
     Note: Tool-level metadata overrides (title, description, tags, hints) are handled
@@ -89,9 +95,9 @@ def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spe
         label_service=MagicMock(),
     )
 
-    # Get tools from provider
-    tools = list(provider._tools.values())
-    tool_names = {t.name: t for t in tools}
+    # Get tools from provider via public API
+    tools = await provider.list_tools()
+    tool_names = _tool_dict(tools)
 
     assert "issue_create_issue" in tool_names
     # Description is NOT overridden at spec level - stays as original
@@ -114,7 +120,8 @@ tool_names:
     assert extensions == {"tool_names": {"issue_create_issue": {"description": "Loaded from YAML"}}}
 
 
-def test_label_guidance_appendage_when_labels_present(minimal_spec):
+@pytest.mark.asyncio
+async def test_label_guidance_appendage_when_labels_present(minimal_spec):
     """Test that LABEL_GUIDANCE is auto-appended to tools with labels parameter."""
     # No explicit description extension, rely on auto-guidance
     mock_gitea_client = MagicMock()
@@ -124,8 +131,8 @@ def test_label_guidance_appendage_when_labels_present(minimal_spec):
         gitea_client=mock_gitea_client,
         label_service=MagicMock(),
     )
-    tools = list(provider._tools.values())
-    tool_names = {t.name: t for t in tools}
+    tools = await provider.list_tools()
+    tool_names = _tool_dict(tools)
 
     # issue_create_issue should have label guidance appended
     create_issue_tool = tool_names.get("issue_create_issue")

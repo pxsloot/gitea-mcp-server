@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 
-ARG PYTHON_IMAGE=registry.home.lan/local/python-slim:3.14
+ARG PYTHON_IMAGE=python:3.14-slim-bookworm
 
 ################################################################################
 # Stage 1: builder - installs deps + project into a venv

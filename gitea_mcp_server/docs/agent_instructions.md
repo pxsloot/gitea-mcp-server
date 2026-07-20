@@ -160,7 +160,8 @@ than trial and error.
 ## Output format
 
 Every tool except `call_tool` accepts a `format` parameter, and so do
-`read_resource` and `read_doc`:
+`read_resource` and `read_doc` (note: `read_doc` supports ``markdown``,
+``json``, and ``raw``):
 
 | Format    | When to use |
 |-----------|-------------|

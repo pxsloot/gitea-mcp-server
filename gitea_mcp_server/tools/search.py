@@ -22,7 +22,7 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import _format_as_markdown, _format_tool_info_markdown, apply_format
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
@@ -443,88 +443,6 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     )
 
 
-def _format_parameter_table(properties: dict[str, Any], required: list[str]) -> str:
-    """Render a parameter table from JSON Schema properties."""
-    lines = ["## Parameters", "", "| Parameter | Type | Required | Description |",
-             "|-----------|------|----------|-------------|"]
-    for param_name, prop in properties.items():
-        if not isinstance(prop, dict):
-            continue
-        ptype = prop.get("type", "any")
-        preq = "yes" if param_name in required else "no"
-        pdesc = prop.get("description", "").replace("|", "\\|")
-        lines.append(f"| {param_name} | {ptype} | {preq} | {pdesc} |")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _format_annotations_table(annotations: dict[str, Any]) -> str:
-    """Render an annotations table."""
-    lines = ["## Annotations", "", "| Hint | Value |", "|------|-------|"]
-    for key in ("title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
-        val = annotations.get(key)
-        if val is not None:
-            lines.append(f"| {key} | {json.dumps(val)} |")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _format_json_section(title: str, data: Any) -> str:
-    """Render a JSON code block section."""
-    return f"## {title}\n\n```json\n{json.dumps(data, indent=2)}\n```\n"
-
-
-def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
-    """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
-
-    Produces a predictable structure with a parameter table that agents can
-    parse reliably:
-
-    - ``## Parameters`` — table with ``Parameter | Type | Required | Description``
-    - ``## Output Example`` — JSON code block
-    - ``## Annotations`` — table with ``Hint | Value``
-    - ``## Tags`` — comma-separated list
-    - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
-    """
-    lines: list[str] = []
-
-    name = schema.get("name", "")
-    if name:
-        lines.append(f"# {name}")
-        lines.append("")
-
-    desc = schema.get("description", "")
-    if desc:
-        lines.append(desc)
-        lines.append("")
-
-    params = schema.get("parameters", {})
-    if isinstance(params, dict):
-        properties = params.get("properties", {})
-        if properties:
-            lines.append(_format_parameter_table(properties, params.get("required", [])))
-
-    example = schema.get("output_example")
-    if example is not None:
-        lines.append(_format_json_section("Output Example", example))
-
-    annotations = schema.get("annotations")
-    if isinstance(annotations, dict):
-        lines.append(_format_annotations_table(annotations))
-
-    tags = schema.get("tags")
-    if tags:
-        lines.append("## Tags\n")
-        lines.append(", ".join(tags))
-        lines.append("")
-
-    output_schema = schema.get("output_schema")
-    if isinstance(output_schema, dict):
-        lines.append(_format_json_section("Output Schema", output_schema))
-
-    return "\n".join(lines).strip()
-
-
 async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool_prefix, detail
     name: str,
     format: str,
@@ -561,15 +479,37 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
         if tool.name in candidates:
             schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
-                schema["output_schema"] = tool.output_schema
+                # FastMCP wraps API tool output_schemas in {"result": {...}}
+                # (x-fastmcp-wrap-result). The actual properties to paginate
+                # are under result.properties.
+                result_obj = tool.output_schema.get("properties", {}).get("result", {})
+                result_props = result_obj.get("properties", {})
+                total_props = len(result_props)
+                # Slice result properties by page/limit so agents can page
+                # through large schemas instead of receiving the full schema.
+                start = (page - 1) * limit
+                end = start + limit
+                prop_keys = list(result_props.keys())
+                sliced_keys = prop_keys[start:end]
+                sliced_schema = dict(tool.output_schema)
+                sliced_schema["properties"] = {
+                    "result": {
+                        "description": result_obj.get("description", ""),
+                        "type": "object",
+                        "properties": {
+                            k: result_props[k] for k in sliced_keys
+                        },
+                    }
+                }
+                schema["output_schema"] = sliced_schema
 
-            result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
 
-            # Paginate output_schema when detail=full
-            if detail == "full" and tool.output_schema is not None:
-                os_props = tool.output_schema.get("properties", {})
-                total_props = len(os_props)
+                # Add pagination metadata to structured_content so agents can
+                # discover total property count and navigate pages.
                 result = apply_pagination(result, page, limit, total_props)
+            else:
+                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
 
             return result
 
@@ -837,14 +777,16 @@ def register_synthetic_tools(
             "Detail level: 'concise' (default) for compact type-summary output_example; "
             "'full' to also include the resolved output_schema",
         ] = "concise",
-        pagination: Annotated[
-            tuple[int, int] | None,
-            "(page, limit) for output_schema properties. Only used when detail=full. "
-            "Example: (2, 5) for page 2 with 5 properties per page.",
-        ] = None,
+        page: Annotated[
+            int,
+            "Page number for output_schema properties (1-based). Only used when detail=full.",
+        ] = 1,
+        limit: Annotated[
+            int,
+            "Properties per page for output_schema. Only used when detail=full.",
+        ] = 10,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        page, limit = (1, 10) if pagination is None else pagination
         return await _tool_info_impl(
             name, format, ctx, transform, tool_prefix,
             detail=detail, page=page, limit=limit,

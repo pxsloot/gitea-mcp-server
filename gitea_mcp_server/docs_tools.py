@@ -369,6 +369,8 @@ def register_doc_tools(
     async def read_doc(
         topic: str,
         format: str = "markdown",
+        page: int = 1,
+        limit: int = 50,
     ) -> ToolResult:
         """Read a workflow guide by topic name.
 
@@ -383,11 +385,18 @@ def register_doc_tools(
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
         - ``format``: Output format -- ``markdown`` (default, full content with
-          YAML frontmatter), ``raw`` (same as markdown - full content included).
+          YAML frontmatter), ``json`` (structured JSON with content in
+          ``{"result": "..."}``), or ``raw`` (same as markdown - full content
+          included).
+        - ``page``: Page number (1-based, default 1). Each page is ``limit`` lines.
+        - ``limit``: Lines per page (default 50, max 200). Use a larger limit
+          to read more of the guide at once.
 
         ## Return Value
 
-        The full guide content in Markdown format.
+        The guide content (sliced by page/limit) in the requested format.
+        Pagination metadata (``has_more``, ``next_offset``, ``total_count``)
+        is available in the structured content.
 
         ## Error Handling
 
@@ -395,10 +404,12 @@ def register_doc_tools(
 
         Args:
             topic: The guide topic name (case-insensitive)
-            format: Output format: markdown (default) or raw
+            format: Output format: markdown (default), json, or raw
+            page: Page number (1-based, default 1)
+            limit: Lines per page (default 50, max 200)
 
         Returns:
-            The full guide content
+            The guide content (sliced by page/limit)
 
         Raises:
             ValueError: If the topic is not found
@@ -413,11 +424,20 @@ def register_doc_tools(
             )
             raise ValueError(msg)
 
-        return apply_format(
-            guide.full_content,
+        # Slice guide content by lines for paginated reading
+        all_lines = guide.full_content.splitlines(keepends=True)
+        total_lines = len(all_lines)
+        start = (page - 1) * limit
+        end = start + limit
+        page_lines = all_lines[start:end]
+        page_content = "".join(page_lines)
+
+        result = apply_format(
+            page_content,
             format,
             markdown_formatter=lambda d: d,
         )
+        return apply_pagination(result, page, limit, total_lines)
 
     # Compute dynamic tags and description from all loaded guides
     # so resource discovery aligns with guide frontmatter content

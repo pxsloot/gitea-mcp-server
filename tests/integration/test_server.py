@@ -929,8 +929,23 @@ class TestServerEdgeCases:
         After substitution, every ``{{PLACEHOLDER}}`` must be resolved.
         This guards against a placeholder being added to the doc without
         a corresponding entry in the substitution values.
+
+        Uses a realistic GUIDES_LIST to catch conflicts between the
+        placeholder syntax (``{{TOOL_PREFIX}}``) and FastMCP URI template
+        syntax (``{topic}``) in the guide manifest.
         """
         from gitea_mcp_server.server import _build_server_instructions
+
+        realistic_guides = (
+            "## Workflow Guides\n\n"
+            "| Guide | Description |\n"
+            "|-------|-------------|\n"
+            "| `labels` | How labels work |\n\n"
+            "Use `search_docs(query)` to find guides, or `read_doc(topic)` "
+            "to read one.\n"
+            "Guides are also available as resources at "
+            "`gitea://docs/guide/{topic}`.\n"
+        )
 
         result = _build_server_instructions(
             placeholder_values={
@@ -938,7 +953,7 @@ class TestServerEdgeCases:
                 "USER_LOGIN": "agent",
                 "TOKEN_SCOPES": "`read:repository`",
                 "SERVER_TYPE": "Gitea",
-                "GUIDES_LIST": "",
+                "GUIDES_LIST": realistic_guides,
             },
         )
         assert "{{" not in result, f"Unresolved placeholder found in: {result}"

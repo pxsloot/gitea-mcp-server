@@ -330,7 +330,7 @@ async def create_mcp_server(
     # handling built in, matching the pattern already established by
     # fetch_token_scopes() in spec_loader.py.
     placeholder_values: dict[str, str] = {
-        "TOOL_PREFIX": config.tool_prefix.rstrip("_"),
+        "TOOL_PREFIX": config.tool_prefix,
     }
 
     # User login — lightweight GET /user, same endpoint fetch_token_scopes

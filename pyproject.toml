@@ -1,12 +1,12 @@
 [project]
 name = "gitea-mcp-server"
-version = "0.1.0"
+version = "0.3.0"
 description = "MCP server for Gitea/Forgejo API using FastMCP 3.x"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Peter", email = "peter@example.com" }
+    { name = "Peter", email = "gitea-mcp-server@pxsloot.nl" }
 ]
 dependencies = [
     "fastmcp>=3.4.2,<4",
@@ -38,6 +38,12 @@ otel = [
     "opentelemetry-sdk>=1.30.0",
     "opentelemetry-exporter-otlp>=1.30.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/pxsloot/gitea-mcp-server"
+Repository = "https://github.com/pxsloot/gitea-mcp-server.git"
+Issues = "https://github.com/pxsloot/gitea-mcp-server/issues"
+Documentation = "https://github.com/pxsloot/gitea-mcp-server#readme"
 
 [project.scripts]
 gitea-mcp = "gitea_mcp_server.server:main"

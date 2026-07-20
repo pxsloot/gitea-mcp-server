@@ -171,9 +171,12 @@ Every tool except `call_tool` accepts a `format` parameter, and so do
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
-large (hundreds of lines on big tools). Use `pagination=(page, limit)` to page
-through large schemas. Run `tool_info` once on a small tool to get a feel for
-the shape, then trust the compact example day to day.
+large (hundreds of lines on big tools). Use `page` and `limit` to page through
+large schemas. Run `tool_info` once on a small tool to get a feel for the
+shape, then trust the compact example day to day.
+
+`read_doc(topic)` also supports `page` and `limit` for line-based pagination
+through long guides. Each page is `limit` lines (default 50, max 200).
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These

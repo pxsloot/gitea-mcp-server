@@ -532,7 +532,7 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec, excluded_routes):
+    def _provider(self, spec, excluded_routes, response_format="markdown"):
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
@@ -546,6 +546,7 @@ class TestRouteMapFiltering:
             gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
+            response_format=response_format,
         )
 
     def test_empty_paths(self):
@@ -874,6 +875,7 @@ class TestCreateOpenapiProvider:
             gitea_client=mock_gitea_client,
             label_service=label_service,
             excluded_routes={("/old/endpoint", "POST")},
+            response_format="markdown",
         )
 
         assert provider is not None
@@ -888,9 +890,10 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec=None):
+    def make_transform(self, openapi_spec=None, response_format="markdown"):
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
+            response_format=response_format,
         )
 
     def make_tool(self, customized=True):

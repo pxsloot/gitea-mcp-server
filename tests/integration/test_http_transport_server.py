@@ -13,50 +13,7 @@ import pytest
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
-
-
-class SimpleHTTPConfig:
-    """Simple config for HTTP transport tests."""
-
-    def __init__(
-        self,
-        url="https://git.example.com",
-        token="test_token",
-        *,
-        verify_ssl=False,
-        ssl_cert_file=None,
-        log_level="ERROR",
-        log_format="text",
-        tool_filtering_enabled=False,
-        enable_lazy_loading=False,
-        tool_prefix="gitea_",
-        transport_type="http",
-        http_host="127.0.0.1",
-        http_port=0,
-        http_path="/mcp",
-        http_cors=None,
-        response_format="markdown",
-    ):
-        self.url = url.rstrip("/")
-        self.token = token
-        self.verify_ssl = verify_ssl
-        self.ssl_cert_file = ssl_cert_file
-        self.log_level = log_level
-        self.log_format = log_format
-        self.tool_filtering_enabled = tool_filtering_enabled
-        self.enable_lazy_loading = enable_lazy_loading
-        self.tool_prefix = tool_prefix
-        self.transport_type = transport_type
-        self.http_host = http_host
-        self.http_port = http_port
-        self.http_path = http_path
-        self.http_cors = http_cors
-        self.response_format = response_format
-
-    @property
-    def base_url(self) -> str:
-        """Get the API base URL."""
-        return f"{self.url}/api/v1"
+from tests.conftest import SimpleConfig
 
 
 @pytest.fixture(autouse=True)
@@ -164,7 +121,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_health_endpoint_returns_ok(self):
         """Test that /health returns {"status": "ok"}."""
-        config = SimpleHTTPConfig()
+        config = SimpleConfig(transport_type="http", http_port=0)
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.get(f"{base_url}/health")
             assert response.status_code == 200
@@ -173,7 +130,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_health_endpoint_content_type(self):
         """Test that /health returns application/json."""
-        config = SimpleHTTPConfig()
+        config = SimpleConfig(transport_type="http", http_port=0)
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.get(f"{base_url}/health")
             assert response.headers["Content-Type"] == "application/json"
@@ -181,7 +138,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_mcp_endpoint_exists(self):
         """Test that MCP endpoint is available at configured path."""
-        config = SimpleHTTPConfig(http_path="/mcp")
+        config = SimpleConfig(transport_type="http", http_port=0, http_path="/mcp")
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.post(
                 f"{base_url}/mcp",
@@ -193,7 +150,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_custom_path_is_respected(self):
         """Test that custom HTTP_PATH is used."""
-        config = SimpleHTTPConfig(http_path="/api/mcp")
+        config = SimpleConfig(transport_type="http", http_port=0, http_path="/api/mcp")
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.get(f"{base_url}/health")
             assert response.status_code == 200
@@ -208,7 +165,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_cors_headers_present(self):
         """Test that CORS headers are present when configured."""
-        config = SimpleHTTPConfig(http_cors=["https://example.com"])
+        config = SimpleConfig(transport_type="http", http_port=0, http_cors=["https://example.com"])
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.options(
                 f"{base_url}/health",
@@ -224,7 +181,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_cors_wildcard_not_used(self):
         """Test that wildcard CORS is not set by default (security)."""
-        config = SimpleHTTPConfig(http_cors=None)
+        config = SimpleConfig(transport_type="http", http_port=0, http_cors=None)
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.options(
                 f"{base_url}/health",
@@ -238,7 +195,7 @@ class TestHTTPTransport:
     @pytest.mark.asyncio
     async def test_graceful_shutdown(self):
         """Test that server can be shut down cleanly."""
-        config = SimpleHTTPConfig()
+        config = SimpleConfig(transport_type="http", http_port=0)
         async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
             response = await client.get(f"{base_url}/health")
             assert response.status_code == 200

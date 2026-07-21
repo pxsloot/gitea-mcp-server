@@ -311,7 +311,7 @@ class _ToolWrappingTransform(Transform):
             meta=tool.meta,
         )
 
-    async def _apply_loop_hooks(
+    async def _apply_loop_hooks(  # noqa: PLR0913
         self,
         result: ToolResult,
         kwargs: dict[str, Any],

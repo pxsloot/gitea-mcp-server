@@ -99,7 +99,7 @@ class VirtualParam:
     pre_hook: Callable[[Any], None] | None = None
     post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
     loop_hook: (
-        Callable[[ToolResult, Any, dict[str, Any], "_ExecuteFn"], Awaitable[ToolResult]]
+        Callable[[ToolResult, Any, dict[str, Any], _ExecuteFn], Awaitable[ToolResult]]
         | None
     ) = None
 

@@ -18,6 +18,7 @@ from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
+    DETAIL_PARAM_SCHEMA_CONCISE,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
@@ -562,6 +563,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
+    # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
     detail: Literal["concise", "full"] = "concise",
     page: int = 1,
     limit: int = 10,
@@ -891,9 +893,9 @@ def register_synthetic_tools(
             "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
         ] = "markdown",
         detail: Annotated[
+            # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
             Literal["concise", "full"],
-            "Detail level: 'concise' (default) for compact type-summary output_example; "
-            "'full' to also include the resolved output_schema",
+            str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
         ] = "concise",
         page: Annotated[
             int,

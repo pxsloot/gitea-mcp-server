@@ -203,11 +203,25 @@ From this doc's how-to angle: to add a new scope-gated param, set
 
 .. note::
 
-    The ``format`` parameter is **not** implemented as a virtual param.
-    It is a promoted, first-class concept handled directly in
-    ``mcp_builder._ToolWrappingTransform._wrap()``.  Its default is
-    injected at construction time via ``response_format``, so the
-    transform never calls ``Config.get()`` at wrap time.
+    The ``format`` and ``detail`` parameters are **not** implemented as
+    virtual params.  They are promoted, first-class concepts handled
+    directly in ``mcp_builder._ToolWrappingTransform._wrap()``.
+
+    ``format``'s default is injected at construction time via
+    ``response_format``, so the transform never calls ``Config.get()``
+    at wrap time.  ``detail`` is injected per-tool from the shared
+    ``DETAIL_PARAM_SCHEMA`` constant.  Both are popped from ``kwargs``
+    before the HTTP call and forwarded to the output formatting layer
+    (``format_result``).
+
+    Because ``format`` and ``detail`` are not virtual params, they don't
+    appear in ``virtual_params.py`` and don't go through the
+    ``extract_from`` / ``apply_to`` lifecycle.  If you need to add
+    another param that affects output formatting only (not the API call),
+    follow the same pattern: inject it in ``_ToolWrappingTransform``,
+    pop it from kwargs alongside ``format`` and ``detail``, and pass it
+    to the formatting functions.  See ``constants.py`` and
+    ``mcp_builder.py`` for the canonical implementation.
 
 ---
 

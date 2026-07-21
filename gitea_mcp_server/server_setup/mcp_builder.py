@@ -20,6 +20,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
 from gitea_mcp_server.format import format_result
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -269,6 +270,13 @@ class _ToolWrappingTransform(Transform):
                 ),
             }
 
+        # Inject ``detail`` (promoted, alongside ``format``).  Controls
+        # markdown rendering depth — ``"concise"`` collapses nested
+        # objects to ``$ref:TypeName`` labels, ``"full"`` renders
+        # everything recursively.
+        if "detail" not in props:
+            props["detail"] = dict(DETAIL_PARAM_SCHEMA)
+
         async def transform_fn(**kwargs: Any) -> ToolResult:
             # Pop virtual params before the HTTP execution path - they are
             # not real API parameters and must not reach the Gitea API.
@@ -280,12 +288,13 @@ class _ToolWrappingTransform(Transform):
             # ``?sudo=<username>`` query parameter.
             apply_pre_hooks(virtual_values)
 
-            # Pop ``format`` explicitly (promoted from virtual params) and
-            # apply the shared ``format_result`` utility from format.py.
+            # Pop ``format`` and ``detail`` explicitly (promoted params
+            # that reach the output layer, not the HTTP execution path).
             fmt = kwargs.pop("format", fmt_default)
+            detail = kwargs.pop("detail", "full")
             result = await self._run_transform_pipeline(kwargs, tool)
             result = apply_to(result, virtual_values)
-            return format_result(result, fmt)
+            return format_result(result, fmt, detail=detail)
 
         return Tool.from_tool(
             tool,

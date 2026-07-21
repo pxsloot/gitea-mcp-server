@@ -6,6 +6,8 @@ Covers all functions in __all__:
 """
 
 from gitea_mcp_server.format import (
+    _collapse_value,
+    _extract_type_name,
     _format_as_markdown,
     _format_datetime,
     _format_parameter_table,
@@ -142,6 +144,109 @@ class TestFormatSimpleValue:
 
     def test_boolean(self):
         assert _format_simple_value(True) == "True"
+
+
+class TestExtractTypeName:
+    """Tests for _extract_type_name — extracts type name from $ref in schemas."""
+
+    def test_direct_ref(self):
+        """Direct $ref on the schema itself."""
+        schema = {"$ref": "#/components/schemas/Repository"}
+        assert _extract_type_name(schema) == "Repository"
+
+    def test_ref_in_anyof(self):
+        """$ref nested inside anyOf."""
+        schema = {"anyOf": [{"$ref": "#/components/schemas/User"}, {"type": "null"}]}
+        assert _extract_type_name(schema) == "User"
+
+    def test_ref_in_oneof(self):
+        """$ref nested inside oneOf."""
+        schema = {"oneOf": [{"$ref": "#/components/schemas/Label"}, {"type": "string"}]}
+        assert _extract_type_name(schema) == "Label"
+
+    def test_no_ref_returns_none(self):
+        """Schema without $ref returns None."""
+        schema = {"type": "string"}
+        assert _extract_type_name(schema) is None
+
+    def test_none_schema_returns_none(self):
+        """None input returns None without error."""
+        assert _extract_type_name(None) is None
+
+    def test_anyof_without_ref_returns_none(self):
+        """anyOf with no $ref options returns None."""
+        schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+        assert _extract_type_name(schema) is None
+
+    def test_list_of_non_dict_anyof(self):
+        """anyOf containing non-dict options is handled gracefully."""
+        schema = {"anyOf": ["string", "integer"]}
+        assert _extract_type_name(schema) is None
+
+    def test_ref_in_allof(self):
+        """$ref nested inside allOf (common OpenAPI pattern)."""
+        schema = {"allOf": [{"$ref": "#/components/schemas/User"}]}
+        assert _extract_type_name(schema) == "User"
+
+    def test_allof_combined_anyof(self):
+        """allOf with anyOf ref — first found wins."""
+        schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}, {"type": "object"}]}
+        assert _extract_type_name(schema) == "Repository"
+
+
+class TestCollapseValue:
+    """Tests for _collapse_value — collapses runtime values to compact $ref strings."""
+
+    def test_dict_with_ref(self):
+        """Dict with matching $ref schema collapses to $ref:TypeName."""
+        schema = {"$ref": "#/components/schemas/User"}
+        assert _collapse_value({"id": 1, "login": "me"}, schema) == "$ref:User"
+
+    def test_dict_with_allof_ref(self):
+        """Dict with allOf $ref (common OpenAPI pattern) collapses correctly."""
+        schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}]}
+        assert _collapse_value({"name": "repo"}, schema) == "$ref:Repository"
+
+    def test_dict_with_anyof_ref(self):
+        """Dict with anyOf $ref schema collapses to $ref:TypeName."""
+        schema = {"anyOf": [{"$ref": "#/components/schemas/Repository"}, {"type": "null"}]}
+        assert _collapse_value({"name": "repo"}, schema) == "$ref:Repository"
+
+    def test_dict_without_schema_uses_placeholder(self):
+        """Dict with no schema falls back to placeholder."""
+        assert _collapse_value({"id": 1}, None) == "{...}"
+
+    def test_dict_without_ref_uses_placeholder(self):
+        """Dict with schema but no $ref falls back to placeholder."""
+        schema = {"type": "object", "properties": {}}
+        assert _collapse_value({"id": 1}, schema) == "{...}"
+
+    def test_list_with_ref(self):
+        """List with items.$ref collapses to $ref:TypeName[count]."""
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Label"}}
+        assert _collapse_value([{"id": 1}, {"id": 2}], schema) == "$ref:Label[2]"
+
+    def test_list_without_ref_shows_count(self):
+        """List without $ref items falls back to count."""
+        schema = {"type": "array", "items": {"type": "object"}}
+        assert _collapse_value([{"x": 1}], schema) == "[1 items]"
+
+    def test_list_with_none_schema(self):
+        """List with no schema falls back to count."""
+        assert _collapse_value([1, 2, 3], None) == "[3 items]"
+
+    def test_list_with_ref_in_anyof_items(self):
+        """Array items with anyOf $ref collapses correctly."""
+        schema = {
+            "type": "array",
+            "items": {"anyOf": [{"$ref": "#/components/schemas/Issue"}, {"type": "null"}]},
+        }
+        assert _collapse_value([{"title": "bug"}], schema) == "$ref:Issue[1]"
+
+    def test_scalar_passthrough(self):
+        """Non-dict, non-list values are stringified."""
+        assert _collapse_value("hello", None) == "hello"
+        assert _collapse_value(42, None) == "42"
 
 
 class TestResolveAnyOfSchema:
@@ -422,6 +527,91 @@ class TestFormatAsMarkdown:
         result = _format_as_markdown(data, schema)
         # Should contain the bold label format at depth > 0
         assert "Host" in result or "Port" in result or "database" in result
+
+    def test_dict_concise_collapses_nested_at_depth(self):
+        """detail='concise' collapses nested objects at depth>=1 to $ref:TypeName.
+
+        The collapse triggers when a property VALUE is a dict or list AND
+        the current nesting depth (_depth) is >= 1.  Top-level properties
+        (_depth=0) are always expanded — they become sections.
+        """
+        # Outer wrapper pushes 'owner' and 'repo' to _depth=1
+        data = {
+            "details": {
+                "owner": {"id": 1, "login": "user1"},
+                "repo": {"id": 10, "name": "my-repo"},
+            },
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {
+                            "allOf": [{"$ref": "#/components/schemas/User"}],
+                        },
+                        "repo": {
+                            "anyOf": [
+                                {"$ref": "#/components/schemas/Repository"},
+                                {"type": "null"},
+                            ],
+                        },
+                    },
+                },
+            },
+        }
+        result = _format_as_markdown(data, schema, detail="concise")
+        # The nested values at depth>=1 should be collapsed to $ref labels
+        assert "$ref:User" in result
+        assert "$ref:Repository" in result
+        # Original values should NOT be visible since they're collapsed
+        assert "user1" not in result
+        assert "my-repo" not in result
+
+    def test_dict_concise_collapses_list_at_depth(self):
+        """detail='concise' at depth>=1 collapses list to $ref:TypeName[N]."""
+        data = {
+            "nested": {
+                "labels": [{"id": 1, "name": "bug"}, {"id": 2, "name": "feature"}],
+            },
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "nested": {
+                    "type": "object",
+                    "properties": {
+                        "labels": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Label"},
+                        },
+                    },
+                },
+            },
+        }
+        result = _format_as_markdown(data, schema, detail="concise")
+        assert "$ref:Label[2]" in result
+        assert "bug" not in result
+        assert "feature" not in result
+
+    def test_dict_concise_top_level_stays_expanded(self):
+        """detail='concise' at depth=0 keeps top-level nested objects expanded."""
+        data = {
+            "user": {"id": 1, "login": "testuser"},
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}, "login": {"type": "string"}},
+                },
+            },
+        }
+        result = _format_as_markdown(data, schema, detail="concise")
+        # At depth=0, nested objects are sections, not collapsed
+        assert "testuser" in result
 
     def test_property_schema_not_a_dict_skipped(self):
         """Property schema that is not a dict is skipped gracefully."""

@@ -106,6 +106,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `page`      | integer | 1-based page number for list/search tools (minimum 1) |
 | `limit`     | integer | page size for list/search tools |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
+| `detail`    | string  | `"full"` (default) \| `"concise"` -- markdown rendering depth; `"concise"` collapses nested objects to `$ref:TypeName` at depth >= 1 |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
 
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
@@ -163,15 +164,29 @@ than trial and error.
 
 ## Output format
 
-Every tool except `call_tool` accepts a `format` parameter, and so do
-`read_resource` and `read_doc` (note: `read_doc` supports ``markdown``,
-``json``, and ``raw``):
+Most tools and resources accept a `format` parameter and a `detail`
+parameter:
+
+- **API tools** (auto-generated from the Gitea spec) accept both
+  `format` and `detail`.
+- **Synthetic tools** (`tool_info`, `resolve_type`, `list_resources`,
+  `read_resource`, `read_doc`) accept them too — except `call_tool`.
+- **Search/discovery tools** (`search_tools`, `search_resources`,
+  `search_docs`, `search`) accept `format` only. Their output is flat
+  metadata (names, descriptions, scores) — `detail` has no effect.
+- Note: `read_doc` supports ``markdown``, ``json``, and ``raw`` but
+  not ``detail``.
 
 | Format    | When to use |
 |-----------|-------------|
 | `markdown`| Default. Schema-aware tables, best for reading. |
 | `json`    | Programmatic extraction (e.g. `result["owner"]["id"]`). |
 | `raw`     | Exact API response, for undocumented fields or debugging. |
+
+| `detail`  | Effect on markdown output |
+|-----------|---------------------------|
+| `"full"` (default) | Complete information, full object expansion. |
+| `"concise"` | Compact view: nested objects at depth >= 1 are collapsed to ``$ref:TypeName`` labels. Unaffected when ``format=json`` or ``format=raw``. |
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is

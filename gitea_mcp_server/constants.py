@@ -13,6 +13,44 @@ RESPONSE_PREVIEW_LIMIT = 100
 
 
 # ============================================================================
+# Detail Parameter Schema (shared by all tools)
+# ============================================================================
+
+DETAIL_PARAM_SCHEMA: dict[str, object] = {
+    "type": "string",
+    "enum": ["concise", "full"],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
+    "default": "full",
+    "description": (
+        "Output detail level.  "
+        '"full" (default) — complete information, full object expansion.  '
+        '"concise" — compact view: nested objects are collapsed to type '
+        "labels ($ref:TypeName) at depth > 0."
+    ),
+}
+"""JSON Schema for the ``detail`` parameter used by all tools.
+
+Controls how much detail is shown in tool output.  ``"full"`` renders
+everything recursively; ``"concise"`` collapses deep nesting to compact
+type references.  The default is ``"full"`` (backward compatible).
+
+.. note::
+    The ``enum`` values **must** stay in sync with the
+    ``Literal["concise", "full"]`` type annotations in
+    ``tools/search.py`` and ``tools/type_info.py``.
+"""
+
+DETAIL_PARAM_SCHEMA_CONCISE: dict[str, object] = {
+    **DETAIL_PARAM_SCHEMA,
+    "default": "concise",
+}
+"""Variant of :data:`DETAIL_PARAM_SCHEMA`  that defaults to ``"concise"``.
+
+Used by introspection tools (``tool_info``, ``resolve_type``) where
+compact output is the normal expectation and ``"full"`` is opt-in.
+"""
+
+
+# ============================================================================
 # HTTP Client Configuration (httpx.AsyncClient)
 # ============================================================================
 

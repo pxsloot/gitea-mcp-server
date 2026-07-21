@@ -73,6 +73,10 @@ call_tool("{{TOOL_PREFIX}}issue_get_issue", {"owner": "org", "repo": "repo", "in
 call_tool("{{TOOL_PREFIX}}issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
 
+If a tool is not available (scope-restricted, config-excluded, or deprecated),
+both `call_tool` and direct MCP calls return a helpful error message
+explaining why — no silent failures.
+
 ## Parameters: never guess, always confirm
 
 There are ~400 tools and the exact parameters differ per tool. **Do not guess a

@@ -269,6 +269,7 @@ async def _call_tool_impl(
     arguments: Any,
     ctx: Context,
     tool_prefix: str = "",
+    filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Core call_tool implementation.
 
@@ -278,10 +279,10 @@ async def _call_tool_impl(
     natively, so the proxy does not re-format.
 
     Filtered-tool error messages (scope, exclusion, deprecation) are
-    handled by :class:`FilteredToolMiddleware` at the MCP protocol level,
-    so the proxy does not duplicate that check.
+    checked here for proxy calls, and by :class:`FilteredToolMiddleware`
+    at the MCP protocol level for direct calls.
     """
-    if name == "call_tool":
+    if name == "call_tool" or (tool_prefix and name == f"{tool_prefix}call_tool"):
         msg = "'call_tool' cannot call itself - call it directly instead"
         _raise_value_error(msg)
     if isinstance(arguments, str):
@@ -297,10 +298,22 @@ async def _call_tool_impl(
     tool = await _find_tool_by_name(name, ctx, tool_prefix)
 
     if tool is None:
-        msg = (
-            f"Tool '{name}' not found. "
-            "Use `search_tools()` to discover available tools."
-        )
+        # Tool not found in the registry — check whether it's a filtered
+        # tool (scope-restricted, config-excluded, or deprecated) and give
+        # a helpful message.  The FilteredToolMiddleware handles this for
+        # direct calls, but the proxy must check too because get_tool()
+        # returns None for filtered tools, so we never reach the inner
+        # ctx.fastmcp.call_tool() that would trigger the middleware.
+        filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
+        if filter_info is not None:
+            msg = build_filtered_tools_message(
+                name, filter_info, filtered_tools_info
+            )
+        else:
+            msg = (
+                f"Tool '{name}' not found. "
+                "Use `search_tools()` to discover available tools."
+            )
         _raise_value_error(msg)
 
     return await ctx.fastmcp.call_tool(tool.name, arguments)
@@ -738,7 +751,7 @@ def register_synthetic_tools(
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, ctx, tool_prefix)
+        return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
 
     mcp.tool(
         name="call_tool",

@@ -338,14 +338,24 @@ class TestCallToolRuntimeBehavior:
         assert result.meta == inner_meta
 
     @pytest.mark.asyncio
-    async def test_call_tool_rejects_self_call(self):
-        """call_tool should reject calling itself."""
+    async def test_call_tool_rejects_self_call_bare(self):
+        """call_tool should reject calling itself via bare name."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
         mock_ctx = MagicMock()
 
         with pytest.raises(ValueError, match="cannot call itself"):
             await _call_tool_impl("call_tool", {}, mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_self_call_prefixed(self):
+        """call_tool should reject calling itself via prefixed name."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="cannot call itself"):
+            await _call_tool_impl("gitea_call_tool", {}, mock_ctx, tool_prefix="gitea_")
 
     @pytest.mark.asyncio
     async def test_call_tool_parses_json_string_arguments(self):
@@ -914,16 +924,55 @@ class TestFilterInfoIntegration:
     # ── call_tool → filter_info ──────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_call_tool_not_found(self):
-        """call_tool for an unknown tool gives generic 'not found'."""
+    async def test_call_tool_scope_filtered(self, scope_filter_info):
+        """call_tool for scope-restricted tool raises scope error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="restricted by your token scopes"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_exclude_filtered(self, exclude_filter_info):
+        """call_tool for config-excluded tool raises exclusion error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="excluded by server configuration"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info):
+        """call_tool for deprecated tool raises deprecation error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="has been deprecated"):
+            await _call_tool_impl(
+                "gitea_some_deprecated_tool", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_filtered_falls_back_to_not_found(self):
+        """Without filter info, call_tool still gives generic 'not found'."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
         mock_ctx.fastmcp.call_tool = AsyncMock()
 
         with pytest.raises(ValueError, match="not found"):
             await _call_tool_impl(
-                "gitea_unknown_tool", {}, mock_ctx,
-                tool_prefix="gitea_",
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=None,
             )
 
     @pytest.mark.asyncio

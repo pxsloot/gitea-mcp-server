@@ -302,8 +302,9 @@ class FilteredToolMiddleware(Middleware):
     descriptive message is raised instead of a generic "tool not found".
 
     This complements the ``call_tool`` proxy's filtered-tool error handling.
-    Every call path — direct MCP calls and proxy calls — gets the same
-    helpful message.
+    Every **direct** call path (via the MCP protocol) gets the same
+    helpful message.  Proxy calls (via ``call_tool``) have a parallel
+    check in ``_call_tool_impl`` that provides the same messages.
 
     Args:
         filtered_tools_info: The filter-prediction data dict as returned by

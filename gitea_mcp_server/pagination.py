@@ -1,4 +1,5 @@
-"""Pagination header capture via httpx event hooks.
+"""Pagination header capture via httpx event hooks, pagination metadata
+injection, and the PaginationRunner for auto-pagination loops.
 
 Captures ``X-Total-Count`` / ``X-Total`` from Gitea API responses into a
 context variable so the tool customization pipeline can populate
@@ -14,13 +15,27 @@ Usage::
     # Later, in transform_fn:
     meta = pagination_ctx.get()
     total_count = meta.get("total_count")  # int or None
+
+The :class:`PaginationRunner` encapsulates the fetch-loop logic for API
+tools that need to iterate over multiple pages via HTTP calls.  It is
+used by the ``_fetch_all_loop`` virtual-param hook.
 """
 
 import contextvars
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 from fastmcp.tools.base import ToolResult
+
+from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
+
+_FetchFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
+"""Type alias for a callable that executes one page of an API tool.
+
+An async function that accepts tool kwargs (with updated ``page``)
+and returns a ``ToolResult`` from a fresh HTTP call.
+"""
 
 PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
 """Keys in structured_content that carry pagination metadata."""
@@ -34,6 +49,132 @@ SUCCESS_STATUS_THRESHOLD = 300
 pagination_ctx: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
     "pagination", default={}
 )
+
+
+class PaginationRunner:
+    """Loop-based pagination for API tools that fetch data via HTTP.
+
+    Encapsulates the fetch-loop logic: starting from an initial page result,
+    reads ``has_more`` / ``next_offset`` / ``total_count`` from
+    ``structured_content`` and re-invokes the fetch callable for subsequent
+    pages, merging array results into a single list.
+
+    Termination (first wins):
+
+    1. ``has_more`` is ``false`` on the most recent page.
+    2. The most recent page returned fewer items than the page size (heuristic
+       when ``total_count`` is unknown).
+    3. ``FETCH_ALL_MAX_PAGES`` pages have been fetched (safety cap).
+
+    Usage::
+
+        runner = PaginationRunner(fetch_fn)
+        merged = await runner.run(first_page_result, kwargs)
+    """
+
+    def __init__(
+        self,
+        fetch_fn: _FetchFn,
+        max_pages: int = FETCH_ALL_MAX_PAGES,
+    ) -> None:
+        """Create a PaginationRunner.
+
+        Args:
+            fetch_fn: Async callable ``(kwargs) → ToolResult`` that fetches
+                one page.  Called with updated ``kwargs["page"]`` for each
+                subsequent page.
+            max_pages: Maximum number of pages to fetch (safety cap).
+                Defaults to ``FETCH_ALL_MAX_PAGES``.
+        """
+        self._fetch_fn = fetch_fn
+        self._max_pages = max_pages
+
+    async def run(
+        self,
+        result: ToolResult,
+        kwargs: dict[str, Any],
+    ) -> ToolResult:
+        """Run the pagination loop starting from the initial page result.
+
+        Args:
+            result: ``ToolResult`` from the first page (must have
+                ``structured_content`` with ``has_more``, ``next_offset``,
+                and optionally ``total_count`` already set).
+            kwargs: Tool arguments (mutable; ``page`` is updated in-place
+                when re-invoking ``self._fetch_fn``).
+
+        Returns:
+            A ``ToolResult`` with merged ``result`` array,
+            ``has_more=False``, ``next_offset=None``, and the most
+            recent ``total_count``.
+        """
+        structured = result.structured_content
+        if not structured:
+            return result
+
+        all_data = structured.get("result")
+        if not isinstance(all_data, list):
+            return result
+
+        # Clone the accumulator so the original ToolResult is unmodified.
+        merged_data = list(all_data)
+        total_count = structured.get("total_count")
+        page_size = kwargs.get("per_page") or kwargs.get("limit", 50)
+
+        # next_offset tells us the next page to fetch (set by
+        # add_pagination_metadata).
+        page = structured.get("next_offset")
+        if page is None:
+            # Single page only — nothing to fetch.
+            return result
+
+        fetched = 1  # first page already counted
+        while fetched < self._max_pages:
+            has_more = structured.get("has_more", False)
+            if not has_more:
+                break
+
+            kwargs["page"] = page
+            next_result = await self._fetch_fn(kwargs)
+            next_sc = next_result.structured_content or {}
+            next_data = next_sc.get("result")
+
+            if isinstance(next_data, list):
+                merged_data.extend(next_data)
+
+            # Carry forward the server's total count (last-known wins).
+            sc_total = next_sc.get("total_count")
+            if sc_total is not None:
+                total_count = sc_total
+
+            # Use the response's has_more; fall back to heuristic when
+            # total_count is unknown (page shorter than limit → last page).
+            next_has_more = next_sc.get("has_more")
+            if next_has_more is None and isinstance(next_data, list):
+                next_has_more = len(next_data) >= page_size
+                next_sc["has_more"] = next_has_more
+
+            page = next_sc.get("next_offset")
+            if page is None:
+                break
+
+            structured = next_sc
+            fetched += 1
+
+        # Build final structured content with all data merged.
+        final_structured = dict(structured)
+        final_structured["result"] = merged_data
+        final_structured["has_more"] = False
+        final_structured["next_offset"] = None
+        final_structured["total_count"] = total_count
+
+        # content carries the first page's text; format_result (called
+        # after PaginationRunner) regenerates it from the final data.
+        return ToolResult(
+            content=result.content,
+            structured_content=final_structured,
+            meta=result.meta,
+        )
 
 
 async def capture_pagination_headers(response: httpx.Response) -> None:
@@ -129,6 +270,7 @@ def apply_pagination(
 __all__ = [
     "PAGINATION_HEADERS",
     "PAGINATION_KEYS",
+    "PaginationRunner",
     "add_pagination_metadata",
     "apply_pagination",
     "capture_pagination_headers",

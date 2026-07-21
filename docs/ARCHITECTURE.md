@@ -284,7 +284,7 @@ The customization layers as applied during server startup:
 | `models.py` | TypedDict models for structured output types (`ToolSearchEntry`, `ResourceEntry`, `ResourceListing`, `DocEntry`, `UnifiedSearchItem`, `ToolSchemaResult`, `SimpleStringResult`) — zero runtime overhead, pure annotation types |
 | `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/`; see `docs/SCOPE_MODEL.md` |
 | `search.py` | BM25 search engine infrastructure (`BM25SearchEngine`) — generic text indexing and ranking, used by `tools/search.py` |
-| `pagination.py` | Pagination metadata injection: `capture_pagination_headers()` httpx event hook, `add_pagination_metadata()` shared helper, `apply_pagination()` for adding `has_more`/`next_offset`/`total_count` to a ``ToolResult``'s structured content, used by both API tools (`_ToolWrappingTransform`) and synthetic tools (search, list, docs) |
+| `pagination.py` | Pagination metadata injection + loop-based auto-pagination: `capture_pagination_headers()` httpx event hook, `add_pagination_metadata()` shared helper, `apply_pagination()` for metadata on a ``ToolResult``; `PaginationRunner` class (extracted from ``_fetch_all_loop``) for multi-page HTTP fetch loops. Used by both API tools (`_ToolWrappingTransform`) and synthetic tools (search, list, docs) |
 
 ---
 

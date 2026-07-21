@@ -5,11 +5,17 @@ Covers all functions in __all__:
 - _resolve_anyof_schema, _format_as_markdown, _format_parameter_table, _format_type
 """
 
+import json
+
+import pytest
+from fastmcp.tools.base import ToolResult
+
 from gitea_mcp_server.format import (
     _collapse_value,
     _extract_type_name,
     _format_as_markdown,
     _format_datetime,
+    _format_paginated_result,
     _format_parameter_table,
     _format_scalar,
     _format_simple_value,
@@ -17,6 +23,7 @@ from gitea_mcp_server.format import (
     _resolve_anyof_schema,
     _snake_to_title,
 )
+from gitea_mcp_server.pagination import PAGINATION_KEYS
 
 
 class TestSnakeToTitle:
@@ -840,3 +847,118 @@ class TestFormatParameterTable:
         rest = result[header_end:]
         # Only blank line after separator, no `| owner |` etc.
         assert rest.strip() == "|-----------|------|----------|-------------|"
+
+
+# ============================================================================
+# _format_paginated_result tests
+# ============================================================================
+
+
+class TestFormatPaginatedResult:
+    """Tests for _format_paginated_result shared display utility."""
+
+    def test_returns_paginated_toolresult(self):
+        """Returns a ToolResult with structured_content containing result."""
+        result = _format_paginated_result(
+            [{"id": 1}, {"id": 2}], 2, "raw", page=1, limit=10,
+        )
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is not None
+        assert "result" in result.structured_content
+
+    def test_respects_page_and_limit(self):
+        """When fetch_all=False, only returns the requested page."""
+        items = [{"id": i} for i in range(25)]
+        result = _format_paginated_result(items, 25, "raw", page=2, limit=10)
+        sc = result.structured_content
+        assert len(sc["result"]) == 10
+        assert sc["result"][0]["id"] == 10
+        assert sc["result"][-1]["id"] == 19
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 3
+        assert sc["total_count"] == 25
+
+    def test_last_page(self):
+        """Last page returns fewer items and has_more=False."""
+        items = [{"id": i} for i in range(25)]
+        result = _format_paginated_result(items, 25, "raw", page=3, limit=10)
+        sc = result.structured_content
+        assert len(sc["result"]) == 5
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 25
+
+    def test_fetch_all_returns_all_items(self):
+        """When fetch_all=True, all items are returned without slicing."""
+        items = [{"id": i} for i in range(50)]
+        result = _format_paginated_result(
+            items, 50, "raw", page=1, limit=10, fetch_all=True,
+        )
+        sc = result.structured_content
+        assert len(sc["result"]) == 50
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 50
+
+    def test_fetch_all_empty_list(self):
+        """When fetch_all=True and items is empty, returns empty."""
+        result = _format_paginated_result(
+            [], 0, "raw", page=1, limit=10, fetch_all=True,
+        )
+        sc = result.structured_content
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["total_count"] == 0
+
+    def test_markdown_format(self):
+        """Markdown format produces text content."""
+        items = [{"id": 1, "name": "test"}]
+        result = _format_paginated_result(
+            items, 1, "markdown", page=1, limit=10,
+        )
+        assert result.content is not None
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "test" in text
+        # Verify pagination metadata is in structured_content
+        sc = result.structured_content
+        assert sc["total_count"] == 1
+
+    def test_json_format(self):
+        """JSON format produces JSON text content."""
+        items = [{"id": 1, "name": "test"}]
+        result = _format_paginated_result(
+            items, 1, "json", page=1, limit=10,
+        )
+        assert result.content is not None
+        text = result.content[0].text
+        parsed = json.loads(text)
+        assert parsed[0]["name"] == "test"
+        sc = result.structured_content
+        assert sc["total_count"] == 1
+
+    def test_pagination_keys_in_structured_content(self):
+        """PAGINATION_KEYS keys appear in structured_content."""
+        items = [{"id": i} for i in range(25)]
+        result = _format_paginated_result(items, 25, "raw", page=1, limit=10)
+        for key in PAGINATION_KEYS:
+            assert key in result.structured_content
+
+    def test_empty_items_list(self):
+        """Empty items list returns empty result."""
+        result = _format_paginated_result(
+            [], 0, "raw", page=1, limit=10,
+        )
+        sc = result.structured_content
+        assert sc["result"] == []
+        assert sc["total_count"] == 0
+
+    def test_markdown_extras_appended(self):
+        """markdown_extras appear as additional sections in markdown output."""
+        items = [{"id": 1}]
+        result = _format_paginated_result(
+            items, 1, "markdown", page=1, limit=10,
+            markdown_extras=["**Extra section:** content"],
+        )
+        text = result.content[0].text
+        assert "**Extra section:** content" in text

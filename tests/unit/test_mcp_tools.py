@@ -902,3 +902,74 @@ class TestMcpListResourcesRawFormat:
         assert result.structured_content is not None
         assert result.structured_content["result"]["count"] == 1
         assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+
+
+class TestMcpListResourcesFetchAll:
+    """Regression tests for fetch_all parameter in list_resources."""
+
+    def _capture_tool(self):
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs):
+            def deco(fn):
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
+            return deco
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        return captured["list_resources"]
+
+    def _make_resource(self, idx: int):
+        r = MagicMock()
+        r.uri = f"gitea://resource/{idx}"
+        r.name = f"Resource {idx}"
+        r.description = f"Resource number {idx}"
+        r.mime_type = "text/plain"
+        r.tags = set()
+        r.meta = None
+        return r
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_with_non_default_page(self):
+        """When fetch_all=True, has_more must be False regardless of page arg.
+
+        Regression: if page/limit are not normalized when fetch_all=True,
+        add_pagination_metadata computes has_more = page * limit < total_count,
+        which is wrong — all items are already in the result.
+        """
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        resources = [self._make_resource(i) for i in range(25)]
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        # fetch_all=True with page=3 — a stale page value that would produce
+        # incorrect has_more=True if page/limit weren't normalized.
+        result = await fn(ctx=ctx, format="raw", page=3, limit=5, fetch_all=True)
+        sc = result.structured_content
+        assert sc is not None
+        assert len(sc["result"]["resources"]) == 25
+        assert sc["has_more"] is False, (
+            "has_more should be False when fetch_all=True — all items already returned"
+        )
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_with_page_1(self):
+        """fetch_all + page=1 returns all items with correct metadata."""
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        resources = [self._make_resource(i) for i in range(7)]
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="raw", page=1, limit=3, fetch_all=True)
+        sc = result.structured_content
+        assert len(sc["result"]["resources"]) == 7
+        assert sc["has_more"] is False
+        assert sc["total_count"] == 7

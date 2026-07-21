@@ -187,6 +187,8 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
     # HTTP call and pagination metadata but before post_hook.  Receives
     # an ``execute_fn`` callable to re-invoke the HTTP path with updated
     # arguments (e.g. incremented ``page`` for auto-pagination).
+    # The ``_fetch_all_loop`` hook delegates to ``PaginationRunner``
+    # (see ``gitea_mcp_server/pagination.py``) for the actual loop logic.
     loop_hook=None,  # e.g. _fetch_all_loop  (result, value, kwargs, execute_fn) -> result
 )
 ```
@@ -212,12 +214,24 @@ and merge results.  The hook should update the ``ToolResult``'s
 
 .. note::
 
-    ``fetch_all`` is registered as a production virtual parameter in
-    ``virtual_params.py``.  When ``fetch_all=true``, the ``_fetch_all_loop``
-    hook fetches all pages and merges them into a single result, capped at
+    ``fetch_all`` has two implementations depending on tool type:
+
+    **API tools** (auto-generated from OpenAPI spec):
+    ``fetch_all`` is a virtual parameter registered in ``virtual_params.py``.
+    The ``_fetch_all_loop`` hook (a thin wrapper around
+    :class:`~gitea_mcp_server.pagination.PaginationRunner`) fetches all pages
+    via HTTP and merges them into a single result, capped at
     ``FETCH_ALL_MAX_PAGES`` pages.  See ``gitea_mcp_server/constants.py`` for
-    the cap value and ``gitea_mcp_server/tools/virtual_params.py`` for the
-    implementation.
+    the cap value.
+
+    **Synthetic tools** (``search_tools``, ``search_resources``,
+    ``search_docs``, ``search``, ``list_resources``):
+    ``fetch_all`` is declared as an explicit parameter in the tool's function
+    signature.  Since all data is already in memory (tool catalog, doc index,
+    resource list), ``fetch_all`` simply skips the page/limit slice and
+    returns all results through the shared
+    :func:`~gitea_mcp_server.format._format_paginated_result` utility — no
+    loop needed.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single
@@ -358,7 +372,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
-| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated results, compose with ``apply_pagination()`` |
+| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``_format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — only meaningful for schema-depth resources |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |

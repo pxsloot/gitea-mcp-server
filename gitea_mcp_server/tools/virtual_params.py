@@ -176,13 +176,13 @@ async def _fetch_all_loop(
 ) -> ToolResult:
     """Loop hook for ``fetch_all``: automatically fetch all pages.
 
-    Called by ``_pipeline_with_context`` after the initial page has been
-    fetched and pagination metadata added.  When ``fetch_all=true``, reads
-    ``has_more`` / ``next_offset`` / ``total_count`` from the result's
-    ``structured_content`` and re-invokes ``execute_fn`` for subsequent
-    pages, merging array results into a single list.
+    Thin wrapper around :class:`~gitea_mcp_server.pagination.PaginationRunner`.
 
-    Termination (first wins):
+    Called by ``_pipeline_with_context`` after the initial page has been
+    fetched and pagination metadata added.  When ``fetch_all=true``, delegates
+    to ``PaginationRunner`` which handles the loop, merge, and termination.
+
+    Termination (via ``PaginationRunner``, first wins):
 
     1. ``has_more`` is ``false`` on the most recent page.
     2. The most recent page returned fewer items than the page size (heuristic
@@ -207,72 +207,10 @@ async def _fetch_all_loop(
     if not value:
         return result
 
-    structured = result.structured_content
-    if not structured:
-        return result
+    from gitea_mcp_server.pagination import PaginationRunner  # noqa: PLC0415
 
-    all_data = structured.get("result")
-    if not isinstance(all_data, list):
-        return result
-
-    # Clone the accumulator so the original ToolResult is unmodified.
-    merged_data = list(all_data)
-    total_count = structured.get("total_count")
-    page_size = kwargs.get("per_page") or kwargs.get("limit", 50)
-
-    # next_offset tells us the next page to fetch (set by add_pagination_metadata).
-    page = structured.get("next_offset")
-    if page is None:
-        # Single page only — nothing to fetch.
-        return result
-
-    fetched = 1  # first page already counted
-    while fetched < FETCH_ALL_MAX_PAGES:
-        has_more = structured.get("has_more", False)
-        if not has_more:
-            break
-
-        kwargs["page"] = page
-        next_result = await execute_fn(kwargs)
-        next_sc = next_result.structured_content or {}
-        next_data = next_sc.get("result")
-
-        if isinstance(next_data, list):
-            merged_data.extend(next_data)
-
-        # Carry forward the server's total count (last-known wins).
-        sc_total = next_sc.get("total_count")
-        if sc_total is not None:
-            total_count = sc_total
-
-        # Use the response's has_more; fall back to the heuristic when
-        # total_count is unknown (page shorter than limit means last page).
-        next_has_more = next_sc.get("has_more")
-        if next_has_more is None and isinstance(next_data, list):
-            next_has_more = len(next_data) >= page_size
-            next_sc["has_more"] = next_has_more
-
-        page = next_sc.get("next_offset")
-        if page is None:
-            break
-
-        structured = next_sc
-        fetched += 1
-
-    # Build the final structured content with all data merged.
-    final_structured = dict(structured)
-    final_structured["result"] = merged_data
-    final_structured["has_more"] = False
-    final_structured["next_offset"] = None
-    final_structured["total_count"] = total_count
-
-    # content carries the first page's text; format_result (called
-    # after the loop hook) regenerates it from final_structured["result"].
-    return ToolResult(
-        content=result.content,
-        structured_content=final_structured,
-        meta=result.meta,
-    )
+    runner = PaginationRunner(execute_fn)
+    return await runner.run(result, kwargs)
 
 
 # Register the fetch_all virtual param so it appears in every tool's schema.

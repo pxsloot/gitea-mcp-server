@@ -23,10 +23,14 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import _format_as_markdown, _format_tool_info_markdown, apply_format
+from gitea_mcp_server.format import (
+    _format_paginated_result,
+    _format_tool_info_markdown,
+    apply_format,
+)
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
+from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -477,6 +481,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     min_score: float = SEARCH_MIN_SCORE,
     filtered_tools_info: dict[str, Any] | None = None,
     tool_prefix: str = "",
+    fetch_all: bool = False,
 ) -> ToolResult:
     """Core search_tools implementation.
 
@@ -484,18 +489,22 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     category, then ranks by name match + BM25 and returns a paginated,
     formatted result.
 
+    When ``fetch_all=True``, returns all matching results without page
+    slicing (in-memory search, no loop needed).
+
     Args:
         query: Natural language query.
         category: Optional category filter.
         format: Output format.
         ctx: FastMCP context.
         transform: Search transform for tool catalog access.
-        page: Page number (1-based).
-        limit: Results per page.
+        page: Page number (1-based).  Ignored when ``fetch_all`` is True.
+        limit: Results per page.  Ignored when ``fetch_all`` is True.
         min_score: Minimum normalized BM25 score (0.0-1.0).
         filtered_tools_info: Filter-prediction data for hidden-tool note.
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from tool names before name matching.
+        fetch_all: When True, return all matching results without slicing.
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -507,8 +516,11 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
 
     texts = [_extract_searchable_text_enhanced(t) for t in tools]
     serialized = _compact_search_serializer(tools)
-    page_items, total_count = _search_and_slice(
-        serialized, texts, query, page, limit,
+
+    # Get all ranked results (no pre-slicing — _format_paginated_result
+    # handles that conditionally based on fetch_all).
+    all_items, total_count = _search_and_slice(
+        serialized, texts, query, 1, len(serialized) or 1,
         min_score=min_score, tool_prefix=tool_prefix,
     )
 
@@ -524,36 +536,31 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
             structured_content={"result": [], "_hint": text},
         )
 
-    if not page_items:
-        text = f"Page {page} is out of range (total results: {total_count})."
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
+    # Check page range before formatting (only when paginating, not fetch_all).
+    if not fetch_all:
+        start = (page - 1) * limit
+        if start >= total_count:
+            text = f"Page {page} is out of range (total results: {total_count})."
+            return ToolResult(
+                content=[TextContent(type="text", text=text)],
+                structured_content={"result": [], "_hint": text},
+            )
 
     extras: list[str] = []
-    if format == "markdown":
-        if cross_link_hints:
-            hints = "**Cross-linking hints:**\n"
-            for label, tool in cross_link_hints.items():
-                hints += f"- For {label}: `{tool}(query)`\n"
-            extras.append(hints)
+    if format == "markdown" and cross_link_hints:
+        hints = "**Cross-linking hints:**\n"
+        for label, tool in cross_link_hints.items():
+            hints += f"- For {label}: `{tool}(query)`\n"
+        extras.append(hints)
 
+    if format == "markdown":
         note = _format_filtered_tools_note(filtered_tools_info)
         if note:
             extras.append(note)
 
-        pagination_table = _format_as_markdown(
-            {k: v for k, v in add_pagination_metadata(
-                {"result": page_items}, page, limit, total_count
-            ).items() if k in PAGINATION_KEYS},
-            None,
-        )
-        extras.append(pagination_table)
-
-    return apply_pagination(
-        apply_format(page_items, format, markdown_extras=extras or None),
-        page, limit, total_count,
+    return _format_paginated_result(
+        all_items, total_count, format, page, limit, fetch_all,
+        markdown_extras=extras or None,
     )
 
 
@@ -685,21 +692,26 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     limit: int = 10,
     min_score: float = SEARCH_MIN_SCORE,
     tool_prefix: str = "",
+    fetch_all: bool = False,
 ) -> ToolResult:
     """Core search_resources implementation.
 
     Fetches all registered MCP resources via ``_mcp_list_resources_impl``,
     runs name match + BM25 ranking, and returns a paginated, formatted result.
 
+    When ``fetch_all=True``, returns all matching results without page
+    slicing (in-memory search, no loop needed).
+
     Args:
         query: Natural language query.
         format: Output format.
         ctx: FastMCP context.
-        page: Page number (1-based).
-        limit: Results per page.
+        page: Page number (1-based).  Ignored when ``fetch_all`` is True.
+        limit: Results per page.  Ignored when ``fetch_all`` is True.
         min_score: Minimum normalized BM25 score (0.0-1.0).
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from resource names before name matching.
+        fetch_all: When True, return all matching results without slicing.
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -708,8 +720,10 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
     texts = [_extract_resource_text(r) for r in resources]
-    page_items, total_count = _search_and_slice(
-        resources, texts, query, page, limit,
+
+    # Get all ranked results (no pre-slicing).
+    all_items, total_count = _search_and_slice(
+        resources, texts, query, 1, len(resources) or 1,
         min_score=min_score, tool_prefix=tool_prefix,
     )
 
@@ -725,32 +739,26 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
             structured_content={"result": [], "_hint": text},
         )
 
-    if not page_items:
-        text = f"Page {page} is out of range (total results: {total_count})."
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
+    # Check page range before formatting (only when paginating, not fetch_all).
+    if not fetch_all:
+        start = (page - 1) * limit
+        if start >= total_count:
+            text = f"Page {page} is out of range (total results: {total_count})."
+            return ToolResult(
+                content=[TextContent(type="text", text=text)],
+                structured_content={"result": [], "_hint": text},
+            )
 
     extras: list[str] = []
-    if format == "markdown":
-        if cross_link_hints:
-            hints = "**Cross-linking hints:**\n"
-            for label, tool in cross_link_hints.items():
-                hints += f"- For {label}: `{tool}(query)`\n"
-            extras.append(hints)
+    if format == "markdown" and cross_link_hints:
+        hints = "**Cross-linking hints:**\n"
+        for label, tool in cross_link_hints.items():
+            hints += f"- For {label}: `{tool}(query)`\n"
+        extras.append(hints)
 
-        pagination_table = _format_as_markdown(
-            {k: v for k, v in add_pagination_metadata(
-                {"result": page_items}, page, limit, total_count
-            ).items() if k in PAGINATION_KEYS},
-            None,
-        )
-        extras.append(pagination_table)
-
-    return apply_pagination(
-        apply_format(page_items, format, markdown_extras=extras or None),
-        page, limit, total_count,
+    return _format_paginated_result(
+        all_items, total_count, format, page, limit, fetch_all,
+        markdown_extras=extras or None,
     )
 
 
@@ -797,12 +805,17 @@ def register_synthetic_tools(
             "0.1 requires at least 10% as relevant as the top result, "
             "1.0 requires perfect match.",
         ] = SEARCH_MIN_SCORE,
+        fetch_all: Annotated[
+            bool,
+            "When true, return all matching results instead of a single page. "
+            "Results are merged into one response (in-memory, no looping needed).",
+        ] = False,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_tools_impl(
             query, category, format, ctx, transform, page, limit,
             min_score=min_score, filtered_tools_info=filtered_tools_info,
-            tool_prefix=tool_prefix,
+            tool_prefix=tool_prefix, fetch_all=fetch_all,
         )
 
     mcp.tool(
@@ -1018,11 +1031,16 @@ def register_synthetic_tools(
             "0.1 requires at least 10% as relevant as the top result, "
             "1.0 requires perfect match.",
         ] = SEARCH_MIN_SCORE,
+        fetch_all: Annotated[
+            bool,
+            "When true, return all matching results instead of a single page. "
+            "Results are merged into one response (in-memory, no looping needed).",
+        ] = False,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_resources_impl(
             query, format, ctx, page, limit,
-            min_score=min_score, tool_prefix=tool_prefix,
+            min_score=min_score, tool_prefix=tool_prefix, fetch_all=fetch_all,
         )
 
     mcp.tool(

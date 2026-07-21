@@ -5,6 +5,10 @@ Kept at the flat level so neither domain depends on the other.
 
 Public functions:
     apply_format - format data for output (raw/json/markdown), no pagination.
+    _format_paginated_result - format paginated list results for display.
+        Separates display from data creation: handles page slicing (or
+        ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
+        over manual ``apply_format()`` + ``apply_pagination()`` composition.
     format_result - reformat a ToolResult by format (json/markdown/raw).
         Prefer ``apply_format`` for new code; ``format_result`` is kept for
         backward compatibility (used by the API tool wrapping transform which
@@ -613,6 +617,63 @@ def format_result(
     return result
 
 
+def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent display axes (items + pagination state + output config)
+    items: list,
+    total_count: int,
+    fmt: str,
+    page: int,
+    limit: int,
+    fetch_all: bool = False,
+    markdown_extras: list[str] | None = None,
+) -> ToolResult:
+    """Format a paginated list result for display.
+
+    Separates **display** from **data creation**.  Synthetic tool handlers
+    produce data (items + total_count) and then call this utility to handle
+    the display layer: page slicing (or everything when ``fetch_all=True``),
+    formatting, and pagination metadata.
+
+    When ``fetch_all=True`` the page/limit slice is skipped — all items are
+    returned with ``has_more=False``.  When ``fetch_all=False`` (default),
+    only the requested page of items is returned with proper pagination
+    metadata (``has_more``, ``next_offset``, ``total_count``).
+
+    Args:
+        items: All matching items (before page slicing).
+        total_count: Total number of matching items.
+        fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
+        page: Page number to display (1-based).  Ignored when ``fetch_all``
+            is True.
+        limit: Items per page.  Ignored when ``fetch_all`` is True.
+        fetch_all: When True, return all items without slicing (no loop
+            needed — data is in-memory).
+        markdown_extras: Optional extra markdown sections appended after
+            the main content (only used in markdown mode).
+
+    Returns:
+        A ``ToolResult`` with formatted content and pagination metadata
+        in ``structured_content``.
+    """
+    # Deferred import to avoid module-level coupling — apply_pagination is
+    # only needed here (not by other formatting functions).
+    from gitea_mcp_server.pagination import apply_pagination  # noqa: PLC0415
+
+    if fetch_all:
+        # Skip slicing — return everything.
+        page, limit = 1, total_count or len(items)
+        page_items = items
+    else:
+        start = (page - 1) * limit
+        page_items = items[start : start + limit]
+
+    return apply_pagination(
+        apply_format(page_items, fmt, markdown_extras=markdown_extras),
+        page,
+        limit,
+        total_count,
+    )
+
+
 __all__ = [
     "_collapse_value",
     "_extract_type_name",
@@ -620,6 +681,7 @@ __all__ = [
     "_format_as_markdown",
     "_format_datetime",
     "_format_json_section",
+    "_format_paginated_result",
     "_format_parameter_table",
     "_format_scalar",
     "_format_simple_value",

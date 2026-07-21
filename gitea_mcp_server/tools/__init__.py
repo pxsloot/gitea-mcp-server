@@ -6,7 +6,7 @@ All tool-related runtime concerns live here:
 - errors: Error handling for tool execution
 - labels: Label name→ID conversion
 - examples: Schema-to-example generation, tool schema serialization
-- search: BM25 search engine + TolerantSearchTransform + synthetic tools
+- search: Name-match + BM25 search + TolerantSearchTransform + synthetic tools
 - virtual_params: Virtual parameter registry (params that live in the schema
   but are handled before the API call)
 - namespace: GiteaNamespace transform (prefix tools, pass resources through)

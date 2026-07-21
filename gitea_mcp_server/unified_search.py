@@ -53,6 +53,7 @@ def register_unified_search(
     mcp: Any,
     doc_manager: DocManager,
     search_transform: TolerantSearchTransform,
+    tool_prefix: str = "",
 ) -> None:
     """Register the unified ``search`` tool.
 
@@ -60,6 +61,8 @@ def register_unified_search(
         mcp: The FastMCP server instance
         doc_manager: DocManager with loaded workflow guides
         search_transform: TolerantSearchTransform for tool catalog access
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+            Used to strip the prefix from tool/resource names before name matching.
     """
 
     async def search(  # noqa: PLR0913 - min_score is a new config axis
@@ -142,7 +145,8 @@ def register_unified_search(
             all_texts.append(_extract_doc_search_text(d))
 
         page_items, total_count = _search_and_slice(
-            all_items, all_texts, query, page, limit, min_score=min_score
+            all_items, all_texts, query, page, limit,
+            min_score=min_score, tool_prefix=tool_prefix,
         )
 
         if total_count == 0:
@@ -182,7 +186,7 @@ def register_unified_search(
 
     mcp.tool(
         name="search",
-        description="Unified search across tools, workflow docs, and data resources. Returns merged BM25-ranked results with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
+        description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={

@@ -100,7 +100,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/errors.py` | Error translation, argument validation runner |
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
-| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic tools |
+| `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref:Type`` name resolution and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo`` (user impersonation, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
@@ -523,7 +523,7 @@ This project uses FastMCP 3.x.  Key APIs:
 
 - `OpenAPIProvider(spec, client)` -- auto-generates tools from OpenAPI spec
 - `ResponseCachingMiddleware` -- TTL-based resource caching
-- `BM25SearchTransform` -- lazy loading with BM25 search
+- `BM25SearchTransform` -- lazy loading with name-match + BM25 search
 - `Transform` -- modify tool lists, intercept tool lookups
 - `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior
 - `FastMCP(name=..., lifespan=lifespan)` -- async context manager for resource lifecycle (startup/teardown)

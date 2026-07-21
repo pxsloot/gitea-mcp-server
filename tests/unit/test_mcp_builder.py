@@ -1138,3 +1138,244 @@ class TestToolWrappingTransform:
             assert output.structured_content["total_count"] == 1
 
             pagination_ctx.set({})
+
+    @pytest.mark.asyncio
+    async def test_apply_loop_hooks_passthrough_no_extracted(self):
+        """_apply_loop_hooks returns result unchanged when extracted is None."""
+        from fastmcp.tools.base import ToolResult
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        result = ToolResult(
+            structured_content={"result": [{"id": 1}]},
+        )
+
+        output = await transform._apply_loop_hooks(
+            result, {"page": 1}, None, tool, "/test", "GET",
+        )
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_apply_loop_hooks_passthrough_empty_extracted(self):
+        """_apply_loop_hooks returns result unchanged when extracted is empty."""
+        from fastmcp.tools.base import ToolResult
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        result = ToolResult(
+            structured_content={"result": [{"id": 1}]},
+        )
+
+        output = await transform._apply_loop_hooks(
+            result, {"page": 1}, {}, tool, "/test", "GET",
+        )
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_apply_loop_hooks_calls_hook(self):
+        """_apply_loop_hooks invokes registered loop hook with correct args."""
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        hook = AsyncMock()
+        hook.return_value = ToolResult(
+            structured_content={"result": [{"id": 1}, {"id": 2}], "has_more": False},
+        )
+
+        result = ToolResult(
+            structured_content={"result": [{"id": 1}], "has_more": True},
+        )
+
+        extracted = {"fetch_all": True}
+
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "fetch_all": VirtualParam(
+                    schema={"type": "boolean"},
+                    default=False,
+                    description="",
+                    loop_hook=hook,
+                ),
+            },
+        ):
+            output = await transform._apply_loop_hooks(
+                result, {"page": 1, "limit": 10}, extracted, tool, "/test", "GET",
+            )
+
+        hook.assert_called_once()
+        args = hook.call_args[0]
+        # args: (result, value, kwargs, execute_fn)
+        assert args[0] is result
+        assert args[1] is True
+        assert args[2] == {"page": 1, "limit": 10}
+        # execute_fn is a callable
+        assert callable(args[3])
+
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
+
+    @pytest.mark.asyncio
+    async def test_apply_loop_hooks_execute_fn_reinvokes_http(self):
+        """The execute_fn passed to loop_hook calls _run_with_error_handling."""
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+        tool.name = "test_tool"
+
+        async def my_loop_hook(result, value, kwargs, execute_fn):
+            """Simple loop hook that fetches one more page and merges."""
+            kwargs["page"] = 2
+            next_result = await execute_fn(kwargs)
+            data = result.structured_content["result"]
+            data.extend(next_result.structured_content["result"])
+            result.structured_content["result"] = data
+            result.structured_content["has_more"] = False
+            return result
+
+        result = ToolResult(
+            structured_content={"result": [{"id": 1}], "has_more": True},
+        )
+
+        extracted = {"fetch_all": True}
+
+        with (
+            patch.dict(
+                "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+                {
+                    "fetch_all": VirtualParam(
+                        schema={"type": "boolean"},
+                        default=False,
+                        description="",
+                        loop_hook=my_loop_hook,
+                    ),
+                },
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_execute,
+        ):
+            mock_execute.return_value = ToolResult(
+                structured_content={"result": [{"id": 2}], "has_more": False},
+            )
+
+            output = await transform._apply_loop_hooks(
+                result, {"page": 1, "limit": 10}, extracted, tool, "/test", "GET",
+            )
+
+        # Executed once with page=2
+        mock_execute.assert_called_once()
+        call_kwargs = mock_execute.call_args[0][0]
+        assert call_kwargs["page"] == 2
+
+        # Results merged
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
+        assert output.structured_content["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_execute_fn_validates_kwargs(self):
+        """execute_fn validates kwargs, rejecting invalid values."""
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        async def bad_loop_hook(result, value, kwargs, execute_fn):
+            await execute_fn({"page": 0})  # page < 1 is invalid
+            return result
+
+        extracted = {"fetch_all": True}
+
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "fetch_all": VirtualParam(
+                    schema={"type": "boolean"},
+                    default=False,
+                    description="",
+                    loop_hook=bad_loop_hook,
+                ),
+            },
+        ):
+            result = ToolResult(
+                structured_content={"result": [{"id": 1}], "has_more": True},
+            )
+            with pytest.raises(ValueError, match="page must be >= 1"):
+                await transform._apply_loop_hooks(
+                    result, {"page": 1}, extracted, tool, "/test", "GET",
+                )
+
+    @pytest.mark.asyncio
+    async def test_loop_hooks_chain_integration(self):
+        """Pipeline with extracted loop hooks calls _apply_loop_hooks.
+
+        Verifies that the full pipeline (transform_fn → _run_transform_pipeline
+        → _pipeline_with_context → _apply_loop_hooks) correctly extracts loop
+        hooks and passes execute_fn when extracted values are provided.
+        """
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        loop_hook_called = False
+
+        async def my_loop_hook(result, value, kwargs, execute_fn):
+            nonlocal loop_hook_called
+            loop_hook_called = True
+            return result
+
+        extracted = {"fetch_test": True}
+
+        with (
+            patch.dict(
+                "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+                {
+                    "fetch_test": VirtualParam(
+                        schema={"type": "boolean"},
+                        default=False,
+                        description="",
+                        loop_hook=my_loop_hook,
+                    ),
+                },
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=True,
+            ),
+        ):
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": 1}]},
+            )
+
+            from gitea_mcp_server.pagination import pagination_ctx
+
+            pagination_ctx.set({"total_count": 1})
+
+            # Call the pipeline directly with extracted
+            result = await transform._run_transform_pipeline(
+                {"page": 1, "limit": 10},
+                tool,
+                extracted=extracted,
+            )
+
+            pagination_ctx.set({})
+
+        assert loop_hook_called

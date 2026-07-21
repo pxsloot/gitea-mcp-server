@@ -455,9 +455,13 @@ class TestEnrichResponseSchemas:
     def test_wraps_response_ref(self):
         """Response-level $ref is left as-is; component schema gets wrapped.
 
-        Note: response-level $ref never appears in practice -- the Swagger 2.0
-        to OpenAPI 3.x converter inlines all refs. This test just verifies
-        no crash when one is encountered.
+        Note: The converter does NOT inline response-level $ref: it preserves
+        the $ref object (e.g. ``{"$ref": "#/components/responses/empty"}``).
+        ``_wrap_response_schema`` skips these because they have no ``content``
+        key; downstream code in ``tools/schemas.py`` resolves the $ref at
+        tool-registration time.  This test verifies no crash and that the
+        component-level schema is still wrapped for shared response
+        definitions that do carry content.
         """
         spec = {
             "paths": {

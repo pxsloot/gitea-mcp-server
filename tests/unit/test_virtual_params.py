@@ -457,6 +457,120 @@ class TestApplyTo:
 
 
 # ---------------------------------------------------------------------------
+# get_loop_hooks
+# ---------------------------------------------------------------------------
+
+
+class TestGetLoopHooks:
+    """Tests for get_loop_hooks - loop hook resolution from extracted values."""
+
+    def test_returns_empty_when_no_extracted_params(self):
+        """Returns empty dict when extracted is empty."""
+        from gitea_mcp_server.tools.virtual_params import get_loop_hooks
+
+        hooks = get_loop_hooks({})
+        assert hooks == {}
+
+    def test_returns_empty_when_no_loop_hook_registered(self):
+        """Returns empty when extracted params have no loop_hook."""
+        from gitea_mcp_server.tools.virtual_params import get_loop_hooks
+
+        extracted = {"sudo": "alice"}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "sudo": VirtualParam(
+                    schema={}, default=None, description="", post_hook=lambda r, v: r
+                ),
+            },
+        ):
+            hooks = get_loop_hooks(extracted)
+        assert hooks == {}
+
+    def test_returns_hook_when_loop_hook_registered(self):
+        """Returns (value, hook) for each param with a registered loop_hook."""
+        from gitea_mcp_server.tools.virtual_params import get_loop_hooks
+
+        loop_hook = AsyncMock(return_value=ToolResult(
+            content=[TextContent(type="text", text="looped")]
+        ))
+
+        extracted = {"fetch_all": True}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "fetch_all": VirtualParam(
+                    schema={"type": "boolean"},
+                    default=False,
+                    description="Fetch all pages",
+                    loop_hook=loop_hook,
+                ),
+            },
+        ):
+            hooks = get_loop_hooks(extracted)
+
+        assert "fetch_all" in hooks
+        value, hook = hooks["fetch_all"]
+        assert value is True
+        assert hook is loop_hook
+
+    def test_returns_multiple_hooks(self):
+        """Returns entries for all params that have loop_hook set."""
+        from gitea_mcp_server.tools.virtual_params import get_loop_hooks
+
+        hook_a = AsyncMock()
+        hook_b = AsyncMock()
+
+        extracted = {"a": 1, "b": 2, "c": 3}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "a": VirtualParam(
+                    schema={}, default=None, description="", loop_hook=hook_a
+                ),
+                "b": VirtualParam(
+                    schema={}, default=None, description="", loop_hook=hook_b
+                ),
+                "c": VirtualParam(
+                    schema={}, default=None, description="", loop_hook=None
+                ),
+            },
+        ):
+            hooks = get_loop_hooks(extracted)
+
+        assert len(hooks) == 2
+        assert "a" in hooks
+        assert "b" in hooks
+        assert "c" not in hooks
+        assert hooks["a"] == (1, hook_a)
+        assert hooks["b"] == (2, hook_b)
+
+
+class TestVirtualParamLoopHookField:
+    """Tests for the loop_hook field on VirtualParam."""
+
+    def test_default_is_none(self):
+        """loop_hook defaults to None for backward compatibility."""
+        vp = VirtualParam(schema={}, default=None, description="test")
+        assert vp.loop_hook is None
+
+    def test_can_set_loop_hook(self):
+        """loop_hook can be set to a callable."""
+        hook = AsyncMock()
+        vp = VirtualParam(
+            schema={}, default=None, description="test", loop_hook=hook
+        )
+        assert vp.loop_hook is hook
+
+    def test_loop_hook_none_is_noop(self):
+        """A VirtualParam with loop_hook=None behaves like before."""
+        vp = VirtualParam(schema={}, default=None, description="test", loop_hook=None)
+        result = ToolResult(content=[TextContent(type="text", text="ok")])
+        new_result = vp.loop_hook(result, True, {}, lambda k: result) if vp.loop_hook else result
+        assert new_result is result
+
+
+# ---------------------------------------------------------------------------
 # Integration with _wrap()
 # ---------------------------------------------------------------------------
 

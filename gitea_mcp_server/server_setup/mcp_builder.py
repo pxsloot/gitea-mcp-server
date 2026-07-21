@@ -48,6 +48,7 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
     apply_to,
     extract_from,
+    get_loop_hooks,
     inject_into,
 )
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
@@ -292,7 +293,11 @@ class _ToolWrappingTransform(Transform):
             # that reach the output layer, not the HTTP execution path).
             fmt = kwargs.pop("format", fmt_default)
             detail = kwargs.pop("detail", "full")
-            result = await self._run_transform_pipeline(kwargs, tool)
+            result = await self._run_transform_pipeline(
+                kwargs,
+                tool,
+                extracted=virtual_values,
+            )
             result = apply_to(result, virtual_values)
             return format_result(result, fmt, detail=detail)
 
@@ -306,10 +311,46 @@ class _ToolWrappingTransform(Transform):
             meta=tool.meta,
         )
 
+    async def _apply_loop_hooks(
+        self,
+        result: ToolResult,
+        kwargs: dict[str, Any],
+        extracted: dict[str, Any] | None,
+        tool: Tool,
+        route_path: str,
+        route_method: str,
+    ) -> ToolResult:
+        """Run registered loop hooks on a ToolResult.
+
+        Called after HTTP execution and pagination metadata have been
+        applied, **before** returning the result.  Loop hooks receive an
+        ``execute_fn`` callable so they can re-invoke the HTTP execution
+        path with updated arguments (e.g. incremented ``page``).
+
+        Returns the (potentially modified) ``ToolResult``.
+        """
+        if not extracted:
+            return result
+
+        async def _execute_fn(inner_kwargs: dict[str, Any]) -> ToolResult:
+            return await _run_with_error_handling(
+                inner_kwargs,
+                tool,
+                self._openapi_spec,
+                route_path,
+                route_method,
+            )
+
+        for _name, (_value, hook) in get_loop_hooks(extracted).items():
+            result = await hook(result, _value, kwargs, _execute_fn)
+
+        return result
+
     async def _run_transform_pipeline(
         self,
         kwargs: dict[str, Any],
         tool: Tool,
+        extracted: dict[str, Any] | None = None,
     ) -> ToolResult:
         """Run the full tool execution pipeline: validate, execute, wrap result.
 
@@ -319,6 +360,10 @@ class _ToolWrappingTransform(Transform):
         Args:
             kwargs: The tool arguments from the agent.
             tool: The Tool being wrapped (provides parameter schema and meta).
+            extracted: Extracted virtual parameter values (from
+                :func:`~tools.virtual_params.extract_from`), passed through
+                so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
+                ``None`` or empty means no loop hooks to run.
         """
         meta = tool.meta or {}
         customization = meta.get("_customization", {})
@@ -342,6 +387,7 @@ class _ToolWrappingTransform(Transform):
                     is_text_response,
                     is_empty_response,
                     output_schema,
+                    extracted=extracted,
                 )
         except RuntimeError:
             return await self._pipeline_with_context(
@@ -353,6 +399,7 @@ class _ToolWrappingTransform(Transform):
                 is_text_response,
                 is_empty_response,
                 output_schema,
+                extracted=extracted,
             )
 
     async def _pipeline_with_context(  # noqa: PLR0913
@@ -365,12 +412,19 @@ class _ToolWrappingTransform(Transform):
         is_text_response: bool,
         is_empty_response: bool,
         output_schema: dict[str, Any] | None,
+        extracted: dict[str, Any] | None = None,
     ) -> ToolResult:
         """Run the tool execution pipeline with an optional Context.
 
         Separated from _run_transform_pipeline so the CurrentContext() async
         context manager is entered before any pipeline work (which may itself
         be async).  ``ctx`` is ``None`` when no request context is active.
+
+        Args:
+            extracted: Extracted virtual param values from
+                :func:`~tools.virtual_params.extract_from`.  Passed through
+                so that loop hooks (``VirtualParam.loop_hook``) can be
+                invoked after the HTTP call and pagination metadata.
         """
         tracer = get_tracer()
 
@@ -427,9 +481,12 @@ class _ToolWrappingTransform(Transform):
                 (c.text for c in result.content if isinstance(c, TextContent)),
                 "",
             )
-            return ToolResult(
+            result = ToolResult(
                 content=[TextContent(type="text", text=text)],
                 structured_content={"result": text},
+            )
+            return await self._apply_loop_hooks(
+                result, kwargs, extracted, tool, route_path, route_method,
             )
 
         # Empty-body success responses (204 No Content, 205 Reset Content):
@@ -439,9 +496,12 @@ class _ToolWrappingTransform(Transform):
             and isinstance(result, ToolResult)
             and result.structured_content is None
         ):
-            return ToolResult(
+            result = ToolResult(
                 content=[TextContent(type="text", text="")],
                 structured_content={"result": None},
+            )
+            return await self._apply_loop_hooks(
+                result, kwargs, extracted, tool, route_path, route_method,
             )
 
         if (
@@ -464,15 +524,20 @@ class _ToolWrappingTransform(Transform):
                 if ctx is not None and len(result_data) > 0:
                     await ctx.report_progress(progress=1.0, total=1.0)
 
-                return ToolResult(
+                result = ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
                     structured_content=enhanced,
+                )
+                return await self._apply_loop_hooks(
+                    result, kwargs, extracted, tool, route_path, route_method,
                 )
 
         if ctx is not None:
             await ctx.report_progress(progress=1.0)
 
-        return result
+        return await self._apply_loop_hooks(
+            result, kwargs, extracted, tool, route_path, route_method,
+        )
 
 
 # ---------------------------------------------------------------------------

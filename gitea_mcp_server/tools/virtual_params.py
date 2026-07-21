@@ -35,9 +35,16 @@ from typing import TYPE_CHECKING, Any
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from fastmcp.tools.base import ToolResult
+
+    _ExecuteFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
+    """Type alias for the re-execution callable passed to loop_hooks.
+
+    An async function that accepts tool kwargs (with updated ``page``)
+    and returns a ``ToolResult`` from a fresh HTTP call.
+    """
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -67,6 +74,21 @@ class VirtualParam:
             read.
         post_hook: Optional ``(ToolResult, value) → ToolResult`` callback
             invoked after the API call with the extracted value.
+        loop_hook: Optional ``(result, value, kwargs, execute_fn) → ToolResult``
+            callback invoked inside the execution pipeline **after** the
+            HTTP call and pagination metadata have been produced, but
+            **before** ``post_hook`` runs.
+
+            ``result`` is the current ``ToolResult`` (with ``has_more``
+            already set in ``structured_content``).  ``value`` is the
+            extracted param value.  ``kwargs`` is the mutable tool
+            arguments dict (unchanged since extraction).  ``execute_fn``
+            is an async ``(dict) → ToolResult`` callable that re-invokes
+            the HTTP execution path with updated kwargs — useful for
+            auto-pagination loops.
+
+            A loop_hook returns a new ``ToolResult``, typically with
+            merged data and ``has_more=False``.
     """
 
     schema: dict[str, Any]
@@ -76,6 +98,10 @@ class VirtualParam:
     required_scope: str | None = None
     pre_hook: Callable[[Any], None] | None = None
     post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
+    loop_hook: (
+        Callable[[ToolResult, Any, dict[str, Any], "_ExecuteFn"], Awaitable[ToolResult]]
+        | None
+    ) = None
 
 
 # Single source of truth for every virtual parameter.
@@ -234,12 +260,38 @@ def apply_to(
     return result
 
 
+def get_loop_hooks(
+    extracted: dict[str, Any],
+) -> dict[str, tuple[Any, Any]]:
+    """Resolve loop hooks from extracted virtual param values.
+
+    Returns a ``{param_name: (value, loop_hook_callable)}`` dict for every
+    extracted virtual parameter that has a ``loop_hook`` registered.
+    Used by the execution pipeline (:func:`_pipeline_with_context`) to
+    invoke re-execution hooks after the initial HTTP call.
+
+    Args:
+        extracted: The dict returned by :func:`extract_from`.
+
+    Returns:
+        Dict mapping param names to ``(extracted_value, callable)`` for
+        params with a registered ``loop_hook``.  Empty dict if none.
+    """
+    hooks: dict[str, tuple[Any, Any]] = {}
+    for name, value in extracted.items():
+        vp = _VIRTUAL_PARAMS.get(name)
+        if vp is not None and vp.loop_hook is not None:
+            hooks[name] = (value, vp.loop_hook)
+    return hooks
+
+
 __all__ = [
     "VirtualParam",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",
     "extract_from",
+    "get_loop_hooks",
     "inject_into",
     "sudo_context",
 ]

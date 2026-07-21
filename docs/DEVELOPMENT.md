@@ -183,6 +183,11 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
     pre_hook=_prepare_verbose,
     # Optional: post-hook transforms the result after the API call.
     post_hook=_apply_verbose,  # (result, value) -> result
+    # Optional: loop-hook runs inside the execution pipeline, after the
+    # HTTP call and pagination metadata but before post_hook.  Receives
+    # an ``execute_fn`` callable to re-invoke the HTTP path with updated
+    # arguments (e.g. incremented ``page`` for auto-pagination).
+    # loop_hook=_fetch_all_loop,  # (result, value, kwargs, execute_fn) -> result
 )
 ```
 
@@ -192,7 +197,18 @@ The lifecycle functions are called automatically in ``_wrap()``:
 2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
 3. ``apply_pre_hooks(extracted)`` — runs pre-hooks (e.g. set ContextVar via
    ``_sudo_pre_hook``)
-4. ``apply_to(result, extracted)`` — runs post-hooks after the API call
+4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values)`` —
+   executes the HTTP call and pagination metadata, then invokes every
+   registered ``loop_hook`` with an ``execute_fn`` that re-invokes
+   ``_run_with_error_handling`` for subsequent pages
+5. ``apply_to(result, extracted)`` — runs post-hooks after the API call
+
+A ``loop_hook`` is how you implement params that need to **re-execute** the
+HTTP call — for example auto-pagination (``fetch_all``).  Unlike pre/post hooks
+which are pure value transformers, a loop hook receives a callable
+``execute_fn(updated_kwargs) → ToolResult`` so it can fetch additional pages
+and merge results.  The hook should update the ``ToolResult``'s
+``structured_content`` (typically setting ``has_more=False``) and return it.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single

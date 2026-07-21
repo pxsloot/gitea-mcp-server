@@ -269,7 +269,6 @@ async def _call_tool_impl(
     arguments: Any,
     ctx: Context,
     tool_prefix: str = "",
-    filtered_tools_info: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Core call_tool implementation.
 
@@ -278,9 +277,9 @@ async def _call_tool_impl(
     Every tool on this server handles its own ``format`` parameter
     natively, so the proxy does not re-format.
 
-    If the tool is not found but appears in the filter-prediction data
-    (scope-restricted, config-excluded, or deprecated), a helpful
-    error message is returned instead of a generic "not found".
+    Filtered-tool error messages (scope, exclusion, deprecation) are
+    handled by :class:`FilteredToolMiddleware` at the MCP protocol level,
+    so the proxy does not duplicate that check.
     """
     if name == "call_tool":
         msg = "'call_tool' cannot call itself - call it directly instead"
@@ -298,19 +297,10 @@ async def _call_tool_impl(
     tool = await _find_tool_by_name(name, ctx, tool_prefix)
 
     if tool is None:
-        # Tool not found in the registry — check whether it's a filtered
-        # tool (scope-restricted, config-excluded, or deprecated) and give
-        # a helpful message.
-        filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
-        if filter_info is not None:
-            msg = build_filtered_tools_message(
-                name, filter_info, filtered_tools_info
-            )
-        else:
-            msg = (
-                f"Tool '{name}' not found. "
-                "Use `search_tools()` to discover available tools."
-            )
+        msg = (
+            f"Tool '{name}' not found. "
+            "Use `search_tools()` to discover available tools."
+        )
         _raise_value_error(msg)
 
     return await ctx.fastmcp.call_tool(tool.name, arguments)
@@ -748,7 +738,7 @@ def register_synthetic_tools(
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
+        return await _call_tool_impl(name, arguments, ctx, tool_prefix)
 
     mcp.tool(
         name="call_tool",
@@ -766,7 +756,7 @@ def register_synthetic_tools(
         },
     )(call_tool_fn)
 
-    async def tool_info_fn(
+    async def tool_info_fn(  # noqa: PLR0913 - 6 params: name, format, detail, page, limit, ctx
         name: Annotated[str, "The exact name of the tool to inspect"],
         format: Annotated[
             str,

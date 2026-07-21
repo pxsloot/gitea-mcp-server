@@ -34,6 +34,7 @@ from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
+from gitea_mcp_server.tools.filter_info import FilteredToolMiddleware
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -153,18 +154,30 @@ def _build_server_instructions(
     return instructions
 
 
-def _setup_caching_middleware(
+def _setup_middleware(
     mcp: FastMCP,
     label_service: LabelService | None = None,
+    filtered_tools_info: dict[str, Any] | None = None,
+    tool_prefix: str = "",
 ) -> None:
-    """Add response caching and cache invalidation middleware.
+    """Add middleware: filtered-tool interceptor, response caching, cache invalidation.
 
-    Invalidation middleware must be added after caching middleware.
+    Filtered-tool middleware runs first so filtered tools are rejected before
+    any caching logic runs.  Invalidation middleware must be added after
+    caching middleware.
 
     Args:
         mcp: The FastMCP server instance.
         label_service: Optional LabelService for label cache invalidation.
+        filtered_tools_info: Filter-prediction data for filtered-tool messages.
+        tool_prefix: Namespace prefix (e.g. ``"gitea_"``).
     """
+    logger.info("Adding filtered-tool middleware...")
+    mcp.add_middleware(FilteredToolMiddleware(
+        filtered_tools_info=filtered_tools_info,
+        tool_prefix=tool_prefix,
+    ))
+
     logger.info("Adding response caching middleware...")
     caching_middleware = ResponseCachingMiddleware(
         cache_storage=None,
@@ -377,7 +390,12 @@ async def create_mcp_server(
     )
 
     register_doc_tools(mcp, doc_manager)
-    _setup_caching_middleware(mcp, label_service=label_service)
+    _setup_middleware(
+        mcp,
+        label_service=label_service,
+        filtered_tools_info=filtered_tools_info,
+        tool_prefix=config.tool_prefix,
+    )
     _setup_tool_discovery(
         mcp, config, doc_manager, extensions,
         openapi_spec=openapi_spec,

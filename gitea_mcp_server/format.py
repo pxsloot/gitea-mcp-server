@@ -20,10 +20,7 @@ from __future__ import annotations
 
 import json as json_module
 import logging
-from collections.abc import (  # noqa: TC003 - used at runtime, not just type checking
-    Callable,
-    Sequence,
-)
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 

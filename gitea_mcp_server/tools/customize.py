@@ -230,14 +230,14 @@ def synthetic_annotations(
         - ``openWorldHint`` = *open_world*
 
     .. caution::
-       ``read_only=False`` is for tools that delegate to arbitrary API
-       operations.  Even though the tool itself does nothing destructive,
-       its *results* can be - agents should not assume safety.
+       ``read_only=False`` is for proxy tools like ``call_tool`` that delegate
+       to arbitrary API tools.  Even though ``call_tool`` itself does nothing
+       destructive, its *results* can be - agents should not assume safety.
 
     Args:
         read_only: Tool only reads/transforms in-memory data without side
-                   effects.  Set to ``False`` for tools that delegate to
-                   arbitrary API operations.
+                   effects.  Set to ``False`` for proxy tools that delegate
+                   to arbitrary operations.
         open_world: Tool makes external API calls.  Local synthetic tools
                     (``search``, ``search_tools``, ``tool_info``, etc.)
                     operate entirely in-memory - pass ``False``.

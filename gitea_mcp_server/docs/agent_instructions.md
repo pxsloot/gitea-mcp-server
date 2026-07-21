@@ -40,7 +40,7 @@ Domains: `issue`, `repo`/`repository`, `pull_request`, `user`, `org`,
 `protected_branch`, `key`, `webhook`, `admin`, `topic`, `gpg_key`.
 
 Synthetic (discovery) tools are prefixed the same way: `{{TOOL_PREFIX}}search`,
-`{{TOOL_PREFIX}}search_tools`, `{{TOOL_PREFIX}}tool_info`, `{{TOOL_PREFIX}}list_resources`,
+`{{TOOL_PREFIX}}search_tools`, `{{TOOL_PREFIX}}tool_info`, `{{TOOL_PREFIX}}call_tool`, `{{TOOL_PREFIX}}list_resources`,
 `{{TOOL_PREFIX}}read_resource`, `{{TOOL_PREFIX}}search_resources`, `{{TOOL_PREFIX}}read_doc`, `{{TOOL_PREFIX}}search_docs`,
 `{{TOOL_PREFIX}}resolve_type`.
 They carry the `synthetic` tag in search results.
@@ -60,16 +60,18 @@ Tools are lazy-loaded: `list_tools()` does not return them. Discover instead:
 
 All search tools accept `min_score` (0.0-1.0, default 0.1) to tune relevance.
 
-Call any tool directly by its name with the required arguments:
+Call any tool via `call_tool(name, args)`. Both the prefixed name
+(`{{TOOL_PREFIX}}call_tool`) and the bare name (`call_tool`) reach the same proxy, and
+it resolves unprefixed tool names too (e.g. `search_tools`). The one exception
+is `call_tool` calling itself, which is blocked. Do not take my word for the
+mechanics -- run `tool_info("{{TOOL_PREFIX}}call_tool")` and try both forms; the schema
+and behavior are right there for you to read.
 
 ```
-{{TOOL_PREFIX}}user_get_current()
-{{TOOL_PREFIX}}issue_get_issue({"owner": "org", "repo": "repo", "index": 1})
-{{TOOL_PREFIX}}issue_create_issue({"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
+call_tool("{{TOOL_PREFIX}}user_get_current")
+call_tool("{{TOOL_PREFIX}}issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
+call_tool("{{TOOL_PREFIX}}issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
 ```
-
-If a tool is not available (scope-restricted, config-excluded, or deprecated),
-the server returns a helpful error message explaining why — no proxy needed.
 
 ## Parameters: never guess, always confirm
 
@@ -157,7 +159,7 @@ than trial and error.
 
 ## Output format
 
-Every tool accepts a `format` parameter, and so do
+Every tool except `call_tool` accepts a `format` parameter, and so do
 `read_resource` and `read_doc` (note: `read_doc` supports ``markdown``,
 ``json``, and ``raw``):
 
@@ -183,7 +185,7 @@ uses references to stay compact. Don't expect a flat structure; read the nested
 fields from the actual response.
 
 When you see a ``$ref:TypeName`` marker and need to know what fields that type
-contains, use ``{{TOOL_PREFIX}}resolve_type({"name": "TypeName"})`` or
+contains, use ``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or
 read ``gitea://types/{TypeName}`` for a cached JSON read. The ``resolve_type``
 tool also shows which tools return or accept each type. Run
 ``tool_info("{{TOOL_PREFIX}}resolve_type")`` for the full parameter and output schema.
@@ -206,7 +208,7 @@ guides (`read_doc`).
 ## Authentication and scope
 
 Auth is set via environment variables at startup; you cannot change it. Verify
-identity with `{{TOOL_PREFIX}}user_get_current()`.
+identity with `call_tool("{{TOOL_PREFIX}}user_get_current")`.
 
 You are authenticated as **{{USER_LOGIN}}** on a **{{SERVER_TYPE}}** server
 with scopes: **{{TOKEN_SCOPES}}**.
@@ -253,7 +255,7 @@ trip of confusion:
 - **`search` returns typed, cross-cutting results.** Unlike `search_tools`,
   `search("create issue")` returns a mixed list tagged `tool` / `doc` /
   `resource`, each with an `Access Uri`. Route each hit to the right access
-  path: call the tool directly for tools, `read_doc` for guides, `read_resource` for data.
+  path: `call_tool` for tools, `read_doc` for guides, `read_resource` for data.
 
 - **Pagination is explicit.** List/search tools take `page` (1-based) and
   `limit`. There is no auto-iteration; to read all pages, loop `page` upward

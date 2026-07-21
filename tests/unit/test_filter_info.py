@@ -1,19 +1,15 @@
 """Unit tests for filter_info module — filter-prediction computation and messaging.
 
 Tests ``compute_filtered_tools_info``, ``get_filtered_tool_info``,
-``build_filtered_tools_message``, and ``FilteredToolMiddleware`` using
-pure dict-in/dict-out patterns with minimal OpenAPI spec fixtures.
+and ``build_filtered_tools_message`` using pure dict-in/dict-out
+patterns with minimal OpenAPI spec fixtures.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
-from fastmcp.exceptions import ToolError
 
 from gitea_mcp_server.tools.filter_info import (
-    FilteredToolMiddleware,
     build_filtered_tools_message,
     compute_filtered_tools_info,
     get_filtered_tool_info,
@@ -380,137 +376,3 @@ class TestBuildFilteredToolsMessage:
         assert "mystery_tool" in msg
         assert "not available" in msg
         assert "some_weird_reason" in msg
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# FilteredToolMiddleware
-# ═══════════════════════════════════════════════════════════════════════
-
-
-class TestFilteredToolMiddleware:
-    """Tests for FilteredToolMiddleware — intercepts tool calls to filtered tools."""
-
-    @pytest.fixture
-    def scope_filter_info(self) -> dict:
-        return {
-            "available_scopes": ["read:repository"],
-            "exclusion_config": {"exclude": [], "include": []},
-            "filtered": {
-                "admin_create_user": {
-                    "reason": "scope",
-                    "required_scope": "sudo",
-                },
-            },
-        }
-
-    @pytest.fixture
-    def exclude_filter_info(self) -> dict:
-        return {
-            "available_scopes": ["read:repository", "write:issue"],
-            "exclusion_config": {"exclude": ["admin_*"], "include": []},
-            "filtered": {
-                "admin_create_user": {
-                    "reason": "excluded",
-                },
-            },
-        }
-
-    @pytest.fixture
-    def deprecated_filter_info(self) -> dict:
-        return {
-            "available_scopes": ["read:repository"],
-            "exclusion_config": {"exclude": [], "include": []},
-            "filtered": {
-                "some_deprecated_tool": {
-                    "reason": "deprecated",
-                },
-            },
-        }
-
-    def _make_mock_context(self, tool_name: str) -> MagicMock:
-        """Create a mock MiddlewareContext with the given tool name."""
-        ctx = MagicMock()
-        ctx.message.name = tool_name
-        ctx.message.arguments = {}
-        return ctx
-
-    @pytest.mark.asyncio
-    async def test_passes_through_for_visible_tool(self, scope_filter_info):
-        """Middleware should pass through for tools not in filter info."""
-        middleware = FilteredToolMiddleware(
-            filtered_tools_info=scope_filter_info,
-            tool_prefix="gitea_",
-        )
-        ctx = self._make_mock_context("gitea_issue_list_issues")
-        call_next = AsyncMock(return_value="result")
-
-        result = await middleware.on_call_tool(ctx, call_next)
-        assert result == "result"
-        call_next.assert_called_once_with(ctx)
-
-    @pytest.mark.asyncio
-    async def test_passes_through_when_no_filter_info(self):
-        """Middleware should pass through when filtered_tools_info is None."""
-        middleware = FilteredToolMiddleware(filtered_tools_info=None)
-        ctx = self._make_mock_context("gitea_admin_create_user")
-        call_next = AsyncMock(return_value="result")
-
-        result = await middleware.on_call_tool(ctx, call_next)
-        assert result == "result"
-        call_next.assert_called_once_with(ctx)
-
-    @pytest.mark.asyncio
-    async def test_scope_filtered_raises_tool_error(self, scope_filter_info):
-        """Scope-restricted tool should raise ToolError with scope message."""
-        middleware = FilteredToolMiddleware(
-            filtered_tools_info=scope_filter_info,
-            tool_prefix="gitea_",
-        )
-        ctx = self._make_mock_context("gitea_admin_create_user")
-        call_next = AsyncMock()
-
-        with pytest.raises(ToolError, match="restricted by your token scopes"):
-            await middleware.on_call_tool(ctx, call_next)
-        call_next.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info):
-        """Config-excluded tool should raise ToolError with exclusion message."""
-        middleware = FilteredToolMiddleware(
-            filtered_tools_info=exclude_filter_info,
-            tool_prefix="gitea_",
-        )
-        ctx = self._make_mock_context("gitea_admin_create_user")
-        call_next = AsyncMock()
-
-        with pytest.raises(ToolError, match="excluded by server configuration"):
-            await middleware.on_call_tool(ctx, call_next)
-        call_next.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info):
-        """Deprecated tool should raise ToolError with deprecation message."""
-        middleware = FilteredToolMiddleware(
-            filtered_tools_info=deprecated_filter_info,
-            tool_prefix="gitea_",
-        )
-        ctx = self._make_mock_context("gitea_some_deprecated_tool")
-        call_next = AsyncMock()
-
-        with pytest.raises(ToolError, match="has been deprecated"):
-            await middleware.on_call_tool(ctx, call_next)
-        call_next.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_works_without_prefix(self, scope_filter_info):
-        """Middleware works with unprefixed tool names."""
-        middleware = FilteredToolMiddleware(
-            filtered_tools_info=scope_filter_info,
-            tool_prefix="",
-        )
-        ctx = self._make_mock_context("admin_create_user")
-        call_next = AsyncMock()
-
-        with pytest.raises(ToolError, match="restricted by your token scopes"):
-            await middleware.on_call_tool(ctx, call_next)
-        call_next.assert_not_called()

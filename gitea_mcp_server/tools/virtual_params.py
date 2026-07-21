@@ -32,23 +32,23 @@ no other file changes needed.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+from fastmcp.tools.base import ToolResult
+
+from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+_ExecuteFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
+"""Type alias for the re-execution callable passed to loop_hooks.
 
-    from fastmcp.tools.base import ToolResult
-
-    _ExecuteFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
-    """Type alias for the re-execution callable passed to loop_hooks.
-
-    An async function that accepts tool kwargs (with updated ``page``)
-    and returns a ``ToolResult`` from a fresh HTTP call.
-    """
+An async function that accepts tool kwargs (with updated ``page``)
+and returns a ``ToolResult`` from a fresh HTTP call.
+"""
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -162,6 +162,131 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
     pre_hook=_sudo_pre_hook,
     post_hook=_sudo_post_hook,
 )
+
+# ---------------------------------------------------------------------------
+# fetch_all — auto-pagination for list/search tools
+# ---------------------------------------------------------------------------
+
+
+async def _fetch_all_loop(
+    result: ToolResult,
+    value: Any,
+    kwargs: dict[str, Any],
+    execute_fn: _ExecuteFn,
+) -> ToolResult:
+    """Loop hook for ``fetch_all``: automatically fetch all pages.
+
+    Called by ``_pipeline_with_context`` after the initial page has been
+    fetched and pagination metadata added.  When ``fetch_all=true``, reads
+    ``has_more`` / ``next_offset`` / ``total_count`` from the result's
+    ``structured_content`` and re-invokes ``execute_fn`` for subsequent
+    pages, merging array results into a single list.
+
+    Termination (first wins):
+
+    1. ``has_more`` is ``false`` on the most recent page.
+    2. The most recent page returned fewer items than the page size (heuristic
+       when ``total_count`` is unknown).
+    3. ``FETCH_ALL_MAX_PAGES`` pages have been fetched (safety cap).
+
+    Args:
+        result: ``ToolResult`` from the first page (already has pagination
+            metadata in ``structured_content``).
+        value: The extracted ``fetch_all`` value — ``True`` to auto-paginate,
+            ``False`` to passthrough.
+        kwargs: Tool arguments (mutable; ``page`` is updated in-place when
+            re-invoking ``execute_fn``).
+        execute_fn: Async ``(dict) → ToolResult`` that re-invokes the HTTP
+            execution path with updated kwargs.
+
+    Returns:
+        A ``ToolResult`` with merged ``result`` array, ``has_more=False``,
+        ``next_offset=None``, and the most recent ``total_count``.
+    """
+    # Passthrough when fetch_all is not enabled.
+    if not value:
+        return result
+
+    structured = result.structured_content
+    if not structured:
+        return result
+
+    all_data = structured.get("result")
+    if not isinstance(all_data, list):
+        return result
+
+    # Clone the accumulator so the original ToolResult is unmodified.
+    merged_data = list(all_data)
+    total_count = structured.get("total_count")
+    page_size = kwargs.get("per_page") or kwargs.get("limit", 50)
+
+    # next_offset tells us the next page to fetch (set by add_pagination_metadata).
+    page = structured.get("next_offset")
+    if page is None:
+        # Single page only — nothing to fetch.
+        return result
+
+    fetched = 1  # first page already counted
+    while fetched < FETCH_ALL_MAX_PAGES:
+        has_more = structured.get("has_more", False)
+        if not has_more:
+            break
+
+        kwargs["page"] = page
+        next_result = await execute_fn(kwargs)
+        next_sc = next_result.structured_content or {}
+        next_data = next_sc.get("result")
+
+        if isinstance(next_data, list):
+            merged_data.extend(next_data)
+
+        # Carry forward the server's total count (last-known wins).
+        sc_total = next_sc.get("total_count")
+        if sc_total is not None:
+            total_count = sc_total
+
+        # Use the response's has_more; fall back to the heuristic when
+        # total_count is unknown (page shorter than limit means last page).
+        next_has_more = next_sc.get("has_more")
+        if next_has_more is None and isinstance(next_data, list):
+            next_has_more = len(next_data) >= page_size
+            next_sc["has_more"] = next_has_more
+
+        page = next_sc.get("next_offset")
+        if page is None:
+            break
+
+        structured = next_sc
+        fetched += 1
+
+    # Build the final structured content with all data merged.
+    final_structured = dict(structured)
+    final_structured["result"] = merged_data
+    final_structured["has_more"] = False
+    final_structured["next_offset"] = None
+    final_structured["total_count"] = total_count
+
+    # content carries the first page's text; format_result (called
+    # after the loop hook) regenerates it from final_structured["result"].
+    return ToolResult(
+        content=result.content,
+        structured_content=final_structured,
+        meta=result.meta,
+    )
+
+
+# Register the fetch_all virtual param so it appears in every tool's schema.
+_VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
+    schema={"type": "boolean"},
+    default=False,
+    description=(
+        "When true, automatically fetch all pages of paginated results. "
+        "Merges results into a single response. "
+        f"Capped at {FETCH_ALL_MAX_PAGES} pages to prevent abuse."
+    ),
+    loop_hook=_fetch_all_loop,
+)
+
 
 # ---------------------------------------------------------------------------
 # Scope-based visibility control
@@ -299,6 +424,7 @@ def get_loop_hooks(
 
 __all__ = [
     "VirtualParam",
+    "_fetch_all_loop",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",

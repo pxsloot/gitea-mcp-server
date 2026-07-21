@@ -105,6 +105,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `index`/`id`| integer | the resource id (int64) -- `index` for issues/PRs, `id` elsewhere |
 | `page`      | integer | 1-based page number for list/search tools (minimum 1) |
 | `limit`     | integer | page size for list/search tools |
+| `fetch_all`   | boolean | When true, auto-fetch all pages (merged result, capped at 10). Default `false` — single page only. See Pagination edge case below. |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
 | `detail`    | string  | `"full"` (default) \| `"concise"` -- markdown rendering depth; `"concise"` collapses nested objects to `$ref:TypeName` at depth >= 1 |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
@@ -276,10 +277,11 @@ trip of confusion:
   `resource`, each with an `Access Uri`. Route each hit to the right access
   path: `call_tool` for tools, `read_doc` for guides, `read_resource` for data.
 
-- **Pagination is explicit.** List/search tools take `page` (1-based) and
-  `limit`. There is no auto-iteration; to read all pages, loop `page` upward
-  until you get `[]`. A short page is not necessarily the last one unless the
-  next page is empty.
+- **Pagination: explicit or automatic.** List/search tools take `page`
+  (1-based) and `limit`. Set `fetch_all=true` to auto-fetch all pages and
+  merge results into one response (capped at 10 pages). Without `fetch_all`,
+  loop `page` upward until you get `[]`. A short page is not necessarily the
+  last one unless the next page is empty.
 
 ## Troubleshooting
 

@@ -355,13 +355,42 @@ class _ToolWrappingTransform(Transform):
                 )
             except ValidationError as e:
                 raise ValueError(str(e)) from e
-            return await _run_with_error_handling(
+
+            result = await _run_with_error_handling(
                 inner_kwargs,
                 tool,
                 self._openapi_spec,
                 route_path,
                 route_method,
             )
+
+            # Add pagination metadata so loop hooks (e.g. _fetch_all_loop)
+            # can read has_more / next_offset / total_count on subsequent
+            # pages — same wrapping that _pipeline_with_context applies
+            # to the initial page.
+            if (
+                _is_array_response(tool.output_schema)
+                and isinstance(result, ToolResult)
+                and result.structured_content is not None
+            ):
+                data = result.structured_content.get("result")
+                if isinstance(data, list):
+                    page = inner_kwargs.get("page", 1)
+                    limit = inner_kwargs.get("per_page") or inner_kwargs.get("limit", 100)
+                    total_count = pagination_ctx.get().get("total_count")
+                    enhanced = add_pagination_metadata(
+                        result.structured_content,
+                        page,
+                        limit,
+                        total_count=total_count,
+                    )
+                    result = ToolResult(
+                        content=result.content,
+                        structured_content=enhanced,
+                        meta=result.meta,
+                    )
+
+            return result
 
         for _name, (_value, hook) in get_loop_hooks(extracted).items():
             result = await hook(result, _value, kwargs, _execute_fn)

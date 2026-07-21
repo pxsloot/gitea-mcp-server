@@ -131,6 +131,19 @@ LABEL_CACHE_TTL = 300
 
 
 # ============================================================================
+# Pagination (fetch_all)
+# ============================================================================
+
+FETCH_ALL_MAX_PAGES = 10
+"""Maximum number of pages ``fetch_all`` will retrieve (safety cap).
+
+Prevents runaway pagination on endpoints that return many pages or have
+misleading ``has_more`` indicators.  The first page counts against this
+cap, so at most this many HTTP calls are made per tool invocation.
+"""
+
+
+# ============================================================================
 # Search Configuration
 # ============================================================================
 

@@ -187,7 +187,7 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
     # HTTP call and pagination metadata but before post_hook.  Receives
     # an ``execute_fn`` callable to re-invoke the HTTP path with updated
     # arguments (e.g. incremented ``page`` for auto-pagination).
-    # loop_hook=_fetch_all_loop,  # (result, value, kwargs, execute_fn) -> result
+    loop_hook=None,  # e.g. _fetch_all_loop  (result, value, kwargs, execute_fn) -> result
 )
 ```
 
@@ -209,6 +209,15 @@ which are pure value transformers, a loop hook receives a callable
 ``execute_fn(updated_kwargs) → ToolResult`` so it can fetch additional pages
 and merge results.  The hook should update the ``ToolResult``'s
 ``structured_content`` (typically setting ``has_more=False``) and return it.
+
+.. note::
+
+    ``fetch_all`` is registered as a production virtual parameter in
+    ``virtual_params.py``.  When ``fetch_all=true``, the ``_fetch_all_loop``
+    hook fetches all pages and merges them into a single result, capped at
+    ``FETCH_ALL_MAX_PAGES`` pages.  See ``gitea_mcp_server/constants.py`` for
+    the cap value and ``gitea_mcp_server/tools/virtual_params.py`` for the
+    implementation.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single

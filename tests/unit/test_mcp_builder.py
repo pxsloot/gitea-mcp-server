@@ -1379,3 +1379,183 @@ class TestToolWrappingTransform:
             pagination_ctx.set({})
 
         assert loop_hook_called
+
+
+# ---------------------------------------------------------------------------
+# fetch_all integration
+# ---------------------------------------------------------------------------
+
+
+class TestFetchAllIntegration:
+    """Integration tests: fetch_all through the full pipeline."""
+
+    @pytest.fixture
+    def make_transform_and_tool(self) -> tuple[_ToolWrappingTransform, Tool]:
+        """Create a transform and a minimal tool suitable for pagination tests."""
+        transform = _ToolWrappingTransform(openapi_spec={})
+        tool = Tool(
+            name="test_list_tool",
+            description="A paginated list tool.",
+            parameters={
+                "properties": {
+                    "owner": {"type": "string"},
+                    "page": {"type": "integer", "default": 1},
+                    "limit": {"type": "integer", "default": 10},
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                    },
+                    "has_more": {"type": "boolean"},
+                    "next_offset": {"type": "integer"},
+                    "total_count": {"type": "integer"},
+                },
+            },
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "is_empty_response": False,
+                    "route_path": "/repos/{owner}/{repo}/items",
+                    "route_method": "GET",
+                },
+            },
+        )
+        return transform, tool
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_merges_all_pages(self, make_transform_and_tool):
+        """Full pipeline with fetch_all=True merges paginated results."""
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform, tool = make_transform_and_tool
+
+        # Simulate 3 pages of 10 items each.
+        # Return raw results (no pagination metadata) — matching what
+        # OpenAPITool.run() returns.  Pagination metadata is added by
+        # _pipeline_with_context (initial page) or _execute_fn (subsequent).
+        page_calls: list[int] = []
+
+        async def _mock_pages(kwargs, _tool, _spec, _path, _method):
+            page = kwargs.get("page", 1)
+            page_calls.append(page)
+            start = (page - 1) * 10 + 1
+            items = [{"id": i} for i in range(start, min(start + 10, 31))]
+            return ToolResult(
+                structured_content={
+                    "result": items,
+                },
+            )
+
+        extracted = {"fetch_all": True}
+
+        with (
+            patch.dict(
+                "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+                {
+                    "fetch_all": VirtualParam(
+                        schema={"type": "boolean"},
+                        default=False,
+                        description="",
+                        loop_hook=_mock_fetch_all_hook,
+                    ),
+                },
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=True,
+            ),
+        ):
+            mock_run.side_effect = _mock_pages
+
+            from gitea_mcp_server.pagination import pagination_ctx
+
+            pagination_ctx.set({"total_count": 30})
+
+            result = await transform._run_transform_pipeline(
+                {"page": 1, "limit": 10, "owner": "test"},
+                tool,
+                extracted=extracted,
+            )
+
+            pagination_ctx.set({})
+
+        # 3 pages fetched total
+        assert page_calls == [1, 2, 3]
+        # All 30 items merged
+        assert len(result.structured_content["result"]) == 30
+        assert result.structured_content["has_more"] is False
+        assert result.structured_content["next_offset"] is None
+        assert result.structured_content["total_count"] == 30
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_false_single_page(self, make_transform_and_tool):
+        """fetch_all=False fetches only the first page (no loop)."""
+        from fastmcp.tools.base import ToolResult
+
+        transform, tool = make_transform_and_tool
+
+        page_calls: list[int] = []
+
+        async def _mock_single(kwargs, _tool, _spec, _path, _method):
+            page = kwargs.get("page", 1)
+            page_calls.append(page)
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 1}, {"id": 2}],
+                },
+            )
+
+        extracted = {"fetch_all": False}
+
+        with (
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+            ),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                return_value=True,
+            ),
+        ):
+            mock_run.side_effect = _mock_single
+
+            from gitea_mcp_server.pagination import pagination_ctx
+
+            pagination_ctx.set({"total_count": 20})
+
+            result = await transform._run_transform_pipeline(
+                {"page": 1, "limit": 10, "owner": "test"},
+                tool,
+                extracted=extracted,
+            )
+
+            pagination_ctx.set({})
+
+        # Only one page fetched
+        assert page_calls == [1]
+        assert len(result.structured_content["result"]) == 2
+        assert result.structured_content["has_more"] is True  # still has more
+
+
+async def _mock_fetch_all_hook(result, value, kwargs, execute_fn):
+    """Simple loop hook that fetches pages via execute_fn and merges."""
+    from gitea_mcp_server.tools.virtual_params import _fetch_all_loop
+
+    return await _fetch_all_loop(result, value, kwargs, execute_fn)

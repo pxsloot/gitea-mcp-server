@@ -5,6 +5,7 @@ This module contains Tool-specific search wrappers, the TolerantSearchTransform,
 and the shared BM25+format pipeline used by both search_tools and search_resources.
 """
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal
 
@@ -27,7 +28,10 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.errors import _raise_value_error
+from gitea_mcp_server.tools.errors import (
+    _raise_value_error,
+    _raise_value_error_from,
+)
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 from gitea_mcp_server.tools.filter_info import (
     build_filtered_tools_message,
@@ -196,7 +200,7 @@ class TolerantSearchTransform(BM25SearchTransform):
     """Search transform for lazy-loading tool discovery.
 
     Unlike the base class, this transform does NOT register synthetic tools
-    (search_tools, tool_info) - those are normal ``mcp.tool()``
+    (search_tools, call_tool, tool_info) - those are normal ``mcp.tool()``
     registrations in ``register_synthetic_tools()``. The transform only
     controls which tools appear in ``list_tools()`` output (pinned set) and
     provides BM25 search over the catalog.
@@ -231,6 +235,88 @@ class TolerantSearchTransform(BM25SearchTransform):
 
 
 # ── Synthetic tool implementations (exported for testing) ──────────────
+
+
+async def _find_tool_by_name(
+    name: str,
+    ctx: Context,
+    tool_prefix: str = "",
+) -> Tool | None:
+    """Find a tool by name, trying both bare and prefixed forms.
+
+    The GiteaNamespace transform prefixes all tool names (e.g. ``search_tools``
+    becomes ``gitea_search_tools``).  When agents pass an unprefixed name to
+    ``call_tool``, the lookup fails because the catalog only contains prefixed
+    names.  This helper tries both forms and returns the ``Tool`` directly,
+    avoiding a redundant second lookup by the caller.
+
+    Returns:
+        The ``Tool`` if found, or ``None`` if not found in the registry.
+    """
+    tool = await ctx.fastmcp.get_tool(name)
+    if tool is not None:
+        return tool
+    if tool_prefix:
+        prefixed = f"{tool_prefix}{name}"
+        tool = await ctx.fastmcp.get_tool(prefixed)
+        if tool is not None:
+            return tool
+    return None
+
+
+async def _call_tool_impl(
+    name: str,
+    arguments: Any,
+    ctx: Context,
+    tool_prefix: str = "",
+    filtered_tools_info: dict[str, Any] | None = None,
+) -> ToolResult:
+    """Core call_tool implementation.
+
+    Acts as a transparent proxy: resolves the tool name, forwards
+    arguments, and returns the inner tool's result unchanged.
+    Every tool on this server handles its own ``format`` parameter
+    natively, so the proxy does not re-format.
+
+    Filtered-tool error messages (scope, exclusion, deprecation) are
+    checked here for proxy calls, and by :class:`FilteredToolMiddleware`
+    at the MCP protocol level for direct calls.
+    """
+    if name == "call_tool" or (tool_prefix and name == f"{tool_prefix}call_tool"):
+        msg = "'call_tool' cannot call itself - call it directly instead"
+        _raise_value_error(msg)
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError as e:
+            msg = f"Invalid JSON in arguments: {e}"
+            _raise_value_error_from(msg, e)
+    if arguments is not None and not isinstance(arguments, dict):
+        msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
+        _raise_value_error(msg)
+
+    tool = await _find_tool_by_name(name, ctx, tool_prefix)
+
+    if tool is None:
+        # Tool not found in the registry — check whether it's a filtered
+        # tool (scope-restricted, config-excluded, or deprecated) and give
+        # a helpful message.  The FilteredToolMiddleware handles this for
+        # direct calls, but the proxy must check too because get_tool()
+        # returns None for filtered tools, so we never reach the inner
+        # ctx.fastmcp.call_tool() that would trigger the middleware.
+        filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
+        if filter_info is not None:
+            msg = build_filtered_tools_message(
+                name, filter_info, filtered_tools_info
+            )
+        else:
+            msg = (
+                f"Tool '{name}' not found. "
+                "Use `search_tools()` to discover available tools."
+            )
+        _raise_value_error(msg)
+
+    return await ctx.fastmcp.call_tool(tool.name, arguments)
 
 
 _VALID_CATEGORIES = ["admin", "organization", "user", "issue", "pull_request", "repository", "misc"]
@@ -562,27 +648,20 @@ def register_synthetic_tools(
     openapi_spec: OpenAPISpec | None = None,
     filtered_tools_info: dict[str, Any] | None = None,
 ) -> None:
-    """Register synthetic tools (search_tools, tool_info, search_resources) on the FastMCP server.
+    """Register synthetic tools (call_tool, search_tools, tool_info, search_resources) on the FastMCP server.
 
-    These tools are registered via ``mcp.tool()`` so they're findable through
-    ``ctx.fastmcp.call_tool()`` and carry the ``synthetic`` tag for agent
-    awareness.
-
-    Filtered-tool error messages for direct tool calls are handled by
-    :class:`FilteredToolMiddleware` at the MCP protocol level.  The
-    ``filtered_tools_info`` parameter here is only used for the hidden-tools
-    note in ``search_tools`` results and for ``tool_info`` filtered-tool
-    lookups.
+    These tools were previously created dynamically inside TolerantSearchTransform.
+    Now they're properly registered via ``mcp.tool()`` so they're findable through
+    ``ctx.fastmcp.call_tool()`` and carry the ``synthetic`` tag for agent awareness.
 
     Args:
         mcp: The FastMCP server instance
         transform: The search transform instance
         tool_prefix: Optional prefix used by GiteaNamespace (e.g. ``"gitea_"``).
-            When provided, ``tool_info`` will also accept bare (unprefixed) tool
-            names by trying the prefixed variant as a fallback.
+            When provided, ``call_tool`` and ``tool_info`` will also accept bare
+            (unprefixed) tool names by trying the prefixed variant as a fallback.
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution).
-        filtered_tools_info: Filter-prediction data for hidden-tools note
-            in search results and filtered-tool lookups in tool_info.
+        filtered_tools_info: Filter-prediction data for filtered-tool messages.
     """
 
     async def search_tools_fn(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
@@ -666,6 +745,29 @@ def register_synthetic_tools(
             },
         },
     )(search_tools_fn)
+
+    async def call_tool_fn(
+        name: Annotated[str, "The name of the tool to call"],
+        arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
+        ctx: Context = CurrentContext(),
+    ) -> ToolResult:
+        return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
+
+    mcp.tool(
+        name="call_tool",
+        description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
+        tags={"synthetic"},
+        annotations=synthetic_annotations(read_only=False, open_world=True),
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "description": "Result of the tool call, wrapped in result for consistency",
+                    "example": {"id": 1, "name": "example-repo", "description": "Example output"},
+                },
+            },
+        },
+    )(call_tool_fn)
 
     async def tool_info_fn(  # noqa: PLR0913 - 6 params: name, format, detail, page, limit, ctx
         name: Annotated[str, "The exact name of the tool to inspect"],
@@ -821,9 +923,11 @@ def register_synthetic_tools(
 __all__ = [
     "TolerantBM25Search",
     "TolerantSearchTransform",
+    "_call_tool_impl",
     "_compact_search_serializer",
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
+    "_find_tool_by_name",
     "_search_and_slice",
     "_search_resources_impl",
     "_search_tools_impl",

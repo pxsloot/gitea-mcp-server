@@ -1,11 +1,9 @@
 """Filter info computation — predicts which tools are filtered and why.
 
 Computes the ``x-mcp-filtered-tools`` extension data during spec
-preparation. Synthetic tools (search_tools, tool_info) use
+preparation. Synthetic tools (search_tools, tool_info, call_tool) use
 this data to give agents actionable error messages instead of generic
-"not found".  The :class:`FilteredToolMiddleware` intercepts direct tool
-calls at the MCP protocol level to provide the same helpful messages
-when an agent calls a filtered tool directly.
+"not found".
 
 Filtering happens at spec-prep time, not via runtime transforms.  The logic
 here mirrors the spec-level filtering applied via ``route_map_fn`` (see
@@ -303,9 +301,10 @@ class FilteredToolMiddleware(Middleware):
     config-excluded, or deprecated).  If it does, a ``ToolError`` with a
     descriptive message is raised instead of a generic "tool not found".
 
-    This replaces the filtered-tool error handling that was previously only
-    available through the ``call_tool`` proxy.  Now every call path — direct
-    MCP calls and proxy calls — gets the same helpful message.
+    This complements the ``call_tool`` proxy's filtered-tool error handling.
+    Every **direct** call path (via the MCP protocol) gets the same
+    helpful message.  Proxy calls (via ``call_tool``) have a parallel
+    check in ``_call_tool_impl`` that provides the same messages.
 
     Args:
         filtered_tools_info: The filter-prediction data dict as returned by

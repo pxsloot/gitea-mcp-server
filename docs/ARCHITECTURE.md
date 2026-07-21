@@ -105,7 +105,10 @@ removed when FastMCP catches up.
 │      required_scope is unavailable (custom)             │
 │      (see Spec-Level Filtering)                         │
 │                                                         │
-│  Middleware:                                            │
+│  Middleware (applied in order on tool calls):           │
+│    • FilteredToolMiddleware — intercept direct calls    │
+│      to filtered tools (scope/excluded/deprecated)      │
+│      with helpful error messages                        │
 │    • ResponseCaching          — TTL for resources       │
 │    • CacheInvalidationOnWrite — clear on write tools    │
 └─────────────────────────────────────────────────────────┘
@@ -154,13 +157,21 @@ Key invariants:
 ## Runtime: Tool Call & Resource Read Flows
 
 ```
-Agent calls a tool directly (e.g. gitea_issue_create_issue({...})):
+Agent calls a tool (via call_tool proxy or direct MCP call):
 
+  call_tool("gitea_create_issue", {...})
     │
-    ├─▶ FilteredToolMiddleware    — check if tool is filtered
-    │                              (scope/excluded/deprecated)
-    │                              → if filtered: raise ToolError
-    │                              → if visible: pass through
+    ├─▶ FilteredToolMiddleware    — check tool name against filter
+    │     │                         predictions (scope/excluded/
+    │     │                         deprecated).  For proxy calls
+    │     │                         the middleware checks the proxy
+    │     │                         name and passes through; the
+    │     │                         inner check happens in
+    │     │                         _call_tool_impl below.
+    │     └─▶ if filtered: raise ToolError with helpful message
+    │
+    ├─▶ TolerantSearchTransform (synthetic handler)
+    │     └─▶ ctx.fastmcp.call_tool(name, args)
     │
     ├─▶ CacheInvalidationMiddleware
     │     ├─▶ executes the tool (auto OTEL span: tools/call gitea_*)
@@ -223,7 +234,8 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/examples.py` | schema→example generation, tool schema serialization |
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
-| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`tool_info` tools |
+| `tools/filter_info.py` | Filter prediction data (`compute_filtered_tools_info`), `FilteredToolMiddleware` for direct-call interception, `get_filtered_tool_info`/`build_filtered_tools_message` used by `_call_tool_impl` and `_tool_info_impl` |
+| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
@@ -560,12 +572,18 @@ Agent: search("create issue")
 ## Data Flow: Agent Calls a Tool
 
 ```
-Agent calls a tool directly (e.g. gitea_issue_create_issue({...}))
+Agent: call_tool("gitea_issue_create_issue", {...})
   │
   ├─▶ FilteredToolMiddleware.on_call_tool()
-  │     └─▶ checks if tool is filtered (scope/excluded/deprecated)
-  │     └─▶ if filtered: raise ToolError with helpful message
-  │     └─▶ if visible: pass through
+  │     └─▶ checks outer tool name against filter predictions
+  │     └─▶ for proxy calls: passes through (the proxy name
+  │     │     is always visible); the inner tool name gets
+  │     │     checked later in _call_tool_impl
+  │     └─▶ for direct calls: if the tool is filtered, raises
+  │         ToolError with a helpful message
+  │
+  ├─▶ TolerantSearchTransform intercepts "call_tool"
+  │     └─▶ ctx.fastmcp.call_tool(name, arguments)
   │
   ├─▶ CacheInvalidationMiddleware.on_call_tool()
   │     └─▶ executes tool

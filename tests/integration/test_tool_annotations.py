@@ -342,6 +342,14 @@ class TestOpenWorldHintSyntheticTools:
         assert t.annotations is not None
         assert t.annotations.openWorldHint is False
 
+    async def test_call_tool_is_external(self, search_mcp_server) -> None:
+        """``call_tool`` delegates to Gitea API → openWorldHint=True."""
+        tools = _tool_map(await search_mcp_server.list_tools())
+        t = tools.get("gitea_call_tool")
+        assert t is not None, "gitea_call_tool not found in tool listing"
+        assert t.annotations is not None
+        assert t.annotations.openWorldHint is True
+
     async def test_read_resource_is_external(self, search_mcp_server) -> None:
         """``read_resource`` fetches from Gitea API → openWorldHint=True."""
         tools = _tool_map(await search_mcp_server.list_tools())
@@ -492,6 +500,12 @@ class TestToolInfoAnnotations:
         """Local synthetic tool (search_tools): read_only=True, open_world=False."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_search_tools", read_only=True, open_world=False
+        )
+
+    async def test_call_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+        """call_tool: read_only=False, open_world=True."""
+        await self._assert_tool_annotations(
+            search_mcp_server, "gitea_call_tool", read_only=False, open_world=True
         )
 
     async def test_read_resource_annotations_via_tool_info(self, search_mcp_server) -> None:

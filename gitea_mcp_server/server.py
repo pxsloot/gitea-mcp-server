@@ -107,7 +107,7 @@ def load_instructions() -> str:
             "Auth is configured via environment variables. Verify identity with user_get_current.\n\n"
             "## Lazy Loading\n"
             "This server uses lazy loading. Use search_tools to discover available tools, "
-            "tool_info to inspect full tool schemas.\n\n"
+            "tool_info to inspect full tool schemas, and call_tool to execute them.\n\n"
             "See full documentation for detailed usage."
         )
 
@@ -211,7 +211,7 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
     """Setup lazy loading search transform, unified search, namespace, and extensions.
 
     Search transform must be added BEFORE namespace so namespace can prefix
-    the synthetic tools (search_tools, tool_info).
+    the synthetic tools (search_tools, tool_info, call_tool).
 
     Extension metadata transform must come AFTER namespace so it sees
     consistent prefixed tool names in both ``list_tools`` and ``get_tool``.
@@ -223,7 +223,7 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
             max_results=SEARCH_MAX_RESULTS,
         )
         mcp.add_transform(search_transform)
-        logger.info("Registering synthetic tools (search_tools, tool_info)...")
+        logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
         register_synthetic_tools(
             mcp, search_transform,
             tool_prefix=config.tool_prefix,

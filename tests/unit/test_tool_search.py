@@ -1,4 +1,4 @@
-"""Unit tests for search engine (indexing, format, serializer)."""
+"""Unit tests for search engine (indexing, call_tool, format, serializer)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,6 +12,7 @@ from gitea_mcp_server.constants import SEARCH_NAME_BOOST
 from gitea_mcp_server.pagination import add_pagination_metadata
 from gitea_mcp_server.format import format_result
 from gitea_mcp_server.tools.search import (
+    _call_tool_impl,
     _compact_search_serializer,
     _extract_resource_text,
     _extract_searchable_text_enhanced,
@@ -46,6 +47,51 @@ class TestSearchableText:
         assert "minimal_tool" in result
         assert isinstance(result, str)
         assert len(result) > 0
+
+
+class TestCallToolOutputSchema:
+    """Tests for call_tool output_schema (via actual registration)."""
+
+    @pytest.mark.asyncio
+    async def _get_call_tool(self) -> Tool:
+        """Helper: register synthetic tools and return the call_tool."""
+        from fastmcp import FastMCP
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        return tool_map.get("call_tool")
+
+    @pytest.mark.asyncio
+    async def test_call_tool_has_output_schema(self):
+        """call_tool should have an output_schema set with type object and result property."""
+        tool = await self._get_call_tool()
+        assert tool is not None, "call_tool not registered"
+        assert tool.output_schema is not None
+        assert tool.output_schema["type"] == "object"
+        assert "result" in tool.output_schema["properties"]
+        assert "x-fastmcp-wrap-result" not in tool.output_schema
+
+    @pytest.mark.asyncio
+    async def test_call_tool_result_property_accepts_any_type(self):
+        """The 'result' property must not have a restrictive type constraint
+        (accepts both objects and arrays since it proxies any tool)."""
+        tool = await self._get_call_tool()
+        assert tool is not None, "call_tool not registered"
+        result_schema = tool.output_schema["properties"]["result"]
+        # Must not have a bare "type": "object" that rejects arrays
+        has_any_of = "anyOf" in result_schema
+        no_type = "type" not in result_schema
+        assert has_any_of or no_type, (
+            f"call_tool.result has a bare type constraint: {result_schema!r}"
+        )
+        if has_any_of:
+            types = {entry.get("type") for entry in result_schema["anyOf"]}
+            assert "object" in types, f"anyOf should accept objects, got {types}"
+            assert "array" in types, f"anyOf should accept arrays, got {types}"
 
 
 class TestToolInfoOutputSchema:
@@ -184,6 +230,200 @@ class TestFormatResult:
         inner = ToolResult(structured_content={"other": "data"})
         result = format_result(inner, "markdown")
         assert result is inner
+
+
+class TestCallToolRuntimeBehavior:
+    """Test runtime behavior of the call_tool function.
+
+    call_tool is a proxy that delegates to ctx.fastmcp.call_tool().
+    These tests verify it correctly passes ToolResult through without
+    double-wrapping, and properly handles argument validation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_toolresult_through(self):
+        """call_tool is a transparent proxy that returns the inner result unchanged."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": 1}, {"id": 2}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+
+        assert result is inner_result
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_through_json_format(self):
+        """call_tool passes through a JSON-formatted result unchanged (format handled by inner tool)."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        data = {"result": [{"id": 1}, {"id": 2}]}
+        inner_result = ToolResult(
+            content=[TextContent(type="text", text='[{"id": 1}, {"id": 2}]')],
+            structured_content=data,
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+
+        assert result is inner_result
+        assert result.structured_content == data
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_through_raw_result(self):
+        """call_tool passes through a raw-formatted result unchanged (format handled by inner tool)."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {"key": "val"}},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+
+        assert result is inner_result
+
+    @pytest.mark.asyncio
+    async def test_call_tool_no_double_wrap(self):
+        """call_tool must pass the ToolResult through without double-wrapping."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {"items": [1, 2, 3], "count": 3}},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+        assert result is inner_result
+        assert result.structured_content == {"result": {"items": [1, 2, 3], "count": 3}}
+        inner = result.structured_content["result"]
+        assert "result" not in inner, (
+            f"Double-wrapped! structured_content={result.structured_content}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_preserves_user_meta_from_inner_tool(self):
+        """call_tool should preserve meta from the inner tool's ToolResult."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_meta = {"fastmcp": {"wrap_result": True}, "custom": "data"}
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": {}},
+            meta=inner_meta,
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
+        assert result is inner_result
+        assert result.meta == inner_meta
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_self_call_bare(self):
+        """call_tool should reject calling itself via bare name."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="cannot call itself"):
+            await _call_tool_impl("call_tool", {}, mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_self_call_prefixed(self):
+        """call_tool should reject calling itself via prefixed name."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="cannot call itself"):
+            await _call_tool_impl("gitea_call_tool", {}, mock_ctx, tool_prefix="gitea_")
+
+    @pytest.mark.asyncio
+    async def test_call_tool_parses_json_string_arguments(self):
+        """String arguments should be parsed as JSON before forwarding."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(content=[], structured_content={"result": {}})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with(
+            "gitea_test_tool", {"key": "val", "num": 42}
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_non_dict_and_non_string_arguments(self):
+        """Arguments that are neither dict nor None nor a JSON string should be rejected."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await _call_tool_impl("gitea_test_tool", [1, 2, 3], mock_ctx)
+
+        with pytest.raises(ValueError, match="Arguments must be a dict"):
+            await _call_tool_impl("gitea_test_tool", 42, mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_invalid_json(self):
+        """Invalid JSON string arguments should be rejected."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        mock_ctx = MagicMock()
+
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            await _call_tool_impl("gitea_test_tool", "{bad json}", mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_handles_none_arguments(self):
+        """None arguments should be forwarded as None."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(content=[], structured_content={"result": []})
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        await _call_tool_impl("gitea_test_tool", None, mock_ctx)
+        mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_routes_array_result_from_inner_tool(self):
+        """When inner tool returns an array wrapped in {"result": [...]}, pass through."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": [{"id": "a"}, {"id": "b"}]},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        final = await _call_tool_impl("gitea_array_tool", None, mock_ctx)
+        assert final is inner_result
 
 
 class TestCompactSearchSerializer:
@@ -445,6 +685,28 @@ class TestSearchableTextExtended:
         assert "The repository name" in result
 
 
+class TestCallToolRuntimeBehaviorExtended:
+    """Extended tests for call_tool runtime behavior."""
+
+    @pytest.mark.asyncio
+    async def test_call_tool_passes_through_regardless_of_output_schema(self):
+        """call_tool ignores the tool's output_schema - the inner tool handles its own formatting."""
+        from gitea_mcp_server.tools.search import _call_tool_impl
+
+        data = {"id": 1, "name": "test"}
+        inner_result = ToolResult(
+            content=[],
+            structured_content={"result": data},
+            meta={"fastmcp": {"wrap_result": True}},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
+        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+
+        result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, mock_ctx)
+        assert result is inner_result
+
+
 class TestToolInfo:
     """Tests for the tool_info synthetic tool."""
 
@@ -550,14 +812,11 @@ class TestToolInfo:
 
 
 class TestFilterInfoIntegration:
-    """Integration tests for the tool_info → filter_info wiring.
+    """Integration tests for the tool_info/call_tool → filter_info wiring.
 
-    Verifies that ``tool_info`` produces rich filtered-tool messages
+    Verifies that synthetic tools produce rich filtered-tool messages
     (scope-restricted, config-excluded, deprecated) instead of generic
     "not found" when ``filtered_tools_info`` is provided.
-
-    Filtered-tool error messages for direct tool calls are handled by
-    :class:`FilteredToolMiddleware` (tested in ``test_filter_info.py``).
     """
 
     @pytest.fixture
@@ -661,6 +920,74 @@ class TestFilterInfoIntegration:
                 "gitea_admin_create_user", "markdown", mock_ctx, transform,
                 tool_prefix="gitea_", filtered_tools_info=None,
             )
+
+    # ── call_tool → filter_info ──────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_call_tool_scope_filtered(self, scope_filter_info):
+        """call_tool for scope-restricted tool raises scope error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="restricted by your token scopes"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_exclude_filtered(self, exclude_filter_info):
+        """call_tool for config-excluded tool raises exclusion error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="excluded by server configuration"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info):
+        """call_tool for deprecated tool raises deprecation error."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="has been deprecated"):
+            await _call_tool_impl(
+                "gitea_some_deprecated_tool", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_filtered_falls_back_to_not_found(self):
+        """Without filter info, call_tool still gives generic 'not found'."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="not found"):
+            await _call_tool_impl(
+                "gitea_admin_create_user", {}, mock_ctx,
+                tool_prefix="gitea_", filtered_tools_info=None,
+            )
+
+    @pytest.mark.asyncio
+    async def test_call_tool_not_found_without_prefix(self):
+        """Without tool_prefix, call_tool still gives generic 'not found'."""
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+        mock_ctx.fastmcp.call_tool = AsyncMock()
+
+        with pytest.raises(ValueError, match="not found"):
+            await _call_tool_impl(
+                "gitea_unknown_tool", {}, mock_ctx,
+                tool_prefix="",
+            )
+
 
 class TestSearchToolsSyntheticTool:
     """Tests for the search_tools synthetic tool."""
@@ -878,6 +1205,15 @@ class TestSyntheticToolAnnotations:
             assert t.description, f"{name}.description should be non-empty"
             self._assert_all_hints(t, read_only=True, open_world=False)
 
+    @pytest.mark.asyncio
+    async def test_call_tool_all_hints(self) -> None:
+        """call_tool: read_only=False, open_world=True."""
+        tool_map = await self._get_tool_map()
+        t = tool_map.get("call_tool")
+        assert t is not None, "call_tool not registered"
+        assert t.description, "call_tool.description should be non-empty"
+        self._assert_all_hints(t, read_only=False, open_world=True)
+
     # ── serializer tests ──────────────────────────────────────────────────
 
     def test_compact_serializer_all_fields_explicit(self) -> None:
@@ -933,6 +1269,31 @@ class TestSyntheticToolAnnotations:
         assert "readOnlyHint" in ann
 
     # ── error path tests ─────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_annotations_survive_call_tool_error(self) -> None:
+        """After calling call_tool with invalid args, its annotations remain correct."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        transform = TolerantSearchTransform()
+        register_synthetic_tools(mcp, transform)
+
+        # Trigger error - call_tool with invalid JSON string
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            ctx = MagicMock(spec=Context)
+            await _call_tool_impl(
+                name="nonexistent",
+                arguments="not-json",
+                ctx=ctx,
+            )
+
+        # Verify call_tool annotations are still correct
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        t = tool_map.get("call_tool")
+        assert t is not None
+        self._assert_all_hints(t, read_only=False, open_world=True)
 
     @pytest.mark.asyncio
     async def test_tool_info_error_does_not_corrupt_catalog(self) -> None:

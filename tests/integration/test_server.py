@@ -167,6 +167,7 @@ class TestSyntheticToolMetadata:
         return [
             "search",
             "search_tools",
+            "call_tool",
             "tool_info",
             "list_resources",
             "read_resource",

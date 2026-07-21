@@ -164,9 +164,18 @@ than trial and error.
 
 ## Output format
 
-Every tool except `call_tool` accepts a `format` parameter and a `detail`
-parameter, and so do `read_resource` and `read_doc` (note: `read_doc`
-supports ``markdown``, ``json``, and ``raw`` but not ``detail``):
+Most tools and resources accept a `format` parameter and a `detail`
+parameter:
+
+- **API tools** (auto-generated from the Gitea spec) accept both
+  `format` and `detail`.
+- **Synthetic tools** (`tool_info`, `resolve_type`, `list_resources`,
+  `read_resource`, `read_doc`) accept them too — except `call_tool`.
+- **Search/discovery tools** (`search_tools`, `search_resources`,
+  `search_docs`, `search`) accept `format` only. Their output is flat
+  metadata (names, descriptions, scores) — `detail` has no effect.
+- Note: `read_doc` supports ``markdown``, ``json``, and ``raw`` but
+  not ``detail``.
 
 | Format    | When to use |
 |-----------|-------------|

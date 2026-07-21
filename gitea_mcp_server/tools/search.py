@@ -7,7 +7,7 @@ and the shared name-match + BM25 + format pipeline used by both search_tools and
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -563,7 +563,8 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
-    detail: str = "concise",
+    # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
+    detail: Literal["concise", "full"] = "concise",
     page: int = 1,
     limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
@@ -892,9 +893,10 @@ def register_synthetic_tools(
             "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
         ] = "markdown",
         detail: Annotated[
-            str,
+            # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
+            Literal["concise", "full"],
             str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
-        ] = str(DETAIL_PARAM_SCHEMA_CONCISE["default"]),
+        ] = "concise",
         page: Annotated[
             int,
             "Page number for output_schema properties (1-based). Only used when detail=full.",

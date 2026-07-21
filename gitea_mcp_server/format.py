@@ -101,9 +101,9 @@ def _format_simple_value(value: Any) -> str:
 def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     """Extract a type name from a schema dict via ``$ref``.
 
-    Checks the schema itself and any ``anyOf``/``oneOf`` options for a
-    ``$ref`` pointer.  Returns the last path segment (the type name) or
-    ``None`` if no ``$ref`` is found.
+    Checks the schema itself and any ``anyOf``/``oneOf``/``allOf``
+    options for a ``$ref`` pointer.  Returns the last path segment (the
+    type name) or ``None`` if no ``$ref`` is found.
 
     Args:
         schema: A JSON Schema fragment (may be ``None``).
@@ -116,7 +116,7 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     ref = schema.get("$ref")
     if isinstance(ref, str):
         return ref.rsplit("/", 1)[-1]
-    for key in ("anyOf", "oneOf"):
+    for key in ("anyOf", "oneOf", "allOf"):
         options = schema.get(key)
         if isinstance(options, list):
             for opt in options:

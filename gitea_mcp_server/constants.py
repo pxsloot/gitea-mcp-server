@@ -18,7 +18,7 @@ RESPONSE_PREVIEW_LIMIT = 100
 
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
-    "enum": ["concise", "full"],
+    "enum": ["concise", "full"],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
     "default": "full",
     "description": (
         "Output detail level.  "
@@ -32,6 +32,11 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
 Controls how much detail is shown in tool output.  ``"full"`` renders
 everything recursively; ``"concise"`` collapses deep nesting to compact
 type references.  The default is ``"full"`` (backward compatible).
+
+.. note::
+    The ``enum`` values **must** stay in sync with the
+    ``Literal["concise", "full"]`` type annotations in
+    ``tools/search.py`` and ``tools/type_info.py``.
 """
 
 DETAIL_PARAM_SCHEMA_CONCISE: dict[str, object] = {

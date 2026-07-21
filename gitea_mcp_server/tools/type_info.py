@@ -17,7 +17,7 @@ Registration:
 
 import json
 import logging
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
@@ -326,9 +326,10 @@ def register_type_tools(
             "json (structured data), or raw (API response)",
         ] = "markdown",
         detail: Annotated[
-            str,
+            # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
+            Literal["concise", "full"],
             str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
-        ] = str(DETAIL_PARAM_SCHEMA_CONCISE["default"]),
+        ] = "concise",
     ) -> ToolResult:
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
@@ -368,7 +369,7 @@ def register_type_tools(
             "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
         )
 
-        return apply_format(info, format)
+        return apply_format(info, format, detail=detail)
 
     mcp.tool(
         name="resolve_type",

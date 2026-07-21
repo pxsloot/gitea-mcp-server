@@ -250,6 +250,7 @@ async def _fetch_all_loop(
         next_has_more = next_sc.get("has_more")
         if next_has_more is None and isinstance(next_data, list):
             next_has_more = len(next_data) >= page_size
+            next_sc["has_more"] = next_has_more
 
         page = next_sc.get("next_offset")
         if page is None:
@@ -265,8 +266,10 @@ async def _fetch_all_loop(
     final_structured["next_offset"] = None
     final_structured["total_count"] = total_count
 
+    # content carries the first page's text; format_result (called
+    # after the loop hook) regenerates it from final_structured["result"].
     return ToolResult(
-        content=result.content,  # replaced by format_result after the hook
+        content=result.content,
         structured_content=final_structured,
         meta=result.meta,
     )

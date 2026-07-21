@@ -1436,7 +1436,10 @@ class TestFetchAllIntegration:
 
         transform, tool = make_transform_and_tool
 
-        # Simulate 3 pages of 10 items each
+        # Simulate 3 pages of 10 items each.
+        # Return raw results (no pagination metadata) — matching what
+        # OpenAPITool.run() returns.  Pagination metadata is added by
+        # _pipeline_with_context (initial page) or _execute_fn (subsequent).
         page_calls: list[int] = []
 
         async def _mock_pages(kwargs, _tool, _spec, _path, _method):
@@ -1444,13 +1447,9 @@ class TestFetchAllIntegration:
             page_calls.append(page)
             start = (page - 1) * 10 + 1
             items = [{"id": i} for i in range(start, min(start + 10, 31))]
-            has_more = page < 3
             return ToolResult(
                 structured_content={
                     "result": items,
-                    "has_more": has_more,
-                    "next_offset": page + 1 if has_more else None,
-                    "total_count": 30,
                 },
             )
 
@@ -1517,9 +1516,6 @@ class TestFetchAllIntegration:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 1}, {"id": 2}],
-                    "has_more": True,
-                    "next_offset": 2,
-                    "total_count": 20,
                 },
             )
 

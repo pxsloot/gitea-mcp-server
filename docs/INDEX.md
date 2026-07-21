@@ -52,6 +52,7 @@ truth. Other mentions point here.
 | Module map | `ARCHITECTURE.md` |
 | Transform execution order | `ARCHITECTURE.md` |
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
+| Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |
 | OpenTelemetry | `DEVELOPMENT.md` |
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |
 | Testing patterns | `TESTING_STANDARDS.md` |

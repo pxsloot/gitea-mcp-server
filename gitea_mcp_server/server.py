@@ -196,6 +196,7 @@ def _setup_middleware(
     invalidation_middleware = CacheInvalidationMiddleware(
         caching_middleware,
         label_service=label_service,
+        tool_prefix=tool_prefix,
     )
     mcp.add_middleware(invalidation_middleware)
 
@@ -235,7 +236,10 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
 
     if search_transform is not None:
         logger.info("Registering unified search tool...")
-        register_unified_search(mcp, doc_manager, search_transform)
+        register_unified_search(
+            mcp, doc_manager, search_transform,
+            tool_prefix=config.tool_prefix,
+        )
 
     if config.tool_prefix:
         logger.info("Adding namespace transform with prefix %s", config.tool_prefix)

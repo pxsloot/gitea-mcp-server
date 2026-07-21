@@ -73,9 +73,11 @@ RESOURCE_URI_PATTERNS: dict[str, str] = {
 # (keys in RESOURCE_URI_PATTERNS).
 TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
 
-# Namespace prefix applied at query time by GiteaNamespace (must match
-# config.tool_prefix minus the trailing underscore).
-_GITEA_TOOL_PREFIX = "gitea_"
+# Namespace prefix applied at query time by GiteaNamespace.  Set at
+# middleware construction time from ``config.tool_prefix``; defaults to
+# empty string (no prefix) so the module-level constant is never relied on
+# at runtime.
+_DEFAULT_TOOL_PREFIX = ""
 
 
 def register_tool_invalidation(tool_name: str, patterns: list[str]) -> None:
@@ -157,23 +159,30 @@ def _substitute_template(template: str, params: dict[str, Any]) -> str:
     return result
 
 
-def compute_uris_to_invalidate(tool_name: str, arguments: dict[str, Any]) -> list[str]:
+def compute_uris_to_invalidate(
+    tool_name: str,
+    arguments: dict[str, Any],
+    tool_prefix: str = _DEFAULT_TOOL_PREFIX,
+) -> list[str]:
     """Compute the list of concrete resource URIs to invalidate for a tool call.
 
-    Lookup tries the exact name first, then strips the ``gitea_`` namespace
+    Lookup tries the exact name first, then strips the configured namespace
     prefix if present - the map is keyed by bare ``operationId`` while the
     middleware receives the namespaced name at runtime.
 
     Args:
         tool_name: Name of the tool being called
         arguments: Arguments passed to the tool
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+            When non-empty and ``tool_name`` starts with it, the prefix is
+            stripped before the map lookup.  Empty string means no prefix.
 
     Returns:
         List of concrete resource URIs to invalidate
     """
     if tool_name not in TOOL_INVALIDATION_MAP:
-        if tool_name.startswith(_GITEA_TOOL_PREFIX):
-            stripped = tool_name[len(_GITEA_TOOL_PREFIX) :]
+        if tool_prefix and tool_name.startswith(tool_prefix):
+            stripped = tool_name[len(tool_prefix) :]
             if stripped in TOOL_INVALIDATION_MAP:
                 tool_name = stripped
             else:
@@ -278,17 +287,22 @@ class CacheInvalidationMiddleware(Middleware):
         self,
         caching_middleware: ResponseCachingMiddleware,
         label_service: LabelService | None = None,
+        tool_prefix: str = _DEFAULT_TOOL_PREFIX,
     ):
         """Initialize with a reference to the caching middleware.
 
         Args:
-            caching_middleware: The ResponseCachingMiddleware instance whose
+            caching_middleware: The response caching middleware whose
                                cache should be invalidated
             label_service: Optional LabelService to clear label caches on
                           label write operations.
+            tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+                Used to strip the prefix from tool names before looking up
+                the invalidation map.  Empty string means no prefix.
         """
         self.caching_middleware = caching_middleware
         self._label_service = label_service
+        self._tool_prefix = tool_prefix
 
     async def on_call_tool(
         self,
@@ -313,7 +327,9 @@ class CacheInvalidationMiddleware(Middleware):
         # NOTE: use getattr for backward compat with fastmcp <3.4.0
         # where ToolResult does not have an is_error attribute.
         if result and not getattr(result, "is_error", False):
-            uris_to_invalidate = compute_uris_to_invalidate(tool_name, arguments)
+            uris_to_invalidate = compute_uris_to_invalidate(
+                tool_name, arguments, tool_prefix=self._tool_prefix,
+            )
             if uris_to_invalidate:
                 await invalidate_cached_resources(
                     self.caching_middleware, uris_to_invalidate, tool_name

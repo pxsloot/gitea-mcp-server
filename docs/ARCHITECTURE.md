@@ -218,7 +218,7 @@ Agent reads a resource:
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
 | `format.py` | General-purpose schema-aware markdown formatters (shared by tools & resources) | `_format_as_markdown`, `_format_datetime`, `_format_simple_value` |
-| `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged BM25 + `type` discriminator) | `register_unified_search` |
+| `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
 
 ### Tool Customization Stack (applied in order)
 
@@ -235,7 +235,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
 | `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
 | `tools/filter_info.py` | Filter prediction data (`compute_filtered_tools_info`), `FilteredToolMiddleware` for direct-call interception, `get_filtered_tool_info`/`build_filtered_tools_message` used by `_call_tool_impl` and `_tool_info_impl` |
-| `tools/search.py` | BM25 search engine + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
+| `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
@@ -250,10 +250,10 @@ The customization layers as applied during server startup:
 | 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
-| 6. Search/lazy loading | `tools/search.py` | BM25 search with alias expansion, synthetic tools |
+| 6. Search/lazy loading | `tools/search.py` | Name-match + BM25 search with alias expansion, synthetic tools |
 | 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 8. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
-| 9. Unified search | `unified_search.py` | merged BM25 search across tools, docs, and resources with `type` discriminator |
+| 9. Unified search | `unified_search.py` | merged name-match + BM25 search across tools, docs, and resources with `type` discriminator |
 | 10. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
 | 11. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
 
@@ -296,7 +296,7 @@ The customization layers as applied during server startup:
    hand-registering each tool.
 
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
-   `search_tools` (BM25). This prevents context pollution from ~200 tools being
+   `search_tools` (name-match + BM25). This prevents context pollution from ~200 tools being
    listed at once.  All tools tagged `synthetic` are always pinned in
    `list_tools()` so agents can call them without searching.
 
@@ -570,7 +570,7 @@ Agent: search("create issue")
         ├─▶ fetch tools: TolerantSearchTransform.get_tool_catalog(ctx)
         ├─▶ fetch resources: _mcp_list_resources_impl(ctx)
         ├─▶ fetch docs: doc_manager.search(query)
-        ├─▶ merge → BM25 rank across all three corpora
+        ├─▶ merge → name-match + BM25 rank across all three corpora
         └─▶ return results with type discriminator
 ```
 

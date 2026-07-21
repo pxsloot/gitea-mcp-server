@@ -526,7 +526,7 @@ exclude_also = [
 | `resources/custom.py` | 80% | Error paths matter; some formatting is visual |
 | `exceptions.py` | 100% | Trivial — exception classes only |
 | `constants.py` | 100% | Constants only — values are coverage |
-| `unified_search.py` | 90% | BM25 merging logic |
+| `unified_search.py` | 90% | Name-match + BM25 merging logic |
 | `config.py` | 95% | Configuration parsing |
 | `client.py` | 90% | HTTP client with retry logic |
 | `server.py` | 70% | Wiring — integration-tested, not unit-friendly |

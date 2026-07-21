@@ -16,6 +16,7 @@ from gitea_mcp_server.tools.search import (
     _compact_search_serializer,
     _extract_resource_text,
     _extract_searchable_text_enhanced,
+    _name_matches,
     _search_and_slice,
     _search_resources_impl,
     _search_tools_impl,
@@ -1536,6 +1537,231 @@ class TestSearchAndSlice:
             assert 0.0 <= item["score"] <= 1.0
         # Original item dicts are not mutated (score is attached to a copy)
         assert "score" not in items[0]
+
+
+class TestNameMatches:
+    """Tests for _name_matches helper."""
+
+    def test_exact_match_with_prefix(self):
+        """Query matching full prefixed name returns True."""
+        assert _name_matches("user get current", "gitea_user_get_current", "gitea_")
+
+    def test_exact_match_without_prefix(self):
+        """Query matching full unprefixed name returns True."""
+        assert _name_matches("user get current", "user_get_current", "gitea_")
+
+    def test_prefix_match(self):
+        """Query that is a token-boundary prefix of the name returns True."""
+        assert _name_matches("issue create", "gitea_issue_create_issue", "gitea_")
+
+    def test_verb_first_order(self):
+        """Verb-first query ('create issue') matches domain-first name via swap."""
+        assert _name_matches("create issue", "gitea_issue_create_issue", "gitea_")
+
+    def test_verb_first_three_tokens(self):
+        """Verb-first 3-token query matches via first-two swap."""
+        assert _name_matches("create issue label", "gitea_issue_create_label", "gitea_")
+
+    def test_prefix_match_with_query_including_prefix(self):
+        """Query that includes the prefix still matches."""
+        assert _name_matches("gitea user get current", "gitea_user_get_current", "gitea_")
+
+    def test_partial_token_matches_via_prefix(self):
+        """Partial token 'cr' matches 'create' because it's a valid prefix."""
+        assert _name_matches("issue cr", "gitea_issue_create_issue", "gitea_")
+
+    def test_no_match(self):
+        """Query that doesn't match returns False."""
+        assert not _name_matches("create issue", "gitea_user_get_current", "gitea_")
+
+    def test_empty_query(self):
+        """Empty query returns False."""
+        assert not _name_matches("", "gitea_user_get_current", "gitea_")
+
+    def test_single_token_not_boosted(self):
+        """Single-token query returns False (BM25 handles it)."""
+        assert not _name_matches("user", "gitea_user_get_current", "gitea_")
+
+    def test_no_prefix_configured(self):
+        """With empty tool_prefix, unprefixed names match."""
+        assert _name_matches("user get current", "user_get_current", "")
+
+    def test_custom_prefix(self):
+        """Non-default prefix is stripped correctly."""
+        assert _name_matches("user get current", "forgejo_user_get_current", "forgejo_")
+
+    def test_underscore_normalization(self):
+        """Underscores in query are treated as spaces."""
+        assert _name_matches("user_get_current", "gitea_user_get_current", "gitea_")
+
+    def test_case_insensitive(self):
+        """Matching is case-insensitive."""
+        assert _name_matches("USER GET CURRENT", "gitea_user_get_current", "gitea_")
+
+    def test_query_longer_than_name(self):
+        """Query with more tokens than name returns False."""
+        assert not _name_matches("user get current extra", "gitea_user_get_current", "gitea_")
+
+
+class TestSearchAndSliceNameMatch:
+    """Tests for name-match boost in _search_and_slice."""
+
+    def _make_items(self, names: list[str]) -> list[dict]:
+        return [{"name": n, "description": f"desc for {n}"} for n in names]
+
+    def _make_texts(self, items: list[dict]) -> list[str]:
+        return [f"{i['name']} {i['description']}" for i in items]
+
+    def test_exact_match_ranks_first(self):
+        """Exact name match ranks above BM25 results."""
+        items = self._make_items([
+            "gitea_user_current_check_following",
+            "gitea_user_current_list_following",
+            "gitea_user_get_current",
+            "gitea_user_current_list_followers",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get current", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        assert page_items[0]["name"] == "gitea_user_get_current"
+        assert page_items[0]["score"] == 1.0
+
+    def test_verb_first_ranks_among_name_matches(self):
+        """Verb-first query ('create issue') puts exact tool among name-match results."""
+        items = self._make_items([
+            "gitea_issue_create_issue_attachment",
+            "gitea_issue_create_issue_comment_attachment",
+            "gitea_issue_create_issue",
+            "gitea_issue_create_issue_blocking",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "create issue", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        # Multiple tools share the "issue create" prefix (via swap), so all
+        # get score 1.0. The exact tool is among them.
+        assert any(
+            item["name"] == "gitea_issue_create_issue" and item["score"] == 1.0
+            for item in page_items
+        )
+
+    def test_prefix_match_ranks_first(self):
+        """Token-boundary prefix match ranks above BM25 results."""
+        items = self._make_items([
+            "gitea_user_current_check_following",
+            "gitea_user_get_current",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        assert page_items[0]["name"] == "gitea_user_get_current"
+        assert page_items[0]["score"] == 1.0
+
+    def test_no_prefix_configured(self):
+        """Without prefix, unprefixed names match."""
+        items = self._make_items([
+            "user_current_check_following",
+            "user_get_current",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get current", page=1, limit=10,
+            tool_prefix="",
+        )
+        assert page_items[0]["name"] == "user_get_current"
+
+    def test_custom_prefix(self):
+        """Non-default prefix is handled correctly."""
+        items = self._make_items([
+            "forgejo_user_current_check_following",
+            "forgejo_user_get_current",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get current", page=1, limit=10,
+            tool_prefix="forgejo_",
+        )
+        assert page_items[0]["name"] == "forgejo_user_get_current"
+
+    def test_broad_query_returns_only_single_token(self):
+        """Single-token query like 'user' is NOT boosted (BM25 handles it)."""
+        items = self._make_items([
+            "gitea_user_get_current",
+            "gitea_user_current_list_following",
+            "gitea_repo_create",
+            "gitea_issue_create",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        # No name matches (single token not boosted), so BM25 ranks purely
+        # by relevance. Items without the term "user" score 0 and are
+        # filtered out.
+        assert total == 2  # only the two 'user_*' tools contain "user"
+        assert len(page_items) == 2
+        for item in page_items:
+            assert "user" in item["name"]
+
+    def test_no_name_match_falls_back_to_bm25(self):
+        """When no name matches, BM25 handles ranking (regression test)."""
+        items = self._make_items([
+            "gitea_repo_create",
+            "gitea_issue_create",
+            "gitea_pull_create",
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "create", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        # No name matches (single token), so all items come from BM25.
+        assert total == 3
+        assert len(page_items) == 3
+        names = {item["name"] for item in page_items}
+        assert "gitea_repo_create" in names
+        assert "gitea_issue_create" in names
+        assert "gitea_pull_create" in names
+
+    def test_mixed_name_match_and_bm25(self):
+        """Name matches come first, BM25 results follow."""
+        items = self._make_items([
+            "gitea_user_get_current",      # name match
+            "gitea_user_current_list_repos",  # BM25 match (shares "user current")
+            "gitea_user_current_list_following",  # BM25 match
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get current", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        assert page_items[0]["name"] == "gitea_user_get_current"
+        assert page_items[0]["score"] == 1.0
+        # Remaining items come from BM25
+        assert total == 3
+        assert len(page_items) == 3
+
+    def test_total_count_includes_name_matches(self):
+        """total_count includes both name matches and BM25 results."""
+        items = self._make_items([
+            "gitea_user_get_current",      # name match
+            "gitea_user_current_list_repos",  # BM25 match (shares "user current")
+            "gitea_user_current_list_following",  # BM25 match
+            "gitea_admin_delete",         # no match
+        ])
+        texts = self._make_texts(items)
+        page_items, total = _search_and_slice(
+            items, texts, "user get current", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        # 1 name match + 2 BM25 matches = 3 total
+        assert total == 3
 
 
 class TestSearchToolsPagination:

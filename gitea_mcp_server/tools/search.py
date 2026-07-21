@@ -2,7 +2,7 @@
 
 BM25 search engine lives in gitea_mcp_server/search.py (flat infra layer).
 This module contains Tool-specific search wrappers, the TolerantSearchTransform,
-and the shared BM25+format pipeline used by both search_tools and search_resources.
+and the shared name-match + BM25 + format pipeline used by both search_tools and search_resources.
 """
 
 import json
@@ -53,22 +53,104 @@ def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) 
     return text
 
 
-def _search_and_slice(  # noqa: PLR0913 - 6 params but all are independent config axes
+_NAME_MATCH_MIN_TOKENS = 2
+"""Minimum query tokens for name-match boosting.  Single-token queries
+are handled by BM25, avoiding a flood of results all at score 1.0."""
+
+
+def _normalize_for_match(text: str, tool_prefix: str) -> tuple[str, list[str]]:
+    """Normalize a name or query for name-matching.
+
+    Strips the ``tool_prefix``, lowercases, replaces underscores with
+    spaces, then splits into tokens.  Returns ``(normalized_text, tokens)``.
+    """
+    t = text.lower().replace("_", " ").strip()
+    if tool_prefix:
+        prefix_norm = tool_prefix.lower().replace("_", " ")
+        if prefix_norm and t.startswith(prefix_norm):
+            t = t[len(prefix_norm):].strip()
+    return t, t.split()
+
+
+def _token_prefix_match(tokens: list[str], name_tokens: list[str]) -> bool:
+    """Return True if each ``token`` is a prefix of the corresponding ``name_tokens``."""
+    return len(tokens) <= len(name_tokens) and all(
+        name_tokens[i].startswith(qt) for i, qt in enumerate(tokens)
+    )
+
+
+def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
+    """Return True if ``query`` matches ``name`` (exact or token-boundary prefix).
+
+    Normalizes both sides: lowercase, underscores → spaces, strips the
+    configured ``tool_prefix`` from both the query and the name.  Then
+    splits into tokens and checks whether the query tokens form a prefix
+    of the name tokens — each query token must be a prefix of the
+    corresponding name token (not crossing token boundaries).
+
+    To handle verb-first queries (e.g. ``"create issue"`` vs domain-first
+    ``"issue_create_issue"``), two orderings of the query tokens are
+    tried: original order and first-two-swapped.  This covers the most
+    common agent pattern without requiring domain/verb lists.
+
+    Single-token queries are **not** boosted — they return ``False`` so
+    BM25 handles them, avoiding a flood of 30+ results all at score 1.0.
+
+    Args:
+        query: The search query (e.g. ``"user get current"``).
+        name: The item name (e.g. ``"gitea_user_get_current"``).
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+            Empty string means no prefix.
+    """
+    q, q_tokens = _normalize_for_match(query, tool_prefix)
+    n, n_tokens = _normalize_for_match(name, tool_prefix)
+
+    if not q or len(q_tokens) < _NAME_MATCH_MIN_TOKENS or len(q_tokens) > len(n_tokens):
+        return False
+
+    # Exact match after normalisation: the normalised query equals the
+    # normalised (stripped) name.
+    if q == n:
+        return True
+
+    # Token-boundary prefix match: each query token must be a prefix of
+    # the corresponding name token, in order.  Try two orderings to
+    # handle verb-first queries ("create issue" ↔ "issue create").
+    if _token_prefix_match(q_tokens, n_tokens):
+        return True
+
+    # Try swapping the first two tokens to handle verb-first queries.
+    if len(q_tokens) >= _NAME_MATCH_MIN_TOKENS:
+        swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
+        return _token_prefix_match(swapped, n_tokens)
+
+    return False
+
+
+def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes
     items: list[Any],
     texts: list[str],
     query: str,
     page: int,
     limit: int,
     min_score: float = SEARCH_MIN_SCORE,
+    tool_prefix: str = "",
 ) -> tuple[list[Any], int]:
-    """BM25 rank items, then slice by page/limit.
+    """Rank items by name match + BM25, then slice by page/limit.
+
+    Name matches (exact or token-boundary prefix, with/without
+    ``tool_prefix``) are placed first with score 1.0.  Remaining items
+    are ranked by BM25.  This fixes the BM25 limitation where
+    ``gitea_user_get_current`` ranks below ``gitea_user_current_*``
+    for the query ``\"user current\"``.
 
     Returns ``(page_items, total_count)`` where ``total_count`` is the total
-    number of items that matched the query (before slicing), and
-    ``page_items`` are the items on the requested page.  Each item in
-    ``page_items`` is a shallow copy of the corresponding input item with an
-    extra ``score`` key (normalized 0.0-1.0, where 1.0 is the top match for
-    this query) so callers/agents can apply their own relevance threshold.
+    number of items that matched the query (name match or BM25 above
+    ``min_score``), and ``page_items`` are the items on the requested page.
+    Each item in ``page_items`` is a shallow copy of the corresponding input
+    item with an extra ``score`` key (normalized 0.0-1.0, where 1.0 is the
+    top match for this query) so callers/agents can apply their own relevance
+    threshold.
 
     When ``items`` or ``texts`` is empty, returns ``([], 0)``.
     When the page is out of range, returns an empty list with the correct
@@ -82,18 +164,41 @@ def _search_and_slice(  # noqa: PLR0913 - 6 params but all are independent confi
         limit: Results per page.
         min_score: Minimum normalized BM25 score (0.0-1.0).  Defaults to
             ``SEARCH_MIN_SCORE``.
+        tool_prefix: Configured namespace prefix (e.g. ``\"gitea_\"``).
+            Used to strip the prefix from item names before name matching.
     """
     if not items or not texts:
         return [], 0
 
+    # Partition: name matches go first (score 1.0), rest go to BM25.
+    name_match_indices: list[int] = []
+    bm25_indices: list[int] = []
+    for i, item in enumerate(items):
+        name = item.get("name", "") if isinstance(item, dict) else ""
+        if name and _name_matches(query, name, tool_prefix):
+            name_match_indices.append(i)
+        else:
+            bm25_indices.append(i)
+
+    # BM25 on the non-name-match items only.
     engine = BM25SearchEngine()
-    # Score everything (len(items) is small - ~200 tools, ~35 resources)
-    ranked = engine.search_with_scores(texts, query, len(items), min_score=min_score)
-    total_count = len(ranked)
+    bm25_texts = [texts[i] for i in bm25_indices]
+    bm25_ranked = engine.search_with_scores(
+        bm25_texts, query, len(bm25_texts), min_score=min_score
+    )
+
+    # Build the combined ranked list: name matches first (score 1.0),
+    # then BM25 results (scores 0.0-1.0, naturally below).
+    combined: list[tuple[int, float]] = [
+        (i, 1.0) for i in name_match_indices
+    ]
+    combined.extend((bm25_indices[i], score) for i, score in bm25_ranked)
+
+    total_count = len(combined)
 
     start = (page - 1) * limit
     end = start + limit
-    page_ranked = ranked[start:end]
+    page_ranked = combined[start:end]
     # Attach the normalized score to each result item so agents can apply
     # their own relevance threshold instead of relying solely on min_score.
     page_items = [{**items[i], "score": round(score, 4)} for i, score in page_ranked]
@@ -370,11 +475,13 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     limit: int = 10,
     min_score: float = SEARCH_MIN_SCORE,
     filtered_tools_info: dict[str, Any] | None = None,
+    tool_prefix: str = "",
 ) -> ToolResult:
     """Core search_tools implementation.
 
     Fetches the tool catalog via the transform, optionally filters by
-    category, then BM25 ranks and returns a paginated, formatted result.
+    category, then ranks by name match + BM25 and returns a paginated,
+    formatted result.
 
     Args:
         query: Natural language query.
@@ -386,6 +493,8 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         limit: Results per page.
         min_score: Minimum normalized BM25 score (0.0-1.0).
         filtered_tools_info: Filter-prediction data for hidden-tool note.
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+            Used to strip the prefix from tool names before name matching.
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -398,7 +507,8 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     texts = [_extract_searchable_text_enhanced(t) for t in tools]
     serialized = _compact_search_serializer(tools)
     page_items, total_count = _search_and_slice(
-        serialized, texts, query, page, limit, min_score=min_score
+        serialized, texts, query, page, limit,
+        min_score=min_score, tool_prefix=tool_prefix,
     )
 
     cross_link_hints = {
@@ -572,11 +682,12 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     page: int = 1,
     limit: int = 10,
     min_score: float = SEARCH_MIN_SCORE,
+    tool_prefix: str = "",
 ) -> ToolResult:
     """Core search_resources implementation.
 
     Fetches all registered MCP resources via ``_mcp_list_resources_impl``,
-    runs BM25 ranking, and returns a paginated, formatted result.
+    runs name match + BM25 ranking, and returns a paginated, formatted result.
 
     Args:
         query: Natural language query.
@@ -585,6 +696,8 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
         page: Page number (1-based).
         limit: Results per page.
         min_score: Minimum normalized BM25 score (0.0-1.0).
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+            Used to strip the prefix from resource names before name matching.
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -594,7 +707,8 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     resources = raw.get("resources", [])
     texts = [_extract_resource_text(r) for r in resources]
     page_items, total_count = _search_and_slice(
-        resources, texts, query, page, limit, min_score=min_score
+        resources, texts, query, page, limit,
+        min_score=min_score, tool_prefix=tool_prefix,
     )
 
     cross_link_hints = {
@@ -686,6 +800,7 @@ def register_synthetic_tools(
         return await _search_tools_impl(
             query, category, format, ctx, transform, page, limit,
             min_score=min_score, filtered_tools_info=filtered_tools_info,
+            tool_prefix=tool_prefix,
         )
 
     mcp.tool(
@@ -904,13 +1019,14 @@ def register_synthetic_tools(
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_resources_impl(
-            query, format, ctx, page, limit, min_score=min_score
+            query, format, ctx, page, limit,
+            min_score=min_score, tool_prefix=tool_prefix,
         )
 
     mcp.tool(
         name="search_resources",
         description="Search MCP resources by natural language query. "
-        "Uses BM25 ranking to find the most relevant resources matching your query. "
+        "Uses name-match boosting then BM25 to find the most relevant resources matching your query. "
         "Searches across resource URI, name, description, and tags. "
         "Use this when you know what kind of information you want but not the "
         "exact resource URI. For an exhaustive listing, use list_resources instead.",
@@ -928,6 +1044,7 @@ __all__ = [
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
     "_find_tool_by_name",
+    "_name_matches",
     "_search_and_slice",
     "_search_resources_impl",
     "_search_tools_impl",

@@ -257,7 +257,7 @@ def register_doc_tools(
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
-    async def search_docs(  # noqa: PLR0913 - 6 params: query, format, page, limit, min_score, fetch_all
+    async def search_docs(  # noqa: PLR0913 - query + pagination (page/limit/fetch_all) + display (format/min_score) are independent concerns
         query: str,
         format: str = "markdown",
         page: int = 1,

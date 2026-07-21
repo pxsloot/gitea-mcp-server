@@ -617,7 +617,7 @@ def format_result(
     return result
 
 
-def _format_paginated_result(  # noqa: PLR0913 - 7 params: items, total_count, fmt, page, limit, fetch_all, markdown_extras
+def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent display axes (items + pagination state + output config)
     items: list,
     total_count: int,
     fmt: str,

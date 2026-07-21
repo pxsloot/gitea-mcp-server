@@ -345,6 +345,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     # Slice (or skip when fetch_all=True).
     if fetch_all:
+        # Normalize page/limit so add_pagination_metadata doesn't compute
+        # an incorrect has_more (the full result is already in hand).
+        page, limit = 1, total_count or len(all_resources)
         page_items = all_resources
     else:
         start = (page - 1) * limit

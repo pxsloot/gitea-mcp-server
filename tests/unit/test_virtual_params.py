@@ -1,7 +1,7 @@
 """Unit tests for gitea_mcp_server/tools/virtual_params.py.
 
-Tests cover the three lifecycle functions (inject_into, extract_from, apply_to)
-and integration with _ToolWrappingTransform._wrap().
+Tests cover the three lifecycle functions (inject_into, extract_from, apply_to),
+the _fetch_all_loop hook, and integration with _ToolWrappingTransform._wrap().
 """
 
 from __future__ import annotations
@@ -12,8 +12,10 @@ import pytest
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
+from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
 from gitea_mcp_server.tools.virtual_params import (
     VirtualParam,
+    _fetch_all_loop,
     apply_pre_hooks,
     apply_scope_filter,
     apply_to,
@@ -667,3 +669,211 @@ class TestWrapIntegration:
 
             result = await wrapped.run({"owner": "test"})
             assert result.structured_content == {"result": [{"id": 1}]}
+
+
+# ---------------------------------------------------------------------------
+# _fetch_all_loop
+# ---------------------------------------------------------------------------
+
+
+class TestFetchAllLoop:
+    """Tests for _fetch_all_loop — auto-pagination hook."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_false_passthrough(self):
+        """fetch_all=False returns result unchanged."""
+        result = ToolResult(structured_content={"result": [{"id": 1}], "has_more": True})
+        output = await _fetch_all_loop(result, False, {}, _mock_execute_fn)
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_no_structured_content_passthrough(self):
+        """No structured_content returns result unchanged."""
+        result = ToolResult(content=[TextContent(type="text", text="")])
+        output = await _fetch_all_loop(result, True, {}, _mock_execute_fn)
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_non_list_result_passthrough(self):
+        """Non-list result returns result unchanged."""
+        result = ToolResult(structured_content={"result": {"id": 1}})
+        output = await _fetch_all_loop(result, True, {}, _mock_execute_fn)
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_single_page_passthrough(self):
+        """Single page (next_offset=None) returns result unchanged."""
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}],
+                "has_more": False,
+                "next_offset": None,
+                "total_count": 1,
+            },
+        )
+        output = await _fetch_all_loop(result, True, {"limit": 10}, _mock_execute_fn)
+        assert output is result
+
+    @pytest.mark.asyncio
+    async def test_two_pages_merged(self):
+        """Two pages are merged into one result."""
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 4,
+            },
+        )
+        executed: list[int] = []
+
+        async def _fetch_page(kwargs):
+            executed.append(kwargs["page"])
+            # Page 2 returns 2 more items, no more pages
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 3}, {"id": 4}],
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": 4,
+                },
+            )
+
+        output = await _fetch_all_loop(result, True, {"page": 1, "limit": 2}, _fetch_page)
+        assert output.structured_content["result"] == [
+            {"id": 1}, {"id": 2}, {"id": 3}, {"id": 4},
+        ]
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["next_offset"] is None
+        assert output.structured_content["total_count"] == 4
+        assert executed == [2]
+
+    @pytest.mark.asyncio
+    async def test_three_pages_with_total_count(self):
+        """Three pages merged with total_count preserved from last page."""
+        page_data = {
+            1: [{"id": 1}, {"id": 2}],
+            2: [{"id": 3}, {"id": 4}],
+            3: [{"id": 5}],  # last page has fewer items
+        }
+
+        result = ToolResult(
+            structured_content={
+                "result": page_data[1],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 5,
+            },
+        )
+
+        async def _fetch_page(kwargs):
+            p = kwargs["page"]
+            items = page_data.get(p, [])
+            return ToolResult(
+                structured_content={
+                    "result": items,
+                    "has_more": p < 3,
+                    "next_offset": p + 1 if p < 3 else None,
+                    "total_count": 5,
+                },
+            )
+
+        output = await _fetch_all_loop(result, True, {"page": 1, "limit": 2}, _fetch_page)
+        assert len(output.structured_content["result"]) == 5
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["total_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_max_pages_cap(self):
+        """Stops after FETCH_ALL_MAX_PAGES pages (safety cap)."""
+        # Simulate a server that always claims there are more pages.
+        many_items = [{"id": i} for i in range(10)]
+
+        result = ToolResult(
+            structured_content={
+                "result": many_items,
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 9999,
+            },
+        )
+
+        call_count = 0
+
+        async def _never_ending(kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ToolResult(
+                structured_content={
+                    "result": many_items,
+                    "has_more": True,
+                    "next_offset": kwargs["page"] + 1,
+                    "total_count": 9999,
+                },
+            )
+
+        output = await _fetch_all_loop(result, True, {"page": 1, "limit": 10}, _never_ending)
+        # First page + FETCH_ALL_MAX_PAGES - 1 additional calls
+        assert call_count == FETCH_ALL_MAX_PAGES - 1
+        total_items = 10 * FETCH_ALL_MAX_PAGES
+        assert len(output.structured_content["result"]) == total_items
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["total_count"] == 9999
+
+    @pytest.mark.asyncio
+    async def test_heuristic_when_has_more_missing(self):
+        """Fall back to heuristic when response has no has_more."""
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": None,
+            },
+        )
+
+        async def _short_page(_kwargs):
+            # Return fewer items than limit → heuristic says last page
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 3}],
+                    "total_count": None,
+                    # No has_more / next_offset set
+                },
+            )
+
+        output = await _fetch_all_loop(result, True, {"page": 1, "limit": 10}, _short_page)
+        # Should have stopped because page was shorter than limit
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}, {"id": 3}]
+        assert output.structured_content["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_total_count_carried_forward(self):
+        """total_count from server response is preserved in merged result."""
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 5,
+            },
+        )
+
+        async def _fetch(_kwargs):
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": 5,
+                },
+            )
+
+        output = await _fetch_all_loop(result, True, {"page": 1, "limit": 10}, _fetch)
+        assert output.structured_content["total_count"] == 5
+
+
+async def _mock_execute_fn(kwargs: dict) -> ToolResult:
+    """Default mock execute_fn that should never be called in passthrough tests."""
+    msg = f"_mock_execute_fn should not have been called with {kwargs}"
+    raise AssertionError(msg)

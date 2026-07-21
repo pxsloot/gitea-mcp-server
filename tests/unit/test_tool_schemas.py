@@ -343,6 +343,45 @@ class TestDeriveOutputSchema:
 
         assert tool.output_schema is None
 
+    def test_empty_200_via_customize_metadata(self):
+        """_customize_metadata should set null output_schema for 200 with $ref to empty response."""
+        route = self._make_route("/repos/{owner}/{repo}/pulls/{index}/merge", "PUT")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_merge_pull_request"
+        tool.annotations = None
+        tool.tags = {"repository"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Merge a pull request"
+        tool.meta = {}
+
+        spec = {
+            "openapi": "3.1.1",
+            "paths": {
+                "/repos/{owner}/{repo}/pulls/{index}/merge": {
+                    "put": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/APIEmpty"},
+                        }
+                    }
+                },
+            },
+            "components": {
+                "responses": {
+                    "APIEmpty": {
+                        "description": "APIEmpty is an empty response",
+                    },
+                },
+            },
+        }
+        _customize_metadata(route, tool, openapi_spec=spec)
+
+        assert tool.output_schema is not None
+        assert tool.output_schema["type"] == "object"
+        assert tool.output_schema["properties"]["result"]["type"] == "null"
+        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+        assert tool.meta["_customization"]["is_empty_response"] is True
+
     @pytest.mark.asyncio
     async def test_transform_pipeline_passes_results_through(self):
         """_ToolWrappingTransform should pass ToolResult through unchanged for JSON object endpoints."""
@@ -608,11 +647,46 @@ class TestResponseHasNoContent:
                         }
                     },
                 },
+                "/repos/{owner}/{repo}/pulls/{index}/merge": {
+                    "put": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/APIEmpty"},
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/pulls/{index}/merge-201": {
+                    "put": {
+                        "responses": {
+                            "201": {"$ref": "#/components/responses/APIEmpty"},
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/200-inline-empty": {
+                    "post": {
+                        "responses": {
+                            "200": {"description": "OK, no body"},
+                        }
+                    },
+                },
+                "/repos/{owner}/{repo}/201-inline-empty": {
+                    "post": {
+                        "responses": {
+                            "201": {"description": "Created, no body"},
+                        }
+                    },
+                },
                 "/missing-path": {
                     "get": {
                         "responses": {
                             "200": {"description": "OK"},
                         }
+                    },
+                },
+            },
+            "components": {
+                "responses": {
+                    "APIEmpty": {
+                        "description": "APIEmpty is an empty response",
                     },
                 },
             },
@@ -632,6 +706,47 @@ class TestResponseHasNoContent:
         """205 Reset Content should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
+
+    def test_200_with_ref_to_empty_response(self, empty_body_spec):
+        """200 with $ref to empty response should return True (merge endpoint scenario)."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(
+            empty_body_spec,
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            "put",
+        ) is True
+
+    def test_201_with_ref_to_empty_response(self, empty_body_spec):
+        """201 with $ref to empty response should return True."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(
+            empty_body_spec,
+            "/repos/{owner}/{repo}/pulls/{index}/merge-201",
+            "put",
+        ) is True
+
+    def test_200_inline_empty_not_detected(self, empty_body_spec):
+        """200 inline with no content key should NOT be flagged (spec gap, not empty body).
+
+        Only ``$ref``-based 200/201 responses are treated as explicit
+        empty-body declarations.  Inline 200/201 without ``content`` are
+        treated as incomplete specs, not genuine empty-body endpoints.
+        """
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(
+            empty_body_spec,
+            "/repos/{owner}/{repo}/200-inline-empty",
+            "post",
+        ) is False
+
+    def test_201_inline_empty_not_detected(self, empty_body_spec):
+        """201 inline with no content key should NOT be flagged (spec gap, not empty body)."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        assert _response_has_no_content(
+            empty_body_spec,
+            "/repos/{owner}/{repo}/201-inline-empty",
+            "post",
+        ) is False
 
     def test_json_endpoint_returns_false(self, empty_body_spec):
         """JSON endpoint with 200 should return False."""

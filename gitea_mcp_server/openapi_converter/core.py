@@ -664,9 +664,11 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     ``$ref`` schemas (media-type level) are resolved so the wrapped schema
     is self-contained at each response site.
 
-    Note: response-level ``$ref`` never appears here because the Swagger 2.0
-    to OpenAPI 3.x converter inlines all response references before this
-    function runs.
+    Note: Response-level ``$ref`` responses (e.g.
+    ``{"$ref": "#/components/responses/empty"}``) are skipped here because
+    they have no ``content`` key — the function returns early.  The ``$ref``
+    survives and is resolved at tool-registration time by downstream code in
+    ``tools/schemas.py``.
 
     Args:
         response: A single response object from the spec (``dict[str, Any]``

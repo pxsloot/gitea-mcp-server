@@ -1,10 +1,15 @@
-"""Unit tests for pagination header capture via event hooks."""
+"""Unit tests for pagination header capture via event hooks and PaginationRunner."""
+
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
 from gitea_mcp_server.pagination import (
     PAGINATION_HEADERS,
+    PaginationRunner,
     add_pagination_metadata,
     capture_pagination_headers,
     pagination_ctx,
@@ -166,3 +171,230 @@ class TestAddPaginationMetadata:
         assert result["next_offset"] is None
         assert result["total_count"] == 5
         assert result["foo"] == "bar"
+
+
+# ============================================================================
+# PaginationRunner tests
+# ============================================================================
+
+
+class TestPaginationRunner:
+    """Tests for PaginationRunner (loop-based auto-pagination for API tools)."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_false_passthrough(self):
+        """When fetch_all=False, PaginationRunner is not used."""
+        fetch_fn = AsyncMock()
+        runner = PaginationRunner(fetch_fn)
+        result = ToolResult(structured_content={"result": [{"id": 1}]})
+        output = await runner.run(result, {"page": 1})
+        assert output.structured_content["result"] == [{"id": 1}]
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_single_page_has_more_false(self):
+        """When has_more is False on the first page, no extra fetches."""
+        fetch_fn = AsyncMock()
+        runner = PaginationRunner(fetch_fn)
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": False,
+                "next_offset": None,
+                "total_count": 2,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
+        assert output.structured_content["has_more"] is False
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_two_pages_merged(self):
+        """Two pages merged when has_more is True initially."""
+        page_calls = []
+
+        async def _fetch(kwargs):
+            page_calls.append(kwargs["page"])
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 3}, {"id": 4}],
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": 4,
+                },
+            )
+
+        runner = PaginationRunner(_fetch)
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 4,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 2})
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["total_count"] == 4
+        assert page_calls == [2]
+
+    @pytest.mark.asyncio
+    async def test_three_pages_with_total_count(self):
+        """Three pages merged with total_count preserved."""
+        page_data = {
+            1: [{"id": 1}, {"id": 2}],
+            2: [{"id": 3}, {"id": 4}],
+            3: [{"id": 5}],
+        }
+
+        async def _fetch(kwargs):
+            p = kwargs["page"]
+            items = page_data.get(p, [])
+            return ToolResult(
+                structured_content={
+                    "result": items,
+                    "has_more": p < 3,
+                    "next_offset": p + 1 if p < 3 else None,
+                    "total_count": 5,
+                },
+            )
+
+        runner = PaginationRunner(_fetch)
+        result = ToolResult(
+            structured_content={
+                "result": page_data[1],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 5,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 2})
+        assert len(output.structured_content["result"]) == 5
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["total_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_max_pages_cap(self):
+        """Stops after FETCH_ALL_MAX_PAGES pages (safety cap)."""
+        many_items = [{"id": i} for i in range(10)]
+        call_count = 0
+
+        async def _never_ending(kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ToolResult(
+                structured_content={
+                    "result": many_items,
+                    "has_more": True,
+                    "next_offset": kwargs["page"] + 1,
+                    "total_count": 9999,
+                },
+            )
+
+        runner = PaginationRunner(_never_ending)
+        result = ToolResult(
+            structured_content={
+                "result": many_items,
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 9999,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        # First page + FETCH_ALL_MAX_PAGES - 1 additional calls
+        assert call_count == FETCH_ALL_MAX_PAGES - 1
+        total_items = 10 * FETCH_ALL_MAX_PAGES
+        assert len(output.structured_content["result"]) == total_items
+        assert output.structured_content["has_more"] is False
+        assert output.structured_content["total_count"] == 9999
+
+    @pytest.mark.asyncio
+    async def test_heuristic_when_has_more_missing(self):
+        """Fall back to heuristic when response has no has_more."""
+        async def _short_page(_kwargs):
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 3}],
+                    "total_count": None,
+                },
+            )
+
+        runner = PaginationRunner(_short_page)
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": None,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}, {"id": 3}]
+        assert output.structured_content["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_total_count_carried_forward(self):
+        """total_count from server response is preserved in merged result."""
+        async def _fetch(_kwargs):
+            return ToolResult(
+                structured_content={
+                    "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": 5,
+                },
+            )
+
+        runner = PaginationRunner(_fetch)
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}],
+                "has_more": True,
+                "next_offset": 2,
+                "total_count": 5,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        assert output.structured_content["total_count"] == 5
+        assert len(output.structured_content["result"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_non_list_result_passthrough(self):
+        """When result is not a list, PaginationRunner returns unchanged."""
+        fetch_fn = AsyncMock()
+        runner = PaginationRunner(fetch_fn)
+        result = ToolResult(structured_content={"result": {"id": 1}})
+        output = await runner.run(result, {"page": 1})
+        assert output.structured_content["result"] == {"id": 1}
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_structured_content_passthrough(self):
+        """When structured_content is None, PaginationRunner returns unchanged."""
+        fetch_fn = AsyncMock()
+        runner = PaginationRunner(fetch_fn)
+        result = ToolResult(content=[], structured_content=None)
+        output = await runner.run(result, {"page": 1})
+        assert output.structured_content is None
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_preserves_meta(self):
+        """PaginationRunner preserves meta from the original ToolResult."""
+        async def _fetch(_kwargs):
+            return ToolResult(structured_content={"result": [{"id": 2}], "has_more": False})
+
+        runner = PaginationRunner(_fetch)
+        result = ToolResult(
+            content=[],
+            structured_content={
+                "result": [{"id": 1}],
+                "has_more": True,
+                "next_offset": 2,
+            },
+            meta={"custom": True},
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        assert output.meta == {"custom": True}

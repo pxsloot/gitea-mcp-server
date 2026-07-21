@@ -16,9 +16,9 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import _format_paginated_result, apply_format
 from gitea_mcp_server.models import DocEntry
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
+from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 
@@ -257,12 +257,13 @@ def register_doc_tools(
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
-    async def search_docs(
+    async def search_docs(  # noqa: PLR0913 - 6 params: query, format, page, limit, min_score, fetch_all
         query: str,
         format: str = "markdown",
         page: int = 1,
         limit: int = 10,
         min_score: float = SEARCH_MIN_SCORE,
+        fetch_all: bool = False,
     ) -> ToolResult:
         """Search workflow guides by natural language query.
 
@@ -272,6 +273,9 @@ def register_doc_tools(
         Use this when you need to understand how Gitea/Forgejo features work
         beyond individual API calls -- e.g., permission models, token scopes,
         branch protection rules, label system, pull request workflows.
+
+        When ``fetch_all=True``, returns all matching results without page
+        slicing (in-memory search, no loop needed).
 
         ## Parameters
 
@@ -294,9 +298,10 @@ def register_doc_tools(
         Args:
             query: Natural language query to search for guides
             format: Output format: markdown (default), json, or raw
-            page: Page number (1-based, default 1)
-            limit: Maximum results per page (1-100, default 10)
+            page: Page number (1-based, default 1). Ignored when ``fetch_all`` is True.
+            limit: Maximum results per page (1-100, default 10). Ignored when ``fetch_all`` is True.
             min_score: Minimum relevance score (0.0-1.0)
+            fetch_all: When True, return all matching results without slicing.
 
         Returns:
             Ranked list of matching guide metadata
@@ -307,11 +312,6 @@ def register_doc_tools(
             min_score=min_score,
         )
         total_count = len(all_results)
-
-        # Slice
-        start = (page - 1) * limit
-        end = start + limit
-        page_items = all_results[start:end]
 
         if total_count == 0:
             content = (
@@ -325,12 +325,15 @@ def register_doc_tools(
                 structured_content={"result": [], "_hint": content},
             )
 
-        if not page_items:
-            content = f"Page {page} is out of range (total results: {total_count})."
-            return ToolResult(
-                content=[TextContent(type="text", text=content)],
-                structured_content={"result": [], "_hint": content},
-            )
+        # Check page range before formatting (only when paginating, not fetch_all).
+        if not fetch_all:
+            start = (page - 1) * limit
+            if start >= total_count:
+                content = f"Page {page} is out of range (total results: {total_count})."
+                return ToolResult(
+                    content=[TextContent(type="text", text=content)],
+                    structured_content={"result": [], "_hint": content},
+                )
 
         extras: list[str] = []
         if format == "markdown":
@@ -340,17 +343,10 @@ def register_doc_tools(
                 "- For API tools: `search_tools(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            pagination_table = _format_as_markdown(
-                {k: v for k, v in add_pagination_metadata(
-                    {"result": page_items}, page, limit, total_count
-                ).items() if k in PAGINATION_KEYS},
-                None,
-            )
-            extras.append(pagination_table)
 
-        return apply_pagination(
-            apply_format(page_items, format, markdown_extras=extras or None),
-            page, limit, total_count,
+        return _format_paginated_result(
+            all_results, total_count, format, page, limit, fetch_all,
+            markdown_extras=extras or None,
         )
 
     @mcp.tool(

@@ -235,6 +235,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     type: str = "",
     page: int = 1,
     limit: int = 10,
+    fetch_all: bool = False,
     detail: str = "full",
     ctx: Context = CurrentContext(),
 ) -> ToolResult:
@@ -258,6 +259,8 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
     - ``page``: Page number (1-based, default 1).
     - ``limit``: Maximum results per page (1-100, default 10).
+    - ``fetch_all``: When true, return all resources instead of a single page.
+      Since data is in-memory, this simply skips the page/limit slice.
     - ``detail``: Markdown rendering depth -- ``"full"`` (default) for complete
       expansion, ``"concise"`` for compact summaries with collapsed nesting.
 
@@ -331,12 +334,22 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     if type:
         raw["resources"] = [r for r in raw["resources"] if r.get("type", "") == type]
 
-    # Paginate
     all_resources = raw["resources"]
     total_count = len(all_resources)
-    start = (page - 1) * limit
-    end = start + limit
-    page_items = all_resources[start:end]
+
+    if total_count == 0:
+        return ToolResult(
+            content=[TextContent(type="text", text="No resources found.")],
+            structured_content={"result": {"resources": [], "count": 0}},
+        )
+
+    # Slice (or skip when fetch_all=True).
+    if fetch_all:
+        page_items = all_resources
+    else:
+        start = (page - 1) * limit
+        page_items = all_resources[start:start + limit]
+
     raw_page = {"resources": page_items, "count": len(page_items)}
 
     extras: list[str] = []

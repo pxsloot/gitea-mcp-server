@@ -21,10 +21,9 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import _format_paginated_result
 from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
@@ -79,6 +78,11 @@ def register_unified_search(
             "0.1 requires at least 10% as relevant as the top result, "
             "1.0 requires perfect match.",
         ] = SEARCH_MIN_SCORE,
+        fetch_all: Annotated[
+            bool,
+            "When true, return all matching results instead of a single page. "
+            "Results are merged into one response (in-memory, no looping needed).",
+        ] = False,
         ctx: Context | None = None,
     ) -> ToolResult:
         if ctx is None:
@@ -144,8 +148,9 @@ def register_unified_search(
             )
             all_texts.append(_extract_doc_search_text(d))
 
-        page_items, total_count = _search_and_slice(
-            all_items, all_texts, query, page, limit,
+        # Get all ranked results (no pre-slicing).
+        all_ranked, total_count = _search_and_slice(
+            all_items, all_texts, query, 1, len(all_items) or 1,
             min_score=min_score, tool_prefix=tool_prefix,
         )
 
@@ -162,26 +167,28 @@ def register_unified_search(
                 structured_content={"result": [], "_hint": hint},
             )
 
-        if not page_items:
-            hint = f"Page {page} is out of range (total results: {total_count})."
-            return ToolResult(
-                content=[TextContent(type="text", text=hint)],
-                structured_content={"result": [], "_hint": hint},
-            )
+        # Check page range before formatting (only when paginating, not fetch_all).
+        if not fetch_all:
+            start = (page - 1) * limit
+            if start >= total_count:
+                hint = f"Page {page} is out of range (total results: {total_count})."
+                return ToolResult(
+                    content=[TextContent(type="text", text=hint)],
+                    structured_content={"result": [], "_hint": hint},
+                )
 
         extras: list[str] = []
         if format == "markdown":
-            pagination_table = _format_as_markdown(
-                {k: v for k, v in add_pagination_metadata(
-                    {"result": page_items}, page, limit, total_count
-                ).items() if k in PAGINATION_KEYS},
-                None,
+            extras.append(
+                "**Cross-linking hints:**\n"
+                "- For API tools: `search_tools(query)`\n"
+                "- For workflow guides: `search_docs(query)`\n"
+                "- For data resources: `search_resources(query)`"
             )
-            extras.append(pagination_table)
 
-        return apply_pagination(
-            apply_format(page_items, format, markdown_extras=extras or None),
-            page, limit, total_count,
+        return _format_paginated_result(
+            all_ranked, total_count, format, page, limit, fetch_all,
+            markdown_extras=extras or None,
         )
 
     mcp.tool(

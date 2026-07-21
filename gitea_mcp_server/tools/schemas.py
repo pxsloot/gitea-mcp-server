@@ -146,8 +146,15 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
 def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
     """Check if the endpoint's success response has no body content.
 
-    Returns ``True`` when the primary success response (2xx) has no ``content``
-    key — e.g. 204 No Content, 205 Reset Content, or 202 Accepted with no body.
+    Returns ``True`` when a 2xx success response has no ``content``
+    key — e.g. 204 No Content, 205 Reset Content, 202 Accepted with no
+    body, or 200/201 responses that reference an empty response definition
+    (like Gitea's ``$ref: #/responses/empty``).
+
+    ``$ref`` pointers are resolved before checking for ``content``, so
+    shared empty response definitions like Gitea's ``$ref: #/responses/empty``
+    are correctly detected.
+
     The ``method`` parameter is normalised to lowercase internally.
 
     Args:
@@ -168,21 +175,36 @@ def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) 
     responses = operation.get("responses", {})
     if not isinstance(responses, dict):
         return False
-    # Only check success codes that legitimately have no body content.
-    # 200/201 responses always carry content in a well-formed spec; a
-    # missing content key for those codes means the spec is incomplete
-    # (e.g. a test fixture), not that the endpoint is an empty-body one.
+    # 200/201 are included because Gitea's spec uses shared empty response
+    # definitions via ``$ref`` (e.g. ``$ref: #/responses/empty``) for
+    # endpoints like ``POST /repos/{owner}/{repo}/pulls/{index}/merge``.
+    # Only ``$ref``-based 200/201 responses are flagged — inline 200/201
+    # without a ``content`` key are treated as incomplete specs, not
+    # genuine empty-body endpoints (the converter would have added
+    # ``content`` if a schema were present).
     #
     # 203 (Non-Authoritative Information) and 206 (Partial Content)
     # are intentionally excluded: 203 always mirrors a 200 body, and
     # 206 only makes sense for range requests on endpoints that also
     # define 200 — both would have ``content`` in practice.
-    for code in ("202", "204", "205"):
+    for code in ("200", "201", "202", "204", "205"):
         response = responses.get(code)
         if not isinstance(response, dict):
             continue
+        has_ref = "$ref" in response
+        if has_ref:
+            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            if not isinstance(resolved, dict):
+                continue
+            response = resolved
         content = response.get("content", {})
         if not content:
+            # For 200/201, only flag empty content when the response
+            # uses ``$ref`` (Gitea's explicit empty-body idiom).
+            # Inline 200/201 without content are spec gaps, not
+            # genuine empty-body endpoints.
+            if code in ("200", "201") and not has_ref:
+                continue
             return True
     return False
 

@@ -526,20 +526,25 @@ For non-JSON endpoints, this extension is absent (no wrapping was applied in
 Stage 2), so `output_schema = None` is paired with the
 `_ToolWrappingTransform` fallback to produce the same `{"result": text}` shape.
 
-### Empty-Body Responses (202, 204, 205)
+### Empty-Body Responses (200, 201, 202, 204, 205)
 
 Some Gitea endpoints return success with no response body (204 No Content,
-205 Reset Content, or 202 Accepted without a body).  Like non-JSON endpoints,
-`_get_success_schema` finds nothing and returns `None` — but for a different
-reason: no `content` entry exists on the success response at all.
+205 Reset Content, or 202 Accepted without a body).  Additionally, some
+endpoints (e.g. ``POST /repos/{owner}/{repo}/pulls/{index}/merge``) return
+200/201 with an explicitly empty body via ``$ref: #/responses/empty``.
+Like non-JSON endpoints, `_get_success_schema` finds nothing and returns
+`None` — but for a different reason: no `content` entry exists on the
+success response at all.
 
 The fix follows the same two-phase pattern as the text/plain handling:
 
 **Schema time** (`server_setup/mcp_builder.py:_customize_metadata`):
 `_response_has_no_content()` in `tools/schemas.py` checks the spec for a
-2xx response without a `content` key (only 202/204/205 are checked — 200/201
-always carry content in a well-formed spec).  When detected, a lightweight
-schema is set:
+2xx response without a `content` key.  202/204/205 are always checked;
+200/201 are checked only when the response uses ``$ref`` — Gitea's idiom
+for shared empty response definitions (inline 200/201 without ``content``
+are treated as spec gaps, not genuine empty-body endpoints).  When
+detected, a lightweight schema is set:
 ```python
 {"type": "object", "properties": {"result": {"type": "null"}}}
 ```

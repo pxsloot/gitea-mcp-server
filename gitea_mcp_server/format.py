@@ -98,12 +98,71 @@ def _format_simple_value(value: Any) -> str:
     return str(value)
 
 
-def _format_list_as_markdown(
+def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
+    """Extract a type name from a schema dict via ``$ref``.
+
+    Checks the schema itself and any ``anyOf``/``oneOf`` options for a
+    ``$ref`` pointer.  Returns the last path segment (the type name) or
+    ``None`` if no ``$ref`` is found.
+
+    Args:
+        schema: A JSON Schema fragment (may be ``None``).
+
+    Returns:
+        The type name (e.g. ``"Repository"``) or ``None``.
+    """
+    if not schema:
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return ref.rsplit("/", 1)[-1]
+    for key in ("anyOf", "oneOf"):
+        options = schema.get(key)
+        if isinstance(options, list):
+            for opt in options:
+                if isinstance(opt, dict):
+                    ref = opt.get("$ref")
+                    if isinstance(ref, str):
+                        return ref.rsplit("/", 1)[-1]
+    return None
+
+
+def _collapse_value(raw_val: Any, prop_schema: dict[str, Any] | None) -> str:
+    """Render a nested runtime value as a compact type reference string.
+
+    Used when ``detail="concise"`` and the value sits at ``_depth >= 1``.
+    Extracts the type name from the schema where possible, otherwise
+    falls back to a generic placeholder.
+
+    Args:
+        raw_val: The runtime value (dict or list).
+        prop_schema: The JSON Schema describing *raw_val*, or ``None``.
+
+    Returns:
+        A compact string such as ``"$ref:Repository"`` or ``"$ref:Label[3]"``.
+    """
+    if isinstance(raw_val, dict):
+        type_name = _extract_type_name(prop_schema)
+        if type_name:
+            return f"$ref:{type_name}"
+        return "{...}"
+    if isinstance(raw_val, list):
+        items_schema = prop_schema.get("items", {}) if isinstance(prop_schema, dict) else {}
+        type_name = _extract_type_name(items_schema)
+        count = len(raw_val)
+        if type_name:
+            return f"$ref:{type_name}[{count}]"
+        return f"[{count} items]"
+    return str(raw_val)
+
+
+def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schema, indent, field_filter, item_title_key, detail
     data: list[Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
     field_filter: Sequence[str] | None = None,
     item_title_key: str | None = None,
+    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     item_schema = schema.get("items") if isinstance(schema, dict) else None
@@ -129,6 +188,7 @@ def _format_list_as_markdown(
                 title=title,
                 _depth=0,
                 field_filter=field_filter,
+                detail=detail,
             )
             lines.append(sub)
     elif item_schema and item_schema.get("type") in ("string", "number", "integer", "boolean"):
@@ -188,12 +248,13 @@ def _render_nested_sections(
         lines.append("")
 
 
-def _format_dict_as_markdown(
+def _format_dict_as_markdown(  # noqa: PLR0912 - 14 branches justified: scalar/nested, detail, field_filter, allOf, anyOf
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
     _depth: int = 0,
     field_filter: Sequence[str] | None = None,
+    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     combined_schema = _merge_allof_schema(schema)
@@ -231,15 +292,21 @@ def _format_dict_as_markdown(
                 raw_val = f"$ref:{raw_val['$ref']}"
             is_nested = isinstance(raw_val, (dict, list))
             if is_nested:
-                # Don't propagate field_filter into nested sub-objects -
-                # the parent's field names don't apply to child objects.
-                sub = _format_as_markdown(
-                    raw_val,
-                    effective or prop_schema,
-                    _depth=_depth + 1,
-                )
-                if sub.strip():
-                    nested.append((label, sub))
+                if detail == "concise" and _depth >= 1:
+                    # Collapse nested objects to compact type references
+                    collapsed = _collapse_value(raw_val, prop_schema or effective)
+                    flat.append((label, collapsed))
+                else:
+                    # Don't propagate field_filter into nested sub-objects -
+                    # the parent's field names don't apply to child objects.
+                    sub = _format_as_markdown(
+                        raw_val,
+                        effective or prop_schema,
+                        _depth=_depth + 1,
+                        detail=detail,
+                    )
+                    if sub.strip():
+                        nested.append((label, sub))
             else:
                 formatted = _format_scalar(raw_val, prop_schema)
                 flat.append((label, formatted))
@@ -254,13 +321,14 @@ def _format_dict_as_markdown(
     return "\n".join(lines)
 
 
-def _format_as_markdown(
+def _format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, title, _depth, field_filter, item_title_key, detail
     data: Any,
     schema: dict[str, Any] | None = None,
     title: str | None = None,
     _depth: int = 0,
     field_filter: Sequence[str] | None = None,
     item_title_key: str | None = None,
+    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     indent = "  " * _depth
@@ -280,13 +348,16 @@ def _format_as_markdown(
             indent,
             field_filter=field_filter,
             item_title_key=item_title_key,
+            detail=detail,
         )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
         return result
 
     if isinstance(data, dict):
-        result = _format_dict_as_markdown(data, schema, indent, _depth, field_filter=field_filter)
+        result = _format_dict_as_markdown(
+            data, schema, indent, _depth, field_filter=field_filter, detail=detail,
+        )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
         return result
@@ -427,6 +498,7 @@ def apply_format(
     *,
     markdown_formatter: Callable[[Any], str] | None = None,
     markdown_extras: list[str] | None = None,
+    detail: str = "full",
 ) -> ToolResult:
     """Format data for output. No pagination involvement.
 
@@ -461,7 +533,11 @@ def apply_format(
     if fmt == "json":
         text = json_module.dumps(data, indent=2)
     else:
-        text = markdown_formatter(data) if markdown_formatter else _format_as_markdown(data, None)
+        text = (
+            markdown_formatter(data)
+            if markdown_formatter
+            else _format_as_markdown(data, None, detail=detail)
+        )
         if markdown_extras:
             text += "\n\n---\n\n" + "\n\n---\n\n".join(markdown_extras)
 
@@ -475,6 +551,7 @@ def format_result(
     result: ToolResult,
     fmt: str,
     output_schema: dict[str, Any] | None = None,
+    detail: str = "full",
 ) -> ToolResult:
     """Reformat a ``ToolResult`` content by ``fmt`` (``json`` / ``markdown`` / ``raw``).
 
@@ -504,7 +581,7 @@ def format_result(
 
     elif fmt == "markdown" and isinstance(data, (dict, list)):
         inner = output_schema.get("properties", {}).get("result", {}) if output_schema else None
-        content = _format_as_markdown(data, inner)
+        content = _format_as_markdown(data, inner, detail=detail)
 
         pagination = {
             k: result.structured_content[k]
@@ -537,6 +614,8 @@ def format_result(
 
 
 __all__ = [
+    "_collapse_value",
+    "_extract_type_name",
     "_format_annotations_table",
     "_format_as_markdown",
     "_format_datetime",
@@ -547,7 +626,6 @@ __all__ = [
     "_format_tool_info_markdown",
     "_format_type",
     "_resolve_anyof_schema",
-    "_snake_to_title",
     "apply_format",
     "format_result",
 ]

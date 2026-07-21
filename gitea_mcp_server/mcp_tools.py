@@ -117,7 +117,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     return ResourceListing(resources=resources_list, count=len(resources_list))
 
 
-def _format_resource_content(raw: str, fmt: str) -> str:
+def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
     """Reformat a resource result string by format.
 
     If the content is JSON, parse and reformat (markdown or pretty-printed).
@@ -138,7 +138,7 @@ def _format_resource_content(raw: str, fmt: str) -> str:
         return json.dumps(data, indent=2)
 
     if fmt == "markdown":
-        return _format_as_markdown(data, None)
+        return _format_as_markdown(data, None, detail=detail)
 
     return raw
 
@@ -235,6 +235,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     type: str = "",
     page: int = 1,
     limit: int = 10,
+    detail: str = "full",
     ctx: Context = CurrentContext(),
 ) -> ToolResult:
     """List all available MCP resources.
@@ -257,6 +258,8 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
     - ``page``: Page number (1-based, default 1).
     - ``limit``: Maximum results per page (1-100, default 10).
+    - ``detail``: Markdown rendering depth -- ``"full"`` (default) for complete
+      expansion, ``"concise"`` for compact summaries with collapsed nesting.
 
     ## Return Structure
 
@@ -343,11 +346,12 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
                 {"result": raw_page}, page, limit, total_count
             ).items() if k in PAGINATION_KEYS},
             None,
+            detail=detail,
         )
         extras.append(pagination_table)
 
     return apply_pagination(
-        apply_format(raw_page, format, markdown_extras=extras or None),
+        apply_format(raw_page, format, markdown_extras=extras or None, detail=detail),
         page, limit, total_count,
     )
 
@@ -355,6 +359,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 async def _read_resource_tool(
     uri: str,
     format: str = "markdown",
+    detail: str = "full",
     ctx: Context = CurrentContext(),
 ) -> ToolResult:
     """Read the content of an MCP resource by URI.
@@ -378,6 +383,12 @@ async def _read_resource_tool(
     - ``raw``: return the resource content exactly as stored.
     - ``json``: pretty-printed JSON (for JSON resources). For non-JSON resources,
       wraps content in ``{"result": "..."}`` for consistent structured output.
+
+    ## Parameter: detail
+
+    Markdown rendering depth (only meaningful when ``format=markdown``):
+    - ``"full"`` (default): complete information, full object expansion.
+    - ``"concise"``: compact view with collapsed nested objects.
 
     ## Return Value
 
@@ -458,7 +469,7 @@ async def _read_resource_tool(
         ValueError: If the resource is not found or cannot be read
     """
     result = await _mcp_read_resource_impl(ctx, uri)
-    formatted = _format_resource_content(result, format)
+    formatted = _format_resource_content(result, format, detail=detail)
 
     return ToolResult(
         content=[TextContent(type="text", text=formatted)],

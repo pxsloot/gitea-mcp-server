@@ -1,7 +1,7 @@
 """Integration tests for register_type_tools registration wiring.
 
 Tests that ``register_type_tools()`` correctly registers the
-``resolve_type`` tool and ``gitea://types/{typeName}{?detail}``
+``resolve_type`` tool and ``gitea://types/{typeName}``
 resource on a FastMCP server, handles error paths, and produces
 correct output.
 """
@@ -133,7 +133,7 @@ class TestRegisterTypeToolsTool:
 
 
 class TestRegisterTypeToolsResource:
-    """Tests for the gitea://types/{typeName}{?detail} resource registration."""
+    """Tests for the gitea://types/{typeName} resource registration."""
 
     @pytest.mark.asyncio
     async def test_registers_resource_template(self, mcp: FastMCP):
@@ -143,7 +143,7 @@ class TestRegisterTypeToolsResource:
         templates = await mcp.list_resource_templates()
         template_uris = [r.uri_template for r in templates]
 
-        assert "gitea://types/{typeName}{?detail}" in template_uris
+        assert "gitea://types/{typeName}" in template_uris
 
     @pytest.mark.asyncio
     async def test_resource_returns_known_type(self, mcp: FastMCP):
@@ -166,17 +166,6 @@ class TestRegisterTypeToolsResource:
         raw = content.contents[0].content
         data = json.loads(raw)
         assert "resolved_schema" in data
-
-    @pytest.mark.asyncio
-    async def test_resource_concise_detail(self, mcp: FastMCP):
-        """?detail=concise should omit resolved_schema."""
-        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
-
-        content = await mcp.read_resource("gitea://types/User?detail=concise")
-        raw = content.contents[0].content
-        data = json.loads(raw)
-        assert data["name"] == "User"
-        assert "resolved_schema" not in data
 
     @pytest.mark.asyncio
     async def test_resource_errors_for_unknown_type(self, mcp: FastMCP):

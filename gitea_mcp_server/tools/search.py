@@ -7,7 +7,7 @@ and the shared name-match + BM25 + format pipeline used by both search_tools and
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -18,6 +18,7 @@ from fastmcp.utilities.versions import VersionSpec
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
+    DETAIL_PARAM_SCHEMA_CONCISE,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
@@ -562,7 +563,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
-    detail: Literal["concise", "full"] = "concise",
+    detail: str = "concise",
     page: int = 1,
     limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
@@ -891,10 +892,9 @@ def register_synthetic_tools(
             "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
         ] = "markdown",
         detail: Annotated[
-            Literal["concise", "full"],
-            "Detail level: 'concise' (default) for compact type-summary output_example; "
-            "'full' to also include the resolved output_schema",
-        ] = "concise",
+            str,
+            str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
+        ] = str(DETAIL_PARAM_SCHEMA_CONCISE["default"]),
         page: Annotated[
             int,
             "Page number for output_schema properties (1-based). Only used when detail=full.",

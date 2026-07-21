@@ -22,6 +22,7 @@ from typing import Annotated, Any, cast
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA_CONCISE
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import scope_meta
 from gitea_mcp_server.tools.schemas import (
@@ -326,9 +327,8 @@ def register_type_tools(
         ] = "markdown",
         detail: Annotated[
             str,
-            "Detail level: 'concise' (default) for compact type-summary with "
-            "$ref placeholders; 'full' to also include the resolved JSON Schema",
-        ] = "concise",
+            str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
+        ] = str(DETAIL_PARAM_SCHEMA_CONCISE["default"]),
     ) -> ToolResult:
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
@@ -444,34 +444,29 @@ def register_type_tools(
         },
     )(_resolve_type_impl)
 
-    # ── gitea://types/{typeName}{?detail} resource ─────────────────────
+    # ── gitea://types/{typeName} resource ──────────────────────────────
 
     async def _type_resource(
         typeName: str,
         ctx: Context,
-        detail: str = "full",
     ) -> str:
         """Get a type schema for a $ref type by name.
 
-        Returns the type's compact schema, cross-references, and (when
-        ``detail="full"``) resolved schema — identical to
-        ``resolve_type(name, detail)`` but available as a cached resource.
-
-        Use ``?detail=concise`` for compact output without the resolved
-        schema.  Defaults to ``detail=full`` for maximum context.
+        Returns the type's full schema with resolved `$ref` definitions,
+        cross-references, and resolved schema — identical to
+        ``resolve_type(name, detail="full")`` but available as a cached
+        resource.
 
         Args:
             typeName: Type name (e.g. "User", "Milestone", "Label").
-            detail: ``"full"`` (default) for resolved schema included,
-                    ``"concise"`` for compact summary with ``$ref`` placeholders.
 
         Returns:
             JSON string with type info (schema, cross-references).
         """
         await _try_ctx_info(
             ctx,
-            f"Reading type resource '{typeName}' (detail={detail})",
-            extra={"type_name": typeName, "detail": detail},
+            f"Reading type resource '{typeName}'",
+            extra={"type_name": typeName},
         )
 
         if not type_index or typeName not in type_index:
@@ -483,11 +478,12 @@ def register_type_tools(
 
         # Same invariant: non-empty type_index means spec was available.
         spec = cast("OpenAPISpec", openapi_spec)
+        # Resource always returns full detail (tools manage concise/full).
         info = resolve_type_info(
             spec,
             type_index,
             typeName,
-            detail=detail,
+            detail="full",
         )
         return json.dumps(info, indent=2) if info else "{}"
 
@@ -499,12 +495,13 @@ def register_type_tools(
     _type_meta = scope_meta(None)
 
     mcp.resource(
-        uri="gitea://types/{typeName}{?detail}",
+        uri="gitea://types/{typeName}",
         name="Type Schema",
         description=(
-            "Get the full schema for a $ref type by name. "
-            "Use after tool_info when you see ``$ref:TypeName`` "
-            "and need to discover the type's fields. "
+            "Get the full schema (always detail='full') for a $ref type "
+            "by name.  Use after tool_info when you see ``$ref:TypeName`` "
+            "and need to discover the type's fields.  For compact output, "
+            "call ``resolve_type(name, detail='concise')`` instead. "
             f"Available types: {', '.join(available_types[:_MAX_TYPES_IN_RESOURCE_DESC])}"
             + ("..." if len(available_types) > _MAX_TYPES_IN_RESOURCE_DESC else "")
             + (

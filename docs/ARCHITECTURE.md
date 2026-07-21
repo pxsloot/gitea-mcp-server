@@ -608,6 +608,8 @@ Agent: call_tool("gitea_issue_create_issue", {...})
         │           └─▶ OpenAPITool.run() → httpx request to Gitea API
         ├─▶ log completion (ctx.info)
         ├─▶ wrap response in {"result": ...}
+        ├─▶ apply loop hooks with ``execute_fn`` for re-execution
+        │   (e.g. auto-pagination via VirtualParam.loop_hook)
         ├─▶ report progress for paginated fetches (ctx.report_progress)
         ├─▶ on error: translate httpx errors to agent-friendly messages
         └─▶ apply virtual param post-hooks to result (tools/virtual_params.py)

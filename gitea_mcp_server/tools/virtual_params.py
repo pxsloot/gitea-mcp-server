@@ -7,10 +7,14 @@ A registered *pre-hook* runs between extraction and the HTTP call.
 
 Lifecycle for every tool call::
 
-    1. inject_into(tool.parameters)   ← adds to schema at startup
-    2. extract_from(kwargs)           ← pops before HTTP call
-    3. apply_pre_hooks(extracted)     ← runs pre-hooks after extraction  (NEW)
-    4. apply_to(result, extracted)    ← runs post-hooks after call
+    1. inject_into(tool.parameters)     ← adds to schema at startup
+    2. extract_from(kwargs)             ← pops before HTTP call
+    3. apply_pre_hooks(extracted)       ← runs pre-hooks after extraction
+    4. _pipeline_with_context(...)      ← HTTP call, pagination metadata,
+       │                                   then loop hooks (re-execution
+       │                                   with ``execute_fn``)
+       └─ _apply_loop_hooks(...)
+    5. apply_to(result, extracted)      ← runs post-hooks after call
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed.
@@ -89,6 +93,14 @@ class VirtualParam:
 
             A loop_hook returns a new ``ToolResult``, typically with
             merged data and ``has_more=False``.
+
+            .. important::
+
+                The hook is responsible for its own termination (e.g. stop
+                when a page returns fewer items than ``limit``).  There is
+                no built-in iteration limit — a buggy hook could loop
+                indefinitely.  Future consumers should document their
+                termination strategy.
     """
 
     schema: dict[str, Any]

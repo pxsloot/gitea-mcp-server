@@ -327,12 +327,34 @@ class _ToolWrappingTransform(Transform):
         ``execute_fn`` callable so they can re-invoke the HTTP execution
         path with updated arguments (e.g. incremented ``page``).
 
+        The ``execute_fn`` callable validates its kwargs (same as the
+        initial pipeline) so malformed re-execution arguments are caught
+        early rather than reaching the Gitea API.
+
+        .. note::
+
+            Each hook is responsible for its own termination (stop when
+            ``has_more`` is false or a page returns fewer items than the
+            page size).  No built-in iteration limit exists — that is
+            intentional; the loop logic belongs in the hook.
+
         Returns the (potentially modified) ``ToolResult``.
         """
         if not extracted:
             return result
 
         async def _execute_fn(inner_kwargs: dict[str, Any]) -> ToolResult:
+            # Validate re-execution kwargs the same way the initial
+            # pipeline validates them (idempotent, catches errors
+            # early instead of relying on the Gitea API to reject them).
+            try:
+                _run_validation(
+                    inner_kwargs,
+                    tool.parameters.get("required"),
+                    tool.parameters.get("properties"),
+                )
+            except ValidationError as e:
+                raise ValueError(str(e)) from e
             return await _run_with_error_handling(
                 inner_kwargs,
                 tool,

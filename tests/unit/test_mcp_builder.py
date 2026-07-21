@@ -1184,7 +1184,7 @@ class TestToolWrappingTransform:
 
         hook = AsyncMock()
         hook.return_value = ToolResult(
-            structured_content={"result": [{"id": 1, "id": 2}], "has_more": False},
+            structured_content={"result": [{"id": 1}, {"id": 2}], "has_more": False},
         )
 
         result = ToolResult(
@@ -1218,7 +1218,7 @@ class TestToolWrappingTransform:
         assert callable(args[3])
 
         assert output.structured_content["has_more"] is False
-        assert output.structured_content["result"] == [{"id": 1, "id": 2}]
+        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
 
     @pytest.mark.asyncio
     async def test_apply_loop_hooks_execute_fn_reinvokes_http(self):
@@ -1279,6 +1279,40 @@ class TestToolWrappingTransform:
         # Results merged
         assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
         assert output.structured_content["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_execute_fn_validates_kwargs(self):
+        """execute_fn validates kwargs, rejecting invalid values."""
+        from fastmcp.tools.base import ToolResult
+        from gitea_mcp_server.tools.virtual_params import VirtualParam
+
+        transform = self.make_transform()
+        tool = self.make_tool(customized=True)
+
+        async def bad_loop_hook(result, value, kwargs, execute_fn):
+            await execute_fn({"page": 0})  # page < 1 is invalid
+            return result
+
+        extracted = {"fetch_all": True}
+
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "fetch_all": VirtualParam(
+                    schema={"type": "boolean"},
+                    default=False,
+                    description="",
+                    loop_hook=bad_loop_hook,
+                ),
+            },
+        ):
+            result = ToolResult(
+                structured_content={"result": [{"id": 1}], "has_more": True},
+            )
+            with pytest.raises(ValueError, match="page must be >= 1"):
+                await transform._apply_loop_hooks(
+                    result, {"page": 1}, extracted, tool, "/test", "GET",
+                )
 
     @pytest.mark.asyncio
     async def test_loop_hooks_chain_integration(self):

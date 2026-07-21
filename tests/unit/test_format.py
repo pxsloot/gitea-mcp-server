@@ -2,14 +2,16 @@
 
 Covers all functions in __all__:
 - _snake_to_title, _format_datetime, _format_scalar, _format_simple_value
-- _resolve_anyof_schema, _format_as_markdown
+- _resolve_anyof_schema, _format_as_markdown, _format_parameter_table, _format_type
 """
 
 from gitea_mcp_server.format import (
     _format_as_markdown,
     _format_datetime,
+    _format_parameter_table,
     _format_scalar,
     _format_simple_value,
+    _format_type,
     _resolve_anyof_schema,
     _snake_to_title,
 )
@@ -512,3 +514,139 @@ class TestFormatAsMarkdown:
         # Dot-path keys should NOT appear
         assert "user.id" not in result
         assert "labels.Name" not in result
+
+
+class TestFormatType:
+    """Tests for _format_type — type enrichment with enum/array info."""
+
+    def test_plain_type_unchanged(self):
+        """No enum, no array items — returns basic type."""
+        assert _format_type({"type": "string"}) == "string"
+        assert _format_type({"type": "integer"}) == "integer"
+        assert _format_type({"type": "boolean"}) == "boolean"
+
+    def test_fallback_when_no_type(self):
+        """No type key — returns 'any'."""
+        assert _format_type({}) == "any"
+
+    def test_enum_appends_values(self):
+        """Enum values appear as type [val1, val2, ...]."""
+        prop = {"type": "string", "enum": ["merge", "rebase", "squash"]}
+        assert _format_type(prop) == "string [merge, rebase, squash]"
+
+    def test_enum_with_integer_values(self):
+        """Non-string enum values are stringified."""
+        prop = {"type": "integer", "enum": [1, 2, 3]}
+        assert _format_type(prop) == "integer [1, 2, 3]"
+
+    def test_array_with_items_properties(self):
+        """Array with items.properties shows array of {key1, key2}."""
+        prop = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string"},
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+            },
+        }
+        assert _format_type(prop) == "array of {operation, path, content}"
+
+    def test_array_without_items(self):
+        """Array without items schema — unchanged."""
+        assert _format_type({"type": "array"}) == "array"
+
+    def test_array_with_items_no_properties(self):
+        """Array items with no properties — unchanged."""
+        prop = {"type": "array", "items": {"type": "string"}}
+        assert _format_type(prop) == "array"
+
+    def test_enum_takes_priority_over_array(self):
+        """When both enum and array are present, enum wins."""
+        prop = {
+            "type": "array",
+            "enum": ["create", "update", "delete"],
+            "items": {"type": "string"},
+        }
+        assert _format_type(prop) == "array [create, update, delete]"
+
+
+class TestFormatParameterTable:
+    """Tests for _format_parameter_table — the markdown parameter table."""
+
+    def test_plain_params(self):
+        """Basic string/integer params render without enrichment."""
+        props = {
+            "owner": {"type": "string", "description": "owner of the repo"},
+            "index": {"type": "integer", "description": "issue index"},
+        }
+        result = _format_parameter_table(props, ["owner", "index"])
+        assert "| owner | string | yes | owner of the repo |" in result
+        assert "| index | integer | yes | issue index |" in result
+        assert "## Parameters" in result
+
+    def test_enum_param(self):
+        """Enum param shows values in type column."""
+        props = {
+            "Do": {
+                "type": "string",
+                "enum": ["merge", "rebase", "squash"],
+            },
+        }
+        result = _format_parameter_table(props, ["Do"])
+        assert "| Do | string [merge, rebase, squash] | yes |  |" in result
+
+    def test_array_param(self):
+        """Array param with items.properties shows item keys."""
+        props = {
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {"type": "string"},
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                },
+                "description": "list of file operations",
+            },
+        }
+        result = _format_parameter_table(props, ["files"])
+        assert "| files | array of {operation, path, content} | yes | list of file operations |" in result
+
+    def test_optional_param(self):
+        """Non-required param gets 'no' in Required column."""
+        props = {
+            "message": {"type": "string", "description": "commit message"},
+        }
+        result = _format_parameter_table(props, [])
+        assert "| message | string | no | commit message |" in result
+
+    def test_description_escapes_pipe(self):
+        """Pipe characters in description are escaped."""
+        props = {
+            "owner": {"type": "string", "description": "owner|repo"},
+        }
+        result = _format_parameter_table(props, ["owner"])
+        assert r"| owner | string | yes | owner\|repo |" in result
+
+    def test_invalid_prop_skipped(self):
+        """Non-dict properties are skipped without error."""
+        props = {"bad": "not a dict"}
+        result = _format_parameter_table(props, [])
+        assert "bad" not in result
+        assert "## Parameters" in result
+
+    def test_empty_properties(self):
+        """Empty properties produces header with no data rows."""
+        result = _format_parameter_table({}, [])
+        assert "## Parameters" in result
+        assert "Parameter | Type | Required | Description" in result
+        # No data row below the separator
+        header_end = result.index("|-----------")
+        rest = result[header_end:]
+        # Only blank line after separator, no `| owner |` etc.
+        assert rest.strip() == "|-----------|------|----------|-------------|"

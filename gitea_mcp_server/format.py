@@ -300,6 +300,41 @@ def _format_as_markdown(
 # ============================================================================
 
 
+def _format_type(prop: dict[str, Any]) -> str:
+    """Build a user-friendly type string with optional enum or array-item details.
+
+    Enriches the type column of the parameter table so agents can see structural
+    information without a second lookup:
+
+    - Enum parameters append allowed values: ``string [merge, rebase, squash]``
+    - Array parameters with known item properties list them: ``array of {operation, path, content}``
+
+    Args:
+        prop: The JSON Schema property dict for a single parameter.
+
+    Returns:
+        A human-readable type string.
+    """
+    ptype = str(prop.get("type", "any"))
+
+    # 1. Enum — append allowed values right in the type column
+    enum_vals = prop.get("enum")
+    if enum_vals:
+        vals = ", ".join(str(v) for v in enum_vals)
+        return f"{ptype} [{vals}]"
+
+    # 2. Array with known item shape — list key property names
+    if ptype == "array":
+        items = prop.get("items")
+        if isinstance(items, dict):
+            item_props = items.get("properties")
+            if isinstance(item_props, dict):
+                keys = ", ".join(item_props.keys())
+                return f"array of {{{keys}}}"
+
+    return ptype
+
+
 def _format_parameter_table(properties: dict[str, Any], required: list[str]) -> str:
     """Render a parameter table from JSON Schema properties."""
     lines = [
@@ -311,7 +346,7 @@ def _format_parameter_table(properties: dict[str, Any], required: list[str]) -> 
     for param_name, prop in properties.items():
         if not isinstance(prop, dict):
             continue
-        ptype = prop.get("type", "any")
+        ptype = _format_type(prop)
         preq = "yes" if param_name in required else "no"
         pdesc = prop.get("description", "").replace("|", "\\|")
         lines.append(f"| {param_name} | {ptype} | {preq} | {pdesc} |")
@@ -510,6 +545,7 @@ __all__ = [
     "_format_scalar",
     "_format_simple_value",
     "_format_tool_info_markdown",
+    "_format_type",
     "_resolve_anyof_schema",
     "_snake_to_title",
     "apply_format",

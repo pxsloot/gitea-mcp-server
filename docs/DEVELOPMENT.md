@@ -249,9 +249,9 @@ From this doc's how-to angle: to add a new scope-gated param, set
     ``format``'s default is injected at construction time via
     ``response_format``, so the transform never calls ``Config.get()``
     at wrap time.  ``detail`` is injected per-tool from the shared
-    ``DETAIL_PARAM_SCHEMA`` constant.  Both are popped from ``kwargs``
-    before the HTTP call and forwarded to the output formatting layer
-    (``format_result``).
+    ``DETAIL_PARAM_SCHEMA`` constant.      Both are popped from ``kwargs``
+    before the HTTP call and forwarded to ``apply_format`` in the output
+    formatting layer.
 
     Because ``format`` and ``detail`` are not virtual params, they don't
     appear in ``virtual_params.py`` and don't go through the

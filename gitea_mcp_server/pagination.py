@@ -168,7 +168,7 @@ class PaginationRunner:
         final_structured["next_offset"] = None
         final_structured["total_count"] = total_count
 
-        # content carries the first page's text; format_result (called
+        # content carries the first page's text; apply_format (called
         # after PaginationRunner) regenerates it from the final data.
         return ToolResult(
             content=result.content,

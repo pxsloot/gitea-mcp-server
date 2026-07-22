@@ -21,10 +21,9 @@ from gitea_mcp_server.format import (
     _format_scalar,
     _format_simple_value,
     _format_type,
-    apply_format,
-    format_result,
     _resolve_anyof_schema,
     _snake_to_title,
+    apply_format,
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
 
@@ -1094,119 +1093,6 @@ class TestFormatPaginatedResult:
 
 
 # ============================================================================
-# format_result - detail=concise with JSON output
-# ============================================================================
-
-
-class TestFormatResultConcise:
-    """Tests for format_result with detail=concise in JSON mode."""
-
-    def _make_result(self, data: dict | list) -> ToolResult:
-        return ToolResult(structured_content={"result": data})
-
-    def _output_schema(self, result_schema: dict) -> dict:
-        return {"type": "object", "properties": {"result": result_schema}}
-
-    def test_json_full_no_collapse(self):
-        """detail='full' (default) with JSON returns complete data unchanged."""
-        data = {"owner": {"id": 1, "login": "user1"}, "name": "repo"}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {
-                "owner": {"$ref": "#/components/schemas/User"},
-                "name": {"type": "string"},
-            },
-        })
-        result = format_result(self._make_result(data), "json", output_schema=schema, detail="full")
-        assert result.content is not None
-        parsed = json.loads(result.content[0].text)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
-
-    def test_json_concise_collapses_ref_dict(self):
-        """detail='concise' + json collapses $ref dicts to labels."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
-        })
-        result = format_result(self._make_result(data), "json", output_schema=schema, detail="concise")
-        parsed = json.loads(result.content[0].text)
-        assert parsed["owner"] == "$ref:User"
-
-    def test_json_concise_collapses_ref_list(self):
-        """detail='concise' + json collapses $ref lists to labels."""
-        data = {"labels": [{"id": 1, "name": "bug"}, {"id": 2, "name": "feature"}]}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {
-                "labels": {"type": "array", "items": {"$ref": "#/components/schemas/Label"}},
-            },
-        })
-        result = format_result(self._make_result(data), "json", output_schema=schema, detail="concise")
-        parsed = json.loads(result.content[0].text)
-        assert parsed["labels"] == "$ref:Label[2]"
-
-    def test_json_concise_inline_not_collapsed(self):
-        """Inline schemas (no $ref) remain expanded even with detail='concise'."""
-        data = {"config": {"host": "localhost", "port": 8080}}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "properties": {"host": {"type": "string"}, "port": {"type": "integer"}},
-                },
-            },
-        })
-        result = format_result(self._make_result(data), "json", output_schema=schema, detail="concise")
-        parsed = json.loads(result.content[0].text)
-        assert isinstance(parsed["config"], dict)
-        assert parsed["config"]["host"] == "localhost"
-
-    def test_json_concise_top_level_object_stays(self):
-        """Top-level object is not collapsed."""
-        data = {"name": "repo", "description": "a test repo"}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
-        })
-        result = format_result(self._make_result(data), "json", output_schema=schema, detail="concise")
-        parsed = json.loads(result.content[0].text)
-        assert parsed["name"] == "repo"
-        assert parsed["description"] == "a test repo"
-
-    def test_markdown_concise_no_regression(self):
-        """Existing markdown concise behavior is preserved."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        schema = self._output_schema({
-            "type": "object",
-            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
-        })
-        result = format_result(self._make_result(data), "markdown", output_schema=schema, detail="concise")
-        assert result.content is not None
-        assert "$ref:User" in result.content[0].text
-
-    def test_no_output_schema_fallback(self):
-        """When output_schema is None, concise is a no-op (data unchanged)."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        result = format_result(self._make_result(data), "json", output_schema=None, detail="concise")
-        parsed = json.loads(result.content[0].text)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
-
-    def test_raw_passthrough(self):
-        """format='raw' ignores detail — data is not collapsed."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        result = format_result(self._make_result(data), "raw", detail="concise")
-        # Raw returns early, structured_content is the original data
-        sc = result.structured_content
-        assert sc is not None
-        assert isinstance(sc["result"], dict)
-        assert sc["result"]["owner"]["login"] == "user1"
-
-
-# ============================================================================
 # apply_format - detail=concise with JSON output
 # ============================================================================
 
@@ -1215,8 +1101,8 @@ class TestApplyFormatConcise:
     """Tests for apply_format with detail=concise in JSON mode.
 
     apply_format receives the schema OF the data directly (not wrapped in a
-    ``{"properties": {"result": ...}}`` container — that wrapper is specific
-    to ``format_result`` which works on ``ToolResult.structured_content``).
+    ``{"properties": {"result": ...}}`` container — that wrapper was specific
+    to the removed ``format_result`` which worked on ``ToolResult.structured_content``).
     """
 
     def test_json_full_no_collapse(self):

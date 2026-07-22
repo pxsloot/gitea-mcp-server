@@ -311,7 +311,11 @@ class _ToolWrappingTransform(Transform):
             if data is None:
                 return result
 
-            formatted = apply_format(data, fmt, detail=detail, schema=raw_schema)
+            # raw_schema is the wrapped output schema ({result: ...});
+            # extract the inner schema for schema-aware collapse
+            # (detail=concise needs the $ref pointers from the inner schema).
+            inner_schema = raw_schema.get("properties", {}).get("result") if raw_schema else None
+            formatted = apply_format(data, fmt, detail=detail, schema=inner_schema)
             # Preserve original structured_content (carries pagination
             # metadata and uncollapsed data for programmatic access).
             formatted.structured_content = result.structured_content

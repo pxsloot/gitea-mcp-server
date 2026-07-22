@@ -20,7 +20,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
-from gitea_mcp_server.tools.schemas import _get_success_schema
+from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,9 @@ def _make_resource_func(  # noqa: PLR0913 - 6 params: path, method, operation, c
         operation: The OpenAPI operation dict.
         gitea_client: Client for API calls.
         resource_name: Optional override for the resource function name.
-        response_schema: The unresolved response schema (with ``$ref`` intact)
-            for ``$ref``-aware data collapse in the display layer.
+        response_schema: The unresolved inner response schema (with ``$ref``
+            intact, ``{result: ...}`` wrapper stripped) for ``$ref``-aware
+            data collapse in the display layer.
     """
     path_params = []
     if "parameters" in operation:
@@ -233,9 +234,13 @@ def register_auto_generated_resources(
 
                 resource_name = _derive_resource_name(operation, path)
 
-                # Derive the unresolved response schema for $ref-aware collapse
-                response_schema = _get_success_schema(
-                    openapi_spec, path, "get", resolve=False,
+                # Derive the unresolved response schema for $ref-aware collapse.
+                # Unwrap the result envelope ({result: inner}) so the stored
+                # schema matches the raw API response shape — consumers of
+                # meta["response_schema"] (like _format_resource_content) need
+                # the inner schema for $ref-aware data collapse.
+                response_schema = _unwrap_result_schema(
+                    _get_success_schema(openapi_spec, path, "get", resolve=False),
                 )
 
                 swagger_tags = set(operation.get("tags", [])) or None

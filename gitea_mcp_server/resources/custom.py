@@ -29,7 +29,7 @@ from gitea_mcp_server.constants import (
 from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
-from gitea_mcp_server.tools.schemas import _get_success_schema
+from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,8 @@ def _build_resource_meta(
     """Build the content metadata dict for a JSON resource response.
 
     Args:
-        response_schema: Unresolved response schema for ``$ref``-aware collapse.
+        response_schema: Unresolved inner response schema (``{result: ...}``
+            wrapper stripped) for ``$ref``-aware collapse.
         format_hint: Name of the registered formatter to use for markdown rendering.
         extra: Additional metadata keys (e.g. ``{"owner": ..., "repo": ...}``).
 
@@ -200,12 +201,27 @@ def register_custom_resources(  # noqa: PLR0915
 
     # Pre-derive response schemas for the display layer.
     # Each maps to the Gitea API endpoint the handler calls internally.
-    _repo_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}", "get", resolve=False) if openapi_spec else None
-    _issues_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/issues", "get", resolve=False) if openapi_spec else None
-    _pulls_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/pulls", "get", resolve=False) if openapi_spec else None
-    _releases_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/releases", "get", resolve=False) if openapi_spec else None
-    _labels_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/labels", "get", resolve=False) if openapi_spec else None
-    _user_schema = _get_success_schema(openapi_spec, "/users/{username}", "get", resolve=False) if openapi_spec else None
+    # Schemas are unwrapped (inner result schema) so they match the raw API
+    # response shape — the display pipeline needs the inner schema for
+    # $ref-aware data collapse.
+    _repo_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}", "get", resolve=False)
+    ) if openapi_spec else None
+    _issues_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/issues", "get", resolve=False)
+    ) if openapi_spec else None
+    _pulls_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/pulls", "get", resolve=False)
+    ) if openapi_spec else None
+    _releases_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/releases", "get", resolve=False)
+    ) if openapi_spec else None
+    _labels_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/labels", "get", resolve=False)
+    ) if openapi_spec else None
+    _user_schema = _unwrap_result_schema(
+        _get_success_schema(openapi_spec, "/users/{username}", "get", resolve=False)
+    ) if openapi_spec else None
 
     # ── repository ──────────────────────────────────────────────────────────
 

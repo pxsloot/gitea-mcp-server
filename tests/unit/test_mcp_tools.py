@@ -634,6 +634,55 @@ class TestFormatResourceContent:
         assert "$ref:User" in result
 
 
+class TestFormatResourceContentWrappedSchema:
+    """Regression tests for issue #510: detail=concise on resource data.
+
+    Resources now store the inner (unwrapped) schema in meta["response_schema"]
+    so _format_resource_content receives a schema that matches the data shape.
+    These tests verify that the pipeline works end-to-end with the kind of
+    schemas that resources actually provide.
+    """
+
+    def test_repo_resource_style_concise_json(self):
+        """Simulates a repository resource: owner and permissions get collapsed."""
+        raw = '{"id": 1, "name": "test-repo", "owner": {"id": 5, "login": "alice"}, "permissions": {"pull": true, "push": false}}'
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "name": {"type": "string"},
+                "owner": {"$ref": "#/components/schemas/User"},
+                "permissions": {"$ref": "#/components/schemas/Permission"},
+            },
+        }
+        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        parsed = json_module.loads(result)
+        assert parsed["name"] == "test-repo"
+        assert parsed["owner"] == "$ref:User"
+        assert parsed["permissions"] == "$ref:Permission"
+
+    def test_issues_list_style_concise_json(self):
+        """Simulates an issue list resource: nested items get collapsed."""
+        raw = '[{"id": 1, "title": "Fix bug", "user": {"id": 5, "login": "alice"}}, {"id": 2, "title": "Add feature", "user": {"id": 7, "login": "bob"}}]'
+        schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "user": {"$ref": "#/components/schemas/User"},
+                },
+            },
+        }
+        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        parsed = json_module.loads(result)
+        assert len(parsed) == 2
+        assert parsed[0]["title"] == "Fix bug"
+        assert parsed[0]["user"] == "$ref:User"
+        assert parsed[1]["user"] == "$ref:User"
+
+
 class TestMcpListResourcesFormat:
     """Tests that list_resources respects the format parameter.
 

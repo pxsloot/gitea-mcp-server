@@ -325,6 +325,32 @@ The customization layers as applied during server startup:
    match the runtime shape.  This is done in `openapi_converter.py` via
    `_wrap_success_response_schemas`.
 
+   Consumers that need a schema matching the *actual API response shape*
+   (data collapse, example generation) must use the inner schema.  The
+   helper ``_unwrap_result_schema`` (in ``tools/schemas.py``) strips the
+   wrapper and is applied when storing schemas for downstream consumers
+   (data collapse, example generation): ``output_schema_raw`` (tool path)
+   and ``meta["response_schema"]`` (resource path) both store the inner
+   (unwrapped) schema so that schema consumers receive a schema that
+   matches the data they work with — no inline unwrapping needed.
+
+   ### Schema wrapping reference
+
+   The system manages three related schema shapes.  Knowing which shape
+   a given code path operates on is key to reasoning about wrapping,
+   unwrapping, and collapse behaviour.
+
+   | Shape | Example | Where it lives | Consumers |
+   |-------|---------|----------------|-----------|
+   | **Original** | ``{"type": "array", "items": {"$ref": "#/..."}}`` | Spec in memory during conversion, *before* ``_wrap_success_response_schemas`` runs | — |
+   | **Wrapped** | ``{"type": "object", "properties": {"result": {"type": "array", …}}}`` | ``tool.output_schema`` | FastMCP output validation, ``_is_array_response()`` (looks inside ``result``), ``_unwrap_result_schema()`` input |
+   | **Inner (unwrapped)** | ``{"type": "array", "items": {"$ref": "#/..."}}`` | ``tool.meta["output_schema_raw"]``, ``meta["response_schema"]`` | ``_schema_to_compact_example()``, ``_collapse_data()``, ``detail=concise`` rendering |
+
+   Wrapping happens once during spec conversion (``_wrap_success_response_schemas``)
+   and is never undone on ``tool.output_schema`` — that wrapped form is the
+   permanent shape for FastMCP validation.  The inner shape is derived once at
+   storage time and cached alongside the wrapped one.
+
 6. **Cache invalidation via middleware** -- Write tools register invalidation
    patterns at startup.  The `CacheInvalidationMiddleware` computes concrete
    URIs from tool arguments and clears them from the response cache after

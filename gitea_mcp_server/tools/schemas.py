@@ -312,6 +312,35 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
     return False
 
 
+def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Extract the inner schema from a ``{"result": ...}`` wrapped response schema.
+
+    The OpenAPI converter wraps all response schemas in a ``{"result": ...}``
+    envelope (via :func:`_wrap_success_response_schemas`) to satisfy FastMCP's
+    ``type: object`` requirement for output validation.
+
+    Consumers that need a schema matching the *actual API response shape*
+    (data collapse, example generation) must use the inner schema.  This
+    function is the single place where that unwrapping logic lives.
+
+    When the schema is not wrapped (no ``result`` property), it is returned
+    unchanged — the function is idempotent for inner and non-wrapped schemas.
+
+    Args:
+        schema: A JSON Schema dict, possibly wrapped in ``{"result": ...}``,
+                or ``None``.
+
+    Returns:
+        The inner schema (``properties.result``), or ``schema`` unchanged
+        if there is no ``result`` property or if ``schema`` is ``None``.
+    """
+    if schema and isinstance(schema, dict) and schema.get("type") == "object":
+        inner = schema.get("properties", {}).get("result")
+        if isinstance(inner, dict):
+            return inner
+    return schema
+
+
 __all__ = [
     "_collect_refs",
     "_deep_resolve_schema",
@@ -320,5 +349,6 @@ __all__ = [
     "_resolve_ref",
     "_response_has_no_content",
     "_schema_type_is_array",
+    "_unwrap_result_schema",
     "derive_output_schema",
 ]

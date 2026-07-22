@@ -1,7 +1,9 @@
-"""Hand-written MCP resource implementations with Markdown formatting.
+"""Hand-written MCP resource implementations.
 
-These custom resources override auto-generated ones with the same URI,
-providing user-friendly formatted output for common use cases.
+Custom resources return raw data (JSON or text) with metadata describing the
+response schema and a ``format_hint`` for the display layer.  No formatting is
+done at the resource level — that is the responsibility of the unified display
+pipeline in ``mcp_tools.py`` and ``tools/display.py``.
 """
 
 import base64
@@ -14,6 +16,7 @@ from typing import Any, cast
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
+from fastmcp.resources import ResourceContent, ResourceResult
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import (
@@ -21,29 +24,47 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_RELEASES,
     CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
+    HTTP_STATUS_NOT_FOUND,
 )
+from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.format import (
-    ResourceResult,
-    _build_server_info_markdown,
-    _format_issues_markdown,
-    _format_labels_markdown,
-    _format_pulls_markdown,
-    _format_release_markdown,
-    _format_repo_markdown,
-    _format_user_markdown,
-    _handle_not_found,
-)
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
+from gitea_mcp_server.tools.schemas import _get_success_schema
 
 logger = logging.getLogger(__name__)
+
+
+def _build_resource_meta(
+    *,
+    response_schema: dict[str, Any] | None = None,
+    format_hint: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Build the content metadata dict for a JSON resource response.
+
+    Args:
+        response_schema: Unresolved response schema for ``$ref``-aware collapse.
+        format_hint: Name of the registered formatter to use for markdown rendering.
+        extra: Additional metadata keys (e.g. ``{"owner": ..., "repo": ...}``).
+
+    Returns:
+        Metadata dict, or ``None`` if empty.
+    """
+    meta: dict[str, Any] = {}
+    if response_schema is not None:
+        meta["response_schema"] = response_schema
+    if format_hint is not None:
+        meta["format_hint"] = format_hint
+    if extra:
+        meta.update(extra)
+    return meta if meta else None
 
 
 def resource_handler(
     resource_type: str,
     id_format: str,
     error_message: str,
-) -> Callable[..., Callable[..., Awaitable[str]]]:
+) -> Callable[..., Callable[..., Awaitable[ResourceResult]]]:
     """Decorator that wraps a resource function with error handling.
 
     Catches exceptions, converts 404 to structured ResourceError
@@ -58,7 +79,9 @@ def resource_handler(
             (e.g. "Repository '{owner}/{repo}' not found.")
     """
 
-    def decorator(func: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+    def decorator(
+        func: Callable[..., Awaitable[ResourceResult]],
+    ) -> Callable[..., Awaitable[ResourceResult]]:
         sig = inspect.signature(func)
 
         @wraps(func)
@@ -90,6 +113,23 @@ def _find_matching_token_scopes(tokens_data: list, raw_token: str) -> list[str] 
     return None
 
 
+def _handle_not_found(
+    e: Exception, resource_type: str, resource_id: str, custom_message: str | None = None
+) -> None:
+    """Convert a 404 exception to ResourceError."""
+    if getattr(e, "status_code", None) == HTTP_STATUS_NOT_FOUND:
+        message = custom_message or f"Resource not found: {resource_id}"
+        raise ResourceError(
+            {
+                "code": "NOT_FOUND",
+                "message": message,
+                "detail": str(e),
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+            }
+        ) from e
+
+
 def register_custom_resources(  # noqa: PLR0915
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -118,6 +158,11 @@ def register_custom_resources(  # noqa: PLR0915
     ]:
         # Check scope before registering: skip if the token lacks the
         # required scope for this resource.
+        #
+        # Note: ``available_scopes`` is derived from the token at startup
+        # and is effectively immutable within a server session — changing
+        # scopes requires a new token and a full server restart.  The
+        # captured closure is therefore stable for the process lifetime.
         required_scope = (meta or {}).get("required_scope")
         if (
             required_scope is not None
@@ -153,23 +198,41 @@ def register_custom_resources(  # noqa: PLR0915
 
         return deco
 
+    # Pre-derive response schemas for the display layer.
+    # Each maps to the Gitea API endpoint the handler calls internally.
+    _repo_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}", "get", resolve=False) if openapi_spec else None
+    _issues_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/issues", "get", resolve=False) if openapi_spec else None
+    _pulls_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/pulls", "get", resolve=False) if openapi_spec else None
+    _releases_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/releases", "get", resolve=False) if openapi_spec else None
+    _labels_schema = _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/labels", "get", resolve=False) if openapi_spec else None
+    _user_schema = _get_success_schema(openapi_spec, "/users/{username}", "get", resolve=False) if openapi_spec else None
+
     # ── repository ──────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_REPOSITORY, **scope_meta("read:repository")}
 
     @_register(
         "gitea://repos/{owner}/{repo}",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "repository"},
         meta=_meta,
     )
     @resource_handler("repository", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
     async def get_repository(owner: str, repo: str) -> ResourceResult:
-        """Get full repository metadata with nice Markdown formatting."""
+        """Get full repository metadata."""
         data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
         if isinstance(data, str):
-            return data
-        return _format_repo_markdown(data)
+            return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(data),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_repo_schema,
+                    format_hint="repository",
+                ),
+            )]
+        )
 
     # ── readme ──────────────────────────────────────────────────────────────
 
@@ -188,13 +251,14 @@ def register_custom_resources(  # noqa: PLR0915
         """Get repository README content."""
         response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
         if isinstance(response, str):
-            return response
+            return ResourceResult(contents=[ResourceContent(content=response, mime_type="text/plain")])
         if not isinstance(response, dict):
-            return str(response)
+            return ResourceResult(contents=[ResourceContent(content=str(response), mime_type="text/plain")])
         if response.get("encoding") == "base64":
             raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return raw
-        return cast("str", response.get("content", ""))
+            return ResourceResult(contents=[ResourceContent(content=raw, mime_type="text/plain")])
+        content = cast("str", response.get("content", ""))
+        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
 
     # ── issues ──────────────────────────────────────────────────────────────
 
@@ -202,7 +266,7 @@ def register_custom_resources(  # noqa: PLR0915
 
     @_register(
         "gitea://repos/{owner}/{repo}/issues{?state}",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "issues"},
         meta=_meta,
     )
@@ -227,10 +291,18 @@ def register_custom_resources(  # noqa: PLR0915
 
         issues = await gitea_client.request("GET", f"/repos/{owner}/{repo}/issues", params=params)
         if isinstance(issues, str):
-            return issues
+            return ResourceResult(contents=[ResourceContent(content=issues, mime_type="text/plain")])
 
-        title = f"Issues ({state})" if state else "All Issues"
-        return _format_issues_markdown(issues, title=title)
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(issues),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_issues_schema,
+                    format_hint="issues",
+                ),
+            )]
+        )
 
     # ── pulls ───────────────────────────────────────────────────────────────
 
@@ -238,7 +310,7 @@ def register_custom_resources(  # noqa: PLR0915
 
     @_register(
         "gitea://repos/{owner}/{repo}/pulls{?state}",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "pull_requests"},
         meta=_meta,
     )
@@ -263,10 +335,18 @@ def register_custom_resources(  # noqa: PLR0915
 
         pulls = await gitea_client.request("GET", f"/repos/{owner}/{repo}/pulls", params=params)
         if isinstance(pulls, str):
-            return pulls
+            return ResourceResult(contents=[ResourceContent(content=pulls, mime_type="text/plain")])
 
-        title = f"Pull Requests ({state})" if state else "All Pull Requests"
-        return _format_pulls_markdown(pulls, title=title)
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(pulls),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_pulls_schema,
+                    format_hint="pull_requests",
+                ),
+            )]
+        )
 
     # ── file ────────────────────────────────────────────────────────────────
 
@@ -292,23 +372,24 @@ def register_custom_resources(  # noqa: PLR0915
         )
 
         if isinstance(response, str):
-            return response
+            return ResourceResult(contents=[ResourceContent(content=response, mime_type="text/plain")])
 
         if not isinstance(response, dict):
-            return str(response)
+            return ResourceResult(contents=[ResourceContent(content=str(response), mime_type="text/plain")])
 
         if response.get("encoding") == "base64":
             raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return raw
-        return cast("str", response.get("content", ""))
+            return ResourceResult(contents=[ResourceContent(content=raw, mime_type="text/plain")])
+        content = cast("str", response.get("content", ""))
+        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
 
-    # ── releases ────────────────────────────────────────────────────────────
+    # ── releases ─────────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_RELEASES, **scope_meta("read:repository")}
 
     @_register(
         "gitea://repos/{owner}/{repo}/releases",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "releases"},
         meta=_meta,
     )
@@ -319,19 +400,18 @@ def register_custom_resources(  # noqa: PLR0915
         """List releases for a repository."""
         releases = await gitea_client.request("GET", f"/repos/{owner}/{repo}/releases")
         if isinstance(releases, str):
-            return releases
+            return ResourceResult(contents=[ResourceContent(content=releases, mime_type="text/plain")])
 
-        if not releases:
-            return f"# Releases for {owner}/{repo}\n\nNo releases found."
-
-        lines = [f"# Releases for {owner}/{repo}", "", f"Showing {len(releases)} releases", ""]
-
-        for release in releases:
-            lines.append(_format_release_markdown(release))
-            lines.append("---")
-            lines.append("")
-
-        return "\n".join(lines)
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(releases),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_releases_schema,
+                    format_hint="release",
+                ),
+            )]
+        )
 
     # ── labels ──────────────────────────────────────────────────────────────
 
@@ -339,7 +419,7 @@ def register_custom_resources(  # noqa: PLR0915
 
     @_register(
         "gitea://repos/{owner}/{repo}/labels",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "labels"},
         meta=_meta,
     )
@@ -347,39 +427,68 @@ def register_custom_resources(  # noqa: PLR0915
         "labels", "{owner}/{repo}", "Labels not found for repository '{owner}/{repo}'."
     )
     async def list_repo_labels(owner: str, repo: str) -> ResourceResult:
-        """List labels for a repository with format and validation hints."""
+        """List labels for a repository."""
         labels = await gitea_client.request("GET", f"/repos/{owner}/{repo}/labels")
         if isinstance(labels, str):
-            return labels
-        return _format_labels_markdown(labels, owner, repo)
+            return ResourceResult(contents=[ResourceContent(content=labels, mime_type="text/plain")])
+
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(labels),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_labels_schema,
+                    format_hint="labels",
+                    extra={"owner": owner, "repo": repo},
+                ),
+            )]
+        )
 
     # ── user ────────────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
 
     @_register(
-        "gitea://users/{username}", mime_type="text/markdown", tags={"wrapper", "user"}, meta=_meta
+        "gitea://users/{username}", mime_type="application/json", tags={"wrapper", "user"}, meta=_meta
     )
     @resource_handler("user", "{username}", "User '{username}' not found.")
     async def get_user(username: str) -> ResourceResult:
         """Get user profile information."""
         user = await gitea_client.request("GET", f"/users/{username}")
         if isinstance(user, str):
-            return user
-        return _format_user_markdown(user)
+            return ResourceResult(contents=[ResourceContent(content=user, mime_type="text/plain")])
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(user),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_user_schema,
+                    format_hint="user",
+                ),
+            )]
+        )
 
     # ── current user ────────────────────────────────────────────────────────
 
     _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
 
-    @_register("gitea://user", mime_type="text/markdown", tags={"wrapper", "user"}, meta=_meta)
+    @_register("gitea://user", mime_type="application/json", tags={"wrapper", "user"}, meta=_meta)
     @resource_handler("user", "current user", "Current user not found or not authenticated.")
     async def get_current_user() -> ResourceResult:
         """Get current authenticated user profile information."""
         user = await gitea_client.request("GET", "/user")
         if isinstance(user, str):
-            return user
-        return _format_user_markdown(user)
+            return ResourceResult(contents=[ResourceContent(content=user, mime_type="text/plain")])
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(user),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_user_schema,
+                    format_hint="user",
+                ),
+            )]
+        )
 
     # ── organization ────────────────────────────────────────────────────────
 
@@ -387,7 +496,7 @@ def register_custom_resources(  # noqa: PLR0915
 
     @_register(
         "gitea://orgs/{orgname}",
-        mime_type="text/markdown",
+        mime_type="application/json",
         tags={"wrapper", "organization"},
         meta=_meta,
     )
@@ -396,8 +505,17 @@ def register_custom_resources(  # noqa: PLR0915
         """Get organization profile information."""
         org = await gitea_client.request("GET", f"/orgs/{orgname}")
         if isinstance(org, str):
-            return org
-        return _format_user_markdown(org)
+            return ResourceResult(contents=[ResourceContent(content=org, mime_type="text/plain")])
+        return ResourceResult(
+            contents=[ResourceContent(
+                content=json.dumps(org),
+                mime_type="application/json",
+                meta=_build_resource_meta(
+                    response_schema=_user_schema,
+                    format_hint="user",
+                ),
+            )]
+        )
 
     # ── version ─────────────────────────────────────────────────────────────
 
@@ -409,8 +527,9 @@ def register_custom_resources(  # noqa: PLR0915
         """Get server application version."""
         data = await gitea_client.request("GET", "/version")
         if isinstance(data, str):
-            return data
-        return str(data.get("version", "Unknown"))
+            return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
+        content = str(data.get("version", "Unknown")) if isinstance(data, dict) else str(data)
+        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
 
     # ── token scopes ────────────────────────────────────────────────────────
 
@@ -424,20 +543,20 @@ def register_custom_resources(  # noqa: PLR0915
         try:
             user_data = await gitea_client.request("GET", "/user")
             if not isinstance(user_data, dict):
-                return json.dumps({"scopes": None})
+                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
             username = user_data.get("login")
             if not username:
-                return json.dumps({"scopes": None})
+                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
 
             tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
             if not isinstance(tokens_data, list):
-                return json.dumps({"scopes": None})
+                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
 
             scopes = _find_matching_token_scopes(tokens_data, gitea_client.config.token)
-            return json.dumps({"scopes": scopes})
+            return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": scopes}), mime_type="application/json")])
         except Exception:
             logger.exception("Failed to retrieve active token scopes")
-            return json.dumps({"scopes": None})
+            return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
 
     # ── server info (only when openapi_spec is available) ───────────────────
 
@@ -449,11 +568,15 @@ def register_custom_resources(  # noqa: PLR0915
         )
         async def get_server_info() -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
-            return _build_server_info_markdown(openapi_spec)
+            return ResourceResult(contents=[ResourceContent(
+                content=_build_server_info_markdown(openapi_spec),
+                mime_type="text/markdown",
+            )])
 
 
 __all__ = [
     "_find_matching_token_scopes",
+    "_handle_not_found",
     "register_custom_resources",
     "resource_handler",
 ]

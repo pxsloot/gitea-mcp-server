@@ -4,6 +4,8 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
+    _build_server_info_markdown - build server info markdown from
+        the OpenAPI spec info block (not a registered domain formatter).
     _collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
         to labels (``$ref:TypeName``).  Used to shape data before formatting
         so any formatter (json or markdown) receives already-collapsed data.
@@ -39,6 +41,7 @@ from mcp.types import TextContent
 
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 # Note: PAGINATION_KEYS is imported lazily inside format_result() to avoid
 # a module-level coupling that only the deprecated function needs.
@@ -795,7 +798,36 @@ def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent di
     )
 
 
+def _build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
+    """Build server info markdown from OpenAPI spec info block.
+
+    Unlike registered domain formatters (which follow the
+    ``(data, *, detail) -> str`` signature), this function takes the
+    raw OpenAPI spec directly.  It lives in ``format.py`` rather than
+    ``tools/display.py`` because it is not a registered formatter —
+    it is a shared utility used by ``resources/custom.py``.
+    """
+    info = openapi_spec.get("info", {})
+    title = info.get("title", "Unknown")
+    version = info.get("version", "Unknown")
+    description = info.get("description", "")
+    lines = [
+        "# Server Information",
+        "",
+        f"**Server Type**: {title}",
+        f"**API Version**: {version}",
+        "",
+    ]
+    if description:
+        lines.append("## Description")
+        lines.append("")
+        lines.append(description)
+        lines.append("")
+    return "\n".join(lines)
+
+
 __all__ = [
+    "_build_server_info_markdown",
     "_collapse_data",
     "_collapse_value",
     "_extract_type_name",

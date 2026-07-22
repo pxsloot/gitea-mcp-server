@@ -192,11 +192,21 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
 
 Agent reads a resource:
 
-  read_resource("gitea://repos/owner/repo")
+  read_resource("gitea://repos/owner/repo", format="markdown")
     │
     ├─▶ ResponseCachingMiddleware  — return cached if fresh
-    └─▶ Resource handler           — auto or custom
-         └─▶ format as Markdown → return content
+    │
+    ├─▶ _mcp_read_resource_impl(ctx, uri)
+    │     └─▶ ctx.read_resource(uri) → ResourceResult
+    │           └─▶ Resource handler  — auto or custom
+    │                 returns raw data + metadata (schema, format_hint)
+    │           ← (raw, schema, format_hint, extra)
+    │
+    └─▶ _format_resource_content(raw, fmt, schema, format_hint, extra)
+          ├─ if detail=concise: _collapse_data (schema-aware)
+          ├─ if format_hint: call_formatter → registered formatter in tools/display.py
+          └─ else: _format_as_markdown (generic, in format.py)
+          → formatted content
 ```
 
 ---
@@ -217,7 +227,7 @@ Agent reads a resource:
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
-| `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources) | `apply_format`, `format_result`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
+| `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources); home for shared utilities like `_build_server_info_markdown` that don't belong to either domain | `apply_format`, `format_result`, `_build_server_info_markdown`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
 | `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
 
 ### Tool Customization Stack (applied in order)
@@ -262,8 +272,8 @@ The customization layers as applied during server startup:
 | Module | Role |
 |--------|------|
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time |
-| `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs; scope-filtered via `available_scopes` at registration time |
-| `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases, labels) |
+| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer |
+| `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) — moved from the removed `resources/format.py` |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
 

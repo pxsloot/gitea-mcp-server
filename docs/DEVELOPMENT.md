@@ -266,27 +266,44 @@ From this doc's how-to angle: to add a new scope-gated param, set
 
 ## How to Add a Custom Resource
 
-1. **Add formatter** (if needed) in `resources/format.py`:
+1. **Add a display formatter** (if needed) in `tools/display.py`:
    ```python
-   def _format_my_type(data: dict) -> str:
+   @register_formatter("my_type")
+   def _format_my_type(data: dict, *, detail: str = "full") -> str:
        ...
    ```
 
 2. **Write the resource function** in `resources/custom.py`:
+   The handler fetches raw data and returns it with schema and format hint — no
+   formatting.  The display pipeline (``_format_resource_content`` in
+   ``mcp_tools.py``) handles all rendering via the registered formatter.
+
    ```python
+   from gitea_mcp_server.tools.schemas import _get_success_schema
+
+   _my_schema = _get_success_schema(openapi_spec, "/api/path/{param}", "get", resolve=False)
+
    async def my_resource(param: str, gitea_client: GiteaClient) -> ResourceResult:
        """Description for agents."""
        data = await gitea_client.request("GET", f"/api/path/{param}")
-       return _format_my_type(data)
+       if isinstance(data, str):
+           return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
+       return ResourceResult(
+           contents=[ResourceContent(
+               content=json.dumps(data),
+               mime_type="application/json",
+               meta={"response_schema": _my_schema, "format_hint": "my_type"},
+           )]
+       )
    ```
 
-3. **Add to the `custom_resources` list** in `register_custom_resources()`:
+3. **Register** in `register_custom_resources()` using the `@_register` decorator:
    ```python
-   custom_resources: list[tuple[str, Callable, str, set[str], dict | None]] = [
-       ("gitea://my/{param}", my_resource, "text/markdown",
-        {"wrapper", "my_type"}, {"required_scope": "read:repository"}),
-       # ...
-   ]
+   @_register("gitea://my/{param}", mime_type="application/json",
+              tags={"wrapper", "my_type"}, meta=scope_meta("read:repository"))
+   @resource_handler("my", "{param}", "Not found.")
+   async def my_resource(param: str) -> ResourceResult:
+       ...
    ```
 
 4. **Add URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`** in `constants.py` if a
@@ -410,7 +427,7 @@ def _format_custom_type(data: dict) -> str:
     ...
 ```
 
-Domain-specific resource formatters still go in `resources/format.py`.
+Domain-specific resource formatters are registered in `tools/display.py` via the ``@register_formatter`` decorator. See "How to Add a Custom Resource" above.
 
 ---
 

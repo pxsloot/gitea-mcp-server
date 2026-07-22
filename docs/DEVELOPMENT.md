@@ -315,6 +315,39 @@ From this doc's how-to angle: to add a new scope-gated param, set
    GET endpoint exists for the same path -- this prevents the auto-generated
    raw JSON resource from conflicting.
 
+### Pre-computed static resources
+
+For resources whose data is static for the server session (server version,
+token scopes, server info), pre-fetch the data at startup in
+``create_mcp_server()`` and pass it as a parameter to ``register_custom_resources()``.
+The handler becomes a simple closure over the cached value — no API calls on read.
+
+```python
+# In server.py: pre-fetch at startup (async context available)
+version_str: str = "Unknown"
+try:
+    version_data = await gitea_client.request("GET", "/version")
+    if isinstance(version_data, dict):
+        version_str = str(version_data.get("version", "Unknown"))
+except GiteaAPIError:
+    pass
+
+# Pass through the registration chain
+register_all_resources(..., version_str=version_str, ...)
+```
+
+```python
+# In custom.py: handler is a closure — no API call on read
+@_register("gitea://version", mime_type="text/plain", ...)
+async def get_version() -> ResourceResult:
+    return ResourceResult(contents=[
+        ResourceContent(content=version_str, mime_type="text/plain")
+    ])
+```
+
+See ``register_custom_resources()`` for the available pre-computed parameters
+(``version_str``, ``server_info_md``, and ``available_scopes`` for token scopes).
+
 ---
 
 ## How to Add a Synthetic Tool (and Optional Resource)

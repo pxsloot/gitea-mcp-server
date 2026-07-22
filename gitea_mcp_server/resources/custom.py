@@ -26,7 +26,6 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
     HTTP_STATUS_NOT_FOUND,
 )
-from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
@@ -103,17 +102,6 @@ def resource_handler(
     return decorator
 
 
-def _find_matching_token_scopes(tokens_data: list, raw_token: str) -> list[str] | None:
-    """Match token by last eight characters and return sorted scopes, or None."""
-    last_eight = raw_token[-8:]
-    for token in tokens_data:
-        if isinstance(token, dict) and token.get("token_last_eight") == last_eight:
-            scopes = token.get("scopes")
-            if scopes and isinstance(scopes, list):
-                return sorted(scopes)
-    return None
-
-
 def _handle_not_found(
     e: Exception, resource_type: str, resource_id: str, custom_message: str | None = None
 ) -> None:
@@ -131,25 +119,34 @@ def _handle_not_found(
         ) from e
 
 
-def register_custom_resources(  # noqa: PLR0915
+def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec + scopes + pre-computed static data are all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None = None,
     available_scopes: set[str] | None = None,
+    version_str: str = "Unknown",
+    server_info_md: str | None = None,
 ) -> None:
     """Register custom-formatted and custom resources.
 
     Each resource function is defined as a closure that naturally
-    captures ``gitea_client`` (and ``openapi_spec`` where needed),
-    so function signatures expose only URI-relevant parameters.
+    captures the pre-computed data it needs, so function signatures
+    expose only URI-relevant parameters.
     Uses FastMCP's last-registration-wins ordering.
+
+    The ``version_str``, ``available_scopes``, and ``server_info_md``
+    parameters are pre-computed at startup — the handlers return them
+    directly without making API calls on read.
 
     Args:
         mcp: The FastMCP server instance.
         gitea_client: GiteaClient for API calls.
-        openapi_spec: Optional OpenAPI spec for server info resource.
+        openapi_spec: Optional OpenAPI spec for schema derivation.
         available_scopes: Set of scopes the token has, or None (no filtering).
             Resources whose ``required_scope`` is not satisfied are skipped.
+            Also used to serve ``gitea://token/scopes`` content.
+        version_str: Pre-fetched server version string.
+        server_info_md: Pre-built server info markdown, or None.
     """
 
     def _register(
@@ -538,14 +535,9 @@ def register_custom_resources(  # noqa: PLR0915
     _meta = scope_meta(None)
 
     @_register("gitea://version", mime_type="text/plain", tags={"wrapper", "server"}, meta=_meta)
-    @resource_handler("version", "server", "Version information not available.")
     async def get_version() -> ResourceResult:
         """Get server application version."""
-        data = await gitea_client.request("GET", "/version")
-        if isinstance(data, str):
-            return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
-        content = str(data.get("version", "Unknown")) if isinstance(data, dict) else str(data)
-        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
+        return ResourceResult(contents=[ResourceContent(content=version_str, mime_type="text/plain")])
 
     # ── token scopes ────────────────────────────────────────────────────────
 
@@ -555,28 +547,20 @@ def register_custom_resources(  # noqa: PLR0915
         "gitea://token/scopes", mime_type="application/json", tags={"wrapper", "server"}, meta=_meta
     )
     async def get_active_token_scopes() -> ResourceResult:
-        """Get the scopes of the active Gitea token."""
-        try:
-            user_data = await gitea_client.request("GET", "/user")
-            if not isinstance(user_data, dict):
-                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
-            username = user_data.get("login")
-            if not username:
-                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
+        """Get the scopes of the active Gitea token.
 
-            tokens_data = await gitea_client.request("GET", f"/users/{username}/tokens")
-            if not isinstance(tokens_data, list):
-                return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
+        Scopes are pre-computed at startup from the same data used for
+        scope-based tool filtering — no API calls are made on read.
+        """
+        scopes: list[str] | None = sorted(available_scopes) if available_scopes else None
+        return ResourceResult(contents=[ResourceContent(
+            content=json.dumps({"scopes": scopes}),
+            mime_type="application/json",
+        )])
 
-            scopes = _find_matching_token_scopes(tokens_data, gitea_client.config.token)
-            return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": scopes}), mime_type="application/json")])
-        except Exception:
-            logger.exception("Failed to retrieve active token scopes")
-            return ResourceResult(contents=[ResourceContent(content=json.dumps({"scopes": None}), mime_type="application/json")])
+    # ── server info (only when pre-built markdown is available) ───────────
 
-    # ── server info (only when openapi_spec is available) ───────────────────
-
-    if openapi_spec is not None:
+    if server_info_md is not None:
         _meta = scope_meta(None)
 
         @_register(
@@ -585,13 +569,12 @@ def register_custom_resources(  # noqa: PLR0915
         async def get_server_info() -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
             return ResourceResult(contents=[ResourceContent(
-                content=_build_server_info_markdown(openapi_spec),
+                content=server_info_md,
                 mime_type="text/markdown",
             )])
 
 
 __all__ = [
-    "_find_matching_token_scopes",
     "_handle_not_found",
     "register_custom_resources",
     "resource_handler",

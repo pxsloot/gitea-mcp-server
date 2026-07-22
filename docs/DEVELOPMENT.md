@@ -266,6 +266,13 @@ From this doc's how-to angle: to add a new scope-gated param, set
 
 ## How to Add a Custom Resource
 
+### Preferred: Use the factory (``make_api_resource``)
+
+For most API-backed resources, use the factory in `resources/factory.py`.
+It auto-derives the response schema from the OpenAPI spec, handles
+``str`` vs JSON branching, and registers the resource in one call -- no
+manual ``_get_success_schema`` / ``_unwrap_result_schema`` boilerplate.
+
 1. **Add a display formatter** (if needed) in `tools/display.py`:
    ```python
    @register_formatter("my_type")
@@ -273,47 +280,51 @@ From this doc's how-to angle: to add a new scope-gated param, set
        ...
    ```
 
-2. **Write the resource function** in `resources/custom.py`:
-   The handler fetches raw data and returns it with schema and format hint — no
-   formatting.  The display pipeline (``_format_resource_content`` in
-   ``mcp_tools.py``) handles all rendering via the registered formatter.
-
+2. **Add a factory call** in `register_custom_resources()` in
+   `resources/custom.py`:
    ```python
-   from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
+   from gitea_mcp_server.resources.factory import make_api_resource
 
-   # Derive the unresolved schema for $ref-aware collapse, then unwrap
-   # the result envelope ({result: inner}) so the stored schema matches
-   # the raw API response shape.
-   _my_schema = _unwrap_result_schema(
-       _get_success_schema(openapi_spec, "/api/path/{param}", "get", resolve=False)
+   make_api_resource(
+       mcp, gitea_client, openapi_spec,
+       uri="gitea://my/{param}",
+       api_path="/api/path/{param}",
+       method="GET",
+       format_hint="my_type",
+       scope="read:repository",
+       cache_ttl=300,
+       tags={"my_tag"},
+       error_message="My resource '{param}' not found.",
+       available_scopes=available_scopes,
    )
-
-   async def my_resource(param: str, gitea_client: GiteaClient) -> ResourceResult:
-       """Description for agents."""
-       data = await gitea_client.request("GET", f"/api/path/{param}")
-       if isinstance(data, str):
-           return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
-       return ResourceResult(
-           contents=[ResourceContent(
-               content=json.dumps(data),
-               mime_type="application/json",
-               meta={"response_schema": _my_schema, "format_hint": "my_type"},
-           )]
-       )
    ```
 
-3. **Register** in `register_custom_resources()` using the `@_register` decorator:
-   ```python
-   @_register("gitea://my/{param}", mime_type="application/json",
-              tags={"wrapper", "my_type"}, meta=scope_meta("read:repository"))
-   @resource_handler("my", "{param}", "Not found.")
-   async def my_resource(param: str) -> ResourceResult:
-       ...
-   ```
+The factory:
+- Derives the response schema automatically from ``openapi_spec[api_path][method]``
+- Generates a handler closure that calls ``gitea_client.request``
+- Handles ``isinstance(data, str)`` branching (text/plain vs application/json)
+- Attaches the schema and ``format_hint`` in ``ResourceContent.meta``
+- Registers via ``mcp.resource()`` and adds the URI to ``_registered_uris``
+- Skips registration when the token's scopes are insufficient
+- Returns ``None`` if scope-filtered, the handler otherwise
 
-4. **Add URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`** in `constants.py` if a
-   GET endpoint exists for the same path -- this prevents the auto-generated
-   raw JSON resource from conflicting.
+No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
+the factory's ``_registered_uris`` set is populated at registration time
+and combined with the legacy ``_NON_FACTORY_SKIP_URIS`` set (in
+``auto.py``) by ``resource_setup.py`` to form the auto-generation skip list.
+
+### Legacy: Hand-written resource (``@_register`` pattern)
+
+For resources with special logic (base64 decoding, static pre-computed data,
+non-GET methods), use the legacy ``@_register`` decorator pattern:
+
+1. **Add a display formatter** (if needed) in `tools/display.py`.
+2. **Write the resource function** in ``resources/custom.py`` with the
+   legacy ``@_register`` + ``@resource_handler`` decorators (see existing
+   handlers for reference).
+3. **No skip-URI update needed** -- add the URI to ``auto.py``'s
+   ``_NON_FACTORY_SKIP_URIS`` set if the resource overrides a GET endpoint
+   and is not yet migrated to the factory.
 
 ### Pre-computed static resources
 
@@ -548,7 +559,9 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
 2. **Don't import from outside `__all__`** in production code.  Internal
    functions may be renamed/refactored without notice.
 3. **Resource URIs conflict** -- When adding a custom resource that shadows
-   a GET endpoint, always add the URI to `AUTO_GENERATED_RESOURCE_SKIP_URIS`.
+   a GET endpoint, either use ``make_api_resource()`` (factory auto-tracks
+   URIs in ``_registered_uris``) or, for legacy ``@_register`` resources,
+   add the URI to ``auto.py``'s ``_NON_FACTORY_SKIP_URIS``.
 4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't

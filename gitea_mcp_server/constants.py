@@ -209,25 +209,6 @@ HTTP_METHODS_ALL = frozenset({
 
 
 # ============================================================================
-# Resource Registration Skips
-# ============================================================================
-
-# URIs that have custom-formatted resources and should be skipped during
-# auto-generated resource registration
-AUTO_GENERATED_RESOURCE_SKIP_URIS = {
-    "gitea://repos/{owner}/{repo}",
-    "gitea://repos/{owner}/{repo}/readme",
-    "gitea://repos/{owner}/{repo}/issues",
-    "gitea://repos/{owner}/{repo}/labels",
-    "gitea://repos/{owner}/{repo}/pulls",
-    "gitea://repos/{owner}/{repo}/files/{path*}",
-    "gitea://repos/{owner}/{repo}/releases",
-    "gitea://users/{username}",
-    "gitea://orgs/{orgname}",
-}
-
-
-# ============================================================================
 # Documentation Strings (reused)
 # ============================================================================
 

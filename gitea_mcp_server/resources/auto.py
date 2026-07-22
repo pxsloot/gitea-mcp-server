@@ -2,6 +2,12 @@
 
 Creates resources for all GET operations, returning raw JSON with schema
 metadata.  These can be overridden by custom resources with the same URI.
+
+The ``skip_uris`` for auto-generation is provided by the orchestrator
+(``resource_setup.py``), which combines factory-registered URIs (from
+``make_api_resource()``) and the legacy ``_NON_FACTORY_SKIP_URIS`` set.
+This hand-maintained set shrinks as Phase 2 and 3 migrate more resources
+to the factory.
 """
 
 import json
@@ -14,10 +20,7 @@ from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceContent, ResourceResult
 
 from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.constants import (
-    AUTO_GENERATED_RESOURCE_SKIP_URIS,
-    HTTP_STATUS_NOT_FOUND,
-)
+from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
@@ -167,6 +170,19 @@ def _make_resource_func(  # noqa: PLR0913 - 6 params: path, method, operation, c
     return resource_func
 
 
+# URIs of custom (non-factory) resources that have not yet been migrated
+# to ``make_api_resource()``.  These are combined with the factory's
+# ``_registered_uris`` set by ``resource_setup.py`` to form the full
+# skip list for auto-generated resource registration.
+# As Phase 2 and 3 migrate more resources, this set shrinks.
+_NON_FACTORY_SKIP_URIS: set[str] = {
+    "gitea://repos/{owner}/{repo}/readme",
+    "gitea://repos/{owner}/{repo}/issues",
+    "gitea://repos/{owner}/{repo}/pulls",
+    "gitea://repos/{owner}/{repo}/files/{path*}",
+}
+
+
 def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -185,13 +201,17 @@ def register_auto_generated_resources(
         gitea_client: GiteaClient for API calls.
         openapi_spec: The OpenAPI specification dictionary.
         skip_uris: Set of URI templates to skip (custom resource overrides).
+            The orchestrator (``resource_setup.py``) passes the union of
+            factory-registered URIs and :data:`_NON_FACTORY_SKIP_URIS`.
+            When ``None``, defaults to ``_NON_FACTORY_SKIP_URIS`` only
+            (no factory URIs are skipped).
         filtered_tools_info: Filter-prediction data from spec-level filtering.
             When provided, resources whose operationId appears in the ``filtered``
-            dict are skipped — they are scope-filtered, deprecated, or excluded by
+            dict are skipped -- they are scope-filtered, deprecated, or excluded by
             config.  ``None`` means no filtering is applied (all resources visible).
     """
     if skip_uris is None:
-        skip_uris = AUTO_GENERATED_RESOURCE_SKIP_URIS
+        skip_uris = _NON_FACTORY_SKIP_URIS
 
     filtered: dict[str, Any] = {}
     if filtered_tools_info:

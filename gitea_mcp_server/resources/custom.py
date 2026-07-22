@@ -2,8 +2,12 @@
 
 Custom resources return raw data (JSON or text) with metadata describing the
 response schema and a ``format_hint`` for the display layer.  No formatting is
-done at the resource level — that is the responsibility of the unified display
+done at the resource level -- that is the responsibility of the unified display
 pipeline in ``mcp_tools.py`` and ``tools/display.py``.
+
+**Phase 1 migration**: 6 resources have been moved to ``factory.py`` via
+``make_api_resource()``.  The remaining resources still use the legacy
+``@_register`` pattern and will be migrated in Phases 2 and 3.
 """
 
 import base64
@@ -27,6 +31,7 @@ from gitea_mcp_server.constants import (
     HTTP_STATUS_NOT_FOUND,
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
@@ -119,7 +124,7 @@ def _handle_not_found(
         ) from e
 
 
-def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec + scopes + pre-computed static data are all independent registration axes
+def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec + scopes + pre-computed static data are all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None = None,
@@ -135,8 +140,12 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
     Uses FastMCP's last-registration-wins ordering.
 
     The ``version_str``, ``available_scopes``, and ``server_info_md``
-    parameters are pre-computed at startup — the handlers return them
+    parameters are pre-computed at startup -- the handlers return them
     directly without making API calls on read.
+
+    **Phase 1**: 6 resources are registered via ``make_api_resource()``
+    (factory pattern with auto schema derivation).  The remaining resources
+    still use the ``@_register`` decorator.
 
     Args:
         mcp: The FastMCP server instance.
@@ -158,7 +167,7 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
         # required scope for this resource.
         #
         # Note: ``available_scopes`` is derived from the token at startup
-        # and is effectively immutable within a server session — changing
+        # and is effectively immutable within a server session -- changing
         # scopes requires a new token and a full server restart.  The
         # captured closure is therefore stable for the process lifetime.
         required_scope = (meta or {}).get("required_scope")
@@ -176,7 +185,7 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
             # Return a no-op passthrough instead of registering with
             # mcp.resource().  Since _register is used as a decorator
             # (outermost on each resource handler), returning passthrough
-            # means the decorated function is returned unmodified — it
+            # means the decorated function is returned unmodified -- it
             # simply never gets wired into FastMCP.  The inner decorator
             # (resource_handler) is still applied for error handling, but
             # without an mcp.resource() call, the URI template is never
@@ -196,56 +205,105 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
 
         return deco
 
-    # Pre-derive response schemas for the display layer.
+    # ======================================================================
+    # FACTORY RESOURCES (Phase 1)
+    # These use ``make_api_resource()`` which auto-derives the response
+    # schema and handles str/JSON branching automatically.
+    # ======================================================================
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}",
+        api_path="/repos/{owner}/{repo}",
+        method="GET",
+        format_hint="repository",
+        scope="read:repository",
+        cache_ttl=CACHE_TTL_REPOSITORY,
+        tags={"repository"},
+        error_message="Repository '{owner}/{repo}' not found.",
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://users/{username}",
+        api_path="/users/{username}",
+        method="GET",
+        format_hint="user",
+        scope="read:user",
+        cache_ttl=CACHE_TTL_USERS,
+        tags={"user"},
+        error_message="User '{username}' not found.",
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://user",
+        api_path="/user",
+        method="GET",
+        format_hint="user",
+        scope="read:user",
+        cache_ttl=CACHE_TTL_USERS,
+        tags={"user"},
+        error_message="Current user not found or not authenticated.",
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://orgs/{orgname}",
+        api_path="/orgs/{orgname}",
+        method="GET",
+        format_hint="user",
+        scope="read:organization",
+        cache_ttl=CACHE_TTL_USERS,
+        tags={"organization"},
+        error_message="Organization '{orgname}' not found.",
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/releases",
+        api_path="/repos/{owner}/{repo}/releases",
+        method="GET",
+        format_hint="release",
+        scope="read:repository",
+        cache_ttl=CACHE_TTL_RELEASES,
+        tags={"releases"},
+        error_message="Repository '{owner}/{repo}' not found or has no releases.",
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/labels",
+        api_path="/repos/{owner}/{repo}/labels",
+        method="GET",
+        format_hint="labels",
+        scope="read:issue",
+        tags={"labels"},
+        error_message="Labels not found for repository '{owner}/{repo}'.",
+        available_scopes=available_scopes,
+    )
+
+    # ======================================================================
+    # NON-MIGRATED RESOURCES (legacy @_register pattern)
+    # These will be migrated to the factory in Phase 2 and 3.
+    # ======================================================================
+
+    # Pre-derive response schemas for remaining display-layer consumers.
     # Each maps to the Gitea API endpoint the handler calls internally.
     # Schemas are unwrapped (inner result schema) so they match the raw API
-    # response shape — the display pipeline needs the inner schema for
+    # response shape -- the display pipeline needs the inner schema for
     # $ref-aware data collapse.
-    _repo_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}", "get", resolve=False)
-    ) if openapi_spec else None
     _issues_schema = _unwrap_result_schema(
         _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/issues", "get", resolve=False)
     ) if openapi_spec else None
     _pulls_schema = _unwrap_result_schema(
         _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/pulls", "get", resolve=False)
     ) if openapi_spec else None
-    _releases_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/releases", "get", resolve=False)
-    ) if openapi_spec else None
-    _labels_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/labels", "get", resolve=False)
-    ) if openapi_spec else None
-    _user_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/users/{username}", "get", resolve=False)
-    ) if openapi_spec else None
-
-    # ── repository ──────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_REPOSITORY, **scope_meta("read:repository")}
-
-    @_register(
-        "gitea://repos/{owner}/{repo}",
-        mime_type="application/json",
-        tags={"wrapper", "repository"},
-        meta=_meta,
-    )
-    @resource_handler("repository", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
-    async def get_repository(owner: str, repo: str) -> ResourceResult:
-        """Get full repository metadata."""
-        data = await gitea_client.request("GET", f"/repos/{owner}/{repo}")
-        if isinstance(data, str):
-            return ResourceResult(contents=[ResourceContent(content=data, mime_type="text/plain")])
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(data),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_repo_schema,
-                    format_hint="repository",
-                ),
-            )]
-        )
 
     # ── readme ──────────────────────────────────────────────────────────────
 
@@ -396,140 +454,6 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
         content = cast("str", response.get("content", ""))
         return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
 
-    # ── releases ─────────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_RELEASES, **scope_meta("read:repository")}
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/releases",
-        mime_type="application/json",
-        tags={"wrapper", "releases"},
-        meta=_meta,
-    )
-    @resource_handler(
-        "releases", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no releases."
-    )
-    async def list_repo_releases(owner: str, repo: str) -> ResourceResult:
-        """List releases for a repository."""
-        releases = await gitea_client.request("GET", f"/repos/{owner}/{repo}/releases")
-        if isinstance(releases, str):
-            return ResourceResult(contents=[ResourceContent(content=releases, mime_type="text/plain")])
-
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(releases),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_releases_schema,
-                    format_hint="release",
-                ),
-            )]
-        )
-
-    # ── labels ──────────────────────────────────────────────────────────────
-
-    _meta = scope_meta("read:issue")
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/labels",
-        mime_type="application/json",
-        tags={"wrapper", "labels"},
-        meta=_meta,
-    )
-    @resource_handler(
-        "labels", "{owner}/{repo}", "Labels not found for repository '{owner}/{repo}'."
-    )
-    async def list_repo_labels(owner: str, repo: str) -> ResourceResult:
-        """List labels for a repository."""
-        labels = await gitea_client.request("GET", f"/repos/{owner}/{repo}/labels")
-        if isinstance(labels, str):
-            return ResourceResult(contents=[ResourceContent(content=labels, mime_type="text/plain")])
-
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(labels),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_labels_schema,
-                    format_hint="labels",
-                    extra={"owner": owner, "repo": repo},
-                ),
-            )]
-        )
-
-    # ── user ────────────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
-
-    @_register(
-        "gitea://users/{username}", mime_type="application/json", tags={"wrapper", "user"}, meta=_meta
-    )
-    @resource_handler("user", "{username}", "User '{username}' not found.")
-    async def get_user(username: str) -> ResourceResult:
-        """Get user profile information."""
-        user = await gitea_client.request("GET", f"/users/{username}")
-        if isinstance(user, str):
-            return ResourceResult(contents=[ResourceContent(content=user, mime_type="text/plain")])
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(user),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_user_schema,
-                    format_hint="user",
-                ),
-            )]
-        )
-
-    # ── current user ────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:user")}
-
-    @_register("gitea://user", mime_type="application/json", tags={"wrapper", "user"}, meta=_meta)
-    @resource_handler("user", "current user", "Current user not found or not authenticated.")
-    async def get_current_user() -> ResourceResult:
-        """Get current authenticated user profile information."""
-        user = await gitea_client.request("GET", "/user")
-        if isinstance(user, str):
-            return ResourceResult(contents=[ResourceContent(content=user, mime_type="text/plain")])
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(user),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_user_schema,
-                    format_hint="user",
-                ),
-            )]
-        )
-
-    # ── organization ────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_USERS, **scope_meta("read:organization")}
-
-    @_register(
-        "gitea://orgs/{orgname}",
-        mime_type="application/json",
-        tags={"wrapper", "organization"},
-        meta=_meta,
-    )
-    @resource_handler("organization", "{orgname}", "Organization '{orgname}' not found.")
-    async def get_org(orgname: str) -> ResourceResult:
-        """Get organization profile information."""
-        org = await gitea_client.request("GET", f"/orgs/{orgname}")
-        if isinstance(org, str):
-            return ResourceResult(contents=[ResourceContent(content=org, mime_type="text/plain")])
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(org),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_user_schema,
-                    format_hint="user",
-                ),
-            )]
-        )
-
     # ── version ─────────────────────────────────────────────────────────────
 
     _meta = scope_meta(None)
@@ -550,7 +474,7 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 — mcp + client + spec
         """Get the scopes of the active Gitea token.
 
         Scopes are pre-computed at startup from the same data used for
-        scope-based tool filtering — no API calls are made on read.
+        scope-based tool filtering -- no API calls are made on read.
         """
         scopes: list[str] | None = sorted(available_scopes) if available_scopes else None
         return ResourceResult(contents=[ResourceContent(

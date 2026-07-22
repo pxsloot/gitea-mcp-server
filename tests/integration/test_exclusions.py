@@ -158,8 +158,9 @@ class TestExclusionIntegration:
     async def test_excluded_tools_also_exclude_resources(self, tmp_path: Path):
         """When a tool is excluded by config, its corresponding auto-generated
         resource should also be excluded at registration time."""
-        # Use paths with {path_params} that are NOT in
-        # AUTO_GENERATED_RESOURCE_SKIP_URIS so they produce auto resources.
+        # Use paths with {path_params} that are NOT in the default
+        # skip-URIs set (``_NON_FACTORY_SKIP_URIS``) so they produce
+        # auto resources.
         spec = {
             "swagger": "2.0",
             "info": {"title": "Gitea API", "version": "1.0"},

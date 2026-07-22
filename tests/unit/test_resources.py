@@ -1360,6 +1360,11 @@ class TestCustomResourceStringResponsePaths:
         Uses mock_gitea_client_str so all resource functions close over it.
         Wraps captured functions to auto-extract content from ``ResourceResult``
         so tests can work with strings as before.
+
+        The wrapper converts positional args to keyword args by extracting
+        param names from the URI template (``{owner}``, ``{repo}``, etc.).
+        This allows calling factory-generated handlers (which use ``**kwargs``)
+        with the same positional-arg style as ``@_register`` handlers.
         """
         from fastmcp.resources import ResourceResult
 
@@ -1367,9 +1372,24 @@ class TestCustomResourceStringResponsePaths:
         registered: dict[str, object] = {}
 
         def resource_decorator(uri, **kwargs):
+            # Extract all param names from URI template for positional-to-keyword
+            # conversion.  Matches ``{param}``, ``{param*}`` (greedy path), and
+            # ``{?param}`` (RFC 6570 optional query params).  The ``?`` prefix
+            # is stripped from names like ``?state`` → ``state``.
+            import re
+            _param_names = [
+                m.group(1).lstrip("?").rstrip("*")
+                for m in re.finditer(r"\{(\?*\w+\*?)\}", uri)
+            ]
+
             def deco(func):
                 async def wrapper(*args: object, **kwargs: object) -> str:
-                    result = await func(*args, **kwargs)
+                    # Convert positional args to keyword if needed
+                    if args:
+                        for i, arg in enumerate(args):
+                            if i < len(_param_names):
+                                kwargs.setdefault(_param_names[i], arg)
+                    result = await func(**kwargs)
                     if isinstance(result, ResourceResult):
                         return result.contents[0].content
                     return str(result)
@@ -1504,7 +1524,7 @@ class TestCustomResourceStringResponsePaths:
         """File with ref parameter passes ref to the API."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "ref content"})
-        result = await func("owner", "repo", "f.py", "main")
+        result = await func("owner", "repo", "f.py", ref="main")
         assert result == "ref content"
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args

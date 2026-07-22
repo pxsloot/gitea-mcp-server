@@ -1,7 +1,7 @@
 """Auto-generated resources from OpenAPI GET endpoints.
 
-Creates resources for all GET operations, returning raw JSON.
-These can be overridden by custom resources with the same URI.
+Creates resources for all GET operations, returning raw JSON with schema
+metadata.  These can be overridden by custom resources with the same URI.
 """
 
 import json
@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
+from fastmcp.resources import ResourceContent, ResourceResult
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import (
@@ -19,6 +20,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
+from gitea_mcp_server.tools.schemas import _get_success_schema
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +49,30 @@ def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
     return "_".join(segments) if segments else "resource"
 
 
-def _make_resource_func(
+def _make_resource_func(  # noqa: PLR0913 - 6 params: path, method, operation, client, name, schema — all independently needed at registration time
     path: str,
     method: str,
     operation: dict[str, Any],
     gitea_client: GiteaClient,
     resource_name: str | None = None,
-) -> Callable[..., Awaitable[str]]:
-    """Create a resource function for a given OpenAPI operation."""
+    response_schema: dict[str, Any] | None = None,
+) -> Callable[..., Awaitable[ResourceResult]]:
+    """Create a resource function for a given OpenAPI operation.
+
+    The returned handler fetches data from the Gitea API and returns it as
+    raw JSON with the response schema attached in content metadata.  No
+    formatting is applied — that is the responsibility of the display layer
+    (``_format_resource_content`` in ``mcp_tools.py``).
+
+    Args:
+        path: The API path template (e.g. ``/repos/{owner}/{repo}``).
+        method: The HTTP method (``"GET"``).
+        operation: The OpenAPI operation dict.
+        gitea_client: Client for API calls.
+        resource_name: Optional override for the resource function name.
+        response_schema: The unresolved response schema (with ``$ref`` intact)
+            for ``$ref``-aware data collapse in the display layer.
+    """
     path_params = []
     if "parameters" in operation:
         for param in operation["parameters"]:
@@ -67,7 +85,7 @@ def _make_resource_func(
             if param["in"] == "query":
                 query_params.append(param["name"])
 
-    async def resource_func(**kwargs: Any) -> str:
+    async def resource_func(**kwargs: Any) -> ResourceResult:
         """Auto-generated resource from OpenAPI spec."""
         formatted_path = path
         missing_params = [p for p in path_params if p not in kwargs]
@@ -90,7 +108,17 @@ def _make_resource_func(
             response = await gitea_client.request(
                 method, formatted_path, params=query if query else None
             )
-            return json.dumps(response, indent=2)
+            content = json.dumps(response, indent=2)
+            meta: dict[str, Any] = {}
+            if response_schema is not None:
+                meta["response_schema"] = response_schema
+            return ResourceResult(
+                contents=[ResourceContent(
+                    content=content,
+                    mime_type="application/json",
+                    meta=meta if meta else None,
+                )]
+            )
         except Exception as e:
             status = getattr(e, "status_code", None)
             if status == HTTP_STATUS_NOT_FOUND:
@@ -129,7 +157,7 @@ def _make_resource_func(
     if description:
         docstring += "\n\n" + description
     if not docstring:
-        docstring = f"Resource for {method.upper()} {path}"
+        docstring = f"Resource for {method} {path}"
     resource_func.__doc__ = docstring
 
     if resource_name:
@@ -146,6 +174,10 @@ def register_auto_generated_resources(
     filtered_tools_info: dict[str, Any] | None = None,
 ) -> None:
     """Auto-generate resources from GET endpoints in OpenAPI spec.
+
+    Each resource returns raw JSON data with its response schema attached
+    in ``ResourceContent.meta["response_schema"]`` for use by the display
+    layer (``_format_resource_content``).
 
     Args:
         mcp: The FastMCP server instance.
@@ -201,6 +233,11 @@ def register_auto_generated_resources(
 
                 resource_name = _derive_resource_name(operation, path)
 
+                # Derive the unresolved response schema for $ref-aware collapse
+                response_schema = _get_success_schema(
+                    openapi_spec, path, "get", resolve=False,
+                )
+
                 swagger_tags = set(operation.get("tags", [])) or None
                 required_scope = derive_required_scope(swagger_tags, "GET")
 
@@ -210,6 +247,7 @@ def register_auto_generated_resources(
                     operation,
                     gitea_client,
                     resource_name=resource_name,
+                    response_schema=response_schema,
                 )
 
                 resource_meta = scope_meta(required_scope)

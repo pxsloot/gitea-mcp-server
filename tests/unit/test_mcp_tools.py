@@ -254,10 +254,51 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        result_str = await _mcp_read_resource_impl(ctx, "gitea://test")
+        result = await _mcp_read_resource_impl(ctx, "gitea://test")
 
-        assert result_str == "Hello World"
+        assert result == ("Hello World", None, None, None)
         ctx.read_resource.assert_awaited_once_with("gitea://test")
+
+    @pytest.mark.asyncio
+    async def test_extracts_meta_from_content(self):
+        """Should extract schema, format_hint, and extra from content meta."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent(
+            '{"key": "val"}',
+            meta={
+                "response_schema": {"type": "object"},
+                "format_hint": "repository",
+                "custom_key": "custom_val",
+            },
+        )
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
+
+        assert raw == '{"key": "val"}'
+        assert schema == {"type": "object"}
+        assert format_hint == "repository"
+        assert extra == {"custom_key": "custom_val"}
+
+    @pytest.mark.asyncio
+    async def test_handles_missing_meta_gracefully(self):
+        """Should return None for all meta fields when no meta is present."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent("plain text")
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
+
+        assert raw == "plain text"
+        assert schema is None
+        assert format_hint is None
+        assert extra is None
 
     @pytest.mark.asyncio
     async def test_raises_for_missing_resource(self):
@@ -290,9 +331,9 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        result_str = await _mcp_read_resource_impl(ctx, "gitea://test")
+        result = await _mcp_read_resource_impl(ctx, "gitea://test")
 
-        assert result_str == "Hello Bytes"
+        assert result == ("Hello Bytes", None, None, None)
         ctx.read_resource.assert_awaited_once_with("gitea://test")
 
 
@@ -535,6 +576,62 @@ class TestFormatResourceContent:
     def test_unknown_format_with_json_returns_raw(self):
         """Unknown format with valid JSON returns raw string unchanged."""
         assert _format_resource_content('{"key": "val"}', "xml") == '{"key": "val"}'
+
+    # ── detail=concise with schema tests ────────────────────────────────────
+
+    def test_concise_json_collapses_nested_dict(self):
+        """detail=concise with schema should collapse $ref objects."""
+        raw = '{"name": "test", "owner": {"id": 1, "login": "alice"}}'
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "owner": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        parsed = json_module.loads(result)
+        assert parsed["name"] == "test"
+        assert parsed["owner"] == "$ref:User"
+
+    def test_concise_json_collapses_nested_list(self):
+        """detail=concise with schema should collapse $ref list items."""
+        raw = '{"items": [{"id": 1}, {"id": 2}], "name": "test"}'
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "items": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/Label"},
+                },
+            },
+        }
+        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        parsed = json_module.loads(result)
+        assert parsed["name"] == "test"
+        assert parsed["items"] == "$ref:Label[2]"
+
+    def test_concise_full_detail_without_schema(self):
+        """Without schema, concise should return data unchanged (no collapse)."""
+        raw = '{"name": "test", "nested": {"a": 1}}'
+        result = _format_resource_content(raw, "json", detail="concise", schema=None)
+        parsed = json_module.loads(result)
+        assert parsed == {"name": "test", "nested": {"a": 1}}
+
+    def test_concise_markdown_with_schema(self):
+        """detail=concise with schema should collapse in markdown output too."""
+        raw = '{"name": "test", "owner": {"id": 1, "login": "alice"}}'
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "owner": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        result = _format_resource_content(raw, "markdown", detail="concise", schema=schema)
+        # The collapsed $ref:User should appear in the markdown
+        assert "$ref:User" in result
 
 
 class TestMcpListResourcesFormat:

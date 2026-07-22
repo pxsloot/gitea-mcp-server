@@ -9,7 +9,7 @@ Tool list:
 - read_resource: Read a resource by its URI
 - gitea://tool/{name}/schema: Resource for full tool schema by name
 
-Note: ``search_resources`` is registered in ``tools/search.py`` alongside
+``search_resources`` is registered in ``tools/search.py`` alongside
 ``search_tools`` via ``register_synthetic_tools()``.
 """
 
@@ -29,6 +29,7 @@ from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
+from gitea_mcp_server.tools.display import call_formatter, get_formatter
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
 logger = logging.getLogger(__name__)
@@ -117,16 +118,40 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     return ResourceListing(resources=resources_list, count=len(resources_list))
 
 
-def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
-    """Reformat a resource result string by format.
+def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 params, 7 returns: all independent display axes
+    raw: str,
+    fmt: str,
+    detail: str = "full",
+    schema: dict[str, Any] | None = None,
+    format_hint: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Unified display pipeline for resource content.
 
-    If the content is JSON, parse and reformat (markdown or pretty-printed).
-    If the content is not JSON and ``format=json`` is requested, wrap
-    in ``{"result": "..."}`` to provide structured output regardless of MIME type.
+    All resources (auto-generated and custom) return raw data.  This function
+    is the single point where that data is shaped and formatted for output.
 
-    The ``detail`` parameter controls data shape before formatting:
-    ``"concise"`` collapses nested objects to type labels (schema-driven when
-    schema info is available, generic otherwise).
+    The pipeline:
+      1. Parse JSON (non-JSON content passes through unchanged).
+      2. Collapse ``$ref``-backed objects when ``detail=concise`` and a schema
+         is available.
+      3. Format per ``fmt``: dispatch to a registered domain formatter (if
+         ``format_hint`` is given), use generic ``_format_as_markdown``, or
+         produce JSON/raw output.
+
+    Args:
+        raw: The raw resource content string (JSON or plain text).
+        fmt: Output format -- ``"raw"``, ``"json"``, or ``"markdown"``.
+        detail: Output detail -- ``"full"`` (default) or ``"concise"``.
+        schema: Optional unresolved response schema for ``$ref``-aware
+            collapse when ``detail=concise``.
+        format_hint: Optional registered formatter name for domain-specific
+            markdown rendering.
+        extra: Optional context dict passed to formatters that need
+            additional parameters (e.g. ``owner``/``repo`` for labels).
+
+    Returns:
+        Formatted content string.
     """
     if fmt == "raw":
         return raw
@@ -134,50 +159,65 @@ def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
+        # Non-JSON content (plain text, markdown) -- pass through.
         if fmt == "json":
             return json.dumps({"result": raw}, indent=2)
         return raw
 
-    # Shape data before formatting when detail="concise".
-    # Resources don't carry their own output schema metadata (unlike API tools
-    # which store output_schema_raw in meta).  Without a schema, _collapse_data
-    # is a no-op — so $ref-aware collapsing is not available for resources.
-    # The call is kept to maintain the collapse-then-format pattern and will
-    # activate once resources gain schema support.  See PR #505 discussion.
-    if detail == "concise" and isinstance(data, (dict, list)):
-        data = _collapse_data(data, None, _depth=0, detail="concise")
+    # 1. Collapse data when detail=concise and schema is available.
+    if detail == "concise" and schema is not None and isinstance(data, (dict, list)):
+        data = _collapse_data(data, schema, _depth=0, detail="concise")
 
+    # 2. Format per fmt.
     if fmt == "json":
         return json.dumps(data, indent=2)
 
     if fmt == "markdown":
-        return _format_as_markdown(data, None)
+        if format_hint and get_formatter(format_hint):
+            return call_formatter(format_hint, data, detail=detail, extra=extra)
+        return _format_as_markdown(data, schema, detail=detail)
 
     return raw
 
 
-async def _mcp_read_resource_impl(ctx: Context, uri: str) -> str:
-    """Implementation of read_resource.
+async def _mcp_read_resource_impl(
+    ctx: Context, uri: str,
+) -> tuple[Any, dict[str, Any] | None, str | None, dict[str, Any] | None]:
+    """Read a resource and return (content, schema, format_hint, extra).
+
+    The content is the raw string from the resource handler.  Schema,
+    format_hint, and extra are extracted from ``ResourceContent.meta`` and
+    passed to the display pipeline.
 
     Args:
-        ctx: FastMCP Context object (injected automatically)
-        uri: The resource URI to read
+        ctx: FastMCP Context object (injected automatically).
+        uri: The resource URI to read.
 
     Returns:
-        The resource content as a string
-
-    Raises:
-        ValueError: If the resource is not found or cannot be read
+        Tuple of ``(content, schema, format_hint, extra)``.
     """
     try:
         # ctx.read_resource returns a ResourceResult (FastMCP 3.x)
         result = await ctx.read_resource(uri)
         contents = result.contents
-        return _extract_resource_content(contents, uri)
+        raw = _extract_resource_content(contents, uri)
+
+        # Extract display metadata from the first content's meta.
+        schema: dict[str, Any] | None = None
+        format_hint: str | None = None
+        extra: dict[str, Any] | None = None
+        if contents and hasattr(contents[0], "meta") and contents[0].meta:
+            meta = contents[0].meta
+            schema = meta.get("response_schema")
+            format_hint = meta.get("format_hint")
+            # Everything except response_schema and format_hint is extra context
+            extra = {k: v for k, v in meta.items() if k not in ("response_schema", "format_hint")} or None
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
         raise ValueError(msg) from e
+    else:
+        return raw, schema, format_hint, extra
 
 
 _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -415,9 +455,11 @@ async def _read_resource_tool(
 
     ## Parameter: detail
 
-    Markdown rendering depth (only meaningful when ``format=markdown``):
+    Output detail level:
     - ``"full"`` (default): complete information, full object expansion.
-    - ``"concise"``: compact view with collapsed nested objects.
+    - ``"concise"``: compact view with collapsed nested objects. Affects both
+      JSON and Markdown output. Schema-aware ``$ref`` collapse is applied
+      when the resource carries a response schema.
 
     ## Return Value
 
@@ -497,8 +539,11 @@ async def _read_resource_tool(
     Raises:
         ValueError: If the resource is not found or cannot be read
     """
-    result = await _mcp_read_resource_impl(ctx, uri)
-    formatted = _format_resource_content(result, format, detail=detail)
+    raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, uri)
+    formatted = _format_resource_content(
+        raw, format, detail=detail,
+        schema=schema, format_hint=format_hint, extra=extra,
+    )
 
     return ToolResult(
         content=[TextContent(type="text", text=formatted)],

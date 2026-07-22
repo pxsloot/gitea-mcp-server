@@ -263,7 +263,7 @@ The customization layers as applied during server startup:
 |--------|------|
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time |
 | `resources/custom.py` | Hand-written Markdown wrapper resources for common URIs; scope-filtered via `available_scopes` at registration time |
-| `resources/format.py` | Domain-specific resource Markdown formatters (repo, issues, pulls, users, releases, labels) |
+| `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) — moved from the removed `resources/format.py` |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
 | `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
 

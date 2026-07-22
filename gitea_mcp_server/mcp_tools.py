@@ -138,8 +138,12 @@ def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
             return json.dumps({"result": raw}, indent=2)
         return raw
 
-    # Shape data before formatting (schema=None → no $ref collapse, but
-    # establishes the collapse-then-format pattern for consistency).
+    # Shape data before formatting when detail="concise".
+    # Resources don't carry their own output schema metadata (unlike API tools
+    # which store output_schema_raw in meta).  Without a schema, _collapse_data
+    # is a no-op — so $ref-aware collapsing is not available for resources.
+    # The call is kept to maintain the collapse-then-format pattern and will
+    # activate once resources gain schema support.  See PR #505 discussion.
     if detail == "concise" and isinstance(data, (dict, list)):
         data = _collapse_data(data, None, _depth=0, detail="concise")
 

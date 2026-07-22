@@ -698,6 +698,14 @@ def format_result(
     elif fmt == "markdown" and isinstance(data, (dict, list)):
         # Data has already been collapsed for concise — the formatter
         # receives already-shaped data and does NOT need the detail param.
+        # NB: `detail` is deliberately omitted here because:
+        #   - For detail="concise", data was pre-collapsed by _collapse_data
+        #     above — nested $ref dicts are now strings like "$ref:User",
+        #     so _format_as_markdown renders them as scalars regardless of
+        #     its own detail param.
+        #   - For detail="full" (default), _format_as_markdown's own default
+        #     matches. If _format_as_markdown's default ever changes, this
+        #     call must pass detail=detail explicitly.
         content = _format_as_markdown(data, inner)
 
         pagination = {

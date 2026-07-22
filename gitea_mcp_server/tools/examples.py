@@ -6,7 +6,7 @@ from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.tools.schemas import _resolve_ref
+from gitea_mcp_server.tools.schemas import _resolve_ref, _unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
@@ -313,7 +313,8 @@ def _serialize_tool_schema(
             # The resolved schema has no $ref pointers, so openapi_spec
             # won't trigger ref resolution, but passing it through keeps
             # the code path consistent and future-proof.
-            inner = tool.output_schema.get("properties", {}).get("result", {})
+            # Unwrap the result envelope to get the inner schema.
+            inner = _unwrap_result_schema(tool.output_schema) or {}
             example = _schema_to_compact_example(
                 inner, openapi_spec=openapi_spec
             )

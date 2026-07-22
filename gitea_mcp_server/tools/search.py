@@ -42,6 +42,7 @@ from gitea_mcp_server.tools.filter_info import (
     build_filtered_tools_message,
     get_filtered_tool_info,
 )
+from gitea_mcp_server.tools.schemas import _unwrap_result_schema
 
 # ============================================================================
 # Shared BM25 + format pipeline (used by search_tools and search_resources)
@@ -606,9 +607,9 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
             schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
                 # FastMCP wraps API tool output_schemas in {"result": {...}}
-                # (x-fastmcp-wrap-result). The actual properties to paginate
-                # are under result.properties.
-                result_obj = tool.output_schema.get("properties", {}).get("result", {})
+                # (x-fastmcp-wrap-result). Unwrap to access the actual
+                # properties for pagination.
+                result_obj = _unwrap_result_schema(tool.output_schema) or {}
                 result_props = result_obj.get("properties", {})
                 total_props = len(result_props)
                 # Slice result properties by page/limit so agents can page

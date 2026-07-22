@@ -140,5 +140,5 @@ class TestResourcesIntegration:
         call_uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in call_uris
         assert "gitea://repos/{owner}/{repo}/readme" in call_uris
-        assert "gitea://repos/{owner}/{repo}/issues{?state}" in call_uris
+        assert "gitea://repos/{owner}/{repo}/issues" in call_uris
         assert "gitea://users/{username}" in call_uris

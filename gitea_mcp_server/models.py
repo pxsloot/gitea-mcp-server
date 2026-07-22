@@ -42,6 +42,7 @@ class ResourceEntry(TypedDict, total=False):
     type: str  # "resource" or "template"; accessed via ["type"]
     tags: list[str]
     required_scope: str | None
+    optional_params: list[dict[str, Any]] | None
 
 
 class ResourceListing(TypedDict, total=False):

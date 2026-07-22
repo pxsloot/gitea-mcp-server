@@ -308,10 +308,45 @@ The factory:
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
+**Optional query parameters**: For resources with optional query params
+(e.g. ``state`` filter on issues/pulls), set ``query_params=["state"]``.
+The factory extracts those kwargs into a ``params`` dict passed to the
+API call — they are *not* substituted into the path template.  When the
+param must be validated against a fixed set of values (e.g. ``"open"`` /
+``"closed"``), add ``query_param_validators={"state": ["open", "closed"]}``
+and the handler raises a clear ``ResourceError`` on invalid input.
+
+**Discovery metadata**: Set ``optional_params=[{"name": "state", ...}]``
+to surface available optional parameters in the ``list_resources`` output.
+Each dict should have at least a ``"name"`` key; ``"type"``, ``"values"``,
+and ``"description"`` are recommended.
+
+See the issues and pulls factory calls in ``custom.py`` for a complete example::
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/issues",
+        api_path="/repos/{owner}/{repo}/issues",
+        format_hint="issues",
+        resource_type="issues",
+        scope="read:repository",
+        tags={"issues"},
+        query_params=["state"],
+        query_param_validators={"state": ["open", "closed"]},
+        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        available_scopes=available_scopes,
+    )
+
 No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
 the factory's ``_registered_uris`` set is populated at registration time
 and combined with the legacy ``_NON_FACTORY_SKIP_URIS`` set (in
 ``auto.py``) by ``resource_setup.py`` to form the auto-generation skip list.
+
+**Note**: If future patterns repeat (many list resources sharing the same
+structure), consider extracting higher-level wrappers like
+``make_list_resource()`` that compose ``make_api_resource`` with common
+defaults.  The current approach adds params directly to the factory
+(``Option A``) — straightforward and zero-impact on existing consumers.
 
 ### Legacy: Hand-written resource (``@_register`` pattern)
 
@@ -418,13 +453,13 @@ OpenAPI spec). They live in the same codebase and register themselves via
            info = do_the_work(my_data, param)
            return json.dumps(info, indent=2)
 
-       mcp.resource(
-           uri="gitea://my/{param}{?detail}",
-           mime_type="application/json",
-           annotations={"readOnlyHint": True, "idempotentHint": True},
-           meta=scope_meta(...),
-           tags={"synthetic", "my-domain"},
-       )(_my_resource)
+        mcp.resource(
+            uri="gitea://my/{param}",
+            mime_type="application/json",
+            annotations={"readOnlyHint": True, "idempotentHint": True},
+            meta=scope_meta(...),
+            tags={"synthetic", "my-domain"},
+        )(_my_resource)
    ```
 
 4. **Wire into ``server.py``** by importing and calling `register_*` in
@@ -443,7 +478,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
-| URI templates | Use ``{?param}`` for optional query params — supported via RFC 6570 (FastMCP 2.13+) |
+| URI templates | Use plain ``{param}`` for path params (no ``{?param}`` — see #520). Surface optional query params via ``optional_params`` in resource metadata and pass them to the factory via ``query_params``. For hand-written synthetic resources, function params with defaults work — FastMCP passes query string values from the request URI to the handler. |
 | Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |
 | Error handling | ``_raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
 | Test pattern | Unit test the core logic; integration test the registration wiring. ``mcp.call_tool()`` returns ``ToolResult`` — access data via ``result.structured_content["result"]``. ``mcp.read_resource()`` returns ``ResourceResult`` — access JSON via ``json.loads(content.contents[0].content)``. Catch ``ToolError`` / ``ResourceError`` from FastMCP, not raw ``ValueError`` |

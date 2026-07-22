@@ -469,3 +469,156 @@ class TestMakeApiResourceMissingEndpoint:
         assert handler is not None
 
 
+class TestMakeApiResourceQueryParams:
+    """Tests for query_params and query_param_validators in make_api_resource."""
+
+    @pytest.mark.asyncio
+    async def test_query_params_extracted_into_params_dict(self):
+        """query_params kwargs are extracted into params dict, not substituted into path."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            query_params=["state"],
+        )
+
+        result = await handler(owner="o", repo="r", state="open")
+        assert isinstance(result, ResourceResult)
+        # Verify the API call was made with params={"state": "open"}
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        assert kwargs.get("params") == {"state": "open"}
+
+    @pytest.mark.asyncio
+    async def test_query_params_not_substituted_into_path(self):
+        """query_params kwargs are NOT substituted into the path template."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            query_params=["state"],
+        )
+
+        await handler(owner="o", repo="r", state="open")
+        # The path should remain /repos/o/r/issues (no {state} substitution)
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/repos/o/r/issues"
+
+    @pytest.mark.asyncio
+    async def test_query_params_ignored_when_none(self):
+        """query_params with None value should not be included in params dict."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            query_params=["state"],
+        )
+
+        await handler(owner="o", repo="r", state=None)
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        # params should be None (not {"state": None})
+        assert kwargs.get("params") is None
+
+    @pytest.mark.asyncio
+    async def test_query_param_validation_raises_resource_error(self):
+        """query_param_validators raises ResourceError for invalid values."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            resource_type="issues",
+        )
+
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r", state="invalid")
+
+        error = exc.value.args[0]
+        assert error["code"] == "VALIDATION_ERROR"
+        assert "Invalid state parameter" in error["message"]
+        assert "open" in error["message"]
+        assert "closed" in error["message"]
+
+    @pytest.mark.asyncio
+    async def test_valid_query_param_passes_validation(self):
+        """Valid query param values pass validation and make the API call."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+        )
+
+        result = await handler(owner="o", repo="r", state="open")
+        assert isinstance(result, ResourceResult)
+        client.request.assert_called_once()
+
+
+class TestMakeApiResourceOptionalParams:
+    """Tests for optional_params in make_api_resource."""
+
+    def test_optional_params_added_to_meta(self):
+        """optional_params appears in the meta dict passed to mcp.resource()."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        )
+
+        for args in mcp.resource.call_args_list:
+            if args[0][0] == "gitea://repos/{owner}/{repo}/issues":
+                meta = args[1].get("meta", {})
+                assert "optional_params" in meta
+                assert meta["optional_params"] == [
+                    {"name": "state", "type": "string", "values": ["open", "closed"]},
+                ]
+                break
+
+    def test_optional_params_not_set_when_none(self):
+        """When optional_params is None, meta should not contain the key."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+        )
+
+        for args in mcp.resource.call_args_list:
+            if args[0][0] == "gitea://repos/{owner}/{repo}":
+                meta = args[1].get("meta", {})
+                assert "optional_params" not in meta
+                break
+
+

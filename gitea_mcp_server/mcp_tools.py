@@ -70,9 +70,12 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             base: ResourceEntry,
             meta: dict[str, Any] | None,
         ) -> ResourceEntry:
-            """Add required_scope to a resource entry from its metadata."""
-            scope = meta.get("required_scope") if meta else None
-            base["required_scope"] = scope
+            """Add required_scope and optional_params to a resource entry from metadata."""
+            base["required_scope"] = meta.get("required_scope") if meta else None
+            if meta:
+                optional_params = meta.get("optional_params")
+                if optional_params:
+                    base["optional_params"] = optional_params
             return base
 
         # Process concrete resources
@@ -286,6 +289,26 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "oneOf": [{"type": "string"}, {"type": "null"}],
                                 "description": "Required token scope or null",
                             },
+                            "optional_params": {
+                                "oneOf": [
+                                    {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {"type": "string"},
+                                                "type": {"type": "string"},
+                                                "values": {
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    {"type": "null"},
+                                ],
+                                "description": "Optional query parameters the resource accepts",
+                            },
                         },
                     },
                     "description": "List of resource metadata entries",
@@ -373,6 +396,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - `tags`: List of tags categorizing the resource (e.g., ["repository", "wrapper"])
     - `required_scope`: Token scope required to access this resource (e.g., "read:repository"),
       or `null` if no specific scope is required
+    - `optional_params`: Optional list of dicts describing available query parameters
+      (e.g., ``[{"name": "state", "type": "string", "values": ["open", "closed"]}]``),
+      or absent if the resource has no optional parameters
 
     ## Usage Example
 

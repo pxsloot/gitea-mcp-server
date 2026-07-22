@@ -449,10 +449,7 @@ class TestCustomResources:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get(
-                "https://git.example.com/api/v1/repos/owner/repo/issues",
-                params={"state": "open"},
-            ).respond(
+            mock.get("https://git.example.com/api/v1/repos/owner/repo/issues").respond(
                 200,
                 json=[
                     {"number": 1, "title": "Bug", "state": "open", "user": {"login": "dev"},
@@ -461,7 +458,7 @@ class TestCustomResources:
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
-            result = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
+            result = await mcp.read_resource("gitea://repos/owner/repo/issues")
             assert "Bug" in result.contents[0].content
 
     @pytest.mark.asyncio

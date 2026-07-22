@@ -325,8 +325,8 @@ class TestRegisterCustomResources:
         expected = [
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/readme",
-            "gitea://repos/{owner}/{repo}/issues{?state}",
-            "gitea://repos/{owner}/{repo}/pulls{?state}",
+            "gitea://repos/{owner}/{repo}/issues",
+            "gitea://repos/{owner}/{repo}/pulls",
             "gitea://repos/{owner}/{repo}/files/{path*}",
             "gitea://repos/{owner}/{repo}/releases",
             "gitea://repos/{owner}/{repo}/labels",
@@ -1444,9 +1444,9 @@ class TestCustomResourceStringResponsePaths:
         """Invalid state parameter raises ResourceError."""
         from fastmcp.exceptions import ResourceError
 
-        func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/issues"]
         with pytest.raises(ResourceError) as exc_info:
-            await func("owner", "repo", "invalid_state")
+            await func("owner", "repo", state="invalid_state")
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "VALIDATION_ERROR"
         assert "Invalid state parameter" in error_data["message"]
@@ -1457,7 +1457,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources, mock_gitea_client_str
     ):
         """isinstance(data, str) returns string directly for issues."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/issues"]
         mock_gitea_client_str.request = AsyncMock(return_value="string issues")
         result = await func("owner", "repo")
         assert result == "string issues"
@@ -1467,9 +1467,9 @@ class TestCustomResourceStringResponsePaths:
         """Invalid state parameter for pulls raises ResourceError."""
         from fastmcp.exceptions import ResourceError
 
-        func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/pulls"]
         with pytest.raises(ResourceError) as exc_info:
-            await func("owner", "repo", "invalid_state")
+            await func("owner", "repo", state="invalid_state")
         error_data = exc_info.value.args[0]
         assert error_data["code"] == "VALIDATION_ERROR"
         assert "Invalid state parameter" in error_data["message"]
@@ -1478,7 +1478,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_pulls_string_response(self, captured_resources, mock_gitea_client_str):
         """isinstance(data, str) returns string directly for pulls."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/pulls"]
         mock_gitea_client_str.request = AsyncMock(return_value="string pulls")
         result = await func("owner", "repo")
         assert result == "string pulls"
@@ -1668,9 +1668,9 @@ class TestCustomResourceStringResponsePaths:
     ):
         """Issues with state='open' passes state param to API."""
 
-        func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/issues"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
-        result = await func("owner", "repo", "open")
+        result = await func("owner", "repo", state="open")
         assert json.loads(result) == []
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args
@@ -1682,9 +1682,9 @@ class TestCustomResourceStringResponsePaths:
     ):
         """Pulls with state='closed' passes state param to API."""
 
-        func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/pulls"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
-        result = await func("owner", "repo", "closed")
+        result = await func("owner", "repo", state="closed")
         assert json.loads(result) == []
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args

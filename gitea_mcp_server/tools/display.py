@@ -9,17 +9,10 @@ The ``detail`` parameter is passed through from the read_resource tool
 so that ``detail=concise`` produces collapsed markdown everywhere.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from gitea_mcp_server.format import _format_as_markdown
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-
-    from gitea_mcp_server.openapi_types import OpenAPISpec
-
 
 # ---------------------------------------------------------------------------
 # Formatter registry
@@ -289,36 +282,8 @@ def _build_labels_markdown(data: list, owner: str, repo: str, *, detail: str = "
     return call_formatter("labels", data, detail=detail, extra={"owner": owner, "repo": repo})
 
 
-# ---------------------------------------------------------------------------
-# Non-data formatters (no raw data input)
-# ---------------------------------------------------------------------------
-
-
-def _build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
-    """Build server info markdown from OpenAPI spec info block."""
-    info = openapi_spec.get("info", {})
-    title = info.get("title", "Unknown")
-    version = info.get("version", "Unknown")
-    description = info.get("description", "")
-    lines = [
-        "# Server Information",
-        "",
-        f"**Server Type**: {title}",
-        f"**API Version**: {version}",
-        "",
-    ]
-    if description:
-        lines.append("## Description")
-        lines.append("")
-        lines.append(description)
-        lines.append("")
-    return "\n".join(lines)
-
-
 __all__ = [
-    "_FORMATTERS",
     "_build_labels_markdown",
-    "_build_server_info_markdown",
     "_format_issues_markdown",
     "_format_labels_markdown",
     "_format_pulls_markdown",

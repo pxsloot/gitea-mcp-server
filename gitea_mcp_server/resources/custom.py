@@ -26,9 +26,9 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
     HTTP_STATUS_NOT_FOUND,
 )
+from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
-from gitea_mcp_server.tools.display import _build_server_info_markdown
 from gitea_mcp_server.tools.schemas import _get_success_schema
 
 logger = logging.getLogger(__name__)
@@ -158,6 +158,11 @@ def register_custom_resources(  # noqa: PLR0915
     ]:
         # Check scope before registering: skip if the token lacks the
         # required scope for this resource.
+        #
+        # Note: ``available_scopes`` is derived from the token at startup
+        # and is effectively immutable within a server session — changing
+        # scopes requires a new token and a full server restart.  The
+        # captured closure is therefore stable for the process lifetime.
         required_scope = (meta or {}).get("required_scope")
         if (
             required_scope is not None

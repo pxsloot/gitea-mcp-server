@@ -257,7 +257,7 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                         "uri": "gitea://repos/{owner}/{repo}",
                         "name": "Repository",
                         "description": "Get full repository metadata",
-                        "mimeType": "text/markdown",
+                        "mimeType": "application/json",
                         "type": "template",
                         "tags": ["wrapper", "repository"],
                         "required_scope": "read:repository",
@@ -353,10 +353,14 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     - Templates require parameter substitution before calling `read_resource`
     - Check the `tags` field to understand resource categories:
-      - `wrapper`: User-friendly formatted content (Markdown)
+      - `wrapper`: User-friendly content (raw JSON with display metadata; rendered as Markdown by default via the display pipeline)
       - `raw`: Raw JSON from API
       - `api`: Auto-generated from OpenAPI spec
-    - The `mimeType` hints at the content format you'll receive
+    - The `mimeType` reflects the stored content type (``application/json`` for
+      wrapper resources, ``text/plain`` for raw text).  Use the ``format`` parameter
+      to control display format — ``format=markdown`` (default) renders JSON data
+      through the display pipeline, ``format=json`` returns the raw JSON,
+      ``format=raw`` bypasses all formatting.
     - The `required_scope` field tells you what Gitea token scope is needed:
       - `"read:repository"` - needs read access to repositories
       - `"read:issue"` - needs read access to issues
@@ -371,7 +375,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
                 "uri": "gitea://repos/{owner}/{repo}",
                 "name": "Repository",
                 "description": "Get full repository metadata",
-                "mimeType": "text/markdown",
+                "mimeType": "application/json",
                 "type": "template",
                 "tags": ["wrapper", "repository"],
                 "required_scope": "read:repository"

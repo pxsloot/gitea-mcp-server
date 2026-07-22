@@ -14,11 +14,6 @@ Public functions:
         Separates display from data creation: handles page slicing (or
         ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
         over manual ``apply_format()`` + ``apply_pagination()`` composition.
-    format_result - reformat a ToolResult by format (json/markdown/raw).
-        Prefer ``apply_format`` for new code; ``format_result`` is kept for
-        backward compatibility (used by the API tool wrapping transform which
-        needs to preserve pagination metadata and ``meta`` from the original
-        ``ToolResult``).
     _format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
@@ -42,9 +37,6 @@ from mcp.types import TextContent
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
     from gitea_mcp_server.openapi_types import OpenAPISpec
-
-# Note: PAGINATION_KEYS is imported lazily inside format_result() to avoid
-# a module-level coupling that only the deprecated function needs.
 
 logger = logging.getLogger(__name__)
 
@@ -639,109 +631,8 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
     )
 
 
-def format_result(
-    result: ToolResult,
-    fmt: str,
-    output_schema: dict[str, Any] | None = None,
-    detail: str = "full",
-    raw_schema: dict[str, Any] | None = None,
-) -> ToolResult:
-    """Reformat a ``ToolResult`` content by ``fmt`` (``json`` / ``markdown`` / ``raw``).
 
-    ``structured_content`` is always preserved as raw data.
-    For non-JSON or binary results, all formats return unchanged.
-
-    When ``detail="concise"``, the data is collapsed before formatting:
-    nested objects whose schema declares a ``$ref`` are replaced with
-    ``"$ref:TypeName"`` labels.  For schema-aware collapse to work,
-    the **unresolved** schema (``raw_schema``) is preferred because
-    the resolved ``output_schema`` has ``$ref`` pointers expanded to
-    inline definitions.
-
-    .. note::
-        Prefer ``apply_format`` for new code. ``format_result`` is kept for
-        the API tool wrapping transform which needs to preserve pagination
-        metadata and ``meta`` from the original ``ToolResult``.
-    """
-    # Deferred import to avoid module-level coupling: PAGINATION_KEYS is
-    # only needed by this function (not by apply_format).
-    from gitea_mcp_server.pagination import PAGINATION_KEYS  # noqa: PLC0415
-
-    if fmt == "raw" or not result.structured_content:
-        return result
-
-    data = result.structured_content.get("result")
-    if data is None:
-        return result
-
-    # Extract the resolved inner schema — used for markdown rendering and
-    # as fallback for collapse.  This is ``output_schema.properties.result``.
-    inner: dict[str, Any] | None = None
-    if output_schema:
-        inner = output_schema.get("properties", {}).get("result", {})
-
-    # For $ref detection during collapse, prefer the UNRESOLVED raw schema.
-    # The resolved output_schema has $ref pointers expanded to inline
-    # definitions, so _extract_type_name cannot find type names there.
-    collapse_inner: dict[str, Any] | None = None
-    if raw_schema:
-        collapse_inner = raw_schema.get("properties", {}).get("result", {})
-
-    # Collapse data when detail=concise — shape the data tree, then
-    # hand off to whichever formatter (json or markdown).  This
-    # separates "what to show" from "how to render".
-    if detail == "concise" and isinstance(data, (dict, list)):
-        data = _collapse_data(data, collapse_inner or inner, _depth=0, detail="concise")
-
-    content: str | None = None
-
-    if fmt == "json":
-        content = json_module.dumps(data, indent=2)
-
-    elif fmt == "markdown" and isinstance(data, (dict, list)):
-        # Data has already been collapsed for concise — the formatter
-        # receives already-shaped data and does NOT need the detail param.
-        # NB: `detail` is deliberately omitted here because:
-        #   - For detail="concise", data was pre-collapsed by _collapse_data
-        #     above — nested $ref dicts are now strings like "$ref:User",
-        #     so _format_as_markdown renders them as scalars regardless of
-        #     its own detail param.
-        #   - For detail="full" (default), _format_as_markdown's own default
-        #     matches. If _format_as_markdown's default ever changes, this
-        #     call must pass detail=detail explicitly.
-        content = _format_as_markdown(data, inner)
-
-        pagination = {
-            k: result.structured_content[k]
-            for k in PAGINATION_KEYS
-            if k in result.structured_content
-        }
-        if pagination:
-            content += "\n\n---\n"
-            content += _format_as_markdown(pagination, None)
-
-    else:
-        # Intentional pass-through: string results (e.g. diff/patch text) and
-        # other non-dict/list types are returned unchanged in markdown mode.
-        # Log so the no-op is observable during debugging (see #442 Finding 3).
-        logger.debug(
-            "format_result: skipping formatting for fmt=%s, data type=%s "
-            "(returned unchanged)",
-            fmt,
-            type(data).__name__,
-        )
-
-    if content is not None:
-        return ToolResult(
-            content=[TextContent(type="text", text=content)],
-            structured_content=result.structured_content,
-            meta=result.meta,
-        )
-
-    return result
-
-
-def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent display axes (items + pagination state + output config)
+def _format_paginated_result(  # noqa: PLR0913 - all 9 params are independent display axes (items + pagination state + output config)
     items: list,
     total_count: int,
     fmt: str,
@@ -749,6 +640,8 @@ def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent di
     limit: int,
     fetch_all: bool = False,
     markdown_extras: list[str] | None = None,
+    detail: str = "full",
+    schema: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Format a paginated list result for display.
 
@@ -773,6 +666,11 @@ def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent di
             needed — data is in-memory).
         markdown_extras: Optional extra markdown sections appended after
             the main content (only used in markdown mode).
+        detail: Output detail level — ``"full"`` (default) or
+            ``"concise"`` (collapse nested ``$ref`` objects).  Passed
+            through to ``apply_format``.
+        schema: Optional JSON Schema describing *items* for
+            schema-aware collapse when ``detail="concise"``.
 
     Returns:
         A ``ToolResult`` with formatted content and pagination metadata
@@ -791,7 +689,7 @@ def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent di
         page_items = items[start : start + limit]
 
     return apply_pagination(
-        apply_format(page_items, fmt, markdown_extras=markdown_extras),
+        apply_format(page_items, fmt, markdown_extras=markdown_extras, detail=detail, schema=schema),
         page,
         limit,
         total_count,
@@ -843,5 +741,4 @@ __all__ = [
     "_format_type",
     "_resolve_anyof_schema",
     "apply_format",
-    "format_result",
 ]

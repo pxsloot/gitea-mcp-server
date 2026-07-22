@@ -257,13 +257,14 @@ def register_doc_tools(
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
     )
-    async def search_docs(  # noqa: PLR0913 - query + pagination (page/limit/fetch_all) + display (format/min_score) are independent concerns
+    async def search_docs(  # noqa: PLR0913 - query + pagination (page/limit/fetch_all) + display (format/min_score/detail) are independent concerns
         query: str,
         format: str = "markdown",
         page: int = 1,
         limit: int = 10,
         min_score: float = SEARCH_MIN_SCORE,
         fetch_all: bool = False,
+        detail: str = "full",
     ) -> ToolResult:
         """Search workflow guides by natural language query.
 
@@ -281,6 +282,7 @@ def register_doc_tools(
 
         - ``query``: Natural language query (e.g., "how do tokens work", "protect branches", "label scopes")
         - ``format``: Output format -- ``markdown`` (default, human-readable table), ``json`` (structured data), or ``raw``.
+        - ``detail``: Output detail level -- ``"full"`` (default) or ``"concise"``.
         - ``min_score``: Minimum relevance score (0.0-1.0). 0.0 returns everything,
           0.1 requires at least 10% as relevant as the top result, 1.0 requires perfect match.
 
@@ -298,6 +300,7 @@ def register_doc_tools(
         Args:
             query: Natural language query to search for guides
             format: Output format: markdown (default), json, or raw
+            detail: Output detail level: "full" (default) or "concise"
             page: Page number (1-based, default 1). Ignored when ``fetch_all`` is True.
             limit: Maximum results per page (1-100, default 10). Ignored when ``fetch_all`` is True.
             min_score: Minimum relevance score (0.0-1.0)
@@ -347,6 +350,7 @@ def register_doc_tools(
         return _format_paginated_result(
             all_results, total_count, format, page, limit, fetch_all,
             markdown_extras=extras or None,
+            detail=detail,
         )
 
     @mcp.tool(

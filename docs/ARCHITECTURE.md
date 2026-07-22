@@ -227,7 +227,7 @@ Agent reads a resource:
 | `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
-| `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources); home for shared utilities like `_build_server_info_markdown` that don't belong to either domain | `apply_format`, `format_result`, `_build_server_info_markdown`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
+| `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources); home for shared utilities like `_build_server_info_markdown` that don't belong to either domain | `apply_format`, `_build_server_info_markdown`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
 | `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
 
 ### Tool Customization Stack (applied in order)

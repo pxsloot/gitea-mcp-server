@@ -482,6 +482,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     filtered_tools_info: dict[str, Any] | None = None,
     tool_prefix: str = "",
     fetch_all: bool = False,
+    detail: str = "full",
 ) -> ToolResult:
     """Core search_tools implementation.
 
@@ -505,6 +506,8 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from tool names before name matching.
         fetch_all: When True, return all matching results without slicing.
+        detail: Output detail level — ``"full"`` (default) or
+            ``"concise"`` (collapse nested ``$ref`` objects).
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -561,6 +564,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     return _format_paginated_result(
         all_items, total_count, format, page, limit, fetch_all,
         markdown_extras=extras or None,
+        detail=detail,
     )
 
 
@@ -693,6 +697,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     min_score: float = SEARCH_MIN_SCORE,
     tool_prefix: str = "",
     fetch_all: bool = False,
+    detail: str = "full",
 ) -> ToolResult:
     """Core search_resources implementation.
 
@@ -712,6 +717,8 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from resource names before name matching.
         fetch_all: When True, return all matching results without slicing.
+        detail: Output detail level — ``"full"`` (default) or
+            ``"concise"`` (collapse nested ``$ref`` objects).
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -759,6 +766,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     return _format_paginated_result(
         all_items, total_count, format, page, limit, fetch_all,
         markdown_extras=extras or None,
+        detail=detail,
     )
 
 
@@ -810,12 +818,18 @@ def register_synthetic_tools(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
+        detail: Annotated[
+            str,
+            'Output detail level.  "full" (default) — complete information, '
+            'full object expansion.  "concise" — compact view: nested objects '
+            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
+        ] = "full",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_tools_impl(
             query, category, format, ctx, transform, page, limit,
             min_score=min_score, filtered_tools_info=filtered_tools_info,
-            tool_prefix=tool_prefix, fetch_all=fetch_all,
+            tool_prefix=tool_prefix, fetch_all=fetch_all, detail=detail,
         )
 
     mcp.tool(
@@ -1036,11 +1050,18 @@ def register_synthetic_tools(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
+        detail: Annotated[
+            str,
+            'Output detail level.  "full" (default) — complete information, '
+            'full object expansion.  "concise" — compact view: nested objects '
+            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
+        ] = "full",
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_resources_impl(
             query, format, ctx, page, limit,
             min_score=min_score, tool_prefix=tool_prefix, fetch_all=fetch_all,
+            detail=detail,
         )
 
     mcp.tool(

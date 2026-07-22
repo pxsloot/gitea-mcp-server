@@ -29,7 +29,7 @@ from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.display import call_formatter, get_formatter
+from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,37 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     return ResourceListing(resources=resources_list, count=len(resources_list))
 
 
-def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 params, 7 returns: all independent display axes
+def _make_resource_formatter(
+    format_hint: str | None,
+    detail: str,
+    extra: dict[str, Any] | None,
+) -> Callable[[Any], str] | None:
+    """Create a markdown formatter callable from a ``format_hint`` name.
+
+    Resolves the registered domain formatter (if any) and binds the
+    ``detail`` and ``extra`` arguments so the callable matches the
+    ``(data) -> str`` signature expected by ``apply_format``.
+
+    Args:
+        format_hint: Registered formatter name, or ``None``.
+        detail: Output detail level to pass through.
+        extra: Extra context dict for formatters that need it.
+
+    Returns:
+        A callable ``(data) -> str``, or ``None`` if no formatter found.
+    """
+    if not format_hint:
+        return None
+    fn = get_formatter(format_hint)
+    if fn is None:
+        return None
+    meta = get_formatter_meta(format_hint)
+    if meta.get("needs_extra"):
+        return lambda data: fn(data, detail=detail, extra=extra)
+    return lambda data: fn(data, detail=detail)
+
+
+def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display axes, 7 return paths handle fmt fallback
     raw: str,
     fmt: str,
     detail: str = "full",
@@ -133,11 +163,9 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 params, 7 returns: a
 
     The pipeline:
       1. Parse JSON (non-JSON content passes through unchanged).
-      2. Collapse ``$ref``-backed objects when ``detail=concise`` and a schema
-         is available.
-      3. Format per ``fmt``: dispatch to a registered domain formatter (if
-         ``format_hint`` is given), use generic ``_format_as_markdown``, or
-         produce JSON/raw output.
+      2. Delegate to ``apply_format`` for collapse (detail) and rendering
+         (format).  Domain-specific formatters are resolved via
+         ``format_hint`` and passed as the ``markdown_formatter`` callback.
 
     Args:
         raw: The raw resource content string (JSON or plain text).
@@ -156,6 +184,11 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 params, 7 returns: a
     if fmt == "raw":
         return raw
 
+    # Only json and markdown are valid beyond this point; some older
+    # tests pass unknown formats expecting raw passthrough.
+    if fmt not in ("json", "markdown"):
+        return raw
+
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
@@ -164,20 +197,28 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 params, 7 returns: a
             return json.dumps({"result": raw}, indent=2)
         return raw
 
-    # 1. Collapse data when detail=concise and schema is available.
+    # Pre-collapse data for concise so the formatter sees flat strings.
+    # This matches the original _format_resource_content contract where
+    # child objects at depth >= 1 are collapsed to $ref labels.  The
+    # formatter (domain or generic) receives already-shaped data.
     if detail == "concise" and schema is not None and isinstance(data, (dict, list)):
         data = _collapse_data(data, schema, _depth=0, detail="concise")
 
-    # 2. Format per fmt.
-    if fmt == "json":
-        return json.dumps(data, indent=2)
-
-    if fmt == "markdown":
-        if format_hint and get_formatter(format_hint):
-            return call_formatter(format_hint, data, detail=detail, extra=extra)
-        return _format_as_markdown(data, schema, detail=detail)
-
-    return raw
+    markdown_formatter = _make_resource_formatter(format_hint, detail, extra)
+    # When data has been pre-collapsed, pass detail="full" to avoid
+    # double-collapse — the formatter already sees flat strings.
+    result = apply_format(
+        data, fmt,
+        markdown_formatter=markdown_formatter,
+        detail="full" if detail == "concise" else detail,
+        schema=schema,
+    )
+    if result.content:
+        for c in result.content:
+            if isinstance(c, TextContent):
+                return c.text
+        return ""
+    return ""
 
 
 async def _mcp_read_resource_impl(

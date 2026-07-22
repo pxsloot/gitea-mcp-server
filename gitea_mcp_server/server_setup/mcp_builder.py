@@ -21,7 +21,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
-from gitea_mcp_server.format import format_result
+from gitea_mcp_server.format import apply_format
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -299,16 +299,24 @@ class _ToolWrappingTransform(Transform):
                 extracted=virtual_values,
             )
             result = apply_to(result, virtual_values)
-            # Pass the unresolved raw schema for $ref-aware data collapse.
-            # The resolved output_schema has $refs expanded to inline
-            # definitions — _collapse_data needs the raw pointers.
+
+            # For raw format, return the API response as-is.
+            if fmt == "raw":
+                return result
+
+            # Format: detail shrinks the data, format renders it.
+            # Pagination metadata is orthogonal — attached after rendering.
             raw_schema = (tool.meta or {}).get("output_schema_raw")
-            return format_result(
-                result, fmt,
-                output_schema=tool.output_schema,
-                raw_schema=raw_schema,
-                detail=detail,
-            )
+            data = result.structured_content.get("result") if result.structured_content else None
+            if data is None:
+                return result
+
+            formatted = apply_format(data, fmt, detail=detail, schema=raw_schema)
+            # Preserve original structured_content (carries pagination
+            # metadata and uncollapsed data for programmatic access).
+            formatted.structured_content = result.structured_content
+            formatted.meta = result.meta
+            return formatted
 
         return Tool.from_tool(
             tool,

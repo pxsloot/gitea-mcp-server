@@ -83,6 +83,12 @@ def register_unified_search(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
+        detail: Annotated[
+            str,
+            'Output detail level.  "full" (default) — complete information, '
+            'full object expansion.  "concise" — compact view: nested objects '
+            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
+        ] = "full",
         ctx: Context | None = None,
     ) -> ToolResult:
         if ctx is None:
@@ -189,6 +195,7 @@ def register_unified_search(
         return _format_paginated_result(
             all_ranked, total_count, format, page, limit, fetch_all,
             markdown_extras=extras or None,
+            detail=detail,
         )
 
     mcp.tool(

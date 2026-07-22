@@ -12,6 +12,7 @@ handle ``str`` vs JSON branching automatically.
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -89,17 +90,17 @@ def _build_handler_meta(
     return meta if meta else None
 
 
-def make_api_resource(
+def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branching are intentional: all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
-    openapi_spec: OpenAPISpec,
+    openapi_spec: OpenAPISpec | None,
     *,
     uri: str,
     api_path: str,
     method: str = "GET",
     format_hint: str | None = None,
     scope: str | None = None,
-    cache_ttl: int | None = None,
+    cache_ttl: float | None = None,
     tags: set[str] | None = None,
     error_message: str | None = None,
     available_scopes: set[str] | None = None,
@@ -140,13 +141,12 @@ def make_api_resource(
             ``openapi_spec`` (when spec is available).
     """
     # Scope check -- same logic as ``@_register`` in ``custom.py``.
-    if scope is not None and available_scopes is not None:
-        if not has_sufficient_scope(scope, available_scopes):
-            logger.debug(
-                "Skipping resource %s: requires scope %s",
-                uri, scope,
-            )
-            return None
+    if scope is not None and available_scopes is not None and not has_sufficient_scope(scope, available_scopes):
+        logger.debug(
+            "Skipping resource %s: requires scope %s",
+            uri, scope,
+        )
+        return None
 
     # Auto-derive schema from the spec.
     # When the endpoint is missing from the spec (e.g. test subsets that
@@ -187,7 +187,6 @@ def make_api_resource(
     # (e.g. ``gitea://user``) need a handler with no function params,
     # otherwise FastMCP creates a ResourceTemplate and fails the
     # "URI template must contain at least one parameter" validation.
-    import re
     _has_uri_params = bool(re.search(r"\{[\w?]+\}", uri))
 
     if _has_uri_params:

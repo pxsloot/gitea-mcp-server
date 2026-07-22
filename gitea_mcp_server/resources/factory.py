@@ -8,6 +8,13 @@ The factory auto-derives the response schema from the OpenAPI spec via
 the endpoint's ``api_path + method``, removing the need for manual
 ``_get_success_schema`` / ``_unwrap_result_schema`` calls.  Handlers
 handle ``str`` vs JSON branching automatically.
+
+URI tracking
+------------
+The module-level ``_registered_uris`` set is populated dynamically at
+registration time (not at import time).  ``register_custom_resources()``
+runs *before* ``register_auto_generated_resources()``, and the resulting
+set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
 """
 
 import json
@@ -28,23 +35,10 @@ from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_s
 
 logger = logging.getLogger(__name__)
 
-# Module-level set of URIs registered via make_api_resource.
-# Populated at import time with all Phase 1 factory URIs so that
-# ``register_auto_generated_resources()`` can read this set at call time
-# (before ``make_api_resource`` actually registers the handlers) and
-# skip auto-generation for these URIs.
-#
-# As more resources migrate to the factory in Phase 2/3, new URIs are
-# added here (both at import time and at registration time via
-# ``make_api_resource``'s ``_registered_uris.add(uri)``).
-_registered_uris: set[str] = {
-    "gitea://repos/{owner}/{repo}",
-    "gitea://users/{username}",
-    "gitea://user",
-    "gitea://orgs/{orgname}",
-    "gitea://repos/{owner}/{repo}/releases",
-    "gitea://repos/{owner}/{repo}/labels",
-}
+# Populated at registration time by ``make_api_resource()``.
+# Starts empty; grows as ``register_custom_resources()`` calls
+# ``make_api_resource`` for each factory resource.
+_registered_uris: set[str] = set()
 
 
 def _auto_derive_schema(
@@ -90,7 +84,94 @@ def _build_handler_meta(
     return meta if meta else None
 
 
-def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branching are intentional: all independent registration axes
+async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inputs to error handling + content construction
+    gitea_client: GiteaClient,
+    method: str,
+    api_path: str,
+    *,
+    response_schema: dict[str, Any] | None,
+    format_hint: str | None,
+    resource_type: str,
+    error_message: str,
+    uri: str,
+    error_kwargs: dict[str, Any] | None = None,
+) -> ResourceResult:
+    """Execute an API request and wrap the response into a ``ResourceResult``.
+
+    Shared by both parameterized and concrete URI handler branches in
+    ``make_api_resource``.  Handles error translation (404 → NOT_FOUND,
+    other HTTP → API_ERROR, unexpected → INTERNAL_ERROR), ``str`` vs JSON
+    branching, and metadata attachment.
+
+    Args:
+        gitea_client: Client for API calls.
+        method: HTTP method (e.g. ``"GET"``).
+        api_path: Full formatted API path (e.g. ``"/repos/owner/repo"``).
+        response_schema: Unwrapped inner response schema for display layer.
+        format_hint: Registered formatter name for markdown rendering.
+        resource_type: Machine-readable resource type for error responses.
+        error_message: User-facing 404 error message, possibly a template
+            expanded with ``error_kwargs``.
+        uri: Resource URI template (for error messages).
+        error_kwargs: Keyword arguments for ``error_message.format()``.
+            Only used when the error message has ``{param}`` placeholders.
+
+    Returns:
+        The wrapped ``ResourceResult``.
+
+    Raises:
+        ResourceError: With structured error codes on failure.
+    """
+    try:
+        data = await gitea_client.request(method.upper(), api_path)
+    except Exception as e:
+        status = getattr(e, "status_code", None)
+        if status == HTTP_STATUS_NOT_FOUND:
+            try:
+                msg = error_message.format(**(error_kwargs or {}))
+            except (KeyError, ValueError):
+                msg = error_message
+            raise ResourceError({
+                "code": "NOT_FOUND",
+                "message": msg,
+                "detail": str(e),
+                "resource_type": resource_type,
+                "resource_id": api_path,
+            }) from e
+        if status:
+            raise ResourceError({
+                "code": "API_ERROR",
+                "message": f"API error {status} for {uri}",
+                "detail": str(e),
+                "resource_type": resource_type,
+                "resource_id": api_path,
+            }) from e
+        raise ResourceError({
+            "code": "INTERNAL_ERROR",
+            "message": f"Unexpected error fetching resource: {uri}",
+            "detail": str(e),
+            "resource_type": resource_type,
+            "resource_id": api_path,
+        }) from e
+
+    if isinstance(data, str):
+        return ResourceResult(contents=[
+            ResourceContent(content=data, mime_type="text/plain"),
+        ])
+
+    return ResourceResult(contents=[
+        ResourceContent(
+            content=json.dumps(data),
+            mime_type="application/json",
+            meta=_build_handler_meta(
+                response_schema=response_schema,
+                format_hint=format_hint,
+            ),
+        ),
+    ])
+
+
+def make_api_resource(  # noqa: PLR0912, PLR0913 -- 13 params + branching are intentional: all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
@@ -99,6 +180,7 @@ def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branchi
     api_path: str,
     method: str = "GET",
     format_hint: str | None = None,
+    resource_type: str | None = None,
     scope: str | None = None,
     cache_ttl: float | None = None,
     tags: set[str] | None = None,
@@ -122,6 +204,8 @@ def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branchi
         api_path: API path in spec (e.g. ``"/repos/{owner}/{repo}"``).
         method: HTTP method (default: ``"GET"``).
         format_hint: Registered formatter name for markdown rendering.
+        resource_type: Machine-readable resource type for error responses.
+            Defaults to ``format_hint``, falling back to ``"api"``.
         scope: Required token scope (e.g. ``"read:repository"``).
         cache_ttl: Cache TTL in seconds (passed via resource meta).
         tags: Set of resource tags (e.g. ``{"repository"}``).  The
@@ -179,9 +263,10 @@ def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branchi
     resource_tags: set[str] = set(tags) if tags else set()
     resource_tags.add("wrapper")
 
-    # Default error message.
+    # Default error message and resource type.
     if error_message is None:
         error_message = "Resource not found."
+    _resource_type: str = resource_type or format_hint or "api"
 
     # Detect whether the URI has path parameters -- concrete URIs
     # (e.g. ``gitea://user``) need a handler with no function params,
@@ -193,108 +278,31 @@ def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branchi
 
         async def handler(**kwargs: Any) -> ResourceResult:
             """Auto-generated resource handler from factory."""
-            # Build formatted API path for error reporting.
             formatted_path = api_path
             for key, value in kwargs.items():
                 formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
-
-            try:
-                data = await gitea_client.request(method.upper(), formatted_path)
-            except Exception as e:
-                status = getattr(e, "status_code", None)
-                if status == HTTP_STATUS_NOT_FOUND:
-                    # Format error message with kwargs.
-                    try:
-                        msg = error_message.format(**kwargs)
-                    except (KeyError, ValueError):
-                        msg = error_message
-                    raise ResourceError({
-                        "code": "NOT_FOUND",
-                        "message": msg,
-                        "detail": str(e),
-                        "resource_type": format_hint or "api",
-                        "resource_id": formatted_path,
-                    }) from e
-                if status:
-                    raise ResourceError({
-                        "code": "API_ERROR",
-                        "message": f"API error {status} for {uri}",
-                        "detail": str(e),
-                        "resource_type": format_hint or "api",
-                        "resource_id": formatted_path,
-                    }) from e
-                raise ResourceError({
-                    "code": "INTERNAL_ERROR",
-                    "message": f"Unexpected error fetching resource: {uri}",
-                    "detail": str(e),
-                    "resource_type": format_hint or "api",
-                    "resource_id": formatted_path,
-                }) from e
-
-            # String vs JSON branching.
-            if isinstance(data, str):
-                return ResourceResult(contents=[
-                    ResourceContent(content=data, mime_type="text/plain"),
-                ])
-
-            return ResourceResult(contents=[
-                ResourceContent(
-                    content=json.dumps(data),
-                    mime_type="application/json",
-                    meta=_build_handler_meta(
-                        response_schema=response_schema,
-                        format_hint=format_hint,
-                    ),
-                ),
-            ])
+            return await _request_and_wrap(
+                gitea_client, method, formatted_path,
+                response_schema=response_schema,
+                format_hint=format_hint,
+                resource_type=_resource_type,
+                error_message=error_message,
+                uri=uri,
+                error_kwargs=kwargs,
+            )
 
     else:
 
         async def handler() -> ResourceResult:  # type: ignore[misc]
             """Auto-generated resource handler from factory (concrete URI)."""
-            try:
-                data = await gitea_client.request(method.upper(), api_path)
-            except Exception as e:
-                status = getattr(e, "status_code", None)
-                if status == HTTP_STATUS_NOT_FOUND:
-                    raise ResourceError({
-                        "code": "NOT_FOUND",
-                        "message": error_message,
-                        "detail": str(e),
-                        "resource_type": format_hint or "api",
-                        "resource_id": api_path,
-                    }) from e
-                if status:
-                    raise ResourceError({
-                        "code": "API_ERROR",
-                        "message": f"API error {status} for {uri}",
-                        "detail": str(e),
-                        "resource_type": format_hint or "api",
-                        "resource_id": api_path,
-                    }) from e
-                raise ResourceError({
-                    "code": "INTERNAL_ERROR",
-                    "message": f"Unexpected error fetching resource: {uri}",
-                    "detail": str(e),
-                    "resource_type": format_hint or "api",
-                    "resource_id": api_path,
-                }) from e
-
-            if isinstance(data, str):
-                return ResourceResult(contents=[
-                    ResourceContent(content=data, mime_type="text/plain"),
-                ])
-
-            return ResourceResult(contents=[
-                ResourceContent(
-                    content=json.dumps(data),
-                    mime_type="application/json",
-                    meta=_build_handler_meta(
-                        response_schema=response_schema,
-                        format_hint=format_hint,
-                    ),
-                ),
-            ])
+            return await _request_and_wrap(
+                gitea_client, method, api_path,
+                response_schema=response_schema,
+                format_hint=format_hint,
+                resource_type=_resource_type,
+                error_message=error_message,
+                uri=uri,
+            )
 
     # Set docstring from operation summary/description.
     if openapi_spec is not None:
@@ -332,5 +340,6 @@ def make_api_resource(  # noqa: PLR0912, PLR0913, PLR0915 -- 12 params + branchi
 __all__ = [
     "_auto_derive_schema",
     "_registered_uris",
+    "_request_and_wrap",
     "make_api_resource",
 ]

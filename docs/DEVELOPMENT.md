@@ -309,8 +309,9 @@ The factory:
 - Returns ``None`` if scope-filtered, the handler otherwise
 
 No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
-the factory's ``_registered_uris`` set is read by
-``register_auto_generated_resources()`` at registration time.
+the factory's ``_registered_uris`` set is populated at registration time
+and combined with the legacy ``_NON_FACTORY_SKIP_URIS`` set (in
+``auto.py``) by ``resource_setup.py`` to form the auto-generation skip list.
 
 ### Legacy: Hand-written resource (``@_register`` pattern)
 

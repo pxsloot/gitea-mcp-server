@@ -113,16 +113,6 @@ def _make_mock_client(json_response: object = None) -> AsyncMock:
     return client
 
 
-def _extract_handler(mcp: MagicMock, uri: str) -> object:
-    """Extract the registered handler function for a given URI."""
-    for call_args in mcp.resource.call_args_list:
-        if call_args[0][0] == uri:
-            return call_args[0] if len(call_args[0]) > 1 else None
-    # The handler is returned as the second argument to the decorator call
-    # mcp.resource(uri, ...)(handler) → we need the handler that was passed to the decorator
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Tests: _auto_derive_schema
 # ---------------------------------------------------------------------------
@@ -222,23 +212,16 @@ class TestMakeApiResourceRegistration:
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
-        uri = "gitea://repos/{owner}/{repo}"
-        was_registered = uri in _registered_uris
-        if not was_registered:
-            _registered_uris.add(uri)
-
+        before = set(_registered_uris)
         handler = make_api_resource(
             mcp, client, spec,
-            uri=uri,
+            uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
 
         assert handler is not None
-        assert uri in _registered_uris
-
-        # Cleanup if we added it
-        if not was_registered:
-            _registered_uris.discard(uri)
+        assert "gitea://repos/{owner}/{repo}" in _registered_uris
+        assert _registered_uris == before  # already present before the call
 
     def test_adds_wrapper_tag(self):
         mcp = _make_mock_mcp()
@@ -486,23 +469,3 @@ class TestMakeApiResourceMissingEndpoint:
         assert handler is not None
 
 
-# ---------------------------------------------------------------------------
-# Tests: _registered_uris
-# ---------------------------------------------------------------------------
-
-
-class TestRegisteredUris:
-    """Tests for the _registered_uris module-level set."""
-
-    def test_contains_factory_uris(self):
-        """Phase 1 factory URIs should be in the set."""
-        assert "gitea://repos/{owner}/{repo}" in _registered_uris
-        assert "gitea://users/{username}" in _registered_uris
-        assert "gitea://user" in _registered_uris
-        assert "gitea://orgs/{orgname}" in _registered_uris
-        assert "gitea://repos/{owner}/{repo}/releases" in _registered_uris
-        assert "gitea://repos/{owner}/{repo}/labels" in _registered_uris
-
-    def test_all_uris_start_with_gitea_prefix(self):
-        for uri in _registered_uris:
-            assert uri.startswith("gitea://"), f"URI should start with gitea://: {uri}"

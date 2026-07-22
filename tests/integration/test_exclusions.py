@@ -159,7 +159,7 @@ class TestExclusionIntegration:
         """When a tool is excluded by config, its corresponding auto-generated
         resource should also be excluded at registration time."""
         # Use paths with {path_params} that are NOT in the default
-        # skip-URIs set (``_get_default_skip_uris``) so they produce
+        # skip-URIs set (``_NON_FACTORY_SKIP_URIS``) so they produce
         # auto resources.
         spec = {
             "swagger": "2.0",

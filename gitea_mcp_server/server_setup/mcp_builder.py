@@ -42,6 +42,7 @@ from gitea_mcp_server.tools.schemas import (
     _get_success_schema,
     _is_text_response,
     _response_has_no_content,
+    _unwrap_result_schema,
     derive_output_schema,
 )
 from gitea_mcp_server.tools.virtual_params import (
@@ -183,7 +184,7 @@ def _customize_metadata(
     component_meta["required_scope"] = required_scope
 
     if raw_schema is not None:
-        component_meta["output_schema_raw"] = raw_schema
+        component_meta["output_schema_raw"] = _unwrap_result_schema(raw_schema)
 
     component_meta["_customization"] = {
         "has_labels": has_labels,
@@ -311,11 +312,10 @@ class _ToolWrappingTransform(Transform):
             if data is None:
                 return result
 
-            # raw_schema is the wrapped output schema ({result: ...});
-            # extract the inner schema for schema-aware collapse
-            # (detail=concise needs the $ref pointers from the inner schema).
-            inner_schema = raw_schema.get("properties", {}).get("result") if raw_schema else None
-            formatted = apply_format(data, fmt, detail=detail, schema=inner_schema)
+            # output_schema_raw stores the inner (unwrapped) schema
+            # (see _customize_metadata where _unwrap_result_schema is applied)
+            # so it matches the shape of ``data`` — no unwrapping needed.
+            formatted = apply_format(data, fmt, detail=detail, schema=raw_schema)
             # Preserve original structured_content (carries pagination
             # metadata and uncollapsed data for programmatic access).
             formatted.structured_content = result.structured_content

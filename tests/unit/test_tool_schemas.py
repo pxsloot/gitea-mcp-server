@@ -1513,3 +1513,105 @@ class TestCollectRefs:
 
         assert _collect_refs("not_a_dict") == set()
         assert _collect_refs([]) == set()
+
+
+class TestUnwrapResultSchema:
+    """Tests for _unwrap_result_schema."""
+
+    def test_none_returns_none(self):
+        """None input returns None."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        assert _unwrap_result_schema(None) is None
+
+    def test_already_unwrapped_unchanged(self):
+        """Schema without result wrapper is returned unchanged."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "user": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        result = _unwrap_result_schema(schema)
+        assert result is schema  # Same object, no copy
+
+    def test_wrapped_extracts_inner(self):
+        """Wrapped schema {result: inner} extracts inner schema."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        inner = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "user": {"$ref": "#/components/schemas/User"},
+            },
+        }
+        wrapped = {
+            "type": "object",
+            "properties": {"result": inner},
+        }
+        result = _unwrap_result_schema(wrapped)
+        assert result is inner  # The inner object is returned directly
+
+    def test_wrapped_preserves_refs(self):
+        """Inner schema retains $ref pointers for collapse-aware consumers."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        wrapped = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"$ref": "#/components/schemas/User"},
+                        "repo": {"$ref": "#/components/schemas/Repository"},
+                    },
+                },
+            },
+        }
+        result = _unwrap_result_schema(wrapped)
+        assert result["properties"]["owner"]["$ref"] == "#/components/schemas/User"
+        assert result["properties"]["repo"]["$ref"] == "#/components/schemas/Repository"
+
+    def test_array_schema_unchanged(self):
+        """Array-type schema (not wrapped) is returned unchanged."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        schema = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Issue"},
+        }
+        result = _unwrap_result_schema(schema)
+        assert result is schema
+
+    def test_wrapped_array_extracts_inner(self):
+        """Wrapped array schema extracts the inner array schema."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        inner = {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Issue"},
+        }
+        wrapped = {
+            "type": "object",
+            "properties": {"result": inner},
+        }
+        result = _unwrap_result_schema(wrapped)
+        assert result is inner
+
+    def test_wrapped_without_result_property(self):
+        """Object schema without 'result' property is returned unchanged (not wrapped)."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "count": {"type": "integer"},
+            },
+        }
+        result = _unwrap_result_schema(schema)
+        assert result is schema

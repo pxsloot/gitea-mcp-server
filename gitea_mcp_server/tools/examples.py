@@ -299,11 +299,14 @@ def _serialize_tool_schema(
     }
     if tool.output_schema is not None:
         # Prefer the raw (unresolved) schema from meta for compact examples.
+        # output_schema_raw stores the inner (unwrapped) schema
+        # (see mcp_builder._customize_metadata where _unwrap_result_schema
+        # is applied), so it matches the shape of the tool output data
+        # directly — no unwrapping needed.
         raw = (tool.meta or {}).get("output_schema_raw")
         if raw is not None:
-            inner = raw.get("properties", {}).get("result", {})
             example = _schema_to_compact_example(
-                inner, openapi_spec=openapi_spec
+                raw, openapi_spec=openapi_spec
             )
         else:
             # Fallback: generate from the resolved output schema.

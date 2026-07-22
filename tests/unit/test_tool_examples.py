@@ -483,17 +483,12 @@ class TestSchemaToCompactExample:
             meta={"output_schema_raw": {
                 "type": "object",
                 "properties": {
-                    "result": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "user": {
-                                "anyOf": [
-                                    {"$ref": "#/components/schemas/User"},
-                                    {"type": "null"},
-                                ],
-                            },
-                        },
+                    "id": {"type": "integer"},
+                    "user": {
+                        "anyOf": [
+                            {"$ref": "#/components/schemas/User"},
+                            {"type": "null"},
+                        ],
                     },
                 },
             }},
@@ -658,14 +653,9 @@ class TestSchemaToCompactExample:
             },
             meta={
                 "output_schema_raw": {
-                    "type": "object",
-                    "properties": {
-                        "result": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/components/schemas/NotificationThread",
-                            },
-                        },
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/components/schemas/NotificationThread",
                     },
                 },
             },

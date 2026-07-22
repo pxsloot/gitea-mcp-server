@@ -325,6 +325,15 @@ The customization layers as applied during server startup:
    match the runtime shape.  This is done in `openapi_converter.py` via
    `_wrap_success_response_schemas`.
 
+   Consumers that need a schema matching the *actual API response shape*
+   (data collapse, example generation) must use the inner schema.  The
+   helper ``_unwrap_result_schema`` (in ``tools/schemas.py``) strips the
+   wrapper and is applied when storing schemas for collapse purposes:
+   ``output_schema_raw`` (tool path) and ``meta["response_schema"]``
+   (resource path) both store the inner (unwrapped) schema so that
+   downstream consumers receive a schema that matches the data they work
+   with — no inline unwrapping needed.
+
 6. **Cache invalidation via middleware** -- Write tools register invalidation
    patterns at startup.  The `CacheInvalidationMiddleware` computes concrete
    URIs from tool arguments and clears them from the response cache after

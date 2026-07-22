@@ -279,9 +279,14 @@ From this doc's how-to angle: to add a new scope-gated param, set
    ``mcp_tools.py``) handles all rendering via the registered formatter.
 
    ```python
-   from gitea_mcp_server.tools.schemas import _get_success_schema
+   from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
-   _my_schema = _get_success_schema(openapi_spec, "/api/path/{param}", "get", resolve=False)
+   # Derive the unresolved schema for $ref-aware collapse, then unwrap
+   # the result envelope ({result: inner}) so the stored schema matches
+   # the raw API response shape.
+   _my_schema = _unwrap_result_schema(
+       _get_success_schema(openapi_spec, "/api/path/{param}", "get", resolve=False)
+   )
 
    async def my_resource(param: str, gitea_client: GiteaClient) -> ResourceResult:
        """Description for agents."""

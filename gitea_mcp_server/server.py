@@ -31,6 +31,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
+from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
@@ -285,7 +286,7 @@ async def _apply_virtual_param_scope_filter(
         )
 
 
-async def create_mcp_server(
+async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inherently has many steps (spec loading, middleware, tool setup, resource setup, instructions)
     gitea_client: GiteaClient,
     config: Config | None = None,
     lifespan: Any = None,
@@ -384,6 +385,29 @@ async def create_mcp_server(
     if guide_manifest:
         placeholder_values["GUIDES_LIST"] = guide_manifest
 
+    # ── Pre-compute static resource data (no API calls on read) ──────────
+    # These resources return data that is static for the server session —
+    # pre-fetch once at startup and cache in closures.  The pattern matches
+    # the placeholder-value work above: raw gitea_client calls before FastMCP
+    # is initialised, with graceful fallbacks on failure.
+
+    # Server version — one GET /version at startup, "Unknown" on failure.
+    version_str: str = "Unknown"
+    try:
+        version_data = await gitea_client.request("GET", "/version")
+        if isinstance(version_data, dict):
+            version_str = str(version_data.get("version", "Unknown"))
+        elif isinstance(version_data, str):
+            version_str = version_data
+    except (OSError, GiteaAPIError):
+        logger.info("Could not fetch version for static resource")
+
+    # Server info markdown — built from the already-loaded OpenAPI spec;
+    # no API call needed.
+    server_info_md: str | None = None
+    if openapi_spec:
+        server_info_md = _build_server_info_markdown(openapi_spec)
+
     instructions = _build_server_instructions(placeholder_values)
 
     mcp = FastMCP(
@@ -411,6 +435,8 @@ async def create_mcp_server(
         openapi_spec,
         filtered_tools_info=filtered_tools_info,
         available_scopes=available_scopes,
+        version_str=version_str,
+        server_info_md=server_info_md,
     )
     register_type_tools(mcp, openapi_spec=openapi_spec)
     await _apply_virtual_param_scope_filter(available_scopes)

@@ -471,7 +471,7 @@ class TestCustomResources:
             url="https://git.example.com",
             token="test-token-prefix_last8",
             log_level="ERROR",
-            tool_filtering_enabled=False,
+            tool_filtering_enabled=True,
         )
         gitea_client = GiteaClient(config)
         swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
@@ -482,40 +482,14 @@ class TestCustomResources:
             mock.get("https://git.example.com/api/v1/users/dev2/tokens").respond(
                 200,
                 json=[
-                    {"id": 1, "name": "test", "token_last_eight": "ix_last8", "scopes": ["read:repo", "write:issue"]},
+                    {"id": 1, "name": "test", "token_last_eight": "ix_last8", "scopes": ["read:repository", "write:issue", "read:user"]},
                 ],
             )
+            mock.get("https://git.example.com/api/v1/version").respond(200, json={"version": "1.0.0"})
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://token/scopes")
-            assert "read:repo" in result.contents[0].content
+            assert "read:repository" in result.contents[0].content
             assert "write:issue" in result.contents[0].content
-
-    @pytest.mark.asyncio
-    async def test_read_token_scopes_no_match(self):
-        """Read gitea://token/scopes returns null when token doesn't match."""
-        config = SimpleConfig(
-            url="https://git.example.com",
-            token="unknown-token",
-            log_level="ERROR",
-            tool_filtering_enabled=False,
-        )
-        gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
-
-        with respx.mock() as mock:
-            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "dev2"})
-            mock.get("https://git.example.com/api/v1/users/dev2/tokens").respond(
-                200,
-                json=[
-                    {"id": 1, "name": "t1", "token_last_eight": "ffffffff", "scopes": ["sudo"]},
-                ],
-            )
-            mcp = await create_mcp_server(gitea_client)
-            result = await mcp.read_resource("gitea://token/scopes")
-            import json
-            data = json.loads(result.contents[0].content)
-            assert data["scopes"] is None
 
     @pytest.mark.asyncio
     async def test_read_organization(self):

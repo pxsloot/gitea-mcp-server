@@ -10,12 +10,14 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
 
 
-def register_all_resources(
+def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + scopes + pre-computed data are all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec,
     filtered_tools_info: dict[str, Any] | None = None,
     available_scopes: set[str] | None = None,
+    version_str: str = "Unknown",
+    server_info_md: str | None = None,
 ) -> None:
     """Register all MCP resources (auto-generated and custom) and resource tools.
 
@@ -35,6 +37,8 @@ def register_all_resources(
             ``None`` means no filtering (all auto resources visible).
         available_scopes: Set of scopes the token has, or ``None`` (no filtering).
             Custom resources whose required scope is not satisfied are skipped.
+        version_str: Pre-fetched server version string.
+        server_info_md: Pre-built server info markdown, or ``None``.
     """
     register_auto_generated_resources(
         mcp,
@@ -47,6 +51,8 @@ def register_all_resources(
         gitea_client,
         openapi_spec,
         available_scopes=available_scopes,
+        version_str=version_str,
+        server_info_md=server_info_md,
     )
     register_mcp_resource_tools(mcp, openapi_spec=openapi_spec)
 

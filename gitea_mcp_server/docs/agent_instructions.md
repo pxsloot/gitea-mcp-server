@@ -107,7 +107,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `limit`     | integer | page size for list/search tools |
 | `fetch_all`   | boolean | When true, auto-fetch all pages (merged result, capped at 10). Default `false` — single page only. See Pagination edge case below. |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
-| `detail`    | string  | `"full"` (default) \| `"concise"` -- markdown rendering depth; `"concise"` collapses nested objects to `$ref:TypeName` at depth >= 1 |
+| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` collapses nested objects to `$ref:TypeName` labels at depth >= 1 (affects both `json` and `markdown` output) |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
 
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
@@ -184,10 +184,10 @@ parameter:
 | `json`    | Programmatic extraction (e.g. `result["owner"]["id"]`). |
 | `raw`     | Exact API response, for undocumented fields or debugging. |
 
-| `detail`  | Effect on markdown output |
-|-----------|---------------------------|
+| `detail`  | Effect on output |
+|-----------|------------------|
 | `"full"` (default) | Complete information, full object expansion. |
-| `"concise"` | Compact view: nested objects at depth >= 1 are collapsed to ``$ref:TypeName`` labels. Unaffected when ``format=json`` or ``format=raw``. |
+| `"concise"` | Compact view: nested objects at depth >= 1 are collapsed to ``$ref:TypeName`` labels. Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is

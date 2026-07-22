@@ -373,7 +373,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
 | ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``_format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
-| ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — only meaningful for schema-depth resources |
+| ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |

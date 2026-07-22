@@ -299,7 +299,16 @@ class _ToolWrappingTransform(Transform):
                 extracted=virtual_values,
             )
             result = apply_to(result, virtual_values)
-            return format_result(result, fmt, detail=detail)
+            # Pass the unresolved raw schema for $ref-aware data collapse.
+            # The resolved output_schema has $refs expanded to inline
+            # definitions — _collapse_data needs the raw pointers.
+            raw_schema = (tool.meta or {}).get("output_schema_raw")
+            return format_result(
+                result, fmt,
+                output_schema=tool.output_schema,
+                raw_schema=raw_schema,
+                detail=detail,
+            )
 
         return Tool.from_tool(
             tool,

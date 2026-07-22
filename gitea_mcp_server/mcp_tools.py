@@ -24,7 +24,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import _collapse_data, _format_as_markdown, apply_format
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
@@ -123,6 +123,10 @@ def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
     If the content is JSON, parse and reformat (markdown or pretty-printed).
     If the content is not JSON and ``format=json`` is requested, wrap
     in ``{"result": "..."}`` to provide structured output regardless of MIME type.
+
+    The ``detail`` parameter controls data shape before formatting:
+    ``"concise"`` collapses nested objects to type labels (schema-driven when
+    schema info is available, generic otherwise).
     """
     if fmt == "raw":
         return raw
@@ -134,11 +138,20 @@ def _format_resource_content(raw: str, fmt: str, detail: str = "full") -> str:
             return json.dumps({"result": raw}, indent=2)
         return raw
 
+    # Shape data before formatting when detail="concise".
+    # Resources don't carry their own output schema metadata (unlike API tools
+    # which store output_schema_raw in meta).  Without a schema, _collapse_data
+    # is a no-op — so $ref-aware collapsing is not available for resources.
+    # The call is kept to maintain the collapse-then-format pattern and will
+    # activate once resources gain schema support.  See PR #505 discussion.
+    if detail == "concise" and isinstance(data, (dict, list)):
+        data = _collapse_data(data, None, _depth=0, detail="concise")
+
     if fmt == "json":
         return json.dumps(data, indent=2)
 
     if fmt == "markdown":
-        return _format_as_markdown(data, None, detail=detail)
+        return _format_as_markdown(data, None)
 
     return raw
 

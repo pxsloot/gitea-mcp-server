@@ -4,6 +4,9 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
+    _collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
+        to labels (``$ref:TypeName``).  Used to shape data before formatting
+        so any formatter (json or markdown) receives already-collapsed data.
     apply_format - format data for output (raw/json/markdown), no pagination.
     _format_paginated_result - format paginated list results for display.
         Separates display from data creation: handles page slicing (or
@@ -129,6 +132,77 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
                     if isinstance(ref, str):
                         return ref.rsplit("/", 1)[-1]
     return None
+
+
+def _collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, no schema), 2 collapse outcomes (dict $ref, list $ref), 2 recursive walks (dict recurse, list recurse), 1 scalar passthrough
+    data: Any,
+    schema: dict[str, Any] | None = None,
+    _depth: int = 0,
+    detail: str = "full",
+) -> Any:
+    """Walk data+schema, collapsing $ref-backed objects at depth>=1 to labels.
+
+    Used to shape data before formatting: when ``detail="concise"`` and
+    ``_depth >= 1``, properties whose schema declares a ``$ref`` are
+    collapsed to ``"$ref:TypeName"`` (or ``"$ref:TypeName[N]"`` for lists).
+    Inline schemas (no ``$ref``) are NOT collapsed — they remain as nested
+    dicts/lists for the formatter to render.
+
+    When ``schema`` is ``None`` or ``detail="full"``, the data is returned
+    unchanged (the tree is still walked for ``schema=None``, but no
+    collapsing occurs).
+
+    Args:
+        data: The data to collapse (dict, list, or scalar).
+        schema: The JSON Schema describing *data*, or ``None``.
+        _depth: Current nesting depth — 0 means top-level (never collapsed).
+        detail: ``"full"`` (return unchanged) or ``"concise"`` (collapse at depth>=1).
+
+    Returns:
+        Collapsed data (dicts, lists, strings) suitable for JSON serialization
+        or markdown rendering.
+    """
+    if detail == "full":
+        return data
+
+    # Without schema context there is nothing to collapse — the data
+    # tree stays as-is.  This avoids unnecessary dict/list copies.
+    if schema is None:
+        return data
+
+    if isinstance(data, dict):
+        if _depth >= 1:
+            # Use raw schema — _extract_type_name natively handles
+            # $ref, allOf, anyOf, oneOf at the top level.
+            type_name = _extract_type_name(schema)
+            if type_name:
+                return f"$ref:{type_name}"
+            # No $ref — recurse (inline schemas stay expanded)
+
+        combined = _merge_allof_schema(schema)
+        properties = combined.get("properties", {}) if isinstance(combined, dict) else {}
+
+        result: dict[str, Any] = {}
+        for k, v in data.items():
+            prop_schema = properties.get(k) if properties else None
+            if prop_schema is not None and not isinstance(prop_schema, dict):
+                prop_schema = None
+            effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
+            result[k] = _collapse_data(v, effective or prop_schema, _depth + 1, detail)
+        return result
+
+    if isinstance(data, list):
+        if _depth >= 1:
+            items_schema = schema.get("items", {}) if isinstance(schema, dict) else {}
+            type_name = _extract_type_name(items_schema)
+            if type_name:
+                return f"$ref:{type_name}[{len(data)}]"
+            # No $ref — recurse
+
+        items_schema = schema.get("items", {}) if isinstance(schema, dict) else {}
+        return [_collapse_data(item, items_schema, _depth + 1, detail) for item in data]
+
+    return data
 
 
 def _collapse_value(raw_val: Any, prop_schema: dict[str, Any] | None) -> str:
@@ -496,13 +570,14 @@ def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     return "\n".join(lines).strip()
 
 
-def apply_format(
+def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only display options (markdown_formatter, markdown_extras, detail, schema) — all independent display axes
     data: Any,
     fmt: str,
     *,
     markdown_formatter: Callable[[Any], str] | None = None,
     markdown_extras: list[str] | None = None,
     detail: str = "full",
+    schema: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Format data for output. No pagination involvement.
 
@@ -512,8 +587,12 @@ def apply_format(
     - ``raw``: structured_content only, no text content.
     - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
     - ``markdown``: text = ``markdown_formatter(data)`` or the generic
-      ``_format_as_markdown(data, None)``.  ``markdown_extras`` are appended
+      ``_format_as_markdown``.  ``markdown_extras`` are appended
       as additional sections after the main content.
+
+    When ``detail="concise"`` and ``schema`` is provided, data is collapsed
+    before formatting — nested ``$ref``-backed objects are replaced with
+    ``"$ref:TypeName"`` labels (applies to both json and markdown).
 
     Args:
         data: The data to format (typically a dict or list).
@@ -522,6 +601,10 @@ def apply_format(
             the generic ``_format_as_markdown`` is used.
         markdown_extras: Optional list of additional markdown sections to
             append after the main content (only in markdown mode).
+        detail: Output detail level — ``"full"`` (default, complete) or
+            ``"concise"`` (collapse nested ``$ref`` objects).
+        schema: Optional JSON Schema describing *data*, used for schema-aware
+            collapsing when ``detail="concise"``.
 
     Returns:
         A ``ToolResult`` with formatted content and raw structured data.
@@ -535,12 +618,14 @@ def apply_format(
         return ToolResult(structured_content={"result": data})
 
     if fmt == "json":
+        if detail == "concise" and schema is not None:
+            data = _collapse_data(data, schema, _depth=0, detail="concise")
         text = json_module.dumps(data, indent=2)
     else:
         text = (
             markdown_formatter(data)
             if markdown_formatter
-            else _format_as_markdown(data, None, detail=detail)
+            else _format_as_markdown(data, schema, detail=detail)
         )
         if markdown_extras:
             text += "\n\n---\n\n" + "\n\n---\n\n".join(markdown_extras)
@@ -556,11 +641,19 @@ def format_result(
     fmt: str,
     output_schema: dict[str, Any] | None = None,
     detail: str = "full",
+    raw_schema: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Reformat a ``ToolResult`` content by ``fmt`` (``json`` / ``markdown`` / ``raw``).
 
     ``structured_content`` is always preserved as raw data.
     For non-JSON or binary results, all formats return unchanged.
+
+    When ``detail="concise"``, the data is collapsed before formatting:
+    nested objects whose schema declares a ``$ref`` are replaced with
+    ``"$ref:TypeName"`` labels.  For schema-aware collapse to work,
+    the **unresolved** schema (``raw_schema``) is preferred because
+    the resolved ``output_schema`` has ``$ref`` pointers expanded to
+    inline definitions.
 
     .. note::
         Prefer ``apply_format`` for new code. ``format_result`` is kept for
@@ -578,14 +671,42 @@ def format_result(
     if data is None:
         return result
 
+    # Extract the resolved inner schema — used for markdown rendering and
+    # as fallback for collapse.  This is ``output_schema.properties.result``.
+    inner: dict[str, Any] | None = None
+    if output_schema:
+        inner = output_schema.get("properties", {}).get("result", {})
+
+    # For $ref detection during collapse, prefer the UNRESOLVED raw schema.
+    # The resolved output_schema has $ref pointers expanded to inline
+    # definitions, so _extract_type_name cannot find type names there.
+    collapse_inner: dict[str, Any] | None = None
+    if raw_schema:
+        collapse_inner = raw_schema.get("properties", {}).get("result", {})
+
+    # Collapse data when detail=concise — shape the data tree, then
+    # hand off to whichever formatter (json or markdown).  This
+    # separates "what to show" from "how to render".
+    if detail == "concise" and isinstance(data, (dict, list)):
+        data = _collapse_data(data, collapse_inner or inner, _depth=0, detail="concise")
+
     content: str | None = None
 
     if fmt == "json":
         content = json_module.dumps(data, indent=2)
 
     elif fmt == "markdown" and isinstance(data, (dict, list)):
-        inner = output_schema.get("properties", {}).get("result", {}) if output_schema else None
-        content = _format_as_markdown(data, inner, detail=detail)
+        # Data has already been collapsed for concise — the formatter
+        # receives already-shaped data and does NOT need the detail param.
+        # NB: `detail` is deliberately omitted here because:
+        #   - For detail="concise", data was pre-collapsed by _collapse_data
+        #     above — nested $ref dicts are now strings like "$ref:User",
+        #     so _format_as_markdown renders them as scalars regardless of
+        #     its own detail param.
+        #   - For detail="full" (default), _format_as_markdown's own default
+        #     matches. If _format_as_markdown's default ever changes, this
+        #     call must pass detail=detail explicitly.
+        content = _format_as_markdown(data, inner)
 
         pagination = {
             k: result.structured_content[k]
@@ -675,6 +796,7 @@ def _format_paginated_result(  # noqa: PLR0913 - all 7 params are independent di
 
 
 __all__ = [
+    "_collapse_data",
     "_collapse_value",
     "_extract_type_name",
     "_format_annotations_table",

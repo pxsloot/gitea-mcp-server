@@ -329,7 +329,7 @@ try:
     version_data = await gitea_client.request("GET", "/version")
     if isinstance(version_data, dict):
         version_str = str(version_data.get("version", "Unknown"))
-except (OSError, GiteaAPIError):
+except GiteaAPIError:
     pass
 
 # Pass through the registration chain
@@ -346,7 +346,7 @@ async def get_version() -> ResourceResult:
 ```
 
 See ``register_custom_resources()`` for the available pre-computed parameters
-(``version_str``, ``server_info_md``, and ``available_scopes`` token scopes).
+(``version_str``, ``server_info_md``, and ``available_scopes`` for token scopes).
 
 ---
 

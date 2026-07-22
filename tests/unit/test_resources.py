@@ -339,7 +339,7 @@ class TestRegisterCustomResources:
         for template in expected:
             assert template in uri_templates
 
-    async def test_registers_all_custom_resources_with_openapi_spec(
+    async def test_registers_all_custom_resources_with_server_info_md(
         self, mock_mcp, mock_gitea_client
     ):
         """Test that 13 custom resources are registered when server_info_md is provided."""

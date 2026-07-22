@@ -773,8 +773,13 @@ class TestServerEdgeCases:
             assert excluded_routes == set()
 
     @pytest.mark.asyncio
-    async def test_permission_filter_disabled_skips_scope_fetch(self):
-        """When filtering is disabled, token scopes are not fetched (no network)."""
+    async def test_permission_filter_disabled_skips_scope_routes(self):
+        """When filtering is disabled, scope-based routes are not excluded.
+
+        Scopes are always fetched (for the ``gitea://token/scopes``
+        resource), but ``_compute_excluded_routes`` drops scope reasons
+        when ``scope_filtering_enabled`` is False.
+        """
         from unittest.mock import patch
 
         from gitea_mcp_server.server_setup.spec_loader import (
@@ -795,14 +800,15 @@ class TestServerEdgeCases:
             respx.mock() as mock,
             patch(
                 "gitea_mcp_server.server_setup.spec_loader.fetch_token_scopes",
+                return_value=None,
             ) as mock_fetch,
         ):
             mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
-            # No exception - scope fetch is skipped entirely when disabled.
+            # Scope fetch is called even when filtering is disabled.
             _, _, filtered_info, excluded_routes = await load_and_convert_spec(
                 gitea_client, config
             )
-            mock_fetch.assert_not_called()
+            mock_fetch.assert_called_once()
             assert excluded_routes == set()
 
     @pytest.mark.asyncio

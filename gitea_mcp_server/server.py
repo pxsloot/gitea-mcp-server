@@ -266,9 +266,13 @@ async def _apply_virtual_param_scope_filter(
     only governs virtual-parameter visibility, which is a separate concern that
     still requires the token's scopes at startup.
 
+    ``None`` disables gating — used when scope data is unavailable (fetch
+    failure) or when ``tool_filtering_enabled`` is False (preserving the
+    convention that disabling tool filtering also disables virtual-param
+    gating).
+
     Args:
-        available_scopes: Set of scopes the token has, or None if scope data
-            could not be fetched (in which case no gating is applied).
+        available_scopes: Set of scopes the token has, or None (no gating).
     """
     if available_scopes is None:
         logger.info("No token scopes available, skipping virtual param scope gating")
@@ -322,13 +326,19 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # ``excluded_routes`` already honours ``config.tool_filtering_enabled``
     # (scope filtering is skipped when disabled, but deprecated-endpoint and
     # config-exclusion filtering always apply — matching the old behaviour).
-    # The available scopes are only needed to gate scope-sensitive virtual
-    # params (e.g. ``sudo``); when filtering is disabled we leave them ungated.
-    available_scopes = (
+    # Token scopes are always loaded (for custom resource gating and the
+    # ``gitea://token/scopes`` resource), but virtual-param gating (e.g.
+    # ``sudo``) follows the filtering flag.
+    # An empty set is treated as ``None`` — it means "no scope data"
+    # (fetch failed or was skipped), not "token has no scopes".  Empty
+    # sets would otherwise enable scope gating with no scopes and filter
+    # out every gated resource.
+    all_scopes: set[str] | None = (
         set(filtered_tools_info.get("available_scopes", []))
-        if filtered_tools_info and config.tool_filtering_enabled
+        if filtered_tools_info
         else None
-    )
+    ) or None
+    available_scopes = all_scopes if config.tool_filtering_enabled else None
 
     label_service = LabelService()
     provider = create_openapi_provider(
@@ -357,7 +367,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
         user_data = await gitea_client.request("GET", "/user")
         if isinstance(user_data, dict):
             placeholder_values["USER_LOGIN"] = str(user_data.get("login", "unknown"))
-    except (OSError, GiteaAPIError):
+    except GiteaAPIError:
         logger.info("Could not fetch user login for instructions placeholder")
 
     # Token scopes — already computed in filtered_tools_info.
@@ -399,7 +409,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
             version_str = str(version_data.get("version", "Unknown"))
         elif isinstance(version_data, str):
             version_str = version_data
-    except (OSError, GiteaAPIError):
+    except GiteaAPIError:
         logger.info("Could not fetch version for static resource")
 
     # Server info markdown — built from the already-loaded OpenAPI spec;
@@ -434,7 +444,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
         gitea_client,
         openapi_spec,
         filtered_tools_info=filtered_tools_info,
-        available_scopes=available_scopes,
+        available_scopes=all_scopes,
         version_str=version_str,
         server_info_md=server_info_md,
     )

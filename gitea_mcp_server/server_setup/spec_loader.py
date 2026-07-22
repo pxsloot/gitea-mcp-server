@@ -257,10 +257,10 @@ async def load_and_convert_spec(
 
     # ── Compute spec-level filtering ───────────────────────────────────
     # Exclusion config is always honoured (it never required token scopes).
-    # Token scopes are only fetched when scope filtering is enabled — this
-    # avoids a network round-trip (and a hard dependency on the /user +
-    # /users/{name}/tokens endpoints) when scope filtering is off, while
-    # still applying deprecated-endpoint and config-exclusion filtering.
+    # Token scopes are always fetched (for the ``gitea://token/scopes``
+    # resource) regardless of ``tool_filtering_enabled``.  Scope-based
+    # route exclusion is gated by ``scope_filtering_enabled`` in
+    # ``_compute_excluded_routes`` below.
     # The result drives BOTH:
     #   * ``filtered_tools_info`` — rich error messages for synthetic tools
     #   * ``excluded_routes``     — operations dropped before provider creation
@@ -272,13 +272,11 @@ async def load_and_convert_spec(
         logger.warning("Failed to load exclusion config, proceeding without it")
         exclusion_config = {"exclude": [], "include": []}
 
-    available_scopes = None
-    if config.tool_filtering_enabled:
-        try:
-            available_scopes = await fetch_token_scopes(gitea_client, config.token)
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to fetch token scopes for filtering info, proceeding without")
-            available_scopes = None
+    try:
+        available_scopes = await fetch_token_scopes(gitea_client, config.token)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to fetch token scopes, proceeding without")
+        available_scopes = None
 
     tool_prefix = config.tool_prefix or ""
     filtered_tools_info = compute_filtered_tools_info(

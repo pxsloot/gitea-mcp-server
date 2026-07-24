@@ -41,6 +41,8 @@ class ResourceEntry(TypedDict, total=False):
     tags: list[str]
     required_scope: str | None
     optional_params: list[dict[str, Any]] | None
+    size_hint: str | None
+    default_detail: str | None
 
 
 class ResourceListing(TypedDict, total=False):

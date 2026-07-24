@@ -99,12 +99,24 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             base: ResourceEntry,
             meta: dict[str, Any] | None,
         ) -> ResourceEntry:
-            """Add required_scope and optional_params to a resource entry from metadata."""
+            """Add metadata fields to a resource entry from the resource's meta dict.
+
+            Extracts discoverable fields that agents can inspect before calling
+            ``read_resource``: ``required_scope``, ``optional_params``,
+            ``size_hint``, and ``default_detail``.  All are optional — missing
+            fields are simply absent from the entry.
+            """
             base["required_scope"] = meta.get("required_scope") if meta else None
             if meta:
                 optional_params = meta.get("optional_params")
                 if optional_params:
                     base["optional_params"] = optional_params
+                size_hint = meta.get("size_hint")
+                if size_hint:
+                    base["size_hint"] = size_hint
+                default_detail = meta.get("default_detail")
+                if default_detail:
+                    base["default_detail"] = default_detail
             return base
 
         # Process concrete resources

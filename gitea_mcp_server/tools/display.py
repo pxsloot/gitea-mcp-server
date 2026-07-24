@@ -9,7 +9,7 @@ The ``detail`` parameter is passed through from the read_resource tool
 so that ``detail=concise`` produces collapsed markdown everywhere.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 from gitea_mcp_server.format import _format_as_markdown
@@ -89,68 +89,78 @@ def call_formatter(
 
 
 # ---------------------------------------------------------------------------
-# Shared field filters
+# Shared field specifications
+# Each entry maps a field name to a dict of render hints:
+#   {}                         — default (expand nested, scalars as-is)
+#   {"render": "compact_ref",  — render nested dict as flat table row
+#    "template": "{k1}/{k2}"}    using template expansion
+#   {"render": "badge"}        — render as Yes/No indicator
 # ---------------------------------------------------------------------------
 
-_ISSUE_FIELDS: Sequence[str] = [
-    "number",
-    "title",
-    "state",
-    "user",
-    "created_at",
-    "comments",
-    "labels",
-    "html_url",
-]
-_PULL_FIELDS: Sequence[str] = [
-    "number",
-    "title",
-    "state",
-    "user",
-    "created_at",
-    "base",
-    "head",
-    "comments",
-    "html_url",
-]
-_REPO_FIELDS: Sequence[str] = [
-    "name",
-    "full_name",
-    "description",
-    "owner",
-    "html_url",
-    "default_branch",
-    "stargazers_count",
-    "forks_count",
-    "open_issues_count",
-    "size",
-    "created_at",
-    "updated_at",
-    "topics",
-    "license",
-]
-_USER_FIELDS: Sequence[str] = [
-    "login",
-    "full_name",
-    "type",
-    "html_url",
-    "public_repos",
-    "followers_count",
-    "following_count",
-    "created_at",
-    "bio",
-    "location",
-    "website",
-]
-_RELEASE_FIELDS: Sequence[str] = [
-    "tag_name",
-    "name",
-    "draft",
-    "prerelease",
-    "created_at",
-    "published_at",
-    "body",
-]
+_ISSUE_FIELDS: dict[str, dict] = {
+    "number": {},
+    "title": {},
+    "state": {},
+    "user": {},
+    "created_at": {},
+    "pull_request": {"render": "badge"},
+    "comments": {},
+    "labels": {"render": "compact_ref", "template": "{name}"},
+    "html_url": {},
+}
+_PULL_FIELDS: dict[str, dict] = {
+    "number": {},
+    "title": {},
+    "state": {},
+    "user": {},
+    "created_at": {},
+    # Gitea's base/head objects use `ref` for the branch name and nest
+    # owner/repo under `repo.owner.login`/`repo.name`.  Flat `{ref}` is
+    # universally available; owner/repo context is visible on the PR itself.
+    "base": {"render": "compact_ref", "template": "{ref}"},
+    "head": {"render": "compact_ref", "template": "{ref}"},
+    "comments": {},
+    "html_url": {},
+}
+_REPO_FIELDS: dict[str, dict] = {
+    "name": {},
+    "full_name": {},
+    "description": {},
+    # Owner is a full User object (10+ fields). Compact to just the login.
+    "owner": {"render": "compact_ref", "template": "{login}"},
+    "html_url": {},
+    "default_branch": {},
+    "stargazers_count": {},
+    "forks_count": {},
+    "open_issues_count": {},
+    "size": {},
+    "created_at": {},
+    "updated_at": {},
+    "topics": {},
+    "license": {},
+}
+_USER_FIELDS: dict[str, dict] = {
+    "login": {},
+    "full_name": {},
+    "type": {},
+    "html_url": {},
+    "public_repos": {},
+    "followers_count": {},
+    "following_count": {},
+    "created_at": {},
+    "bio": {},
+    "location": {},
+    "website": {},
+}
+_RELEASE_FIELDS: dict[str, dict] = {
+    "tag_name": {},
+    "name": {},
+    "draft": {},
+    "prerelease": {},
+    "created_at": {},
+    "published_at": {},
+    "body": {},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +180,11 @@ def _format_repo_markdown(data: dict, *, detail: str = "full") -> str:
 
 @register_formatter("issues")
 def _format_issues_markdown(data: list, *, detail: str = "full") -> str:
-    title = f"Issues - {len(data)} issues" if data else "Issues"
+    # The /issues endpoint returns both issues and pull requests.
+    # Detect presence of PRs for an accurate title label.
+    has_prs = any(item.get("pull_request") for item in data) if data else False
+    title_label = "Issues and Pull Requests" if has_prs else "Issues"
+    title = f"{title_label} - {len(data)} items" if data else title_label
     return _format_as_markdown(
         data,
         title=title,
@@ -182,7 +196,7 @@ def _format_issues_markdown(data: list, *, detail: str = "full") -> str:
 
 @register_formatter("pull_requests")
 def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
-    title = f"Pull Requests - {len(data)} pull requests" if data else "Pull Requests"
+    title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
     return _format_as_markdown(
         data,
         title=title,

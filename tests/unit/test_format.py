@@ -773,7 +773,7 @@ class TestFormatAsMarkdown:
     def test_field_filter_on_dict_selects_subset(self):
         """field_filter shows only the specified properties."""
         data = {"id": 1, "name": "Alice", "email": "alice@test.com", "role": "admin"}
-        result = _format_as_markdown(data, field_filter=["id", "name"])
+        result = _format_as_markdown(data, field_filter={"id": {}, "name": {}})
         assert "| Id | 1 |" in result
         assert "| Name | Alice |" in result
         assert "Email" not in result
@@ -785,7 +785,7 @@ class TestFormatAsMarkdown:
             {"id": 1, "name": "Foo", "extra": "x"},
             {"id": 2, "name": "Bar", "extra": "y"},
         ]
-        result = _format_as_markdown(data, field_filter=["id", "name"])
+        result = _format_as_markdown(data, field_filter={"id": {}, "name": {}})
         for row in ("Foo", "Bar", "1", "2"):
             assert row in result
         assert "extra" not in result.lower() and "Extra" not in result
@@ -793,7 +793,7 @@ class TestFormatAsMarkdown:
     def test_field_filter_skips_missing_keys_gracefully(self):
         """field_filter entries not in data are silently skipped."""
         data = {"name": "Alice"}
-        result = _format_as_markdown(data, field_filter=["name", "nonexistent"])
+        result = _format_as_markdown(data, field_filter={"name": {}, "nonexistent": {}})
         assert "| Name | Alice |" in result
         assert "nonexistent" not in result.lower()
 
@@ -818,7 +818,7 @@ class TestFormatAsMarkdown:
         data = [{"number": 1, "title": "Bug", "body": "Details"}]
         result = _format_as_markdown(
             data,
-            field_filter=["number", "title"],
+            field_filter={"number": {}, "title": {}},
             item_title_key="title",
         )
         assert "# Bug" in result
@@ -839,6 +839,164 @@ class TestFormatAsMarkdown:
         # Dot-path keys should NOT appear
         assert "user.id" not in result
         assert "labels.Name" not in result
+
+    # ── Field-level render hints: compact_ref, badge ──────────────────────────────
+
+    def test_compact_ref_renders_dict_as_flat_row(self):
+        """compact_ref renders a nested dict as a flat table row using template."""
+        data = {"base": {"owner": "org", "repo": "myrepo", "branch": "main"}}
+        field_filter = {
+            "base": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # base appears as a flat table row, not a nested sub-section
+        assert "| Base | org/myrepo:main |" in result
+        assert "## Base" not in result
+
+    def test_compact_ref_at_full_detail(self):
+        """compact_ref works at detail=full (not just concise)."""
+        data = {
+            "name": "PR-42",
+            "head": {"owner": "fork", "repo": "fork-repo", "branch": "feature-x"},
+        }
+        field_filter = {
+            "name": {},
+            "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter, detail="full")
+        assert "| Head | fork/fork-repo:feature-x |" in result
+        assert "## Head" not in result
+
+    def test_compact_ref_at_concise_detail(self):
+        """compact_ref works at detail=concise (same flat rendering)."""
+        data = {
+            "name": "PR-42",
+            "head": {"owner": "fork", "repo": "fork-repo", "branch": "feature-x"},
+        }
+        field_filter = {
+            "name": {},
+            "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter, detail="concise")
+        assert "| Head | fork/fork-repo:feature-x |" in result
+
+    def test_compact_ref_fallback_on_missing_template_key(self):
+        """When template.format() fails, compact_ref falls back to str()."""
+        data = {"base": {"label": "main"}}
+        field_filter = {
+            "base": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # Should not crash; falls back to str representation
+        assert "| Base | {'label': 'main'}" in result or "| Base |" in result
+        assert "## Base" not in result
+
+    def test_badge_yes_for_truthy(self):
+        """badge renders truthy values as 'Yes'."""
+        data = {"active": True, "name": "test"}
+        field_filter = {"active": {"render": "badge"}, "name": {}}
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Active | Yes |" in result
+
+    def test_badge_no_for_falsy(self):
+        """badge renders falsy values as 'No'."""
+        data = {"active": False, "pull_request": None}
+        field_filter = {"active": {"render": "badge"}, "pull_request": {"render": "badge"}}
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Active | No |" in result
+        assert "| Pull Request | No |" in result
+
+    def test_badge_with_dict_value(self):
+        """badge with a dict (present) renders as 'Yes'."""
+        data = {"pull_request": {"url": "https://example.com/pr/1"}}
+        field_filter = {"pull_request": {"render": "badge"}}
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Pull Request | Yes |" in result
+        # Should NOT expand the nested dict
+        assert "url" not in result.lower() and "Url" not in result
+
+    def test_expand_default_renders_nested_as_section(self):
+        """Default render='expand' preserves existing nested-section behavior."""
+        data = {"user": {"id": 1, "login": "dev"}}
+        field_filter = {"user": {}}
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "## User" in result or "**User:**" in result
+        assert "dev" in result
+
+    # ── List compact_ref ──────────────────────────────────────────────────────────
+
+    def test_compact_ref_on_list_renders_comma_separated(self):
+        """compact_ref on a list renders comma-separated template values."""
+        data = {"labels": [{"name": "bug"}, {"name": "enhancement"}]}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels | bug, enhancement |" in result
+        assert "## Labels" not in result
+
+    def test_compact_ref_on_list_single_item(self):
+        """compact_ref on a single-element list works correctly."""
+        data = {"labels": [{"name": "bug"}]}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels | bug |" in result
+
+    def test_compact_ref_on_list_empty(self):
+        """compact_ref on an empty list renders empty string."""
+        data = {"labels": []}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels |  |" in result
+
+    def test_compact_ref_on_list_fallback_on_missing_key(self):
+        """When template is missing a key, compact_ref list falls back to str()."""
+        data = {"items": [{"id": 1}, {"id": 2}]}
+        field_filter = {
+            "items": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # Should not crash; falls back to str representation
+        assert "| Items |" in result
+
+    def test_compact_ref_on_list_non_dict_items(self):
+        """compact_ref on a list of scalars renders each as str."""
+        data = {"tags": ["alpha", "beta"]}
+        field_filter = {
+            "tags": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Tags | alpha, beta |" in result
+
+    def test_dollar_ref_flattened_only_on_expand_path(self):
+        """$ref flattening happens after render hints so compact_ref still works."""
+        data = {
+            "base": {"$ref": "FakeRef"},
+        }
+        # With an explicit compact_ref, the $ref dict should be handled
+        # by compact_ref (template likely fails → str fallback), not
+        # flattened to "$ref:FakeRef".
+        field_filter = {
+            "base": {"render": "compact_ref", "template": "{ref}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # Should render as the str fallback (dict doesn't have 'ref' key)
+        assert "| Base | {'$ref': 'FakeRef'}" in result or "| Base |" in result
+        # Should NOT show the $ref flattened syntax
+        assert "$ref:FakeRef" not in result
+
+    def test_dollar_ref_flattened_on_expand_path(self):
+        """$ref flattening still works on the default expand path."""
+        data = {
+            "user": {"$ref": "User"},
+        }
+        result = _format_as_markdown(data)
+        # Without explicit render hints, the $ref dict is flattened
+        assert "$ref:User" in result
 
 
 class TestFormatType:

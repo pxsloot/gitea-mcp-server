@@ -21,7 +21,7 @@ import inspect
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -139,6 +139,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     error_message: str,
     uri: str,
     error_kwargs: dict[str, Any] | None = None,
+    handler_hook: Callable[[Any], Awaitable[str]] | None = None,
 ) -> ResourceResult:
     """Execute an API request and wrap the response into a ``ResourceResult``.
 
@@ -146,6 +147,11 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     ``make_api_resource``.  Handles error translation (404 → NOT_FOUND,
     other HTTP → API_ERROR, unexpected → INTERNAL_ERROR), ``str`` vs JSON
     branching, and metadata attachment.
+
+    When ``handler_hook`` is provided, the API response is passed through
+    the hook for post-processing (e.g., base64 decoding), and the result
+    is returned as ``text/plain``.  Schema derivation and JSON wrapping
+    are skipped in this case — the hook's return value is the final content.
 
     Args:
         gitea_client: Client for API calls.
@@ -160,6 +166,8 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
         uri: Resource URI template (for error messages).
         error_kwargs: Keyword arguments for ``error_message.format()``.
             Only used when the error message has ``{param}`` placeholders.
+        handler_hook: Optional async callback for post-processing the API
+            response.  Receives the raw response data and returns a string.
 
     Returns:
         The wrapped ``ResourceResult``.
@@ -198,6 +206,15 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
             "resource_type": resource_type,
             "resource_id": api_path,
         }) from e
+
+    # When a handler_hook is provided, pass the response through the hook
+    # and return as text/plain.  This is used for resources that need
+    # post-processing (e.g., base64 decoding of Gitea ContentsResponse).
+    if handler_hook is not None:
+        content = await handler_hook(data)
+        return ResourceResult(contents=[
+            ResourceContent(content=content, mime_type="text/plain"),
+        ])
 
     if isinstance(data, str):
         return ResourceResult(contents=[
@@ -282,7 +299,7 @@ def _build_query_param_signature(
     return handler_sig.replace(parameters=[*new_params, kwargs_param])
 
 
-def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional: all independent registration axes
+def make_api_resource(  # noqa: PLR0913, PLR0912 -- 16 params + branching are intentional: all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
@@ -291,6 +308,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     api_path: str,
     method: str = "GET",
     format_hint: str | None = None,
+    handler_hook: Callable[[Any], Awaitable[str]] | None = None,
     resource_type: str | None = None,
     scope: str | None = None,
     cache_ttl: float | None = None,
@@ -307,6 +325,12 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     (unresolved, then unwrapped from the result envelope).  Generates the
     handler closure, handles ``str`` vs JSON branching, registers the URI
     in ``_registered_uris``, and calls ``mcp.resource()``.
+
+    When ``handler_hook`` is provided, schema derivation and JSON wrapping
+    are skipped.  The API response is passed through the hook for post-
+    processing (e.g., base64 decoding), and the result is registered as
+    ``text/plain``.  Use this for resources whose output is derived from
+    but different from the API response (e.g., base64-decoded file content).
 
     Query params (designated by ``query_params``) are extracted from the
     handler kwargs into a ``params`` dict passed to the underlying API
@@ -335,6 +359,11 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
         api_path: API path in spec (e.g. ``"/repos/{owner}/{repo}"``).
         method: HTTP method (default: ``"GET"``).
         format_hint: Registered formatter name for markdown rendering.
+            Not used when ``handler_hook`` is provided.
+        handler_hook: Optional async callback for post-processing the API
+            response.  When set, schema derivation is skipped and the
+            result is registered as ``text/plain``.  The hook receives the
+            raw API response data and returns a string.
         resource_type: Machine-readable resource type for error responses.
             Defaults to ``format_hint``, falling back to ``"api"``.
         scope: Required token scope (e.g. ``"read:repository"``).
@@ -383,9 +412,18 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     # don't include all production paths), warn and proceed without schema
     # -- the resource is still registered so that scope filtering and
     # registration count tests pass.
+    #
+    # When handler_hook is provided, skip schema derivation entirely --
+    # text/plain resources have no JSON schema to derive.
+    if handler_hook and format_hint:
+        logger.warning(
+            "make_api_resource: handler_hook set with format_hint=%r for %s -- "
+            "format_hint is ignored when handler_hook is provided",
+            format_hint, uri,
+        )
     method_lower = method.lower()
-    response_schema = _auto_derive_schema(openapi_spec, api_path, method_lower)
-    if response_schema is None and openapi_spec is not None:
+    response_schema = None if handler_hook else _auto_derive_schema(openapi_spec, api_path, method_lower)
+    if response_schema is None and openapi_spec is not None and handler_hook is None:
         paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         if paths:
             path_item = paths.get(api_path, {})
@@ -449,6 +487,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
                 error_message=error_message,
                 uri=uri,
                 error_kwargs=kwargs,
+                handler_hook=handler_hook,
             )
 
     else:
@@ -462,6 +501,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
                 resource_type=_resource_type,
                 error_message=error_message,
                 uri=uri,
+                handler_hook=handler_hook,
             )
 
     # FastMCP validates ``{?param}`` template entries against the handler's
@@ -485,9 +525,13 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     _set_handler_docstring(handler, openapi_spec, api_path, method, method_lower)
 
     # Register with FastMCP.
+    # When handler_hook is provided, the resource returns text/plain --
+    # the hook transforms the API response into human-readable text.
+    # Otherwise, the resource returns application/json with schema metadata.
+    mime_type = "text/plain" if handler_hook else "application/json"
     mcp.resource(
         uri,
-        mime_type="application/json",
+        mime_type=mime_type,
         tags=resource_tags,
         meta=meta if meta else None,
     )(handler)

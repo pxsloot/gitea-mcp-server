@@ -5,23 +5,21 @@ response schema and a ``format_hint`` for the display layer.  No formatting is
 done at the resource level -- that is the responsibility of the unified display
 pipeline in ``mcp_tools.py`` and ``tools/display.py``.
 
-**Phase 1 + 2 migration**: 8 resources have been moved to ``factory.py`` via
-``make_api_resource()``, including issues and pulls with optional ``state``
-parameters via ``query_params`` support.  The remaining resources (readme,
-files) still use the legacy ``@_register`` pattern and will be migrated in
-Phase 3.
+**Phase 1 + 2 + 3 migration**: 10 resources have been moved to ``factory.py``
+via ``make_api_resource()``, including issues/pulls with optional ``state``
+parameters (Phase 2) and readme/files with ``handler_hook`` for base64 decoding
+(Phase 3).  The remaining static resources (version, token/scopes, server/info)
+still use the legacy ``@_register`` pattern and await migration in the next
+architectural phase.
 """
 
 import base64
-import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from functools import wraps
 from typing import Any, cast
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceContent, ResourceResult
 
 from gitea_mcp_server.client import GiteaClient
@@ -30,7 +28,6 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_RELEASES,
     CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
-    HTTP_STATUS_NOT_FOUND,
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import make_api_resource
@@ -39,63 +36,32 @@ from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
 logger = logging.getLogger(__name__)
 
 
-def resource_handler(
-    resource_type: str,
-    id_format: str,
-    error_message: str,
-) -> Callable[..., Callable[..., Awaitable[ResourceResult]]]:
-    """Decorator that wraps a resource function with error handling.
+async def _decode_base64_content(response: Any) -> str:
+    """Decode base64 file/readme content from a Gitea ContentsResponse.
 
-    Catches exceptions, converts 404 to structured ResourceError
-    via _handle_not_found. The decorated function only needs to
-    perform the API request and formatting logic.
+    Gitea's ``/repos/{owner}/{repo}/contents/{path}`` endpoint returns a JSON
+    object with ``content`` (base64-encoded) and ``encoding`` ("base64") fields.
+    This hook extracts and decodes the content for ``text/plain`` resources.
+
+    Handles three response shapes:
+    - ``str``: returned as-is (e.g., error messages from the API)
+    - ``dict`` with ``encoding="base64"``: ``content`` is base64-decoded
+    - ``dict`` without base64 encoding: ``content`` field returned as-is
+    - Any other type: converted to ``str()``
 
     Args:
-        resource_type: Machine-readable type (e.g. "repository", "file")
-        id_format: Template string for resource_id using func kwargs
-            (e.g. "{owner}/{repo}")
-        error_message: User-facing error message template using func kwargs
-            (e.g. "Repository '{owner}/{repo}' not found.")
+        response: Raw API response (str, dict, or other).
+
+    Returns:
+        Decoded text content.
     """
-
-    def decorator(
-        func: Callable[..., Awaitable[ResourceResult]],
-    ) -> Callable[..., Awaitable[ResourceResult]]:
-        sig = inspect.signature(func)
-
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> ResourceResult:
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                # Map positional args to parameter names for format templates
-                bound = sig.bind(*args, **kwargs)
-                bound.apply_defaults()
-                resource_id = id_format.format(**bound.arguments)
-                msg = error_message.format(**bound.arguments)
-                _handle_not_found(e, resource_type, resource_id, msg)
-                raise
-
-        return wrapper
-
-    return decorator
-
-
-def _handle_not_found(
-    e: Exception, resource_type: str, resource_id: str, custom_message: str | None = None
-) -> None:
-    """Convert a 404 exception to ResourceError."""
-    if getattr(e, "status_code", None) == HTTP_STATUS_NOT_FOUND:
-        message = custom_message or f"Resource not found: {resource_id}"
-        raise ResourceError(
-            {
-                "code": "NOT_FOUND",
-                "message": message,
-                "detail": str(e),
-                "resource_type": resource_type,
-                "resource_id": resource_id,
-            }
-        ) from e
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict) and response.get("encoding") == "base64":
+        return base64.b64decode(response.get("content") or "").decode("utf-8")
+    if isinstance(response, dict):
+        return cast("str", response.get("content", ""))
+    return str(response)
 
 
 def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes + pre-computed static data are all independent registration axes
@@ -117,10 +83,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     parameters are pre-computed at startup -- the handlers return them
     directly without making API calls on read.
 
-    **Phase 1 + 2**: 8 resources are registered via ``make_api_resource()``
-    (factory pattern with auto schema derivation).  The remaining
-    ``@_register`` resources (readme, files, static) will be migrated in
-    Phase 3.
+    **Phase 1 + 2 + 3**: 10 resources are registered via ``make_api_resource()``
+    (factory pattern with auto schema derivation).  Phases 1-2 cover JSON
+    resources; Phase 3 adds ``handler_hook`` support for text/plain resources
+    (readme, files) with base64 decoding.  The remaining static resources
+    (version, token/scopes, server/info) use the legacy ``@_register`` pattern.
 
     Args:
         mcp: The FastMCP server instance.
@@ -307,70 +274,43 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     # ======================================================================
-    # NON-MIGRATED RESOURCES (legacy @_register pattern)
-    # These will be migrated to the factory in Phase 3.
+    # FACTORY RESOURCES (Phase 3 — text/plain via handler_hook)
+    # These use make_api_resource() with handler_hook for base64 decoding
+    # of Gitea ContentsResponse JSON into plain text.
     # ======================================================================
 
-    # ── readme ──────────────────────────────────────────────────────────────
-
-    _meta = {"cache_ttl": CACHE_TTL_README, **scope_meta("read:repository")}
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/readme",
-        mime_type="text/plain",
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/readme",
+        api_path="/repos/{owner}/{repo}/contents/README.md",
+        method="GET",
+        scope="read:repository",
+        cache_ttl=CACHE_TTL_README,
         tags={"wrapper", "readme"},
-        meta=_meta,
+        error_message="README not found for repository '{owner}/{repo}'.",
+        handler_hook=_decode_base64_content,
+        available_scopes=available_scopes,
     )
-    @resource_handler(
-        "readme", "{owner}/{repo}", "README not found for repository '{owner}/{repo}'."
-    )
-    async def get_readme(owner: str, repo: str) -> ResourceResult:
-        """Get repository README content."""
-        response = await gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/README.md")
-        if isinstance(response, str):
-            return ResourceResult(contents=[ResourceContent(content=response, mime_type="text/plain")])
-        if not isinstance(response, dict):
-            return ResourceResult(contents=[ResourceContent(content=str(response), mime_type="text/plain")])
-        if response.get("encoding") == "base64":
-            raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return ResourceResult(contents=[ResourceContent(content=raw, mime_type="text/plain")])
-        content = cast("str", response.get("content", ""))
-        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
 
-    # ── file ────────────────────────────────────────────────────────────────
-
-    _meta = scope_meta("read:repository")
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/files/{path*}",
-        mime_type="text/plain",
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/files/{path*}",
+        api_path="/repos/{owner}/{repo}/contents/{path}",
+        method="GET",
+        scope="read:repository",
         tags={"wrapper", "files"},
-        meta=_meta,
+        error_message="File '{path}' not found in repository '{owner}/{repo}'.",
+        query_params=["ref"],
+        available_scopes=available_scopes,
+        handler_hook=_decode_base64_content,
     )
-    @resource_handler(
-        "file", "{owner}/{repo}/{path}", "File '{path}' not found in repository '{owner}/{repo}'."
-    )
-    async def get_file(owner: str, repo: str, path: str, ref: str | None = None) -> ResourceResult:
-        """Get file content from repository."""
-        params = {}
-        if ref:
-            params["ref"] = ref
 
-        response = await gitea_client.request(
-            "GET", f"/repos/{owner}/{repo}/contents/{path}", params=params
-        )
-
-        if isinstance(response, str):
-            return ResourceResult(contents=[ResourceContent(content=response, mime_type="text/plain")])
-
-        if not isinstance(response, dict):
-            return ResourceResult(contents=[ResourceContent(content=str(response), mime_type="text/plain")])
-
-        if response.get("encoding") == "base64":
-            raw: str = base64.b64decode(response.get("content", "")).decode("utf-8")
-            return ResourceResult(contents=[ResourceContent(content=raw, mime_type="text/plain")])
-        content = cast("str", response.get("content", ""))
-        return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
+    # ======================================================================
+    # STATIC RESOURCES (legacy @_register pattern)
+    # These use pre-computed data (version, scopes, server info) and will
+    # be migrated to the factory or static resource handling in a future
+    # architectural phase.
+    # ======================================================================
 
     # ── version ─────────────────────────────────────────────────────────────
 
@@ -417,7 +357,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
 
 __all__ = [
-    "_handle_not_found",
+    "_decode_base64_content",
     "register_custom_resources",
-    "resource_handler",
 ]

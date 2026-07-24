@@ -8,7 +8,6 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
-from gitea_mcp_server.resources.auto import _NON_FACTORY_SKIP_URIS
 from gitea_mcp_server.resources.factory import _registered_uris as _factory_registered_uris
 
 
@@ -25,8 +24,8 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
 
     Custom resources are registered first so that ``_factory_registered_uris``
     is populated by ``make_api_resource()``.  Auto-generated resources are
-    then registered with ``skip_uris`` combining factory and non-factory
-    custom URIs -- avoiding duplicate resource registrations.
+    then registered with the factory's ``_registered_uris`` as ``skip_uris`` --
+    avoiding duplicate resource registrations.
 
     Auto-generated resources are filtered by ``filtered_tools_info`` (the same
     spec-level data used for tool filtering) -- resources whose operationId is
@@ -57,8 +56,8 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
         server_info_md=server_info_md,
     )
 
-    # Auto second: skip URIs already claimed by custom/factory resources.
-    skip_uris = _factory_registered_uris | _NON_FACTORY_SKIP_URIS
+    # Auto second: skip URIs already claimed by factory resources.
+    skip_uris = _factory_registered_uris
     register_auto_generated_resources(
         mcp,
         gitea_client,

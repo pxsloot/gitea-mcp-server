@@ -207,11 +207,14 @@ def _format_user_markdown(data: dict, *, detail: str = "full") -> str:
 
 
 @register_formatter("release")
-def _format_release_markdown(data: dict, *, detail: str = "full") -> str:
+def _format_release_markdown(data: list, *, detail: str = "full") -> str:
+    """Format a list of releases as markdown."""
+    title = f"Releases - {len(data)} releases" if data else "Releases"
     return _format_as_markdown(
         data,
-        title=data.get("tag_name", "Release"),
+        title=title,
         field_filter=_RELEASE_FIELDS,
+        item_title_key="tag_name",
         detail=detail,
     )
 

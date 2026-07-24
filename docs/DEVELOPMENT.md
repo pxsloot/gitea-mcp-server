@@ -308,6 +308,40 @@ The factory:
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
+**Text/plain resources via ``handler_hook``**: For resources that serve
+plain text derived from a JSON API response (e.g., base64-decoded file
+content from Gitea's ContentsResponse), pass a ``handler_hook`` callback.
+The hook receives the raw API response and returns a string; the factory
+skips schema derivation, registers with ``mime_type="text/plain"``, and
+wraps the hook's result directly:
+
+.. code-block:: python
+
+    async def _my_hook(response: Any) -> str:
+        if isinstance(response, str):
+            return response
+        if isinstance(response, dict) and response.get("encoding") == "base64":
+            return base64.b64decode(response["content"]).decode("utf-8")
+        return str(response)
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://my/{param}/content",
+        api_path="/api/path/{param}/content",
+        method="GET",
+        scope="read:repository",
+        tags={"my_tag"},
+        error_message="Content '{param}' not found.",
+        handler_hook=_my_hook,
+        available_scopes=available_scopes,
+    )
+
+When ``handler_hook`` is set:
+- Schema derivation is skipped (no ``response_schema`` in meta)
+- The resource is registered as ``text/plain`` (``format_hint`` is ignored)
+- The hook is called for every response, including strings
+- Query parameters work as usual via ``query_params``
+
 **Optional query parameters**: For resources with optional query params
 (e.g. ``state`` filter on issues/pulls), set ``query_params=["state"]``.
 The factory extracts those kwargs into a ``params`` dict passed to the

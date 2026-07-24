@@ -19,6 +19,7 @@ from gitea_mcp_server.resources.custom import (
     register_custom_resources,
 )
 from gitea_mcp_server.tools.display import (
+    _ISSUE_FIELDS,
     _format_issues_markdown,
     _format_pulls_markdown,
     _format_release_markdown,
@@ -384,8 +385,8 @@ class TestResourceFormatters:
             "state": "open",
             "user": {"login": "contributor"},
             "created_at": "2024-01-01T00:00:00Z",
-            "base": {"label": "main"},
-            "head": {"label": "feature"},
+            "base": {"label": "main", "ref": "main"},
+            "head": {"label": "feature", "ref": "feature"},
             "comments": 5,
             "html_url": "https://example.com/pr/1",
         }
@@ -395,7 +396,9 @@ class TestResourceFormatters:
         assert "| Number | 1 |" in result
         assert "| Title | Test PR |" in result
         assert "| State | open |" in result
-        assert "## Base" in result
+        # base/head render as compact_ref flat rows, not nested sections
+        assert "| Base |" in result
+        assert "## Base" not in result
 
     def test_format_user_markdown_regular_user(self):
         """Test user profile formatting."""
@@ -976,8 +979,8 @@ class TestFormatterGaps:
         ]
         result = _format_issues_markdown(issues)
 
-        # Formatter derives title from data: "Issues - {count} issues"
-        assert "Issues - 1 issues" in result
+        # Formatter derives title from data: "Issues - {count} items"
+        assert "Issues - 1 items" in result
         assert "| Number | 1 |" in result
         assert "| Title | Bug |" in result
 
@@ -1540,27 +1543,55 @@ class TestToolResourceConsistency:
         resource_result = _format_issues_markdown(issues)
         direct_result = _format_as_markdown(
             issues,
-            title="Issues - 1 issues",
-            field_filter=[
-                "number",
-                "title",
-                "state",
-                "user",
-                "created_at",
-                "comments",
-                "labels",
-                "html_url",
-            ],
+            title="Issues - 1 items",
+            field_filter=_ISSUE_FIELDS,
             item_title_key="title",
         )
         # Same structure: both produce nested sub-tables with the same fields
         assert "| Number | 1 |" in resource_result
         assert "| Title | Bug |" in resource_result
         assert "## User" in resource_result
-        # The resource formatter wraps the title with count info
-        assert "1 issues" in resource_result
+        # The resource formatter wraps the title with count info; since test
+        # data lacks pull_request, title reads "Issues - N items"
+        assert "Issues - 1 items" in resource_result
         # Label names appear in sub-sections (not as comma-separated string)
         assert "bug" in resource_result
+
+    def test_issue_format_dynamic_title_without_pr(self):
+        """Issues without pull_request use 'Issues' title."""
+        from gitea_mcp_server.tools.display import _format_issues_markdown
+
+        issues = [
+            {"number": 1, "title": "Bug", "state": "open"},
+            {"number": 2, "title": "Feature", "state": "closed"},
+        ]
+        result = _format_issues_markdown(issues)
+        assert "Issues - 2 items" in result
+
+    def test_issue_format_dynamic_title_with_prs(self):
+        """Issues with pull_request entries use 'Issues and Pull Requests' title."""
+        from gitea_mcp_server.tools.display import _format_issues_markdown
+
+        items = [
+            {"number": 1, "title": "Bug", "state": "open", "pull_request": None},
+            {"number": 2, "title": "Fix", "state": "open", "pull_request": {"url": "/pr/2"}},
+        ]
+        result = _format_issues_markdown(items)
+        assert "Issues and Pull Requests - 2 items" in result
+
+    def test_issue_format_shows_pull_request_badge(self):
+        """pull_request field renders as Yes/No badge in issues list."""
+        from gitea_mcp_server.tools.display import _format_issues_markdown
+
+        items = [
+            {"number": 1, "title": "Bug", "state": "open", "pull_request": None},
+            {"number": 2, "title": "Fix", "state": "open", "pull_request": {"url": "/pr/2"}},
+        ]
+        result = _format_issues_markdown(items)
+        # The Bug (pull_request=None) should show No
+        assert "| Pull Request | No |" in result
+        # The Fix (pull_request=dict) should show Yes
+        assert "| Pull Request | Yes |" in result
 
     def test_pull_format_consistent_with_shared_formatter(self):
         """_format_pulls_markdown delegates to _format_as_markdown with field_filter."""
@@ -1573,8 +1604,8 @@ class TestToolResourceConsistency:
                 "state": "open",
                 "user": {"login": "contributor"},
                 "created_at": "2024-01-01T00:00:00Z",
-                "base": {"label": "main"},
-                "head": {"label": "feature"},
+                "base": {"label": "main", "repo": {"full_name": "org/repo"}, "ref": "main"},
+                "head": {"label": "feature", "repo": {"full_name": "fork/repo"}, "ref": "feature"},
                 "comments": 3,
                 "html_url": "https://example.com/pr/1",
             }
@@ -1583,7 +1614,9 @@ class TestToolResourceConsistency:
         assert "| Number | 1 |" in resource_result
         assert "| Title | Fix things |" in resource_result
         assert "| State | open |" in resource_result
-        assert "## Base" in resource_result
+        # base/head render as compact_ref flat rows, not nested sections
+        assert "| Base |" in resource_result
+        assert "## Base" not in resource_result
 
     def test_repo_format_consistent_with_shared_formatter(self):
         """_format_repo_markdown delegates to _format_as_markdown with field_filter."""

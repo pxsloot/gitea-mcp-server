@@ -26,7 +26,6 @@ import json as json_module
 import logging
 from collections.abc import (  # noqa: TC003 - used at runtime, not just type checking
     Callable,
-    Sequence,
 )
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -233,7 +232,7 @@ def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schem
     data: list[Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
-    field_filter: Sequence[str] | None = None,
+    field_filter: dict[str, dict] | None = None,
     item_title_key: str | None = None,
     detail: str = "full",
 ) -> str:
@@ -321,12 +320,12 @@ def _render_nested_sections(
         lines.append("")
 
 
-def _format_dict_as_markdown(  # noqa: PLR0912 - 14 branches justified: scalar/nested, detail, field_filter, allOf, anyOf
+def _format_dict_as_markdown(  # noqa: PLR0912 - 14+ branches justified: scalar/nested, detail, field_filter, allOf, anyOf, render hints
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
     _depth: int = 0,
-    field_filter: Sequence[str] | None = None,
+    field_filter: dict[str, dict] | None = None,
     detail: str = "full",
 ) -> str:
     lines: list[str] = []
@@ -358,13 +357,30 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - 14 branches justified: scalar/n
             effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
             label = _snake_to_title(key)
             raw_val = data.get(key)
+
+            # Resolve field-level render hint from field_filter dict values.
+            field_opts = field_filter.get(key, {}) if field_filter else {}
+            render_hint = field_opts.get("render", "expand")
+
             # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
             # tables - keeps the display compact while signalling that the
             # value is a component reference, not a literal string.
             if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
                 raw_val = f"$ref:{raw_val['$ref']}"
-            is_nested = isinstance(raw_val, (dict, list))
-            if is_nested:
+
+            # Render hints override nesting — compact_ref and badge
+            # always produce flat table rows regardless of value type
+            # or detail level.
+            if render_hint == "compact_ref" and isinstance(raw_val, dict):
+                template = field_opts.get("template", "{id}")
+                try:
+                    formatted = template.format(**raw_val)
+                except (KeyError, ValueError, AttributeError):
+                    formatted = str(raw_val)
+                flat.append((label, formatted))
+            elif render_hint == "badge":
+                flat.append((label, "Yes" if raw_val else "No"))
+            elif isinstance(raw_val, (dict, list)):
                 if detail == "concise" and _depth >= 1:
                     # Collapse nested objects to compact type references
                     collapsed = _collapse_value(raw_val, prop_schema or effective)
@@ -399,7 +415,7 @@ def _format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, ti
     schema: dict[str, Any] | None = None,
     title: str | None = None,
     _depth: int = 0,
-    field_filter: Sequence[str] | None = None,
+    field_filter: dict[str, dict] | None = None,
     item_title_key: str | None = None,
     detail: str = "full",
 ) -> str:

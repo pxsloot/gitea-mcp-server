@@ -178,12 +178,24 @@ def _format_repo_markdown(data: dict, *, detail: str = "full") -> str:
     )
 
 
-@register_formatter("issues")
-def _format_issues_markdown(data: list, *, detail: str = "full") -> str:
-    # The /issues endpoint returns both issues and pull requests.
-    # Detect presence of PRs for an accurate title label.
-    has_prs = any(item.get("pull_request") for item in data) if data else False
-    title_label = "Issues and Pull Requests" if has_prs else "Issues"
+@register_formatter("issues", needs_extra=True)
+def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | None = None) -> str:
+    # The /issues endpoint returns both issues and pull requests by default.
+    # When available, use the ``type`` query param from the handler context
+    # (forwarded via content meta → extra dict) to determine the title
+    # without scanning the full data list.
+    #
+    #   type="issues" → "Issues"
+    #   type="pulls"  → "Pull Requests"
+    #   absent/Nones  → "Issues and Pull Requests" (mixed, the default)
+    if extra and extra.get("type"):
+        type_value = extra["type"]
+        title_label = "Pull Requests" if type_value == "pulls" else "Issues"
+    else:
+        # No ``type`` context — scan the data to detect PRs (backward compat
+        # for callers that don't forward handler context).
+        has_prs = any(item.get("pull_request") for item in data) if data else False
+        title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
     return _format_as_markdown(
         data,

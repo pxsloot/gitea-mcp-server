@@ -252,9 +252,17 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:repository",
         tags={"issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        query_params=["state", "type"],
+        query_param_validators={
+            "state": ["open", "closed"],
+            "type": ["issues", "pulls"],
+        },
+        optional_params=[
+            {"name": "state", "type": "string", "values": ["open", "closed"]},
+            {"name": "type", "type": "string", "values": ["issues", "pulls"],
+             "description": "Filter by type (issues / pulls)"},
+        ],
+        context_meta_keys=["type"],
         available_scopes=available_scopes,
     )
 

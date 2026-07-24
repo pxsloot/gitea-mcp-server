@@ -112,6 +112,7 @@ def _build_handler_meta(
     *,
     response_schema: dict[str, Any] | None = None,
     format_hint: str | None = None,
+    **extra: Any,
 ) -> dict[str, Any] | None:
     """Build the content metadata dict for a JSON resource response.
 
@@ -119,12 +120,19 @@ def _build_handler_meta(
     from registration-level metadata passed to ``mcp.resource(meta=...)``.
     Registration-level metadata (``optional_params``, ``cache_ttl``) is set
     directly in ``make_api_resource()``, not here.
+
+    Extra keyword arguments are merged on top of the standard keys.  The
+    display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``
+    and ``format_hint`` and surfaces everything else as the ``extra`` dict
+    passed to domain formatters — useful for forwarding handler context
+    like the ``type`` query param.
     """
     meta: dict[str, Any] = {}
     if response_schema is not None:
         meta["response_schema"] = response_schema
     if format_hint is not None:
         meta["format_hint"] = format_hint
+    meta.update(extra)
     return meta if meta else None
 
 
@@ -141,6 +149,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     uri: str,
     error_kwargs: dict[str, Any] | None = None,
     handler_hook: Callable[[Any], Awaitable[str]] | None = None,
+    handler_extra_meta: dict[str, Any] | None = None,
 ) -> ResourceResult:
     """Execute an API request and wrap the response into a ``ResourceResult``.
 
@@ -169,6 +178,10 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
             Only used when the error message has ``{param}`` placeholders.
         handler_hook: Optional async callback for post-processing the API
             response.  Receives the raw response data and returns a string.
+        handler_extra_meta: Optional additional metadata to merge into
+            ``ResourceContent.meta``.  The display pipeline surfaces these
+            as the ``extra`` dict passed to domain formatters — use this
+            to forward handler context (e.g. requested ``type`` param).
 
     Returns:
         The wrapped ``ResourceResult``.
@@ -229,6 +242,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
             meta=_build_handler_meta(
                 response_schema=response_schema,
                 format_hint=format_hint,
+                **(handler_extra_meta or {}),
             ),
         ),
     ])
@@ -319,6 +333,7 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     query_params: list[str] | None = None,
     query_param_validators: dict[str, list[str]] | None = None,
     optional_params: list[dict[str, Any]] | None = None,
+    context_meta_keys: list[str] | None = None,
     size_hint: str | None = None,
     default_detail: str | None = None,
 ) -> Callable[..., Any] | None:
@@ -394,6 +409,11 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
             and ``"description"`` are recommended.  Attached to resource
             metadata under ``meta["optional_params"]``.
+        context_meta_keys: Query param names whose values should be forwarded
+            into ``ResourceContent.meta`` as display context for formatters
+            that need ``extra`` (e.g. the issues formatter reads the ``type``
+            param to avoid scanning all items for PR detection).  Only params
+            actually present in the request are forwarded.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -491,6 +511,15 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                     query_kwargs[key] = value
                 else:
                     formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
+
+            # Forward requested query params as display context for
+            # formatters (e.g. ``type`` for the issues title).
+            handler_extra_meta: dict[str, Any] | None = None
+            if query_kwargs and context_meta_keys:
+                extra = {k: query_kwargs[k] for k in context_meta_keys if k in query_kwargs}
+                if extra:
+                    handler_extra_meta = extra
+
             return await _request_and_wrap(
                 gitea_client, method, formatted_path,
                 params=query_kwargs or None,
@@ -501,6 +530,7 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                 uri=uri,
                 error_kwargs=kwargs,
                 handler_hook=handler_hook,
+                handler_extra_meta=handler_extra_meta,
             )
 
     else:

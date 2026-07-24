@@ -396,8 +396,9 @@ class TestResourceFormatters:
         assert "| Number | 1 |" in result
         assert "| Title | Test PR |" in result
         assert "| State | open |" in result
-        # base/head render as compact_ref flat rows, not nested sections
-        assert "| Base |" in result
+        # base/head render as compact_ref flat rows showing branch name
+        assert "| Base | main |" in result
+        assert "| Head | feature |" in result
         assert "## Base" not in result
 
     def test_format_user_markdown_regular_user(self):
@@ -1614,8 +1615,9 @@ class TestToolResourceConsistency:
         assert "| Number | 1 |" in resource_result
         assert "| Title | Fix things |" in resource_result
         assert "| State | open |" in resource_result
-        # base/head render as compact_ref flat rows, not nested sections
-        assert "| Base |" in resource_result
+        # base/head render as compact_ref flat rows showing branch name
+        assert "| Base | main |" in resource_result
+        assert "| Head | feature |" in resource_result
         assert "## Base" not in resource_result
 
     def test_repo_format_consistent_with_shared_formatter(self):

@@ -114,8 +114,11 @@ _PULL_FIELDS: dict[str, dict] = {
     "state": {},
     "user": {},
     "created_at": {},
-    "base": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
-    "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
+    # Gitea's base/head objects use `ref` for the branch name and nest
+    # owner/repo under `repo.owner.login`/`repo.name`.  Flat `{ref}` is
+    # universally available; owner/repo context is visible on the PR itself.
+    "base": {"render": "compact_ref", "template": "{ref}"},
+    "head": {"render": "compact_ref", "template": "{ref}"},
     "comments": {},
     "html_url": {},
 }

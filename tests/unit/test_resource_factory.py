@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
-from fastmcp.resources import ResourceContent, ResourceResult
+from fastmcp.resources import ResourceResult
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.resources.factory import (
@@ -14,7 +14,6 @@ from gitea_mcp_server.resources.factory import (
     _registered_uris,
     make_api_resource,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -576,6 +575,64 @@ class TestMakeApiResourceQueryParams:
         result = await handler(owner="o", repo="r", state="open")
         assert isinstance(result, ResourceResult)
         client.request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multiple_query_params_all_extracted(self):
+        """Multiple query params are all extracted into the params dict."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/releases",
+            api_path="/repos/{owner}/{repo}/releases",
+            query_params=["draft", "q"],
+        )
+
+        await handler(owner="o", repo="r", draft="true", q="search term")
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        assert kwargs.get("params") == {"draft": "true", "q": "search term"}
+
+    @pytest.mark.asyncio
+    async def test_some_query_params_none(self):
+        """Some query params with None value should not appear in params dict."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/releases",
+            api_path="/repos/{owner}/{repo}/releases",
+            query_params=["draft", "q"],
+        )
+
+        await handler(owner="o", repo="r", draft=None, q="urgent")
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        assert kwargs.get("params") == {"q": "urgent"}
+
+    @pytest.mark.asyncio
+    async def test_mixed_query_and_path_params(self):
+        """Path params and query params are handled correctly together."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/releases",
+            api_path="/repos/{owner}/{repo}/releases",
+            query_params=["draft", "q"],
+        )
+
+        await handler(owner="o", repo="r", draft="true", q=None)
+        client.request.assert_called_once()
+        args, kwargs = client.request.call_args
+        assert args[1] == "/repos/o/r/releases"  # path params substituted
+        assert kwargs.get("params") == {"draft": "true"}  # only non-None query params
 
 
 class TestMakeApiResourceOptionalParams:

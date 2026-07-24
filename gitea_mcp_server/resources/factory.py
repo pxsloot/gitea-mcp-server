@@ -111,16 +111,19 @@ def _build_handler_meta(
     *,
     response_schema: dict[str, Any] | None = None,
     format_hint: str | None = None,
-    optional_params: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """Build the content metadata dict for a JSON resource response."""
+    """Build the content metadata dict for a JSON resource response.
+
+    This is content-level metadata (``ResourceContent.meta``), distinct
+    from registration-level metadata passed to ``mcp.resource(meta=...)``.
+    Registration-level metadata (``optional_params``, ``cache_ttl``) is set
+    directly in ``make_api_resource()``, not here.
+    """
     meta: dict[str, Any] = {}
     if response_schema is not None:
         meta["response_schema"] = response_schema
     if format_hint is not None:
         meta["format_hint"] = format_hint
-    if optional_params:
-        meta["optional_params"] = optional_params
     return meta if meta else None
 
 
@@ -417,7 +420,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     # (e.g. ``gitea://user``) need a handler with no function params,
     # otherwise FastMCP creates a ResourceTemplate and fails the
     # "URI template must contain at least one parameter" validation.
-    _has_uri_params = bool(re.search(r"\{[\w?,]+\}", uri))
+    _has_uri_params = bool(re.search(r"\{[\w?*,]+\}", uri))
 
     if _has_uri_params:
 

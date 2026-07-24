@@ -8,8 +8,6 @@ These types provide static type annotations with zero runtime overhead -
 TypedDict is a dict at runtime, so no serialization round-trip is needed.
 """
 
-from __future__ import annotations
-
 from typing import Any, TypedDict
 
 

@@ -48,6 +48,13 @@ def _clean_resource_uri(uri: str) -> str:
         ``gitea://repos/{owner}/{repo}/issues{?state}`` →
         ``gitea://repos/{owner}/{repo}/issues``
 
+    Note:
+        The regex only strips ``{?...}`` when it appears at the **end** of the
+        URI (``$`` anchor).  This assumes query params are always the last
+        segment in a URI template — a convention enforced by convention, not
+        code.  If a future URI template places ``{?param}`` before trailing
+        path segments, this function must be updated.
+
     Args:
         uri: The raw URI template from FastMCP registration.
 

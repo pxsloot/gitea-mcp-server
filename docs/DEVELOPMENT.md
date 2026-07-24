@@ -325,7 +325,7 @@ See the issues and pulls factory calls in ``custom.py`` for a complete example::
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/issues",
+        uri="gitea://repos/{owner}/{repo}/issues{?state}",
         api_path="/repos/{owner}/{repo}/issues",
         format_hint="issues",
         resource_type="issues",
@@ -336,6 +336,12 @@ See the issues and pulls factory calls in ``custom.py`` for a complete example::
         optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
         available_scopes=available_scopes,
     )
+
+    The ``{?state}`` suffix in the URI template is required so FastMCP
+    routes ``?state=...`` query strings to the handler.  The display layer
+    (``_clean_resource_uri``) strips it from ``list_resources`` output, so
+    agents see a clean ``gitea://repos/{owner}/{repo}/issues`` URI and
+    discover available params via ``optional_params`` metadata.
 
 No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
 the factory's ``_registered_uris`` set is populated at registration time

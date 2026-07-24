@@ -328,7 +328,7 @@ class TestRegisterCustomResources:
             "gitea://repos/{owner}/{repo}/issues{?state}",
             "gitea://repos/{owner}/{repo}/pulls{?state}",
             "gitea://repos/{owner}/{repo}/files/{path*}",
-            "gitea://repos/{owner}/{repo}/releases",
+            "gitea://repos/{owner}/{repo}/releases{?draft,q}",
             "gitea://repos/{owner}/{repo}/labels",
             "gitea://users/{username}",
             "gitea://user",
@@ -1373,13 +1373,16 @@ class TestCustomResourceStringResponsePaths:
 
         def resource_decorator(uri, **kwargs):
             # Extract all param names from URI template for positional-to-keyword
-            # conversion.  Matches ``{param}``, ``{param*}`` (greedy path), and
-            # ``{?param}`` (RFC 6570 optional query params).  The ``?`` prefix
-            # is stripped from names like ``?state`` → ``state``.
+            # conversion.  Matches ``{param}``, ``{param*}`` (greedy path),
+            # ``{?param}`` (RFC 6570 optional query params), and RFC 6570
+            # multi-param form ``{?a,b,c}``.  The ``?`` prefix is stripped,
+            # comma-separated groups are split, and ``*`` suffixes removed.
             import re
             _param_names = [
-                m.group(1).lstrip("?").rstrip("*")
-                for m in re.finditer(r"\{(\?*\w+\*?)\}", uri)
+                stripped
+                for m in re.finditer(r"\{(\?*[\w?,*]+)\}", uri)
+                for part in m.group(1).lstrip("?").rstrip("*").split(",")
+                if (stripped := part.strip())
             ]
 
             def deco(func):
@@ -1535,7 +1538,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources, mock_gitea_client_str
     ):
         """isinstance(data, str) returns string directly for releases."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/releases"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/releases{?draft,q}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string releases")
         result = await func("owner", "repo")
         assert result == "string releases"
@@ -1543,7 +1546,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_releases_empty(self, captured_resources, mock_gitea_client_str):
         """Empty releases list returns raw JSON empty array."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/releases"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/releases{?draft,q}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
         result = await func("owner", "repo")
         assert result == "[]"

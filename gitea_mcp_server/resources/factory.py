@@ -417,7 +417,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
     # (e.g. ``gitea://user``) need a handler with no function params,
     # otherwise FastMCP creates a ResourceTemplate and fails the
     # "URI template must contain at least one parameter" validation.
-    _has_uri_params = bool(re.search(r"\{[\w?]+\}", uri))
+    _has_uri_params = bool(re.search(r"\{[\w?,]+\}", uri))
 
     if _has_uri_params:
 

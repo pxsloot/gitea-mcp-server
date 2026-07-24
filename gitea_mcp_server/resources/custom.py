@@ -240,7 +240,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/releases",
+        uri="gitea://repos/{owner}/{repo}/releases{?draft,q}",
         api_path="/repos/{owner}/{repo}/releases",
         method="GET",
         format_hint="release",
@@ -248,6 +248,13 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_RELEASES,
         tags={"releases"},
         error_message="Repository '{owner}/{repo}' not found or has no releases.",
+        query_params=["draft", "q"],
+        optional_params=[
+            {"name": "draft", "type": "boolean",
+             "description": "Filter (exclude/include) drafts"},
+            {"name": "q", "type": "string",
+             "description": "Search string"},
+        ],
         available_scopes=available_scopes,
     )
 

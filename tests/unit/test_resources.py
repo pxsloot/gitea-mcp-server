@@ -16,7 +16,6 @@ from gitea_mcp_server.format import (
 )
 from gitea_mcp_server.resources.auto import register_auto_generated_resources
 from gitea_mcp_server.resources.custom import (
-    _handle_not_found,
     register_custom_resources,
 )
 from gitea_mcp_server.tools.display import (
@@ -435,93 +434,6 @@ class TestResourceFormatters:
         assert "# myorg" in result
         assert "| Type | Organization |" in result
 
-
-class TestCustomResourceErrorHandling:
-    """Tests for custom resource error handling."""
-
-    @pytest.fixture
-    def mock_gitea_client(self):
-        """Create a mock GiteaClient."""
-        client = AsyncMock()
-        return client
-
-    async def test_get_repository_404_raises_resource_error(self, mock_gitea_client):
-        """Test resource_handler raises ResourceError with NOT_FOUND on 404."""
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("repository", "{owner}/{repo}", "Repository '{owner}/{repo}' not found")
-        async def get_repository(owner: str, repo: str):
-            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}")
-            if isinstance(data, str):
-                return data
-            return data
-
-        mock_gitea_client.request = AsyncMock(
-            side_effect=GiteaAPIError("Not found", status_code=HTTP_STATUS_NOT_FOUND)
-        )
-
-        with pytest.raises(ResourceError) as exc_info:
-            await get_repository("owner", "repo")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["code"] == "NOT_FOUND"
-        assert "Repository 'owner/repo' not found" in error_data["message"]
-        assert error_data["resource_type"] == "repository"
-        assert error_data["resource_id"] == "owner/repo"
-
-    async def test_get_file_404_raises_resource_error(self, mock_gitea_client):
-        """Test resource_handler raises ResourceError with NOT_FOUND on 404."""
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("file", "{owner}/{repo}/{path}", "File '{path}' not found")
-        async def get_file(owner: str, repo: str, path: str):
-            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}/contents/{path}")
-            if isinstance(data, str):
-                return data
-            return data
-
-        mock_gitea_client.request = AsyncMock(
-            side_effect=GiteaAPIError("Not found", status_code=HTTP_STATUS_NOT_FOUND)
-        )
-
-        with pytest.raises(ResourceError) as exc_info:
-            await get_file("owner", "repo", "path/to/file")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["code"] == "NOT_FOUND"
-        assert "File 'path/to/file' not found" in error_data["message"]
-        assert error_data["resource_type"] == "file"
-        assert error_data["resource_id"] == "owner/repo/path/to/file"
-
-    async def test_list_repo_issues_invalid_state_raises_validation_error(self, mock_gitea_client):
-        """Test resource_handler raises ResourceError with VALIDATION_ERROR for invalid state."""
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("issues", "{owner}/{repo}", "Resource not found: {owner}/{repo}")
-        async def list_repo_issues(owner: str, repo: str, state: str = "open"):
-            valid_states = {"open", "closed", "all"}
-            if state not in valid_states:
-                raise ResourceError(
-                    {
-                        "code": "VALIDATION_ERROR",
-                        "message": f"Invalid state parameter: '{state}'",
-                        "resource_type": "issues",
-                        "resource_id": f"{owner}/{repo}",
-                    }
-                )
-            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}/issues")
-            if isinstance(data, str):
-                return data
-            return data
-
-        with pytest.raises(ResourceError) as exc_info:
-            await list_repo_issues("owner", "repo", state="invalid")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["code"] == "VALIDATION_ERROR"
-        assert "Invalid state parameter: 'invalid'" in error_data["message"]
-        assert error_data["resource_type"] == "issues"
-        assert error_data["resource_id"] == "owner/repo"
 
 
 class TestDeriveResourceName:
@@ -1095,7 +1007,7 @@ class TestFormatterGaps:
         assert "*None*" in result
 
     def test_format_release_markdown_full(self):
-        release = {
+        releases = [{
             "tag_name": "v1.0.0",
             "name": "Version 1.0.0",
             "draft": False,
@@ -1103,8 +1015,8 @@ class TestFormatterGaps:
             "created_at": "2024-01-01T00:00:00Z",
             "published_at": "2024-01-02T00:00:00Z",
             "body": "Release notes here",
-        }
-        result = _format_release_markdown(release)
+        }]
+        result = _format_release_markdown(releases)
 
         assert "# v1.0.0" in result
         assert "| Name | Version 1.0.0 |" in result
@@ -1113,34 +1025,34 @@ class TestFormatterGaps:
         assert "| Body | Release notes here |" in result
 
     def test_format_release_markdown_missing_name(self):
-        release = {
+        releases = [{
             "tag_name": "v1.0.0",
             "draft": False,
             "prerelease": False,
             "created_at": "2024-01-01T00:00:00Z",
             "published_at": "2024-01-02T00:00:00Z",
             "body": "Body",
-        }
-        result = _format_release_markdown(release)
+        }]
+        result = _format_release_markdown(releases)
 
         assert "| Tag Name | v1.0.0 |" in result
 
     def test_format_release_markdown_missing_body(self):
-        release = {
+        releases = [{
             "tag_name": "v1.0.0",
             "name": "Version 1.0.0",
             "draft": False,
             "prerelease": False,
             "created_at": "2024-01-01T00:00:00Z",
             "published_at": "2024-01-02T00:00:00Z",
-        }
-        result = _format_release_markdown(release)
+        }]
+        result = _format_release_markdown(releases)
 
         assert "# v1.0.0" in result
         assert "| Name | Version 1.0.0 |" in result
 
     def test_format_release_markdown_draft_prerelease(self):
-        release = {
+        releases = [{
             "tag_name": "v2.0.0-beta",
             "name": "Beta",
             "draft": True,
@@ -1148,8 +1060,8 @@ class TestFormatterGaps:
             "created_at": "2024-06-01T00:00:00Z",
             "published_at": "2024-06-02T00:00:00Z",
             "body": "Beta release",
-        }
-        result = _format_release_markdown(release)
+        }]
+        result = _format_release_markdown(releases)
 
         assert "| Draft | True |" in result
         assert "| Prerelease | True |" in result
@@ -1181,161 +1093,6 @@ class TestFormatterGaps:
 
         assert "**Server Type**: Unknown" in result
         assert "**API Version**: Unknown" in result
-
-    def test_handle_not_found_non_404_passes_through(self):
-        exc = GiteaAPIError("Internal error", status_code=500)
-
-        _handle_not_found(exc, "test", "123")
-
-    def test_handle_not_found_missing_status_code_passes_through(self):
-        exc = ValueError("Some error")
-
-        _handle_not_found(exc, "test", "123")
-
-    def test_handle_not_found_converts_404_with_custom_message(self):
-        exc = GiteaAPIError("Not found", status_code=404)
-
-        with pytest.raises(ResourceError) as exc_info:
-            _handle_not_found(exc, "test", "123", "Custom message")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["code"] == "NOT_FOUND"
-        assert error_data["message"] == "Custom message"
-        assert error_data["resource_type"] == "test"
-        assert error_data["resource_id"] == "123"
-
-    def test_handle_not_found_converts_404_with_default_message(self):
-        exc = GiteaAPIError("Not found", status_code=404)
-
-        with pytest.raises(ResourceError) as exc_info:
-            _handle_not_found(exc, "test", "123")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["message"] == "Resource not found: 123"
-
-
-class TestResourceHandlerDecorator:
-    """Tests for the resource_handler decorator."""
-
-    @pytest.fixture
-    def mock_gitea_client(self):
-        return AsyncMock()
-
-    async def test_wraps_successful_response(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str):
-            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
-            if isinstance(data, str):
-                return data
-            return f"Formatted: {data}"
-
-        mock_gitea_client.request = AsyncMock(return_value={"name": "test"})
-        result = await my_resource(item_id="abc")
-        assert result == "Formatted: {'name': 'test'}"
-        mock_gitea_client.request.assert_called_once_with("GET", "/items/abc")
-
-    async def test_passes_through_string_response(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str):
-            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
-            if isinstance(data, str):
-                return data
-            return f"Formatted: {data}"
-
-        mock_gitea_client.request = AsyncMock(return_value="error string")
-        result = await my_resource(item_id="abc")
-        assert result == "error string"
-
-    async def test_404_converts_to_resource_error(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str):
-            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
-            if isinstance(data, str):
-                return data
-            return f"Formatted: {data}"
-
-        class MockGiteaError(Exception):
-            def __init__(self, status_code):
-                self.status_code = status_code
-                super().__init__(f"HTTP {status_code}")
-
-        mock_gitea_client.request = AsyncMock(side_effect=MockGiteaError(HTTP_STATUS_NOT_FOUND))
-
-        with pytest.raises(ResourceError) as exc_info:
-            await my_resource(item_id="abc")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["code"] == "NOT_FOUND"
-        assert "Item 'abc' not found." in error_data["message"]
-        assert error_data["resource_type"] == "test_type"
-        assert error_data["resource_id"] == "abc"
-
-    async def test_non_404_passed_through(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str):
-            data = await mock_gitea_client.request("GET", f"/items/{item_id}")
-            if isinstance(data, str):
-                return data
-            return f"Formatted: {data}"
-
-        mock_gitea_client.request = AsyncMock(side_effect=ValueError("boom"))
-
-        with pytest.raises(ValueError, match="boom"):
-            await my_resource(item_id="abc")
-
-    async def test_preserves_function_metadata(self):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("test_type", "{item_id}", "Item '{item_id}' not found.")
-        async def my_resource(item_id: str):
-            """My test resource."""
-            return "ok"
-
-        assert my_resource.__name__ == "my_resource"
-        assert my_resource.__doc__ == "My test resource."
-
-    async def test_positional_args_resolved_correctly(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("repo", "{owner}/{repo}", "Not found: {owner}/{repo}")
-        async def my_resource(owner: str, repo: str):
-            return f"OK: {owner}/{repo}"
-
-        result = await my_resource("user", "my-repo")
-        assert result == "OK: user/my-repo"
-
-    async def test_positional_args_error_formatting(self, mock_gitea_client):
-        from gitea_mcp_server.resources.custom import resource_handler
-
-        @resource_handler("repo", "{owner}/{repo}", "Repo '{owner}/{repo}' missing.")
-        async def my_resource(owner: str, repo: str):
-            data = await mock_gitea_client.request("GET", f"/repos/{owner}/{repo}")
-            if isinstance(data, str):
-                return data
-            return f"Formatted: {data}"
-
-        class MockGiteaError(Exception):
-            def __init__(self, status_code):
-                self.status_code = status_code
-                super().__init__(f"HTTP {status_code}")
-
-        mock_gitea_client.request = AsyncMock(side_effect=MockGiteaError(HTTP_STATUS_NOT_FOUND))
-        with pytest.raises(ResourceError) as exc_info:
-            await my_resource("user", "my-repo")
-
-        error_data = exc_info.value.args[0]
-        assert error_data["resource_type"] == "repo"
-        assert error_data["resource_id"] == "user/my-repo"
-        assert "Repo 'user/my-repo' missing." in error_data["message"]
-
 
 class TestCustomResourceStringResponsePaths:
     """Tests for string response handling in custom resources.
@@ -1863,7 +1620,7 @@ class TestToolResourceConsistency:
         """_format_release_markdown delegates to _format_as_markdown with field_filter."""
         from gitea_mcp_server.tools.display import _format_release_markdown
 
-        release = {
+        releases = [{
             "tag_name": "v1.0.0",
             "name": "Version 1.0.0",
             "draft": False,
@@ -1871,8 +1628,8 @@ class TestToolResourceConsistency:
             "created_at": "2024-01-01T00:00:00Z",
             "published_at": "2024-01-02T00:00:00Z",
             "body": "Notes",
-        }
-        resource_result = _format_release_markdown(release)
+        }]
+        resource_result = _format_release_markdown(releases)
         assert "# v1.0.0" in resource_result
         assert "| Tag Name | v1.0.0 |" in resource_result
         assert "| Name | Version 1.0.0 |" in resource_result

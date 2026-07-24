@@ -9,6 +9,7 @@ from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceResult
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
+from gitea_mcp_server.resources.custom import _decode_base64_content
 from gitea_mcp_server.resources.factory import (
     _auto_derive_schema,
     _registered_uris,
@@ -113,6 +114,22 @@ def _make_mock_client(json_response: object = None) -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_registered_uris() -> None:
+    """Clear ``_registered_uris`` before each test to ensure test isolation.
+
+    ``make_api_resource`` populates this module-level set at registration
+    time; without resetting, test ordering matters and parallel execution
+    would produce false failures.
+    """
+    _registered_uris.clear()
+
+
+# ---------------------------------------------------------------------------
 # Tests: _auto_derive_schema
 # ---------------------------------------------------------------------------
 
@@ -211,7 +228,6 @@ class TestMakeApiResourceRegistration:
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
-        before = set(_registered_uris)
         handler = make_api_resource(
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}",
@@ -219,8 +235,7 @@ class TestMakeApiResourceRegistration:
         )
 
         assert handler is not None
-        assert "gitea://repos/{owner}/{repo}" in _registered_uris
-        assert _registered_uris == before  # already present before the call
+        assert _registered_uris == {"gitea://repos/{owner}/{repo}"}
 
     def test_adds_wrapper_tag(self):
         mcp = _make_mock_mcp()
@@ -679,3 +694,226 @@ class TestMakeApiResourceOptionalParams:
                 break
 
 
+# ---------------------------------------------------------------------------
+# Tests: make_api_resource -- handler_hook for text/plain resources
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourceHandlerHook:
+    """Tests for handler_hook parameter in make_api_resource."""
+
+    async def _hook(self, response: Any) -> str:
+        """Simple test hook that returns a processed string."""
+        if isinstance(response, str):
+            return response
+        return f"processed:{response}"
+
+    def test_registers_with_text_plain_mime_type(self):
+        """handler_hook should register with mime_type='text/plain'."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            handler_hook=self._hook,
+        )
+
+        for args in mcp.resource.call_args_list:
+            if args[0][0] == "gitea://repos/{owner}/{repo}/readme":
+                mime = args[1].get("mime_type", "")
+                assert mime == "text/plain"
+                break
+
+    def test_registers_without_format_hint(self):
+        """handler_hook resources should not set format_hint."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            format_hint="readme",
+            handler_hook=self._hook,
+        )
+
+        for args in mcp.resource.call_args_list:
+            if args[0][0] == "gitea://repos/{owner}/{repo}/readme":
+                meta = args[1].get("meta", {})
+                assert "format_hint" not in meta
+                break
+
+    @pytest.mark.asyncio
+    async def test_handler_hook_called_with_dict_response(self):
+        """handler_hook receives the API response and its result becomes the content."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"content": "hello", "encoding": "base64"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            handler_hook=self._hook,
+        )
+
+        result = await handler(owner="o", repo="r")
+        assert isinstance(result, ResourceResult)
+        content = result.contents[0]
+        assert content.mime_type == "text/plain"
+        assert content.content == "processed:{'content': 'hello', 'encoding': 'base64'}"
+
+    @pytest.mark.asyncio
+    async def test_handler_hook_called_with_string_response(self):
+        """handler_hook is called even when API returns a string."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response="raw error message")
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            handler_hook=self._hook,
+        )
+
+        result = await handler(owner="o", repo="r")
+        content = result.contents[0]
+        assert content.mime_type == "text/plain"
+        assert content.content == "raw error message"
+
+    @pytest.mark.asyncio
+    async def test_handler_hook_no_response_schema_in_meta(self):
+        """handler_hook resources should have no response_schema in content meta."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"content": "test"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            handler_hook=self._hook,
+        )
+
+        result = await handler(owner="o", repo="r")
+        meta = result.contents[0].meta
+        assert meta is None or "response_schema" not in meta
+
+    @pytest.mark.asyncio
+    async def test_hook_resource_handles_404_error(self):
+        """Error handling still works when handler_hook is set."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+
+        class Mock404(Exception):
+            def __init__(self):
+                self.status_code = HTTP_STATUS_NOT_FOUND
+                super().__init__("Not found")
+
+        client.request = AsyncMock(side_effect=Mock404())
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/readme",
+            api_path="/repos/{owner}/{repo}/contents/README.md",
+            error_message="README not found for '{owner}/{repo}'.",
+            handler_hook=self._hook,
+        )
+
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r")
+
+        error = exc.value.args[0]
+        assert error["code"] == "NOT_FOUND"
+        assert "README not found for 'o/r'." in error["message"]
+
+    @pytest.mark.asyncio
+    async def test_hook_resource_with_query_params(self):
+        """handler_hook works together with query_params."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"content": "ref content"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/files/{path*}",
+            api_path="/repos/{owner}/{repo}/contents/{path}",
+            query_params=["ref"],
+            handler_hook=self._hook,
+        )
+
+        result = await handler(owner="o", repo="r", path="f.py", ref="main")
+        assert isinstance(result, ResourceResult)
+        content = result.contents[0]
+        assert content.mime_type == "text/plain"
+        # Verify ref was passed as a query param
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        assert kwargs.get("params") == {"ref": "main"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _decode_base64_content (the real hook function)
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeBase64Content:
+    """Tests for ``_decode_base64_content`` in ``custom.py``.
+
+    This is the real-world handler_hook used by readme and file resources
+    to decode Gitea's base64-encoded ContentsResponse into plain text.
+    """
+
+    @pytest.mark.asyncio
+    async def test_string_passthrough(self):
+        """String responses are returned as-is."""
+        result = await _decode_base64_content("plain text error")
+        assert result == "plain text error"
+
+    @pytest.mark.asyncio
+    async def test_base64_dict_decoding(self):
+        """Dict with encoding='base64' decodes the content field."""
+        result = await _decode_base64_content(
+            {"content": "SGVsbG8gV29ybGQ=", "encoding": "base64"}
+        )
+        assert result == "Hello World"
+
+    @pytest.mark.asyncio
+    async def test_non_base64_dict_returns_content_field(self):
+        """Dict without base64 encoding returns the content field as-is."""
+        result = await _decode_base64_content(
+            {"content": "raw text content"}
+        )
+        assert result == "raw text content"
+
+    @pytest.mark.asyncio
+    async def test_base64_dict_missing_content_returns_empty_string(self):
+        """Dict with encoding='base64' but no content key returns ''."""
+        result = await _decode_base64_content({"encoding": "base64"})
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_base64_dict_none_content_returns_empty_string(self):
+        """Dict with encoding='base64' and content=None returns ''."""
+        result = await _decode_base64_content(
+            {"content": None, "encoding": "base64"}
+        )
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_non_dict_non_str_fallback(self):
+        """Non-dict, non-str responses are stringified."""
+        result = await _decode_base64_content(42)
+        assert result == "42"
+
+        result = await _decode_base64_content(None)
+        assert result == "None"
+
+        result = await _decode_base64_content([1, 2, 3])
+        assert result == "[1, 2, 3]"

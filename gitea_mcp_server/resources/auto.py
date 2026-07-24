@@ -4,10 +4,10 @@ Creates resources for all GET operations, returning raw JSON with schema
 metadata.  These can be overridden by custom resources with the same URI.
 
 The ``skip_uris`` for auto-generation is provided by the orchestrator
-(``resource_setup.py``), which combines factory-registered URIs (from
-``make_api_resource()``) and the legacy ``_NON_FACTORY_SKIP_URIS`` set.
-This hand-maintained set shrinks as Phase 2 and 3 migrate more resources
-to the factory.
+(``resource_setup.py``), which passes the factory's ``_registered_uris``
+set (from ``make_api_resource()``).  All custom resources that have API
+equivalents in the spec are now registered via the factory, so no
+additional skip set is needed.
 """
 
 import json
@@ -170,17 +170,6 @@ def _make_resource_func(  # noqa: PLR0913 - 6 params: path, method, operation, c
     return resource_func
 
 
-# URIs of custom (non-factory) resources that have not yet been migrated
-# to ``make_api_resource()``.  These are combined with the factory's
-# ``_registered_uris`` set by ``resource_setup.py`` to form the full
-# skip list for auto-generated resource registration.
-# As Phase 2 and 3 migrate more resources, this set shrinks.
-_NON_FACTORY_SKIP_URIS: set[str] = {
-    "gitea://repos/{owner}/{repo}/readme",
-    "gitea://repos/{owner}/{repo}/files/{path*}",
-}
-
-
 def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -199,17 +188,16 @@ def register_auto_generated_resources(
         gitea_client: GiteaClient for API calls.
         openapi_spec: The OpenAPI specification dictionary.
         skip_uris: Set of URI templates to skip (custom resource overrides).
-            The orchestrator (``resource_setup.py``) passes the union of
-            factory-registered URIs and :data:`_NON_FACTORY_SKIP_URIS`.
-            When ``None``, defaults to ``_NON_FACTORY_SKIP_URIS`` only
-            (no factory URIs are skipped).
+            The orchestrator (``resource_setup.py``) passes the factory's
+            ``_registered_uris`` set.  When ``None``, defaults to an empty
+            set (no URIs skipped).
         filtered_tools_info: Filter-prediction data from spec-level filtering.
             When provided, resources whose operationId appears in the ``filtered``
             dict are skipped -- they are scope-filtered, deprecated, or excluded by
             config.  ``None`` means no filtering is applied (all resources visible).
     """
     if skip_uris is None:
-        skip_uris = _NON_FACTORY_SKIP_URIS
+        skip_uris = set()
 
     filtered: dict[str, Any] = {}
     if filtered_tools_info:

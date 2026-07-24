@@ -447,9 +447,9 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                 )
 
     # Build resource metadata (passed to ``mcp.resource(meta=...)``).
-    # Use ResourceMeta for typed construction with auto-derivation of
-    # size_hint from the response schema when not explicitly provided.
-    meta = ResourceMeta.from_schema(
+    # Use ResourceMeta.for_schema for typed construction with auto-derivation
+    # of size_hint from the response schema when not explicitly provided.
+    meta = ResourceMeta.for_schema(
         response_schema,
         required_scope=scope,
         cache_ttl=cache_ttl,

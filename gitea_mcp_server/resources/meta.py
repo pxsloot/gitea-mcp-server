@@ -16,7 +16,7 @@ Usage::
 
 Or with auto-derivation::
 
-    meta = ResourceMeta.from_schema(schema, required_scope="read:repository")
+    meta = ResourceMeta.for_schema(schema, required_scope="read:repository")
     mcp.resource(uri, meta=meta.to_dict())(handler)
 """
 
@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+
+from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +70,15 @@ class ResourceMeta:
 
         ResourceMeta(required_scope="read:repository", size_hint="medium")
 
-    Or via ``from_schema()`` for auto-derived values::
+    Or via ``for_schema()`` for auto-derived ``size_hint``::
 
-        ResourceMeta.from_schema(schema, required_scope="read:repository")
+        ResourceMeta.for_schema(schema, required_scope="read:repository")
+
+    ``for_schema`` derives ``size_hint`` from the response schema's structure
+    when not provided explicitly, and derives ``default_detail`` from the
+    resulting ``size_hint``.  Other fields (``required_scope``, ``cache_ttl``,
+    ``optional_params``) pass through untouched — they are configuration, not
+    schema-derived.
     """
 
     required_scope: str | None = None
@@ -109,7 +117,7 @@ class ResourceMeta:
         return result
 
     @classmethod
-    def from_schema(  # noqa: PLR0913 — 6 params: cls, schema, +4 optional overrides — all independent
+    def for_schema(  # noqa: PLR0913 — 6 params: cls, schema, +4 optional overrides — all independent
         cls,
         schema: dict[str, Any] | None,
         *,
@@ -119,17 +127,21 @@ class ResourceMeta:
         size_hint: str | None = None,
         default_detail: str | None = None,
     ) -> ResourceMeta:
-        """Build metadata with optional auto-derivation of ``size_hint``.
+        """Build metadata for a resource backed by *schema*, auto-deriving ``size_hint``.
 
-        When ``size_hint`` is not explicitly provided, it is derived from
-        the response schema via :func:`derive_size_hint_from_schema`.
-        When ``default_detail`` is not explicitly provided, it is derived
-        from the ``size_hint`` (whether explicit or derived) via
-        :func:`default_detail_for`.
+        Only ``size_hint`` and ``default_detail`` are derived from the schema:
+        ``size_hint`` is derived from the response schema's property count,
+        array-ness, and nesting depth via :func:`derive_size_hint_from_schema`.
+        ``default_detail`` is then derived from ``size_hint``.
 
-        This is the recommended construction path for all registration
-        code — it ensures consistent metadata regardless of how the
-        resource is registered.
+        The remaining fields (``required_scope``, ``cache_ttl``,
+        ``optional_params``) pass through as-is — they are configuration,
+        not schema-derived.  This avoids callers having to construct two
+        separate metadata dicts.
+
+        Use explicit overrides when the auto-derived values don't fit
+        (e.g. a resource with few object properties that can still produce
+        large output).
         """
         resolved_size = size_hint or derive_size_hint_from_schema(schema)
         resolved_detail = default_detail or default_detail_for(resolved_size)
@@ -163,22 +175,8 @@ def _count_schema_properties(schema: dict[str, Any] | None) -> int:
     return 0
 
 
-def _is_array_schema(schema: dict[str, Any] | None) -> bool:
-    """Check whether a schema represents an array (list) response."""
-    if not schema or not isinstance(schema, dict):
-        return False
-    if schema.get("type") == "array" or schema.get("type") == ["array"]:
-        return True
-    # Check for array inside result wrapper (shouldn't happen here
-    # since we use the *inner* schema, but defensive check)
-    props = schema.get("properties", {})
-    if isinstance(props, dict):
-        for prop in props.values():
-            if isinstance(prop, dict) and (
-                prop.get("type") == "array" or prop.get("type") == ["array"]
-            ):
-                return True
-    return False
+# _is_array_schema is deliberately imported from tools/schemas rather than
+# duplicated here.  Both modules need it; one canonical implementation.
 
 
 def _estimate_nesting_depth(schema: dict[str, Any] | None, _depth: int = 0) -> int:
@@ -209,34 +207,38 @@ def derive_size_hint_from_schema(schema: dict[str, Any] | None) -> str:
 
     Returns one of ``"tiny"``, ``"small"``, ``"medium"``, or ``"large"``.
 
-    Rules::
+    Priority order (first match wins)::
 
-        No schema or no properties   → tiny
-        1-5 properties, not an array → small
-        6-20 properties              → medium
-        20+ properties or array      → large
         Nesting depth >= 3           → large
+        Array type                   → large
+        No schema or no properties   → tiny
+        > 20 properties              → large
+        > 5 properties               → medium
+        ≤ 5 properties               → small
     """
     if not schema or not isinstance(schema, dict):
         return SIZE_TINY
 
     props_count = _count_schema_properties(schema)
-    is_array = _is_array_schema(schema)
+    is_array = _schema_type_is_array(schema) if isinstance(schema, dict) else False
     depth = _estimate_nesting_depth(schema)
 
-    # Deep nesting makes even small schemas expensive
-    if depth >= _DEEP_NESTING_THRESHOLD:
+    # Deep nesting or array → large: both signal potentially expensive output.
+    # Arrays have unknown item count — even a schema with zero direct
+    # properties (e.g. ``{"type": "array", "items": {"type": "string"}}``)
+    # could produce hundreds of rows in practice.
+    if depth >= _DEEP_NESTING_THRESHOLD or is_array:
         return SIZE_LARGE
 
     # Empty/scalar
     if props_count == 0:
         return SIZE_TINY
 
-    # Determine size from property count, with array boost
+    # Determine size from property count
     if props_count > _MEDIUM_MAX_PROPERTIES:
         return SIZE_LARGE
 
-    if is_array or props_count > _SMALL_MAX_PROPERTIES:
+    if props_count > _SMALL_MAX_PROPERTIES:
         return SIZE_MEDIUM
 
     return SIZE_SMALL
@@ -247,7 +249,13 @@ def default_detail_for(size_hint: str) -> str:
 
     ``large`` resources should default to ``concise`` to avoid token
     bloat; everything else defaults to ``full`` for maximum detail.
+
+    Raises:
+        ValueError: If ``size_hint`` is not one of ``SIZE_HINTS``.
     """
+    if size_hint not in SIZE_HINTS:
+        msg = f"Unknown size_hint: {size_hint!r}. Must be one of {sorted(SIZE_HINTS)}."
+        raise ValueError(msg)
     return DETAIL_CONCISE if size_hint == SIZE_LARGE else DETAIL_FULL
 
 

@@ -262,7 +262,7 @@ def register_auto_generated_resources(
                     response_schema=response_schema,
                 )
 
-                resource_meta = ResourceMeta.from_schema(
+                resource_meta = ResourceMeta.for_schema(
                     response_schema,
                     required_scope=required_scope,
                 ).to_dict()

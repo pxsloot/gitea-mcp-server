@@ -991,13 +991,15 @@ class TestServerEdgeCases:
           The doc is intentionally comprehensive because it is the *only*
           context injected at connection time — every other resource is
           discovered on demand.
+        - 320 lines: raised 2026-07-24 to document size_hint, default_detail,
+          and optional_params metadata fields in the Resources section (#522).
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 310, (
-            f"Instructions are {line_count} lines (budget: 310). "
+        assert line_count <= 320, (
+            f"Instructions are {line_count} lines (budget: 320). "
             "Increase the budget deliberately, not by trimming."
         )
 

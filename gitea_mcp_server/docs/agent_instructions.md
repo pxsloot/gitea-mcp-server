@@ -130,6 +130,17 @@ Resources give cached, pre-formatted reads. For any read-only operation, prefer
 - `gitea://tool/{name}/schema`              -> full tool schema (JSON)
 - `gitea://types/{typeName}`                -> resolved type schema (JSON with full details)
 
+Resources carry discoverable metadata you can inspect before reading:
+
+- **``size_hint``**: ``"tiny"`` \| ``"small"`` \| ``"medium"`` \| ``"large"``
+  — estimated token cost. Check this before reading expensive resources.
+  Resources marked ``"large"`` (e.g. issues, pulls lists) can produce 300KB+
+  output; prefer ``read_resource(uri, detail="concise")`` for those.
+- **``default_detail``**: ``"full"`` \| ``"concise"`` — the recommended
+  detail level for this resource. ``large`` resources default to ``concise``.
+- **``optional_params``**: List of available query parameters (e.g.
+  ``state`` for issues/pulls) and their valid values.
+
 Some resources accept optional query parameters to filter results (e.g.
 ``?state=open`` on issues or pulls). The URIs shown in ``list_resources``
 are clean — no ``{?state}`` syntax. Instead, each resource's metadata

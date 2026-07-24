@@ -23,7 +23,7 @@ Or with auto-derivation::
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,8 @@ DETAILS = frozenset({DETAIL_FULL, DETAIL_CONCISE})
 
 _SMALL_MAX_PROPERTIES = 5
 _MEDIUM_MAX_PROPERTIES = 20
+_MAX_RECURSION_DEPTH = 5
+_DEEP_NESTING_THRESHOLD = 3
 
 
 # ── ResourceMeta dataclass ───────────────────────────────────────────────────
@@ -72,8 +74,6 @@ class ResourceMeta:
     """
 
     required_scope: str | None = None
-    response_schema: dict[str, Any] | None = None
-    format_hint: str | None = None
     cache_ttl: float | None = None
     optional_params: list[dict[str, Any]] | None = None
     size_hint: str | None = None
@@ -87,14 +87,17 @@ class ResourceMeta:
         ``None`` values are omitted so that resources that don't set a field
         remain backward compatible — missing fields are simply absent from
         the dict rather than present with a ``null`` value.
+
+        Note:
+            ``response_schema`` and ``format_hint`` are **content-level**
+            metadata (stored in ``ResourceContent.meta`` for the display
+            pipeline).  They intentionally do **not** appear here —
+            registration-level metadata (this class) is what agents discover
+            via ``list_resources`` before reading.
         """
         result: dict[str, Any] = {}
         if self.required_scope is not None:
             result["required_scope"] = self.required_scope
-        if self.response_schema is not None:
-            result["response_schema"] = self.response_schema
-        if self.format_hint is not None:
-            result["format_hint"] = self.format_hint
         if self.cache_ttl is not None:
             result["cache_ttl"] = self.cache_ttl
         if self.optional_params is not None:
@@ -106,13 +109,11 @@ class ResourceMeta:
         return result
 
     @classmethod
-    def from_schema(
+    def from_schema(  # noqa: PLR0913 — 6 params: cls, schema, +4 optional overrides — all independent
         cls,
         schema: dict[str, Any] | None,
         *,
         required_scope: str | None = None,
-        response_schema: dict[str, Any] | None = None,
-        format_hint: str | None = None,
         cache_ttl: float | None = None,
         optional_params: list[dict[str, Any]] | None = None,
         size_hint: str | None = None,
@@ -134,8 +135,6 @@ class ResourceMeta:
         resolved_detail = default_detail or default_detail_for(resolved_size)
         return cls(
             required_scope=required_scope,
-            response_schema=response_schema,
-            format_hint=format_hint,
             cache_ttl=cache_ttl,
             optional_params=optional_params,
             size_hint=resolved_size,
@@ -188,7 +187,7 @@ def _estimate_nesting_depth(schema: dict[str, Any] | None, _depth: int = 0) -> i
     Used to determine whether a resource has deep object hierarchies
     that would make its output expensive to render.
     """
-    if not schema or not isinstance(schema, dict) or _depth > 5:
+    if not schema or not isinstance(schema, dict) or _depth > _MAX_RECURSION_DEPTH:
         return _depth
     depths = [_depth]
     props = schema.get("properties")
@@ -212,7 +211,7 @@ def derive_size_hint_from_schema(schema: dict[str, Any] | None) -> str:
 
     Rules::
 
-        No schema or no properties  → tiny
+        No schema or no properties   → tiny
         1-5 properties, not an array → small
         6-20 properties              → medium
         20+ properties or array      → large
@@ -226,27 +225,20 @@ def derive_size_hint_from_schema(schema: dict[str, Any] | None) -> str:
     depth = _estimate_nesting_depth(schema)
 
     # Deep nesting makes even small schemas expensive
-    if depth >= 3:
+    if depth >= _DEEP_NESTING_THRESHOLD:
         return SIZE_LARGE
 
-    # List resources are always at least medium
-    if is_array:
-        if props_count > _MEDIUM_MAX_PROPERTIES:
-            return SIZE_LARGE
-        if props_count > _SMALL_MAX_PROPERTIES:
-            return SIZE_MEDIUM
-        # Shallow list of simple items
-        return SIZE_MEDIUM if props_count > 0 else SIZE_SMALL
-
-    # Scalar or empty
+    # Empty/scalar
     if props_count == 0:
         return SIZE_TINY
 
-    # Object with properties
+    # Determine size from property count, with array boost
     if props_count > _MEDIUM_MAX_PROPERTIES:
         return SIZE_LARGE
-    if props_count > _SMALL_MAX_PROPERTIES:
+
+    if is_array or props_count > _SMALL_MAX_PROPERTIES:
         return SIZE_MEDIUM
+
     return SIZE_SMALL
 
 
@@ -260,9 +252,9 @@ def default_detail_for(size_hint: str) -> str:
 
 
 __all__ = [
+    "DETAILS",
     "DETAIL_CONCISE",
     "DETAIL_FULL",
-    "DETAILS",
     "SIZE_HINTS",
     "SIZE_LARGE",
     "SIZE_MEDIUM",

@@ -497,10 +497,13 @@ OpenAPI spec). They live in the same codebase and register themselves via
             uri="gitea://my/{param}",
             mime_type="application/json",
             annotations={"readOnlyHint": True, "idempotentHint": True},
-            meta=scope_meta(...),
+            meta=ResourceMeta(required_scope=scope, size_hint="medium").to_dict(),
             tags={"synthetic", "my-domain"},
         )(_my_resource)
    ```
+
+   For factory-migrated resources, use ``make_api_resource()`` which auto-derives
+   ``size_hint`` from the response schema via ``ResourceMeta.from_schema()``.
 
 4. **Wire into ``server.py``** by importing and calling `register_*` in
    ``create_mcp_server()`` — see lines 330–332 for the canonical placement.
@@ -516,9 +519,9 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``_format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
-| ``meta`` / scope | Set ``meta=scope_meta(scope)`` on resources — ``None`` means scope-free (explain *why* in a comment) |
+| ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.from_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. The legacy ``scope_meta()`` helper still works but omits the new discovery fields. |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
-| URI templates | Use ``{?param}`` in the URI template for query params so FastMCP routes them to the handler. The display layer (``_clean_resource_uri`` in ``mcp_tools.py``) strips ``{?...}`` from ``list_resources`` output, showing clean URIs. Agents discover available optional params via ``optional_params`` metadata. When using ``make_api_resource()`` with ``query_params``, the factory automatically adds the params to the handler's ``__signature__`` so FastMCP validates them as optional keyword-only parameters. For hand-written synthetic resources, include ``{?param}`` in the URI template and ensure the handler has matching optional params with defaults. |
+| URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.from_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``_clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``query_params``, the factory auto-adds params to the handler's ``__signature__``. |
 | Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |
 | Error handling | ``_raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
 | Test pattern | Unit test the core logic; integration test the registration wiring. ``mcp.call_tool()`` returns ``ToolResult`` — access data via ``result.structured_content["result"]``. ``mcp.read_resource()`` returns ``ResourceResult`` — access JSON via ``json.loads(content.contents[0].content)``. Catch ``ToolError`` / ``ResourceError`` from FastMCP, not raw ``ValueError`` |

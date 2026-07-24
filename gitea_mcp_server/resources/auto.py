@@ -22,7 +22,8 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
+from gitea_mcp_server.resources.meta import ResourceMeta
+from gitea_mcp_server.resources.scope import derive_required_scope
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
@@ -261,7 +262,10 @@ def register_auto_generated_resources(
                     response_schema=response_schema,
                 )
 
-                resource_meta = scope_meta(required_scope)
+                resource_meta = ResourceMeta.from_schema(
+                    response_schema,
+                    required_scope=required_scope,
+                ).to_dict()
 
                 try:
                     mcp.resource(

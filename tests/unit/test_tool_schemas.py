@@ -13,6 +13,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 )
 from gitea_mcp_server.tools.schemas import (
     _deep_resolve_schema,
+    _is_object_type,
     _is_text_response,
     _schema_type_is_array,
     derive_output_schema,
@@ -51,6 +52,36 @@ class TestSchemaTypeIsArray:
         from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({}) is False
+
+
+class TestIsObjectType:
+    """Tests for _is_object_type."""
+
+    def test_detects_string_type(self):
+        """Should return True for schema with type 'object'."""
+        assert _is_object_type({"type": "object"}) is True
+
+    def test_detects_list_type(self):
+        """Should return True for schema with type ['object', 'null']."""
+        assert _is_object_type({"type": ["object", "null"]}) is True
+
+    def test_rejects_non_object_string(self):
+        """Should return False for non-object string types."""
+        assert _is_object_type({"type": "string"}) is False
+        assert _is_object_type({"type": "array"}) is False
+
+    def test_rejects_non_object_list(self):
+        """Should return False when 'object' not in type list."""
+        assert _is_object_type({"type": ["string", "null"]}) is False
+
+    def test_no_type_key(self):
+        """Should return False when no type key."""
+        assert _is_object_type({}) is False
+
+    def test_rejects_unknown_type(self):
+        """Should return False for non-string, non-list type values."""
+        assert _is_object_type({"type": None}) is False
+        assert _is_object_type({"type": 42}) is False
 
 
 class TestDeriveOutputSchema:
@@ -1611,6 +1642,37 @@ class TestUnwrapResultSchema:
             "properties": {
                 "name": {"type": "string"},
                 "count": {"type": "integer"},
+            },
+        }
+        result = _unwrap_result_schema(schema)
+        assert result is schema
+
+    def test_wrapped_with_type_list(self):
+        """Wrapped schema with ``type: [\"object\", \"null\"]`` extracts inner schema."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        inner = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "title": {"type": "string"},
+            },
+        }
+        wrapped = {
+            "type": ["object", "null"],
+            "properties": {"result": inner},
+        }
+        result = _unwrap_result_schema(wrapped)
+        assert result is inner
+
+    def test_unwrapped_type_list_without_result(self):
+        """Schema with ``type: [\"object\", \"null\"]`` but no 'result' property is returned unchanged."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        schema = {
+            "type": ["object", "null"],
+            "properties": {
+                "name": {"type": "string"},
             },
         }
         result = _unwrap_result_schema(schema)

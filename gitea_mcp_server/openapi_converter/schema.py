@@ -168,7 +168,11 @@ class OptionalPropertyTransformer:
 
         optional = self._is_optional_property(parent, key)
 
-        if schema.get("type") == "string" and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
+        t = schema.get("type")
+        is_string = (isinstance(t, str) and t == "string") or (
+            isinstance(t, list) and "string" in t
+        )
+        if is_string and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
             self._transform_special_format(schema, optional)
             return
 

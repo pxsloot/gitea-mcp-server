@@ -454,6 +454,19 @@ class TestResolveAnyOfSchema:
         assert result["type"] == "object"
         assert "id" in result["properties"]
 
+    def test_anyof_object_with_type_list(self):
+        """Type-as-list form (``type: [\"object\", \"null\"]``) is handled correctly."""
+        schema = {
+            "anyOf": [
+                {"type": "string"},
+                {"type": ["object", "null"], "properties": {"id": {"type": "integer"}}},
+            ]
+        }
+        result = _resolve_anyof_schema(schema)
+        assert result is not None
+        assert result["type"] == ["object", "null"]
+        assert "id" in result["properties"]
+
 
 class TestFormatAsMarkdown:
     def test_none_input(self):

@@ -193,9 +193,14 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
         title_label = "Pull Requests" if type_value == "pulls" else "Issues"
     else:
         # No ``type`` context — scan the data to detect PRs (backward compat
-        # for callers that don't forward handler context).
-        has_prs = any(item.get("pull_request") for item in data) if data else False
-        title_label = "Issues and Pull Requests" if has_prs else "Issues"
+        # for callers that don't forward handler context).  When items are
+        # collapsed to ``$ref`` strings (``detail=concise``), we can't scan;
+        # fall back to the safe default.
+        if data and isinstance(data[0], str):
+            title_label = "Issues and Pull Requests"
+        else:
+            has_prs = any(item.get("pull_request") for item in data) if data else False
+            title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
     return _format_as_markdown(
         data,

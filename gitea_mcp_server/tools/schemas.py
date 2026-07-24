@@ -312,6 +312,19 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
     return False
 
 
+def _is_object_type(t: Any) -> bool:
+    """Check if a JSON Schema type value is 'object', handling both string and list forms.
+
+    JSON Schema permits ``type`` as either a string (``"object"``) or a list
+    (``["object", "null"]``).  This helper handles both.
+    """
+    if isinstance(t, str):
+        return t == "object"
+    if isinstance(t, list):
+        return "object" in t
+    return False
+
+
 def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
     """Extract the inner schema from a ``{"result": ...}`` wrapped response schema.
 
@@ -334,7 +347,7 @@ def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
         The inner schema (``properties.result``), or ``schema`` unchanged
         if there is no ``result`` property or if ``schema`` is ``None``.
     """
-    if schema and isinstance(schema, dict) and schema.get("type") == "object":
+    if schema and isinstance(schema, dict) and _is_object_type(schema.get("type")):
         inner = schema.get("properties", {}).get("result")
         if isinstance(inner, dict):
             return inner
@@ -345,6 +358,7 @@ __all__ = [
     "_collect_refs",
     "_deep_resolve_schema",
     "_get_success_schema",
+    "_is_object_type",
     "_is_text_response",
     "_resolve_ref",
     "_response_has_no_content",

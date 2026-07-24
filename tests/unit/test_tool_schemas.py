@@ -1615,3 +1615,34 @@ class TestUnwrapResultSchema:
         }
         result = _unwrap_result_schema(schema)
         assert result is schema
+
+    def test_wrapped_with_type_list(self):
+        """Wrapped schema with ``type: [\"object\", \"null\"]`` extracts inner schema."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        inner = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "title": {"type": "string"},
+            },
+        }
+        wrapped = {
+            "type": ["object", "null"],
+            "properties": {"result": inner},
+        }
+        result = _unwrap_result_schema(wrapped)
+        assert result is inner
+
+    def test_unwrapped_type_list_without_result(self):
+        """Schema with ``type: [\"object\", \"null\"]`` but no 'result' property is returned unchanged."""
+        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+
+        schema = {
+            "type": ["object", "null"],
+            "properties": {
+                "name": {"type": "string"},
+            },
+        }
+        result = _unwrap_result_schema(schema)
+        assert result is schema

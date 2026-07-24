@@ -244,7 +244,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/issues{?state}",
+        uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
         api_path="/repos/{owner}/{repo}/issues",
         method="GET",
         format_hint="issues",

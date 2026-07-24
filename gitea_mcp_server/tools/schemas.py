@@ -312,12 +312,19 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
     return False
 
 
-def _is_object_type(t: Any) -> bool:
-    """Check if a JSON Schema type value is 'object', handling both string and list forms.
+def _is_object_type(schema: dict[str, Any]) -> bool:
+    """Check whether a schema dict has type 'object', handling both string and list forms.
 
     JSON Schema permits ``type`` as either a string (``"object"``) or a list
-    (``["object", "null"]``).  This helper handles both.
+    (``["object", "null"]``).  This helper handles both forms.
+
+    Args:
+        schema: A JSON Schema dict to check.
+
+    Returns:
+        ``True`` if the schema's ``type`` is or contains ``"object"``.
     """
+    t = schema.get("type")
     if isinstance(t, str):
         return t == "object"
     if isinstance(t, list):
@@ -347,7 +354,7 @@ def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
         The inner schema (``properties.result``), or ``schema`` unchanged
         if there is no ``result`` property or if ``schema`` is ``None``.
     """
-    if schema and isinstance(schema, dict) and _is_object_type(schema.get("type")):
+    if schema and isinstance(schema, dict) and _is_object_type(schema):
         inner = schema.get("properties", {}).get("result")
         if isinstance(inner, dict):
             return inner

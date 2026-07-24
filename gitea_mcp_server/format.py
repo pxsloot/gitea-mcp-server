@@ -293,8 +293,12 @@ def _resolve_anyof_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
         variants = schema.get(key)
         if isinstance(variants, list):
             for sub in variants:
-                if isinstance(sub, dict) and sub.get("type") == "object" and sub.get("properties"):
-                    return sub
+                if isinstance(sub, dict) and sub.get("properties"):
+                    t = sub.get("type")
+                    if isinstance(t, str) and t == "object":
+                        return sub
+                    if isinstance(t, list) and "object" in t:
+                        return sub
     return schema
 
 

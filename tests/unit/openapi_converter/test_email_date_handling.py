@@ -96,6 +96,42 @@ class TestEmailFormatHandling:
         assert email_branch.get("maxLength") == 254
         assert email_branch.get("pattern") == "^[^@]+@[^@]+\\.[^@]+$"
 
+    def test_optional_email_with_type_list_transformed_correctly(self):
+        """Email with type ``[\"string\", \"null\"]`` still receives anyOf transformation.
+
+        Type-as-list form (e.g. from a schema that was pre-normalized) must
+        still match the string-type check so the email anyOf transformation
+        is applied instead of just adding null to the type list.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": ["string", "null"],
+                    "format": "email",
+                    "description": "User email",
+                }
+            },
+        }
+        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        email_schema = schema["properties"]["email"]
+        # Should become anyOf, not remain a simple type list
+        assert "anyOf" in email_schema, (
+            "Email with type-as-list should be transformed to anyOf, "
+            f"got type={email_schema.get('type')!r}"
+        )
+        any_of = email_schema["anyOf"]
+        # Should have email, empty string, and null branches (optional field)
+        assert len(any_of) == 3
+        email_branch = next((b for b in any_of if b.get("format") == "email"), None)
+        assert email_branch is not None
+        assert email_branch["type"] == "string"
+        empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
+        assert empty_branch is not None
+        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+        assert null_branch is not None
+        assert email_schema.get("description") == "User email"
+
     def test_email_format_still_valid_openapi_3_1(self):
         """Test that a spec with email anyOf is valid OpenAPI 3.1."""
         spec = {

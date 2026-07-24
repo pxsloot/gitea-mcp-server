@@ -15,6 +15,7 @@ Tool list:
 
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -33,6 +34,34 @@ from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_resource_uri(uri: str) -> str:
+    """Strip RFC 6570 form-style query parameters from a resource URI for display.
+
+    Resource templates use ``{?param}`` syntax internally so FastMCP routes
+    query-string parameters to the handler.  The display-layer URI is cleaned
+    to show a clean template without ``{?param}`` — agents discover available
+    optional parameters via the ``optional_params`` metadata field instead.
+
+    Example:
+        ``gitea://repos/{owner}/{repo}/issues{?state}`` →
+        ``gitea://repos/{owner}/{repo}/issues``
+
+    Note:
+        The regex only strips ``{?...}`` when it appears at the **end** of the
+        URI (``$`` anchor).  This assumes query params are always the last
+        segment in a URI template — a convention enforced by convention, not
+        code.  If a future URI template places ``{?param}`` before trailing
+        path segments, this function must be updated.
+
+    Args:
+        uri: The raw URI template from FastMCP registration.
+
+    Returns:
+        Cleaned URI with ``{?...}`` suffix removed.
+    """
+    return re.sub(r"\{\?[^}]+\}$", "", uri)
 
 
 def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
@@ -70,9 +99,12 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             base: ResourceEntry,
             meta: dict[str, Any] | None,
         ) -> ResourceEntry:
-            """Add required_scope to a resource entry from its metadata."""
-            scope = meta.get("required_scope") if meta else None
-            base["required_scope"] = scope
+            """Add required_scope and optional_params to a resource entry from metadata."""
+            base["required_scope"] = meta.get("required_scope") if meta else None
+            if meta:
+                optional_params = meta.get("optional_params")
+                if optional_params:
+                    base["optional_params"] = optional_params
             return base
 
         # Process concrete resources
@@ -82,7 +114,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for resource in resources:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=str(resource.uri),
+                    uri=_clean_resource_uri(str(resource.uri)),
                     name=resource.name,
                     description=resource.description or "",
                     mimeType=resource.mime_type or "text/plain",
@@ -99,7 +131,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for template in templates:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=str(template.uri_template),
+                    uri=_clean_resource_uri(str(template.uri_template)),
                     name=template.name,
                     description=template.description or "",
                     mimeType=template.mime_type or "text/plain",
@@ -286,6 +318,26 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "oneOf": [{"type": "string"}, {"type": "null"}],
                                 "description": "Required token scope or null",
                             },
+                            "optional_params": {
+                                "oneOf": [
+                                    {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {"type": "string"},
+                                                "type": {"type": "string"},
+                                                "values": {
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    {"type": "null"},
+                                ],
+                                "description": "Optional query parameters the resource accepts",
+                            },
                         },
                     },
                     "description": "List of resource metadata entries",
@@ -373,6 +425,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - `tags`: List of tags categorizing the resource (e.g., ["repository", "wrapper"])
     - `required_scope`: Token scope required to access this resource (e.g., "read:repository"),
       or `null` if no specific scope is required
+    - `optional_params`: Optional list of dicts describing available query parameters
+      (e.g., ``[{"name": "state", "type": "string", "values": ["open", "closed"]}]``),
+      or absent if the resource has no optional parameters
 
     ## Usage Example
 
@@ -691,6 +746,7 @@ def register_mcp_resource_tools(
 
 
 __all__ = [
+    "_clean_resource_uri",
     "_format_resource_content",
     "_mcp_list_resources_impl",
     "_mcp_read_resource_impl",

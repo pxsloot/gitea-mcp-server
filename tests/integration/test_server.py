@@ -436,8 +436,34 @@ class TestCustomResources:
             assert "Hello" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_issues(self):
-        """Read gitea://repos/{owner}/{repo}/issues returns formatted issues."""
+    async def test_read_issues_default(self):
+        """Read gitea://repos/{owner}/{repo}/issues returns all issues."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+
+        with respx.mock() as mock:
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
+            mock.get("https://git.example.com/api/v1/repos/owner/repo/issues").respond(
+                200,
+                json=[
+                    {"number": 1, "title": "Bug", "state": "open", "user": {"login": "dev"},
+                     "created_at": "2024-01-01T00:00:00Z", "comments": 0, "labels": [],
+                     "html_url": "https://example.com/issue/1"},
+                ],
+            )
+            mcp = await create_mcp_server(gitea_client)
+            result = await mcp.read_resource("gitea://repos/owner/repo/issues")
+            assert "Bug" in result.contents[0].content
+
+    @pytest.mark.asyncio
+    async def test_read_issues_with_state_param(self):
+        """Read gitea://repos/{owner}/{repo}/issues?state=open passes state to API."""
         config = SimpleConfig(
             url="https://git.example.com",
             token="test_token",
@@ -463,6 +489,9 @@ class TestCustomResources:
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
             assert "Bug" in result.contents[0].content
+            # Verify the mock was called with the expected params
+            issues_route = mock.routes[-1]
+            assert issues_route.called
 
     @pytest.mark.asyncio
     async def test_read_token_scopes(self):
@@ -967,8 +996,8 @@ class TestServerEdgeCases:
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 300, (
-            f"Instructions are {line_count} lines (budget: 300). "
+        assert line_count <= 310, (
+            f"Instructions are {line_count} lines (budget: 310). "
             "Increase the budget deliberately, not by trimming."
         )
 

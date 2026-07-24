@@ -9,11 +9,44 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.mcp_tools import (
+    _clean_resource_uri,
+    _format_resource_content,
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
-    _format_resource_content,
     register_mcp_resource_tools,
 )
+
+
+class TestCleanResourceUri:
+    """Tests for _clean_resource_uri."""
+
+    def test_strips_query_param_suffix(self):
+        """Should strip {?param} suffix from URI."""
+        assert _clean_resource_uri(
+            "gitea://repos/{owner}/{repo}/issues{?state}"
+        ) == "gitea://repos/{owner}/{repo}/issues"
+
+    def test_preserves_uri_without_query_params(self):
+        """Should return URI unchanged if no query params suffix."""
+        uri = "gitea://repos/{owner}/{repo}"
+        assert _clean_resource_uri(uri) == uri
+
+    def test_preserves_concrete_uri(self):
+        """Should return concrete URIs unchanged."""
+        uri = "gitea://version"
+        assert _clean_resource_uri(uri) == uri
+
+    def test_strips_multiple_query_params(self):
+        """Should strip multi-param {?a,b} suffix."""
+        assert _clean_resource_uri(
+            "search://{query}{?page,limit}"
+        ) == "search://{query}"
+
+    def test_preserves_wildcard_path_params(self):
+        """Should preserve {path*} and other non-query params."""
+        assert _clean_resource_uri(
+            "gitea://repos/{owner}/{repo}/files/{path*}"
+        ) == "gitea://repos/{owner}/{repo}/files/{path*}"
 
 
 class TestMcpListResourcesImpl:

@@ -5,9 +5,11 @@ response schema and a ``format_hint`` for the display layer.  No formatting is
 done at the resource level -- that is the responsibility of the unified display
 pipeline in ``mcp_tools.py`` and ``tools/display.py``.
 
-**Phase 1 migration**: 6 resources have been moved to ``factory.py`` via
-``make_api_resource()``.  The remaining resources still use the legacy
-``@_register`` pattern and will be migrated in Phases 2 and 3.
+**Phase 1 + 2 migration**: 8 resources have been moved to ``factory.py`` via
+``make_api_resource()``, including issues and pulls with optional ``state``
+parameters via ``query_params`` support.  The remaining resources (readme,
+files) still use the legacy ``@_register`` pattern and will be migrated in
+Phase 3.
 """
 
 import base64
@@ -33,36 +35,8 @@ from gitea_mcp_server.constants import (
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
-from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
-
-
-def _build_resource_meta(
-    *,
-    response_schema: dict[str, Any] | None = None,
-    format_hint: str | None = None,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    """Build the content metadata dict for a JSON resource response.
-
-    Args:
-        response_schema: Unresolved inner response schema (``{result: ...}``
-            wrapper stripped) for ``$ref``-aware collapse.
-        format_hint: Name of the registered formatter to use for markdown rendering.
-        extra: Additional metadata keys (e.g. ``{"owner": ..., "repo": ...}``).
-
-    Returns:
-        Metadata dict, or ``None`` if empty.
-    """
-    meta: dict[str, Any] = {}
-    if response_schema is not None:
-        meta["response_schema"] = response_schema
-    if format_hint is not None:
-        meta["format_hint"] = format_hint
-    if extra:
-        meta.update(extra)
-    return meta if meta else None
 
 
 def resource_handler(
@@ -124,7 +98,7 @@ def _handle_not_found(
         ) from e
 
 
-def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec + scopes + pre-computed static data are all independent registration axes
+def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes + pre-computed static data are all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None = None,
@@ -143,9 +117,10 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec 
     parameters are pre-computed at startup -- the handlers return them
     directly without making API calls on read.
 
-    **Phase 1**: 6 resources are registered via ``make_api_resource()``
-    (factory pattern with auto schema derivation).  The remaining resources
-    still use the ``@_register`` decorator.
+    **Phase 1 + 2**: 8 resources are registered via ``make_api_resource()``
+    (factory pattern with auto schema derivation).  The remaining
+    ``@_register`` resources (readme, files, static) will be migrated in
+    Phase 3.
 
     Args:
         mcp: The FastMCP server instance.
@@ -265,7 +240,7 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec 
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/releases",
+        uri="gitea://repos/{owner}/{repo}/releases{?draft,q}",
         api_path="/repos/{owner}/{repo}/releases",
         method="GET",
         format_hint="release",
@@ -273,6 +248,13 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec 
         cache_ttl=CACHE_TTL_RELEASES,
         tags={"releases"},
         error_message="Repository '{owner}/{repo}' not found or has no releases.",
+        query_params=["draft", "q"],
+        optional_params=[
+            {"name": "draft", "type": "boolean",
+             "description": "Filter (exclude/include) drafts"},
+            {"name": "q", "type": "string",
+             "description": "Search string"},
+        ],
         available_scopes=available_scopes,
     )
 
@@ -289,21 +271,45 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec 
     )
 
     # ======================================================================
-    # NON-MIGRATED RESOURCES (legacy @_register pattern)
-    # These will be migrated to the factory in Phase 2 and 3.
+    # FACTORY RESOURCES (Phase 2 — issues and pulls with optional params)
     # ======================================================================
 
-    # Pre-derive response schemas for remaining display-layer consumers.
-    # Each maps to the Gitea API endpoint the handler calls internally.
-    # Schemas are unwrapped (inner result schema) so they match the raw API
-    # response shape -- the display pipeline needs the inner schema for
-    # $ref-aware data collapse.
-    _issues_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/issues", "get", resolve=False)
-    ) if openapi_spec else None
-    _pulls_schema = _unwrap_result_schema(
-        _get_success_schema(openapi_spec, "/repos/{owner}/{repo}/pulls", "get", resolve=False)
-    ) if openapi_spec else None
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/issues{?state}",
+        api_path="/repos/{owner}/{repo}/issues",
+        method="GET",
+        format_hint="issues",
+        resource_type="issues",
+        scope="read:repository",
+        tags={"issues"},
+        error_message="Repository '{owner}/{repo}' not found or has no issues.",
+        query_params=["state"],
+        query_param_validators={"state": ["open", "closed"]},
+        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        available_scopes=available_scopes,
+    )
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/pulls{?state}",
+        api_path="/repos/{owner}/{repo}/pulls",
+        method="GET",
+        format_hint="pull_requests",
+        resource_type="pulls",
+        scope="read:repository",
+        tags={"pull_requests"},
+        error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
+        query_params=["state"],
+        query_param_validators={"state": ["open", "closed"]},
+        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        available_scopes=available_scopes,
+    )
+
+    # ======================================================================
+    # NON-MIGRATED RESOURCES (legacy @_register pattern)
+    # These will be migrated to the factory in Phase 3.
+    # ======================================================================
 
     # ── readme ──────────────────────────────────────────────────────────────
 
@@ -330,94 +336,6 @@ def register_custom_resources(  # noqa: PLR0913, PLR0915 -- mcp + client + spec 
             return ResourceResult(contents=[ResourceContent(content=raw, mime_type="text/plain")])
         content = cast("str", response.get("content", ""))
         return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/plain")])
-
-    # ── issues ──────────────────────────────────────────────────────────────
-
-    _meta = scope_meta("read:repository")
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/issues{?state}",
-        mime_type="application/json",
-        tags={"wrapper", "issues"},
-        meta=_meta,
-    )
-    @resource_handler(
-        "issues", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no issues."
-    )
-    async def list_repo_issues(owner: str, repo: str, state: str | None = None) -> ResourceResult:
-        """List issues for a repository, optionally filtered by state (open/closed)."""
-        params = {}
-        if state:
-            if state not in ("open", "closed"):
-                raise ResourceError(
-                    {
-                        "code": "VALIDATION_ERROR",
-                        "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
-                        "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
-                        "resource_type": "issues",
-                        "resource_id": f"{owner}/{repo}",
-                    }
-                )
-            params["state"] = state
-
-        issues = await gitea_client.request("GET", f"/repos/{owner}/{repo}/issues", params=params)
-        if isinstance(issues, str):
-            return ResourceResult(contents=[ResourceContent(content=issues, mime_type="text/plain")])
-
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(issues),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_issues_schema,
-                    format_hint="issues",
-                ),
-            )]
-        )
-
-    # ── pulls ───────────────────────────────────────────────────────────────
-
-    _meta = scope_meta("read:repository")
-
-    @_register(
-        "gitea://repos/{owner}/{repo}/pulls{?state}",
-        mime_type="application/json",
-        tags={"wrapper", "pull_requests"},
-        meta=_meta,
-    )
-    @resource_handler(
-        "pulls", "{owner}/{repo}", "Repository '{owner}/{repo}' not found or has no pull requests."
-    )
-    async def list_repo_pulls(owner: str, repo: str, state: str | None = None) -> ResourceResult:
-        """List pull requests for a repository, optionally filtered by state."""
-        params = {}
-        if state:
-            if state not in ("open", "closed"):
-                raise ResourceError(
-                    {
-                        "code": "VALIDATION_ERROR",
-                        "message": f"Invalid state parameter: '{state}'. Must be 'open' or 'closed'.",
-                        "detail": "The 'state' query parameter must be either 'open' or 'closed'.",
-                        "resource_type": "pulls",
-                        "resource_id": f"{owner}/{repo}",
-                    }
-                )
-            params["state"] = state
-
-        pulls = await gitea_client.request("GET", f"/repos/{owner}/{repo}/pulls", params=params)
-        if isinstance(pulls, str):
-            return ResourceResult(contents=[ResourceContent(content=pulls, mime_type="text/plain")])
-
-        return ResourceResult(
-            contents=[ResourceContent(
-                content=json.dumps(pulls),
-                mime_type="application/json",
-                meta=_build_resource_meta(
-                    response_schema=_pulls_schema,
-                    format_hint="pull_requests",
-                ),
-            )]
-        )
 
     # ── file ────────────────────────────────────────────────────────────────
 

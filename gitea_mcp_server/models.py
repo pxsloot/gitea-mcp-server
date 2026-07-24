@@ -8,8 +8,6 @@ These types provide static type annotations with zero runtime overhead -
 TypedDict is a dict at runtime, so no serialization round-trip is needed.
 """
 
-from __future__ import annotations
-
 from typing import Any, TypedDict
 
 
@@ -42,6 +40,7 @@ class ResourceEntry(TypedDict, total=False):
     type: str  # "resource" or "template"; accessed via ["type"]
     tags: list[str]
     required_scope: str | None
+    optional_params: list[dict[str, Any]] | None
 
 
 class ResourceListing(TypedDict, total=False):

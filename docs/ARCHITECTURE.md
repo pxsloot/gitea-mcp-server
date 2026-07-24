@@ -271,12 +271,12 @@ The customization layers as applied during server startup:
 
 | Module | Role |
 |--------|------|
-| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time; reads `_registered_uris` from factory to skip auto-generation for factory-registered URIs |
-| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Uses `make_api_resource()` for factory-migrated resources, legacy `@_register` for remaining ones |
-| `resources/factory.py` | ``make_api_resource()`` factory function that auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip |
+| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time; reads `_registered_uris` from factory + `_NON_FACTORY_SKIP_URIS` to skip auto-generation for factory-registered and legacy custom URIs |
+| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Uses `make_api_resource()` for factory-migrated resources (Phase 1 + 2), legacy `@_register` for static resources and Phase 3 candidates (readme, files) |
+| `resources/factory.py` | ``make_api_resource()`` factory function that auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip. Supports optional query params (`query_params`, `query_param_validators`) and discovery metadata (`optional_params`). ``_build_query_param_signature()`` is a pure helper (takes/returns ``inspect.Signature``) that adds query params as ``KEYWORD_ONLY`` params matching ``{?param}`` template entries — used by ``make_api_resource()`` to satisfy FastMCP's signature validation at registration time. |
 | `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) -- moved from the removed `resources/format.py` |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
-| `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource |
+| `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource; ``_clean_resource_uri()`` strips ``{?param}`` from URI templates at display time so agents see clean URIs in ``list_resources`` while FastMCP routing uses the full template |
 
 ### Server Setup Orchestration (startup-only)
 

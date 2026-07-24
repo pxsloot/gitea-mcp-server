@@ -177,8 +177,6 @@ def _make_resource_func(  # noqa: PLR0913 - 6 params: path, method, operation, c
 # As Phase 2 and 3 migrate more resources, this set shrinks.
 _NON_FACTORY_SKIP_URIS: set[str] = {
     "gitea://repos/{owner}/{repo}/readme",
-    "gitea://repos/{owner}/{repo}/issues",
-    "gitea://repos/{owner}/{repo}/pulls",
     "gitea://repos/{owner}/{repo}/files/{path*}",
 }
 

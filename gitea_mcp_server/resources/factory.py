@@ -17,6 +17,7 @@ runs *before* ``register_auto_generated_resources()``, and the resulting
 set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
 """
 
+import inspect
 import json
 import logging
 import re
@@ -241,6 +242,43 @@ def _set_handler_docstring(
         handler.__doc__ = f"Resource for {method} {api_path}"
 
 
+def _build_query_param_signature(
+    handler_sig: inspect.Signature,
+    query_params: list[str],
+) -> inspect.Signature:
+    """Add query params as ``KEYWORD_ONLY`` params to a handler signature.
+
+    FastMCP requires ``{?param}`` URI template entries to have matching
+    optional function parameters with default values.  This helper takes a
+    ``**kwargs``-style signature and adds each query param as a
+    ``KEYWORD_ONLY`` parameter with ``default=None``, keeping the actual
+    handler body unchanged (params flow through ``**kwargs``).
+
+    Args:
+        handler_sig: The handler's inspect.Signature.
+        query_params: List of query parameter names to add.
+
+    Returns:
+        Modified signature with query params inserted before the
+        ``**kwargs`` parameter, or the original signature unchanged
+        if the handler uses positional params instead of ``**kwargs``.
+    """
+    existing = handler_sig.parameters
+    kwargs_param = existing.get("kwargs")
+    if kwargs_param is None:
+        return handler_sig  # Only works with **kwargs-style handlers
+
+    new_params: list[inspect.Parameter] = [
+        inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=None)
+        for name in query_params
+        if name not in existing
+    ]
+    if not new_params:
+        return handler_sig
+
+    return handler_sig.replace(parameters=[*new_params, kwargs_param])
+
+
 def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional: all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -423,6 +461,23 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
                 uri=uri,
             )
 
+    # FastMCP validates ``{?param}`` template entries against the handler's
+    # function signature, requiring matching optional params with defaults.
+    # The factory handler uses ``**kwargs`` which doesn't declare those params
+    # explicitly, so we override ``__signature__`` -- a standard Python feature
+    # documented in the ``inspect`` module for exactly this scenario.
+    #
+    # The ``type: ignore[attr-defined]`` is needed because mypy's function
+    # type stubs don't include ``__signature__``.  This is a typeshed gap --
+    # setting ``__signature__`` on a function is part of Python's data model,
+    # not a workaround.
+    if query_params:
+        _sig = _build_query_param_signature(
+            inspect.signature(handler), query_params
+        )
+        if _sig != inspect.signature(handler):
+            handler.__signature__ = _sig  # type: ignore[attr-defined]
+
     # Set docstring from operation summary/description or fallback to path.
     _set_handler_docstring(handler, openapi_spec, api_path, method, method_lower)
 
@@ -443,6 +498,7 @@ def make_api_resource(  # noqa: PLR0913 -- 16 params + branching are intentional
 
 __all__ = [
     "_auto_derive_schema",
+    "_build_query_param_signature",
     "_registered_uris",
     "_request_and_wrap",
     "_set_handler_docstring",

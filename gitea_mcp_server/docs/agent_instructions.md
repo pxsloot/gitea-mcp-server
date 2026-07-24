@@ -130,6 +130,12 @@ Resources give cached, pre-formatted reads. For any read-only operation, prefer
 - `gitea://tool/{name}/schema`              -> full tool schema (JSON)
 - `gitea://types/{typeName}`                -> resolved type schema (JSON with full details)
 
+Some resources accept optional query parameters to filter results (e.g.
+``?state=open`` on issues or pulls). The URIs shown in ``list_resources``
+are clean — no ``{?state}`` syntax. Instead, each resource's metadata
+carries an ``optional_params`` field listing available parameters and
+their valid values. Check that field before reading to discover filters.
+
 List with `list_resources(tag=..., type=...)`; search with `search_resources(query)`.
 
 ## A common workflow

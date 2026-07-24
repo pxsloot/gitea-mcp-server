@@ -15,6 +15,7 @@ Tool list:
 
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -33,6 +34,27 @@ from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_resource_uri(uri: str) -> str:
+    """Strip RFC 6570 form-style query parameters from a resource URI for display.
+
+    Resource templates use ``{?param}`` syntax internally so FastMCP routes
+    query-string parameters to the handler.  The display-layer URI is cleaned
+    to show a clean template without ``{?param}`` — agents discover available
+    optional parameters via the ``optional_params`` metadata field instead.
+
+    Example:
+        ``gitea://repos/{owner}/{repo}/issues{?state}`` →
+        ``gitea://repos/{owner}/{repo}/issues``
+
+    Args:
+        uri: The raw URI template from FastMCP registration.
+
+    Returns:
+        Cleaned URI with ``{?...}`` suffix removed.
+    """
+    return re.sub(r"\{\?[^}]+\}$", "", uri)
 
 
 def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
@@ -85,7 +107,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for resource in resources:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=str(resource.uri),
+                    uri=_clean_resource_uri(str(resource.uri)),
                     name=resource.name,
                     description=resource.description or "",
                     mimeType=resource.mime_type or "text/plain",
@@ -102,7 +124,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for template in templates:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=str(template.uri_template),
+                    uri=_clean_resource_uri(str(template.uri_template)),
                     name=template.name,
                     description=template.description or "",
                     mimeType=template.mime_type or "text/plain",
@@ -717,6 +739,7 @@ def register_mcp_resource_tools(
 
 
 __all__ = [
+    "_clean_resource_uri",
     "_format_resource_content",
     "_mcp_list_resources_impl",
     "_mcp_read_resource_impl",

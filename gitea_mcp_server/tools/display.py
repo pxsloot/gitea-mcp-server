@@ -105,7 +105,7 @@ _ISSUE_FIELDS: dict[str, dict] = {
     "created_at": {},
     "pull_request": {"render": "badge"},
     "comments": {},
-    "labels": {},
+    "labels": {"render": "compact_ref", "template": "{name}"},
     "html_url": {},
 }
 _PULL_FIELDS: dict[str, dict] = {
@@ -126,7 +126,8 @@ _REPO_FIELDS: dict[str, dict] = {
     "name": {},
     "full_name": {},
     "description": {},
-    "owner": {},
+    # Owner is a full User object (10+ fields). Compact to just the login.
+    "owner": {"render": "compact_ref", "template": "{login}"},
     "html_url": {},
     "default_branch": {},
     "stargazers_count": {},
@@ -195,7 +196,7 @@ def _format_issues_markdown(data: list, *, detail: str = "full") -> str:
 
 @register_formatter("pull_requests")
 def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
-    title = f"Pull Requests - {len(data)} pull requests" if data else "Pull Requests"
+    title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
     return _format_as_markdown(
         data,
         title=title,

@@ -320,7 +320,25 @@ def _render_nested_sections(
         lines.append("")
 
 
-def _format_dict_as_markdown(  # noqa: PLR0912 - 14+ branches justified: scalar/nested, detail, field_filter, allOf, anyOf, render hints
+def _render_list_as_compact_ref(raw_val: list, template: str) -> str:
+    """Render a list of dicts as comma-separated template expansions.
+
+    Each dict item is expanded through *template* via ``str.format(**item)``.
+    Non-dict items and template errors fall back to ``str(item)``.
+    """
+    items: list[str] = []
+    for item in raw_val:
+        if isinstance(item, dict):
+            try:
+                items.append(template.format(**item))
+            except (KeyError, ValueError, TypeError):
+                items.append(str(item))
+        else:
+            items.append(str(item))
+    return ", ".join(items)
+
+
+def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar/nested, detail, field_filter, allOf, anyOf, render hints
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
@@ -362,12 +380,6 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - 14+ branches justified: scalar/
             field_opts = field_filter.get(key, {}) if field_filter else {}
             render_hint = field_opts.get("render", "expand")
 
-            # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-            # tables - keeps the display compact while signalling that the
-            # value is a component reference, not a literal string.
-            if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
-                raw_val = f"$ref:{raw_val['$ref']}"
-
             # Render hints override nesting — compact_ref and badge
             # always produce flat table rows regardless of value type
             # or detail level.
@@ -375,12 +387,21 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - 14+ branches justified: scalar/
                 template = field_opts.get("template", "{id}")
                 try:
                     formatted = template.format(**raw_val)
-                except (KeyError, ValueError, AttributeError):
+                except (KeyError, ValueError, TypeError):
                     formatted = str(raw_val)
+                flat.append((label, formatted))
+            elif render_hint == "compact_ref" and isinstance(raw_val, list):
+                template = field_opts.get("template", "{name}")
+                formatted = _render_list_as_compact_ref(raw_val, template)
                 flat.append((label, formatted))
             elif render_hint == "badge":
                 flat.append((label, "Yes" if raw_val else "No"))
             elif isinstance(raw_val, (dict, list)):
+                # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
+                # tables — only on the expand path; render hints
+                # (compact_ref, badge) already handled their cases above.
+                if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
+                    raw_val = f"$ref:{raw_val['$ref']}"
                 if detail == "concise" and _depth >= 1:
                     # Collapse nested objects to compact type references
                     collapsed = _collapse_value(raw_val, prop_schema or effective)

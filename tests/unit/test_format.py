@@ -923,6 +923,81 @@ class TestFormatAsMarkdown:
         assert "## User" in result or "**User:**" in result
         assert "dev" in result
 
+    # ── List compact_ref ──────────────────────────────────────────────────────────
+
+    def test_compact_ref_on_list_renders_comma_separated(self):
+        """compact_ref on a list renders comma-separated template values."""
+        data = {"labels": [{"name": "bug"}, {"name": "enhancement"}]}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels | bug, enhancement |" in result
+        assert "## Labels" not in result
+
+    def test_compact_ref_on_list_single_item(self):
+        """compact_ref on a single-element list works correctly."""
+        data = {"labels": [{"name": "bug"}]}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels | bug |" in result
+
+    def test_compact_ref_on_list_empty(self):
+        """compact_ref on an empty list renders empty string."""
+        data = {"labels": []}
+        field_filter = {
+            "labels": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Labels |  |" in result
+
+    def test_compact_ref_on_list_fallback_on_missing_key(self):
+        """When template is missing a key, compact_ref list falls back to str()."""
+        data = {"items": [{"id": 1}, {"id": 2}]}
+        field_filter = {
+            "items": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # Should not crash; falls back to str representation
+        assert "| Items |" in result
+
+    def test_compact_ref_on_list_non_dict_items(self):
+        """compact_ref on a list of scalars renders each as str."""
+        data = {"tags": ["alpha", "beta"]}
+        field_filter = {
+            "tags": {"render": "compact_ref", "template": "{name}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        assert "| Tags | alpha, beta |" in result
+
+    def test_dollar_ref_flattened_only_on_expand_path(self):
+        """$ref flattening happens after render hints so compact_ref still works."""
+        data = {
+            "base": {"$ref": "FakeRef"},
+        }
+        # With an explicit compact_ref, the $ref dict should be handled
+        # by compact_ref (template likely fails → str fallback), not
+        # flattened to "$ref:FakeRef".
+        field_filter = {
+            "base": {"render": "compact_ref", "template": "{ref}"},
+        }
+        result = _format_as_markdown(data, field_filter=field_filter)
+        # Should render as the str fallback (dict doesn't have 'ref' key)
+        assert "| Base | {'$ref': 'FakeRef'}" in result or "| Base |" in result
+        # Should NOT show the $ref flattened syntax
+        assert "$ref:FakeRef" not in result
+
+    def test_dollar_ref_flattened_on_expand_path(self):
+        """$ref flattening still works on the default expand path."""
+        data = {
+            "user": {"$ref": "User"},
+        }
+        result = _format_as_markdown(data)
+        # Without explicit render hints, the $ref dict is flattened
+        assert "$ref:User" in result
+
 
 class TestFormatType:
     """Tests for _format_type — type enrichment with enum/array info."""

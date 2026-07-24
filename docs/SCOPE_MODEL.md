@@ -110,12 +110,15 @@ Logic:
 `component.meta["required_scope"]`, alongside other metadata.
 
 **On resources**: auto-generated resources (`resources/auto.py`) and custom
-resources (`resources/custom.py`) both use the `scope_meta()` helper to set
-`meta={"required_scope": "..."}` on the resource registration.
+resources (`resources/custom.py`) now use the ``ResourceMeta`` dataclass
+(``resources/meta.py``) for typed registration metadata.  ``ResourceMeta``
+wraps ``required_scope`` alongside ``size_hint``, ``default_detail``, and
+``optional_params``, serialised via ``.to_dict()``.  The legacy ``scope_meta()``
+helper is still available for cases that don't need the new discovery fields.
 
 ---
 
-## `scope_meta()` helper
+## `scope_meta()` helper (legacy)
 
 **Module**: `gitea_mcp_server/scope.py`
 
@@ -127,12 +130,21 @@ def scope_meta(required_scope: str | None) -> dict[str, Any]:
 A one-line factory that signals *intent* — "this dict is scope metadata" —
 rather than inlining `{"required_scope": x}` at every call site.
 
+Prefer ``ResourceMeta`` (``resources/meta.py``) for new resources — it wraps
+``required_scope`` with ``size_hint``, ``default_detail``, and
+``optional_params``, producing metadata visible to agents via
+``list_resources``.  ``scope_meta()`` remains for legacy static resources and
+cases that don't need the new discovery fields.
+
 Used in 14 places across `resources/auto.py` and `resources/custom.py`,
 typically merged into a larger metadata dict:
 
 ```python
-# From resources/custom.py
+# Legacy pattern (scope_meta)
 _meta = {"cache_ttl": CACHE_TTL_REPOSITORY, **scope_meta("read:repository")}
+
+# Modern pattern (ResourceMeta)
+_meta = ResourceMeta(required_scope="read:repository", size_hint="medium").to_dict()
 ```
 
 The re-export chain (`scope.py` → `resources/scope.py` → `resources/__init__.py`)

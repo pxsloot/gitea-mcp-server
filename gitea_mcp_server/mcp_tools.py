@@ -99,12 +99,24 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             base: ResourceEntry,
             meta: dict[str, Any] | None,
         ) -> ResourceEntry:
-            """Add required_scope and optional_params to a resource entry from metadata."""
+            """Add metadata fields to a resource entry from the resource's meta dict.
+
+            Extracts discoverable fields that agents can inspect before calling
+            ``read_resource``: ``required_scope``, ``optional_params``,
+            ``size_hint``, and ``default_detail``.  All are optional — missing
+            fields are simply absent from the entry.
+            """
             base["required_scope"] = meta.get("required_scope") if meta else None
             if meta:
                 optional_params = meta.get("optional_params")
                 if optional_params:
                     base["optional_params"] = optional_params
+                size_hint = meta.get("size_hint")
+                if size_hint:
+                    base["size_hint"] = size_hint
+                default_detail = meta.get("default_detail")
+                if default_detail:
+                    base["default_detail"] = default_detail
             return base
 
         # Process concrete resources
@@ -338,6 +350,20 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                                 ],
                                 "description": "Optional query parameters the resource accepts",
                             },
+                            "size_hint": {
+                                "oneOf": [
+                                    {"type": "string", "enum": ["tiny", "small", "medium", "large"]},
+                                    {"type": "null"},
+                                ],
+                                "description": "Estimated token cost (tiny/small/medium/large)",
+                            },
+                            "default_detail": {
+                                "oneOf": [
+                                    {"type": "string", "enum": ["full", "concise"]},
+                                    {"type": "null"},
+                                ],
+                                "description": "Recommended detail level (full/concise)",
+                            },
                         },
                     },
                     "description": "List of resource metadata entries",
@@ -428,6 +454,10 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - `optional_params`: Optional list of dicts describing available query parameters
       (e.g., ``[{"name": "state", "type": "string", "values": ["open", "closed"]}]``),
       or absent if the resource has no optional parameters
+    - `size_hint`: Estimated token cost — ``"tiny"`` | ``"small"`` | ``"medium"`` | ``"large"``
+      (absent if not set). Check this before reading expensive resources.
+    - `default_detail`: Recommended detail level — ``"full"`` | ``"concise"``
+      (absent if not set)
 
     ## Usage Example
 
@@ -461,6 +491,10 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
       - `"read:repository"` - needs read access to repositories
       - `"read:issue"` - needs read access to issues
       - `null` - requires no specific scope (public info)
+    - The `size_hint` field estimates token cost. For ``"large"`` resources
+      (e.g., ``pulls``, ``issues``), pass ``detail="concise"`` to save tokens.
+    - The `default_detail` field recommends a detail level. Respect it unless
+      you specifically need full expansion.
     - Use the `format` parameter to control output: ``format=markdown`` (default),
       ``format=json``, or ``format=raw``.
 
@@ -474,7 +508,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
                 "mimeType": "application/json",
                 "type": "template",
                 "tags": ["wrapper", "repository"],
-                "required_scope": "read:repository"
+                "required_scope": "read:repository",
+                "size_hint": "medium",
+                "default_detail": "full"
             },
             ...
         ]

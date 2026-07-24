@@ -32,8 +32,8 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
     scope-filtered, deprecated, or config-excluded are skipped.
 
     Custom resources are filtered by ``available_scopes`` -- they declare their
-    own ``required_scope`` via ``scope_meta()`` and are skipped when the token
-    lacks that scope.
+    own ``required_scope`` via ``ResourceMeta`` (or the legacy ``scope_meta``
+    helper) and are skipped when the token lacks that scope.
 
     Args:
         mcp: The FastMCP server instance.

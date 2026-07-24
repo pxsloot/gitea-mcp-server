@@ -31,7 +31,8 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.scope import has_sufficient_scope, scope_meta
+from gitea_mcp_server.resources.meta import ResourceMeta
+from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
@@ -299,7 +300,7 @@ def _build_query_param_signature(
     return handler_sig.replace(parameters=[*new_params, kwargs_param])
 
 
-def make_api_resource(  # noqa: PLR0913, PLR0912 -- 16 params + branching are intentional: all independent registration axes
+def make_api_resource(  # noqa: PLR0913 -- params are all independent registration axes
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
@@ -318,6 +319,8 @@ def make_api_resource(  # noqa: PLR0913, PLR0912 -- 16 params + branching are in
     query_params: list[str] | None = None,
     query_param_validators: dict[str, list[str]] | None = None,
     optional_params: list[dict[str, Any]] | None = None,
+    size_hint: str | None = None,
+    default_detail: str | None = None,
 ) -> Callable[..., Any] | None:
     """Create and register a custom resource from an API endpoint.
 
@@ -391,6 +394,14 @@ def make_api_resource(  # noqa: PLR0913, PLR0912 -- 16 params + branching are in
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
             and ``"description"`` are recommended.  Attached to resource
             metadata under ``meta["optional_params"]``.
+        size_hint: Estimated token cost of the resource content.
+            One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
+            When not set, auto-derived from the response schema.
+        default_detail: Recommended detail level for this resource.
+            One of ``"full"`` or ``"concise"``.
+            When not set, auto-derived from ``size_hint`` (``large``
+            resources default to ``concise``; everything else to
+            ``full``).
 
     Returns:
         The registered handler callable, or ``None`` if scope-filtered.
@@ -436,14 +447,16 @@ def make_api_resource(  # noqa: PLR0913, PLR0912 -- 16 params + branching are in
                 )
 
     # Build resource metadata (passed to ``mcp.resource(meta=...)``).
-    meta: dict[str, Any] = {}
-    scope_meta_dict = scope_meta(scope)
-    if scope_meta_dict:
-        meta.update(scope_meta_dict)
-    if cache_ttl is not None:
-        meta["cache_ttl"] = cache_ttl
-    if optional_params:
-        meta["optional_params"] = optional_params
+    # Use ResourceMeta.for_schema for typed construction with auto-derivation
+    # of size_hint from the response schema when not explicitly provided.
+    meta = ResourceMeta.for_schema(
+        response_schema,
+        required_scope=scope,
+        cache_ttl=cache_ttl,
+        optional_params=optional_params or None,
+        size_hint=size_hint,
+        default_detail=default_detail,
+    ).to_dict()
 
     # Build tags.
     resource_tags: set[str] = set(tags) if tags else set()

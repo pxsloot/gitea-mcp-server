@@ -49,7 +49,8 @@ tests/
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
-│   ├── test_resources.py
+│   ├── test_resource_meta.py
+├── test_resources.py
 │   ├── test_scope.py
 │   ├── test_search_engine.py
 │   ├── test_spec_loader.py

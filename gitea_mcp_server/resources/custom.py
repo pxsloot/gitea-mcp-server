@@ -31,7 +31,8 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import make_api_resource
-from gitea_mcp_server.resources.scope import has_sufficient_scope, scope_meta
+from gitea_mcp_server.resources.meta import ResourceMeta
+from gitea_mcp_server.resources.scope import has_sufficient_scope
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +290,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         tags={"wrapper", "readme"},
         error_message="README not found for repository '{owner}/{repo}'.",
         handler_hook=_decode_base64_content,
+        query_params=["ref"],
+        optional_params=[{"name": "ref", "type": "string",
+                          "description": "The name of the commit/branch/tag"}],
         available_scopes=available_scopes,
     )
 
@@ -301,6 +305,8 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         tags={"wrapper", "files"},
         error_message="File '{path}' not found in repository '{owner}/{repo}'.",
         query_params=["ref"],
+        optional_params=[{"name": "ref", "type": "string",
+                          "description": "The name of the commit/branch/tag"}],
         available_scopes=available_scopes,
         handler_hook=_decode_base64_content,
     )
@@ -314,7 +320,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     # ── version ─────────────────────────────────────────────────────────────
 
-    _meta = scope_meta(None)
+    _meta = ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict()
 
     @_register("gitea://version", mime_type="text/plain", tags={"wrapper", "server"}, meta=_meta)
     async def get_version() -> ResourceResult:
@@ -323,7 +329,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     # ── token scopes ────────────────────────────────────────────────────────
 
-    _meta = scope_meta("read:user")
+    _meta = ResourceMeta(required_scope="read:user", size_hint="tiny", default_detail="full").to_dict()
 
     @_register(
         "gitea://token/scopes", mime_type="application/json", tags={"wrapper", "server"}, meta=_meta
@@ -343,7 +349,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     # ── server info (only when pre-built markdown is available) ───────────
 
     if server_info_md is not None:
-        _meta = scope_meta(None)
+        _meta = ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict()
 
         @_register(
             "gitea://server/info", mime_type="text/markdown", tags={"wrapper", "server"}, meta=_meta

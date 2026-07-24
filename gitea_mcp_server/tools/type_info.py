@@ -24,7 +24,7 @@ from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA_CONCISE
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.scope import scope_meta
+from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.schemas import (
     _collect_refs,
     _deep_resolve_schema,
@@ -493,7 +493,7 @@ def register_type_tools(
     # Tools and resources outside the agent's token scope are filtered at
     # spec-prep time (route_map_fn), so the type index cannot leak data
     # from unreachable endpoints.
-    _type_meta = scope_meta(None)
+    _type_meta = ResourceMeta(required_scope=None, size_hint="medium", default_detail="full").to_dict()
 
     mcp.resource(
         uri="gitea://types/{typeName}",

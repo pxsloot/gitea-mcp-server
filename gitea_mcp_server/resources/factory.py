@@ -368,6 +368,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     uri: str,
     api_path: str,
     method: str = "GET",
+    name: str | None = None,
     format_hint: str | None = None,
     handler_hook: Callable[[Any], Awaitable[str]] | None = None,
     resource_type: str | None = None,
@@ -552,9 +553,8 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         default_detail=default_detail,
     ).to_dict()
 
-    # Build tags.
+    # Build tags (caller-owned; "wrapper" added by callers that have format_hint).
     resource_tags: set[str] = set(tags) if tags else set()
-    resource_tags.add("wrapper")
 
     # Default error message and resource type.
     if error_message is None:
@@ -693,6 +693,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     mime_type = "text/plain" if handler_hook else "application/json"
     mcp.resource(
         uri,
+        name=name,
         mime_type=mime_type,
         tags=resource_tags,
         meta=meta if meta else None,

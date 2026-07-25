@@ -1154,7 +1154,7 @@ class TestContextMetaKeysPipeline:
     @pytest.fixture
     def issues_resource(self, mock_client):
         """Register and return the issues resource handler with context_meta_keys."""
-        from gitea_mcp_server.resources.factory import make_api_resource
+        from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, object] = {}
@@ -1176,11 +1176,13 @@ class TestContextMetaKeysPipeline:
             resource_type="issues",
             scope="read:repository",
             tags={"issues"},
-            query_params=["state"],
-            query_param_validators={"state": ["open", "closed"]},
-            context_params=["type"],
-            context_param_validators={"type": ["issues", "pulls"]},
-            context_meta_keys=["type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                query_param_validators={"state": ["open", "closed"]},
+                context_params=["type"],
+                context_param_validators={"type": ["issues", "pulls"]},
+                context_meta_keys=["type"],
+            ),
         )
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
@@ -1223,7 +1225,7 @@ class TestContextMetaKeysPipeline:
         """Handler does NOT forward any extra meta when context_meta_keys is absent."""
         from fastmcp.resources import ResourceResult
 
-        from gitea_mcp_server.resources.factory import make_api_resource
+        from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, object] = {}
@@ -1245,7 +1247,9 @@ class TestContextMetaKeysPipeline:
             format_hint="repository",
             scope="read:repository",
             tags={"test"},
-            query_params=["state"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+            ),
         )
         handler = registered.get("gitea://repos/{owner}/{repo}/test")
         assert handler is not None
@@ -1315,7 +1319,7 @@ class TestContextMetaKeysPipeline:
         """Handler with context_meta_keys=["owner","repo"] forwards path params to meta."""
         from fastmcp.resources import ResourceResult
 
-        from gitea_mcp_server.resources.factory import make_api_resource
+        from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
         mcp = MagicMock(spec=FastMCP)
@@ -1338,7 +1342,9 @@ class TestContextMetaKeysPipeline:
             scope="read:issue",
             tags={"labels"},
             error_message="Labels not found for repository '{owner}/{repo}'.",
-            context_meta_keys=["owner", "repo"],
+            param_config=ResourceParamConfig(
+                context_meta_keys=["owner", "repo"],
+            ),
         )
         handler = registered.get("gitea://repos/{owner}/{repo}/labels")
         assert handler is not None

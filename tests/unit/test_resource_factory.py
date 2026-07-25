@@ -11,6 +11,7 @@ from fastmcp.resources import ResourceResult
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.resources.custom import _decode_base64_content
 from gitea_mcp_server.resources.factory import (
+    ResourceParamConfig,
     _auto_derive_schema,
     _registered_uris,
     make_api_resource,
@@ -497,7 +498,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            query_params=["state"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+            ),
         )
 
         result = await handler(owner="o", repo="r", state="open")
@@ -518,7 +521,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            query_params=["state"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+            ),
         )
 
         await handler(owner="o", repo="r", state="open")
@@ -538,7 +543,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            query_params=["state"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+            ),
         )
 
         await handler(owner="o", repo="r", state=None)
@@ -558,8 +565,10 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            query_params=["state"],
-            query_param_validators={"state": ["open", "closed"]},
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                query_param_validators={"state": ["open", "closed"]},
+            ),
             resource_type="issues",
         )
 
@@ -583,8 +592,10 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            query_params=["state"],
-            query_param_validators={"state": ["open", "closed"]},
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                query_param_validators={"state": ["open", "closed"]},
+            ),
         )
 
         result = await handler(owner="o", repo="r", state="open")
@@ -602,7 +613,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
-            query_params=["draft", "q"],
+            param_config=ResourceParamConfig(
+                query_params=["draft", "q"],
+            ),
         )
 
         await handler(owner="o", repo="r", draft="true", q="search term")
@@ -621,7 +634,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
-            query_params=["draft", "q"],
+            param_config=ResourceParamConfig(
+                query_params=["draft", "q"],
+            ),
         )
 
         await handler(owner="o", repo="r", draft=None, q="urgent")
@@ -640,7 +655,9 @@ class TestMakeApiResourceQueryParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
-            query_params=["draft", "q"],
+            param_config=ResourceParamConfig(
+                query_params=["draft", "q"],
+            ),
         )
 
         await handler(owner="o", repo="r", draft="true", q=None)
@@ -670,7 +687,9 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}/labels",
             api_path="/repos/{owner}/{repo}/labels",
             format_hint="labels",
-            context_meta_keys=["owner", "repo"],
+            param_config=ResourceParamConfig(
+                context_meta_keys=["owner", "repo"],
+            ),
         )
 
         result = await handler(owner="myorg", repo="myrepo")
@@ -693,9 +712,11 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state"],
-            context_params=["type"],
-            context_meta_keys=["owner", "repo", "type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["type"],
+                context_meta_keys=["owner", "repo", "type"],
+            ),
         )
 
         result = await handler(owner="myorg", repo="myrepo", type="pulls")
@@ -723,7 +744,9 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="repository",
-            context_meta_keys=["nonexistent"],
+            param_config=ResourceParamConfig(
+                context_meta_keys=["nonexistent"],
+            ),
         )
 
         result = await handler(owner="o", repo="r")
@@ -747,9 +770,11 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state"],
-            context_params=["type"],
-            context_meta_keys=["type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["type"],
+                context_meta_keys=["type"],
+            ),
         )
 
         result = await handler(owner="o", repo="r", type=None)
@@ -785,8 +810,10 @@ class TestMakeApiResourceContextParams:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state"],
-            context_params=["type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["type"],
+            ),
         )
 
         await handler(owner="myorg", repo="myrepo", state="open", type="pulls")
@@ -810,9 +837,11 @@ class TestMakeApiResourceContextParams:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state"],
-            context_params=["type"],
-            context_meta_keys=["type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["type"],
+                context_meta_keys=["type"],
+            ),
         )
 
         result = await handler(owner="myorg", repo="myrepo", type="pulls")
@@ -834,8 +863,10 @@ class TestMakeApiResourceContextParams:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            context_params=["type"],
-            context_param_validators={"type": ["issues", "pulls"]},
+            param_config=ResourceParamConfig(
+                context_params=["type"],
+                context_param_validators={"type": ["issues", "pulls"]},
+            ),
             resource_type="issues",
         )
 
@@ -860,8 +891,10 @@ class TestMakeApiResourceContextParams:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            context_params=["type"],
-            context_param_validators={"type": ["issues", "pulls"]},
+            param_config=ResourceParamConfig(
+                context_params=["type"],
+                context_param_validators={"type": ["issues", "pulls"]},
+            ),
         )
 
         result = await handler(owner="o", repo="r", type="issues")
@@ -880,8 +913,10 @@ class TestMakeApiResourceContextParams:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state"],
-            context_params=["type"],
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["type"],
+            ),
         )
 
         await handler(owner="o", repo="r", state="open", type="pulls")
@@ -902,8 +937,10 @@ class TestMakeApiResourceContextParams:
                 mcp, client, spec,
                 uri="gitea://repos/{owner}/{repo}/issues",
                 api_path="/repos/{owner}/{repo}/issues",
-                query_params=["type"],
-                context_params=["type"],
+                param_config=ResourceParamConfig(
+                    query_params=["type"],
+                    context_params=["type"],
+                ),
             )
 
 
@@ -920,7 +957,9 @@ class TestMakeApiResourceOptionalParams:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
-            optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+            param_config=ResourceParamConfig(
+                optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+            ),
         )
 
         for args in mcp.resource.call_args_list:
@@ -1101,7 +1140,9 @@ class TestMakeApiResourceHandlerHook:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/files/{path*}",
             api_path="/repos/{owner}/{repo}/contents/{path}",
-            query_params=["ref"],
+            param_config=ResourceParamConfig(
+                query_params=["ref"],
+            ),
             handler_hook=self._hook,
         )
 

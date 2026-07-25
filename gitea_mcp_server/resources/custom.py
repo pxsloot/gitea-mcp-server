@@ -27,7 +27,7 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import make_api_resource
+from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.scope import has_sufficient_scope
 
@@ -165,13 +165,15 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_RELEASES,
         tags={"wrapper", "releases"},
         error_message="Repository '{owner}/{repo}' not found or has no releases.",
-        query_params=["draft", "q"],
-        optional_params=[
-            {"name": "draft", "type": "boolean",
-             "description": "Filter (exclude/include) drafts"},
-            {"name": "q", "type": "string",
-             "description": "Search string"},
-        ],
+        param_config=ResourceParamConfig(
+            query_params=["draft", "q"],
+            optional_params=[
+                {"name": "draft", "type": "boolean",
+                 "description": "Filter (exclude/include) drafts"},
+                {"name": "q", "type": "string",
+                 "description": "Search string"},
+            ],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -184,7 +186,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:issue",
         tags={"wrapper", "labels"},
         error_message="Labels not found for repository '{owner}/{repo}'.",
-        context_meta_keys=["owner", "repo"],
+        param_config=ResourceParamConfig(
+            context_meta_keys=["owner", "repo"],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -202,16 +206,18 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:repository",
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        context_params=["type"],
-        context_param_validators={"type": ["issues", "pulls"]},
-        optional_params=[
-            {"name": "state", "type": "string", "values": ["open", "closed"]},
-            {"name": "type", "type": "string", "values": ["issues", "pulls"],
-             "description": "Filter display heading by type (issues / pulls)"},
-        ],
-        context_meta_keys=["type"],
+        param_config=ResourceParamConfig(
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
+            optional_params=[
+                {"name": "state", "type": "string", "values": ["open", "closed"]},
+                {"name": "type", "type": "string", "values": ["issues", "pulls"],
+                 "description": "Filter display heading by type (issues / pulls)"},
+            ],
+            context_meta_keys=["type"],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -225,9 +231,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:repository",
         tags={"wrapper", "pull_requests"},
         error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        param_config=ResourceParamConfig(
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -247,9 +255,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         tags={"wrapper", "readme"},
         error_message="README not found for repository '{owner}/{repo}'.",
         handler_hook=_decode_base64_content,
-        query_params=["ref"],
-        optional_params=[{"name": "ref", "type": "string",
-                          "description": "The name of the commit/branch/tag"}],
+        param_config=ResourceParamConfig(
+            query_params=["ref"],
+            optional_params=[{"name": "ref", "type": "string",
+                              "description": "The name of the commit/branch/tag"}],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -261,9 +271,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:repository",
         tags={"wrapper", "files"},
         error_message="File '{path}' not found in repository '{owner}/{repo}'.",
-        query_params=["ref"],
-        optional_params=[{"name": "ref", "type": "string",
-                          "description": "The name of the commit/branch/tag"}],
+        param_config=ResourceParamConfig(
+            query_params=["ref"],
+            optional_params=[{"name": "ref", "type": "string",
+                              "description": "The name of the commit/branch/tag"}],
+        ),
         available_scopes=available_scopes,
         handler_hook=_decode_base64_content,
     )

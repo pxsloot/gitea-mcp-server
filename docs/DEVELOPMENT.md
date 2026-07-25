@@ -340,50 +340,40 @@ When ``handler_hook`` is set:
 - Schema derivation is skipped (no ``response_schema`` in meta)
 - The resource is registered as ``text/plain`` (``format_hint`` is ignored)
 - The hook is called for every response, including strings
-- Query parameters work as usual via ``query_params``
-- Context-only (metadata) parameters via ``context_params` — validated,
-  forwarded to formatters via ``context_meta_keys``, but **never sent to
-  the underlying API**
+- Query parameters work as usual via ``param_config.query_params``
+- Context-only (metadata) parameters via ``param_config.context_params`` —
+  validated, forwarded to formatters via ``param_config.context_meta_keys``,
+  but **never sent to the underlying API**
 
-**Optional query parameters**: For resources with optional query params
-(e.g. ``state`` filter on issues/pulls), set ``query_params=["state"]``.
-The factory extracts those kwargs into a ``params`` dict passed to the
-API call — they are *not* substituted into the path template.  When the
-param must be validated against a fixed set of values (e.g. ``"open"`` /
-``"closed"``), add ``query_param_validators={"state": ["open", "closed"]}``
-and the handler raises a clear ``ResourceError`` on invalid input.
+All parameter-routing configuration is grouped into a ``ResourceParamConfig``
+dataclass.  Key fields:
 
-**Metadata-only (context) parameters**: For params that should appear in
-the URI template (for agent discovery) and be forwarded as context to
-formatters, but **must not** be sent to the API (e.g. ``type`` on the
-issues resource, which is a display hint for the heading), use
-``context_params`` instead of ``query_params``.  Same validation pattern
-via ``context_param_validators``.  A param cannot appear in both lists.
+- ``query_params`` — optional kwargs extracted into the API call's
+  ``params`` dict (e.g. ``["state"]``).  Never substituted into the path.
+- ``query_param_validators`` — allowed values per query param.  Raises
+  ``ResourceError`` on invalid input.
+- ``context_params`` — validated kwargs that appear in the URI template
+  but are **never** sent to the API (e.g. ``["type"]`` for display hints).
+- ``context_param_validators`` — allowed values per context param.
+- ``optional_params`` — discovery metadata for ``list_resources`` output.
+- ``context_meta_keys`` — handler kwargs forwarded into
+  ``ResourceContent.meta`` as display context for formatters.
 
-**Discovery metadata**: Set ``optional_params=[{"name": "state", ...}]``
-to surface available optional parameters in the ``list_resources`` output.
-Each dict should have at least a ``"name"`` key; ``"type"``, ``"values"``,
-and ``"description"`` are recommended.
+A param cannot appear in both ``query_params`` and ``context_params``.
 
-**Handler context for formatters**: When a param value (path or context) is
-useful to the display formatter, list its name in ``context_meta_keys``.
-The factory forwards matching values from all handler kwargs (path params
-like ``owner``/``repo``, query params like ``state``, and context params
-like ``type``) through ``ResourceContent.meta``, where the display
-pipeline surfaces them as the ``extra`` dict for formatters registered
-with ``needs_extra=True``.
-
-Two formatters currently use this:
+Two formatters currently use context metadata:
 
 - **Issues**: reads ``type`` (context param: ``issues`` / ``pulls``) to
   produce the correct title without scanning data for PR detection.
-  ``type`` is a ``context_param`` — validated and forwarded to the
+  ``type`` is a ``context_params`` entry — validated and forwarded to the
   formatter, but never sent to the underlying API.
-- **Labels**: reads ``owner`` and ``repo`` (path params) for the heading
-  (``# Labels for {owner}/{repo}``).
+- **Labels**: reads ``owner`` and ``repo`` (path params forwarded via
+  ``context_meta_keys``) for the heading (``# Labels for {owner}/{repo}``).
 
 See the factory calls in ``custom.py`` for complete examples.  The issues
 resource (context-param forwarding)::
+
+    from gitea_mcp_server.resources.factory import ResourceParamConfig
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
@@ -392,21 +382,26 @@ resource (context-param forwarding)::
         format_hint="issues",
         resource_type="issues",
         scope="read:repository",
-        tags={"issues"},
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        context_params=["type"],
-        context_param_validators={"type": ["issues", "pulls"]},
-        optional_params=[
-            {"name": "state", "type": "string", "values": ["open", "closed"]},
-            {"name": "type", "type": "string", "values": ["issues", "pulls"],
-             "description": "Filter display heading by type (issues / pulls)"},
-        ],
-        context_meta_keys=["type"],
+        tags={"wrapper", "issues"},
+        error_message="Repository '{owner}/{repo}' not found or has no issues.",
+        param_config=ResourceParamConfig(
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
+            optional_params=[
+                {"name": "state", "type": "string", "values": ["open", "closed"]},
+                {"name": "type", "type": "string", "values": ["issues", "pulls"],
+                 "description": "Filter display heading by type (issues / pulls)"},
+            ],
+            context_meta_keys=["type"],
+        ),
         available_scopes=available_scopes,
     )
 
 And the labels resource (path-param forwarding)::
+
+    from gitea_mcp_server.resources.factory import ResourceParamConfig
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
@@ -414,9 +409,11 @@ And the labels resource (path-param forwarding)::
         api_path="/repos/{owner}/{repo}/labels",
         format_hint="labels",
         scope="read:issue",
-        tags={"labels"},
+        tags={"wrapper", "labels"},
         error_message="Labels not found for repository '{owner}/{repo}'.",
-        context_meta_keys=["owner", "repo"],
+        param_config=ResourceParamConfig(
+            context_meta_keys=["owner", "repo"],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -436,7 +433,7 @@ The ``{?param}`` suffix in the URI template serves double duty:
 
 1. **Agent discovery** — FastMCP exposes ``{?param}`` as optional URI parameters.  The display layer (``_clean_resource_uri``) strips them from ``list_resources`` output so agents see clean URIs and discover available params via ``optional_params`` metadata.
 
-2. **Signature validation** — FastMCP validates that every ``{?param}`` in the URI template has a matching optional function parameter.  The factory adds both ``query_params`` and ``context_params`` names to the handler's ``__signature__`` as ``KEYWORD_ONLY`` params with ``default=None``, satisfying this constraint.
+2. **Signature validation** — FastMCP validates that every ``{?param}`` in the URI template has a matching optional function parameter.  The factory adds param names from ``param_config`` (both ``query_params`` and ``context_params``) to the handler's ``__signature__`` as ``KEYWORD_ONLY`` params with ``default=None``, satisfying this constraint.
 
 A param **cannot** be declared in both ``query_params`` and ``context_params`` — the factory raises ``ValueError`` at registration time if you do.
 
@@ -454,6 +451,8 @@ A param **cannot** be declared in both ``query_params`` and ``context_params`` �
 The most fully-featured factory resource (issues) illustrates all categories
 working together::
 
+    from gitea_mcp_server.resources.factory import ResourceParamConfig
+
     make_api_resource(
         mcp, gitea_client, openapi_spec,
         uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
@@ -461,25 +460,26 @@ working together::
         format_hint="issues",
         resource_type="issues",
         scope="read:repository",
-        tags={"issues"},
+        tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
-        query_params=["state"],                  # → API as ?state=
-        query_param_validators={"state": ["open", "closed"]},
-        context_params=["type"],                  # → meta only, never API
-        context_param_validators={"type": ["issues", "pulls"]},
-        optional_params=[
-            {"name": "state", "type": "string", "values": ["open", "closed"]},
-            {"name": "type", "type": "string", "values": ["issues", "pulls"],
-             "description": "Filter display heading by type (issues / pulls)"},
-        ],
-        context_meta_keys=["type"],
+        param_config=ResourceParamConfig(
+            query_params=["state"],              # → API as ?state=
+            query_param_validators={"state": ["open", "closed"]},
+            context_params=["type"],              # → meta only, never API
+            context_param_validators={"type": ["issues", "pulls"]},
+            optional_params=[
+                {"name": "state", "type": "string", "values": ["open", "closed"]},
+                {"name": "type", "type": "string", "values": ["issues", "pulls"],
+                 "description": "Filter display heading by type (issues / pulls)"},
+            ],
+            context_meta_keys=["type"],
+        ),
         available_scopes=available_scopes,
     )
 
-No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
-the factory's ``_registered_uris`` set is populated at registration time
-and combined with the legacy ``_NON_FACTORY_SKIP_URIS`` set (in
-``auto.py``) by ``resource_setup.py`` to form the auto-generation skip list.
+No manual skip-URI maintenance is needed — the factory's ``_registered_uris``
+set is populated at registration time and passed as ``skip_uris`` to
+``register_auto_generated_resources()`` by ``resource_setup.py``.
 
 **Note**: If future patterns repeat (many list resources sharing the same
 structure), consider extracting higher-level wrappers like
@@ -487,18 +487,18 @@ structure), consider extracting higher-level wrappers like
 defaults.  The current approach adds params directly to the factory
 (``Option A``) — straightforward and zero-impact on existing consumers.
 
-### Legacy: Hand-written resource (``@_register`` pattern)
+### Static resources (direct ``mcp.resource()``)
 
 For resources with special logic (base64 decoding, static pre-computed data,
-non-GET methods), use the legacy ``@_register`` decorator pattern:
+non-GET methods) that don't fit the factory pattern, register directly with
+``mcp.resource()``:
 
 1. **Add a display formatter** (if needed) in `tools/display.py`.
-2. **Write the resource function** in ``resources/custom.py`` with the
-   legacy ``@_register`` + ``@resource_handler`` decorators (see existing
-   handlers for reference).
-3. **No skip-URI update needed** -- add the URI to ``auto.py``'s
-   ``_NON_FACTORY_SKIP_URIS`` set if the resource overrides a GET endpoint
-   and is not yet migrated to the factory.
+2. **Write the resource function** in ``resources/custom.py``.
+3. **Register** with a direct ``mcp.resource()`` call — no decorator needed.
+   Add a scope guard inline when the resource requires a token scope.
+4. **No skip-URI update needed** — factory resources are auto-tracked in
+   ``_registered_uris`` and skipped by the auto-generation loop.
 
 ### Pre-computed static resources
 
@@ -523,11 +523,18 @@ register_all_resources(..., version_str=version_str, ...)
 
 ```python
 # In custom.py: handler is a closure — no API call on read
-@_register("gitea://version", mime_type="text/plain", ...)
+# Direct mcp.resource() call — no decorator needed.
 async def get_version() -> ResourceResult:
+    """Get server application version."""
     return ResourceResult(contents=[
-        ResourceContent(content=version_str, mime_type="text/plain")
+        ResourceContent(content=version_str, mime_type="text/plain"),
     ])
+
+mcp.resource(
+    "gitea://version", mime_type="text/plain",
+    tags={"wrapper", "server"},
+    meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
+)(get_version)
 ```
 
 See ``register_custom_resources()`` for the available pre-computed parameters
@@ -620,7 +627,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. The legacy ``scope_meta()`` helper still works but omits the new discovery fields. |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
-| URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``_clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``query_params``, the factory auto-adds params to the handler's ``__signature__``. |
+| URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``_clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``param_config``, the factory auto-adds param names to the handler's ``__signature__``. |
 | Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |
 | Error handling | ``_raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
 | Test pattern | Unit test the core logic; integration test the registration wiring. ``mcp.call_tool()`` returns ``ToolResult`` — access data via ``result.structured_content["result"]``. ``mcp.read_resource()`` returns ``ResourceResult`` — access JSON via ``json.loads(content.contents[0].content)``. Catch ``ToolError`` / ``ResourceError`` from FastMCP, not raw ``ValueError`` |
@@ -736,9 +743,10 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
 2. **Don't import from outside `__all__`** in production code.  Internal
    functions may be renamed/refactored without notice.
 3. **Resource URIs conflict** -- When adding a custom resource that shadows
-   a GET endpoint, either use ``make_api_resource()`` (factory auto-tracks
-   URIs in ``_registered_uris``) or, for legacy ``@_register`` resources,
-   add the URI to ``auto.py``'s ``_NON_FACTORY_SKIP_URIS``.
+   a GET endpoint, use ``make_api_resource()`` (factory auto-tracks URIs
+   in ``_registered_uris``).  For static resources registered via direct
+   ``mcp.resource()`` calls, add the URI to the ``skip_uris`` set that
+   ``resource_setup.py`` passes to ``register_auto_generated_resources``.
 4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't

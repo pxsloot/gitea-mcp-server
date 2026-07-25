@@ -5,18 +5,15 @@ response schema and a ``format_hint`` for the display layer.  No formatting is
 done at the resource level -- that is the responsibility of the unified display
 pipeline in ``mcp_tools.py`` and ``tools/display.py``.
 
-**Phase 1 + 2 + 3 migration**: 10 resources have been moved to ``factory.py``
-via ``make_api_resource()``, including issues/pulls with optional ``state``
-parameters (Phase 2) and readme/files with ``handler_hook`` for base64 decoding
-(Phase 3).  The remaining static resources (version, token/scopes, server/info)
-still use the legacy ``@_register`` pattern and await migration in the next
-architectural phase.
+**Migration complete**: 10 resources are registered via the factory
+(``make_api_resource()``).  The remaining 3 static resources (version,
+token/scopes, server/info) use direct ``mcp.resource()`` calls with inline
+scope guarding -- the legacy ``@_register`` decorator has been removed.
 """
 
 import base64
 import json
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -30,7 +27,7 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import make_api_resource
+from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.scope import has_sufficient_scope
 
@@ -84,11 +81,10 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     parameters are pre-computed at startup -- the handlers return them
     directly without making API calls on read.
 
-    **Phase 1 + 2 + 3**: 10 resources are registered via ``make_api_resource()``
-    (factory pattern with auto schema derivation).  Phases 1-2 cover JSON
-    resources; Phase 3 adds ``handler_hook`` support for text/plain resources
-    (readme, files) with base64 decoding.  The remaining static resources
-    (version, token/scopes, server/info) use the legacy ``@_register`` pattern.
+    **Factory + static**: 10 resources are registered via ``make_api_resource()``
+    (factory pattern with auto schema derivation).  The remaining 3 static
+    resources (version, token/scopes, server/info) are registered directly
+    with ``mcp.resource()`` and inline scope guarding.
 
     Args:
         mcp: The FastMCP server instance.
@@ -101,55 +97,8 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         server_info_md: Pre-built server info markdown, or None.
     """
 
-    def _register(
-        uri: str, mime_type: str, tags: set[str], meta: dict[str, Any] | None
-    ) -> Callable[
-        [Callable[..., Awaitable[ResourceResult]]], Callable[..., Awaitable[ResourceResult]]
-    ]:
-        # Check scope before registering: skip if the token lacks the
-        # required scope for this resource.
-        #
-        # Note: ``available_scopes`` is derived from the token at startup
-        # and is effectively immutable within a server session -- changing
-        # scopes requires a new token and a full server restart.  The
-        # captured closure is therefore stable for the process lifetime.
-        required_scope = (meta or {}).get("required_scope")
-        if (
-            required_scope is not None
-            and available_scopes is not None
-            and not has_sufficient_scope(required_scope, available_scopes)
-        ):
-            logger.debug(
-                "Skipping custom resource %s: requires %s",
-                uri,
-                required_scope,
-            )
-
-            # Return a no-op passthrough instead of registering with
-            # mcp.resource().  Since _register is used as a decorator
-            # (outermost on each resource handler), returning passthrough
-            # means the decorated function is returned unmodified -- it
-            # simply never gets wired into FastMCP.  The inner decorator
-            # (resource_handler) is still applied for error handling, but
-            # without an mcp.resource() call, the URI template is never
-            # exposed to clients.
-            def passthrough(
-                func: Callable[..., Awaitable[ResourceResult]],
-            ) -> Callable[..., Awaitable[ResourceResult]]:
-                return func
-
-            return passthrough
-
-        def deco(
-            func: Callable[..., Awaitable[ResourceResult]],
-        ) -> Callable[..., Awaitable[ResourceResult]]:
-            mcp.resource(uri, mime_type=mime_type, tags=tags, meta=meta)(func)
-            return func
-
-        return deco
-
     # ======================================================================
-    # FACTORY RESOURCES (Phase 1)
+    # FACTORY RESOURCES
     # These use ``make_api_resource()`` which auto-derives the response
     # schema and handles str/JSON branching automatically.
     # ======================================================================
@@ -162,7 +111,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="repository",
         scope="read:repository",
         cache_ttl=CACHE_TTL_REPOSITORY,
-        tags={"repository"},
+        tags={"wrapper", "repository"},
         error_message="Repository '{owner}/{repo}' not found.",
         available_scopes=available_scopes,
     )
@@ -175,7 +124,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="user",
         scope="read:user",
         cache_ttl=CACHE_TTL_USERS,
-        tags={"user"},
+        tags={"wrapper", "user"},
         error_message="User '{username}' not found.",
         available_scopes=available_scopes,
     )
@@ -188,7 +137,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="user",
         scope="read:user",
         cache_ttl=CACHE_TTL_USERS,
-        tags={"user"},
+        tags={"wrapper", "user"},
         error_message="Current user not found or not authenticated.",
         available_scopes=available_scopes,
     )
@@ -201,7 +150,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="user",
         scope="read:organization",
         cache_ttl=CACHE_TTL_USERS,
-        tags={"organization"},
+        tags={"wrapper", "organization"},
         error_message="Organization '{orgname}' not found.",
         available_scopes=available_scopes,
     )
@@ -214,15 +163,17 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="release",
         scope="read:repository",
         cache_ttl=CACHE_TTL_RELEASES,
-        tags={"releases"},
+        tags={"wrapper", "releases"},
         error_message="Repository '{owner}/{repo}' not found or has no releases.",
-        query_params=["draft", "q"],
-        optional_params=[
-            {"name": "draft", "type": "boolean",
-             "description": "Filter (exclude/include) drafts"},
-            {"name": "q", "type": "string",
-             "description": "Search string"},
-        ],
+        param_config=ResourceParamConfig(
+            query_params=["draft", "q"],
+            optional_params=[
+                {"name": "draft", "type": "boolean",
+                 "description": "Filter (exclude/include) drafts"},
+                {"name": "q", "type": "string",
+                 "description": "Search string"},
+            ],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -233,14 +184,16 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         method="GET",
         format_hint="labels",
         scope="read:issue",
-        tags={"labels"},
+        tags={"wrapper", "labels"},
         error_message="Labels not found for repository '{owner}/{repo}'.",
-        context_meta_keys=["owner", "repo"],
+        param_config=ResourceParamConfig(
+            context_meta_keys=["owner", "repo"],
+        ),
         available_scopes=available_scopes,
     )
 
     # ======================================================================
-    # FACTORY RESOURCES (Phase 2 — issues and pulls with optional params)
+    # FACTORY RESOURCES (with optional query and context params)
     # ======================================================================
 
     make_api_resource(
@@ -251,18 +204,20 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="issues",
         resource_type="issues",
         scope="read:repository",
-        tags={"issues"},
+        tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        context_params=["type"],
-        context_param_validators={"type": ["issues", "pulls"]},
-        optional_params=[
-            {"name": "state", "type": "string", "values": ["open", "closed"]},
-            {"name": "type", "type": "string", "values": ["issues", "pulls"],
-             "description": "Filter display heading by type (issues / pulls)"},
-        ],
-        context_meta_keys=["type"],
+        param_config=ResourceParamConfig(
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
+            optional_params=[
+                {"name": "state", "type": "string", "values": ["open", "closed"]},
+                {"name": "type", "type": "string", "values": ["issues", "pulls"],
+                 "description": "Filter display heading by type (issues / pulls)"},
+            ],
+            context_meta_keys=["type"],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -274,16 +229,18 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         format_hint="pull_requests",
         resource_type="pulls",
         scope="read:repository",
-        tags={"pull_requests"},
+        tags={"wrapper", "pull_requests"},
         error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        param_config=ResourceParamConfig(
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        ),
         available_scopes=available_scopes,
     )
 
     # ======================================================================
-    # FACTORY RESOURCES (Phase 3 — text/plain via handler_hook)
+    # FACTORY RESOURCES (text/plain via handler_hook)
     # These use make_api_resource() with handler_hook for base64 decoding
     # of Gitea ContentsResponse JSON into plain text.
     # ======================================================================
@@ -298,9 +255,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         tags={"wrapper", "readme"},
         error_message="README not found for repository '{owner}/{repo}'.",
         handler_hook=_decode_base64_content,
-        query_params=["ref"],
-        optional_params=[{"name": "ref", "type": "string",
-                          "description": "The name of the commit/branch/tag"}],
+        param_config=ResourceParamConfig(
+            query_params=["ref"],
+            optional_params=[{"name": "ref", "type": "string",
+                              "description": "The name of the commit/branch/tag"}],
+        ),
         available_scopes=available_scopes,
     )
 
@@ -312,36 +271,35 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:repository",
         tags={"wrapper", "files"},
         error_message="File '{path}' not found in repository '{owner}/{repo}'.",
-        query_params=["ref"],
-        optional_params=[{"name": "ref", "type": "string",
-                          "description": "The name of the commit/branch/tag"}],
+        param_config=ResourceParamConfig(
+            query_params=["ref"],
+            optional_params=[{"name": "ref", "type": "string",
+                              "description": "The name of the commit/branch/tag"}],
+        ),
         available_scopes=available_scopes,
         handler_hook=_decode_base64_content,
     )
 
     # ======================================================================
-    # STATIC RESOURCES (legacy @_register pattern)
-    # These use pre-computed data (version, scopes, server info) and will
-    # be migrated to the factory or static resource handling in a future
-    # architectural phase.
+    # STATIC RESOURCES
+    # These use pre-computed data (version, scopes, server info) and are
+    # registered directly with mcp.resource() — no factory needed since
+    # they don't call the Gitea API.
     # ======================================================================
 
     # ── version ─────────────────────────────────────────────────────────────
 
-    _meta = ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict()
-
-    @_register("gitea://version", mime_type="text/plain", tags={"wrapper", "server"}, meta=_meta)
     async def get_version() -> ResourceResult:
         """Get server application version."""
         return ResourceResult(contents=[ResourceContent(content=version_str, mime_type="text/plain")])
 
+    mcp.resource(
+        "gitea://version", mime_type="text/plain", tags={"wrapper", "server"},
+        meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
+    )(get_version)
+
     # ── token scopes ────────────────────────────────────────────────────────
 
-    _meta = ResourceMeta(required_scope="read:user", size_hint="tiny", default_detail="full").to_dict()
-
-    @_register(
-        "gitea://token/scopes", mime_type="application/json", tags={"wrapper", "server"}, meta=_meta
-    )
     async def get_active_token_scopes() -> ResourceResult:
         """Get the scopes of the active Gitea token.
 
@@ -354,20 +312,30 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             mime_type="application/json",
         )])
 
+    _meta_scopes = ResourceMeta(required_scope="read:user", size_hint="tiny", default_detail="full").to_dict()
+    if available_scopes is None or has_sufficient_scope("read:user", available_scopes):
+        mcp.resource(
+            "gitea://token/scopes", mime_type="application/json",
+            tags={"wrapper", "server"}, meta=_meta_scopes,
+        )(get_active_token_scopes)
+    else:
+        logger.debug("Skipping gitea://token/scopes: requires read:user")
+
     # ── server info (only when pre-built markdown is available) ───────────
 
     if server_info_md is not None:
-        _meta = ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict()
-
-        @_register(
-            "gitea://server/info", mime_type="text/markdown", tags={"wrapper", "server"}, meta=_meta
-        )
         async def get_server_info() -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
             return ResourceResult(contents=[ResourceContent(
                 content=server_info_md,
                 mime_type="text/markdown",
             )])
+
+        mcp.resource(
+            "gitea://server/info", mime_type="text/markdown",
+            tags={"wrapper", "server"},
+            meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
+        )(get_server_info)
 
 
 __all__ = [

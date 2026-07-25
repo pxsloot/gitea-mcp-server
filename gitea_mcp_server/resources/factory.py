@@ -28,8 +28,10 @@ Parameter                         Default        Purpose
                                                  and optional ``{?a,b}`` query suffix.
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
+``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
+                                                  When ``None``, FastMCP auto-generates one.
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
-                                                 Ignored when ``handler_hook`` is set.
+                                                  Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
                                                  response.  Skips schema derivation, registers as
                                                  ``text/plain``.
@@ -38,22 +40,16 @@ Parameter                         Default        Purpose
 ``scope``                         ``None``       Required token scope.  Resource silently skipped when
                                                  absent from ``available_scopes``.
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
-``tags``                          ``set()``      Tags for discovery.  ``"wrapper"`` always added.
+``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
+                                                  must be included explicitly when the resource has
+                                                  a ``format_hint`` (i.e., a markdown formatter).
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
                                  not found."``  placeholders.
-``query_params``                  ``None``       Kwarg names sent as ``?key=value`` to the API.  Not
-                                                 substituted into the path.
-``query_param_validators``        ``None``       Allowed values per query param.  Raises
-                                                 ``ResourceError`` on invalid input.
-``context_params``                ``None``       Kwarg names that are validated and forwarded to
-                                                 formatters, but **never** sent to the API.  Must not
-                                                 overlap with ``query_params``.
-``context_param_validators``      ``None``       Allowed values per context param.
-``optional_params``               ``None``       Discovery metadata for ``list_resources``.  Each dict
-                                                 needs at least ``"name"``.
-``context_meta_keys``             ``None``       Handler kwarg names forwarded into
-                                                 ``ResourceContent.meta`` as the ``extra`` dict for
-                                                 formatters.
+``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6
+                                                  parameter-routing fields (query_params,
+                                                  query_param_validators, context_params,
+                                                  context_param_validators, context_meta_keys,
+                                                  optional_params).  All fields optional.
 ``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
 ``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
 ``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
@@ -66,6 +62,7 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -80,6 +77,23 @@ from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ResourceParamConfig:
+    """Groups parameter-routing configuration for ``make_api_resource``.
+
+    All fields are optional — create only what you need::
+
+        ResourceParamConfig(query_params=["state"], optional_params=[...])
+    """
+    query_params: list[str] | None = None
+    query_param_validators: dict[str, list[str]] | None = None
+    context_params: list[str] | None = None
+    context_param_validators: dict[str, list[str]] | None = None
+    context_meta_keys: list[str] | None = None
+    optional_params: list[dict[str, Any]] | None = None
+
 
 # Populated at registration time by ``make_api_resource()``.
 # Starts empty; grows as ``register_custom_resources()`` calls
@@ -317,6 +331,8 @@ def _set_handler_docstring(
                     docstring += "\n\n" + description
                 if docstring:
                     handler.__doc__ = docstring
+                else:
+                    handler.__doc__ = f"Resource for {method} {api_path}"
 
     if handler.__doc__ is None:
         handler.__doc__ = f"Resource for {method} {api_path}"
@@ -368,6 +384,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     uri: str,
     api_path: str,
     method: str = "GET",
+    name: str | None = None,
     format_hint: str | None = None,
     handler_hook: Callable[[Any], Awaitable[str]] | None = None,
     resource_type: str | None = None,
@@ -376,12 +393,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     tags: set[str] | None = None,
     error_message: str | None = None,
     available_scopes: set[str] | None = None,
-    query_params: list[str] | None = None,
-    query_param_validators: dict[str, list[str]] | None = None,
-    context_params: list[str] | None = None,
-    context_param_validators: dict[str, list[str]] | None = None,
-    optional_params: list[dict[str, Any]] | None = None,
-    context_meta_keys: list[str] | None = None,
+    param_config: ResourceParamConfig | None = None,
     size_hint: str | None = None,
     default_detail: str | None = None,
 ) -> Callable[..., Any] | None:
@@ -398,16 +410,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     ``text/plain``.  Use this for resources whose output is derived from
     but different from the API response (e.g., base64-decoded file content).
 
-    Query params (designated by ``query_params``) are extracted from the
-    handler kwargs into a ``params`` dict passed to the underlying API
-    call -- they are *not* substituted into the path template.  When
-    ``query_param_validators`` specifies allowed values for a param, the
-    handler validates before making the API call and raises a clear
-    ``ResourceError`` on invalid input.
-
-    Optional params metadata (``optional_params``) is attached to the
-    resource registration so agents can discover available parameters
-    via ``list_resources`` without needing to read the resource first.
+    Parameter routing (query vs context, validators, discovery metadata,
+    formatter forwarding) is configured via ``param_config``, a
+    ``ResourceParamConfig`` instance.  See that dataclass for details.
 
     Returns ``None`` if scope-filtered (no registration occurs).
 
@@ -435,48 +440,23 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             Defaults to ``format_hint``, falling back to ``"api"``.
         scope: Required token scope (e.g. ``"read:repository"``).
         cache_ttl: Cache TTL in seconds (passed via resource meta).
-        tags: Set of resource tags (e.g. ``{"repository"}``).  The
-            ``"wrapper"`` tag is always added automatically.
+        tags: Caller-owned set of resource tags (e.g. ``{"wrapper", "repository"}``).
+            ``"wrapper"`` is NOT auto-added — include it explicitly when the
+            resource has a ``format_hint`` (i.e., a markdown formatter).
         error_message: User-facing 404 error message template using
             ``{param}`` placeholders from the handler kwargs.
             Default: ``"Resource not found."``.
         available_scopes: Set of scopes the token has, or ``None``
             (no scope filtering).  When set and ``scope`` is not
             satisfied, the resource is silently skipped.
-        query_params: Optional list of kwargs names to treat as query
-            parameters.  These are NOT substituted into the path; they
-            are extracted and passed as a ``params`` dict to the API
-            request.  Handy for resources with optional filters like
-            ``state``.
-        query_param_validators: Optional dict mapping query param names
-            to lists of allowed values.  When set, the handler validates
-            the param value against the list before making the API call
-            and raises a ``ResourceError`` with ``VALIDATION_ERROR`` code
-            on invalid input.  Example: ``{"state": ["open", "closed"]}``.
-        context_params: Optional list of kwargs names to treat as
-            context-only parameters.  These appear in the URI template
-            (for agent discovery) and are validated, but are **not**
-            forwarded to the underlying API call -- they are metadata
-            only, forwarded via ``context_meta_keys`` to formatters.
-            Must not overlap with ``query_params``.
-            Example: ``["type"]`` for the issues resource's display-hint.
-        context_param_validators: Optional dict mapping context param
-            names to lists of allowed values.  Same shape and behavior
-            as ``query_param_validators`` but for ``context_params``.
-            Example: ``{"type": ["issues", "pulls"]}``.
-        optional_params: Optional list of dicts describing available
-            optional parameters for agent discovery.  Each dict should
-            have at least a ``"name"`` key; ``"type"``, ``"values"``,
-            and ``"description"`` are recommended.  Attached to resource
-            metadata under ``meta["optional_params"]``.
-        context_meta_keys: Kwarg names whose values should be forwarded
-            into ``ResourceContent.meta`` as display context for formatters
-            that need ``extra``.  Path params (``owner``, ``repo``),
-            query params (``state``), and context params (``type``) are
-            all eligible.  Example: the issues formatter reads ``type`` to
-            avoid scanning for PR detection; the labels formatter needs
-            ``owner`` and ``repo`` for its heading.  Only params actually
-            present in the request and not ``None`` are forwarded.
+        param_config: A ``ResourceParamConfig`` instance grouping the
+            parameter-routing configuration (``query_params``,
+            ``query_param_validators``, ``context_params``,
+            ``context_param_validators``, ``context_meta_keys``,
+            ``optional_params``).  See the dataclass docstring for
+            details on each field.  When ``None`` (default), no
+            parameter routing is applied — the handler treats all
+            kwargs as path parameters.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -493,13 +473,23 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         ValueError: If ``api_path`` or ``method`` not found in
             ``openapi_spec`` (when spec is available).
     """
-    # Scope check -- same logic as ``@_register`` in ``custom.py``.
+    # Scope check.
     if scope is not None and available_scopes is not None and not has_sufficient_scope(scope, available_scopes):
         logger.debug(
             "Skipping resource %s: requires scope %s",
             uri, scope,
         )
         return None
+
+    # Unwrap the param_config dataclass into local variables so the handler
+    # closure can capture them normally (avoids changing all internal refs).
+    _pc = param_config or ResourceParamConfig()
+    query_params = _pc.query_params
+    query_param_validators = _pc.query_param_validators
+    context_params = _pc.context_params
+    context_param_validators = _pc.context_param_validators
+    context_meta_keys = _pc.context_meta_keys
+    optional_params = _pc.optional_params
 
     # Cross-list invariant: query_params and context_params must not overlap.
     if query_params and context_params:
@@ -552,9 +542,8 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         default_detail=default_detail,
     ).to_dict()
 
-    # Build tags.
+    # Build tags (caller-owned; "wrapper" added by callers that have format_hint).
     resource_tags: set[str] = set(tags) if tags else set()
-    resource_tags.add("wrapper")
 
     # Default error message and resource type.
     if error_message is None:
@@ -693,6 +682,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     mime_type = "text/plain" if handler_hook else "application/json"
     mcp.resource(
         uri,
+        name=name,
         mime_type=mime_type,
         tags=resource_tags,
         meta=meta if meta else None,
@@ -706,6 +696,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
 
 
 __all__ = [
+    "ResourceParamConfig",
     "_auto_derive_schema",
     "_build_optional_param_signature",
     "_registered_uris",

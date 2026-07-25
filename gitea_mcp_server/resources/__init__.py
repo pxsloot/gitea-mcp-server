@@ -8,7 +8,7 @@ schema and optional format hints.  All formatting is done by the display layer
 - auto: Auto-generated resources from OpenAPI GET endpoints (raw JSON)
 - custom: Hand-written resource implementations with raw data + metadata
 - factory: ``make_api_resource()`` for declarative resource creation with
-  auto schema derivation (Phase 1, replaces most custom boilerplate)
+  auto schema derivation (replaces most custom boilerplate)
 - meta: ``ResourceMeta`` dataclass + schema analysis for discoverable
   metadata (``size_hint``, ``default_detail``, ``optional_params``)
 - scope: Scope derivation utilities for resources

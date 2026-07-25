@@ -2,7 +2,7 @@
 
 Provides the ``ResourceMeta`` dataclass for typed resource metadata and
 schema-analysis helpers for auto-deriving ``size_hint`` and ``default_detail``
-across all three registration paths (factory, auto-generated, legacy static).
+across both registration paths (factory and static).
 
 Usage::
 

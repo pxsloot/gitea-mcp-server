@@ -355,14 +355,22 @@ to surface available optional parameters in the ``list_resources`` output.
 Each dict should have at least a ``"name"`` key; ``"type"``, ``"values"``,
 and ``"description"`` are recommended.
 
-**Handler context for formatters**: When a query param value is useful to
-the display formatter (e.g. the issues formatter reads the ``type`` param
-to decide the title without scanning the data), list the param names in
-``context_meta_keys``.  The factory forwards matching values through
+**Handler context for formatters**: When a param value (path or query) is
+useful to the display formatter, list its name in ``context_meta_keys``.
+The factory forwards matching values from all handler kwargs (both path
+params like ``owner``/``repo`` and query params like ``type``) through
 ``ResourceContent.meta``, where the display pipeline surfaces them as the
 ``extra`` dict for formatters registered with ``needs_extra=True``.
 
-See the issues factory call in ``custom.py`` for a complete example::
+Two formatters currently use this:
+
+- **Issues**: reads ``type`` (query param: ``issues`` / ``pulls``) to
+  produce the correct title without scanning data for PR detection.
+- **Labels**: reads ``owner`` and ``repo`` (path params) for the heading
+  (``# Labels for {owner}/{repo}``).
+
+See the factory calls in ``custom.py`` for complete examples.  The issues
+resource (query-param forwarding)::
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
@@ -383,6 +391,20 @@ See the issues factory call in ``custom.py`` for a complete example::
              "description": "Filter by type (issues / pulls)"},
         ],
         context_meta_keys=["type"],
+        available_scopes=available_scopes,
+    )
+
+And the labels resource (path-param forwarding)::
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/labels",
+        api_path="/repos/{owner}/{repo}/labels",
+        format_hint="labels",
+        scope="read:issue",
+        tags={"labels"},
+        error_message="Labels not found for repository '{owner}/{repo}'.",
+        context_meta_keys=["owner", "repo"],
         available_scopes=available_scopes,
     )
 

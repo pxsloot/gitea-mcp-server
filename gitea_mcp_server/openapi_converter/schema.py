@@ -2,6 +2,8 @@
 
 from typing import Any, ClassVar, Protocol
 
+from gitea_mcp_server.schema_utils import schema_type_matches
+
 
 class SchemaCallback(Protocol):
     """Protocol for schema walker callbacks."""
@@ -17,8 +19,12 @@ class SchemaNormalizer:
     def normalize(self, schema: dict[str, Any]) -> dict[str, Any]:
         """Normalize a single schema."""
         schema = dict(schema)
-        if schema.get("type") == "file":
-            schema["type"] = "string"
+        if schema_type_matches(schema, "file"):
+            t = schema["type"]
+            if isinstance(t, list):
+                schema["type"] = ["string" if x == "file" else x for x in t]
+            else:
+                schema["type"] = "string"
             schema["format"] = "binary"
         if schema.get("format") == "uint64":
             schema["format"] = "int64"
@@ -168,11 +174,7 @@ class OptionalPropertyTransformer:
 
         optional = self._is_optional_property(parent, key)
 
-        t = schema.get("type")
-        is_string = (isinstance(t, str) and t == "string") or (
-            isinstance(t, list) and "string" in t
-        )
-        if is_string and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
+        if schema_type_matches(schema, "string") and schema.get("format") in self.FORMATS_NEEDING_EMPTY:
             self._transform_special_format(schema, optional)
             return
 

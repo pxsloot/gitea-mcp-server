@@ -4,6 +4,7 @@ from gitea_mcp_server.openapi_converter import (
     _add_nullable_for_optional_refs,
     convert_swagger_to_openapi_v3,
 )
+from gitea_mcp_server.schema_utils import schema_type_matches
 
 
 class TestEmailFormatHandling:
@@ -34,7 +35,7 @@ class TestEmailFormatHandling:
         assert empty_branch is not None
         assert empty_branch["type"] == "string"
         # Find null branch
-        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+        null_branch = next((b for b in any_of if schema_type_matches(b, "null")), None)
         assert null_branch is not None
         # Description should be preserved at the top level
         assert email_schema.get("description") == "User email address"
@@ -60,7 +61,7 @@ class TestEmailFormatHandling:
         # Should NOT have empty string or null branches
         empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
         assert empty_branch is None
-        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+        null_branch = next((b for b in any_of if schema_type_matches(b, "null")), None)
         assert null_branch is None
 
     def test_optional_email_field_includes_null(self):
@@ -71,7 +72,7 @@ class TestEmailFormatHandling:
         assert "anyOf" in email_schema
         # Should have email, empty string, and null branches
         assert len(email_schema["anyOf"]) == 3
-        null_branch = next((b for b in email_schema["anyOf"] if b.get("type") == "null"), None)
+        null_branch = next((b for b in email_schema["anyOf"] if schema_type_matches(b, "null")), None)
         assert null_branch is not None
 
     def test_email_preserves_other_constraints(self):
@@ -128,7 +129,7 @@ class TestEmailFormatHandling:
         assert email_branch["type"] == "string"
         empty_branch = next((b for b in any_of if b.get("maxLength") == 0), None)
         assert empty_branch is not None
-        null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+        null_branch = next((b for b in any_of if schema_type_matches(b, "null")), None)
         assert null_branch is not None
         assert email_schema.get("description") == "User email"
 
@@ -160,7 +161,7 @@ class TestEmailFormatHandling:
         # Email branch with format
         assert any(b.get("format") == "email" for b in any_of)
         # Empty string branch
-        assert any(b.get("type") == "string" and b.get("maxLength") == 0 for b in any_of)
+        assert any(schema_type_matches(b, "string") and b.get("maxLength") == 0 for b in any_of)
 
 
 class TestDateFormatHandling:

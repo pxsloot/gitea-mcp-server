@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.server.providers.openapi import OpenAPITool
 
 from gitea_mcp_server.label_service import LabelService
+from gitea_mcp_server.schema_utils import schema_type_matches
 from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
 if TYPE_CHECKING:
@@ -83,8 +84,9 @@ def update_labels_schema(component: OpenAPITool) -> None:
 
     items_schema = labels_schema.get("items", {})
 
-    current_type = items_schema.get("type")
-    if current_type in ("integer", "string"):
+    has_string = schema_type_matches(items_schema, "string")
+    has_integer = schema_type_matches(items_schema, "integer")
+    if has_string or has_integer:
         items_schema["type"] = ["string", "integer"]
 
 

@@ -40,7 +40,9 @@ Parameter                         Default        Purpose
 ``scope``                         ``None``       Required token scope.  Resource silently skipped when
                                                  absent from ``available_scopes``.
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
-``tags``                          ``set()``      Tags for discovery.  ``"wrapper"`` always added.
+``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
+                                                  must be included explicitly when the resource has
+                                                  a ``format_hint`` (i.e., a markdown formatter).
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
                                  not found."``  placeholders.
 ``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6

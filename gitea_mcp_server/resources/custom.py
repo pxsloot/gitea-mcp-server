@@ -193,7 +193,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     # ======================================================================
-    # FACTORY RESOURCES (Phase 2 — issues and pulls with optional params)
+    # FACTORY RESOURCES (with optional query and context params)
     # ======================================================================
 
     make_api_resource(
@@ -240,7 +240,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     # ======================================================================
-    # FACTORY RESOURCES (Phase 3 — text/plain via handler_hook)
+    # FACTORY RESOURCES (text/plain via handler_hook)
     # These use make_api_resource() with handler_hook for base64 decoding
     # of Gitea ContentsResponse JSON into plain text.
     # ======================================================================

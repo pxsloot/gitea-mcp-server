@@ -420,11 +420,61 @@ And the labels resource (path-param forwarding)::
         available_scopes=available_scopes,
     )
 
-    The ``{?state}`` suffix in the URI template is required so FastMCP
-    routes ``?state=...`` query strings to the handler.  The display layer
-    (``_clean_resource_uri``) strips it from ``list_resources`` output, so
-    agents see a clean ``gitea://repos/{owner}/{repo}/issues`` URI and
-    discover available params via ``optional_params`` metadata.
+    The ``{?state,type}`` suffix in the URI template is required so FastMCP
+    routes ``?state=...`` and ``?type=...`` query strings to the handler.
+    The display layer (``_clean_resource_uri``) strips the ``{?...}`` suffix
+    from ``list_resources`` output, so agents see a clean
+    ``gitea://repos/{owner}/{repo}/issues`` URI and discover available params
+    via ``optional_params`` metadata.
+
+See the module docstring in ``gitea_mcp_server/resources/factory.py`` for a
+complete parameter reference table.
+
+### URI template and param routing
+
+The ``{?param}`` suffix in the URI template serves double duty:
+
+1. **Agent discovery** — FastMCP exposes ``{?param}`` as optional URI parameters.  The display layer (``_clean_resource_uri``) strips them from ``list_resources`` output so agents see clean URIs and discover available params via ``optional_params`` metadata.
+
+2. **Signature validation** — FastMCP validates that every ``{?param}`` in the URI template has a matching optional function parameter.  The factory adds both ``query_params`` and ``context_params`` names to the handler's ``__signature__`` as ``KEYWORD_ONLY`` params with ``default=None``, satisfying this constraint.
+
+A param **cannot** be declared in both ``query_params`` and ``context_params`` — the factory raises ``ValueError`` at registration time if you do.
+
+### Decision guide: which param category?
+
+| Your kwarg... | Use | Because |
+|--------------|-----|---------|
+| Is a filter the Gitea API understands (``state``, ``draft``, ``q``) | ``query_params`` | Sent to the API as ``?key=value`` |
+| Is a display hint only (``type`` for issues heading) | ``context_params`` | Validated and forwarded to formatters, never sent |
+| Is a path segment (``owner``, ``repo``) | (automatic) | Substituted into ``api_path`` from the URI template |
+| Needs post-processing (base64 decode, string transform) | ``handler_hook`` | Receives raw API response, returns a string |
+
+### Complete example
+
+The most fully-featured factory resource (issues) illustrates all categories
+working together::
+
+    make_api_resource(
+        mcp, gitea_client, openapi_spec,
+        uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+        api_path="/repos/{owner}/{repo}/issues",
+        format_hint="issues",
+        resource_type="issues",
+        scope="read:repository",
+        tags={"issues"},
+        error_message="Repository '{owner}/{repo}' not found or has no issues.",
+        query_params=["state"],                  # → API as ?state=
+        query_param_validators={"state": ["open", "closed"]},
+        context_params=["type"],                  # → meta only, never API
+        context_param_validators={"type": ["issues", "pulls"]},
+        optional_params=[
+            {"name": "state", "type": "string", "values": ["open", "closed"]},
+            {"name": "type", "type": "string", "values": ["issues", "pulls"],
+             "description": "Filter display heading by type (issues / pulls)"},
+        ],
+        context_meta_keys=["type"],
+        available_scopes=available_scopes,
+    )
 
 No manual ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` maintenance is needed --
 the factory's ``_registered_uris`` set is populated at registration time

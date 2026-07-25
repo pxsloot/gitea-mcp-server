@@ -15,6 +15,50 @@ The module-level ``_registered_uris`` set is populated dynamically at
 registration time (not at import time).  ``register_custom_resources()``
 runs *before* ``register_auto_generated_resources()``, and the resulting
 set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
+
+Parameter reference
+-------------------
+The table below summarises every parameter of ``make_api_resource()``.
+See the function's docstring for detailed prose descriptions of each.
+
+================================  =============  ==========================================================
+Parameter                         Default        Purpose
+================================  =============  ==========================================================
+``uri``                           (required)     MCP resource URI template with ``{param}`` path segments
+                                                 and optional ``{?a,b}`` query suffix.
+``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
+``method``                        ``"GET"``      HTTP method.
+``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
+                                                 Ignored when ``handler_hook`` is set.
+``handler_hook``                  ``None``       Async callback returning a string from the raw API
+                                                 response.  Skips schema derivation, registers as
+                                                 ``text/plain``.
+``resource_type``                 ``format_hint`` Machine-readable type for error responses.  Falls
+                                  or ``"api"``   back to ``"api"``.
+``scope``                         ``None``       Required token scope.  Resource silently skipped when
+                                                 absent from ``available_scopes``.
+``cache_ttl``                     ``None``       Cache TTL in seconds.
+``tags``                          ``set()``      Tags for discovery.  ``"wrapper"`` always added.
+``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
+                                 not found."``  placeholders.
+``query_params``                  ``None``       Kwarg names sent as ``?key=value`` to the API.  Not
+                                                 substituted into the path.
+``query_param_validators``        ``None``       Allowed values per query param.  Raises
+                                                 ``ResourceError`` on invalid input.
+``context_params``                ``None``       Kwarg names that are validated and forwarded to
+                                                 formatters, but **never** sent to the API.  Must not
+                                                 overlap with ``query_params``.
+``context_param_validators``      ``None``       Allowed values per context param.
+``optional_params``               ``None``       Discovery metadata for ``list_resources``.  Each dict
+                                                 needs at least ``"name"``.
+``context_meta_keys``             ``None``       Handler kwarg names forwarded into
+                                                 ``ResourceContent.meta`` as the ``extra`` dict for
+                                                 formatters.
+``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
+``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
+``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
+                                                 ``scope``, resource is silently skipped.
+================================  =============  ==========================================================
 """
 
 import inspect
@@ -72,21 +116,21 @@ def _auto_derive_schema(
     return _unwrap_result_schema(schema)
 
 
-def _validate_query_param(
+def _validate_optional_param(
     key: str,
     value: str,
     allowed_values: list[str],
     resource_type: str,
     resource_id: str,
 ) -> None:
-    """Validate a query parameter value against allowed values.
+    """Validate an optional (query or context) parameter value.
 
-    Raises ``ResourceError`` with ``VALIDATION_ERROR`` code if the value
-    is not in ``allowed_values``.  This gives agents a clear error message
-    about acceptable values — better than a generic API error.
+    Shared by ``query_param_validators`` and ``context_param_validators``
+    in the handler loop.  Raises ``ResourceError`` with ``VALIDATION_ERROR``
+    code if the value is not in ``allowed_values``.
 
     Args:
-        key: Parameter name (e.g. ``"state"``).
+        key: Parameter name (e.g. ``"state"``, ``"type"``).
         value: The value to validate.
         allowed_values: List of acceptable values.
         resource_type: Machine-readable resource type for error responses.
@@ -102,7 +146,7 @@ def _validate_query_param(
                 f"Invalid {key} parameter: '{value}'. "
                 f"Must be one of: {', '.join(allowed_values)}."
             ),
-            "detail": f"The '{key}' query parameter must be one of: {', '.join(allowed_values)}.",
+            "detail": f"The '{key}' parameter must be one of: {', '.join(allowed_values)}.",
             "resource_type": resource_type,
             "resource_id": resource_id,
         })
@@ -533,7 +577,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 if query_params and key in query_params and value is not None:
                     # Validate against allowed values if a validator is registered.
                     if query_param_validators and key in query_param_validators and isinstance(value, str):
-                        _validate_query_param(
+                        _validate_optional_param(
                             key, value, query_param_validators[key],
                             resource_type=_resource_type,
                             resource_id=formatted_path,
@@ -542,13 +586,26 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 elif context_params and key in context_params and value is not None:
                     # Context-only param: validate but do NOT forward to API.
                     if context_param_validators and key in context_param_validators and isinstance(value, str):
-                        _validate_query_param(
+                        _validate_optional_param(
                             key, value, context_param_validators[key],
                             resource_type=_resource_type,
                             resource_id=formatted_path,
                         )
                 else:
-                    formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
+                    # Assume any remaining kwarg is a path parameter and
+                    # substitute into the API path.  If the key isn't a
+                    # valid path placeholder, the replace is a no-op --
+                    # warn so misconfigured callers (tests, future code)
+                    # don't silently get the wrong behavior.
+                    placeholder = f"{{{key}}}"
+                    if placeholder in formatted_path:
+                        formatted_path = formatted_path.replace(placeholder, str(value))
+                    else:
+                        logger.warning(
+                            "make_api_resource %s: unknown kwarg %r=%r "
+                            "-- not a path, query, or context param; ignored",
+                            uri, key, value,
+                        )
 
             # Forward requested context keys as display metadata for
             # formatters that need extra context (e.g. ``type`` for
@@ -654,6 +711,6 @@ __all__ = [
     "_registered_uris",
     "_request_and_wrap",
     "_set_handler_docstring",
-    "_validate_query_param",
+    "_validate_optional_param",
     "make_api_resource",
 ]

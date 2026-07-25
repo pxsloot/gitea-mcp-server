@@ -409,11 +409,14 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
             and ``"description"`` are recommended.  Attached to resource
             metadata under ``meta["optional_params"]``.
-        context_meta_keys: Query param names whose values should be forwarded
+        context_meta_keys: Kwarg names whose values should be forwarded
             into ``ResourceContent.meta`` as display context for formatters
-            that need ``extra`` (e.g. the issues formatter reads the ``type``
-            param to avoid scanning all items for PR detection).  Only params
-            actually present in the request are forwarded.
+            that need ``extra``.  Both path params (``owner``, ``repo``)
+            and query params (``type``, ``state``) are eligible.
+            Example: the issues formatter reads ``type`` to avoid scanning
+            for PR detection; the labels formatter needs ``owner`` and
+            ``repo`` for its heading.  Only params actually present in the
+            request and not ``None`` are forwarded.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -512,11 +515,19 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                 else:
                     formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
 
-            # Forward requested query params as display context for
-            # formatters (e.g. ``type`` for the issues title).
+            # Forward requested context keys as display metadata for
+            # formatters that need extra context (e.g. ``type`` for
+            # the issues title, ``owner``/``repo`` for the labels
+            # heading).  Both path params and query params are
+            # eligible -- the ``is not None`` guard excludes absent
+            # optional query params.
             handler_extra_meta: dict[str, Any] | None = None
-            if query_kwargs and context_meta_keys:
-                extra = {k: query_kwargs[k] for k in context_meta_keys if k in query_kwargs}
+            if context_meta_keys:
+                extra = {
+                    k: kwargs[k]
+                    for k in context_meta_keys
+                    if k in kwargs and kwargs[k] is not None
+                }
                 if extra:
                     handler_extra_meta = extra
 

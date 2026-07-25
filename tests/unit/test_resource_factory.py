@@ -650,6 +650,115 @@ class TestMakeApiResourceQueryParams:
         assert kwargs.get("params") == {"draft": "true"}  # only non-None query params
 
 
+# ---------------------------------------------------------------------------
+# Tests: make_api_resource -- context_meta_keys (path + query params)
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourceContextMetaKeys:
+    """Tests for context_meta_keys forwarding in make_api_resource."""
+
+    @pytest.mark.asyncio
+    async def test_path_params_forwarded_via_context_meta_keys(self):
+        """Path params (owner, repo) are forwarded to ResourceContent.meta."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[{"id": 1, "name": "bug"}])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/labels",
+            api_path="/repos/{owner}/{repo}/labels",
+            format_hint="labels",
+            context_meta_keys=["owner", "repo"],
+        )
+
+        result = await handler(owner="myorg", repo="myrepo")
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+        assert meta.get("owner") == "myorg"
+        assert meta.get("repo") == "myrepo"
+
+    @pytest.mark.asyncio
+    async def test_both_path_and_query_params_forwarded(self):
+        """Both path and query params listed in context_meta_keys are forwarded."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            query_params=["state", "type"],
+            context_meta_keys=["owner", "repo", "type"],
+        )
+
+        result = await handler(owner="myorg", repo="myrepo", type="pulls")
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+        # Path params
+        assert meta.get("owner") == "myorg"
+        assert meta.get("repo") == "myrepo"
+        # Query param
+        assert meta.get("type") == "pulls"
+        # 'state' not in context_meta_keys → absent
+        assert "state" not in meta
+
+    @pytest.mark.asyncio
+    async def test_context_meta_keys_no_match_omits_extra(self):
+        """When no context_meta_keys match kwargs, no extra meta is added."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            format_hint="repository",
+            context_meta_keys=["nonexistent"],
+        )
+
+        result = await handler(owner="o", repo="r")
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+        assert "nonexistent" not in meta
+        assert "owner" not in meta
+        assert "repo" not in meta
+
+    @pytest.mark.asyncio
+    async def test_context_meta_keys_skips_none_values(self):
+        """Params with None values are excluded from forwarded meta."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            query_params=["state", "type"],
+            context_meta_keys=["type"],
+        )
+
+        result = await handler(owner="o", repo="r", type=None)
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+        assert "type" not in meta  # None → excluded
+        assert "owner" not in meta  # Not in context_meta_keys
+
+
 class TestMakeApiResourceOptionalParams:
     """Tests for optional_params in make_api_resource."""
 

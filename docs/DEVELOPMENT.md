@@ -355,7 +355,14 @@ to surface available optional parameters in the ``list_resources`` output.
 Each dict should have at least a ``"name"`` key; ``"type"``, ``"values"``,
 and ``"description"`` are recommended.
 
-See the issues and pulls factory calls in ``custom.py`` for a complete example::
+**Handler context for formatters**: When a query param value is useful to
+the display formatter (e.g. the issues formatter reads the ``type`` param
+to decide the title without scanning the data), list the param names in
+``context_meta_keys``.  The factory forwards matching values through
+``ResourceContent.meta``, where the display pipeline surfaces them as the
+``extra`` dict for formatters registered with ``needs_extra=True``.
+
+See the issues factory call in ``custom.py`` for a complete example::
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
@@ -365,9 +372,17 @@ See the issues and pulls factory calls in ``custom.py`` for a complete example::
         resource_type="issues",
         scope="read:repository",
         tags={"issues"},
-        query_params=["state"],
-        query_param_validators={"state": ["open", "closed"]},
-        optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
+        query_params=["state", "type"],
+        query_param_validators={
+            "state": ["open", "closed"],
+            "type": ["issues", "pulls"],
+        },
+        optional_params=[
+            {"name": "state", "type": "string", "values": ["open", "closed"]},
+            {"name": "type", "type": "string", "values": ["issues", "pulls"],
+             "description": "Filter by type (issues / pulls)"},
+        ],
+        context_meta_keys=["type"],
         available_scopes=available_scopes,
     )
 

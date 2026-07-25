@@ -21,7 +21,7 @@ from gitea_mcp_server.format import _format_as_markdown
 _FORMATTERS: dict[str, Callable[..., str]] = {}
 
 _FORMATTER_META: dict[str, dict[str, Any]] = {}
-"""Optional per-formatter metadata (e.g. ``{"needs_extra": True}``)."""
+"""Optional per-formatter metadata (e.g. ``{"need_extra": True}``)."""
 
 
 def register_formatter(
@@ -32,7 +32,7 @@ def register_formatter(
 
     Args:
         name: Unique name used as ``format_hint`` in resource metadata.
-        **meta: Optional metadata (``needs_extra``, etc.) stored alongside
+        **meta: Optional metadata (``need_extra``, etc.) stored alongside
             the formatter for the display pipeline.
 
     Usage::
@@ -73,7 +73,7 @@ def call_formatter(
         data: The data to format (already collapsed if ``detail=concise``).
         detail: Output detail level.
         extra: Optional context dict passed to formatters that need it
-            (checked via ``needs_extra`` metadata flag).
+            (checked via ``need_extra`` metadata flag).
 
     Returns:
         Markdown string.
@@ -83,7 +83,7 @@ def call_formatter(
         msg = f"No formatter registered for {name!r}"
         raise ValueError(msg)
     meta = get_formatter_meta(name)
-    if meta.get("needs_extra"):
+    if meta.get("need_extra"):
         return fn(data, detail=detail, extra=extra)
     return fn(data, detail=detail)
 
@@ -178,12 +178,26 @@ def _format_repo_markdown(data: dict, *, detail: str = "full") -> str:
     )
 
 
-@register_formatter("issues")
-def _format_issues_markdown(data: list, *, detail: str = "full") -> str:
-    # The /issues endpoint returns both issues and pull requests.
-    # Detect presence of PRs for an accurate title label.
-    has_prs = any(item.get("pull_request") for item in data) if data else False
-    title_label = "Issues and Pull Requests" if has_prs else "Issues"
+@register_formatter("issues", need_extra=True)
+def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | None = None) -> str:
+    # The /issues endpoint returns both issues and pull requests by default.
+    # When available, use the ``type`` query param from the handler context
+    # (forwarded via content meta → extra dict) to determine the title
+    # without scanning the full data list.
+    #
+    #   type="issues" → "Issues"
+    #   type="pulls"  → "Pull Requests"
+    #   absent/None  → "Issues and Pull Requests" (mixed, the default)
+    if extra and extra.get("type"):
+        type_value = extra["type"]
+        title_label = "Pull Requests" if type_value == "pulls" else "Issues"
+    elif data and isinstance(data[0], str):
+        # When items are collapsed to ``$ref`` strings (``detail=concise``),
+        # we can't scan; fall back to the safe default.
+        title_label = "Issues and Pull Requests"
+    else:
+        has_prs = any(item.get("pull_request") for item in data) if data else False
+        title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
     return _format_as_markdown(
         data,
@@ -233,7 +247,7 @@ def _format_release_markdown(data: list, *, detail: str = "full") -> str:
     )
 
 
-@register_formatter("labels", needs_extra=True)
+@register_formatter("labels", need_extra=True)
 def _format_labels_markdown(
     data: list,
     *,

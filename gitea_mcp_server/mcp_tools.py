@@ -187,7 +187,7 @@ def _make_resource_formatter(
     if fn is None:
         return None
     meta = get_formatter_meta(format_hint)
-    if meta.get("needs_extra"):
+    if meta.get("need_extra"):
         return lambda data: fn(data, detail=detail, extra=extra)
     return lambda data: fn(data, detail=detail)
 

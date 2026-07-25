@@ -238,7 +238,8 @@ class TestMakeApiResourceRegistration:
         assert handler is not None
         assert _registered_uris == {"gitea://repos/{owner}/{repo}"}
 
-    def test_adds_wrapper_tag(self):
+    def test_tags_are_caller_owned(self):
+        """Caller-provided tags are passed through unchanged (no auto-adder)."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -247,12 +248,33 @@ class TestMakeApiResourceRegistration:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
+            tags={"wrapper", "custom"},
         )
 
         for call_args in mcp.resource.call_args_list:
             if call_args[0][0] == "gitea://repos/{owner}/{repo}":
                 tags = call_args[1].get("tags", set())
                 assert "wrapper" in tags
+                assert "custom" in tags
+                break
+
+    def test_no_wrapper_tag_when_not_provided(self):
+        """No 'wrapper' tag appears unless the caller includes it."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            tags={"api", "raw"},
+        )
+
+        for call_args in mcp.resource.call_args_list:
+            if call_args[0][0] == "gitea://repos/{owner}/{repo}":
+                tags = call_args[1].get("tags", set())
+                assert "wrapper" not in tags
                 break
 
     def test_adds_cache_ttl_to_meta(self):

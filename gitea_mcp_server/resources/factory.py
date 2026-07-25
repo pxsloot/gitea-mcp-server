@@ -329,6 +329,8 @@ def _set_handler_docstring(
                     docstring += "\n\n" + description
                 if docstring:
                     handler.__doc__ = docstring
+                else:
+                    handler.__doc__ = f"Resource for {method} {api_path}"
 
     if handler.__doc__ is None:
         handler.__doc__ = f"Resource for {method} {api_path}"

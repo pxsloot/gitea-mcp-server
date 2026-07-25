@@ -125,7 +125,7 @@ def _build_handler_meta(
     display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``
     and ``format_hint`` and surfaces everything else as the ``extra`` dict
     passed to domain formatters — useful for forwarding handler context
-    like the ``type`` query param.
+    like path params (``owner``, ``repo``) or query params (``type``).
     """
     meta: dict[str, Any] = {}
     if response_schema is not None:
@@ -181,7 +181,8 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
         handler_extra_meta: Optional additional metadata to merge into
             ``ResourceContent.meta``.  The display pipeline surfaces these
             as the ``extra`` dict passed to domain formatters — use this
-            to forward handler context (e.g. requested ``type`` param).
+            to forward handler context like path params (``owner``,
+            ``repo``) or query params (``type``).
 
     Returns:
         The wrapped ``ResourceResult``.
@@ -364,10 +365,11 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     Returns ``None`` if scope-filtered (no registration occurs).
 
     Note:
-        If future patterns repeat (e.g., many list resources share the
-        same structure), consider extracting higher-level wrappers like
-        ``make_list_resource()`` or ``make_text_resource()`` that compose
-        ``make_api_resource`` with common defaults.
+        This is a candidate for extracting higher-level wrappers
+        (``make_list_resource()``, ``make_text_resource()``, etc.) that
+        compose ``make_api_resource`` with common defaults — see
+        ``docs/DEVELOPMENT.md`` → "Custom resource via factory" for
+        the project-level perspective on when and how to decide.
 
     Args:
         mcp: The FastMCP server instance.
@@ -548,6 +550,14 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
 
         async def handler() -> ResourceResult:  # type: ignore[misc]
             """Auto-generated resource handler from factory (concrete URI)."""
+            # Concrete URIs have no path/query args, so context_meta_keys
+            # cannot forward anything — warn the dev early.
+            if context_meta_keys:
+                logger.warning(
+                    "make_api_resource: context_meta_keys=%r ignored for %s "
+                    "(concrete URI — no handler kwargs to forward from)",
+                    context_meta_keys, uri,
+                )
             return await _request_and_wrap(
                 gitea_client, method, api_path,
                 response_schema=response_schema,

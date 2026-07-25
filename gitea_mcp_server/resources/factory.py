@@ -28,8 +28,10 @@ Parameter                         Default        Purpose
                                                  and optional ``{?a,b}`` query suffix.
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
+``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
+                                                  When ``None``, FastMCP auto-generates one.
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
-                                                 Ignored when ``handler_hook`` is set.
+                                                  Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
                                                  response.  Skips schema derivation, registers as
                                                  ``text/plain``.
@@ -41,13 +43,11 @@ Parameter                         Default        Purpose
 ``tags``                          ``set()``      Tags for discovery.  ``"wrapper"`` always added.
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
                                  not found."``  placeholders.
-``param_config``                  ``None``       A ``ResourceParamConfig`` instance grouping:
-                                                  ``query_params``, ``query_param_validators``,
-                                                  ``context_params``, ``context_param_validators``,
-                                                  ``context_meta_keys``, and ``optional_params``.
-                                                  See the dataclass docstring for details.
-                                                 ``ResourceContent.meta`` as the ``extra`` dict for
-                                                 formatters.
+``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6
+                                                  parameter-routing fields (query_params,
+                                                  query_param_validators, context_params,
+                                                  context_param_validators, context_meta_keys,
+                                                  optional_params).  All fields optional.
 ``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
 ``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
 ``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
@@ -408,16 +408,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     ``text/plain``.  Use this for resources whose output is derived from
     but different from the API response (e.g., base64-decoded file content).
 
-    Query params (designated by ``query_params``) are extracted from the
-    handler kwargs into a ``params`` dict passed to the underlying API
-    call -- they are *not* substituted into the path template.  When
-    ``query_param_validators`` specifies allowed values for a param, the
-    handler validates before making the API call and raises a clear
-    ``ResourceError`` on invalid input.
-
-    Optional params metadata (``optional_params``) is attached to the
-    resource registration so agents can discover available parameters
-    via ``list_resources`` without needing to read the resource first.
+    Parameter routing (query vs context, validators, discovery metadata,
+    formatter forwarding) is configured via ``param_config``, a
+    ``ResourceParamConfig`` instance.  See that dataclass for details.
 
     Returns ``None`` if scope-filtered (no registration occurs).
 
@@ -445,8 +438,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             Defaults to ``format_hint``, falling back to ``"api"``.
         scope: Required token scope (e.g. ``"read:repository"``).
         cache_ttl: Cache TTL in seconds (passed via resource meta).
-        tags: Set of resource tags (e.g. ``{"repository"}``).  The
-            ``"wrapper"`` tag is always added automatically.
+        tags: Caller-owned set of resource tags (e.g. ``{"wrapper", "repository"}``).
+            ``"wrapper"`` is NOT auto-added — include it explicitly when the
+            resource has a ``format_hint`` (i.e., a markdown formatter).
         error_message: User-facing 404 error message template using
             ``{param}`` placeholders from the handler kwargs.
             Default: ``"Resource not found."``.

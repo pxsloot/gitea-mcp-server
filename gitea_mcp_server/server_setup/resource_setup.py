@@ -46,6 +46,10 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
         version_str: Pre-fetched server version string.
         server_info_md: Pre-built server info markdown, or ``None``.
     """
+    # Start fresh: clear accumulated URIs from previous server instances
+    # (important for test isolation within the same process).
+    _factory_registered_uris.clear()
+
     # Custom first: populates _factory_registered_uris at registration time.
     register_custom_resources(
         mcp,

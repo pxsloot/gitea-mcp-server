@@ -6,6 +6,7 @@ from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.schema_utils import get_schema_type
 from gitea_mcp_server.tools.schemas import _resolve_ref, _unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
@@ -140,7 +141,7 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
         options = schema.get(key)
         if isinstance(options, list):
             for opt in options:
-                if isinstance(opt, dict) and opt.get("type") != "null":
+                if isinstance(opt, dict) and get_schema_type(opt) != "null":
                     return _schema_to_example(
                         opt, depth, max_depth, max_properties, prop_name=prop_name
                     )
@@ -230,7 +231,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         options = schema.get(key)
         if isinstance(options, list):
             for opt in options:
-                if isinstance(opt, dict) and opt.get("type") != "null":
+                if isinstance(opt, dict) and get_schema_type(opt) != "null":
                     return _schema_to_compact_example(
                         opt, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                     )

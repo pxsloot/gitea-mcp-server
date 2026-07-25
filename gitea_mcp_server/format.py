@@ -265,7 +265,7 @@ def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schem
                 detail=detail,
             )
             lines.append(sub)
-    elif item_schema and item_schema.get("type") in ("string", "number", "integer", "boolean"):
+    elif item_schema and get_schema_type(item_schema) in ("string", "number", "integer", "boolean"):
         items = [_format_scalar(v, item_schema) for v in data]
         lines.append(f"{indent}{', '.join(items)}")
     else:

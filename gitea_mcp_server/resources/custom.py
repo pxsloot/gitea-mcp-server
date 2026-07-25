@@ -207,14 +207,12 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
         param_config=ResourceParamConfig(
-            query_params=["state"],
-            query_param_validators={"state": ["open", "closed"]},
-            context_params=["type"],
-            context_param_validators={"type": ["issues", "pulls"]},
+            query_params=["state", "type"],
+            query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
             optional_params=[
                 {"name": "state", "type": "string", "values": ["open", "closed"]},
                 {"name": "type", "type": "string", "values": ["issues", "pulls"],
-                 "description": "Filter display heading by type (issues / pulls)"},
+                 "description": "Filter by type (issues / pulls)"},
             ],
             context_meta_keys=["type"],
         ),

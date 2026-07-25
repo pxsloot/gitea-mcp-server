@@ -1026,18 +1026,16 @@ class TestContextMetaKeysPipeline:
             scope="read:repository",
             tags={"issues"},
             param_config=ResourceParamConfig(
-                query_params=["state"],
-                query_param_validators={"state": ["open", "closed"]},
-                context_params=["type"],
-                context_param_validators={"type": ["issues", "pulls"]},
+                query_params=["state", "type"],
+                query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
                 context_meta_keys=["type"],
             ),
         )
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
     @pytest.mark.asyncio
-    async def test_handler_meta_includes_context_param(self, issues_resource, mock_client):
-        """Handler forwards context_meta_keys params into ResourceContent.meta."""
+    async def test_handler_meta_includes_forwarded_param(self, issues_resource, mock_client):
+        """Handler forwards context_meta_keys params (query or path) into ResourceContent.meta."""
         from fastmcp.resources import ResourceResult
 
         mock_client.request = AsyncMock(return_value=[])
@@ -1595,7 +1593,7 @@ class TestCustomResourceStringResponsePaths:
     async def test_list_repo_issues_with_type_param(
         self, captured_resources, mock_gitea_client_str
     ):
-        """Issues with type='pulls' does NOT send type param to API (context-only)."""
+        """Issues with type='pulls' sends type param to API."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
@@ -1603,8 +1601,8 @@ class TestCustomResourceStringResponsePaths:
         assert json.loads(result) == []
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args
-        # type is a context_param, not sent to API
-        assert kwargs.get("params") is None
+        # type is a query_param, sent to API
+        assert kwargs.get("params") == {"type": "pulls"}
 
     @pytest.mark.asyncio
     async def test_list_repo_pulls_with_state_param(

@@ -1176,11 +1176,10 @@ class TestContextMetaKeysPipeline:
             resource_type="issues",
             scope="read:repository",
             tags={"issues"},
-            query_params=["state", "type"],
-            query_param_validators={
-                "state": ["open", "closed"],
-                "type": ["issues", "pulls"],
-            },
+            query_params=["state"],
+            query_param_validators={"state": ["open", "closed"]},
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
             context_meta_keys=["type"],
         )
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
@@ -1741,7 +1740,7 @@ class TestCustomResourceStringResponsePaths:
     async def test_list_repo_issues_with_type_param(
         self, captured_resources, mock_gitea_client_str
     ):
-        """Issues with type='pulls' passes type param to API."""
+        """Issues with type='pulls' does NOT send type param to API (context-only)."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
@@ -1749,7 +1748,8 @@ class TestCustomResourceStringResponsePaths:
         assert json.loads(result) == []
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args
-        assert kwargs.get("params") == {"type": "pulls"}
+        # type is a context_param, not sent to API
+        assert kwargs.get("params") is None
 
     @pytest.mark.asyncio
     async def test_list_repo_pulls_with_state_param(

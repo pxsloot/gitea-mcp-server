@@ -15,6 +15,50 @@ The module-level ``_registered_uris`` set is populated dynamically at
 registration time (not at import time).  ``register_custom_resources()``
 runs *before* ``register_auto_generated_resources()``, and the resulting
 set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
+
+Parameter reference
+-------------------
+The table below summarises every parameter of ``make_api_resource()``.
+See the function's docstring for detailed prose descriptions of each.
+
+================================  =============  ==========================================================
+Parameter                         Default        Purpose
+================================  =============  ==========================================================
+``uri``                           (required)     MCP resource URI template with ``{param}`` path segments
+                                                 and optional ``{?a,b}`` query suffix.
+``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
+``method``                        ``"GET"``      HTTP method.
+``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
+                                                 Ignored when ``handler_hook`` is set.
+``handler_hook``                  ``None``       Async callback returning a string from the raw API
+                                                 response.  Skips schema derivation, registers as
+                                                 ``text/plain``.
+``resource_type``                 ``format_hint`` Machine-readable type for error responses.  Falls
+                                  or ``"api"``   back to ``"api"``.
+``scope``                         ``None``       Required token scope.  Resource silently skipped when
+                                                 absent from ``available_scopes``.
+``cache_ttl``                     ``None``       Cache TTL in seconds.
+``tags``                          ``set()``      Tags for discovery.  ``"wrapper"`` always added.
+``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
+                                 not found."``  placeholders.
+``query_params``                  ``None``       Kwarg names sent as ``?key=value`` to the API.  Not
+                                                 substituted into the path.
+``query_param_validators``        ``None``       Allowed values per query param.  Raises
+                                                 ``ResourceError`` on invalid input.
+``context_params``                ``None``       Kwarg names that are validated and forwarded to
+                                                 formatters, but **never** sent to the API.  Must not
+                                                 overlap with ``query_params``.
+``context_param_validators``      ``None``       Allowed values per context param.
+``optional_params``               ``None``       Discovery metadata for ``list_resources``.  Each dict
+                                                 needs at least ``"name"``.
+``context_meta_keys``             ``None``       Handler kwarg names forwarded into
+                                                 ``ResourceContent.meta`` as the ``extra`` dict for
+                                                 formatters.
+``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
+``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
+``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
+                                                 ``scope``, resource is silently skipped.
+================================  =============  ==========================================================
 """
 
 import inspect
@@ -72,21 +116,21 @@ def _auto_derive_schema(
     return _unwrap_result_schema(schema)
 
 
-def _validate_query_param(
+def _validate_optional_param(
     key: str,
     value: str,
     allowed_values: list[str],
     resource_type: str,
     resource_id: str,
 ) -> None:
-    """Validate a query parameter value against allowed values.
+    """Validate an optional (query or context) parameter value.
 
-    Raises ``ResourceError`` with ``VALIDATION_ERROR`` code if the value
-    is not in ``allowed_values``.  This gives agents a clear error message
-    about acceptable values — better than a generic API error.
+    Shared by ``query_param_validators`` and ``context_param_validators``
+    in the handler loop.  Raises ``ResourceError`` with ``VALIDATION_ERROR``
+    code if the value is not in ``allowed_values``.
 
     Args:
-        key: Parameter name (e.g. ``"state"``).
+        key: Parameter name (e.g. ``"state"``, ``"type"``).
         value: The value to validate.
         allowed_values: List of acceptable values.
         resource_type: Machine-readable resource type for error responses.
@@ -102,7 +146,7 @@ def _validate_query_param(
                 f"Invalid {key} parameter: '{value}'. "
                 f"Must be one of: {', '.join(allowed_values)}."
             ),
-            "detail": f"The '{key}' query parameter must be one of: {', '.join(allowed_values)}.",
+            "detail": f"The '{key}' parameter must be one of: {', '.join(allowed_values)}.",
             "resource_type": resource_type,
             "resource_id": resource_id,
         })
@@ -278,26 +322,27 @@ def _set_handler_docstring(
         handler.__doc__ = f"Resource for {method} {api_path}"
 
 
-def _build_query_param_signature(
+def _build_optional_param_signature(
     handler_sig: inspect.Signature,
-    query_params: list[str],
+    optional_params_names: list[str],
 ) -> inspect.Signature:
-    """Add query params as ``KEYWORD_ONLY`` params to a handler signature.
+    """Add optional URI template params as ``KEYWORD_ONLY`` params.
 
     FastMCP requires ``{?param}`` URI template entries to have matching
     optional function parameters with default values.  This helper takes a
-    ``**kwargs``-style signature and adds each query param as a
-    ``KEYWORD_ONLY`` parameter with ``default=None``, keeping the actual
-    handler body unchanged (params flow through ``**kwargs``).
+    ``**kwargs``-style signature and adds each param as a ``KEYWORD_ONLY``
+    parameter with ``default=None``, keeping the handler body unchanged
+    (params flow through ``**kwargs``).
 
     Args:
         handler_sig: The handler's inspect.Signature.
-        query_params: List of query parameter names to add.
+        optional_params_names: List of optional param names to add (from
+            ``query_params`` and/or ``context_params``).
 
     Returns:
-        Modified signature with query params inserted before the
-        ``**kwargs`` parameter, or the original signature unchanged
-        if the handler uses positional params instead of ``**kwargs``.
+        Modified signature with optional params inserted before the
+        ``**kwargs`` parameter, or the original unchanged if the handler
+        uses positional params instead of ``**kwargs``.
     """
     existing = handler_sig.parameters
     kwargs_param = existing.get("kwargs")
@@ -306,7 +351,7 @@ def _build_query_param_signature(
 
     new_params: list[inspect.Parameter] = [
         inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=None)
-        for name in query_params
+        for name in optional_params_names
         if name not in existing
     ]
     if not new_params:
@@ -315,7 +360,7 @@ def _build_query_param_signature(
     return handler_sig.replace(parameters=[*new_params, kwargs_param])
 
 
-def make_api_resource(  # noqa: PLR0913 -- params are all independent registration axes
+def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all independent registration axes; three-branch handler loop increases branch/statement count
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
@@ -333,6 +378,8 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     available_scopes: set[str] | None = None,
     query_params: list[str] | None = None,
     query_param_validators: dict[str, list[str]] | None = None,
+    context_params: list[str] | None = None,
+    context_param_validators: dict[str, list[str]] | None = None,
     optional_params: list[dict[str, Any]] | None = None,
     context_meta_keys: list[str] | None = None,
     size_hint: str | None = None,
@@ -406,6 +453,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             the param value against the list before making the API call
             and raises a ``ResourceError`` with ``VALIDATION_ERROR`` code
             on invalid input.  Example: ``{"state": ["open", "closed"]}``.
+        context_params: Optional list of kwargs names to treat as
+            context-only parameters.  These appear in the URI template
+            (for agent discovery) and are validated, but are **not**
+            forwarded to the underlying API call -- they are metadata
+            only, forwarded via ``context_meta_keys`` to formatters.
+            Must not overlap with ``query_params``.
+            Example: ``["type"]`` for the issues resource's display-hint.
+        context_param_validators: Optional dict mapping context param
+            names to lists of allowed values.  Same shape and behavior
+            as ``query_param_validators`` but for ``context_params``.
+            Example: ``{"type": ["issues", "pulls"]}``.
         optional_params: Optional list of dicts describing available
             optional parameters for agent discovery.  Each dict should
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
@@ -413,12 +471,12 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             metadata under ``meta["optional_params"]``.
         context_meta_keys: Kwarg names whose values should be forwarded
             into ``ResourceContent.meta`` as display context for formatters
-            that need ``extra``.  Both path params (``owner``, ``repo``)
-            and query params (``type``, ``state``) are eligible.
-            Example: the issues formatter reads ``type`` to avoid scanning
-            for PR detection; the labels formatter needs ``owner`` and
-            ``repo`` for its heading.  Only params actually present in the
-            request and not ``None`` are forwarded.
+            that need ``extra``.  Path params (``owner``, ``repo``),
+            query params (``state``), and context params (``type``) are
+            all eligible.  Example: the issues formatter reads ``type`` to
+            avoid scanning for PR detection; the labels formatter needs
+            ``owner`` and ``repo`` for its heading.  Only params actually
+            present in the request and not ``None`` are forwarded.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -442,6 +500,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             uri, scope,
         )
         return None
+
+    # Cross-list invariant: query_params and context_params must not overlap.
+    if query_params and context_params:
+        overlap = set(query_params) & set(context_params)
+        if overlap:
+            msg = (
+                f"make_api_resource: params {sorted(overlap)} appear in both "
+                f"query_params and context_params for {uri}. "
+                "A param cannot be both an API parameter and a context-only parameter."
+            )
+            raise ValueError(msg)
 
     # Auto-derive schema from the spec.
     # When the endpoint is missing from the spec (e.g. test subsets that
@@ -508,21 +577,42 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                 if query_params and key in query_params and value is not None:
                     # Validate against allowed values if a validator is registered.
                     if query_param_validators and key in query_param_validators and isinstance(value, str):
-                        _validate_query_param(
+                        _validate_optional_param(
                             key, value, query_param_validators[key],
                             resource_type=_resource_type,
                             resource_id=formatted_path,
                         )
                     query_kwargs[key] = value
+                elif context_params and key in context_params and value is not None:
+                    # Context-only param: validate but do NOT forward to API.
+                    if context_param_validators and key in context_param_validators and isinstance(value, str):
+                        _validate_optional_param(
+                            key, value, context_param_validators[key],
+                            resource_type=_resource_type,
+                            resource_id=formatted_path,
+                        )
                 else:
-                    formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
+                    # Assume any remaining kwarg is a path parameter and
+                    # substitute into the API path.  If the key isn't a
+                    # valid path placeholder, the replace is a no-op --
+                    # warn so misconfigured callers (tests, future code)
+                    # don't silently get the wrong behavior.
+                    placeholder = f"{{{key}}}"
+                    if placeholder in formatted_path:
+                        formatted_path = formatted_path.replace(placeholder, str(value))
+                    else:
+                        logger.warning(
+                            "make_api_resource %s: unknown kwarg %r=%r "
+                            "-- not a path, query, or context param; ignored",
+                            uri, key, value,
+                        )
 
             # Forward requested context keys as display metadata for
             # formatters that need extra context (e.g. ``type`` for
             # the issues title, ``owner``/``repo`` for the labels
-            # heading).  Both path params and query params are
-            # eligible -- the ``is not None`` guard excludes absent
-            # optional query params.
+            # heading).  Path params, query params, and context params
+            # are all eligible -- the ``is not None`` guard excludes
+            # absent optional params.
             handler_extra_meta: dict[str, Any] | None = None
             if context_meta_keys:
                 extra = {
@@ -578,9 +668,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     # type stubs don't include ``__signature__``.  This is a typeshed gap --
     # setting ``__signature__`` on a function is part of Python's data model,
     # not a workaround.
+    # Build the combined list of optional param names for the handler signature.
+    # Both query_params and context_params need ``{?param}`` entries in the URI
+    # template, which FastMCP validates against the handler's function signature.
+    _optional_param_names: list[str] = []
     if query_params:
-        _sig = _build_query_param_signature(
-            inspect.signature(handler), query_params
+        _optional_param_names.extend(query_params)
+    if context_params:
+        _optional_param_names.extend(context_params)
+    if _optional_param_names:
+        _sig = _build_optional_param_signature(
+            inspect.signature(handler), _optional_param_names,
         )
         if _sig != inspect.signature(handler):
             handler.__signature__ = _sig  # type: ignore[attr-defined]
@@ -609,10 +707,10 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
 
 __all__ = [
     "_auto_derive_schema",
-    "_build_query_param_signature",
+    "_build_optional_param_signature",
     "_registered_uris",
     "_request_and_wrap",
     "_set_handler_docstring",
-    "_validate_query_param",
+    "_validate_optional_param",
     "make_api_resource",
 ]

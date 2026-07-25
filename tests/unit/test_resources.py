@@ -9,7 +9,6 @@ from fastmcp.exceptions import ResourceError
 from mcp.server.fastmcp import FastMCP
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
-from gitea_mcp_server.exceptions import GiteaAPIError
 from gitea_mcp_server.format import (
     _build_server_info_markdown,
     _format_datetime,
@@ -1155,7 +1154,6 @@ class TestContextMetaKeysPipeline:
     @pytest.fixture
     def issues_resource(self, mock_client):
         """Register and return the issues resource handler with context_meta_keys."""
-        from fastmcp.resources import ResourceResult
         from gitea_mcp_server.resources.factory import make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
@@ -1225,6 +1223,7 @@ class TestContextMetaKeysPipeline:
     async def test_handler_meta_no_context_meta_keys(self, mock_client):
         """Handler does NOT forward any extra meta when context_meta_keys is absent."""
         from fastmcp.resources import ResourceResult
+
         from gitea_mcp_server.resources.factory import make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
@@ -1312,16 +1311,76 @@ class TestContextMetaKeysPipeline:
         # Generic markdown uses capitalized "Key" as header
         assert "| Key | value |" in result
 
+    @pytest.mark.asyncio
+    async def test_labels_handler_meta_forwards_owner_repo(self, mock_client):
+        """Handler with context_meta_keys=["owner","repo"] forwards path params to meta."""
+        from fastmcp.resources import ResourceResult
+
+        from gitea_mcp_server.resources.factory import make_api_resource
+        from gitea_mcp_server.tools.display import _format_labels_markdown
+
+        mcp = MagicMock(spec=FastMCP)
+        registered: dict[str, object] = {}
+
+        def resource_decorator(uri, **kwargs):
+            def deco(func):
+                registered[uri] = func
+                return func
+            return deco
+
+        mcp.resource = resource_decorator
+
+        make_api_resource(
+            mcp, mock_client, openapi_spec=None,
+            uri="gitea://repos/{owner}/{repo}/labels",
+            api_path="/repos/{owner}/{repo}/labels",
+            method="GET",
+            format_hint="labels",
+            scope="read:issue",
+            tags={"labels"},
+            error_message="Labels not found for repository '{owner}/{repo}'.",
+            context_meta_keys=["owner", "repo"],
+        )
+        handler = registered.get("gitea://repos/{owner}/{repo}/labels")
+        assert handler is not None
+
+        # Simulate Gitea returning label data.
+        labels = [
+            {"id": 1, "name": "bug", "color": "ff0000",
+             "description": "Bug reports", "exclusive": False},
+        ]
+        mock_client.request = AsyncMock(return_value=labels)
+        result = await handler(owner="acmecorp", repo="widgets")
+
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+
+        # Path param values should be forwarded via context_meta_keys
+        # into ResourceContent.meta for the display pipeline.
+        assert meta.get("owner") == "acmecorp"
+        assert meta.get("repo") == "widgets"
+
+        # Verify the display pipeline can extract and use those values:
+        # the formatter receives the extra dict (simulating what
+        # _mcp_read_resource_impl extracts from meta), and renders
+        # the owner/repo into the heading.
+        formatted = _format_labels_markdown(
+            labels,
+            extra={"owner": meta["owner"], "repo": meta["repo"]},
+        )
+        assert "# Labels for acmecorp/widgets" in formatted
+        assert "bug" in formatted
+
     def test_mcp_read_resource_impl_extracts_extra(self):
         """_mcp_read_resource_impl correctly strips known keys from meta."""
-        from gitea_mcp_server.mcp_tools import _mcp_read_resource_impl
 
         # We can't easily mock the FastMCP Context in a unit test,
         # but we can verify the extraction logic directly by testing
         # that the function's return shape matches expectations.
         # The actual extraction is tested via the handler_meta tests above
         # and the _format_resource_content tests below.
-        pass
 
 
 class TestCustomResourceStringResponsePaths:
@@ -1655,7 +1714,7 @@ class TestCustomResourceStringResponsePaths:
             return deco
 
         mcp.resource = resource_decorator
-        expected_md = f"# Server Information\n\n**Server Type**: Test\n**API Version**: 1.0\n"
+        expected_md = "# Server Information\n\n**Server Type**: Test\n**API Version**: 1.0\n"
         register_custom_resources(
             mcp, mock_gitea_client_str,
             server_info_md=expected_md,
@@ -1964,3 +2023,26 @@ class TestToolResourceConsistency:
         assert "exclusive" in result.lower()
         assert "validated" in result.lower()
         assert "`#ff0000`" in result
+
+    def test_labels_format_concise_handles_collapsed_refs(self):
+        """_format_labels_markdown with detail=concise handles collapsed $ref:Label strings."""
+        from gitea_mcp_server.tools.display import _format_labels_markdown
+
+        # Simulate collapsed items from the display pipeline (detail=concise).
+        collapsed_labels = [
+            "$ref:Label",
+            "$ref:Label",
+            "$ref:Label",
+        ]
+        result = _format_labels_markdown(
+            collapsed_labels,
+            detail="concise",
+            extra={"owner": "test-owner", "repo": "test-repo"},
+        )
+        assert "# Labels for test-owner/test-repo" in result
+        assert "**Total**: 3 labels" in result
+        assert "Accepted Format" in result
+        assert "$ref:Label" in result
+        # Per-label detail sections should NOT appear for concise mode
+        assert "**Color**:" not in result
+        assert "**Description**:" not in result

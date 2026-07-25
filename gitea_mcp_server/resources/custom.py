@@ -235,6 +235,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope="read:issue",
         tags={"labels"},
         error_message="Labels not found for repository '{owner}/{repo}'.",
+        context_meta_keys=["owner", "repo"],
         available_scopes=available_scopes,
     )
 

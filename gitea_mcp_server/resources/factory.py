@@ -125,7 +125,7 @@ def _build_handler_meta(
     display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``
     and ``format_hint`` and surfaces everything else as the ``extra`` dict
     passed to domain formatters — useful for forwarding handler context
-    like the ``type`` query param.
+    like path params (``owner``, ``repo``) or query params (``type``).
     """
     meta: dict[str, Any] = {}
     if response_schema is not None:
@@ -181,7 +181,8 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
         handler_extra_meta: Optional additional metadata to merge into
             ``ResourceContent.meta``.  The display pipeline surfaces these
             as the ``extra`` dict passed to domain formatters — use this
-            to forward handler context (e.g. requested ``type`` param).
+            to forward handler context like path params (``owner``,
+            ``repo``) or query params (``type``).
 
     Returns:
         The wrapped ``ResourceResult``.
@@ -364,10 +365,11 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     Returns ``None`` if scope-filtered (no registration occurs).
 
     Note:
-        If future patterns repeat (e.g., many list resources share the
-        same structure), consider extracting higher-level wrappers like
-        ``make_list_resource()`` or ``make_text_resource()`` that compose
-        ``make_api_resource`` with common defaults.
+        This is a candidate for extracting higher-level wrappers
+        (``make_list_resource()``, ``make_text_resource()``, etc.) that
+        compose ``make_api_resource`` with common defaults — see
+        ``docs/DEVELOPMENT.md`` → "Custom resource via factory" for
+        the project-level perspective on when and how to decide.
 
     Args:
         mcp: The FastMCP server instance.
@@ -409,11 +411,14 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
             and ``"description"`` are recommended.  Attached to resource
             metadata under ``meta["optional_params"]``.
-        context_meta_keys: Query param names whose values should be forwarded
+        context_meta_keys: Kwarg names whose values should be forwarded
             into ``ResourceContent.meta`` as display context for formatters
-            that need ``extra`` (e.g. the issues formatter reads the ``type``
-            param to avoid scanning all items for PR detection).  Only params
-            actually present in the request are forwarded.
+            that need ``extra``.  Both path params (``owner``, ``repo``)
+            and query params (``type``, ``state``) are eligible.
+            Example: the issues formatter reads ``type`` to avoid scanning
+            for PR detection; the labels formatter needs ``owner`` and
+            ``repo`` for its heading.  Only params actually present in the
+            request and not ``None`` are forwarded.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -512,11 +517,19 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                 else:
                     formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
 
-            # Forward requested query params as display context for
-            # formatters (e.g. ``type`` for the issues title).
+            # Forward requested context keys as display metadata for
+            # formatters that need extra context (e.g. ``type`` for
+            # the issues title, ``owner``/``repo`` for the labels
+            # heading).  Both path params and query params are
+            # eligible -- the ``is not None`` guard excludes absent
+            # optional query params.
             handler_extra_meta: dict[str, Any] | None = None
-            if query_kwargs and context_meta_keys:
-                extra = {k: query_kwargs[k] for k in context_meta_keys if k in query_kwargs}
+            if context_meta_keys:
+                extra = {
+                    k: kwargs[k]
+                    for k in context_meta_keys
+                    if k in kwargs and kwargs[k] is not None
+                }
                 if extra:
                     handler_extra_meta = extra
 
@@ -537,6 +550,14 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
 
         async def handler() -> ResourceResult:  # type: ignore[misc]
             """Auto-generated resource handler from factory (concrete URI)."""
+            # Concrete URIs have no path/query args, so context_meta_keys
+            # cannot forward anything — warn the dev early.
+            if context_meta_keys:
+                logger.warning(
+                    "make_api_resource: context_meta_keys=%r ignored for %s "
+                    "(concrete URI — no handler kwargs to forward from)",
+                    context_meta_keys, uri,
+                )
             return await _request_and_wrap(
                 gitea_client, method, api_path,
                 response_schema=response_schema,

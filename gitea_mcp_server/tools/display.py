@@ -251,12 +251,16 @@ def _format_release_markdown(data: list, *, detail: str = "full") -> str:
 def _format_labels_markdown(
     data: list,
     *,
-    detail: str = "full",  # noqa: ARG001 - kept for uniform formatter signature
+    detail: str = "full",
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Format labels list as Markdown with format and validation hints.
 
     Needs ``extra`` with ``owner`` and ``repo`` keys for the heading.
+
+    When ``detail=concise``, the data items may be collapsed to ``$ref:Label``
+    strings by the display pipeline before reaching this formatter — the
+    per-label detail section is replaced with a compact summary.
     """
     owner = (extra or {}).get("owner", "?")
     repo = (extra or {}).get("repo", "?")
@@ -280,6 +284,16 @@ def _format_labels_markdown(
 
     if not data:
         lines.append("*No labels configured for this repository.*")
+        lines.append("")
+    elif detail == "concise":
+        # Pre-collapsed items: the display pipeline collapses nested
+        # objects to ``$ref:Label`` strings before reaching this
+        # formatter.  Show a compact listing with type-name items
+        # instead of full per-label detail.
+        lines.append(f"## Labels ({len(data)})")
+        lines.append("")
+        for label in data:
+            lines.append(f"- {label}")
         lines.append("")
     else:
         lines.append(f"## Labels ({len(data)})")

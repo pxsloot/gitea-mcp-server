@@ -86,6 +86,11 @@ class ResourceParamConfig:
     All fields are optional — create only what you need::
 
         ResourceParamConfig(query_params=["state"], optional_params=[...])
+
+    Note: ``context_params`` and ``context_param_validators`` are currently
+    unused by any production resource — no Gitea/Forgejo API parameter is
+    genuinely display-only.  The mechanism is kept as a clean abstraction
+    for future use should a genuine display-only param ever appear.
     """
     query_params: list[str] | None = None
     query_param_validators: dict[str, list[str]] | None = None

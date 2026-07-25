@@ -1034,7 +1034,7 @@ class TestContextMetaKeysPipeline:
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
     @pytest.mark.asyncio
-    async def test_handler_meta_includes_context_param(self, issues_resource, mock_client):
+    async def test_handler_meta_includes_forwarded_param(self, issues_resource, mock_client):
         """Handler forwards context_meta_keys params (query or path) into ResourceContent.meta."""
         from fastmcp.resources import ResourceResult
 

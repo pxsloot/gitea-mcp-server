@@ -553,9 +553,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             # Forward requested context keys as display metadata for
             # formatters that need extra context (e.g. ``type`` for
             # the issues title, ``owner``/``repo`` for the labels
-            # heading).  Both path params and query params are
-            # eligible -- the ``is not None`` guard excludes absent
-            # optional query params.
+            # heading).  Path params, query params, and context params
+            # are all eligible -- the ``is not None`` guard excludes
+            # absent optional params.
             handler_extra_meta: dict[str, Any] | None = None
             if context_meta_keys:
                 extra = {

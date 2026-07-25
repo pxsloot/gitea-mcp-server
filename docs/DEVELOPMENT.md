@@ -341,6 +341,9 @@ When ``handler_hook`` is set:
 - The resource is registered as ``text/plain`` (``format_hint`` is ignored)
 - The hook is called for every response, including strings
 - Query parameters work as usual via ``query_params``
+- Context-only (metadata) parameters via ``context_params` — validated,
+  forwarded to formatters via ``context_meta_keys``, but **never sent to
+  the underlying API**
 
 **Optional query parameters**: For resources with optional query params
 (e.g. ``state`` filter on issues/pulls), set ``query_params=["state"]``.
@@ -350,45 +353,54 @@ param must be validated against a fixed set of values (e.g. ``"open"`` /
 ``"closed"``), add ``query_param_validators={"state": ["open", "closed"]}``
 and the handler raises a clear ``ResourceError`` on invalid input.
 
+**Metadata-only (context) parameters**: For params that should appear in
+the URI template (for agent discovery) and be forwarded as context to
+formatters, but **must not** be sent to the API (e.g. ``type`` on the
+issues resource, which is a display hint for the heading), use
+``context_params`` instead of ``query_params``.  Same validation pattern
+via ``context_param_validators``.  A param cannot appear in both lists.
+
 **Discovery metadata**: Set ``optional_params=[{"name": "state", ...}]``
 to surface available optional parameters in the ``list_resources`` output.
 Each dict should have at least a ``"name"`` key; ``"type"``, ``"values"``,
 and ``"description"`` are recommended.
 
-**Handler context for formatters**: When a param value (path or query) is
+**Handler context for formatters**: When a param value (path or context) is
 useful to the display formatter, list its name in ``context_meta_keys``.
-The factory forwards matching values from all handler kwargs (both path
-params like ``owner``/``repo`` and query params like ``type``) through
-``ResourceContent.meta``, where the display pipeline surfaces them as the
-``extra`` dict for formatters registered with ``needs_extra=True``.
+The factory forwards matching values from all handler kwargs (path params
+like ``owner``/``repo``, query params like ``state``, and context params
+like ``type``) through ``ResourceContent.meta``, where the display
+pipeline surfaces them as the ``extra`` dict for formatters registered
+with ``needs_extra=True``.
 
 Two formatters currently use this:
 
-- **Issues**: reads ``type`` (query param: ``issues`` / ``pulls``) to
+- **Issues**: reads ``type`` (context param: ``issues`` / ``pulls``) to
   produce the correct title without scanning data for PR detection.
+  ``type`` is a ``context_param`` — validated and forwarded to the
+  formatter, but never sent to the underlying API.
 - **Labels**: reads ``owner`` and ``repo`` (path params) for the heading
   (``# Labels for {owner}/{repo}``).
 
 See the factory calls in ``custom.py`` for complete examples.  The issues
-resource (query-param forwarding)::
+resource (context-param forwarding)::
 
     make_api_resource(
         mcp, gitea_client, openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/issues{?state}",
+        uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
         api_path="/repos/{owner}/{repo}/issues",
         format_hint="issues",
         resource_type="issues",
         scope="read:repository",
         tags={"issues"},
-        query_params=["state", "type"],
-        query_param_validators={
-            "state": ["open", "closed"],
-            "type": ["issues", "pulls"],
-        },
+        query_params=["state"],
+        query_param_validators={"state": ["open", "closed"]},
+        context_params=["type"],
+        context_param_validators={"type": ["issues", "pulls"]},
         optional_params=[
             {"name": "state", "type": "string", "values": ["open", "closed"]},
             {"name": "type", "type": "string", "values": ["issues", "pulls"],
-             "description": "Filter by type (issues / pulls)"},
+             "description": "Filter display heading by type (issues / pulls)"},
         ],
         context_meta_keys=["type"],
         available_scopes=available_scopes,

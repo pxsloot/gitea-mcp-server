@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
+from gitea_mcp_server.schema_utils import schema_type_matches
 
 from .schema import (
     OptionalPropertyTransformer,
@@ -534,7 +535,7 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
             if required_fields:
                 schema["required"] = required_fields
 
-    if "type" in schema and schema["type"] == "array" and "items" in schema:
+    if schema_type_matches(schema, "array") and "items" in schema:
         schema["items"] = convert_schema(schema["items"])
 
     for combo in ["allOf", "anyOf", "oneOf"]:

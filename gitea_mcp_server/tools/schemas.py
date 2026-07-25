@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from gitea_mcp_server.openapi_converter import _resolve_spec_ref as _resolve_ref
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.schema_utils import schema_type_matches
 
 
 def _collect_refs(schema: Any) -> set[str]:
@@ -303,20 +304,19 @@ def derive_output_schema(
 
 
 def _schema_type_is_array(schema: dict[str, Any]) -> bool:
-    """Check whether a schema dict has type 'array' (string or list form)."""
-    t = schema.get("type")
-    if isinstance(t, str):
-        return t == "array"
-    if isinstance(t, list):
-        return "array" in t
-    return False
+    """Check whether a schema dict has type 'array' (string or list form).
+
+    Delegates to :func:`schema_type_matches` which handles both
+    ``type: "array"`` and ``type: ["array", "null"]`` forms.
+    """
+    return schema_type_matches(schema, "array")
 
 
 def _is_object_type(schema: dict[str, Any]) -> bool:
     """Check whether a schema dict has type 'object', handling both string and list forms.
 
-    JSON Schema permits ``type`` as either a string (``"object"``) or a list
-    (``["object", "null"]``).  This helper handles both forms.
+    Delegates to :func:`schema_type_matches` which handles both
+    ``type: "object"`` and ``type: ["object", "null"]`` forms.
 
     Args:
         schema: A JSON Schema dict to check.
@@ -324,12 +324,7 @@ def _is_object_type(schema: dict[str, Any]) -> bool:
     Returns:
         ``True`` if the schema's ``type`` is or contains ``"object"``.
     """
-    t = schema.get("type")
-    if isinstance(t, str):
-        return t == "object"
-    if isinstance(t, list):
-        return "object" in t
-    return False
+    return schema_type_matches(schema, "object")
 
 
 def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:

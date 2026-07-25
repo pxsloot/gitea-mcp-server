@@ -371,6 +371,29 @@ class TestAddNullableForOptionalRefs:
         assert email_prop["anyOf"][1]["type"] == "null"
 
 
+class TestSchemaNormalizer:
+    """Tests for SchemaNormalizer — Swagger 2.0 type normalization."""
+
+    def test_file_type_converted_to_string_binary(self):
+        """Swagger 2.0 ``type: "file"`` becomes ``type: "string"`` + ``format: "binary"``."""
+        schema = SchemaNormalizer().normalize({"type": "file"})
+        assert schema["type"] == "string"
+        assert schema["format"] == "binary"
+
+    def test_file_type_list_handled_defensively(self):
+        """``type: ["file", "null"]`` — schema_type_matches detects ``"file"`` in the list
+        and converts it to ``"string"``, preserving the list structure."""
+        schema = SchemaNormalizer().normalize({"type": ["file", "null"]})
+        # The normalizer replaces "file" with "string" in the list
+        assert schema["type"] == ["string", "null"]
+        assert schema["format"] == "binary"
+
+    def test_uint64_format_converted_to_int64(self):
+        """Swagger 2.0 ``format: "uint64"`` becomes ``format: "int64"``."""
+        schema = SchemaNormalizer().normalize({"type": "integer", "format": "uint64"})
+        assert schema["format"] == "int64"
+
+
 class TestVendorExtensionStripping:
     """Tests for vendor extension (x-*) stripping in schema conversion."""
 
@@ -492,3 +515,57 @@ class TestVendorExtensionStripping:
         assert "x-go-name" not in schema["properties"]["labels"]
         assert schema["properties"]["title"]["type"] == "string"
         assert schema["properties"]["labels"]["type"] == "array"
+
+
+class TestConvertSchemaWithTypeList:
+    """Tests for convert_schema with type-as-list values.
+
+    JSON Schema permits ``type`` as either a string or a list.  The
+    ``convert_schema`` function must handle both.
+    """
+
+    def test_array_type_list_with_items(self):
+        """``type: ["array", "null"]`` with items should still recursively convert items."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": ["array", "null"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "The ID"},
+                    "name": {"type": "string", "description": "The name"},
+                },
+                "x-go-package": "forgejo.org/modules/structs",
+            },
+        }
+        result = convert_schema(schema)
+        # Type should be preserved as-is since the normalizer doesn't change it
+        assert result["type"] == ["array", "null"]
+        # Items must be recursively converted (x-go-package stripped from items)
+        assert "x-go-package" not in result["items"]
+        assert result["items"]["properties"]["id"]["type"] == "integer"
+        assert result["items"]["properties"]["name"]["type"] == "string"
+
+    def test_object_type_list(self):
+        """``type: ["object", "null"]`` with properties — properties should be converted."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {
+            "type": ["object", "null"],
+            "properties": {
+                "title": {"type": "string", "x-go-name": "Title"},
+            },
+        }
+        result = convert_schema(schema)
+        # Vendor extensions stripped from properties
+        assert "x-go-name" not in result["properties"]["title"]
+        assert result["properties"]["title"]["type"] == "string"
+
+    def test_array_type_list_without_items(self):
+        """``type: ["array", "null"]`` without items key — should not crash."""
+        from gitea_mcp_server.openapi_converter import convert_schema
+
+        schema = {"type": ["array", "null"]}
+        result = convert_schema(schema)
+        assert result["type"] == ["array", "null"]

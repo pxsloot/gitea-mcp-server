@@ -33,6 +33,8 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
+from gitea_mcp_server.schema_utils import get_schema_type
+
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
     from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -500,7 +502,7 @@ def _format_type(prop: dict[str, Any]) -> str:
     Returns:
         A human-readable type string.
     """
-    ptype = str(prop.get("type", "any"))
+    ptype = get_schema_type(prop) or "any"
 
     # 1. Enum — append allowed values right in the type column
     enum_vals = prop.get("enum")

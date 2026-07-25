@@ -1068,6 +1068,34 @@ class TestFormatType:
         }
         assert _format_type(prop) == "array [create, update, delete]"
 
+    def test_type_list_extracts_non_null_type(self):
+        """``type: ["array", "null"]`` should display as ``"array"``."""
+        prop = {"type": ["array", "null"]}
+        assert _format_type(prop) == "array"
+
+    def test_type_list_with_items_properties(self):
+        """``type: ["array", "null"]`` with items.properties shows array of {...}."""
+        prop = {
+            "type": ["array", "null"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string"},
+                    "path": {"type": "string"},
+                },
+            },
+        }
+        assert _format_type(prop) == "array of {operation, path}"
+
+    def test_type_list_with_enum(self):
+        """``type: ["string", "null"]`` with enum appends enum values."""
+        prop = {"type": ["string", "null"], "enum": ["open", "closed"]}
+        assert _format_type(prop) == "string [open, closed]"
+
+    def test_type_list_all_null(self):
+        """``type: ["null"]`` returns ``"null"`` — the only type present."""
+        assert _format_type({"type": ["null"]}) == "null"
+
 
 class TestFormatParameterTable:
     """Tests for _format_parameter_table — the markdown parameter table."""

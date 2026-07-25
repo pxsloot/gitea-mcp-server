@@ -735,8 +735,7 @@ class TestMakeApiResourceContextMetaKeys:
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
-                query_params=["state"],
-                context_params=["type"],
+                query_params=["state", "type"],
                 context_meta_keys=["owner", "repo", "type"],
             ),
         )
@@ -749,7 +748,7 @@ class TestMakeApiResourceContextMetaKeys:
         # Path params
         assert meta.get("owner") == "myorg"
         assert meta.get("repo") == "myrepo"
-        # Context param forwarded via context_meta_keys
+        # Query param forwarded via context_meta_keys
         assert meta.get("type") == "pulls"
         # 'state' not in context_meta_keys → absent
         assert "state" not in meta
@@ -793,8 +792,7 @@ class TestMakeApiResourceContextMetaKeys:
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
-                query_params=["state"],
-                context_params=["type"],
+                query_params=["state", "type"],
                 context_meta_keys=["type"],
             ),
         )
@@ -818,6 +816,10 @@ class TestMakeApiResourceContextParams:
 
     context_params are validated and forwarded via context_meta_keys but
     never included in the API request's params dict.
+
+    Note: The mechanism uses a dummy param name ``display_hint`` to avoid
+    confusion with real Gitea API params — no Gitea endpoint currently
+    has a genuinely display-only parameter (see issue #540).
     """
 
     @pytest.mark.asyncio
@@ -829,23 +831,23 @@ class TestMakeApiResourceContextParams:
 
         handler = make_api_resource(
             mcp, client, spec,
-            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
                 query_params=["state"],
-                context_params=["type"],
+                context_params=["display_hint"],
             ),
         )
 
-        await handler(owner="myorg", repo="myrepo", state="open", type="pulls")
+        await handler(owner="myorg", repo="myrepo", state="open", display_hint="pulls")
         client.request.assert_called_once()
         _, kwargs = client.request.call_args
         params = kwargs.get("params", {})
         # state IS sent to API
         assert params.get("state") == "open"
-        # type is NOT sent to API
-        assert "type" not in params
+        # display_hint is NOT sent to API (context-only)
+        assert "display_hint" not in params
 
     @pytest.mark.asyncio
     async def test_context_params_forwarded_via_meta(self):
@@ -856,22 +858,22 @@ class TestMakeApiResourceContextParams:
 
         handler = make_api_resource(
             mcp, client, spec,
-            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
                 query_params=["state"],
-                context_params=["type"],
-                context_meta_keys=["type"],
+                context_params=["display_hint"],
+                context_meta_keys=["display_hint"],
             ),
         )
 
-        result = await handler(owner="myorg", repo="myrepo", type="pulls")
+        result = await handler(owner="myorg", repo="myrepo", display_hint="pulls")
         assert isinstance(result, ResourceResult)
         assert result.contents
         meta = result.contents[0].meta
         assert meta is not None
-        assert meta.get("type") == "pulls"
+        assert meta.get("display_hint") == "pulls"
 
     @pytest.mark.asyncio
     async def test_context_param_validators_rejects_invalid(self):
@@ -882,22 +884,22 @@ class TestMakeApiResourceContextParams:
 
         handler = make_api_resource(
             mcp, client, spec,
-            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
-                context_params=["type"],
-                context_param_validators={"type": ["issues", "pulls"]},
+                context_params=["display_hint"],
+                context_param_validators={"display_hint": ["issues", "pulls"]},
             ),
             resource_type="issues",
         )
 
         with pytest.raises(ResourceError) as exc:
-            await handler(owner="o", repo="r", type="invalid")
+            await handler(owner="o", repo="r", display_hint="invalid")
 
         error = exc.value.args[0]
         assert error["code"] == "VALIDATION_ERROR"
-        assert "Invalid type parameter" in error["message"]
+        assert "Invalid display_hint parameter" in error["message"]
         assert "issues" in error["message"]
         assert "pulls" in error["message"]
 
@@ -910,16 +912,16 @@ class TestMakeApiResourceContextParams:
 
         handler = make_api_resource(
             mcp, client, spec,
-            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
-                context_params=["type"],
-                context_param_validators={"type": ["issues", "pulls"]},
+                context_params=["display_hint"],
+                context_param_validators={"display_hint": ["issues", "pulls"]},
             ),
         )
 
-        result = await handler(owner="o", repo="r", type="issues")
+        result = await handler(owner="o", repo="r", display_hint="issues")
         assert isinstance(result, ResourceResult)
         client.request.assert_called_once()
 
@@ -932,19 +934,19 @@ class TestMakeApiResourceContextParams:
 
         handler = make_api_resource(
             mcp, client, spec,
-            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
             param_config=ResourceParamConfig(
                 query_params=["state"],
-                context_params=["type"],
+                context_params=["display_hint"],
             ),
         )
 
-        await handler(owner="o", repo="r", state="open", type="pulls")
+        await handler(owner="o", repo="r", state="open", display_hint="pulls")
         client.request.assert_called_once()
         args, _ = client.request.call_args
-        # path should not contain {type}
+        # path should not contain {display_hint}
         assert args[1] == "/repos/o/r/issues"
 
     @pytest.mark.asyncio
@@ -960,8 +962,8 @@ class TestMakeApiResourceContextParams:
                 uri="gitea://repos/{owner}/{repo}/issues",
                 api_path="/repos/{owner}/{repo}/issues",
                 param_config=ResourceParamConfig(
-                    query_params=["type"],
-                    context_params=["type"],
+                    query_params=["display_hint"],
+                    context_params=["display_hint"],
                 ),
             )
 

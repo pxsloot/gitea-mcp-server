@@ -90,6 +90,10 @@ class ResourceParamConfig:
     query_params: list[str] | None = None
     query_param_validators: dict[str, list[str]] | None = None
     context_params: list[str] | None = None
+    # context_param_validators is unused in practice -- no Gitea/Forgejo API
+    # parameter is genuinely display-only (all params in the spec are real
+    # API query params).  The mechanism is kept as a clean abstraction for
+    # future use should a genuine display-only param ever appear.
     context_param_validators: dict[str, list[str]] | None = None
     context_meta_keys: list[str] | None = None
     optional_params: list[dict[str, Any]] | None = None

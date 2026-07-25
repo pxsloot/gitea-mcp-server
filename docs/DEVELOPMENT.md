@@ -341,37 +341,47 @@ When ``handler_hook`` is set:
 - The resource is registered as ``text/plain`` (``format_hint`` is ignored)
 - The hook is called for every response, including strings
 - Query parameters work as usual via ``param_config.query_params``
-- Context-only (metadata) parameters via ``param_config.context_params`` —
+- Context parameters via ``param_config.context_params`` —
   validated, forwarded to formatters via ``param_config.context_meta_keys``,
-  but **never sent to the underlying API**
+  but **never sent to the underlying API**.  Reserved for future use —
+  see note below.
 
 All parameter-routing configuration is grouped into a ``ResourceParamConfig``
 dataclass.  Key fields:
 
 - ``query_params`` — optional kwargs extracted into the API call's
-  ``params`` dict (e.g. ``["state"]``).  Never substituted into the path.
+  ``params`` dict (e.g. ``["state", "type"]``).  Never substituted into the path.
 - ``query_param_validators`` — allowed values per query param.  Raises
   ``ResourceError`` on invalid input.
 - ``context_params`` — validated kwargs that appear in the URI template
-  but are **never** sent to the API (e.g. ``["type"]`` for display hints).
-- ``context_param_validators`` — allowed values per context param.
+  but are **never** sent to the API.  **Currently unused** — see note below.
+- ``context_param_validators`` — allowed values per context param.  Also
+  currently unused.
 - ``optional_params`` — discovery metadata for ``list_resources`` output.
 - ``context_meta_keys`` — handler kwargs forwarded into
-  ``ResourceContent.meta`` as display context for formatters.
+  ``ResourceContent.meta`` as display context for formatters.  Works for
+  path params, query params, and context params alike.
 
 A param cannot appear in both ``query_params`` and ``context_params``.
 
+> **Note on ``context_params``**: The Gitea/Forgejo API spec describes real
+> query parameters — every ``in: query`` param from the Swagger spec is
+> accepted and processed by the server.  There is no Gitea API parameter
+> that is genuinely display-only.  The ``context_params`` mechanism is kept
+> as a clean abstraction for future use (e.g. a non-Gitea backend with
+> display-only URL params), but it is not currently consumed by any resource.
+> See issue #540 for the full research.
+
 Two formatters currently use context metadata:
 
-- **Issues**: reads ``type`` (context param: ``issues`` / ``pulls``) to
-  produce the correct title without scanning data for PR detection.
-  ``type`` is a ``context_params`` entry — validated and forwarded to the
-  formatter, but never sent to the underlying API.
+- **Issues**: reads ``type`` (query param: ``issues`` / ``pulls``) via
+  ``context_meta_keys`` for the resource title.  ``type`` is a real API
+  query parameter — it is sent to the API and forwarded to the formatter.
 - **Labels**: reads ``owner`` and ``repo`` (path params forwarded via
   ``context_meta_keys``) for the heading (``# Labels for {owner}/{repo}``).
 
 See the factory calls in ``custom.py`` for complete examples.  The issues
-resource (context-param forwarding)::
+resource (query params with context forwarding)::
 
     from gitea_mcp_server.resources.factory import ResourceParamConfig
 
@@ -385,14 +395,12 @@ resource (context-param forwarding)::
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
         param_config=ResourceParamConfig(
-            query_params=["state"],
-            query_param_validators={"state": ["open", "closed"]},
-            context_params=["type"],
-            context_param_validators={"type": ["issues", "pulls"]},
+            query_params=["state", "type"],
+            query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
             optional_params=[
                 {"name": "state", "type": "string", "values": ["open", "closed"]},
                 {"name": "type", "type": "string", "values": ["issues", "pulls"],
-                 "description": "Filter display heading by type (issues / pulls)"},
+                 "description": "Filter by type (issues / pulls)"},
             ],
             context_meta_keys=["type"],
         ),
@@ -441,8 +449,8 @@ A param **cannot** be declared in both ``query_params`` and ``context_params`` �
 
 | Your kwarg... | Use | Because |
 |--------------|-----|---------|
-| Is a filter the Gitea API understands (``state``, ``draft``, ``q``) | ``query_params`` | Sent to the API as ``?key=value`` |
-| Is a display hint only (``type`` for issues heading) | ``context_params`` | Validated and forwarded to formatters, never sent |
+| Is a filter the Gitea API understands (``state``, ``type``, ``draft``, ``q``) | ``query_params`` | Sent to the API as ``?key=value`` |
+| Is a display hint only (keep this row for when a case appears) | ``context_params`` | Validated and forwarded to formatters, never sent; currently unused |
 | Is a path segment (``owner``, ``repo``) | (automatic) | Substituted into ``api_path`` from the URI template |
 | Needs post-processing (base64 decode, string transform) | ``handler_hook`` | Receives raw API response, returns a string |
 
@@ -463,16 +471,14 @@ working together::
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found or has no issues.",
         param_config=ResourceParamConfig(
-            query_params=["state"],              # → API as ?state=
-            query_param_validators={"state": ["open", "closed"]},
-            context_params=["type"],              # → meta only, never API
-            context_param_validators={"type": ["issues", "pulls"]},
+            query_params=["state", "type"],       # → API as ?state=&type=
+            query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
             optional_params=[
                 {"name": "state", "type": "string", "values": ["open", "closed"]},
                 {"name": "type", "type": "string", "values": ["issues", "pulls"],
-                 "description": "Filter display heading by type (issues / pulls)"},
+                 "description": "Filter by type (issues / pulls)"},
             ],
-            context_meta_keys=["type"],
+            context_meta_keys=["type"],            # → forwarded to formatter too
         ),
         available_scopes=available_scopes,
     )

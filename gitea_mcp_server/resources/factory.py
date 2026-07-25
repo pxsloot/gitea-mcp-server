@@ -278,26 +278,27 @@ def _set_handler_docstring(
         handler.__doc__ = f"Resource for {method} {api_path}"
 
 
-def _build_query_param_signature(
+def _build_optional_param_signature(
     handler_sig: inspect.Signature,
-    query_params: list[str],
+    optional_params_names: list[str],
 ) -> inspect.Signature:
-    """Add query params as ``KEYWORD_ONLY`` params to a handler signature.
+    """Add optional URI template params as ``KEYWORD_ONLY`` params.
 
     FastMCP requires ``{?param}`` URI template entries to have matching
     optional function parameters with default values.  This helper takes a
-    ``**kwargs``-style signature and adds each query param as a
-    ``KEYWORD_ONLY`` parameter with ``default=None``, keeping the actual
-    handler body unchanged (params flow through ``**kwargs``).
+    ``**kwargs``-style signature and adds each param as a ``KEYWORD_ONLY``
+    parameter with ``default=None``, keeping the handler body unchanged
+    (params flow through ``**kwargs``).
 
     Args:
         handler_sig: The handler's inspect.Signature.
-        query_params: List of query parameter names to add.
+        optional_params_names: List of optional param names to add (from
+            ``query_params`` and/or ``context_params``).
 
     Returns:
-        Modified signature with query params inserted before the
-        ``**kwargs`` parameter, or the original signature unchanged
-        if the handler uses positional params instead of ``**kwargs``.
+        Modified signature with optional params inserted before the
+        ``**kwargs`` parameter, or the original unchanged if the handler
+        uses positional params instead of ``**kwargs``.
     """
     existing = handler_sig.parameters
     kwargs_param = existing.get("kwargs")
@@ -306,7 +307,7 @@ def _build_query_param_signature(
 
     new_params: list[inspect.Parameter] = [
         inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=None)
-        for name in query_params
+        for name in optional_params_names
         if name not in existing
     ]
     if not new_params:
@@ -315,7 +316,7 @@ def _build_query_param_signature(
     return handler_sig.replace(parameters=[*new_params, kwargs_param])
 
 
-def make_api_resource(  # noqa: PLR0913 -- params are all independent registration axes
+def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all independent registration axes; three-branch handler loop increases branch/statement count
     mcp: FastMCP,
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
@@ -333,6 +334,8 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     available_scopes: set[str] | None = None,
     query_params: list[str] | None = None,
     query_param_validators: dict[str, list[str]] | None = None,
+    context_params: list[str] | None = None,
+    context_param_validators: dict[str, list[str]] | None = None,
     optional_params: list[dict[str, Any]] | None = None,
     context_meta_keys: list[str] | None = None,
     size_hint: str | None = None,
@@ -406,6 +409,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             the param value against the list before making the API call
             and raises a ``ResourceError`` with ``VALIDATION_ERROR`` code
             on invalid input.  Example: ``{"state": ["open", "closed"]}``.
+        context_params: Optional list of kwargs names to treat as
+            context-only parameters.  These appear in the URI template
+            (for agent discovery) and are validated, but are **not**
+            forwarded to the underlying API call -- they are metadata
+            only, forwarded via ``context_meta_keys`` to formatters.
+            Must not overlap with ``query_params``.
+            Example: ``["type"]`` for the issues resource's display-hint.
+        context_param_validators: Optional dict mapping context param
+            names to lists of allowed values.  Same shape and behavior
+            as ``query_param_validators`` but for ``context_params``.
+            Example: ``{"type": ["issues", "pulls"]}``.
         optional_params: Optional list of dicts describing available
             optional parameters for agent discovery.  Each dict should
             have at least a ``"name"`` key; ``"type"``, ``"values"``,
@@ -413,12 +427,12 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             metadata under ``meta["optional_params"]``.
         context_meta_keys: Kwarg names whose values should be forwarded
             into ``ResourceContent.meta`` as display context for formatters
-            that need ``extra``.  Both path params (``owner``, ``repo``)
-            and query params (``type``, ``state``) are eligible.
-            Example: the issues formatter reads ``type`` to avoid scanning
-            for PR detection; the labels formatter needs ``owner`` and
-            ``repo`` for its heading.  Only params actually present in the
-            request and not ``None`` are forwarded.
+            that need ``extra``.  Path params (``owner``, ``repo``),
+            query params (``state``), and context params (``type``) are
+            all eligible.  Example: the issues formatter reads ``type`` to
+            avoid scanning for PR detection; the labels formatter needs
+            ``owner`` and ``repo`` for its heading.  Only params actually
+            present in the request and not ``None`` are forwarded.
         size_hint: Estimated token cost of the resource content.
             One of ``"tiny"``, ``"small"``, ``"medium"``, ``"large"``.
             When not set, auto-derived from the response schema.
@@ -442,6 +456,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
             uri, scope,
         )
         return None
+
+    # Cross-list invariant: query_params and context_params must not overlap.
+    if query_params and context_params:
+        overlap = set(query_params) & set(context_params)
+        if overlap:
+            msg = (
+                f"make_api_resource: params {sorted(overlap)} appear in both "
+                f"query_params and context_params for {uri}. "
+                "A param cannot be both an API parameter and a context-only parameter."
+            )
+            raise ValueError(msg)
 
     # Auto-derive schema from the spec.
     # When the endpoint is missing from the spec (e.g. test subsets that
@@ -514,6 +539,14 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
                             resource_id=formatted_path,
                         )
                     query_kwargs[key] = value
+                elif context_params and key in context_params and value is not None:
+                    # Context-only param: validate but do NOT forward to API.
+                    if context_param_validators and key in context_param_validators and isinstance(value, str):
+                        _validate_query_param(
+                            key, value, context_param_validators[key],
+                            resource_type=_resource_type,
+                            resource_id=formatted_path,
+                        )
                 else:
                     formatted_path = formatted_path.replace(f"{{{key}}}", str(value))
 
@@ -578,9 +611,17 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
     # type stubs don't include ``__signature__``.  This is a typeshed gap --
     # setting ``__signature__`` on a function is part of Python's data model,
     # not a workaround.
+    # Build the combined list of optional param names for the handler signature.
+    # Both query_params and context_params need ``{?param}`` entries in the URI
+    # template, which FastMCP validates against the handler's function signature.
+    _optional_param_names: list[str] = []
     if query_params:
-        _sig = _build_query_param_signature(
-            inspect.signature(handler), query_params
+        _optional_param_names.extend(query_params)
+    if context_params:
+        _optional_param_names.extend(context_params)
+    if _optional_param_names:
+        _sig = _build_optional_param_signature(
+            inspect.signature(handler), _optional_param_names,
         )
         if _sig != inspect.signature(handler):
             handler.__signature__ = _sig  # type: ignore[attr-defined]
@@ -609,7 +650,7 @@ def make_api_resource(  # noqa: PLR0913 -- params are all independent registrati
 
 __all__ = [
     "_auto_derive_schema",
-    "_build_query_param_signature",
+    "_build_optional_param_signature",
     "_registered_uris",
     "_request_and_wrap",
     "_set_handler_docstring",

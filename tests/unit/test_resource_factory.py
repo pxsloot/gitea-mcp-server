@@ -693,7 +693,8 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state", "type"],
+            query_params=["state"],
+            context_params=["type"],
             context_meta_keys=["owner", "repo", "type"],
         )
 
@@ -705,7 +706,7 @@ class TestMakeApiResourceContextMetaKeys:
         # Path params
         assert meta.get("owner") == "myorg"
         assert meta.get("repo") == "myrepo"
-        # Query param
+        # Context param forwarded via context_meta_keys
         assert meta.get("type") == "pulls"
         # 'state' not in context_meta_keys → absent
         assert "state" not in meta
@@ -746,7 +747,8 @@ class TestMakeApiResourceContextMetaKeys:
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
-            query_params=["state", "type"],
+            query_params=["state"],
+            context_params=["type"],
             context_meta_keys=["type"],
         )
 
@@ -757,6 +759,152 @@ class TestMakeApiResourceContextMetaKeys:
         assert meta is not None
         assert "type" not in meta  # None → excluded
         assert "owner" not in meta  # Not in context_meta_keys
+
+
+# ---------------------------------------------------------------------------
+# Tests: make_api_resource -- context_params (metadata-only, not sent to API)
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourceContextParams:
+    """Tests for context_params and context_param_validators in make_api_resource.
+
+    context_params are validated and forwarded via context_meta_keys but
+    never included in the API request's params dict.
+    """
+
+    @pytest.mark.asyncio
+    async def test_context_params_not_sent_to_api(self):
+        """context_params are NOT included in the params dict sent to the API."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            query_params=["state"],
+            context_params=["type"],
+        )
+
+        await handler(owner="myorg", repo="myrepo", state="open", type="pulls")
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        params = kwargs.get("params", {})
+        # state IS sent to API
+        assert params.get("state") == "open"
+        # type is NOT sent to API
+        assert "type" not in params
+
+    @pytest.mark.asyncio
+    async def test_context_params_forwarded_via_meta(self):
+        """context_params values are forwarded via context_meta_keys into ResourceContent.meta."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            query_params=["state"],
+            context_params=["type"],
+            context_meta_keys=["type"],
+        )
+
+        result = await handler(owner="myorg", repo="myrepo", type="pulls")
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+        meta = result.contents[0].meta
+        assert meta is not None
+        assert meta.get("type") == "pulls"
+
+    @pytest.mark.asyncio
+    async def test_context_param_validators_rejects_invalid(self):
+        """context_param_validators raises ResourceError for invalid values."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
+            resource_type="issues",
+        )
+
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r", type="invalid")
+
+        error = exc.value.args[0]
+        assert error["code"] == "VALIDATION_ERROR"
+        assert "Invalid type parameter" in error["message"]
+        assert "issues" in error["message"]
+        assert "pulls" in error["message"]
+
+    @pytest.mark.asyncio
+    async def test_context_param_validators_accepts_valid(self):
+        """Valid context_param values pass validation."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            context_params=["type"],
+            context_param_validators={"type": ["issues", "pulls"]},
+        )
+
+        result = await handler(owner="o", repo="r", type="issues")
+        assert isinstance(result, ResourceResult)
+        client.request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_context_params_not_substituted_into_path(self):
+        """context_params are NOT substituted into the API path."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            query_params=["state"],
+            context_params=["type"],
+        )
+
+        await handler(owner="o", repo="r", state="open", type="pulls")
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        # path should not contain {type}
+        assert args[1] == "/repos/o/r/issues"
+
+    @pytest.mark.asyncio
+    async def test_query_params_and_context_params_overlap_raises(self):
+        """Overlapping keys in query_params and context_params raise ValueError."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        with pytest.raises(ValueError, match="appear in both"):
+            make_api_resource(
+                mcp, client, spec,
+                uri="gitea://repos/{owner}/{repo}/issues",
+                api_path="/repos/{owner}/{repo}/issues",
+                query_params=["type"],
+                context_params=["type"],
+            )
 
 
 class TestMakeApiResourceOptionalParams:

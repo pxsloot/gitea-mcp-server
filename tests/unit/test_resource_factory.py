@@ -466,8 +466,8 @@ class TestMakeApiResourceErrorHandling:
         assert "Unexpected error" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_404_error_with_type_entity_issues(self):
-        """Error message uses 'issues' entity when type=issues."""
+    async def test_404_error_resource_type_issues(self):
+        """resource_type is 'issues' in error when type=issues."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -483,7 +483,7 @@ class TestMakeApiResourceErrorHandling:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
-            error_message="'{owner}/{repo}' has no {type_entity}.",
+            error_message="'{owner}/{repo}' resource not found.",
             param_config=ResourceParamConfig(
                 query_params=["state", "type"],
                 query_param_validators={"type": ["issues", "pulls"]},
@@ -495,12 +495,11 @@ class TestMakeApiResourceErrorHandling:
 
         error = exc.value.args[0]
         assert error["code"] == "NOT_FOUND"
-        assert "my-org/my-repo' has no issues." in error["message"]
         assert error["resource_type"] == "issues"
 
     @pytest.mark.asyncio
-    async def test_404_error_with_type_entity_pulls(self):
-        """Error message uses 'pull requests' entity when type=pulls."""
+    async def test_404_error_resource_type_pulls(self):
+        """resource_type is 'pulls' in error when type=pulls."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -516,7 +515,7 @@ class TestMakeApiResourceErrorHandling:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
-            error_message="'{owner}/{repo}' has no {type_entity}.",
+            error_message="'{owner}/{repo}' resource not found.",
             param_config=ResourceParamConfig(
                 query_params=["state", "type"],
                 query_param_validators={"type": ["issues", "pulls"]},
@@ -528,12 +527,11 @@ class TestMakeApiResourceErrorHandling:
 
         error = exc.value.args[0]
         assert error["code"] == "NOT_FOUND"
-        assert "my-org/my-repo' has no pull requests." in error["message"]
         assert error["resource_type"] == "pulls"
 
     @pytest.mark.asyncio
-    async def test_404_error_without_type_param(self):
-        """Error message defaults to 'issues' entity when type is absent."""
+    async def test_404_error_resource_type_default(self):
+        """resource_type defaults to factory's resource_type when type is absent."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -549,7 +547,7 @@ class TestMakeApiResourceErrorHandling:
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
-            error_message="'{owner}/{repo}' has no {type_entity}.",
+            error_message="'{owner}/{repo}' resource not found.",
             param_config=ResourceParamConfig(
                 query_params=["state", "type"],
                 query_param_validators={"type": ["issues", "pulls"]},
@@ -561,7 +559,6 @@ class TestMakeApiResourceErrorHandling:
 
         error = exc.value.args[0]
         assert error["code"] == "NOT_FOUND"
-        assert "my-org/my-repo' has no issues." in error["message"]
         assert error["resource_type"] == "issues"
 
 

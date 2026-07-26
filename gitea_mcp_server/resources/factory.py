@@ -621,19 +621,11 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 if extra:
                     handler_extra_meta = extra
 
-            # Build error_kwargs with derived labels for dynamic error
-            # messages.  The ``type`` query param (issues/pulls) determines
-            # the entity label injected as ``{type_entity}`` for use in the
-            # error message template.  We copy kwargs so derived keys can
-            # be added without mutating the original args.
-            error_kwargs = dict(kwargs)
-            if error_kwargs.get("type") == "pulls":
-                error_kwargs["type_entity"] = "pull requests"
-            else:
-                error_kwargs["type_entity"] = error_kwargs.get("type", "issues")
-
             # Resolve resource_type dynamically based on ``type`` query
-            # param so that error responses reflect the actual entity.
+            # param so that error responses reflect what the agent was
+            # querying.  The ``type`` value is a raw API entity name
+            # ("issues" / "pulls"); display formatting (e.g. "pull requests")
+            # belongs in the read_resource display layer.
             effective_resource_type: str = (
                 "pulls" if kwargs.get("type") == "pulls" else _resource_type
             )
@@ -646,7 +638,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 resource_type=effective_resource_type,
                 error_message=error_message,
                 uri=uri,
-                error_kwargs=error_kwargs,
+                error_kwargs=kwargs,
                 handler_hook=handler_hook,
                 handler_extra_meta=handler_extra_meta,
             )

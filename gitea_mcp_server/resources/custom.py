@@ -205,7 +205,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         resource_type="issues",
         scope="read:repository",
         tags={"wrapper", "issues"},
-        error_message="Repository '{owner}/{repo}' not found or returned no results.",
+        error_message="Repository '{owner}/{repo}' not found.",
         param_config=ResourceParamConfig(
             query_params=["state", "type"],
             query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},

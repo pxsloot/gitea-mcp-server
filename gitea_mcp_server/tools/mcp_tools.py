@@ -14,9 +14,6 @@ Tool list:
 
 Display pipeline lives in ``tools/resource_display.py`` — this module imports
 from it rather than duplicating formatting logic.
-
-Originally at ``gitea_mcp_server/mcp_tools.py`` (root), moved here in
-the refactor/543-move-tools-and-resources branch.
 """
 
 import json

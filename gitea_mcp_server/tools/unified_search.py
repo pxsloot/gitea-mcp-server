@@ -4,9 +4,6 @@ Provides a single ``search`` tool that queries all three subsystems
 (tools, workflow docs, MCP resources) and returns merged results
 with a ``type`` discriminator so agents can route each result
 to the appropriate access path.
-
-Originally at ``gitea_mcp_server/unified_search.py`` (root), moved here in
-the refactor/543-move-tools-and-resources branch.
 """
 
 from __future__ import annotations

@@ -184,7 +184,7 @@ def _init_otel_exporter() -> None:
 
 @pytest.fixture
 def trace_exporter() -> Any:
-    """Yield the shared InMemorySpanExporter, cleared between tests."""
+    """Return the shared InMemorySpanExporter, cleared between tests."""
     _TRACE_EXPORTER.clear()
     return _TRACE_EXPORTER
 

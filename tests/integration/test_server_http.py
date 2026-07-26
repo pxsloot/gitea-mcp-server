@@ -67,9 +67,9 @@ def common_patches(monkeypatch):
 def captured_app(monkeypatch):
     """Capture the composed ASGI app from uvicorn.Config for route/middleware inspection.
 
-    Yields a single-element list populated lazily by main_async().
+    Returns a single-element list populated lazily by main_async().
     Tests access via captured_app[0] - the wrapper is needed because
-    uvicorn.Config.__init__ hasn't been called yet at fixture yield time.
+    uvicorn.Config.__init__ hasn't been called yet at fixture setup time.
     """
     import uvicorn
 

@@ -812,7 +812,6 @@ class TestServerEdgeCases:
         from unittest.mock import patch
 
         from gitea_mcp_server.server_setup.spec_loader import (
-            fetch_token_scopes,
             load_and_convert_spec,
         )
 
@@ -1093,8 +1092,8 @@ class TestServerEdgeCases:
         """_setup_tool_discovery adds search + namespace transforms when lazy loading enabled."""
         from unittest.mock import MagicMock, patch
 
-        from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.server import _setup_tool_discovery
+        from gitea_mcp_server.tools.docs_tools import DocManager
 
         mcp = MagicMock()
         config = SimpleConfig(enable_lazy_loading=True)
@@ -1115,8 +1114,8 @@ class TestServerEdgeCases:
         """_setup_tool_discovery skips search transform when lazy loading disabled."""
         from unittest.mock import MagicMock, patch
 
-        from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.server import _setup_tool_discovery
+        from gitea_mcp_server.tools.docs_tools import DocManager
 
         mcp = MagicMock()
         config = SimpleConfig(enable_lazy_loading=False)
@@ -1223,7 +1222,6 @@ class TestServerEdgeCases:
     async def test_mcp_disable_hides_resource_templates(self):
         """mcp.disable() with template keys hides templates from listing."""
         from fastmcp import FastMCP
-        from fastmcp.resources import ResourceTemplate
 
         server = FastMCP("Test")
 
@@ -1273,7 +1271,7 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_create_server_exception_exits(self):
         """main_async exits with code 1 when create_mcp_server fails."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
             mock_config.return_value = MagicMock(log_level="INFO", log_format="text")
@@ -1289,7 +1287,7 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_stdio_transport(self):
         """main_async with stdio transport calls run_stdio_async."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock()
@@ -1306,7 +1304,7 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_keyboard_interrupt_handled(self):
         """main_async handles KeyboardInterrupt gracefully."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock(side_effect=KeyboardInterrupt)

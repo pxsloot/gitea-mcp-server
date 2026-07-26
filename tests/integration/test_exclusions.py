@@ -12,7 +12,6 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig, extract_tool_names
 
-
 SWAGGER_SPEC = {
     "swagger": "2.0",
     "info": {"title": "Gitea API", "version": "1.0"},
@@ -113,7 +112,7 @@ class TestExclusionIntegration:
         """
         cfg = tmp_path / "whitelist.yaml"
         cfg.write_text(
-            "exclude:\n  - \"*\"\ninclude:\n  - gitea_admin_get_users"
+            'exclude:\n  - "*"\ninclude:\n  - gitea_admin_get_users'
         )
         config = SimpleConfig(exclude_config_path=str(cfg))
         gitea_client = GiteaClient(config)

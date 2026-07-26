@@ -4,7 +4,7 @@ Verifies that resource operations pass through unchanged while
 tool/prompt operations are handled by the parent Namespace class.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp.resources import Resource

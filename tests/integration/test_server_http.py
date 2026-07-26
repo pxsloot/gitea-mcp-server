@@ -88,7 +88,7 @@ def captured_app(monkeypatch):
 
     monkeypatch.setattr("uvicorn.Server.serve", noop_serve)
 
-    yield apps
+    return apps
 
 
 class TestHealthEndpoint:

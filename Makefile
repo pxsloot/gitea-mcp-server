@@ -11,11 +11,13 @@ help: ## Show this help message
 
 test:
 	ruff check gitea_mcp_server
+	ruff check tests/
 	mypy gitea_mcp_server
 	pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 
 docker-test:
 	docker run --rm localhost/gitea-mcp-server:ci ruff check gitea_mcp_server
+	docker run --rm localhost/gitea-mcp-server:ci ruff check tests/
 	docker run --rm localhost/gitea-mcp-server:ci mypy gitea_mcp_server
 	docker run --rm localhost/gitea-mcp-server:ci pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 

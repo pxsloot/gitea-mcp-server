@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -183,10 +183,10 @@ def _init_otel_exporter() -> None:
 
 
 @pytest.fixture
-def trace_exporter() -> Generator[Any, None, None]:
+def trace_exporter() -> Any:
     """Yield the shared InMemorySpanExporter, cleared between tests."""
     _TRACE_EXPORTER.clear()
-    yield _TRACE_EXPORTER
+    return _TRACE_EXPORTER
 
 
 @pytest.fixture

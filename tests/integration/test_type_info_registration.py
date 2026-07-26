@@ -14,7 +14,6 @@ from fastmcp.exceptions import ResourceError, ToolError
 
 from gitea_mcp_server.tools.type_info import register_type_tools
 
-
 # Minimal OpenAPI 3.1 spec with two types for testing
 _MINIMAL_SPEC: dict = {
     "openapi": "3.1.0",

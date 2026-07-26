@@ -2,6 +2,7 @@
 
 from gitea_mcp_server.scope import derive_required_scope as _derive_required_scope
 
+
 class TestDeriveRequiredScope:
     """Tests for the derive_required_scope function."""
 

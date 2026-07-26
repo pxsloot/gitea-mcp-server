@@ -1,6 +1,6 @@
 """Unit tests for MCP extensions processing."""
 
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -334,7 +334,6 @@ class TestLoadMcpExtensionsEdgeCases:
 
     def test_runtime_error_from_find_project_root(self):
         """_find_project_root raises RuntimeError when no pyproject.toml found."""
-        from pathlib import Path
         from unittest.mock import patch
 
         # Mock the __file__ path to be in a dir without pyproject.toml

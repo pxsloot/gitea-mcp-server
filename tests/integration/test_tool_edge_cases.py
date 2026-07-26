@@ -18,7 +18,6 @@ from fastmcp.exceptions import ToolError
 
 from tests.integration.conftest import BASE_TEST_URL
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

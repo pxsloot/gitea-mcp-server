@@ -1,6 +1,6 @@
 """Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
 
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -974,7 +974,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=False)
 
-        async def call_next(name, version=None):  # noqa: ARG001
+        async def call_next(name, version=None):
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
@@ -986,7 +986,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def call_next(name, version=None):  # noqa: ARG001
+        async def call_next(name, version=None):
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
@@ -998,7 +998,7 @@ class TestToolWrappingTransform:
         """None from call_next passes through."""
         transform = self.make_transform()
 
-        async def call_next(name, version=None):  # noqa: ARG001
+        async def call_next(name, version=None):
             return None
 
         result = await transform.get_tool("test_tool", call_next)
@@ -1177,6 +1177,7 @@ class TestToolWrappingTransform:
     async def test_apply_loop_hooks_calls_hook(self):
         """_apply_loop_hooks invokes registered loop hook with correct args."""
         from fastmcp.tools.base import ToolResult
+
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform = self.make_transform()
@@ -1224,6 +1225,7 @@ class TestToolWrappingTransform:
     async def test_apply_loop_hooks_execute_fn_reinvokes_http(self):
         """The execute_fn passed to loop_hook calls _run_with_error_handling."""
         from fastmcp.tools.base import ToolResult
+
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform = self.make_transform()
@@ -1284,6 +1286,7 @@ class TestToolWrappingTransform:
     async def test_execute_fn_validates_kwargs(self):
         """execute_fn validates kwargs, rejecting invalid values."""
         from fastmcp.tools.base import ToolResult
+
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform = self.make_transform()
@@ -1323,6 +1326,7 @@ class TestToolWrappingTransform:
         hooks and passes execute_fn when extracted values are provided.
         """
         from fastmcp.tools.base import ToolResult
+
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform = self.make_transform()
@@ -1432,6 +1436,7 @@ class TestFetchAllIntegration:
     async def test_fetch_all_merges_all_pages(self, make_transform_and_tool):
         """Full pipeline with fetch_all=True merges paginated results."""
         from fastmcp.tools.base import ToolResult
+
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform, tool = make_transform_and_tool

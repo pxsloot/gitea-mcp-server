@@ -621,15 +621,32 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 if extra:
                     handler_extra_meta = extra
 
+            # Build error_kwargs with derived labels for dynamic error
+            # messages.  The ``type`` query param (issues/pulls) determines
+            # the entity label injected as ``{type_entity}`` for use in the
+            # error message template.  We copy kwargs so derived keys can
+            # be added without mutating the original args.
+            error_kwargs = dict(kwargs)
+            if error_kwargs.get("type") == "pulls":
+                error_kwargs["type_entity"] = "pull requests"
+            else:
+                error_kwargs["type_entity"] = error_kwargs.get("type", "issues")
+
+            # Resolve resource_type dynamically based on ``type`` query
+            # param so that error responses reflect the actual entity.
+            effective_resource_type: str = (
+                "pulls" if kwargs.get("type") == "pulls" else _resource_type
+            )
+
             return await _request_and_wrap(
                 gitea_client, method, formatted_path,
                 params=query_kwargs or None,
                 response_schema=response_schema,
                 format_hint=format_hint,
-                resource_type=_resource_type,
+                resource_type=effective_resource_type,
                 error_message=error_message,
                 uri=uri,
-                error_kwargs=kwargs,
+                error_kwargs=error_kwargs,
                 handler_hook=handler_hook,
                 handler_extra_meta=handler_extra_meta,
             )

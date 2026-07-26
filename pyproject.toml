@@ -66,6 +66,7 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 markers = [
     "live: Tests that require a real Gitea/Forgejo instance (skipped if unavailable).",
+    "slow: Tests that take >1s (HTTP server startup, retry timeouts, etc.). Use ``-m 'not slow'`` for fast iteration.",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

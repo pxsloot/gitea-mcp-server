@@ -70,6 +70,7 @@ class TestLoadOpenAPISpec:
             with pytest.raises(SpecError, match="Invalid JSON"):
                 await load_openapi_spec(gitea_client, test_config)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_network_error_raises_spec_error(self, gitea_client, test_config, spec_url):
         async with respx.mock:
@@ -77,6 +78,7 @@ class TestLoadOpenAPISpec:
             with pytest.raises(SpecError, match="Failed to fetch or parse"):
                 await load_openapi_spec(gitea_client, test_config)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_http_error_raises_spec_error(self, gitea_client, test_config, spec_url):
         async with respx.mock:
@@ -172,6 +174,7 @@ class TestLoadAndConvertSpec:
             spec, *_ = await load_and_convert_spec(gitea_client, test_config)
             assert spec["openapi"] == "3.1.0"
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_http_error_during_load_propagates(self, gitea_client, test_config, spec_url):
         async with respx.mock:

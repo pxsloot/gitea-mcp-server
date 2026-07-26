@@ -115,6 +115,7 @@ async def run_test_server(config):
         await gitea_client.close()
 
 
+@pytest.mark.slow
 class TestHTTPTransport:
     """Integration tests for HTTP transport."""
 

@@ -685,6 +685,7 @@ class TestToolFiltering:
                 f"Expected admin tools when filtering is disabled, but none found in {tool_names}"
             )
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_filtering_keeps_all_tools_on_user_fetch_error(self):
         """Test that all tools are kept if fetching user info fails."""
@@ -840,6 +841,7 @@ class TestServerEdgeCases:
             mock_fetch.assert_called_once()
             assert excluded_routes == set()
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_spec_loading_error_propagates(self):
         """Spec loading error propagates as SpecError."""

@@ -621,12 +621,21 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 if extra:
                     handler_extra_meta = extra
 
+            # Resolve resource_type dynamically based on ``type`` query
+            # param so that error responses reflect what the agent was
+            # querying.  The ``type`` value is a raw API entity name
+            # ("issues" / "pulls"); display formatting (e.g. "pull requests")
+            # belongs in the read_resource display layer.
+            effective_resource_type: str = (
+                "pulls" if kwargs.get("type") == "pulls" else _resource_type
+            )
+
             return await _request_and_wrap(
                 gitea_client, method, formatted_path,
                 params=query_kwargs or None,
                 response_schema=response_schema,
                 format_hint=format_hint,
-                resource_type=_resource_type,
+                resource_type=effective_resource_type,
                 error_message=error_message,
                 uri=uri,
                 error_kwargs=kwargs,

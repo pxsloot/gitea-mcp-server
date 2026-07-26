@@ -470,14 +470,24 @@ AsyncMock(
   the public `config` property, causing `AttributeError` or returning a stray AsyncMock
 
 ```python
-# Good
-async with respx.mock:
-    mock_route.get(...).respond(200, json={})
+# Good — isolated context (use when tests don't need module-level respx.get())
+async with respx.mock() as mock:
+    mock.get(...).respond(200, json={})
     result = await client.request(...)
 
-# Bad — leaks to other tests
+# Also good — start/stop with try/finally (use when tests rely on module-level
+# respx.get(), which delegates to a global MockRouter singleton)
+respx.start()
+try:
+    respx.get(...).respond(200, json={})
+    result = await client.request(...)
+finally:
+    respx.stop(clear=True, reset=True)
+
+# Bad — no cleanup at all
 respx_mock = respx.mock()
 respx_mock.get(...).respond(...)
+# Forgot stop() — routes leak to next test
 ```
 
 ## Anti-Patterns / Red Flags

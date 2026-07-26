@@ -6,7 +6,8 @@ integration tests.  Two patterns are supported:
 1. **Override ``base_spec`` per test class** - the most common pattern.
    Define a class-level fixture that adds paths to the spec, then use the
    ``mcp_server`` fixture.  API mock routes are added inside the test body
-   (the ``respx`` context from the fixture is still active).
+   via module-level ``respx.get()`` / ``respx.post()`` etc. (the fixture
+   keeps the global respx router active for the duration of the test).
 
    .. code-block:: python
 
@@ -33,7 +34,9 @@ integration tests.  Two patterns are supported:
 
 2. **Full manual control** - for tests that need custom config or mock setup
    before ``create_mcp_server`` runs (e.g., permission filtering).  Use
-   ``create_test_server`` inside your own ``respx`` context.
+   ``create_test_server`` inside your own ``respx`` context.  Because these
+   tests don't rely on module-level ``respx.get()``, they can use the
+   isolated ``respx.mock()`` context manager.
 
    .. code-block:: python
 
@@ -45,6 +48,15 @@ integration tests.  Two patterns are supported:
                server = await create_test_server(config, base_spec)
                tools = await server.list_tools()
                assert not any("admin" in t.name for t in tools)
+
+.. note::
+
+   The ``mcp_server`` / ``search_mcp_server`` fixtures use
+   ``respx.start()`` / ``stop()`` (not ``respx.mock()``) because
+   module-level ``respx.get()`` relies on a **global** ``MockRouter``
+   singleton.  ``respx.mock()`` creates an isolated router that module-level
+   calls cannot reach.  The ``try/finally`` pattern ensures routes are
+   always cleaned up, even on test failure.
 """
 
 from __future__ import annotations
@@ -191,10 +203,17 @@ async def mcp_server(
                 .respond(200, json={"name": "repo"})
             result = await mcp_server.call_tool("gitea_repo_get", …)
     """
-    # Use ``respx.start()`` / ``stop()`` instead of the ``respx.mock()``
-    # context manager so that module-level ``respx.get() / post() / ...``
-    # calls inside the test body add routes to the **same** global router
-    # that is intercepting requests.
+    # NOTE: We use ``respx.start()`` / ``stop()`` (not ``respx.mock()``)
+    # because module-level ``respx.get() / post() / ...`` calls in test
+    # bodies rely on a **global** ``MockRouter`` singleton set by
+    # ``respx.start()``.  ``respx.mock()`` creates an isolated mock that
+    # does NOT set the global — so module-level route registration would
+    # silently target the wrong router.
+    #
+    # Safety: ``respx.start()`` always creates a fresh mock (discarding
+    # any stale state).  The ``try/finally`` ensures ``respx.stop()`` is
+    # called even on test failure, which unpatches httpx and clears all
+    # routes.  No state leaks between tests.
     respx.start()
     try:
         respx.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
@@ -213,6 +232,9 @@ async def search_mcp_server(
 
     Use this fixture when tests need the synthetic tools (``search_tools``,
     ``call_tool``, ``tool_info``, ``list_resources``, etc.) to be visible.
+
+    See ``mcp_server`` fixture docstring for notes on the
+    ``respx.start()`` / ``stop()`` pattern.
     """
     respx.start()
     try:

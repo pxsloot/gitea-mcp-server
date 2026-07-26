@@ -10,6 +10,12 @@ All tool-related runtime concerns live here:
 - virtual_params: Virtual parameter registry (params that live in the schema
   but are handled before the API call)
 - namespace: GiteaNamespace transform (prefix tools, pass resources through)
+- docs_tools: DocManager + search_docs/read_doc tools + gitea://docs/guide/{topic} resource
+- unified_search: Unified ``search`` tool across tools, docs, and resources
+- mcp_tools: list_resources/read_resource tools + gitea://tool/{name}/schema resource
+- resource_display: Resource content formatting pipeline
+- tool_display: Tool result formatting entry point (mirrors resource_display)
+- display: Domain-specific formatter registry (shared by tool_display + resource_display)
 """
 
 from gitea_mcp_server.scope import derive_required_scope

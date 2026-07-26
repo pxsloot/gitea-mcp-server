@@ -3,7 +3,7 @@
 Resources provide read-only data access to Gitea entities via URI templates.
 Resources return raw data (JSON or text) with metadata describing the response
 schema and optional format hints.  All formatting is done by the display layer
-(``tools/display.py`` and ``mcp_tools.py``).
+(``tools/display.py`` and ``tools/mcp_tools.py``).
 
 - auto: Auto-generated resources from OpenAPI GET endpoints (raw JSON)
 - custom: Hand-written resource implementations with raw data + metadata

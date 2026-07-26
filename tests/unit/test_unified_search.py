@@ -9,9 +9,9 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import Tool
 from mcp.types import TextContent
 
-from gitea_mcp_server.docs_tools import DocManager
+from gitea_mcp_server.tools.docs_tools import DocManager
 from gitea_mcp_server.tools.search import TolerantSearchTransform
-from gitea_mcp_server.unified_search import register_unified_search
+from gitea_mcp_server.tools.unified_search import register_unified_search
 
 
 def _make_resource(uri: str, name: str, description: str, mime_type: str = "text/plain", tags: set[str] | None = None) -> SimpleNamespace:
@@ -59,7 +59,7 @@ class TestUnifiedSearchAnnotations:
 
     def test_search_tool_has_description(self):
         """search tool must have a non-empty description."""
-        from gitea_mcp_server.unified_search import register_unified_search
+        from gitea_mcp_server.tools.unified_search import register_unified_search
 
         doc_manager = MagicMock()
         search_transform = MagicMock()
@@ -75,7 +75,7 @@ class TestUnifiedSearchAnnotations:
 
     def test_search_has_openworld_false(self):
         """search tool should have openWorldHint=False."""
-        from gitea_mcp_server.unified_search import register_unified_search
+        from gitea_mcp_server.tools.unified_search import register_unified_search
 
         doc_manager = MagicMock()
         search_transform = MagicMock()
@@ -283,7 +283,7 @@ class TestUnifiedSearch:
     @pytest.mark.asyncio
     async def test_ctx_none_raises_value_error(self) -> None:
         """When ctx is None, should raise ValueError (lines 87-88)."""
-        from gitea_mcp_server.unified_search import register_unified_search
+        from gitea_mcp_server.tools.unified_search import register_unified_search
 
         doc_manager = MagicMock(spec=DocManager)
         search_transform = _make_search_transform([])

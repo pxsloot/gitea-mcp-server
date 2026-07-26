@@ -2,6 +2,9 @@
 
 Provides search_docs and read_doc tools, plus gitea://docs/guide/{topic} resources.
 Guides are markdown files in gitea_mcp_server/docs/guides/.
+
+Originally at ``gitea_mcp_server/docs_tools.py`` (root), moved here in
+the refactor/543-move-tools-and-resources branch.
 """
 
 from __future__ import annotations

@@ -228,7 +228,7 @@ Agent reads a resource:
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
 | `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
 | `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources); home for shared utilities like `_build_server_info_markdown` that don't belong to either domain | `apply_format`, `_build_server_info_markdown`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
-| `unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
+| `tools/unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
 
 ### Tool Customization Stack (applied in order)
 
@@ -247,6 +247,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/filter_info.py` | Filter prediction data (`compute_filtered_tools_info`), `FilteredToolMiddleware` for direct-call interception, `get_filtered_tool_info`/`build_filtered_tools_message` used by `_call_tool_impl` and `_tool_info_impl` |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
+| `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + ``gitea://docs/guide/{topic}`` resource — workflow guide discovery and retrieval via ``DocManager`` | ``DocManager`` |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo`` (user impersonation via ``?sudo=``, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
 
@@ -263,7 +264,7 @@ The customization layers as applied during server startup:
 | 6. Search/lazy loading | `tools/search.py` | Name-match + BM25 search with alias expansion, synthetic tools |
 | 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 8. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
-| 9. Unified search | `unified_search.py` | merged name-match + BM25 search across tools, docs, and resources with `type` discriminator |
+| 9. Unified search | `tools/unified_search.py` | merged name-match + BM25 search across tools, docs, and resources with `type` discriminator |
 | 10. Response caching | `cache_invalidation.py` middleware | TTL-based caching of resource reads |
 | 11. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
 
@@ -275,9 +276,11 @@ The customization layers as applied during server startup:
 | `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Factory resources via `make_api_resource()`, static resources via direct `mcp.resource()` calls. Defines `_decode_base64_content` handler hook for text/plain resources |
 | `resources/factory.py` | ``make_api_resource()`` factory + ``ResourceParamConfig`` dataclass. Auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip. ``ResourceParamConfig`` groups: query params (sent to API), context params (validated but never sent), discovery metadata (`optional_params`), and formatter context forwarding (`context_meta_keys`). ``handler_hook`` for text/plain post-processing (e.g., base64 decoding). Uses ``ResourceMeta.for_schema()`` for typed registration metadata. ``_build_optional_param_signature()`` is a pure helper (takes/returns ``inspect.Signature``) that adds optional param names as ``KEYWORD_ONLY`` params matching ``{?param}`` template entries — used by ``make_api_resource()`` to satisfy FastMCP's signature validation at registration time. |
 | `resources/meta.py` | ``ResourceMeta`` dataclass for typed resource registration metadata (``required_scope``, ``cache_ttl``, ``optional_params``, ``size_hint``, ``default_detail``). ``derive_size_hint_from_schema()`` auto-estimates token cost from response schema complexity, enabling agents to discover expensive resources before reading them. ``default_detail_for()`` provides the recommended detail policy (``large`` → ``concise``, else ``full``). Used by both registration paths (factory and static). |
-| `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) -- moved from the removed `resources/format.py` |
+| `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) — moved from the removed `resources/format.py` |
+| `tools/resource_display.py` | Resource content display pipeline (JSON parse → collapse → formatter dispatch → ``apply_format``) — mirrors ``tools/tool_display.py`` | ``_format_resource_content``, ``_clean_resource_uri`` |
+| `tools/tool_display.py` | Thin tool result formatting entry point — mirrors ``tools/resource_display.py`` | ``format_tool_result`` |
 | `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
-| `mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource; ``_clean_resource_uri()`` strips ``{?param}`` from URI templates at display time so agents see clean URIs in ``list_resources`` while FastMCP routing uses the full template |
+| `tools/mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource; ``_mcp_list_resources_impl`` used by ``unified_search.py`` and ``tools/search.py`` |
 
 ### Server Setup Orchestration (startup-only)
 

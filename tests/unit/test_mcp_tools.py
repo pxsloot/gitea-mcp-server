@@ -8,9 +8,11 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.mcp_tools import (
+from gitea_mcp_server.tools.resource_display import (
     _clean_resource_uri,
     _format_resource_content,
+)
+from gitea_mcp_server.tools.mcp_tools import (
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
     register_mcp_resource_tools,
@@ -923,7 +925,7 @@ class TestExtractResourceContent:
 
     def test_non_bytes_non_str_content(self):
         """Non-bytes, non-string content is converted via str()."""
-        from gitea_mcp_server.mcp_tools import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import _extract_resource_content
 
         class CustomContent:
             def __str__(self):
@@ -935,7 +937,7 @@ class TestExtractResourceContent:
     @pytest.mark.asyncio
     async def test_list_resources_impl_exception_handled(self):
         """Exception in _mcp_list_resources_impl returns empty result."""
-        from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
+        from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl
 
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()

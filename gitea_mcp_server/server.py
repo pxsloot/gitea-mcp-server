@@ -29,12 +29,12 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_RESOURCE_LIST,
     SEARCH_MAX_RESULTS,
 )
-from gitea_mcp_server.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
 from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
+from gitea_mcp_server.tools.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.tools.filter_info import FilteredToolMiddleware
 
 if TYPE_CHECKING:
@@ -46,8 +46,8 @@ from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransfor
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
 from gitea_mcp_server.tools.type_info import register_type_tools
+from gitea_mcp_server.tools.unified_search import register_unified_search
 from gitea_mcp_server.tools.virtual_params import apply_scope_filter
-from gitea_mcp_server.unified_search import register_unified_search
 
 logger = logging.getLogger(__name__)
 

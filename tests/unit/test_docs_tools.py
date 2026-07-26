@@ -7,7 +7,7 @@ import pytest
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.docs_tools import DocGuide, DocManager, register_doc_tools
+from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 from gitea_mcp_server.search import BM25SearchEngine
 
 # Sample guide content for testing
@@ -175,7 +175,7 @@ class TestDocManagerLoadEdgeCases:
         # Patch pkg_files to return a path that doesn't exist
         from unittest.mock import patch
         fake_path = "/nonexistent/guides/path"
-        with patch("gitea_mcp_server.docs_tools.pkg_files") as mock_pkg_files:
+        with patch("gitea_mcp_server.tools.docs_tools.pkg_files") as mock_pkg_files:
             mock_path = __import__("pathlib").Path(fake_path)
             mock_pkg_files.return_value.joinpath.return_value = mock_path
             mgr = DocManager()
@@ -188,7 +188,7 @@ class TestDocManagerLoadEdgeCases:
         caplog.set_level(logging.WARNING)
 
         from unittest.mock import patch
-        with patch("gitea_mcp_server.docs_tools.pkg_files", side_effect=PermissionError("Access denied")):
+        with patch("gitea_mcp_server.tools.docs_tools.pkg_files", side_effect=PermissionError("Access denied")):
             mgr = DocManager()
             assert len(mgr._guides) == 0
             assert "Failed to load workflow guides" in caplog.text
@@ -207,7 +207,7 @@ class TestDocManagerLoadEdgeCases:
         (guides_dir / "notes.txt").write_text("Not a guide")
         (guides_dir / "image.png").write_bytes(b"PNG")
 
-        with patch("gitea_mcp_server.docs_tools.pkg_files") as mock_pkg_files:
+        with patch("gitea_mcp_server.tools.docs_tools.pkg_files") as mock_pkg_files:
             mock_pkg_files.return_value.joinpath.return_value = guides_dir
             mgr = DocManager()
             assert len(mgr._guides) == 1  # Only readme.md loaded
@@ -524,7 +524,7 @@ class TestSearchDocsPagination:
     @pytest.mark.asyncio
     async def test_search_docs_pagination_metadata_present(self):
         """search_docs result should include has_more/next_offset/total_count."""
-        from gitea_mcp_server.docs_tools import DocGuide, DocManager, register_doc_tools
+        from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 
         mgr = DocManager.__new__(DocManager)
         guides = [

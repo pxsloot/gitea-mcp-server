@@ -2,7 +2,7 @@
 
 All resources return raw data.  This module provides the registered
 formatters that the unified display pipeline (``_format_resource_content``
-in ``mcp_tools.py``) dispatches to when a ``format_hint`` is present.
+in ``tools/resource_display.py``) dispatches to when a ``format_hint`` is present.
 
 Each formatter has the signature ``(data, *, detail='full') -> str``.
 The ``detail`` parameter is passed through from the read_resource tool

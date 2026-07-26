@@ -100,6 +100,7 @@ class TestHTTPTransport:
         assert client.headers["Accept"] == "application/json"
         assert client.headers["Content-Type"] == "application/json"
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_retry_on_retryable_exception(self, config):
         """Test that retry logic works for retryable exceptions."""
@@ -120,6 +121,7 @@ class TestHTTPTransport:
             result = await transport.request("GET", "https://git.example.com/api/v1/test")
             assert result == {"ok": True}
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_retry_stops_after_max_attempts(self, config):
         """Test that retry stops after max attempts."""
@@ -150,6 +152,7 @@ class TestHTTPTransport:
             assert exc_info.value.status_code == 404
             assert "Not found" in str(exc_info.value)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_error_conversion_request_error(self, config):
         """Test RequestError is converted to GiteaAPIError."""

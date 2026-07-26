@@ -56,6 +56,7 @@ class TestGiteaClient:
             assert "Not found" in str(exc_info.value)
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_500_error(self, config):
         """Test 500 error handling."""
         client = GiteaClient(config)
@@ -192,6 +193,7 @@ class TestGiteaClient:
             result = await client.request("GET", "/user")
             assert result["name"] == "testuser"
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_429_retry_exhaustion(self, config):
         """Test 429 responses exhaust retry limit and raise error with retry-after guidance."""
@@ -211,6 +213,7 @@ class TestGiteaClient:
             assert exc_info.value.status_code == 429
             assert "retry after 1 seconds" in str(exc_info.value)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_429_retry_exhaustion_no_retry_after(self, config):
         """Test 429 exhaustion without Retry-After header says 'retry later'."""
@@ -229,6 +232,7 @@ class TestGiteaClient:
             assert exc_info.value.status_code == 429
             assert "retry later" in str(exc_info.value)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_429_retry_exhaustion_invalid_retry_after(self, config):
         """Test 429 exhaustion with invalid Retry-After header."""

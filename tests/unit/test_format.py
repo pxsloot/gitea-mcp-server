@@ -7,7 +7,6 @@ Covers all functions in __all__:
 
 import json
 
-import pytest
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (

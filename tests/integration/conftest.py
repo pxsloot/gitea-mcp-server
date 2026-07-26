@@ -53,8 +53,8 @@ from collections.abc import AsyncIterator
 
 import pytest
 import respx
-
 from fastmcp import FastMCP
+
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig

@@ -5,10 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
 
-from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 from gitea_mcp_server.search import BM25SearchEngine
+from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 
 # Sample guide content for testing
 SAMPLE_FRONTMATTER = """\
@@ -169,7 +168,6 @@ class TestDocManagerLoadEdgeCases:
     def test_guides_dir_not_found(self, caplog):
         """When guides directory doesn't exist, warning is logged and no guides loaded."""
         import logging
-        import os
         caplog.set_level(logging.WARNING)
 
         # Patch pkg_files to return a path that doesn't exist

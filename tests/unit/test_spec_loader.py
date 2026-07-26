@@ -4,14 +4,13 @@ Covers load_openapi_spec and load_and_convert_spec.
 """
 
 import json
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import respx
 
 from gitea_mcp_server.client import GiteaClient
-from unittest.mock import MagicMock, patch
-
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.server_setup.spec_loader import (
     load_and_convert_spec,
@@ -190,6 +189,5 @@ class TestLoadAndConvertSpec:
         with patch(
             "gitea_mcp_server.server_setup.spec_loader.load_openapi_spec",
             side_effect=ValueError("unexpected error"),
-        ):
-            with pytest.raises(SpecError, match="Failed to load OpenAPI spec"):
-                await load_and_convert_spec(mock_client, test_config)
+        ), pytest.raises(SpecError, match="Failed to load OpenAPI spec"):
+            await load_and_convert_spec(mock_client, test_config)

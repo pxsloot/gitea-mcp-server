@@ -32,6 +32,17 @@ jobs:
           cd /app
           ruff check gitea_mcp_server
 
+  lint-tests:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Lint tests
+        run: |
+          cd /app
+          ruff check tests/
+
   typecheck:
     needs: [build]
     runs-on: self-hosted

@@ -11,7 +11,6 @@ Covers:
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastmcp.server.providers.openapi import MCPType
 
 from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
@@ -21,7 +20,6 @@ from gitea_mcp_server.server_setup.spec_loader import (
     fetch_token_scopes,
 )
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # _match_active_token

@@ -6,16 +6,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
 
-from gitea_mcp_server.tools.resource_display import (
-    _clean_resource_uri,
-    _format_resource_content,
-)
 from gitea_mcp_server.tools.mcp_tools import (
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
     register_mcp_resource_tools,
+)
+from gitea_mcp_server.tools.resource_display import (
+    _clean_resource_uri,
+    _format_resource_content,
 )
 
 

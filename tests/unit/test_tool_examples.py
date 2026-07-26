@@ -11,6 +11,7 @@ from gitea_mcp_server.tools.examples import (
     _serialize_tool_schema,
 )
 
+
 class TestSchemaToExample:
     """Tests for _schema_to_example function."""
 
@@ -160,7 +161,6 @@ class TestSchemaToExample:
         """_serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -189,7 +189,6 @@ class TestSchemaToExample:
         """_serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
 
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -257,9 +256,7 @@ class TestSchemaToExample:
     def test_serialize_tool_schema_with_tags(self):
         """_serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
-        from mcp.types import ToolAnnotations
 
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -275,7 +272,6 @@ class TestSchemaToExample:
         """_serialize_tool_schema should include version when present."""
         from fastmcp.tools.base import Tool
 
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -291,7 +287,6 @@ class TestSchemaToExample:
         from fastmcp.tools.base import Tool
         from mcp.types import ToolAnnotations
 
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -457,7 +452,6 @@ class TestSchemaToCompactExample:
 
     def test_serialize_tool_schema_with_raw_meta(self):
         """_serialize_tool_schema should use raw meta schema for compact example."""
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -501,7 +495,6 @@ class TestSchemaToCompactExample:
 
     def test_serialize_tool_schema_no_raw_meta_fallback(self):
         """Without raw meta, _serialize_tool_schema falls back to old behavior."""
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         tool = Tool(
             name="test_tool",
@@ -623,7 +616,6 @@ class TestSchemaToCompactExample:
 
     def test_serialize_bare_ref_with_openapi_spec(self):
         """_serialize_tool_schema with bare $ref output resolves with spec."""
-        from gitea_mcp_server.tools.examples import _serialize_tool_schema
 
         spec = {
             "components": {

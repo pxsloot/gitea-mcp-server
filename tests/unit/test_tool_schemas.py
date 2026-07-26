@@ -19,37 +19,33 @@ from gitea_mcp_server.tools.schemas import (
     derive_output_schema,
 )
 
+
 class TestSchemaTypeIsArray:
     """Tests for _schema_type_is_array."""
 
     def test_detects_string_type(self):
         """Should return True for type 'array'."""
-        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": "array"}) is True
 
     def test_detects_list_type(self):
         """Should return True for type ['array', 'null']."""
-        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": ["array", "null"]}) is True
 
     def test_rejects_non_array_string(self):
         """Should return False for non-array string types."""
-        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": "string"}) is False
         assert _schema_type_is_array({"type": "object"}) is False
 
     def test_rejects_non_array_list(self):
         """Should return False when 'array' not in type list."""
-        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({"type": ["string", "null"]}) is False
 
     def test_no_type_key(self):
         """Should return False when no type key."""
-        from gitea_mcp_server.tools.schemas import _schema_type_is_array
 
         assert _schema_type_is_array({}) is False
 
@@ -167,7 +163,6 @@ class TestDeriveOutputSchema:
 
     def test_inline_schema_response(self):
         """Should extract inline schema directly from response content."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -179,7 +174,6 @@ class TestDeriveOutputSchema:
 
     def test_array_response(self):
         """Should handle array-type response schemas."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -190,7 +184,6 @@ class TestDeriveOutputSchema:
 
     def test_ref_response_resolved(self):
         """Should resolve $ref in response to get the schema."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec_with_ref: dict = {
             "openapi": "3.1.0",
@@ -236,7 +229,6 @@ class TestDeriveOutputSchema:
 
     def test_no_content_response_returns_none(self):
         """204 No Content responses should return None."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "DELETE")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -244,7 +236,6 @@ class TestDeriveOutputSchema:
 
     def test_none_spec_returns_none(self):
         """When spec is None, should return None."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/test", "GET")
         schema = derive_output_schema(route, None)
@@ -252,7 +243,6 @@ class TestDeriveOutputSchema:
 
     def test_missing_path_returns_none(self):
         """When route path is not in spec, should return None."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/nonexistent/path", "GET")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -260,7 +250,6 @@ class TestDeriveOutputSchema:
 
     def test_missing_method_returns_none(self):
         """When route method is not in spec, should return None."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "PATCH")
         schema = derive_output_schema(route, self.MINIMAL_SPEC)
@@ -268,7 +257,6 @@ class TestDeriveOutputSchema:
 
     def test_prefers_200_over_201(self):
         """Should prefer 200 over 201 when both are present."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec: dict = {
             "openapi": "3.1.0",
@@ -306,7 +294,6 @@ class TestDeriveOutputSchema:
 
     def test_falls_back_to_201_when_no_200(self):
         """Should fall back to 201 when no 200 response exists."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec: dict = {
             "openapi": "3.1.0",
@@ -581,33 +568,26 @@ class TestIsTextResponse:
         }
 
     def test_text_plain_endpoint_detected(self, text_spec):
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
 
     def test_json_endpoint_not_text(self, text_spec):
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
 
     def test_no_content_types_not_text(self, text_spec):
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/no-content-types", "get") is False
 
     def test_missing_path_returns_false(self, text_spec):
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/nonexistent", "get") is False
 
     def test_missing_method_returns_false(self, text_spec):
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
     def test_uppercase_method_normalized(self, text_spec):
         """Uppercase method should be normalized to lowercase internally."""
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
 
     def test_uppercase_json_endpoint_not_text(self, text_spec):
         """Uppercase method on JSON endpoint should still return False."""
-        from gitea_mcp_server.tools.schemas import _is_text_response
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
 
 
@@ -877,7 +857,6 @@ class TestTextResponseOutputSchema:
 
     def test_text_plain_derive_output_schema_none(self):
         """text/plain endpoints should return None from derive_output_schema."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
         schema = derive_output_schema(route, self.TEXT_SPEC)
@@ -885,7 +864,6 @@ class TestTextResponseOutputSchema:
 
     def test_json_still_gets_output_schema(self):
         """JSON endpoints should still get output_schema."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
         schema = derive_output_schema(route, self.TEXT_SPEC)
@@ -1046,7 +1024,6 @@ class TestDeepResolveSchema:
 
     def test_deep_resolve_applied_in_derive_output_schema(self):
         """derive_output_schema should deep-resolve nested refs."""
-        from gitea_mcp_server.tools.schemas import derive_output_schema
 
         spec = {
             "openapi": "3.1.0",

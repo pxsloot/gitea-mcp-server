@@ -1,11 +1,11 @@
 """Unit tests for the self-contained BM25 search engine (search.py)."""
 
 from gitea_mcp_server.search import (
+    BM25SearchEngine,
     _BM25Index,
     _expand_word_aliases,
     _texts_hash,
     _tokenize_len2,
-    BM25SearchEngine,
 )
 
 

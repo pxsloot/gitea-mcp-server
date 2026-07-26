@@ -12,8 +12,8 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import (
     BasePathToServerConverter,
     SecuritySchemeConverter,
-    convert_swagger_to_openapi_v3,
     _wrap_success_response_schemas,
+    convert_swagger_to_openapi_v3,
 )
 
 # Load OpenAPI 3.1 schema once

@@ -8,7 +8,7 @@ import logging
 
 import pytest
 
-from gitea_mcp_server.logging_config import JSONFormatter, SENSITIVE_KEYS, setup_logging
+from gitea_mcp_server.logging_config import SENSITIVE_KEYS, JSONFormatter, setup_logging
 
 
 class TestJSONFormatter:

@@ -54,7 +54,31 @@ target-version = "py311"
 lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC", "ICN", "G", "INP", "PIE", "PT", "Q", "RSE", "RET", "SIM", "TCH", "ARG", "PTH", "PD", "PL", "TRY", "NPY", "RUF", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["PLR2004", "PLC0415", "F841", "RUF043", "BLE001", "S101"]
+"tests/**/*" = [
+    "PLR2004", "PLC0415", "F841", "RUF043", "BLE001", "S101",
+    # Test code intentionally uses dummy secrets
+    "S105", "S106", "S107", "S104",
+    # Test code often accepts unused fixture args
+    "ARG001", "ARG002", "ARG005",
+    # Test fixtures commonly use mutable defaults
+    "RUF012",
+    # Test code sometimes suppresses exceptions intentionally
+    "S110",
+    # Test functions may accept many args (fixtures)
+    "PLR0913", "PLR0915",
+    # PT019: tests may accept fixture params without values
+    "PT019",
+    # Issues tracked by #551 — remove suppressions as they're fixed:
+    "PT011", "PT006", "PT012", "PT017", "PT018",
+    "EM101", "TRY003", "TRY301", "TRY300",
+    "SIM117", "SIM105",
+    "RET504",
+    "PLW0108",
+    "C416",
+    "TC002", "TC003",
+    "F811", "F821",
+    "RUF001", "RUF005", "RUF015", "RUF059",
+]
 "gitea_mcp_client/transport.py" = ["S401", "S404", "S603"]
 "check_annotations.py" = ["BLE001"]
 
@@ -66,6 +90,7 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 markers = [
     "live: Tests that require a real Gitea/Forgejo instance (skipped if unavailable).",
+    "slow: Tests that take >1s (HTTP server startup, retry timeouts, etc.). Use ``-m 'not slow'`` for fast iteration.",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

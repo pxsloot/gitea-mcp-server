@@ -24,7 +24,6 @@ from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.resources.custom import register_custom_resources
 from gitea_mcp_server.validation import FILEPATH_PATTERN, validate_filepath
 
-
 # ============================================================================
 # Bug 1: URI template uses {path} instead of {path*}
 # ============================================================================

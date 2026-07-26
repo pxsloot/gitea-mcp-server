@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
 from gitea_mcp_server.cache_invalidation import (

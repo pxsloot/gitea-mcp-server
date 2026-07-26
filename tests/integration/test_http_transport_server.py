@@ -78,8 +78,8 @@ async def run_test_server(config):
         app = mcp.http_app(path=config.http_path)
 
     # Add health check endpoint (matches server.py workaround)
-    from starlette.routing import Route
     from starlette.responses import JSONResponse
+    from starlette.routing import Route
 
     async def health_check(_):
         return JSONResponse({"status": "ok"})
@@ -115,6 +115,7 @@ async def run_test_server(config):
         await gitea_client.close()
 
 
+@pytest.mark.slow
 class TestHTTPTransport:
     """Integration tests for HTTP transport."""
 

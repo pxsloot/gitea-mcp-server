@@ -7,8 +7,6 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
-
-from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -17,8 +15,14 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 from gitea_mcp_server.tools.customize import (
     _is_array_response,
     _snake_to_title,
+)
+from gitea_mcp_server.tools.customize import (
     add_inferred_hints as _add_inferred_hints,
+)
+from gitea_mcp_server.tools.customize import (
     categorize_tool as _categorize_tool,
+)
+from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
 
@@ -169,6 +173,7 @@ class TestSnakeToTitle:
     def test_unknown_domain_logs_warning(self, caplog):
         """Unknown domain prefixes should log a warning."""
         import logging
+
         from gitea_mcp_server.tools.customize import _snake_to_title
 
         caplog.set_level(logging.WARNING)
@@ -180,6 +185,7 @@ class TestSnakeToTitle:
     def test_known_domain_does_not_log_warning(self, caplog):
         """Known domain prefixes should not log a warning."""
         import logging
+
         from gitea_mcp_server.tools.customize import _snake_to_title
 
         caplog.set_level(logging.WARNING)

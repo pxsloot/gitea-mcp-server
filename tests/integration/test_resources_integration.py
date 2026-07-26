@@ -45,15 +45,14 @@ class TestResourcesIntegration:
             # Patch the resource registration to track calls
             with patch(
                 "gitea_mcp_server.server_setup.resource_setup.register_auto_generated_resources"
-            ) as mock_auto:
-                with patch(
-                    "gitea_mcp_server.server_setup.resource_setup.register_custom_resources"
-                ) as mock_custom:
-                    mcp = await create_mcp_server(gitea_client)
+            ) as mock_auto, patch(
+                "gitea_mcp_server.server_setup.resource_setup.register_custom_resources"
+            ) as mock_custom:
+                mcp = await create_mcp_server(gitea_client)
 
-                    # Verify both registration functions were called
-                    mock_auto.assert_called_once()
-                    mock_custom.assert_called_once()
+                # Verify both registration functions were called
+                mock_auto.assert_called_once()
+                mock_custom.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_auto_generated_resources_use_gitea_uri_scheme(self):

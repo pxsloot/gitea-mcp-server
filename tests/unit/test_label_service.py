@@ -1,6 +1,6 @@
 """Unit tests for LabelService - stats, cache clearing, and context logging."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 

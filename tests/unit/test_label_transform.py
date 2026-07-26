@@ -1,7 +1,6 @@
 """Unit tests for LabelTransform - FastMCP Transform wrapping label conversion."""
 
-from typing import TYPE_CHECKING, Any, Generator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp.server.transforms import Transform
@@ -14,12 +13,6 @@ from gitea_mcp_server.tools.label_transform import (
     LabelTransform,
     _convert_labels_inline,
 )
-
-if TYPE_CHECKING:
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-        InMemorySpanExporter,
-    )
-
 
 # The session-scoped ``_init_otel_exporter`` and ``trace_exporter`` fixture
 # are defined in ``tests/conftest.py`` (shared across all test modules).

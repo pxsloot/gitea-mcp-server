@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 import respx
-
 from fastmcp import FastMCP
+
 from tests.integration.conftest import (
     BASE_TEST_URL,
     create_test_server,

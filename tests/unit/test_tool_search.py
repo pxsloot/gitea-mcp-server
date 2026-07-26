@@ -5,15 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastmcp import Context
 from fastmcp.tools.base import Tool, ToolResult
-from mcp.types import ToolAnnotations
-from mcp.types import TextContent
+from mcp.types import TextContent, ToolAnnotations
 
 from gitea_mcp_server.constants import SEARCH_NAME_BOOST
-from gitea_mcp_server.pagination import add_pagination_metadata
 from gitea_mcp_server.tools.search import (
+    TolerantSearchTransform,
     _call_tool_impl,
     _compact_search_serializer,
-    _extract_resource_text,
     _extract_searchable_text_enhanced,
     _name_matches,
     _search_and_slice,
@@ -21,8 +19,8 @@ from gitea_mcp_server.tools.search import (
     _search_tools_impl,
     _tool_info_impl,
     register_synthetic_tools,
-    TolerantSearchTransform,
 )
+
 
 class TestSearchableText:
     """Tests for _extract_searchable_text_enhanced."""
@@ -56,6 +54,7 @@ class TestCallToolOutputSchema:
     async def _get_call_tool(self) -> Tool:
         """Helper: register synthetic tools and return the call_tool."""
         from fastmcp import FastMCP
+
         from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
 
         mcp = FastMCP("test")
@@ -101,6 +100,7 @@ class TestToolInfoOutputSchema:
     async def _get_tool_info(self) -> Tool:
         """Helper: register synthetic tools and return the tool_info tool."""
         from fastmcp import FastMCP
+
         from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
 
         mcp = FastMCP("test")
@@ -561,7 +561,7 @@ class TestToolInfo:
     @pytest.mark.asyncio
     async def test_tool_info_returns_schema(self):
         """tool_info should return the schema for a known tool."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
 
@@ -583,7 +583,7 @@ class TestToolInfo:
     @pytest.mark.asyncio
     async def test_tool_info_detail_full_includes_output_schema(self):
         """tool_info with detail='full' should include output_schema."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
 
@@ -620,7 +620,7 @@ class TestToolInfo:
     @pytest.mark.asyncio
     async def test_tool_info_detail_concise_excludes_output_schema(self):
         """tool_info with detail='concise' (default) should NOT include output_schema."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
 
@@ -649,7 +649,7 @@ class TestToolInfo:
     @pytest.mark.asyncio
     async def test_tool_info_not_found(self):
         """tool_info should raise ValueError for unknown tool."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -712,7 +712,7 @@ class TestFilterInfoIntegration:
     @pytest.mark.asyncio
     async def test_tool_info_scope_filtered(self, scope_filter_info):
         """tool_info for scope-restricted tool returns scope message."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -727,7 +727,7 @@ class TestFilterInfoIntegration:
     @pytest.mark.asyncio
     async def test_tool_info_exclude_filtered(self, exclude_filter_info):
         """tool_info for config-excluded tool returns exclusion message."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -742,7 +742,7 @@ class TestFilterInfoIntegration:
     @pytest.mark.asyncio
     async def test_tool_info_deprecated_filtered(self, deprecated_filter_info):
         """tool_info for deprecated tool returns deprecation message."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -757,7 +757,7 @@ class TestFilterInfoIntegration:
     @pytest.mark.asyncio
     async def test_tool_info_filtered_falls_back_to_not_found(self):
         """Without filter info, tool_info still gives generic 'not found'."""
-        from gitea_mcp_server.tools.search import _tool_info_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -843,7 +843,7 @@ class TestSearchToolsSyntheticTool:
     @pytest.mark.asyncio
     async def test_search_tools_category_filter_invalid(self):
         """search_tools with invalid category should raise ValueError."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -854,7 +854,7 @@ class TestSearchToolsSyntheticTool:
     @pytest.mark.asyncio
     async def test_search_tools_with_no_results(self):
         """search_tools with no matches should show cross-linking hints."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_ctx = MagicMock()
@@ -868,7 +868,7 @@ class TestSearchToolsSyntheticTool:
     @pytest.mark.asyncio
     async def test_search_tools_with_results_and_cross_links(self):
         """search_tools with results should show cross-linking hints."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_tool = Tool(
@@ -888,7 +888,7 @@ class TestSearchToolsSyntheticTool:
     @pytest.mark.asyncio
     async def test_search_tools_with_category_filter(self):
         """search_tools with valid category should filter results."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         issue_tool = Tool(
@@ -1617,7 +1617,7 @@ class TestSearchToolsPagination:
     @pytest.mark.asyncio
     async def test_search_tools_pagination_metadata_present(self):
         """search_tools result should include has_more/next_offset/total_count."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_tools = [
@@ -1639,7 +1639,7 @@ class TestSearchToolsPagination:
     @pytest.mark.asyncio
     async def test_search_tools_pagination_last_page(self):
         """Last page of search_tools should have has_more=False."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_tools = [
@@ -1658,7 +1658,7 @@ class TestSearchToolsPagination:
     @pytest.mark.asyncio
     async def test_search_tools_page_out_of_range_message(self):
         """Out-of-range page should return a helpful message."""
-        from gitea_mcp_server.tools.search import _search_tools_impl, TolerantSearchTransform
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
 
         transform = TolerantSearchTransform()
         mock_tools = [

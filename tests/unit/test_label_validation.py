@@ -165,7 +165,6 @@ class TestLabelServiceValidateAndConvert:
     @pytest.fixture(autouse=True)
     def clear_cache(self):
         _label_service.clear_cache()
-        yield
 
     def _make_client(self, labels_data):
         client = MagicMock()
@@ -266,7 +265,6 @@ class TestLabelServiceFormatAvailable:
     @pytest.fixture(autouse=True)
     def clear_cache(self):
         _label_service.clear_cache()
-        yield
 
     @pytest.mark.asyncio
     async def test_groups_labels_by_prefix(self):

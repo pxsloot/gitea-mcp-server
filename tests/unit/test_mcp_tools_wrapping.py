@@ -1,11 +1,11 @@
 """Unit tests for FunctionTool result wrapping (x-fastmcp-wrap-result)."""
 
 from copy import deepcopy
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import CallToolResult
+
 
 class TestFunctionToolResultWrapping:
     """Test that FunctionTool.convert_result() wraps when x-fastmcp-wrap-result is set.
@@ -31,8 +31,6 @@ class TestFunctionToolResultWrapping:
     @pytest.mark.asyncio
     async def test_convert_result_wraps_dict_with_x_fastmcp(self):
         """convert_result should wrap return value in {'result': ...}."""
-        from fastmcp.tools.base import Tool
-        from fastmcp.tools.function_parsing import ParsedFunction
 
         tool = Tool(
             name="test_list",
@@ -50,7 +48,6 @@ class TestFunctionToolResultWrapping:
     @pytest.mark.asyncio
     async def test_convert_result_wraps_array_with_x_fastmcp(self):
         """convert_result should wrap arrays too."""
-        from fastmcp.tools.base import Tool
 
         tool = Tool(
             name="test_array",
@@ -68,7 +65,6 @@ class TestFunctionToolResultWrapping:
     @pytest.mark.asyncio
     async def test_convert_result_sets_meta_when_wrapping(self):
         """When wrapping, meta should be set to bypass MCP SDK validation."""
-        from fastmcp.tools.base import Tool
 
         tool = Tool(
             name="test_meta",
@@ -84,7 +80,6 @@ class TestFunctionToolResultWrapping:
 
     def test_convert_result_no_wrap_without_flag(self):
         """Without x-fastmcp-wrap-result, structured_content should not be wrapped."""
-        from fastmcp.tools.base import Tool
 
         schema = {
             "type": "object",
@@ -116,7 +111,6 @@ class TestFunctionToolResultWrapping:
     async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self):
         """When meta is set (wrapping active), to_mcp_result should return
         CallToolResult directly to bypass MCP SDK output validation."""
-        from fastmcp.tools.base import Tool
 
         tool = Tool(
             name="test_calltool",
@@ -129,6 +123,5 @@ class TestFunctionToolResultWrapping:
         result = tool.convert_result(raw)
         mcp_result = result.to_mcp_result()
 
-        from mcp.types import CallToolResult
         assert isinstance(mcp_result, CallToolResult)
         assert mcp_result.structuredContent == {"result": {"resources": [], "count": 0}}

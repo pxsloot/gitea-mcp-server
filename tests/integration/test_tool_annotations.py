@@ -22,7 +22,6 @@ from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
 from tests.integration.conftest import BASE_TEST_URL
 
-
 # ---------------------------------------------------------------------------
 # Shared spec with endpoints across all HTTP methods + all 7 categories
 # ---------------------------------------------------------------------------

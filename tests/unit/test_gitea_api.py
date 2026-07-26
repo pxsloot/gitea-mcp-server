@@ -105,6 +105,7 @@ class TestGiteaAPI:
         )
         assert result == {"mocked": True}
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_error_propagation(self, api):
         """Test that errors from transport are propagated correctly."""

@@ -678,6 +678,21 @@ uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/integration/
 ```
 
+### Test Markers
+
+| Marker | Description | Fast iteration |
+|--------|-------------|----------------|
+| `live` | Requires a real Gitea/Forgejo instance (skipped if unreachable). Defined in `tests/live/conftest.py`. | — |
+| `slow` | Tests taking >1s (HTTP server startup, retry timeouts). Skip with `-m 'not slow'`. | `uv run pytest -m 'not slow'` |
+
+```bash
+# Fast iteration — skip HTTP server startup and retry timeout tests
+uv run pytest -m 'not slow'
+
+# Run only slow tests (e.g. before CI)
+uv run pytest -m slow
+```
+
 ## Quality Standards
 
 - **All tests must be deterministic**: No random behavior without fixed seeds

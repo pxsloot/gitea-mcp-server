@@ -1,6 +1,5 @@
 """Tests for ExtensionMetadataTransform."""
 
-from collections.abc import Sequence
 from typing import Any
 
 import pytest

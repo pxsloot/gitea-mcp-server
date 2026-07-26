@@ -5,9 +5,9 @@ from gitea_mcp_server.openapi_converter import (
     RequestBodyBuilder,
     SchemaNormalizer,
     SchemaWalker,
+    _add_nullable_for_optional_refs,
     convert_definitions,
     fix_references,
-    _add_nullable_for_optional_refs,
 )
 
 

@@ -9,8 +9,6 @@ Filtering happens at spec-prep time — no runtime transform applies exclusion.
 
 from pathlib import Path
 
-import pytest
-
 from gitea_mcp_server.server_setup.spec_loader import (
     _compute_excluded_routes,
     load_exclusion_config,
@@ -20,7 +18,6 @@ from gitea_mcp_server.tools.exclusion import (
     matches_pattern,
 )
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
-
 
 # ---------------------------------------------------------------------------
 # Config loading tests

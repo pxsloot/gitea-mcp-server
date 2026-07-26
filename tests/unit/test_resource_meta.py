@@ -14,7 +14,6 @@ from gitea_mcp_server.resources.meta import (
     derive_size_hint_from_schema,
 )
 
-
 # ── derive_size_hint_from_schema ─────────────────────────────────────────────
 
 

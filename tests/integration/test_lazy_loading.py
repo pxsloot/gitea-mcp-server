@@ -2,7 +2,6 @@
 
 import pytest
 import respx
-
 from fastmcp.exceptions import ToolError
 from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 

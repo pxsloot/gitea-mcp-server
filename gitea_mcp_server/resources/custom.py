@@ -3,7 +3,7 @@
 Custom resources return raw data (JSON or text) with metadata describing the
 response schema and a ``format_hint`` for the display layer.  No formatting is
 done at the resource level -- that is the responsibility of the unified display
-pipeline in ``mcp_tools.py`` and ``tools/display.py``.
+pipeline in ``tools/mcp_tools.py`` and ``tools/display.py``.
 
 **Migration complete**: 10 resources are registered via the factory
 (``make_api_resource()``).  The remaining 3 static resources (version,

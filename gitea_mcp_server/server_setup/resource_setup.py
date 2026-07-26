@@ -5,10 +5,10 @@ from typing import Any
 from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.mcp_tools import register_mcp_resource_tools
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
 from gitea_mcp_server.resources.factory import _registered_uris as _factory_registered_uris
+from gitea_mcp_server.tools.mcp_tools import register_mcp_resource_tools
 
 
 def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + scopes + pre-computed data are all independent registration axes

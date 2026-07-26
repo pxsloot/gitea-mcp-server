@@ -1115,7 +1115,7 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_with_extra_pulls(self):
         """Display pipeline passes extra to formatter - produces 'Pull Requests' title."""
-        from gitea_mcp_server.mcp_tools import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
         result = _format_resource_content(
@@ -1127,7 +1127,7 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_with_extra_issues(self):
         """Display pipeline passes extra to formatter - produces 'Issues' title."""
-        from gitea_mcp_server.mcp_tools import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
         result = _format_resource_content(
@@ -1139,7 +1139,7 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_without_extra_fallback(self):
         """Display pipeline falls back to scanning when extra is absent."""
-        from gitea_mcp_server.mcp_tools import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
 
         # Data has no pull_request field -> title is "Issues"
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
@@ -1151,7 +1151,7 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_without_format_hint(self):
         """Display pipeline ignores extra when no format_hint is provided."""
-        from gitea_mcp_server.mcp_tools import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
 
         data = json.dumps({"key": "value"})
         result = _format_resource_content(

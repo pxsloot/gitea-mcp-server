@@ -1,7 +1,7 @@
 """Generic BM25 search engine (infra layer).
 
 Provides tokenization, alias expansion, and a reusable BM25 search engine.
-Used by both tool search (tools/search.py) and resource search (mcp_tools.py).
+Used by both tool search (tools/search.py) and resource search (tools/mcp_tools.py).
 
 BM25 index implementation is self-contained (not imported from FastMCP internals)
 to avoid coupling to FastMCP's private API.

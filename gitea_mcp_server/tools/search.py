@@ -723,7 +723,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
-    from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 - deferred to break circular import
+    from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 - deferred to break circular import
 
     raw = await _mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])

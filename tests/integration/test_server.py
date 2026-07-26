@@ -1093,7 +1093,7 @@ class TestServerEdgeCases:
         """_setup_tool_discovery adds search + namespace transforms when lazy loading enabled."""
         from unittest.mock import MagicMock, patch
 
-        from gitea_mcp_server.docs_tools import DocManager
+        from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.server import _setup_tool_discovery
 
         mcp = MagicMock()
@@ -1115,7 +1115,7 @@ class TestServerEdgeCases:
         """_setup_tool_discovery skips search transform when lazy loading disabled."""
         from unittest.mock import MagicMock, patch
 
-        from gitea_mcp_server.docs_tools import DocManager
+        from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.server import _setup_tool_discovery
 
         mcp = MagicMock()

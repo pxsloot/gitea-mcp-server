@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from gitea_mcp_server.docs_tools import DocManager
+    from gitea_mcp_server.tools.docs_tools import DocManager
 
 from fastmcp.server.context import Context  # noqa: TC002 - runtime use via get_type_hints
 from fastmcp.tools.base import Tool, ToolResult
@@ -22,9 +22,9 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.format import _format_paginated_result
-from gitea_mcp_server.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.tools.customize import synthetic_annotations
+from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _compact_search_serializer,

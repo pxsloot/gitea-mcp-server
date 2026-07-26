@@ -55,8 +55,8 @@ class TestGiteaClient:
             assert exc_info.value.status_code == 404
             assert "Not found" in str(exc_info.value)
 
-    @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.asyncio
     async def test_500_error(self, config):
         """Test 500 error handling."""
         client = GiteaClient(config)

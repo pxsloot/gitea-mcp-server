@@ -393,7 +393,7 @@ resource (query params with context forwarding)::
         resource_type="issues",
         scope="read:repository",
         tags={"wrapper", "issues"},
-        error_message="Repository '{owner}/{repo}' not found or returned no results.",
+        error_message="Repository '{owner}/{repo}' not found.",
         param_config=ResourceParamConfig(
             query_params=["state", "type"],
             query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
@@ -407,10 +407,10 @@ resource (query params with context forwarding)::
         available_scopes=available_scopes,
     )
 
-The resource reports the raw ``type`` value (``"issues"`` / ``"pulls"``) in the
-error response's ``resource_type`` field.  Human-readable formatting
-(e.g. "pull requests") is a display concern handled by the read_resource
-display layer, not the resource itself.
+The error response carries a ``resource_type`` field with the raw API type
+value (``"issues"`` / ``"pulls"``).  Human-readable entity names (e.g. "pull
+requests") are a display concern for the read_resource layer, not the
+resource itself.
 
 And the labels resource (path-param forwarding)::
 
@@ -474,7 +474,7 @@ working together::
         resource_type="issues",
         scope="read:repository",
         tags={"wrapper", "issues"},
-        error_message="Repository '{owner}/{repo}' not found or returned no results.",
+        error_message="Repository '{owner}/{repo}' not found.",
         param_config=ResourceParamConfig(
             query_params=["state", "type"],       # → API as ?state=&type=
             query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},

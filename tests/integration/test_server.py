@@ -1456,6 +1456,8 @@ class TestServerStartupFailures:
     @pytest.mark.asyncio
     async def test_unreachable_server_raises_spec_error(self):
         """Server creation with an unreachable Gitea URL raises SpecError."""
+        import httpx
+
         from gitea_mcp_server.exceptions import SpecError
 
         config = SimpleConfig(
@@ -1467,9 +1469,10 @@ class TestServerStartupFailures:
         gitea_client = GiteaClient(config)
 
         with respx.mock() as mock_http:
-            # Simulate a connection timeout / DNS failure.
+            # Simulate a connection refusal (DNS failure / server down).
+            # httpx.ConnectError is what the real httpx transport raises.
             mock_http.get("https://git.example.com/swagger.v1.json").side_effect = (
-                TimeoutError("Connection timed out")
+                httpx.ConnectError("Connection refused")
             )
             with pytest.raises(SpecError, match="Failed to fetch"):
                 await create_mcp_server(gitea_client)

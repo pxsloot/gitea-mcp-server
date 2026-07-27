@@ -517,7 +517,10 @@ class TestClearLabelServiceCache:
         await middleware.on_call_tool(mock_context, mock_call_next)
 
     # ------------------------------------------------------------------
-    # Direct _clear_label_service_cache tests — URI parsing edge cases
+    # URI parsing edge cases — tested through on_call_tool with patched
+    # compute_uris_to_invalidate to inject edge-case URIs that cannot
+    # arise from the normal invalidation system (all registered patterns
+    # produce well-formed gitea://repos/.../labels URIs).
     # ------------------------------------------------------------------
 
     def _make_middleware(self, label_service=None):
@@ -532,73 +535,119 @@ class TestClearLabelServiceCache:
         mock_caching._read_resource_cache = mock_cache
         return CacheInvalidationMiddleware(mock_caching, label_service=label_service)
 
-    def test_uri_too_few_parts_skips(self):
+    def _make_context_and_call_next(self, tool_name="test_label_tool", arguments=None):
+        """Helper: create mock context and call_next for on_call_tool tests."""
+        from unittest.mock import MagicMock
+
+        mock_context = MagicMock()
+        mock_context.message.name = tool_name
+        mock_context.message.arguments = arguments or {}
+
+        async def mock_call_next(context):
+            return MagicMock(is_error=False)
+
+        return mock_context, mock_call_next
+
+    @pytest.mark.asyncio
+    async def test_uri_too_few_parts_skips(self):
         """URI with fewer than _MIN_LABEL_URI_PARTS parts does not call clear_cache_for."""
+        from unittest.mock import patch
+
         from gitea_mcp_server.label_service import LabelService
 
+        register_tool_invalidation("test_label_tool", ["labels"])
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
-        # "gitea://labels" has only 3 parts — fewer than the 6-part minimum
-        middleware._clear_label_service_cache(
-            uris=["gitea://labels"],
-            arguments={},
-        )
+        with patch(
+            "gitea_mcp_server.cache_invalidation.compute_uris_to_invalidate",
+            return_value=["gitea://labels"],
+        ):
+            await middleware.on_call_tool(mock_context, mock_call_next)
+
         label_service.clear_cache_for.assert_not_called()
 
-    def test_uri_not_gitea_scheme_skips(self):
+    @pytest.mark.asyncio
+    async def test_uri_not_gitea_scheme_skips(self):
         """URI where parts[1] is not empty string skips.
 
         URIs like ``gitea:repos/owner/repo/labels`` (missing ``//``) produce
         fewer parts or no empty string at ``parts[1]``.
         """
+        from unittest.mock import patch
+
         from gitea_mcp_server.label_service import LabelService
 
+        register_tool_invalidation("test_label_tool", ["labels"])
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
-        # No empty second segment (not a ``gitea://`` style URI)
-        middleware._clear_label_service_cache(
-            uris=["gitea:repos/owner/repo/labels"],
-            arguments={},
-        )
+        with patch(
+            "gitea_mcp_server.cache_invalidation.compute_uris_to_invalidate",
+            return_value=["gitea:repos/owner/repo/labels"],
+        ):
+            await middleware.on_call_tool(mock_context, mock_call_next)
+
         label_service.clear_cache_for.assert_not_called()
 
-    def test_uri_not_repos_segment_skips(self):
+    @pytest.mark.asyncio
+    async def test_uri_not_repos_segment_skips(self):
         """URI where parts[2] is not 'repos' skips."""
+        from unittest.mock import patch
+
         from gitea_mcp_server.label_service import LabelService
 
+        register_tool_invalidation("test_label_tool", ["labels"])
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
-        middleware._clear_label_service_cache(
-            uris=["gitea://user/owner/repo/labels"],
-            arguments={},
-        )
+        with patch(
+            "gitea_mcp_server.cache_invalidation.compute_uris_to_invalidate",
+            return_value=["gitea://user/owner/repo/labels"],
+        ):
+            await middleware.on_call_tool(mock_context, mock_call_next)
+
         label_service.clear_cache_for.assert_not_called()
 
-    def test_uri_with_empty_owner_skips(self):
+    @pytest.mark.asyncio
+    async def test_uri_with_empty_owner_skips(self):
         """URI with empty owner (parts[3] == '') skips."""
+        from unittest.mock import patch
+
         from gitea_mcp_server.label_service import LabelService
 
+        register_tool_invalidation("test_label_tool", ["labels"])
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
-        middleware._clear_label_service_cache(
-            uris=["gitea://repos//repo/labels"],
-            arguments={},
-        )
+        with patch(
+            "gitea_mcp_server.cache_invalidation.compute_uris_to_invalidate",
+            return_value=["gitea://repos//repo/labels"],
+        ):
+            await middleware.on_call_tool(mock_context, mock_call_next)
+
         label_service.clear_cache_for.assert_not_called()
 
-    def test_uri_with_empty_repo_skips(self):
+    @pytest.mark.asyncio
+    async def test_uri_with_empty_repo_skips(self):
         """URI with empty repo (parts[4] == '') skips."""
+        from unittest.mock import patch
+
         from gitea_mcp_server.label_service import LabelService
 
+        register_tool_invalidation("test_label_tool", ["labels"])
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
-        middleware._clear_label_service_cache(
-            uris=["gitea://repos/owner//labels"],
-            arguments={},
-        )
+        with patch(
+            "gitea_mcp_server.cache_invalidation.compute_uris_to_invalidate",
+            return_value=["gitea://repos/owner//labels"],
+        ):
+            await middleware.on_call_tool(mock_context, mock_call_next)
+
         label_service.clear_cache_for.assert_not_called()

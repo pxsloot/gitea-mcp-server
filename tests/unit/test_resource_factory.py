@@ -1176,12 +1176,6 @@ class TestMakeApiResourceHandlerHook:
             return response
         return f"processed:{response}"
 
-    async def _non_str_hook(self, response: Any) -> str:
-        """Hook that returns non-string to test edge case."""
-        # Return the response as-is — if it's non-string this tests
-        # how ResourceContent(content=...) handles it.
-        return response  # type: ignore[return-value]
-
     def test_registers_with_text_plain_mime_type(self):
         """handler_hook should register with mime_type='text/plain'."""
         mcp = _make_mock_mcp()
@@ -1307,9 +1301,21 @@ class TestMakeApiResourceHandlerHook:
         assert error["code"] == "NOT_FOUND"
         assert "README not found for 'o/r'." in error["message"]
 
+    async def _list_item_count_hook(self, response: Any) -> str:
+        """Hook that returns item count for list responses, falls through for dicts."""
+        if isinstance(response, list):
+            return f"{len(response)} items"
+        if isinstance(response, str):
+            return response
+        return f"processed:{response}"
+
     @pytest.mark.asyncio
     async def test_handler_hook_called_with_list_response(self):
-        """handler_hook receives a list API response (non-dict, non-str)."""
+        """handler_hook meaningfully processes a list API response (non-dict, non-str).
+        
+        Uses a hook that returns different output for list vs dict responses,
+        proving the hook receives the correct data type.
+        """
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[1, 2, 3])
         spec = _make_mock_openapi_spec()
@@ -1318,13 +1324,14 @@ class TestMakeApiResourceHandlerHook:
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}/items",
             api_path="/repos/{owner}/{repo}/items",
-            handler_hook=self._hook,
+            handler_hook=self._list_item_count_hook,
         )
 
         result = await handler(owner="o", repo="r")
         content = result.contents[0]
         assert content.mime_type == "text/plain"
-        assert "processed:" in content.content
+        # The list-specific hook counts items instead of just stringifying
+        assert content.content == "3 items"
 
     @pytest.mark.asyncio
     async def test_hook_resource_with_query_params(self):

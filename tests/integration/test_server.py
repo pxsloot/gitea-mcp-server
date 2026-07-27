@@ -797,7 +797,7 @@ class TestServerEdgeCases:
         ):
             mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
             # Should not raise - exception is caught and filtering fails open.
-            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+            _, _, _, excluded_routes = await load_and_convert_spec(
                 gitea_client, config
             )
             assert excluded_routes == set()
@@ -834,7 +834,7 @@ class TestServerEdgeCases:
         ):
             mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
             # Scope fetch is called even when filtering is disabled.
-            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+            _, _, _, excluded_routes = await load_and_convert_spec(
                 gitea_client, config
             )
             mock_fetch.assert_called_once()
@@ -1048,7 +1048,7 @@ class TestServerEdgeCases:
         }
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+            _, _, _, excluded_routes = await load_and_convert_spec(
                 gitea_client, config
             )
             assert excluded_routes == set()
@@ -1084,7 +1084,7 @@ class TestServerEdgeCases:
                 "gitea_mcp_server.server_setup.spec_loader.load_exclusion_config",
                 return_value={"exclude": ["gitea_admin_*"], "include": []},
             ):
-                _, _, filtered_info, excluded_routes = await load_and_convert_spec(
+                _, _, _, excluded_routes = await load_and_convert_spec(
                     gitea_client, config
                 )
                 assert ("/admin/settings", "GET") in excluded_routes
@@ -1262,8 +1262,8 @@ class TestServerEdgeCases:
             task = asyncio.ensure_future(coro)
             return task
 
-        with patch("gitea_mcp_server.server.main_async") as mock_main_async:
-            with patch.object(asyncio, "run", _run_on_current_loop):
+        with patch("gitea_mcp_server.server.main_async") as mock_main_async, \
+             patch.object(asyncio, "run", _run_on_current_loop):
                 from gitea_mcp_server.server import main
                 main()
                 if task is not None:
@@ -1277,8 +1277,10 @@ class TestServerEdgeCases:
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
             mock_config.return_value = MagicMock(log_level="INFO", log_format="text")
-            with patch("gitea_mcp_server.server.create_mcp_server", side_effect=Exception("boom")):
-                with patch("gitea_mcp_server.server.GiteaClient") as mock_client:
+            with (
+                patch("gitea_mcp_server.server.create_mcp_server", side_effect=Exception("boom")),
+                patch("gitea_mcp_server.server.GiteaClient") as mock_client,
+            ):
                     mock_client.return_value.close = AsyncMock()
                     with pytest.raises(SystemExit) as exc:
                         from gitea_mcp_server.server import main_async
@@ -1297,11 +1299,13 @@ class TestServerEdgeCases:
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
             cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
             mock_config.return_value = cfg
-            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
-                with patch("gitea_mcp_server.server.GiteaClient"):
-                    from gitea_mcp_server.server import main_async
-                    await main_async()
-                    mock_mcp.run_stdio_async.assert_called_once()
+            with (
+                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
+                patch("gitea_mcp_server.server.GiteaClient"),
+            ):
+                from gitea_mcp_server.server import main_async
+                await main_async()
+                mock_mcp.run_stdio_async.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_main_async_keyboard_interrupt_handled(self):
@@ -1314,10 +1318,12 @@ class TestServerEdgeCases:
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
             cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
             mock_config.return_value = cfg
-            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
-                with patch("gitea_mcp_server.server.GiteaClient"):
-                    from gitea_mcp_server.server import main_async
-                    await main_async()  # Should not raise
+            with (
+                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
+                patch("gitea_mcp_server.server.GiteaClient"),
+            ):
+                from gitea_mcp_server.server import main_async
+                await main_async()  # Should not raise
 
     @pytest.mark.asyncio
     async def test_create_mcp_server_generic_exception_wrapped(self):
@@ -1334,6 +1340,8 @@ class TestServerEdgeCases:
         gitea_client = GiteaClient(config)
 
         # Mock load_and_convert_spec to raise a generic exception
-        with patch("gitea_mcp_server.server.load_and_convert_spec", side_effect=ValueError("bad spec")):
-            with pytest.raises(SpecError, match="Failed to load or convert OpenAPI spec"):
+        with (
+            patch("gitea_mcp_server.server.load_and_convert_spec", side_effect=ValueError("bad spec")),
+            pytest.raises(SpecError, match="Failed to load or convert OpenAPI spec"),
+        ):
                 await create_mcp_server(gitea_client)

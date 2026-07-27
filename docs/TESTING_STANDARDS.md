@@ -716,6 +716,45 @@ uv run pytest -m slow
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
 7. Run `uv run pytest` before pushing — 1219+ tests should all pass
 
+## Test Code Linting
+
+The project enforces ruff lint rules on test code via `ruff check tests/` in both
+the `Makefile` (``make test``) and CI (``lint-tests`` job).
+
+### Active Rule Remediation (Issue #551)
+
+The following rules are suppressed for ``tests/**/*`` in ``pyproject.toml`` and are
+being fixed incrementally. As each rule is resolved, it is removed from the
+suppression list and from this table.
+
+| Rule | Violations | Status | Notes |
+|------|-----------|--------|-------|
+| ~~SIM117~~ | ~~9~~ | ✅ Fixed | ~~multiple-with-statements~~ |
+| ~~C416~~ | ~~2~~ | ✅ Fixed | ~~unnecessary-comprehension~~ |
+| ~~RET504~~ | ~~7~~ | ✅ Fixed | ~~unnecessary-assign~~ |
+| ~~PLW0108~~ | ~~5~~ | ✅ Fixed | ~~unnecessary-lambda~~ |
+| ~~RUF059~~ | ~~12~~ | ✅ Fixed | ~~unused-unpacked-variable~~ |
+| ~~SIM105~~ | ~~2~~ | ✅ Fixed | ~~suppressible-exception~~ |
+| PT006 | 8 | 🔧 Pending | pytest-parametrize-names-wrong-type |
+| PT011 | 11 | 🔧 Pending | pytest-raises-too-broad |
+| PT012 | 3 | 🔧 Pending | pytest-raises-with-multiple-statements |
+| PT017 | 1 | 🔧 Pending | pytest-assert-in-except |
+| PT018 | 4 | 🔧 Pending | pytest-composite-assertion |
+| EM101 | 8 | 🔧 Pending | raw-string-in-exception |
+| TRY003 | 6 | 🔧 Pending | raise-vanilla-args |
+| TRY301 | 2 | 🔧 Pending | raise-within-try |
+| TRY300 | 1 | 🔧 Pending | try-consider-else |
+| TC002 | 3 | 🔧 Pending | typing-only-third-party-import |
+| TC003 | 2 | 🔧 Pending | typing-only-standard-library-import |
+| F811 | 1 | 🔧 Pending | redefined-while-unused |
+| F821 | 1 | 🔧 Pending | undefined-name |
+| RUF001 | 1 | 🔧 Pending | ambiguous-unicode-character-string |
+| RUF005 | 1 | 🔧 Pending | collection-literal-concatenation |
+| RUF015 | 1 | 🔧 Pending | unnecessary-iterable-allocation-for-first-element |
+
+When all rules are fixed, this table will be removed and ``pyproject.toml`` will
+be the single source of truth for test lint configuration.
+
 ## Coverage Enforcement
 
 The project enforces a minimum coverage of 85% overall. This means:

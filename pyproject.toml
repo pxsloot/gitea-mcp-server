@@ -71,13 +71,9 @@ lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC"
     # Issues tracked by #551 — remove suppressions as they're fixed:
     "PT011", "PT006", "PT012", "PT017", "PT018",
     "EM101", "TRY003", "TRY301", "TRY300",
-    "SIM117", "SIM105",
-    "RET504",
-    "PLW0108",
-    "C416",
     "TC002", "TC003",
     "F811", "F821",
-    "RUF001", "RUF005", "RUF015", "RUF059",
+    "RUF001", "RUF005", "RUF015",
 ]
 "gitea_mcp_client/transport.py" = ["S401", "S404", "S603"]
 "check_annotations.py" = ["BLE001"]

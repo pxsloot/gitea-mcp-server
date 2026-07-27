@@ -5,6 +5,7 @@ endpoint and MCP endpoint accessibility.
 """
 
 import asyncio
+import contextlib
 import socket
 from contextlib import asynccontextmanager
 
@@ -108,10 +109,8 @@ async def run_test_server(config):
         # Shutdown server
         await server.shutdown()
         server_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await server_task
-        except asyncio.CancelledError:
-            pass
         await gitea_client.close()
 
 

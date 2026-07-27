@@ -33,7 +33,7 @@ def common_patches(monkeypatch):
 
     monkeypatch.setattr(
         "gitea_mcp_server.server.Config.get",
-        lambda: _http_config(),
+        _http_config,
     )
 
     monkeypatch.setattr(
@@ -94,7 +94,7 @@ def captured_app(monkeypatch):
 class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_returns_ok(self, captured_app, monkeypatch):
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", _http_config)
         await main_async()
         app = captured_app[0]
         async with httpx.AsyncClient(
@@ -107,7 +107,7 @@ class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_content_type(self, captured_app, monkeypatch):
         """Health endpoint should return application/json content type."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", _http_config)
         await main_async()
         app = captured_app[0]
         async with httpx.AsyncClient(
@@ -141,14 +141,14 @@ class TestRouteConfiguration:
     @pytest.mark.asyncio
     async def test_health_route_exists(self, captured_app, monkeypatch):
         """Health route should be present in the app routes."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", _http_config)
         await main_async()
         assert self._find_route(captured_app[0], "/health") is not None
 
     @pytest.mark.asyncio
     async def test_both_health_and_mcp_routes_present(self, captured_app, monkeypatch):
         """Both health and MCP routes should be registered simultaneously."""
-        monkeypatch.setattr("gitea_mcp_server.server.Config.get", lambda: _http_config())
+        monkeypatch.setattr("gitea_mcp_server.server.Config.get", _http_config)
         await main_async()
         assert self._find_route(captured_app[0], "/health") is not None
         assert self._find_route(captured_app[0], "/mcp") is not None
@@ -190,7 +190,7 @@ class TestCORSConfiguration:
             lambda: _http_config(http_cors=["https://example.com"]),
         )
         await main_async()
-        user_mw, cors = self._get_middleware(captured_app[0])
+        _, cors = self._get_middleware(captured_app[0])
         assert cors is not None, "Expected CORSMiddleware"
         origins = cors.kwargs.get("allow_origins", [])
         assert "https://example.com" in origins

@@ -344,9 +344,11 @@ class TestConfigEdgeCases:
 
     def test_exception_during_init_logged(self):
         """Exception during configuration init is logged and re-raised."""
-        with patch.object(Config, "_instance", None):
-            with patch.object(Config, "__init__", side_effect=ConfigError("init failed")):
-                with pytest.raises(ConfigError, match="init failed"):
+        with (
+            patch.object(Config, "_instance", None),
+            patch.object(Config, "__init__", side_effect=ConfigError("init failed")),
+            pytest.raises(ConfigError, match="init failed"),
+        ):
                     Config.get()
 
     def test_empty_token_after_strip_raises(self, monkeypatch):

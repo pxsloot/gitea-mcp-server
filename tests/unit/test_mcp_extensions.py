@@ -311,9 +311,11 @@ tool_names:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("invalid: yaml: content:")
 
-        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
-            with pytest.raises(Exception):
-                load_mcp_extensions()
+        with (
+            patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}),
+            pytest.raises(Exception),
+        ):
+            load_mcp_extensions()
 
 
 class TestLoadMcpExtensionsEdgeCases:
@@ -349,8 +351,10 @@ class TestLoadMcpExtensionsEdgeCases:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("tool_names:\n  test: {}")
 
-        with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}):
-            with patch("gitea_mcp_server.server_setup.mcp_extensions.Path.open") as mock_open:
+        with (
+            patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}),
+            patch("gitea_mcp_server.server_setup.mcp_extensions.Path.open") as mock_open,
+        ):
                 mock_open.side_effect = OSError("Permission denied")
                 with pytest.raises(OSError, match="Permission denied"):
                     load_mcp_extensions()

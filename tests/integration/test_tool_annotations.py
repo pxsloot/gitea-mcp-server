@@ -10,12 +10,15 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/332
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import respx
-from fastmcp.tools.base import Tool
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
@@ -381,7 +384,7 @@ class TestCategoryTags:
     def base_spec(self):
         return _make_annotation_spec()
 
-    @pytest.mark.parametrize("tool_name,expected_category", _CATEGORY_CASES)
+    @pytest.mark.parametrize(("tool_name", "expected_category"), _CATEGORY_CASES)
     async def test_category_tag(
         self, mcp_server, tool_name: str, expected_category: str,
     ) -> None:

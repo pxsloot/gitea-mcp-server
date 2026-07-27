@@ -29,14 +29,20 @@ class TestJSONFormatter:
         assert result["logger"] == "test_logger"
         assert result["message"] == "hello world"
 
-    def test_format_with_exc_info(self):
-        formatter = JSONFormatter()
+    @staticmethod
+    def _capture_exc_info():
+        """Capture exception info for testing."""
         try:
-            raise ValueError("test error")
+            msg = "test error"
+            raise ValueError(msg)  # noqa: TRY301
         except ValueError:
             import sys
-            exc_info = sys.exc_info()
-            record = logging.LogRecord(
+            return sys.exc_info()
+
+    def test_format_with_exc_info(self):
+        formatter = JSONFormatter()
+        exc_info = self._capture_exc_info()
+        record = logging.LogRecord(
                 name="test",
                 level=logging.ERROR,
                 pathname="test.py",

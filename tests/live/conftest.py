@@ -68,9 +68,10 @@ def _gitea_reachable() -> bool:
             headers={"Authorization": f"token {LIVE_TOKEN}"},
             timeout=5,
         )
-        return r.status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
         return False
+    else:
+        return r.status_code == 200
 
 
 live_available = pytest.mark.skipif(

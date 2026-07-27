@@ -294,7 +294,7 @@ class TestBM25SearchEngine:
         texts = ["apple banana", "apple apple cherry"]
         ranked = engine.search_with_scores(texts, "apple", 10, min_score=0.0)
         assert [i for i, _ in ranked] == [1, 0]
-        assert [s for _, s in ranked][0] == 1.0
+        assert next(s for _, s in ranked) == 1.0
 
     def test_search_bounds_check_raises(self):
         """min_score outside [0.0, 1.0] raises ValueError."""

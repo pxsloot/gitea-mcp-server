@@ -1,5 +1,7 @@
 """Tests for exception hierarchy and message formatting."""
 
+import pytest
+
 from gitea_mcp_server.exceptions import (
     ConfigError,
     GiteaAPIError,
@@ -17,10 +19,10 @@ class TestGiteaMCPError:
         assert issubclass(GiteaMCPError, Exception)
 
     def test_can_be_raised_and_caught(self):
-        try:
-            raise GiteaMCPError("base error")
-        except GiteaMCPError as e:
-            assert str(e) == "base error"
+        msg = "base error"
+        with pytest.raises(GiteaMCPError) as exc:
+            raise GiteaMCPError(msg)
+        assert str(exc.value) == "base error"
 
 
 class TestConfigError:

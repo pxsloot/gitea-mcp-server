@@ -114,7 +114,7 @@ class TestLoadAndConvertSpec:
             respx.get(spec_url).respond(200, json=valid_spec)
 
             def failing_convert(spec):
-                raise ValueError("conversion failed")
+                raise ValueError
 
             monkeypatch.setattr(
                 "gitea_mcp_server.server_setup.spec_loader.convert_swagger_to_openapi_v3",
@@ -139,7 +139,7 @@ class TestLoadAndConvertSpec:
             )
 
             def failing_apply(spec, ext):
-                raise RuntimeError("extension error")
+                raise RuntimeError
 
             monkeypatch.setattr(
                 "gitea_mcp_server.server_setup.spec_loader.apply_mcp_extensions",

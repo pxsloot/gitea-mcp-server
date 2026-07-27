@@ -104,8 +104,8 @@ class TestRawMCPClientSession:
             env=env,
         )
 
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
+        async with stdio_client(params) as (read, write), \
+               ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool(

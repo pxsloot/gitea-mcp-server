@@ -716,6 +716,17 @@ uv run pytest -m slow
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
 7. Run `uv run pytest` before pushing — 1219+ tests should all pass
 
+## Test Code Linting
+
+Test code must comply with the project's ruff lint rules. The
+``[tool.ruff.lint.per-file-ignores]`` section in ``pyproject.toml`` documents
+the few intentional exemptions (e.g. unused arguments in fixtures, bare asserts,
+magic numbers in test data).
+
+Enforcement:
+- ``make test`` runs ``ruff check tests/`` before pytest
+- CI runs a dedicated ``lint-tests`` job
+
 ## Coverage Enforcement
 
 The project enforces a minimum coverage of 85% overall. This means:

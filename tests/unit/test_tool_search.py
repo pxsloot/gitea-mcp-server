@@ -1,5 +1,6 @@
 """Unit tests for search engine (indexing, call_tool, format, serializer)."""
 
+import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1128,8 +1129,8 @@ class TestSyntheticToolAnnotations:
         register_synthetic_tools(mcp, transform)
 
         # Trigger error - call_tool with invalid JSON string
+        ctx = MagicMock(spec=Context)
         with pytest.raises(ValueError, match="Invalid JSON"):
-            ctx = MagicMock(spec=Context)
             await _call_tool_impl(
                 name="nonexistent",
                 arguments="not-json",
@@ -1154,7 +1155,7 @@ class TestSyntheticToolAnnotations:
 
         # Simulate a failed lookup (will raise because magic mock can't call list_tools)
         # The key assertion: the mcp instance's tool metadata is intact after the attempt
-        try:
+        with contextlib.suppress(Exception):
             await _tool_info_impl(
                 name="nonexistent",
                 format="markdown",
@@ -1162,8 +1163,6 @@ class TestSyntheticToolAnnotations:
                 transform=transform,
                 tool_prefix="",
             )
-        except Exception:
-            pass  # Expected - we're testing post-error state
 
         # Annotations on registered tools unchanged
         tools = await mcp.list_tools()
@@ -1359,7 +1358,7 @@ class TestSearchAndSlice:
     def test_mismatched_items_and_texts(self):
         """Mismatched items/texts should not crash (BM25 will handle gracefully)."""
         items = self._make_items(3)
-        texts = self._make_texts(3) + ["extra"]  # more texts than items
+        texts = [*self._make_texts(3), "extra"]  # more texts than items
         # Should not raise
         page_items, total = _search_and_slice(items, texts, "description", page=1, limit=10)
         assert total == 3
@@ -1468,7 +1467,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_user_current_list_followers",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, _ = _search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1484,7 +1483,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_issue_create_issue_blocking",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, _ = _search_and_slice(
             items, texts, "create issue", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1502,7 +1501,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, _ = _search_and_slice(
             items, texts, "user get", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1516,7 +1515,7 @@ class TestSearchAndSliceNameMatch:
             "user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, _ = _search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="",
         )
@@ -1529,7 +1528,7 @@ class TestSearchAndSliceNameMatch:
             "forgejo_user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, _ = _search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="forgejo_",
         )
@@ -1603,7 +1602,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_admin_delete",         # no match
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        _, total = _search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="gitea_",
         )

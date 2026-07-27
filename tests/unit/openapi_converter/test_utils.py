@@ -14,7 +14,7 @@ class TestCamelToSnake:
     def test_simple_pascalcase(self):
         assert camel_to_snake("CreateIssue") == "create_issue"
 
-    @pytest.mark.parametrize("input_str,expected", [
+    @pytest.mark.parametrize(("input_str", "expected"), [
         ("issueCreateIssue", "issue_create_issue"),
         ("repoGetBranch", "repo_get_branch"),
     ])

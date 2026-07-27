@@ -7,7 +7,8 @@ from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
-from tests.conftest import SimpleConfig, extract_tool_names
+from tests.conftest import SimpleConfig
+from tests.helpers.tool_names import extract_tool_names
 
 
 class TestLazyLoading:

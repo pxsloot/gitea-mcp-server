@@ -1,15 +1,22 @@
-"""Pytest configuration and fixtures."""
+"""Pytest configuration and fixtures.
+
+This file provides test infrastructure shared across the entire test suite:
+``SimpleConfig`` (canonical test config), session-scoped event loop,
+OpenTelemetry setup, and temp workspace.
+
+Helper utilities (mock factories, output parsers, spec fixtures) live in
+``tests/helpers/`` — see that package for ``make_mock_tool``,
+``make_mock_route``, ``extract_tool_names``, ``base_spec``, and
+``minimal_spec``.
+"""
 
 import asyncio
 import json
 import logging
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
-from fastmcp.server.providers.openapi import OpenAPITool
-from mcp.types import ToolAnnotations
 
 
 class SimpleConfig:
@@ -64,76 +71,6 @@ class SimpleConfig:
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-
-
-def make_mock_tool(name="test_tool", tags=None, annotations=None, parameters=None,
-                    output_schema=None, description="", **kwargs):
-    """Create a MagicMock with OpenAPITool spec for unit tests.
-
-    Usage::
-
-        tool = make_mock_tool(name="issue_list_issues", tags={"issue"})
-        tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": []}))
-    """
-    tool = MagicMock(spec=OpenAPITool)
-    tool.name = name
-    tool.annotations = annotations if annotations is not None else ToolAnnotations()
-    tool.tags = tags or set()
-    tool.parameters = parameters or {"properties": {}}
-    tool.output_schema = output_schema
-    tool.description = description
-    tool.version = "1"
-    tool.auth = None
-    tool.serializer = None
-    tool.meta = {}
-    for k, v in kwargs.items():
-        setattr(tool, k, v)
-    return tool
-
-
-def make_mock_route(path="/test", method="GET", summary="Test", operation_id="test_op"):
-    """Create a MagicMock route for unit tests.
-
-    Usage::
-
-        route = make_mock_route("/repos/{owner}/{repo}/issues", "GET")
-    """
-    return MagicMock(
-        path=path,
-        method=method,
-        summary=summary,
-        operation_id=operation_id,
-    )
-
-
-def extract_tool_names(tools):
-    """Extract tool names from mcp.get_tools() return value.
-
-    Args:
-        tools: The result from mcp.get_tools(), which can be a dict, list, or other structure.
-
-    Returns:
-        List of tool names as strings.
-    """
-    if isinstance(tools, dict):
-        return list(tools.keys())
-    if isinstance(tools, list):
-        tool_names = []
-        for tool in tools:
-            if hasattr(tool, "name"):
-                tool_names.append(tool.name)
-            elif isinstance(tool, str):
-                tool_names.append(tool)
-            else:
-                try:
-                    if hasattr(tool, "get"):
-                        name = tool.get("name")
-                        if name:
-                            tool_names.append(name)
-                except Exception:
-                    pass
-        return tool_names
-    return []
 
 
 @pytest.fixture(scope="session")

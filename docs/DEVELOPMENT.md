@@ -45,10 +45,13 @@ TRANSPORT_TYPE=http uv run python -m gitea_mcp_server
 ## Running Tests
 
 ```bash
-# All tests
+# All tests (parallel by default: -n auto --dist loadscope)
 uv run pytest
 
-# Specific area
+# Disable parallel workers for single-file debugging
+uv run pytest -n 0
+
+# Specific area (parallel still active; one file → one worker)
 uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/unit/test_tool_annotations.py -v
 

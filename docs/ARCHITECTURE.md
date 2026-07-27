@@ -492,7 +492,31 @@ The customization layers as applied during server startup:
 
 ---
 
+## Converter Edge Cases
 
+The ``openapi_converter/core.py`` pipeline handles several classes of
+malformed or degenerate input without crashing.  The intended behaviour
+is documented below and enforced by ``TestEdgeCases`` in
+``tests/unit/openapi_converter/test_converter_properties.py``.
+
+| Input condition | Converter behaviour |
+|----------------|---------------------|
+| Missing ``paths`` key | Output gets ``paths: {}`` (required by OpenAPI 3.1). |
+| ``paths: null`` | Coerced to ``paths: {}``. |
+| Non-dict ``paths`` value (e.g. string) | Coerced to ``paths: {}``. |
+| Non-dict path item (e.g. string ``"/empty": "not a dict"``) | Passes through unchanged — the converter only processes dict path items. |
+| Missing ``info`` field | ``info`` absent from output (converter does not create it). |
+| Non-dict ``info`` (e.g. string) | Survives with original value — converter returns early from ``_update_info_version``. |
+| Missing ``basePath`` | No ``servers`` entry created. |
+| ``basePath: null`` | Treated as absent — no ``servers`` entry. |
+| Null ``definitions`` | Skipped — no ``components/schemas`` entry created. |
+| Duplicate ``operationId`` | Second (and subsequent) occurrences get ``_1``, ``_2``, … suffixes. First occurrence keeps its original ID. This ensures the output is a valid OpenAPI 3.1 spec. |
+| Null ``responses`` entries | Non-dict response entries pass through unchanged (``convert_responses`` early return). |
+
+The ``swagger`` field is always removed from the output (replaced by
+``openapi: 3.1.1``) regardless of input shape.
+
+---
 
 ## Response Content-Type Handling
 

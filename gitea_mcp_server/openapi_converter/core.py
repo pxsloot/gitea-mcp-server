@@ -333,10 +333,16 @@ class OperationTransformer:
 
 
 class PathsConverter:
-    """Convert paths object to OpenAPI 3.x format."""
+    """Convert paths object to OpenAPI 3.x format.
+
+    Tracks seen ``operationId`` values during conversion and appends
+    ``_1``, ``_2``, … suffixes to duplicates, ensuring the output
+    spec has unique operationIds (required by OpenAPI 3.1).
+    """
 
     def __init__(self, operation_transformer: OperationTransformer):
         self.operation_transformer = operation_transformer
+        self._seen_operation_ids: set[str] = set()
 
     def convert(self, paths: dict[str, Any]) -> dict[str, Any]:
         """Convert all paths and their operations."""
@@ -365,6 +371,7 @@ class PathsConverter:
 
                 raw_params = operation.get("parameters", [])
                 op_copy = self.operation_transformer.transform(operation, path, method, raw_params)
+                op_copy = self._deduplicate_operation_id(op_copy)
                 path_item_copy[method] = op_copy
 
             # Remove Swagger-specific fields from path item
@@ -373,6 +380,28 @@ class PathsConverter:
             new_paths[path] = path_item_copy
 
         return new_paths
+
+    def _deduplicate_operation_id(self, operation: dict[str, Any]) -> dict[str, Any]:
+        """Ensure the operation's ``operationId`` is unique within the spec.
+
+        OpenAPI 3.1 requires unique operationIds across all operations.
+        When a duplicate is found, appends ``_1``, ``_2``, … until unique.
+        The first occurrence keeps its original ID.
+        """
+        op_id = operation.get("operationId", "")
+        if not op_id:
+            return operation
+
+        if op_id not in self._seen_operation_ids:
+            self._seen_operation_ids.add(op_id)
+            return operation
+
+        counter = 1
+        while f"{op_id}_{counter}" in self._seen_operation_ids:
+            counter += 1
+        deduped = f"{op_id}_{counter}"
+        self._seen_operation_ids.add(deduped)
+        return {**operation, "operationId": deduped}
 
 
 def _add_nullable_for_optional_refs(spec: OpenAPISpec) -> None:
@@ -771,6 +800,16 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
       * ``paths`` is always a dict in the output — null, missing, or non-dict
         input paths are coerced to ``{}``.  This ensures the output conforms
         to the OpenAPI 3.1 spec, which requires ``paths`` to be an object.
+      * The ``swagger`` field is always removed (replaced by ``openapi``).
+      * Missing or non-dict ``info`` is left as-is in the output (neither
+        created nor removed).
+      * ``basePath`` set to ``None`` is treated as absent — no ``servers``
+        entry is created.
+      * ``definitions`` set to ``None`` is skipped — no ``components/schemas``
+        entry is created.
+      * Non-dict path items (e.g. strings) pass through unchanged.
+      * Duplicate ``operationId`` values are deduplicated by appending
+        ``_1``, ``_2``, … suffixes (second and later occurrences only).
 
     Args:
         spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)

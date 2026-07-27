@@ -189,14 +189,21 @@ class TestAllExportsAreValid:
 
 
 class TestNoCircularImports:
-    """Verify the entire package can be imported in a fresh interpreter context.
+    """Verify all modules can be imported in a single session.
 
-    This imports every module we know about in a single session to flush out
-    circular-import bugs that don't appear when importing one module at a time.
+    This imports every known module in sequence to flush out
+    circular-import bugs that don't appear when importing one
+    module at a time.
+
+    Note: ``importlib.reload`` is NOT used here because it re-creates
+    exception classes (``ValidationError``, ``SpecError``), breaking
+    ``pytest.raises()`` in downstream tests that imported the old class
+    at module level.  ``importlib.import_module()`` is idempotent —
+    returning the already-cached module — which is sufficient for the
+    circular-import detection purpose.
     """
 
     def test_full_tree_import(self) -> None:
         """All modules import cleanly in one pass."""
         for mod in ALL_MODULES:
-            # Re-import to ensure idempotent imports
-            importlib.reload(importlib.import_module(mod))
+            importlib.import_module(mod)

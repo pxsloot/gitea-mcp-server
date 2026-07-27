@@ -228,7 +228,12 @@ def _make_spec(
     paths: dict[str, Any] | None = None,
     definitions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a minimal valid Swagger 2.0 spec with the given paths and definitions."""
+    """Return a minimal valid Swagger 2.0 spec with the given paths and definitions.
+
+    Always includes ``swagger: "2.0"``, ``info``, and ``basePath``.
+    ``paths`` and ``definitions`` are only added when explicitly provided.
+    The ``info`` field contains ``{"title": "Test API", "version": "1.0.0"}``.
+    """
     spec: dict[str, Any] = {
         "swagger": "2.0",
         "info": {"title": "Test API", "version": "1.0.0"},
@@ -707,7 +712,13 @@ class TestEdgeCases:
     Related overlapping tests in ``test_swagger_to_openapi.py``
     (``test_null_paths_becomes_empty_dict``,
     ``test_missing_paths_becomes_empty_dict``) were consolidated
-    here in #581 to avoid duplication."""
+    here in #581 to avoid duplication.
+
+    The ``test_non_dict_paths_becomes_empty_dict`` test
+    (``paths`` string value at top level) remains in
+    ``test_swagger_to_openapi.py`` — it is a distinct scenario
+    from the non-dict *path items* tested here.
+    """
 
     def test_minimal_spec_no_paths(self) -> None:
         """A spec with only swagger/info/basePath must not crash
@@ -715,7 +726,7 @@ class TestEdgeCases:
 
         Expected behaviour:
         - ``swagger`` field is removed (replaced by ``openapi``)
-        - ``info.version`` is annotated into ``info.description``
+        - ``info.version`` survives in the result
         - ``basePath`` is converted to a ``servers`` entry
         - Missing ``paths`` key becomes ``paths: {}``
         """

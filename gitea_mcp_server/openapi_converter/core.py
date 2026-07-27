@@ -335,9 +335,16 @@ class OperationTransformer:
 class PathsConverter:
     """Convert paths object to OpenAPI 3.x format.
 
-    Tracks seen ``operationId`` values during conversion and appends
-    ``_1``, ``_2``, … suffixes to duplicates, ensuring the output
-    spec has unique operationIds (required by OpenAPI 3.1).
+    **Deduplication ordering**: ``OperationTransformer`` normalises each
+    ``operationId`` (camelCase → snake_case) *before* this converter
+    deduplicates it.  Deduplication therefore operates on *already-
+    normalised* IDs — ``getThing`` and ``get-thing`` that both normalise
+    to ``get_thing`` count as duplicates and the second gets a ``_1``
+    suffix.
+
+    Tracks seen ``operationId`` values and appends ``_1``, ``_2``, …
+    suffixes to duplicates, ensuring the output spec has unique
+    operationIds (required by OpenAPI 3.1).
     """
 
     def __init__(self, operation_transformer: OperationTransformer):
@@ -796,20 +803,29 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     ``dict[str, Any]`` copy for the conversion pipeline, then casts to
     ``OpenAPISpec`` for the final read-only wrapping steps.
 
-    Post-conversion normalization:
-      * ``paths`` is always a dict in the output — null, missing, or non-dict
-        input paths are coerced to ``{}``.  This ensures the output conforms
-        to the OpenAPI 3.1 spec, which requires ``paths`` to be an object.
+    Post-conversion normalization (enforced by ``TestEdgeCases`` in
+    ``tests/unit/openapi_converter/test_converter_properties.py``):
+
+      * ``paths`` is always a dict in the output — ``null``, missing, or
+        non-dict input ``paths`` are coerced to ``{}``.  This ensures the
+        output conforms to the OpenAPI 3.1 spec, which requires ``paths``
+        to be an object.
       * The ``swagger`` field is always removed (replaced by ``openapi``).
-      * Missing or non-dict ``info`` is left as-is in the output (neither
-        created nor removed).
-      * ``basePath`` set to ``None`` is treated as absent — no ``servers``
-        entry is created.
-      * ``definitions`` set to ``None`` is skipped — no ``components/schemas``
-        entry is created.
-      * Non-dict path items (e.g. strings) pass through unchanged.
-      * Duplicate ``operationId`` values are deduplicated by appending
-        ``_1``, ``_2``, … suffixes (second and later occurrences only).
+      * Missing ``info`` field → ``info`` absent from output (converter
+        does not create it).
+      * Non-dict ``info`` (e.g. string) → survives with its original value
+        (``_update_info_version`` returns early).
+      * Missing ``basePath`` → no ``servers`` entry created.
+      * ``basePath: null`` → treated as absent — no ``servers`` entry.
+      * ``definitions: null`` → skipped — no ``components/schemas`` entry.
+      * Non-dict path items (e.g. strings) pass through unchanged — the
+        converter only processes ``dict`` path items.
+      * Duplicate ``operationId`` values — second (and subsequent)
+        occurrences get ``_1``, ``_2``, … suffixes; the first occurrence
+        keeps its original ID.  Deduplication runs on already-normalised
+        IDs (camelCase → snake_case applied earlier in the pipeline).
+      * ``null`` ``responses`` entries → non-dict response entries pass
+        through unchanged (``convert_responses`` early return).
 
     Args:
         spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)

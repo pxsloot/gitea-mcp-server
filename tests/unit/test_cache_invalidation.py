@@ -515,3 +515,90 @@ class TestClearLabelServiceCache:
 
         # Should not raise even though label_service is None
         await middleware.on_call_tool(mock_context, mock_call_next)
+
+    # ------------------------------------------------------------------
+    # Direct _clear_label_service_cache tests — URI parsing edge cases
+    # ------------------------------------------------------------------
+
+    def _make_middleware(self, label_service=None):
+        """Helper: create CacheInvalidationMiddleware with a mock cache and optional label_service."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+        return CacheInvalidationMiddleware(mock_caching, label_service=label_service)
+
+    def test_uri_too_few_parts_skips(self):
+        """URI with fewer than _MIN_LABEL_URI_PARTS parts does not call clear_cache_for."""
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        # "gitea://labels" has only 3 parts — fewer than the 6-part minimum
+        middleware._clear_label_service_cache(
+            uris=["gitea://labels"],
+            arguments={},
+        )
+        label_service.clear_cache_for.assert_not_called()
+
+    def test_uri_not_gitea_scheme_skips(self):
+        """URI where parts[1] is not empty string skips.
+
+        URIs like ``gitea:repos/owner/repo/labels`` (missing ``//``) produce
+        fewer parts or no empty string at ``parts[1]``.
+        """
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        # No empty second segment (not a ``gitea://`` style URI)
+        middleware._clear_label_service_cache(
+            uris=["gitea:repos/owner/repo/labels"],
+            arguments={},
+        )
+        label_service.clear_cache_for.assert_not_called()
+
+    def test_uri_not_repos_segment_skips(self):
+        """URI where parts[2] is not 'repos' skips."""
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        middleware._clear_label_service_cache(
+            uris=["gitea://user/owner/repo/labels"],
+            arguments={},
+        )
+        label_service.clear_cache_for.assert_not_called()
+
+    def test_uri_with_empty_owner_skips(self):
+        """URI with empty owner (parts[3] == '') skips."""
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        middleware._clear_label_service_cache(
+            uris=["gitea://repos//repo/labels"],
+            arguments={},
+        )
+        label_service.clear_cache_for.assert_not_called()
+
+    def test_uri_with_empty_repo_skips(self):
+        """URI with empty repo (parts[4] == '') skips."""
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        middleware._clear_label_service_cache(
+            uris=["gitea://repos/owner//labels"],
+            arguments={},
+        )
+        label_service.clear_cache_for.assert_not_called()

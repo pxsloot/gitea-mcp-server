@@ -90,6 +90,14 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | `docs/` | **Developer-facing** documentation (this file, ARCHITECTURE.md, etc.) |
 | `tests/` | Unit tests (`unit/`) and integration tests (`integration/`) |
 
+### Keeping the Import-Smoke List in Sync
+
+`tests/unit/test_module_imports.py` maintains an ``ALL_MODULES`` list that
+every production module must be added to.  When you add a new ``.py`` file
+to any subpackage under ``gitea_mcp_server/``, add its dotted module name
+to ``ALL_MODULES``.  The list is the single source of truth for import-smoke
+and ``__all__``-validation coverage.
+
 ---
 
 ## How to Add a Tool Customization

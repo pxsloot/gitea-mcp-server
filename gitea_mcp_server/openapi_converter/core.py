@@ -736,7 +736,8 @@ def _wrap_success_response_schemas(spec: OpenAPISpec) -> None:
          spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``,
                mutated in place).
     """
-    paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths", {}))
+    # spec.get("paths") may be None (null in JSON); default to {} safely.
+    paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths") or {})
     for path_item in paths.values():
         if not isinstance(path_item, dict):
             continue
@@ -787,7 +788,7 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     if components:
         result["components"] = components
 
-    if "paths" in result:
+    if isinstance(result.get("paths"), dict):
         result["paths"] = convert_paths(result["paths"])
 
     remove_swagger_fields(result, ["consumes", "produces", "schemes"])

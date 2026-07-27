@@ -344,7 +344,7 @@ uv run pytest tests/live/ -v    # → 3 skipped
 - **pytest-xdist**: Parallel test execution (`-n auto --dist loadscope` enabled by default)
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
-- **hypothesis**: Property-based testing for converter invariants (``$ref`` resolution, vendor-extension stripping, response wrapping)
+- **hypothesis**: Property-based testing for converter invariants — ``$ref`` resolution, vendor-extension stripping, response wrapping, round-trip completeness, parameter preservation, and crash-safety on malformed input
 
 ## What to Test (Per Layer)
 

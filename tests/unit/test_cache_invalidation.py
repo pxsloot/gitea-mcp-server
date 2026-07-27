@@ -430,3 +430,88 @@ class TestIntegration:
         deleted_uris = [call[1]["key"] for call in mock_cache.delete.call_args_list]
         expected_key = _compute_cache_key("gitea://repos/testorg/testrepo/issues")
         assert deleted_uris == [expected_key]
+
+
+class TestClearLabelServiceCache:
+    """Tests for CacheInvalidationMiddleware._clear_label_service_cache."""
+
+    @pytest.mark.asyncio
+    async def test_label_uri_clears_label_cache(self):
+        """URI ending with /labels clears LabelService cache for that repo."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from gitea_mcp_server.label_service import LabelService
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
+
+        register_tool_invalidation("repo_create_label", ["labels"])
+
+        mock_context = MagicMock()
+        mock_context.message.name = "repo_create_label"
+        mock_context.message.arguments = {"owner": "myorg", "repo": "myrepo"}
+
+        async def mock_call_next(context):
+            return MagicMock(is_error=False)
+
+        await middleware.on_call_tool(mock_context, mock_call_next)
+
+        # LabelService cache should be cleared for myorg/myrepo
+        label_service.clear_cache_for.assert_called_once_with("myorg", "myrepo")
+
+    @pytest.mark.asyncio
+    async def test_non_label_uri_does_not_clear_label_cache(self):
+        """URI not ending with /labels does not clear LabelService cache."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from gitea_mcp_server.label_service import LabelService
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
+
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+
+        mock_context = MagicMock()
+        mock_context.message.name = "issue_edit_issue"
+        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
+
+        async def mock_call_next(context):
+            return MagicMock(is_error=False)
+
+        await middleware.on_call_tool(mock_context, mock_call_next)
+
+        label_service.clear_cache_for.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_label_service_skips_gracefully(self):
+        """When label_service is None, no error is raised."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        middleware = CacheInvalidationMiddleware(mock_caching, label_service=None)
+
+        register_tool_invalidation("repo_create_label", ["labels"])
+
+        mock_context = MagicMock()
+        mock_context.message.name = "repo_create_label"
+        mock_context.message.arguments = {"owner": "org", "repo": "repo"}
+
+        async def mock_call_next(context):
+            return MagicMock(is_error=False)
+
+        # Should not raise even though label_service is None
+        await middleware.on_call_tool(mock_context, mock_call_next)

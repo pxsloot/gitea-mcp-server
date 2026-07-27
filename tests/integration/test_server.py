@@ -1346,3 +1346,69 @@ class TestServerEdgeCases:
             pytest.raises(SpecError, match="Failed to load or convert OpenAPI spec"),
         ):
                 await create_mcp_server(gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_create_mcp_server_forgejo_server_type(self):
+        """Server type placeholder is set to Forgejo when spec says 'forgejo'."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                json={
+                    "swagger": "2.0",
+                    "info": {"title": "Forgejo API", "version": "1.0"},
+                    "paths": {},
+                    "definitions": {},
+                },
+            )
+            mcp = await create_mcp_server(gitea_client)
+            assert mcp is not None
+
+    @pytest.mark.asyncio
+    async def test_create_mcp_server_version_as_string(self):
+        """Server version string path when /version returns a string."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                json={
+                    "swagger": "2.0",
+                    "info": {"title": "Gitea API", "version": "1.0"},
+                    "paths": {},
+                    "definitions": {},
+                },
+            )
+            # Mock version endpoint to return a plain string
+            mock_http.get("https://git.example.com/api/v1/version").respond(
+                200, text="1.22.0"
+            )
+            mcp = await create_mcp_server(gitea_client)
+            assert mcp is not None
+
+    @pytest.mark.asyncio
+    async def test_apply_virtual_param_scope_filter_exception(self):
+        """_apply_virtual_param_scope_filter handles exceptions gracefully."""
+        from unittest.mock import patch
+
+        from gitea_mcp_server.server import _apply_virtual_param_scope_filter
+
+        with patch(
+            "gitea_mcp_server.server.apply_scope_filter",
+            side_effect=ValueError("scope error"),
+        ):
+            # Should not raise - exception is caught inside
+            await _apply_virtual_param_scope_filter({"read:repository"})

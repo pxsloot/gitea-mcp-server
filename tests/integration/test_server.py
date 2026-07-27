@@ -1413,3 +1413,87 @@ class TestServerEdgeCases:
         ):
             # Should not raise - exception is caught inside
             await _apply_virtual_param_scope_filter({"read:repository"})
+
+
+# ---------------------------------------------------------------------------
+# Tests: Server startup failure modes
+# ---------------------------------------------------------------------------
+
+
+class TestServerStartupFailures:
+    """Tests for server creation with invalid spec, unreachable URL, or invalid token.
+
+    These test the error-handling paths in ``create_mcp_server`` /
+    ``load_and_convert_spec`` that are reached when the Swagger spec cannot
+    be fetched or parsed.
+    """
+
+    @pytest.mark.asyncio
+    async def test_corrupt_spec_raises_spec_error(self):
+        """Server creation with a corrupt (non-JSON) swagger spec raises SpecError."""
+        from gitea_mcp_server.exceptions import SpecError
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            # Return non-JSON content with a JSON content-type (simulates
+            # a corrupt server response that the HTTP layer accepts but
+            # json.loads fails on).
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                content=b"{corrupt json",
+                headers={"content-type": "application/json"},
+            )
+            with pytest.raises(SpecError, match="Failed to fetch or parse spec"):
+                await create_mcp_server(gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_unreachable_server_raises_spec_error(self):
+        """Server creation with an unreachable Gitea URL raises SpecError."""
+        import httpx
+
+        from gitea_mcp_server.exceptions import SpecError
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            # Simulate a connection refusal (DNS failure / server down).
+            # httpx.ConnectError is what the real httpx transport raises.
+            mock_http.get("https://git.example.com/swagger.v1.json").side_effect = (
+                httpx.ConnectError("Connection refused")
+            )
+            with pytest.raises(SpecError, match="Failed to fetch"):
+                await create_mcp_server(gitea_client)
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_spec_fetch_raises_spec_error(self):
+        """Server creation with a 401 on the swagger endpoint raises SpecError."""
+        from gitea_mcp_server.exceptions import SpecError
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                401,
+                json={"message": "Unauthorized"},
+            )
+            with pytest.raises(SpecError, match="Failed to fetch"):
+                await create_mcp_server(gitea_client)

@@ -1023,6 +1023,57 @@ class TestMakeApiResourceContextParams:
         client.request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_context_param_not_in_uri_still_validated(self):
+        """Context param not present in URI template is still validated and forwarded."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        # Use a URI without {?display_hint} — the context param is not in the
+        # template but should still be validated (via _build_optional_param_signature).
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["display_hint"],
+                context_param_validators={"display_hint": ["pulls", "issues"]},
+            ),
+        )
+
+        # Valid context param value
+        result = await handler(owner="o", repo="r", state="open", display_hint="pulls")
+        assert isinstance(result, ResourceResult)
+
+    @pytest.mark.asyncio
+    async def test_context_param_not_in_uri_rejects_invalid(self):
+        """Context param not in URI template still raises validation error."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state}",
+            api_path="/repos/{owner}/{repo}/issues",
+            format_hint="issues",
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                context_params=["display_hint"],
+                context_param_validators={"display_hint": ["pulls", "issues"]},
+            ),
+        )
+
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r", display_hint="invalid")
+
+        error = exc.value.args[0]
+        assert error["code"] == "VALIDATION_ERROR"
+        assert "display_hint" in error["message"]
+
+    @pytest.mark.asyncio
     async def test_context_params_not_substituted_into_path(self):
         """context_params are NOT substituted into the API path."""
         mcp = _make_mock_mcp()
@@ -1250,6 +1301,38 @@ class TestMakeApiResourceHandlerHook:
         assert error["code"] == "NOT_FOUND"
         assert "README not found for 'o/r'." in error["message"]
 
+    async def _list_item_count_hook(self, response: Any) -> str:
+        """Hook that returns item count for list responses, falls through for dicts."""
+        if isinstance(response, list):
+            return f"{len(response)} items"
+        if isinstance(response, str):
+            return response
+        return f"processed:{response}"
+
+    @pytest.mark.asyncio
+    async def test_handler_hook_called_with_list_response(self):
+        """handler_hook meaningfully processes a list API response (non-dict, non-str).
+        
+        Uses a hook that returns different output for list vs dict responses,
+        proving the hook receives the correct data type.
+        """
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[1, 2, 3])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/items",
+            api_path="/repos/{owner}/{repo}/items",
+            handler_hook=self._list_item_count_hook,
+        )
+
+        result = await handler(owner="o", repo="r")
+        content = result.contents[0]
+        assert content.mime_type == "text/plain"
+        # The list-specific hook counts items instead of just stringifying
+        assert content.content == "3 items"
+
     @pytest.mark.asyncio
     async def test_hook_resource_with_query_params(self):
         """handler_hook works together with query_params."""
@@ -1336,3 +1419,53 @@ class TestDecodeBase64Content:
 
         result = await _decode_base64_content([1, 2, 3])
         assert result == "[1, 2, 3]"
+
+
+# ---------------------------------------------------------------------------
+# Tests: make_api_resource -- unregistered format_hint
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourceUnregisteredFormatHint:
+    """make_api_resource with a format_hint that has no registered formatter.
+
+    The registration should succeed, and the display pipeline should degrade
+    gracefully to generic markdown when ``read_resource`` is called with the
+    unknown ``format_hint``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unregistered_format_hint_registers_successfully(self):
+        """Unknown format_hint does not prevent resource registration."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"name": "test"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            format_hint="nonexistent-formatter",
+        )
+        assert handler is not None, "Handler should be returned despite unknown format_hint"
+
+        result = await handler(owner="o", repo="r")
+        assert isinstance(result, ResourceResult)
+        assert result.contents
+
+    def test_unregistered_format_hint_in_meta(self):
+        """The unknown format_hint is stored in registration meta for discovery."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/unknown_fmt",
+            api_path="/repos/{owner}/{repo}",
+            format_hint="does-not-exist",
+        )
+
+        # Verify the URI was registered (registration didn't fail)
+        registered_uris = [args[0][0] for args in mcp.resource.call_args_list]
+        assert any("unknown_fmt" in uri for uri in registered_uris)

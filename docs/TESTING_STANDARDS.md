@@ -116,7 +116,7 @@ are noted explicitly.
 | Source module | Test file(s) | Zone | Notes |
 |---|---|---|---|
 | `__init__.py` | — | — | Package marker (version string only) |
-| `cache_invalidation.py` | `test_cache_invalidation.py` | Unit + Integration | Both unit and integration test files |
+| `cache_invalidation.py` | `test_cache_invalidation.py` | Unit + Integration | Both unit and integration test files; label cache URI parsing edge cases added in #552 |
 | `client.py` | `test_client.py`, `test_client_gitea_api.py`, `test_client_http_transport.py` | Unit | Three files cover the main class, `GiteaAPI`, and `HTTPTransport` |
 | `config.py` | `test_config.py` | Unit | 95% target |
 | `constants.py` | `test_constants.py` | Unit | 100% target |
@@ -130,7 +130,7 @@ are noted explicitly.
 | `schema_utils.py` | `test_schema_utils.py` | Unit | Shared JSON Schema utilities |
 | `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py` |
 | `search.py` | `test_search_bm25.py` | Unit | BM25 search engine tests. Named ``_bm25`` to disambiguate from ``tools/search.py`` → ``test_tool_search.py`` — see pragmatic deviations below |
-| `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 70% target |
+| `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 70% target; server startup failure modes added in #552 |
 | `validation.py` | `test_validation.py` | Unit | 95% target |
 
 #### `openapi_converter/` subpackage
@@ -148,7 +148,7 @@ are noted explicitly.
 | `resources/__init__.py` | — | — | Package marker |
 | `resources/auto.py` | `test_resource_auto.py` | Unit | Split from `test_resources.py` (#567) |
 | `resources/custom.py` | `test_resource_custom.py` | Unit | Split from `test_resources.py` (#567) |
-| `resources/factory.py` | `test_resource_factory.py` | Unit | Primarily `test_resource_factory.py`; some integration tests now in `test_resource_display.py` and `test_resource_auto.py` |
+| `resources/factory.py` | `test_resource_factory.py` | Unit | Handler hook non-str/list edge cases, context_params not in URI, unregistered format_hint fallback added in #552 |
 | `resources/meta.py` | `test_resource_meta.py` | Unit | 85% target |
 | `resources/scope.py` | `test_scope.py` | Unit | 13-line re-export of flat `scope.py` |
 
@@ -212,6 +212,15 @@ are noted explicitly.
   better disambiguation or clarity (e.g., ``search.py`` → ``test_search_bm25.py``
   to distinguish from ``tools/search.py`` tests). Every deviation must be
   documented with a brief rationale in the source-to-test mapping table.
+
+### Cross-Cutting / Smoke Test Files
+
+These files don't map to a single source module — they verify invariants
+across the entire module tree:
+
+| Test file | What it verifies | Added in |
+|---|---|---|
+| `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. **Must be updated** when a new module is added to any subpackage — add its dotted name to ``ALL_MODULES``. | #552 |
 
 ## Test Layering
 

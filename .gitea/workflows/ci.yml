@@ -63,4 +63,4 @@ jobs:
       - name: Test
         run: |
           cd /app
-          pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
+          pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing

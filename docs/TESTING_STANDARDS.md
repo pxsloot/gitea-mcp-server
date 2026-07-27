@@ -718,17 +718,14 @@ uv run pytest -m slow
 
 ## Test Code Linting
 
-The project enforces ruff lint rules on test code via `ruff check tests/` in both
-the `Makefile` (``make test``) and CI (``lint-tests`` job).
+Test code must comply with the project's ruff lint rules. The
+``[tool.ruff.lint.per-file-ignores]`` section in ``pyproject.toml`` documents
+the few intentional exemptions (e.g. unused arguments in fixtures, bare asserts,
+magic numbers in test data).
 
-### Issue #551 — Ruff Rule Remediation (Completed)
-
-All 22 rules previously suppressed for ``tests/**/*`` in ``pyproject.toml``
-have been fixed and their suppressions removed. The
-``[tool.ruff.lint.per-file-ignores]`` section now contains only intentional,
-permanently-exempt rules for test code (e.g. unused arguments in fixtures,
-bare asserts, magic numbers in test data). The single source of truth for
-test lint configuration is ``pyproject.toml``.
+Enforcement:
+- ``make test`` runs ``ruff check tests/`` before pytest
+- CI runs a dedicated ``lint-tests`` job
 
 ## Coverage Enforcement
 

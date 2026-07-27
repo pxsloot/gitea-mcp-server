@@ -674,7 +674,7 @@ class TestErrorHandlingNonJson:
         assert "something went wrong" in error_msg
 
 
-class TestParamIsBooleanExtended:
+class TestParamIsBooleanEdgeCases:
     """Tests for _param_is_boolean edge cases."""
 
     def test_non_string_non_list_type_returns_false(self):

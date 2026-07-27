@@ -15,6 +15,7 @@ from gitea_mcp_server.openapi_converter import (
     _wrap_success_response_schemas,
     convert_swagger_to_openapi_v3,
 )
+from tests.helpers.spec_fixtures import minimal_spec as _minimal_spec
 
 # Load OpenAPI 3.1 schema once
 OAS_3_1_SCHEMA = None
@@ -30,27 +31,19 @@ except (OSError, json.JSONDecodeError) as e:
 class TestConvertSwaggerToOpenAPI:
     """Full integration tests for conversion."""
 
-    def _minimal_spec(self) -> dict:
-        return {
-            "swagger": "2.0",
-            "info": {"title": "Test API", "version": "1.0.0"},
-            "basePath": "/api/v1",
-            "paths": {"/ping": {"get": {"responses": {"200": {"description": "pong"}}}}},
-        }
-
     def test_output_version_is_3_1_1(self):
         """Converted spec should have OpenAPI version 3.1.1."""
-        result = convert_swagger_to_openapi_v3(self._minimal_spec())
+        result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert result["openapi"] == "3.1.1"
 
     def test_basepath_becomes_server_url(self):
         """Swagger basePath should become OpenAPI server URL."""
-        result = convert_swagger_to_openapi_v3(self._minimal_spec())
+        result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert result["servers"][0]["url"] == "/api/v1"
 
     def test_paths_are_preserved(self):
         """All paths from Swagger spec should be preserved in output."""
-        result = convert_swagger_to_openapi_v3(self._minimal_spec())
+        result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert "/ping" in result["paths"]
 
     def test_full_spec_with_definitions(self):

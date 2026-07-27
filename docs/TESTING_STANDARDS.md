@@ -16,7 +16,12 @@ It is a living document — update it when patterns or conventions change.
 ```
 tests/
 ├── __init__.py
-├── conftest.py                             # Shared fixtures and helpers
+├── conftest.py                             # Infrastructure: SimpleConfig, event_loop, OTel
+├── helpers/
+│   ├── __init__.py
+│   ├── mock_tool.py                        # make_mock_tool, make_mock_route
+│   ├── tool_names.py                       # extract_tool_names
+│   └── spec_fixtures.py                    # base_spec, minimal_spec
 ├── schemas/
 │   ├── openapi_3.1_schema.json             # JSON Schema for validating converted specs
 │   └── openapi_3.1.1_schema.json
@@ -78,6 +83,7 @@ tests/
 │   └── test_virtual_params.py
 ├── integration/
 │   ├── __init__.py
+│   ├── conftest.py          # mcp_server, search_mcp_server, create_test_server
 │   ├── test_cache_invalidation.py
 │   ├── test_http_transport_server.py
 │   ├── test_lazy_loading.py
@@ -501,13 +507,21 @@ assert data["result"]  # always wrapped in result
 
 ## Fixture Patterns
 
-### Shared Fixtures
+### Shared Fixtures & Helpers
 
 Put truly shared fixtures in `tests/conftest.py`:
 
-- `extract_tool_names()` — normalizes tool listing output (dict/list/object) into a list of names
+- `SimpleConfig` — canonical test config stub
 - `swagger_spec_fixture` — loads `tests/swagger.v1.json` for tests that need a real spec
 - `event_loop` — session-scoped default event loop
+- `trace_exporter` — OpenTelemetry InMemorySpanExporter (cleared between tests)
+- `temp_workspace` — temporary workspace directory for file-based tests
+
+Put domain-specific helper functions in ``tests/helpers/``:
+
+- `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`
+- `tests/helpers/tool_names.py` — `extract_tool_names`
+- `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`
 
 ### Module-Level Fixtures
 

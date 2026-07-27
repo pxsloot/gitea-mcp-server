@@ -69,6 +69,7 @@ import respx
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
+from tests.helpers.spec_fixtures import base_spec as _base_spec
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -90,17 +91,16 @@ BASE_TEST_URL = "https://git.example.com"
 
 @pytest.fixture
 def simple_config() -> SimpleConfig:
-    """Standard test configuration - no tool filtering, no lazy loading.
+    """Standard test configuration — uses all SimpleConfig defaults.
 
-    Override in a test class to customise (e.g. enable filtering).
+    Override in a test class to customise (e.g. enable filtering)::
+
+        @pytest.fixture
+        def simple_config(self):
+            return SimpleConfig(BASE_TEST_URL, "test_token",
+                                tool_filtering_enabled=True)
     """
-    return SimpleConfig(
-        url=BASE_TEST_URL,
-        token="test_token",
-        log_level="ERROR",
-        tool_filtering_enabled=False,
-        enable_lazy_loading=False,
-    )
+    return SimpleConfig(url=BASE_TEST_URL, token="test_token")
 
 
 @pytest.fixture
@@ -113,8 +113,6 @@ def lazy_config() -> SimpleConfig:
     return SimpleConfig(
         url=BASE_TEST_URL,
         token="test_token",
-        log_level="ERROR",
-        tool_filtering_enabled=False,
         enable_lazy_loading=True,
     )
 
@@ -128,6 +126,7 @@ def lazy_config() -> SimpleConfig:
 def base_spec() -> dict:
     """Minimal valid Swagger 2.0 spec with no endpoints.
 
+    Delegates to the shared fixture in ``tests.helpers.spec_fixtures``.
     Override in a test class or module to add paths:
 
     .. code-block:: python
@@ -143,13 +142,7 @@ def base_spec() -> dict:
             }
             return base_spec
     """
-    return {
-        "swagger": "2.0",
-        "info": {"title": "Gitea API", "version": "1.0"},
-        "basePath": "/api/v1",
-        "paths": {},
-        "definitions": {},
-    }
+    return _base_spec()
 
 
 # ---------------------------------------------------------------------------

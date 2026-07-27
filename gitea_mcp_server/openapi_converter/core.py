@@ -736,7 +736,9 @@ def _wrap_success_response_schemas(spec: OpenAPISpec) -> None:
          spec: Post-conversion OpenAPI 3.1 spec (typed as ``OpenAPISpec``,
                mutated in place).
     """
-    # spec.get("paths") may be None (null in JSON); default to {} safely.
+    # paths is always a dict at this point (normalised earlier in the
+    # pipeline from null/missing/non-dict values).  The fallback is a
+    # defensive measure for independent callers.
     paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths") or {})
     for path_item in paths.values():
         if not isinstance(path_item, dict):
@@ -765,6 +767,11 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     ``dict[str, Any]`` copy for the conversion pipeline, then casts to
     ``OpenAPISpec`` for the final read-only wrapping steps.
 
+    Post-conversion normalization:
+      * ``paths`` is always a dict in the output — null, missing, or non-dict
+        input paths are coerced to ``{}``.  This ensures the output conforms
+        to the OpenAPI 3.1 spec, which requires ``paths`` to be an object.
+
     Args:
         spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)
 
@@ -790,6 +797,13 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
 
     if isinstance(result.get("paths"), dict):
         result["paths"] = convert_paths(result["paths"])
+
+    # Ensure paths is always a dict before downstream steps iterate it.
+    # OpenAPI 3.1 requires paths to be an object (not null, not a string).
+    # Coerce null, missing, or non-dict paths to {} so consumers in
+    # _wrap_success_response_schemas and callers never crash on .values().
+    if not isinstance(result.get("paths"), dict):
+        result["paths"] = {}
 
     remove_swagger_fields(result, ["consumes", "produces", "schemes"])
     result = ReferenceFixer().fix(result)

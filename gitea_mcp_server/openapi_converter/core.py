@@ -765,6 +765,11 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     ``dict[str, Any]`` copy for the conversion pipeline, then casts to
     ``OpenAPISpec`` for the final read-only wrapping steps.
 
+    Post-conversion normalization:
+      * ``paths`` is always a dict in the output — null, missing, or non-dict
+        input paths are coerced to ``{}``.  This ensures the output conforms
+        to the OpenAPI 3.1 spec, which requires ``paths`` to be an object.
+
     Args:
         spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)
 
@@ -795,6 +800,12 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     result = ReferenceFixer().fix(result)
     _add_nullable_for_optional_refs(cast("OpenAPISpec", result))
     _wrap_success_response_schemas(cast("OpenAPISpec", result))
+
+    # Ensure paths is always a dict — OpenAPI 3.1 requires paths to be an
+    # object (not null).  Coerce null, missing, or non-dict paths to {} so
+    # downstream consumers never encounter a null paths entry.
+    if not isinstance(result.get("paths"), dict):
+        result["paths"] = {}
 
     logger.info("OpenAPI conversion completed successfully")
     return result

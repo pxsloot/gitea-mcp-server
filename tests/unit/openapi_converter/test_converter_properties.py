@@ -696,7 +696,8 @@ class TestEdgeCases:
     """Converter must handle corner-case inputs without crashing."""
 
     def test_minimal_spec_no_paths(self) -> None:
-        """A spec with only swagger/info/basePath must not crash."""
+        """A spec with only swagger/info/basePath must not crash
+        and must produce an empty paths dict."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
@@ -704,7 +705,7 @@ class TestEdgeCases:
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
-        assert "paths" not in result or result["paths"] == {}
+        assert result["paths"] == {}
 
     def test_no_info_field(self) -> None:
         """A spec without ``info`` must not crash."""
@@ -737,7 +738,8 @@ class TestEdgeCases:
         assert "/b" in result["paths"]
 
     def test_null_values_in_spec(self) -> None:
-        """A spec with None values for optional fields must not crash."""
+        """A spec with None values for optional fields must not crash
+        and must coerce null paths to empty dict."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
@@ -747,6 +749,7 @@ class TestEdgeCases:
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert result["paths"] == {}
 
     def test_path_with_no_operations(self) -> None:
         """A path item that is not a dict must not crash."""

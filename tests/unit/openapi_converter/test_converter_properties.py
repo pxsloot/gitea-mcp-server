@@ -20,6 +20,12 @@ from hypothesis import strategies as st
 
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 
+# NOTE: None of these tests use ``@settings`` yet. Default hypothesis settings
+# (100 examples per @given, no deadline) are fine for the current size.  As
+# the property-test suite grows, add ``@settings(max_examples=..., deadline=...)``
+# to individual test classes to tune profile vs. CI time — see the
+# ``@pytest.mark.slow`` guideline in TESTING_STANDARDS.md for the threshold.
+
 # ===========================================================================
 # Reactive helpers — walk converted specs for assertions
 # ===========================================================================
@@ -95,6 +101,14 @@ def _has_result_wrapper(schema: dict[str, Any]) -> bool:
 # A few well-known Swagger types to draw from
 _SCHEMA_TYPES = st.sampled_from(["string", "integer", "number", "boolean"])
 
+# Non-JSON content-type combinations for wrapping tests
+_NON_JSON_TYPES = st.sampled_from([
+    ["text/plain"],
+    ["text/html"],
+    ["application/octet-stream"],
+    ["text/plain", "application/json"],  # multiple — non-JSON priority
+])
+
 # Build a simple leaf schema (no nesting).
 _leaf_schema = st.builds(
     lambda t: {"type": t},
@@ -152,14 +166,47 @@ def swagger_schema_with_x(draw: st.DrawFn) -> dict[str, Any]:
 
 
 @st.composite
-def swagger_schema_with_ref(draw: st.DrawFn, definition_names: list[str]) -> dict[str, Any]:
-    """Generate a schema that may include a ``$ref`` to a definition."""
-    schema = draw(swagger_schema(max_depth=2))
-    use_ref = draw(st.booleans())
-    if use_ref and definition_names:
+def swagger_schema_with_nested_refs(
+    draw: st.DrawFn,
+    definition_names: list[str],
+    max_depth: int = 2,
+) -> dict[str, Any]:
+    """Generate a schema that may emit ``$ref`` at any nesting depth.
+
+    Unlike the existing top-level-only $ref test, this strategy embeds
+    ``$ref`` values inside object properties, array items, and at the
+    root level — exercising ReferenceFixer across the full schema tree.
+    """
+    # At any recursion level, may produce a $ref instead of an inline schema
+    if definition_names and draw(st.booleans()):
         target = draw(st.sampled_from(definition_names))
-        schema = {"$ref": f"#/definitions/{target}"}
-    return schema
+        return {"$ref": f"#/definitions/{target}"}
+
+    depth = draw(st.integers(min_value=0, max_value=max_depth))
+    if depth == 0:
+        return draw(_leaf_schema)
+
+    kind = draw(st.sampled_from(["primitive", "array", "object"]))
+    if kind == "primitive":
+        return draw(_leaf_schema)
+    if kind == "array":
+        return {
+            "type": "array",
+            "items": draw(swagger_schema_with_nested_refs(
+                definition_names, max_depth=depth - 1,
+            )),
+        }
+    # kind == "object"
+    n_props = draw(st.integers(min_value=0, max_value=3))
+    properties: dict[str, Any] = {}
+    for _ in range(n_props):
+        name = draw(st.text(min_size=1, max_size=6, alphabet=st.characters(
+            whitelist_categories=["Ll", "Lu", "Nd"],
+        )))
+        properties[name] = draw(swagger_schema_with_nested_refs(
+            definition_names, max_depth=depth - 1,
+        ))
+    return {"type": "object", "properties": properties} if properties else {"type": "object"}
 
 
 # ===========================================================================
@@ -232,6 +279,48 @@ class TestNoUnresolvedRefs:
                     target = target[part]
             except (KeyError, TypeError):
                 pytest.fail(f"Unresolved $ref: {ref}")
+
+    @given(
+        def_names=st.lists(st.text(min_size=1, max_size=10, alphabet=st.characters(
+            whitelist_categories=["Ll", "Lu", "Nd"],
+        )), min_size=1, max_size=5, unique=True),
+        data=st.data(),
+    )
+    def test_nested_refs_resolve_across_schema_tree(
+        self, def_names: list[str], data: st.DataObject,
+    ) -> None:
+        """``$ref`` inside object properties and array items must resolve.
+
+        The existing ``test_refs_point_to_existing_definitions`` only places
+        ``$ref`` at the response root.  This test embeds ``$ref`` at arbitrary
+        depth inside the schema tree, exercising ``ReferenceFixer`` and
+        ``convert_schema`` on nested structures.
+        """
+        definitions: dict[str, Any] = {n: {"type": "object"} for n in def_names}
+        schema = data.draw(swagger_schema_with_nested_refs(
+            def_names, max_depth=2,
+        ))
+
+        spec = _make_spec(paths={
+            "/r": {"get": {
+                "operationId": "getR",
+                "responses": {"200": {"description": "OK", "schema": schema}},
+            }},
+        }, definitions=definitions)
+        result = convert_swagger_to_openapi_v3(spec)
+        refs = _collect_refs(result)
+
+        for ref in refs:
+            parts = ref.lstrip("#/").split("/")
+            target: Any = result
+            try:
+                for part in parts:
+                    target = target[part]
+            except (KeyError, TypeError):
+                pytest.fail(
+                    f"Nested $ref not resolved: {ref} "
+                    f"(defs={def_names}, schema={schema})"
+                )
 
 
 # ===========================================================================
@@ -311,11 +400,6 @@ class TestJsonResponsesWrapped:
     @given(schema=swagger_schema(max_depth=2))
     def test_every_json_200_response_wrapped(self, schema: dict[str, Any]) -> None:
         """Every 200 response with application/json must have a result wrapper."""
-        # Skip primitive schemas that aren't meaningful as standalone responses
-        # (they're used inside object properties, not as top-level responses)
-        assume(isinstance(schema, dict))
-        assume("type" in schema)
-
         spec = _make_spec(paths={
             "/resource": {
                 "get": {
@@ -341,9 +425,6 @@ class TestJsonResponsesWrapped:
     @given(schema=swagger_schema(max_depth=2))
     def test_every_json_201_response_wrapped(self, schema: dict[str, Any]) -> None:
         """Every 201 response with application/json must have a result wrapper."""
-        assume(isinstance(schema, dict))
-        assume("type" in schema)
-
         spec = _make_spec(paths={
             "/resource": {
                 "post": {
@@ -373,13 +454,6 @@ class TestJsonResponsesWrapped:
 
 class TestNonJsonResponsesNotWrapped:
     """Non-JSON content types must not get the ``{"result": ...}`` wrapper."""
-
-    _NON_JSON_TYPES = st.sampled_from([
-        ["text/plain"],
-        ["text/html"],
-        ["application/octet-stream"],
-        ["text/plain", "application/json"],  # multiple — non-JSON priority
-    ])
 
     @given(produces=_NON_JSON_TYPES)
     def test_text_plain_response_not_wrapped(self, produces: list[str]) -> None:

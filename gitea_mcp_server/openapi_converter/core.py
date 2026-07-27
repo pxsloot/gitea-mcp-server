@@ -430,7 +430,18 @@ def convert_parameters(parameters: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _determine_content_type(produces: list[str] | None) -> str:
-    """Determine the correct response content-type from the Swagger ``produces`` list.
+    """Determine the response content-type from the Swagger ``produces`` list.
+
+    The converter produces a *single* content-type per operation. When
+    ``produces`` lists multiple types, the first non-JSON type wins — e.g.
+    ``["text/plain", "application/json"]`` yields ``text/plain``.
+    Only when all entries are ``application/json`` (or ``produces`` is
+    ``None``/empty) does this fall back to ``application/json``.
+
+    This means mixed-content ``produces`` lists silently drop ``application/json``
+    from the output. Other non-JSON types (``text/html``, etc.) are stored in
+    ``x-original-content-types`` by the ``OperationTransformer`` for downstream
+    output_schema decisions.
 
     Args:
         produces: The ``produces`` list from a Swagger operation, or ``None``.

@@ -37,6 +37,7 @@ tests/
 │   │   ├── test_paths.py
 │   │   ├── test_responses.py
 │   │   ├── test_swagger_to_openapi.py
+│   │   ├── test_converter_properties.py    # hypothesis property-based tests
 │   │   └── test_utils.py
 │   ├── test_cache_invalidation.py
 │   ├── test_client.py
@@ -138,7 +139,7 @@ are noted explicitly.
 | Source module | Test file(s) | Zone | Notes |
 |---|---|---|---|
 | `openapi_converter/__init__.py` | — | — | Re-exports from `core.py` and `schema.py` |
-| `openapi_converter/core.py` | `openapi_converter/test_*.py` (8 files) | Unit | 95% target — spread across all 8 `openapi_converter/` test files |
+| `openapi_converter/core.py` | `openapi_converter/test_*.py` (9 files) | Unit | 95% target — spread across all 9 `openapi_converter/` test files; `test_converter_properties.py` uses hypothesis for property-based invariants (``$ref`` resolution, vendor-extension stripping, response wrapping) |
 | `openapi_converter/schema.py` | `openapi_converter/test_definitions.py` | Unit | No dedicated `test_schema.py`; `convert_schema()` tested via package re-export |
 
 #### `resources/` subpackage
@@ -343,6 +344,7 @@ uv run pytest tests/live/ -v    # → 3 skipped
 - **pytest-xdist**: Parallel test execution (`-n auto --dist loadscope` enabled by default)
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
+- **hypothesis**: Property-based testing for converter invariants (``$ref`` resolution, vendor-extension stripping, response wrapping)
 
 ## What to Test (Per Layer)
 
@@ -515,6 +517,45 @@ import json
 data = json.loads(text_content.text)
 assert data["result"]  # always wrapped in result
 ```
+
+### Property-Based Testing (hypothesis)
+
+Some invariants are better expressed as properties than as example-based tests.
+The converter (``openapi_converter/core.py``) is a pure function — ideal for
+hypothesis-driven property tests.
+
+**When to use**: Pure or nearly-pure transformation functions where you can
+express invariants that must hold for all inputs (e.g., "no ``$ref`` is ever
+left unresolved", "all JSON responses are wrapped in ``result``").
+
+**Pattern** — ``tests/unit/openapi_converter/test_converter_properties.py``:
+
+```python
+from hypothesis import assume, given, strategies as st
+
+@given(schema=swagger_schema(max_depth=2))
+def test_every_json_200_response_wrapped(self, schema):
+    """Every 200 with application/json must have a result wrapper."""
+    assume(isinstance(schema, dict))
+    spec = _make_spec(paths={"/r": {"get": {
+        "operationId": "get",
+        "responses": {"200": {"description": "OK", "schema": schema}},
+    }}})
+    result = convert_swagger_to_openapi_v3(spec)
+    resp_schema = result["paths"]["/r"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _has_result_wrapper(resp_schema)
+```
+
+**Strategies**: Build minimal specs from focused ``@st.composite`` strategies
+rather than trying to model the full Swagger spec.  Each invariant gets its
+own targeted strategy (schema generation, ``$ref`` generation, vendor-extension
+generation).
+
+**Guidelines**:
+- Use ``assume()`` to filter out invalid combinations, not ``if/continue``
+- Keep ``max_depth`` small (2–3) to avoid exponential blowup in nested strategies
+- Add a deterministic regression test alongside the property test for known edge cases
+- Mark with ``@pytest.mark.slow`` if the hypothesis test takes >1s to find counterexamples
 
 ## Fixture Patterns
 

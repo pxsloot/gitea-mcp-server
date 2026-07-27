@@ -8,12 +8,32 @@ Covers gap areas not yet exercised by resource tests:
 import pytest
 
 from gitea_mcp_server.tools.display import (
+    _FORMATTER_META,
+    _FORMATTERS,
     _build_labels_markdown,
     _format_labels_markdown,
     _format_user_markdown,
     call_formatter,
     register_formatter,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clean_formatters() -> None:
+    """Save and restore the global formatter registry around each test.
+
+    Tests register ad-hoc formatters via ``@register_formatter`` which
+    mutates the module-level ``_FORMATTERS`` and ``_FORMATTER_META``
+    dicts.  This fixture ensures each test starts with a clean slate
+    and does not leak registrations to subsequent tests.
+    """
+    saved_formatters = dict(_FORMATTERS)
+    saved_meta = dict(_FORMATTER_META)
+    yield
+    _FORMATTERS.clear()
+    _FORMATTERS.update(saved_formatters)
+    _FORMATTER_META.clear()
+    _FORMATTER_META.update(saved_meta)
 
 
 class TestCallFormatter:

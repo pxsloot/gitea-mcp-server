@@ -118,6 +118,16 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display 
          (format).  Domain-specific formatters are resolved via
          ``format_hint`` and passed as the ``markdown_formatter`` callback.
 
+    **Error recovery**: The post-parse pipeline (collapse → apply_format →
+    domain formatter) is wrapped in a try/except for
+    ``(TypeError, AttributeError, ValueError)``.  When a formatting error
+    occurs (e.g. schema/data shape mismatch, domain formatter receiving
+    unexpected types, non-JSON-serializable data), the error is logged and
+    a readable fallback is returned — the raw data wrapped in a JSON code
+    fence for markdown, or as ``{"result": raw}`` for JSON output.  This
+    prevents unexpected API data shapes from crashing the resource read
+    while preserving visibility into what the API returned.
+
     Args:
         raw: The raw resource content string (JSON or plain text).
         fmt: Output format -- ``"raw"``, ``"json"``, or ``"markdown"``.
@@ -158,12 +168,27 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display 
     markdown_formatter = _make_resource_formatter(format_hint, detail, extra)
     # When data has been pre-collapsed, pass detail="full" to avoid
     # double-collapse — the formatter already sees flat strings.
-    result = apply_format(
-        data, fmt,
-        markdown_formatter=markdown_formatter,
-        detail="full" if detail == "concise" else detail,
-        schema=schema,
-    )
+    try:
+        result = apply_format(
+            data, fmt,
+            markdown_formatter=markdown_formatter,
+            detail="full" if detail == "concise" else detail,
+            schema=schema,
+        )
+    except (TypeError, AttributeError, ValueError) as exc:
+        # Post-parse pipeline failure (e.g. schema/data mismatch,
+        # domain formatter receiving unexpected types, non-JSON-
+        # serializable data).  Fall back to a readable representation
+        # rather than letting the error propagate to the agent.
+        logger.warning(
+            "Display pipeline recovered from %s: %s. fmt=%s, format_hint=%s",
+            type(exc).__name__, exc, fmt, format_hint,
+        )
+        if fmt == "json":
+            return json.dumps({"result": raw}, indent=2)
+        # Markdown fallback: wrap in code fence to preserve readability.
+        return f"```json\n{raw}\n```\n\n*Note: formatting failed ({type(exc).__name__}), showing raw data.*\n"
+
     if result.content:
         for c in result.content:
             if isinstance(c, TextContent):

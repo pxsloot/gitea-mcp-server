@@ -7,10 +7,13 @@ Scenarios covered:
   1. Issues formatter with non-dict items (strings) → no AttributeError
   2. Labels formatter with non-dict items (full detail) → no AttributeError
   3. User formatter with non-dict input → no TypeError
-  4. Non-JSON-serializable data in JSON output → no TypeError
-  5. Non-iterable data to issues formatter → no TypeError
+  4. Non-JSON-serializable data in JSON output → no TypeError (documents
+     raw ``apply_format`` behaviour before pipeline catches it)
+  5. Empty list to issues formatter → no TypeError
   6. Schema/object but data=[] end-to-end → graceful fallback
   7. Pipeline fallback returns readable raw data on formatting error
+  8. Pulls formatter with non-dict items → no crash (generic fallback)
+  9. Release formatter with non-dict items → no crash (generic fallback)
 """
 
 import json
@@ -38,10 +41,9 @@ class TestFormatIssuesMarkdownGuard:
         # Should contain the generic title since items aren't dicts
         assert "Issues" in result or "Issues and Pull Requests" in result
 
-    def test_non_iterable_data_no_crash(self):
-        """Non-iterable data falls back to string title, no TypeError."""
+    def test_empty_list_no_crash(self):
+        """Empty list produces output, not TypeError or crash."""
         data = []
-        # Even with bad data hint - empty list is handled
         result = _format_issues_markdown(data, detail="full")
         assert result.strip() != ""
         assert "*None*" in result
@@ -149,8 +151,18 @@ class TestFormatResourceContentPipelineFallback:
         # Should produce some readable output
         assert "*None*" in result or "Empty" in result or "N/A" in result
 
+
+class TestApplyFormatRaiseOnNonSerializable:
+    """``apply_format`` raises TypeError for non-JSON-serializable data.
+
+    This documents the raw behavior before the pipeline catches it.
+    The pipeline-level catch in ``_format_resource_content`` converts
+    this into a readable fallback; this test verifies the underlying
+    exception is raised when ``apply_format`` is called directly.
+    """
+
     def test_json_output_non_serializable_raises(self):
-        """apply_format with non-serializable data in JSON mode raises TypeError."""
+        """Non-serializable data in JSON mode raises TypeError."""
         class Unserializable:
             pass
 
@@ -177,6 +189,38 @@ class TestFormatResourceContentJsonParseEdgeCases:
         """Empty string returns empty string for markdown."""
         result = _format_resource_content("", "markdown")
         assert result == ""
+
+
+class TestFormatPullsMarkdownGuard:
+    """Guard: _format_pulls_markdown handles unexpected data shapes safely."""
+
+    def test_empty_list(self):
+        """Empty list produces output, not crash."""
+        from gitea_mcp_server.tools.display import _format_pulls_markdown
+        result = _format_pulls_markdown([])
+        assert "Pull Requests" in result
+
+    def test_non_dict_items_safe(self):
+        """Non-dict items render through generic fallback, no crash."""
+        from gitea_mcp_server.tools.display import _format_pulls_markdown
+        result = _format_pulls_markdown(["just", "strings"])
+        assert result.strip() != ""
+
+
+class TestFormatReleaseMarkdownGuard:
+    """Guard: _format_release_markdown handles unexpected data shapes safely."""
+
+    def test_empty_list(self):
+        """Empty list produces output, not crash."""
+        from gitea_mcp_server.tools.display import _format_release_markdown
+        result = _format_release_markdown([])
+        assert "Releases" in result
+
+    def test_non_dict_items_safe(self):
+        """Non-dict items render through generic fallback, no crash."""
+        from gitea_mcp_server.tools.display import _format_release_markdown
+        result = _format_release_markdown(["tag1", "tag2"])
+        assert result.strip() != ""
 
 
 class TestFormatAsMarkdownEdgeCases:

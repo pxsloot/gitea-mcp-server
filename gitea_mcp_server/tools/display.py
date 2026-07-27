@@ -227,7 +227,14 @@ def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
 def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
     # Guard against non-dict input (unexpected data shape).
     if not isinstance(data, dict):
-        return _format_as_markdown({"login": str(data)}, title="User", detail=detail)
+        # Show the type and a truncated repr so agents can still reason
+        # about what was returned, without producing a misleading login
+        # field (e.g. ``str([...])`` for list input).
+        fallback_data = {
+            "_type": type(data).__name__,
+            "_raw": str(data)[:500],
+        }
+        return _format_as_markdown(fallback_data, title="User", detail=detail)
     # Normalize: API may return 'created_at' or 'created' for the same field
     normalized = dict(data)
     if "created_at" not in normalized and "created" in normalized:

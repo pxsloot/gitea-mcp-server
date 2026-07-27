@@ -196,7 +196,10 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
         # we can't scan; fall back to the safe default.
         title_label = "Issues and Pull Requests"
     else:
-        has_prs = any(item.get("pull_request") for item in data) if data else False
+        # Guard against non-dict items (unexpected data shape).
+        has_prs = (
+            any(isinstance(item, dict) and item.get("pull_request") for item in data)
+        ) if data else False
         title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
     return _format_as_markdown(
@@ -221,7 +224,10 @@ def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
 
 
 @register_formatter("user")
-def _format_user_markdown(data: dict, *, detail: str = "full") -> str:
+def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
+    # Guard against non-dict input (unexpected data shape).
+    if not isinstance(data, dict):
+        return _format_as_markdown({"login": str(data)}, title="User", detail=detail)
     # Normalize: API may return 'created_at' or 'created' for the same field
     normalized = dict(data)
     if "created_at" not in normalized and "created" in normalized:
@@ -299,6 +305,10 @@ def _format_labels_markdown(
         lines.append(f"## Labels ({len(data)})")
         lines.append("")
         for label in data:
+            if not isinstance(label, dict):
+                # Guard against non-dict items (unexpected data shape).
+                lines.append(f"- {label}")
+                continue
             label_id = label.get("id", "?")
             name = label.get("name", "Unnamed")
             color = label.get("color", "")

@@ -46,25 +46,6 @@ class TestConvertSwaggerToOpenAPI:
         result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert "/ping" in result["paths"]
 
-    def test_null_paths_becomes_empty_dict(self):
-        """paths: null in input should become paths: {} in output."""
-        spec = {
-            "swagger": "2.0",
-            "info": {"title": "T", "version": "1"},
-            "paths": None,
-        }
-        result = convert_swagger_to_openapi_v3(spec)
-        assert result["paths"] == {}
-
-    def test_missing_paths_becomes_empty_dict(self):
-        """Spec without paths key should get paths: {} in output."""
-        spec = {
-            "swagger": "2.0",
-            "info": {"title": "T", "version": "1"},
-        }
-        result = convert_swagger_to_openapi_v3(spec)
-        assert result["paths"] == {}
-
     def test_non_dict_paths_becomes_empty_dict(self):
         """paths as a non-dict (e.g. string) should become {} in output.
 

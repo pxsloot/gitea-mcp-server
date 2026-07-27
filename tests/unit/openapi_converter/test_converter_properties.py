@@ -1,16 +1,23 @@
-"""Property-based tests for the OpenAPI converter using hypothesis.
+"""Property-based and edge-case tests for the OpenAPI converter.
 
-Tests invariants of ``convert_swagger_to_openapi_v3`` that are difficult
-to cover exhaustively with example-based tests alone.
+Property-based tests (hypothesis) verify invariants of
+``convert_swagger_to_openapi_v3`` that are difficult to cover
+exhaustively with example-based tests alone.
 
-Invariants tested (from #560):
+Example-based ``TestEdgeCases`` tests verify crash-safety and
+output invariants for malformed, null, and missing inputs.
+
+Invariants tested (from #560, #581):
   1. No $ref is ever left unresolved in the output
   2. No x-* vendor extensions leak into output schemas
   3. All success response schemas are wrapped in {"result": ...}
   4. Non-JSON responses are never wrapped
   5. Round-trip completeness — every input path survives with operations
   6. Parameter conversion preserves in, name, schema fields
-  7. No crash on edge cases (null values, missing fields, malformed input)
+  7. Edge cases — no crash on null values, missing fields, malformed
+     input, and each case asserts a meaningful output invariant
+     (swagger removal, paths coercion, servers creation, info
+     survival, operationId deduplication, non-dict passthrough)
 """
 
 from __future__ import annotations
@@ -221,7 +228,12 @@ def _make_spec(
     paths: dict[str, Any] | None = None,
     definitions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a minimal valid Swagger 2.0 spec with the given paths and definitions."""
+    """Return a minimal valid Swagger 2.0 spec with the given paths and definitions.
+
+    Always includes ``swagger: "2.0"``, ``info``, and ``basePath``.
+    ``paths`` and ``definitions`` are only added when explicitly provided.
+    The ``info`` field contains ``{"title": "Test API", "version": "1.0.0"}``.
+    """
     spec: dict[str, Any] = {
         "swagger": "2.0",
         "info": {"title": "Test API", "version": "1.0.0"},
@@ -693,11 +705,31 @@ class TestParameterConversionPreserved:
 
 
 class TestEdgeCases:
-    """Converter must handle corner-case inputs without crashing."""
+    """Converter must handle corner-case inputs without crashing
+    and produce correct output invariants.
+
+    This is the canonical home for edge-case / crash-safety tests.
+    Related overlapping tests in ``test_swagger_to_openapi.py``
+    (``test_null_paths_becomes_empty_dict``,
+    ``test_missing_paths_becomes_empty_dict``) were consolidated
+    here in #581 to avoid duplication.
+
+    The ``test_non_dict_paths_becomes_empty_dict`` test
+    (``paths`` string value at top level) remains in
+    ``test_swagger_to_openapi.py`` — it is a distinct scenario
+    from the non-dict *path items* tested here.
+    """
 
     def test_minimal_spec_no_paths(self) -> None:
         """A spec with only swagger/info/basePath must not crash
-        and must produce an empty paths dict."""
+        and must produce an empty paths dict.
+
+        Expected behaviour:
+        - ``swagger`` field is removed (replaced by ``openapi``)
+        - ``info.version`` survives in the result
+        - ``basePath`` is converted to a ``servers`` entry
+        - Missing ``paths`` key becomes ``paths: {}``
+        """
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
@@ -705,29 +737,69 @@ class TestEdgeCases:
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert "swagger" not in result
         assert result["paths"] == {}
+        assert "servers" in result
+        assert result["info"]["version"] == "1"
 
     def test_no_info_field(self) -> None:
-        """A spec without ``info`` must not crash."""
+        """A spec without ``info`` must not crash.
+
+        Expected behaviour:
+        - ``swagger`` field is removed
+        - ``info`` is absent from the result (the converter does not create it)
+        - ``paths`` is coerced to ``{}``
+        - ``basePath`` is converted to a ``servers`` entry
+        """
         spec = {"swagger": "2.0", "basePath": "/api"}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert "swagger" not in result
+        assert "info" not in result
+        assert result["paths"] == {}
+        assert "servers" in result
 
     def test_info_not_a_dict(self) -> None:
-        """``info`` as a non-dict must not crash."""
+        """``info`` as a non-dict must not crash.
+
+        Expected behaviour:
+        - ``info`` survives in the result with its original value
+          (the converter returns early for non-dict info)
+        - ``swagger`` field is removed
+        - ``paths`` is coerced to ``{}``
+        """
         spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert "swagger" not in result
+        assert result["info"] == "just a string"
+        assert result["paths"] == {}
 
     def test_no_base_path(self) -> None:
-        """A spec without ``basePath`` must not crash."""
+        """A spec without ``basePath`` must not crash.
+
+        Expected behaviour:
+        - No ``servers`` entry (converter returns early without basePath)
+        - ``swagger`` field is removed
+        - ``info`` survives
+        - ``paths`` is coerced to ``{}``
+        """
         spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert "swagger" not in result
         assert "servers" not in result
+        assert "info" in result
+        assert result["paths"] == {}
 
     def test_duplicate_operation_ids(self) -> None:
-        """Duplicate operationId values must not cause a crash."""
+        """Duplicate operationId values must be deduplicated with ``_1`` suffix.
+
+        Expected behaviour:
+        - Both paths survive
+        - The first occurrence keeps its original ``operationId``
+        - The second occurrence gets a ``_1`` suffix appended
+        """
         spec = _make_spec(paths={
             "/a": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
             "/b": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
@@ -736,10 +808,19 @@ class TestEdgeCases:
         assert result["openapi"] == "3.1.1"
         assert "/a" in result["paths"]
         assert "/b" in result["paths"]
+        assert result["paths"]["/a"]["get"]["operationId"] == "get_thing"
+        assert result["paths"]["/b"]["get"]["operationId"] == "get_thing_1"
 
     def test_null_values_in_spec(self) -> None:
         """A spec with None values for optional fields must not crash
-        and must coerce null paths to empty dict."""
+        and must coerce null paths to empty dict.
+
+        Expected behaviour:
+        - ``basePath: None`` is treated as absent — no ``servers`` entry
+        - ``definitions: None`` is skipped — no ``components/schemas`` entry
+        - ``paths: None`` becomes ``paths: {}``
+        - ``swagger`` field is removed
+        """
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
@@ -749,10 +830,20 @@ class TestEdgeCases:
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
+        assert "swagger" not in result
         assert result["paths"] == {}
+        assert "servers" not in result
+        assert "components" not in result
 
     def test_path_with_no_operations(self) -> None:
-        """A path item that is not a dict must not crash."""
+        """A path item that is not a dict must pass through unchanged.
+
+        Expected behaviour:
+        - Non-dict path items (e.g. strings) survive in the output
+          without modification — the converter does not validate
+          path item types beyond the dict check
+        - Real path items with operations are converted normally
+        """
         spec = _make_spec(paths={
             "/empty": "not a dict",
             "/real": {
@@ -763,5 +854,6 @@ class TestEdgeCases:
             },
         })
         result = convert_swagger_to_openapi_v3(spec)
+        assert result["paths"]["/empty"] == "not a dict"
         assert "/real" in result["paths"]
-        # /empty is preserved as-is (non-dict items pass through) — at minimum no crash
+        assert result["paths"]["/real"]["get"]["operationId"] == "get_real"

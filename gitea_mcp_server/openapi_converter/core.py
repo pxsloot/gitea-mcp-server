@@ -333,10 +333,23 @@ class OperationTransformer:
 
 
 class PathsConverter:
-    """Convert paths object to OpenAPI 3.x format."""
+    """Convert paths object to OpenAPI 3.x format.
+
+    **Deduplication ordering**: ``OperationTransformer`` normalises each
+    ``operationId`` (camelCase → snake_case) *before* this converter
+    deduplicates it.  Deduplication therefore operates on *already-
+    normalised* IDs — ``getThing`` and ``get-thing`` that both normalise
+    to ``get_thing`` count as duplicates and the second gets a ``_1``
+    suffix.
+
+    Tracks seen ``operationId`` values and appends ``_1``, ``_2``, …
+    suffixes to duplicates, ensuring the output spec has unique
+    operationIds (required by OpenAPI 3.1).
+    """
 
     def __init__(self, operation_transformer: OperationTransformer):
         self.operation_transformer = operation_transformer
+        self._seen_operation_ids: set[str] = set()
 
     def convert(self, paths: dict[str, Any]) -> dict[str, Any]:
         """Convert all paths and their operations."""
@@ -365,6 +378,7 @@ class PathsConverter:
 
                 raw_params = operation.get("parameters", [])
                 op_copy = self.operation_transformer.transform(operation, path, method, raw_params)
+                op_copy = self._deduplicate_operation_id(op_copy)
                 path_item_copy[method] = op_copy
 
             # Remove Swagger-specific fields from path item
@@ -373,6 +387,28 @@ class PathsConverter:
             new_paths[path] = path_item_copy
 
         return new_paths
+
+    def _deduplicate_operation_id(self, operation: dict[str, Any]) -> dict[str, Any]:
+        """Ensure the operation's ``operationId`` is unique within the spec.
+
+        OpenAPI 3.1 requires unique operationIds across all operations.
+        When a duplicate is found, appends ``_1``, ``_2``, … until unique.
+        The first occurrence keeps its original ID.
+        """
+        op_id = operation.get("operationId", "")
+        if not op_id:
+            return operation
+
+        if op_id not in self._seen_operation_ids:
+            self._seen_operation_ids.add(op_id)
+            return operation
+
+        counter = 1
+        while f"{op_id}_{counter}" in self._seen_operation_ids:
+            counter += 1
+        deduped = f"{op_id}_{counter}"
+        self._seen_operation_ids.add(deduped)
+        return {**operation, "operationId": deduped}
 
 
 def _add_nullable_for_optional_refs(spec: OpenAPISpec) -> None:
@@ -767,10 +803,29 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     ``dict[str, Any]`` copy for the conversion pipeline, then casts to
     ``OpenAPISpec`` for the final read-only wrapping steps.
 
-    Post-conversion normalization:
-      * ``paths`` is always a dict in the output — null, missing, or non-dict
-        input paths are coerced to ``{}``.  This ensures the output conforms
-        to the OpenAPI 3.1 spec, which requires ``paths`` to be an object.
+    Post-conversion normalization (enforced by ``TestEdgeCases`` in
+    ``tests/unit/openapi_converter/test_converter_properties.py``):
+
+      * ``paths`` is always a dict in the output — ``null``, missing, or
+        non-dict input ``paths`` are coerced to ``{}``.  This ensures the
+        output conforms to the OpenAPI 3.1 spec, which requires ``paths``
+        to be an object.
+      * The ``swagger`` field is always removed (replaced by ``openapi``).
+      * Missing ``info`` field → ``info`` absent from output (converter
+        does not create it).
+      * Non-dict ``info`` (e.g. string) → survives with its original value
+        (``_update_info_version`` returns early).
+      * Missing ``basePath`` → no ``servers`` entry created.
+      * ``basePath: null`` → treated as absent — no ``servers`` entry.
+      * ``definitions: null`` → skipped — no ``components/schemas`` entry.
+      * Non-dict path items (e.g. strings) pass through unchanged — the
+        converter only processes ``dict`` path items.
+      * Duplicate ``operationId`` values — second (and subsequent)
+        occurrences get ``_1``, ``_2``, … suffixes; the first occurrence
+        keeps its original ID.  Deduplication runs on already-normalised
+        IDs (camelCase → snake_case applied earlier in the pipeline).
+      * ``null`` ``responses`` entries → non-dict response entries pass
+        through unchanged (``convert_responses`` early return).
 
     Args:
         spec: Swagger 2.0 specification (typed as ``SwaggerV2Spec``)

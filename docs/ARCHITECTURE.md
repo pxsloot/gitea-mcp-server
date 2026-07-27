@@ -491,9 +491,6 @@ The customization layers as applied during server startup:
      response detection and MCP extension overrides.
 
 ---
-
-
-
 ## Response Content-Type Handling
 
 Gitea's API mixes content types: most endpoints return JSON, but some return

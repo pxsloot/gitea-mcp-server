@@ -14,6 +14,7 @@ from gitea_mcp_server.tools.search import (
     _call_tool_impl,
     _compact_search_serializer,
     _extract_searchable_text_enhanced,
+    _format_filtered_tools_note,
     _name_matches,
     _search_and_slice,
     _search_resources_impl,
@@ -1754,3 +1755,235 @@ class TestSearchResourcesPagination:
         text = result.content[0].text
         assert "Page 10 is out of range" in text
         assert "total results: 5" in text
+
+
+class TestEmptyResultsMessage:
+    """Tests for _empty_results_message helper."""
+
+    def test_with_cross_link_hints(self):
+        """Empty results message includes cross-linking hints."""
+        from gitea_mcp_server.tools.search import _empty_results_message
+
+        result = _empty_results_message("test query", {
+            "workflow guides": "search_docs",
+            "data resources": "search_resources",
+        })
+        assert "No results found for 'test query'" in result
+        assert "search_docs" in result
+        assert "search_resources" in result
+
+    def test_without_cross_link_hints(self):
+        """Empty results message without hints omits hint section."""
+        from gitea_mcp_server.tools.search import _empty_results_message
+
+        result = _empty_results_message("test query", None)
+        assert "No results found for 'test query'" in result
+        assert "Cross-linking" not in result
+
+    def test_empty_cross_link_hints(self):
+        """Empty dict of hints omits hint section."""
+        from gitea_mcp_server.tools.search import _empty_results_message
+
+        result = _empty_results_message("test query", {})
+        assert "No results found for 'test query'" in result
+        assert "Cross-linking" not in result
+
+
+class TestFindToolByName:
+    """Tests for _find_tool_by_name helper."""
+
+    @pytest.mark.asyncio
+    async def test_finds_prefixed_tool(self):
+        """Prefixed tool name is found."""
+        from gitea_mcp_server.tools.search import _find_tool_by_name
+
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.get_tool = AsyncMock(return_value=MagicMock(name="gitea_test_tool"))
+
+        result = await _find_tool_by_name("gitea_test_tool", ctx)
+        assert result is not None
+        ctx.fastmcp.get_tool.assert_awaited_once_with("gitea_test_tool")
+
+    @pytest.mark.asyncio
+    async def test_finds_unprefixed_tool_with_prefix_fallback(self):
+        """Unprefixed name falls back to prefixed variant."""
+        from gitea_mcp_server.tools.search import _find_tool_by_name
+
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        # First lookup (unprefixed) returns None, second (prefixed) returns tool
+        ctx.fastmcp.get_tool = AsyncMock(side_effect=[None, MagicMock(name="gitea_test_tool")])
+
+        result = await _find_tool_by_name("test_tool", ctx, tool_prefix="gitea_")
+        assert result is not None
+        assert ctx.fastmcp.get_tool.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self):
+        """Returns None when tool not found in any form."""
+        from gitea_mcp_server.tools.search import _find_tool_by_name
+
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.get_tool = AsyncMock(return_value=None)
+
+        result = await _find_tool_by_name("nonexistent_tool", ctx, tool_prefix="gitea_")
+        assert result is None
+
+
+class TestFormatFilteredToolsNote:
+    """Tests for _format_filtered_tools_note."""
+
+    def test_none_filtered_info_returns_empty(self):
+        """None filtered_tools_info returns empty string."""
+        result = _format_filtered_tools_note(None)
+        assert result == ""
+
+    def test_empty_filtered_returns_empty(self):
+        """Empty filtered dict returns empty string."""
+        result = _format_filtered_tools_note({"filtered": {}})
+        assert result == ""
+
+    def test_scope_restricted_count(self):
+        """Scope-restricted tools are counted."""
+        result = _format_filtered_tools_note({
+            "filtered": {
+                "tool1": {"reason": "scope"},
+                "tool2": {"reason": "scope"},
+            },
+        })
+        assert "2 scope-restricted" in result
+
+    def test_excluded_count(self):
+        """Config-excluded tools are counted."""
+        result = _format_filtered_tools_note({
+            "filtered": {
+                "tool1": {"reason": "excluded"},
+            },
+        })
+        assert "1 config-excluded" in result
+
+    def test_deprecated_count(self):
+        """Deprecated tools are counted."""
+        result = _format_filtered_tools_note({
+            "filtered": {
+                "tool1": {"reason": "deprecated"},
+            },
+        })
+        assert "1 deprecated" in result
+
+    def test_combined_counts(self):
+        """Multiple reason types are combined in the note."""
+        result = _format_filtered_tools_note({
+            "filtered": {
+                "t1": {"reason": "scope"},
+                "t2": {"reason": "excluded"},
+                "t3": {"reason": "deprecated"},
+                "t4": {"reason": "scope"},
+            },
+        })
+        assert "2 scope-restricted" in result
+        assert "1 config-excluded" in result
+        assert "1 deprecated" in result
+
+    def test_unknown_reason_not_counted(self):
+        """Unknown reason type is not counted."""
+        result = _format_filtered_tools_note({
+            "filtered": {
+                "tool1": {"reason": "mystery"},
+            },
+        })
+        # Unknown reason should produce no parts and return empty
+        assert result == ""
+
+
+class TestToolInfoImplPrefixFallback:
+    """Tests for _tool_info_impl prefix fallback (line 604)."""
+
+    @pytest.mark.asyncio
+    async def test_unprefixed_name_adds_prefixed_candidate(self):
+        """Unprefixed name should add prefixed version as candidate."""
+
+        # Create a minimal real Tool with version attribute
+        tool = Tool(
+            name="gitea_test_tool",
+            description="Test tool",
+            tags=set(),
+            parameters={"properties": {}},
+            output_schema=None,
+            meta={},
+            version="1.0",
+        )
+
+        ctx = MagicMock(spec=Context)
+        transform = MagicMock(spec=TolerantSearchTransform)
+        transform.get_tool_catalog = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "test_tool", "markdown", ctx, transform, tool_prefix="gitea_",
+        )
+        assert result is not None
+
+
+class TestSearchToolsWithFilteredInfo:
+    """Tests for _search_tools_impl with filtered_tools_info."""
+
+    @pytest.mark.asyncio
+    async def test_markdown_format_with_filtered_note(self):
+        """Markdown search includes filtered-tools note with results."""
+        ctx = MagicMock(spec=Context)
+        transform = MagicMock(spec=TolerantSearchTransform)
+        # Provide at least one tool so the search doesn't short-circuit to
+        # empty-results message.  The tool name won't match the query "test",
+        # but the markdown-result path with cross-linking hints + filtered
+        # note is what we want to test.
+        tool = Tool(
+            name="gitea_issue_list_issues",
+            description="List issues in a repository",
+            tags={"issue"},
+            parameters={"properties": {}},
+            annotations=None,
+        )
+        transform.get_tool_catalog = AsyncMock(return_value=[tool])
+
+        filtered_info = {
+            "filtered": {
+                "admin_tool": {"reason": "scope"},
+            },
+        }
+
+        result = await _search_tools_impl(
+            "issue", None, "markdown", ctx, transform,
+            page=1, limit=10, min_score=0.0,
+            filtered_tools_info=filtered_info, tool_prefix="gitea_",
+        )
+        assert result is not None
+        text = result.content[0].text if result.content else ""
+        assert "hidden from this listing" in text
+
+
+class TestTolerantSearchTransformSearch:
+    """Tests for TolerantSearchTransform._search method."""
+
+    @pytest.mark.asyncio
+    async def test_search_delegates_to_searcher(self):
+        """_search should delegate to internal BM25 searcher."""
+        tools = [
+            Tool(
+                name="tool_a",
+                description="First tool",
+                tags=set(),
+                parameters={"properties": {}},
+            ),
+            Tool(
+                name="tool_b",
+                description="Second tool",
+                tags=set(),
+                parameters={"properties": {}},
+            ),
+        ]
+        transform = TolerantSearchTransform()
+        # An empty query returns no results
+        result = await transform._search(tools, "")
+        assert len(result) == 0

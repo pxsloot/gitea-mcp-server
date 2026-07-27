@@ -717,6 +717,70 @@ class TestFormatResourceContentWrappedSchema:
         assert parsed[1]["user"] == "$ref:User"
 
 
+class TestMakeResourceFormatter:
+    """Tests for _make_resource_formatter helper."""
+
+    def test_none_format_hint_returns_none(self):
+        """format_hint=None returns None."""
+        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
+
+        fn = _make_resource_formatter(None, "full", None)
+        assert fn is None
+
+    def test_unknown_format_hint_returns_none(self):
+        """Unknown format_hint name returns None."""
+        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
+
+        fn = _make_resource_formatter("nonexistent_formatter", "full", None)
+        assert fn is None
+
+    def test_known_format_hint_returns_callable(self):
+        """Known format_hint returns a callable."""
+        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
+
+        fn = _make_resource_formatter("repository", "full", None)
+        assert callable(fn)
+        result = fn({"name": "test-repo", "full_name": "org/test-repo"})
+        assert "test-repo" in result
+
+    def test_formatter_with_extra_passes_it_through(self):
+        """Formatter registered with need_extra=True receives extra dict."""
+        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
+
+        fn = _make_resource_formatter(
+            "labels", "full", {"owner": "myorg", "repo": "myrepo"}
+        )
+        assert callable(fn)
+        result = fn([{"id": 1, "name": "bug"}])
+        assert "myorg/myrepo" in result
+
+
+class TestFormatResourceContentEdgeCases:
+    """Edge cases for _format_resource_content."""
+
+    def test_concise_non_dict_data_skips_collapse(self):
+        """When data is not dict/list, concise with schema skips collapse."""
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        # Non-JSON input -> not parsed as dict/list -> passes through
+        result = _format_resource_content(
+            "plain text", "markdown", detail="concise",
+            schema={"type": "object"},
+        )
+        assert result == "plain text"
+
+    def test_concise_with_non_dict_json_data(self):
+        """JSON primitive (number) with concise+skips collapse."""
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        result = _format_resource_content(
+            "42", "json", detail="concise",
+            schema={"type": "integer"},
+        )
+        parsed = json_module.loads(result)
+        assert parsed == 42
+
+
 class TestMcpListResourcesFormat:
     """Tests that list_resources respects the format parameter.
 
@@ -921,6 +985,36 @@ class TestMcpListResourcesTagTypeFilter:
 
 class TestExtractResourceContent:
     """Tests for _extract_resource_content helper."""
+
+    def test_none_contents_raises(self):
+        """None contents list raises LookupError."""
+        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+
+        with pytest.raises(LookupError, match="returned no content"):
+            _extract_resource_content(None, "gitea://test")
+
+    def test_empty_contents_raises(self):
+        """Empty contents list raises LookupError."""
+        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+
+        with pytest.raises(LookupError, match="returned no content"):
+            _extract_resource_content([], "gitea://test/resource")
+
+    def test_bytes_content_decoded(self):
+        """Bytes content is decoded from utf-8."""
+        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+
+        content_obj = type("Obj", (), {"content": b"hello bytes"})()
+        result = _extract_resource_content([content_obj], "gitea://test")
+        assert result == "hello bytes"
+
+    def test_str_content_returned_as_is(self):
+        """String content is returned unchanged."""
+        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+
+        content_obj = type("Obj", (), {"content": "hello string"})()
+        result = _extract_resource_content([content_obj], "gitea://test")
+        assert result == "hello string"
 
     def test_non_bytes_non_str_content(self):
         """Non-bytes, non-string content is converted via str()."""

@@ -15,11 +15,8 @@ Reasons to keep this file:
 from __future__ import annotations
 
 import importlib
-import inspect
-from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # All public modules in the gitea_mcp_server package.
@@ -103,12 +100,47 @@ class TestAllModulesImport:
             importlib.import_module(mod)
 
 
-# Modules that define __all__ but have zero runtime code (pure types only).
-# These have no public callables to verify — skip them.
+# ---------------------------------------------------------------------------
+# Modules with zero runtime code (pure types only).  They have no public
+# callables to verify, so they are skipped in the __all__-validation test.
+# ---------------------------------------------------------------------------
 _ZERO_RUNTIME_MODULES = frozenset({
     "gitea_mcp_server.models",
     "gitea_mcp_server.openapi_types",
 })
+
+
+def _all_exports_skip_reason(module_name: str) -> str | None:
+    """Return a skip reason if *module_name* should be excluded, else ``None``.
+
+    Called at collection time to build ``@pytest.mark.skipif`` marks per
+    the project's testing standards (conditional skips must be declared
+    at collection time, not via inline ``pytest.skip()``).
+    """
+    if module_name in _ZERO_RUNTIME_MODULES:
+        return "Zero-runtime module (typed dicts only)"
+    try:
+        mod = importlib.import_module(module_name)
+    except Exception:
+        return f"Cannot import {module_name}"
+    if not hasattr(mod, "__all__"):
+        return f"{module_name} has no __all__"
+    return None
+
+
+# Parametrize each module with a skip-if mark when the module has nothing
+# to validate.  This makes skip reasons visible at collection time (e.g.
+# ``pytest --co``, ``pytest -rs``) and follows the project convention of
+# ``@pytest.mark.skipif`` over inline ``pytest.skip()``.
+_ALL_EXPORTS_PARAMS = []
+for _mod in ALL_MODULES:
+    _reason = _all_exports_skip_reason(_mod)
+    if _reason:
+        _ALL_EXPORTS_PARAMS.append(
+            pytest.param(_mod, marks=pytest.mark.skipif(True, reason=_reason))
+        )
+    else:
+        _ALL_EXPORTS_PARAMS.append(pytest.param(_mod))
 
 
 class TestAllExportsAreValid:
@@ -118,16 +150,17 @@ class TestAllExportsAreValid:
     ``__all__`` is not updated, this test will fail.
     """
 
-    @pytest.mark.parametrize("module_name", ALL_MODULES)
+    @pytest.mark.parametrize("module_name", _ALL_EXPORTS_PARAMS)
     def test_all_exports_exist(self, module_name: str) -> None:
-        """All names in ``__all__`` are valid attributes of the module."""
-        if module_name in _ZERO_RUNTIME_MODULES:
-            pytest.skip("Zero-runtime module (typed dicts only)")
+        """All names in ``__all__`` are valid attributes of the module.
 
+        Note: modules without ``__all__`` and zero-runtime modules are
+        skipped via ``@pytest.mark.skipif`` at parametrization time
+        (see ``_ALL_EXPORTS_PARAMS`` above).  The test body only sees
+        modules that have a valid ``__all__`` list.
+        """
         module = importlib.import_module(module_name)
-        all_names: list[str] | None = getattr(module, "__all__", None)
-        if all_names is None:
-            pytest.skip(f"{module_name} has no __all__")
+        all_names: list[str] = module.__all__  # guaranteed present via skip marks
 
         module_dir = set(dir(module))
         for name in all_names:

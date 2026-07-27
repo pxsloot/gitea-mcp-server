@@ -518,3 +518,244 @@ class TestNonJsonResponsesNotWrapped:
         assert _has_result_wrapper(json_schema), (
             "Default JSON response missing result wrapper."
         )
+
+
+# ===========================================================================
+# Invariant 5: Round-trip completeness — every input path survives
+# ===========================================================================
+
+
+class TestRoundTripCompleteness:
+    """Every path from the input must survive conversion with at least one operation."""
+
+    @given(
+        path_count=st.integers(min_value=0, max_value=5),
+        methods_per_path=st.lists(
+            st.sampled_from(["get", "post", "put", "patch", "delete"]),
+            min_size=0, max_size=4, unique=True,
+        ),
+    )
+    def test_all_input_paths_preserved(
+        self, path_count: int, methods_per_path: list[str],
+    ) -> None:
+        """All input paths must exist in the output."""
+        paths: dict[str, Any] = {}
+        for i in range(path_count):
+            path = f"/resource_{i}"
+            ops: dict[str, Any] = {}
+            for method in methods_per_path:
+                ops[method] = {
+                    "operationId": f"{method}Resource{i}",
+                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                }
+            if ops:
+                paths[path] = ops
+
+        spec = _make_spec(paths=paths)
+        result = convert_swagger_to_openapi_v3(spec)
+        result_paths = result.get("paths", {})
+
+        for input_path, input_ops_dict in paths.items():
+            assert input_path in result_paths, (
+                f"Input path '{input_path}' missing from output. "
+                f"Output paths: {list(result_paths.keys())}"
+            )
+            # At least one operation from this path must survive
+            input_ops = [m for m in input_ops_dict if m in ("get", "post", "put", "patch", "delete")]
+            output_ops = [m for m in result_paths[input_path] if m in ("get", "post", "put", "patch", "delete")]
+            assert len(output_ops) == len(input_ops), (
+                f"Path '{input_path}': expected {len(input_ops)} operation(s), "
+                f"got {len(output_ops)}. Missing: {set(input_ops) - set(output_ops)}"
+            )
+
+    def test_empty_paths_survives(self) -> None:
+        """An empty paths dict must not cause a crash and must survive."""
+        spec = _make_spec(paths={})
+        result = convert_swagger_to_openapi_v3(spec)
+        assert "paths" in result
+        assert result["paths"] == {}
+
+
+# ===========================================================================
+# Invariant 6: Parameter conversion preserves in, name, schema
+# ===========================================================================
+
+
+class TestParameterConversionPreserved:
+    """Path, query, and header parameters must survive with correct fields."""
+
+    @st.composite
+    def _param(draw: st.DrawFn) -> dict[str, Any]:
+        """Generate a single Swagger parameter dict."""
+        param_in = draw(st.sampled_from(["path", "query", "header"]))
+        param_name = draw(st.text(min_size=1, max_size=8, alphabet=st.characters(
+            whitelist_categories=["Ll", "Lu", "Nd"],
+        )))
+        param_type = draw(st.sampled_from(["string", "integer", "boolean"]))
+        param = {
+            "in": param_in,
+            "name": param_name,
+            "type": param_type,
+            "required": draw(st.booleans()),
+        }
+        if param_in == "path":
+            param["required"] = True
+        # Add optional description
+        if draw(st.booleans()):
+            param["description"] = draw(st.text(max_size=20))
+        return param
+
+    @given(params=st.lists(_param(), min_size=1, max_size=5, unique_by=lambda p: (p.get("in"), p.get("name"))))
+    def test_parameters_preserve_in_and_name(self, params: list[dict[str, Any]]) -> None:
+        """Each parameter must survive with the correct ``in`` and ``name`` fields."""
+        spec = _make_spec(paths={
+            "/resource/{param}": {
+                "get": {
+                    "operationId": "getResource",
+                    "parameters": params,
+                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                },
+            },
+        })
+        result = convert_swagger_to_openapi_v3(spec)
+        output_params = result["paths"]["/resource/{param}"]["get"].get("parameters", [])
+
+        # Build lookup by (in, name) for both input and output
+        input_index = {(p["in"], p["name"]): p for p in params}
+        output_index: dict[tuple[str, str], dict[str, Any]] = {}
+        for p in output_params:
+            pin = p.get("in")
+            pname = p.get("name")
+            if pin and pname:
+                output_index[(pin, pname)] = p
+
+        for key in input_index:
+            assert key in output_index, (
+                f"Parameter ({key[0]}, {key[1]}) missing from output. "
+                f"Input params: {params}, output params: {output_params}"
+            )
+
+    def test_parameter_schema_has_type(self) -> None:
+        """Every output parameter must have a ``schema`` with a ``type``."""
+        params = [
+            {"in": "path", "name": "owner", "type": "string", "required": True},
+            {"in": "query", "name": "limit", "type": "integer"},
+            {"in": "header", "name": "X-Custom", "type": "string"},
+        ]
+        spec = _make_spec(paths={
+            "/repos/{owner}": {
+                "get": {
+                    "operationId": "getRepo",
+                    "parameters": params,
+                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                },
+            },
+        })
+        result = convert_swagger_to_openapi_v3(spec)
+        output_params = result["paths"]["/repos/{owner}"]["get"]["parameters"]
+
+        for p in output_params:
+            assert "schema" in p, (
+                f"Parameter '{p.get('name')}' missing 'schema' field. "
+                f"Output: {p}"
+            )
+            assert "type" in p["schema"], (
+                f"Parameter '{p.get('name')}' schema missing 'type'. "
+                f"Output schema: {p['schema']}"
+            )
+
+    def test_path_required_flag_preserved(self) -> None:
+        """Path parameters must have ``required: true`` after conversion."""
+        params = [{"in": "path", "name": "id", "type": "integer", "required": True}]
+        spec = _make_spec(paths={
+            "/items/{id}": {
+                "get": {
+                    "operationId": "getItem",
+                    "parameters": params,
+                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                },
+            },
+        })
+        result = convert_swagger_to_openapi_v3(spec)
+        output_params = result["paths"]["/items/{id}"]["get"]["parameters"]
+        assert len(output_params) == 1
+        assert output_params[0]["required"] is True, (
+            f"Path parameter 'id' should be required: {output_params[0]}"
+        )
+
+
+# ===========================================================================
+# Invariant 7: No crash on edge cases
+# ===========================================================================
+
+
+class TestEdgeCases:
+    """Converter must handle corner-case inputs without crashing."""
+
+    def test_minimal_spec_no_paths(self) -> None:
+        """A spec with only swagger/info/basePath must not crash."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "basePath": "/api",
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+        assert "paths" not in result or result["paths"] == {}
+
+    def test_no_info_field(self) -> None:
+        """A spec without ``info`` must not crash."""
+        spec = {"swagger": "2.0", "basePath": "/api"}
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+
+    def test_info_not_a_dict(self) -> None:
+        """``info`` as a non-dict must not crash."""
+        spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+
+    def test_no_base_path(self) -> None:
+        """A spec without ``basePath`` must not crash."""
+        spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}}
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+        assert "servers" not in result
+
+    def test_duplicate_operation_ids(self) -> None:
+        """Duplicate operationId values must not cause a crash."""
+        spec = _make_spec(paths={
+            "/a": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
+            "/b": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
+        })
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+        assert "/a" in result["paths"]
+        assert "/b" in result["paths"]
+
+    def test_null_values_in_spec(self) -> None:
+        """A spec with None values for optional fields must not crash."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "basePath": None,
+            "paths": None,
+            "definitions": None,
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["openapi"] == "3.1.1"
+
+    def test_path_with_no_operations(self) -> None:
+        """A path item that is not a dict must not crash."""
+        spec = _make_spec(paths={
+            "/empty": "not a dict",
+            "/real": {
+                "get": {
+                    "operationId": "getReal",
+                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                },
+            },
+        })
+        result = convert_swagger_to_openapi_v3(spec)
+        assert "/real" in result["paths"]
+        # /empty may be dropped or passed through — at minimum no crash

@@ -1419,3 +1419,25 @@ class TestApplyFormatConcise:
         assert sc is not None
         assert isinstance(sc["result"], dict)
         assert sc["result"]["owner"]["login"] == "user1"
+
+
+class TestFormatDateTime:
+    """Tests for _format_datetime."""
+
+    def test_formats_iso_datetime(self):
+        """Test ISO datetime string is formatted correctly."""
+        dt = "2024-01-15T10:30:00Z"
+        result = _format_datetime(dt)
+        assert result == "2024-01-15 10:30:00 UTC"
+
+    def test_handles_none(self):
+        """Test None returns N/A."""
+        assert _format_datetime(None) == "N/A"
+
+    def test_handles_empty_string(self):
+        """Test empty string returns N/A."""
+        assert _format_datetime("") == "N/A"
+
+    def test_handles_invalid_format(self):
+        """Test invalid format returns original string."""
+        assert _format_datetime("not a date") == "not a date"

@@ -180,6 +180,8 @@ are noted explicitly.
   (e.g., `test_lazy_loading.py`, `test_cache_invalidation.py`).
 - **Cross-cutting / behavioral test files**: `test_<behavior>.py`
   (e.g., `test_mcp_tools_wrapping.py`, `test_label_validation.py`).
+- **Regression test files**: `test_regression_<issue_num>_<description>.py`
+  (e.g., `test_regression_316_dotfile_paths.py`).
 - **Test classes**: `Test<ComponentName>` (PascalCase).
 - **Test methods**: `test_<behavior_description>` (snake_case).
 - **Test fixtures**: Descriptive names, preferably noun-based.

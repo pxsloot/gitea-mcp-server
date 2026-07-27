@@ -35,13 +35,18 @@ tests/
 │   │   └── test_utils.py
 │   ├── test_cache_invalidation.py
 │   ├── test_client.py
-│   ├── test_config.py
-│   ├── test_constants.py
-│   ├── test_docs_tools.py
-│   ├── test_exceptions.py
-│   ├── test_format.py
 │   ├── test_client_gitea_api.py
 │   ├── test_client_http_transport.py
+│   ├── test_config.py
+│   ├── test_constants.py
+│   ├── test_display.py
+│   ├── test_docs_tools.py
+│   ├── test_exceptions.py
+│   ├── test_extensions_metadata.py
+│   ├── test_filter_info.py
+│   ├── test_format.py
+│   ├── test_label_service.py
+│   ├── test_label_transform.py
 │   ├── test_label_validation.py
 │   ├── test_logging_config.py
 │   ├── test_mcp_builder.py
@@ -49,15 +54,19 @@ tests/
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
+│   ├── test_regression_316_dotfile_paths.py
+│   ├── test_resource_factory.py
 │   ├── test_resource_meta.py
 │   ├── test_resources.py
+│   ├── test_schema_utils.py
 │   ├── test_scope.py
 │   ├── test_search_bm25.py
 │   ├── test_spec_loader.py
 │   ├── test_tool_customize.py
+│   ├── test_tool_display.py
 │   ├── test_tool_errors.py
 │   ├── test_tool_examples.py
-│   ├── test_tool_exclusions.py
+│   ├── test_tool_exclusion.py
 │   ├── test_tool_filter.py
 │   ├── test_tool_labels.py
 │   ├── test_tool_namespace.py
@@ -65,7 +74,8 @@ tests/
 │   ├── test_tool_search.py
 │   ├── test_type_info.py
 │   ├── test_unified_search.py
-│   └── test_validation.py
+│   ├── test_validation.py
+│   └── test_virtual_params.py
 ├── integration/
 │   ├── __init__.py
 │   ├── test_cache_invalidation.py
@@ -111,7 +121,7 @@ are noted explicitly.
 | `pagination.py` | `test_pagination.py` | Unit | Pagination metadata and runner |
 | `schema_utils.py` | `test_schema_utils.py` | Unit | Shared JSON Schema utilities |
 | `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py` |
-| `search.py` | `test_search_bm25.py` | Unit | BM25 search engine tests |
+| `search.py` | `test_search_bm25.py` | Unit | BM25 search engine tests. Named ``_bm25`` to disambiguate from ``tools/search.py`` → ``test_tool_search.py`` — see pragmatic deviations below |
 | `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 70% target |
 | `validation.py` | `test_validation.py` | Unit | 95% target |
 
@@ -189,6 +199,11 @@ are noted explicitly.
 - **Test fixtures**: Descriptive names, preferably noun-based.
 - **New test files**: Follow the existing convention for the module area.
   When in doubt, refer to the source-to-test mapping table above.
+- **Pragmatic deviations**: Strict convention is preferred but not rigidly
+  enforced. A name that departs from the rule is acceptable when it provides
+  better disambiguation or clarity (e.g., ``search.py`` → ``test_search_bm25.py``
+  to distinguish from ``tools/search.py`` tests). Every deviation must be
+  documented with a brief rationale in the source-to-test mapping table.
 
 ## Test Layering
 

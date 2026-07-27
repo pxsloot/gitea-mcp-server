@@ -3,11 +3,14 @@
 Tests invariants of ``convert_swagger_to_openapi_v3`` that are difficult
 to cover exhaustively with example-based tests alone.
 
-Invariants tested (from #553 sub-item 2):
+Invariants tested (from #560):
   1. No $ref is ever left unresolved in the output
   2. No x-* vendor extensions leak into output schemas
   3. All success response schemas are wrapped in {"result": ...}
   4. Non-JSON responses are never wrapped
+  5. Round-trip completeness — every input path survives with operations
+  6. Parameter conversion preserves in, name, schema fields
+  7. No crash on edge cases (null values, missing fields, malformed input)
 """
 
 from __future__ import annotations
@@ -758,4 +761,4 @@ class TestEdgeCases:
         })
         result = convert_swagger_to_openapi_v3(spec)
         assert "/real" in result["paths"]
-        # /empty may be dropped or passed through — at minimum no crash
+        # /empty is preserved as-is (non-dict items pass through) — at minimum no crash

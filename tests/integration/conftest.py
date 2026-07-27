@@ -113,7 +113,6 @@ def lazy_config() -> SimpleConfig:
     return SimpleConfig(
         url=BASE_TEST_URL,
         token="test_token",
-        log_level="ERROR",
         enable_lazy_loading=True,
     )
 

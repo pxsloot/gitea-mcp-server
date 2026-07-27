@@ -515,6 +515,7 @@ Put truly shared fixtures in `tests/conftest.py`:
 - `swagger_spec_fixture` — loads `tests/swagger.v1.json` for tests that need a real spec
 - `event_loop` — session-scoped default event loop
 - `trace_exporter` — OpenTelemetry InMemorySpanExporter (cleared between tests)
+- `temp_workspace` — temporary workspace directory for file-based tests
 
 Put domain-specific helper functions in ``tests/helpers/``:
 

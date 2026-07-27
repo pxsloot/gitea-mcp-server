@@ -95,7 +95,7 @@ class TestErrorHandlingEnhancement:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="APINotFound") as exc_info:
             await wrapped.run(
                 {
                     "owner": "mcp-server",
@@ -140,7 +140,7 @@ class TestErrorHandlingEnhancement:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="Some unrelated validation error") as exc_info:
             await wrapped.run({})
 
         assert str(exc_info.value) == "Some unrelated validation error"
@@ -173,7 +173,7 @@ class TestErrorHandlingEnhancement:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="(?i)network|connection") as exc_info:
             await wrapped.run({})
 
         error_msg = str(exc_info.value)
@@ -207,7 +207,7 @@ class TestErrorHandlingEnhancement:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="Request timed out") as exc_info:
             await wrapped.run({})
 
         error_msg = str(exc_info.value)
@@ -240,7 +240,7 @@ class TestErrorHandlingEnhancement:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="(?i)unexpected") as exc_info:
             await wrapped.run({})
 
         error_msg = str(exc_info.value)
@@ -434,7 +434,7 @@ class TestRunValidation:
         from gitea_mcp_server.validation import SINGLE_VALIDATORS
 
         def bad_validator(value, *, field):
-            raise TypeError("unexpected type")
+            raise TypeError
 
         monkeypatch.setitem(SINGLE_VALIDATORS, "owner", bad_validator)
         with pytest.raises(ValidationError, match="Validation error"):
@@ -546,7 +546,7 @@ class TestCatchAllErrorHandler:
 
         tool.run = failing_run
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="unexpected") as exc_info:
             await _run_with_error_handling(
                 kwargs={"owner": "me"},
                 component=tool,
@@ -570,11 +570,11 @@ class TestCatchAllErrorHandler:
         tool.name = "context_tool"
 
         async def failing_run(kwargs):
-            raise exc_type("fail")
+            raise exc_type
 
         tool.run = failing_run
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="unexpected"):
             await _run_with_error_handling(
                 kwargs={"owner": "me", "repo": "my-repo"},
                 component=tool,
@@ -602,11 +602,11 @@ class TestCatchAllErrorHandler:
         del tool.name
 
         async def failing_run(kwargs):
-            raise RuntimeError("fail")
+            raise RuntimeError
 
         tool.run = failing_run
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="unexpected"):
             await _run_with_error_handling(
                 kwargs={},
                 component=tool,
@@ -666,7 +666,7 @@ class TestErrorHandlingNonJson:
         transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
         [wrapped] = await transform.list_tools([tool])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="Internal Server Error") as exc_info:
             await wrapped.run({})
 
         error_msg = str(exc_info.value)
@@ -674,7 +674,7 @@ class TestErrorHandlingNonJson:
         assert "something went wrong" in error_msg
 
 
-class TestParamIsBoolean:
+class TestParamIsBooleanExtended:
     """Tests for _param_is_boolean edge cases."""
 
     def test_non_string_non_list_type_returns_false(self):

@@ -133,7 +133,7 @@ def main():
     custom_patterns = ["issues_list", "repo"]
     register_tool_invalidation(custom_tool, custom_patterns)
 
-    print(f"\n➕ Registered custom tool: {custom_tool}")
+    print(f"\n+ Registered custom tool: {custom_tool}")
     uris = compute_uris_to_invalidate(custom_tool, test_repo)
     print("   Invalidates:")
     for uri in uris:

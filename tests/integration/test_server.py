@@ -1135,9 +1135,10 @@ class TestServerEdgeCases:
         """main_async handles config initialization errors gracefully."""
         from unittest.mock import patch
 
+        from gitea_mcp_server.server import main_async
+
         with patch("gitea_mcp_server.server.Config.get", side_effect=Exception("Config init failed")):
             with pytest.raises(SystemExit) as exc:
-                from gitea_mcp_server.server import main_async
                 await main_async()
             assert exc.value.code == 1
 
@@ -1282,8 +1283,8 @@ class TestServerEdgeCases:
                 patch("gitea_mcp_server.server.GiteaClient") as mock_client,
             ):
                     mock_client.return_value.close = AsyncMock()
+                    from gitea_mcp_server.server import main_async
                     with pytest.raises(SystemExit) as exc:
-                        from gitea_mcp_server.server import main_async
                         await main_async()
                     assert exc.value.code == 1
                     mock_client.return_value.close.assert_awaited_once()

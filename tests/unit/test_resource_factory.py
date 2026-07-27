@@ -1,6 +1,7 @@
 """Tests for the resource factory (``make_api_resource``)."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

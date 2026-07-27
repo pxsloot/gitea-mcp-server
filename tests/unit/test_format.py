@@ -800,7 +800,8 @@ class TestFormatAsMarkdown:
         result = _format_as_markdown(data, field_filter={"id": {}, "name": {}})
         for row in ("Foo", "Bar", "1", "2"):
             assert row in result
-        assert "extra" not in result.lower() and "Extra" not in result
+        assert "extra" not in result.lower()
+        assert "Extra" not in result
 
     def test_field_filter_skips_missing_keys_gracefully(self):
         """field_filter entries not in data are silently skipped."""
@@ -836,7 +837,8 @@ class TestFormatAsMarkdown:
         assert "# Bug" in result
         assert "| Number | 1 |" in result
         assert "| Title | Bug |" in result
-        assert "Body" not in result and "body" not in result
+        assert "Body" not in result
+        assert "body" not in result
 
     # ── Consistency: tool and resource should produce same structure ──────────────
 
@@ -925,7 +927,8 @@ class TestFormatAsMarkdown:
         result = _format_as_markdown(data, field_filter=field_filter)
         assert "| Pull Request | Yes |" in result
         # Should NOT expand the nested dict
-        assert "url" not in result.lower() and "Url" not in result
+        assert "url" not in result.lower()
+        assert "Url" not in result
 
     def test_expand_default_renders_nested_as_section(self):
         """Default render='expand' preserves existing nested-section behavior."""

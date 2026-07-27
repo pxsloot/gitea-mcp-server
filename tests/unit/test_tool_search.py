@@ -1129,8 +1129,8 @@ class TestSyntheticToolAnnotations:
         register_synthetic_tools(mcp, transform)
 
         # Trigger error - call_tool with invalid JSON string
+        ctx = MagicMock(spec=Context)
         with pytest.raises(ValueError, match="Invalid JSON"):
-            ctx = MagicMock(spec=Context)
             await _call_tool_impl(
                 name="nonexistent",
                 arguments="not-json",
@@ -1358,7 +1358,7 @@ class TestSearchAndSlice:
     def test_mismatched_items_and_texts(self):
         """Mismatched items/texts should not crash (BM25 will handle gracefully)."""
         items = self._make_items(3)
-        texts = self._make_texts(3) + ["extra"]  # more texts than items
+        texts = [*self._make_texts(3), "extra"]  # more texts than items
         # Should not raise
         page_items, total = _search_and_slice(items, texts, "description", page=1, limit=10)
         assert total == 3

@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from gitea_mcp_server.server_setup.mcp_extensions import (
     apply_mcp_extensions,
@@ -313,7 +314,7 @@ tool_names:
 
         with (
             patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}),
-            pytest.raises(Exception),
+            pytest.raises(yaml.YAMLError),
         ):
             load_mcp_extensions()
 

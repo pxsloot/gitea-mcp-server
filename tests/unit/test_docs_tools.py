@@ -369,7 +369,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_read_doc_error_includes_available_guides(self):
         fn = self._capture_tool("read_doc")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="Available guides:") as exc_info:
             await fn(topic="unknown")
         msg = str(exc_info.value)
         assert "Available guides:" in msg

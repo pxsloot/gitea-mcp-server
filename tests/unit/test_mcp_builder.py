@@ -578,7 +578,7 @@ class TestRouteMapFiltering:
         except (ValueError, Exception):  # FastMCP raises on invalid spec
             pass
         else:
-            raise AssertionError("Expected FastMCP to reject non-dict paths")
+            pytest.fail("Expected FastMCP to reject non-dict paths")
 
     def test_no_deprecated_returns_empty(self):
         """No deprecated:true operations returns empty set."""

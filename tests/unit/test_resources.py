@@ -77,7 +77,8 @@ class TestFormatRepoMarkdown:
         assert "| Owner | owner |" in result
         assert "## Owner" not in result
         assert "| Stargazers Count | 42 |" in result
-        assert "test" in result and "example" in result
+        assert "test" in result
+        assert "example" in result
         assert "## License" in result
 
     def test_handles_missing_fields(self):

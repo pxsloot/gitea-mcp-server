@@ -721,39 +721,14 @@ uv run pytest -m slow
 The project enforces ruff lint rules on test code via `ruff check tests/` in both
 the `Makefile` (``make test``) and CI (``lint-tests`` job).
 
-### Active Rule Remediation (Issue #551)
+### Issue #551 — Ruff Rule Remediation (Completed)
 
-The following rules are suppressed for ``tests/**/*`` in ``pyproject.toml`` and are
-being fixed incrementally. As each rule is resolved, it is removed from the
-suppression list and from this table.
-
-| Rule | Violations | Status | Notes |
-|------|-----------|--------|-------|
-| ~~SIM117~~ | ~~9~~ | ✅ Fixed | ~~multiple-with-statements~~ |
-| ~~C416~~ | ~~2~~ | ✅ Fixed | ~~unnecessary-comprehension~~ |
-| ~~RET504~~ | ~~7~~ | ✅ Fixed | ~~unnecessary-assign~~ |
-| ~~PLW0108~~ | ~~5~~ | ✅ Fixed | ~~unnecessary-lambda~~ |
-| ~~RUF059~~ | ~~12~~ | ✅ Fixed | ~~unused-unpacked-variable~~ |
-| ~~SIM105~~ | ~~2~~ | ✅ Fixed | ~~suppressible-exception~~ |
-| ~~PT006~~ | ~~8~~ | ✅ Fixed | ~~pytest-parametrize-names-wrong-type~~ |
-| ~~TC002~~ | ~~3~~ | ✅ Fixed | ~~typing-only-third-party-import~~ |
-| ~~TC003~~ | ~~2~~ | ✅ Fixed | ~~typing-only-standard-library-import~~ |
-| PT011 | 11 | 🔧 Pending | pytest-raises-too-broad |
-| PT012 | 3 | 🔧 Pending | pytest-raises-with-multiple-statements |
-| PT017 | 1 | 🔧 Pending | pytest-assert-in-except |
-| PT018 | 4 | 🔧 Pending | pytest-composite-assertion |
-| EM101 | 8 | 🔧 Pending | raw-string-in-exception |
-| TRY003 | 6 | 🔧 Pending | raise-vanilla-args |
-| TRY301 | 2 | 🔧 Pending | raise-within-try |
-| TRY300 | 1 | 🔧 Pending | try-consider-else |
-| F811 | 1 | 🔧 Pending | redefined-while-unused |
-| F821 | 1 | 🔧 Pending | undefined-name |
-| RUF001 | 1 | 🔧 Pending | ambiguous-unicode-character-string |
-| RUF005 | 1 | 🔧 Pending | collection-literal-concatenation |
-| RUF015 | 1 | 🔧 Pending | unnecessary-iterable-allocation-for-first-element |
-
-When all rules are fixed, this table will be removed and ``pyproject.toml`` will
-be the single source of truth for test lint configuration.
+All 22 rules previously suppressed for ``tests/**/*`` in ``pyproject.toml``
+have been fixed and their suppressions removed. The
+``[tool.ruff.lint.per-file-ignores]`` section now contains only intentional,
+permanently-exempt rules for test code (e.g. unused arguments in fixtures,
+bare asserts, magic numbers in test data). The single source of truth for
+test lint configuration is ``pyproject.toml``.
 
 ## Coverage Enforcement
 

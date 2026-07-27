@@ -306,6 +306,7 @@ uv run pytest tests/live/ -v    # → 3 skipped
 - **pytest-asyncio**: Async test support (`asyncio_mode = "auto"`)
 - **pytest-mock**: Mocking via `mocker` fixture
 - **pytest-cov**: Coverage measurement
+- **pytest-xdist**: Parallel test execution (`-n auto --dist loadscope` enabled by default)
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
 
@@ -755,13 +756,16 @@ def minimal_spec():
 ## Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (parallel by default: -n auto --dist loadscope)
 uv run pytest
+
+# Run sequentially (disable parallel workers for debugging)
+uv run pytest -n 0
 
 # Run with verbose output
 uv run pytest -v
 
-# Run specific test file
+# Run specific test file (parallel still active; single file goes to one worker)
 uv run pytest tests/unit/test_client.py
 
 # Run specific test by name
@@ -770,12 +774,63 @@ uv run pytest -k "test_async_operation"
 # Run with coverage
 uv run pytest --cov=gitea_mcp_server
 
-# Stop on first failure
+# Stop on first failure (kills all workers)
 uv run pytest -x
 
 # Run a specific module area
 uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/integration/
+```
+
+### Parallel Execution with pytest-xdist
+
+The test suite runs with ``-n auto --dist loadscope`` by default (configured
+in ``pyproject.toml``). This distributes tests across CPU cores while keeping
+session-scoped fixtures in one worker per module:
+
+- ``--dist loadscope`` groups tests by module scope, so session-scoped
+  fixtures (HTTP server, OTel exporter) are created once per worker instead
+  of once per test.
+- Each worker gets its own event loop via the session-scoped
+  ``event_loop`` fixture in ``tests/conftest.py``.
+- To debug a single file without the parallel overhead, pass ``-n 0``:
+  ``uv run pytest tests/unit/test_foo.py -xvs -n 0``.
+
+Design notes for session-scoped fixtures under xdist:
+
+- **Avoid inter-worker state**: Session fixtures must not depend on state
+  shared across workers (files, ports, global singletons). The ``http_port=0``
+  pattern (OS-assigned port) keeps each worker's HTTP server isolated.
+- **Avoid module-level imports** with side effects that execute at import
+  time — each worker re-imports the test modules.
+- **``asyncio_default_fixture_loop_scope = "session"``**: This setting in
+  ``pyproject.toml`` matches the session-scoped ``event_loop`` fixture in
+  ``tests/conftest.py``. Without it, xdist workers would each create
+  per-function event loops, defeating the session-scoped loop. Async
+  fixtures that need a per-function loop should set
+  ``loop_scope="function"`` explicitly.
+
+### Timeout Safety
+
+The suite uses ``pytest-timeout`` with ``--timeout=120 --timeout_method=thread``
+(configured in ``pyproject.toml``). Any test hanging longer than 2 minutes is
+killed automatically, preventing a single stuck test from blocking the whole
+run (especially important with xdist workers).
+
+Use ``@pytest.mark.timeout(N)`` to override per-test — shorter for
+known-fast tests, longer for slow ones. The ``thread`` method is compatible
+with xdist and asyncio (``fork`` would break the event loop).
+
+```python
+# Override timeout for a specific test
+@pytest.mark.timeout(30)
+def test_slow_operation(self):
+    ...
+
+# Disable timeout entirely (use sparingly)
+@pytest.mark.timeout(None)
+def test_unbounded(self):
+    ...
 ```
 
 ### Test Markers

@@ -1,13 +1,19 @@
-"""Integration tests for HTTP transport.
+"""Integration tests for real uvicorn HTTP transport.
 
-These tests verify the HTTP transport functionality including the /health
-endpoint and MCP endpoint accessibility.
+These tests verify the full stack: uvicorn → ASGI → MCP responds to real HTTP.
+Each test starts its own short-lived uvicorn server.  The ~0.5s startup cost
+is acceptable because there are only 2 tests and xdist runs them in parallel
+with other modules.
+
+Endpoint-level behaviour (CORS, custom path, route registration) is tested
+at the ASGI level in ``test_server_http.py`` with near-zero startup cost.
+This file covers what only a real uvicorn server can: the full transport
+stack and graceful shutdown.
 """
 
 import asyncio
 import contextlib
 import socket
-from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -17,9 +23,16 @@ from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
 
 
-@pytest.fixture(autouse=True)
-def patch_spec_loader(monkeypatch):
-    """Patch the OpenAPI spec loader to avoid network calls."""
+@pytest.fixture(scope="module", autouse=True)
+def _patch_spec_loader():
+    """Patch the OpenAPI spec loader once for this module.
+
+    Module-scoped to avoid leaking the patch to other test modules.
+    The user / version fetch calls during ``create_mcp_server()`` are
+    **not** patched — they fail harmlessly (handled gracefully by
+    server.py), and we accept the log noise to keep the fixture simple.
+    """
+    mp = pytest.MonkeyPatch()
 
     async def mock_load_and_convert_spec(gitea_client, config=None):
         return (
@@ -29,25 +42,29 @@ def patch_spec_loader(monkeypatch):
                 "paths": {},
                 "definitions": {},
             },
-            {},  # no extensions
-            {},  # no filtered-tools info
-            set(),  # no excluded routes
+            {},
+            {},
+            set(),
         )
 
-    # Patch where it's used, not where it's defined
-    monkeypatch.setattr(
+    mp.setattr(
         "gitea_mcp_server.server.load_and_convert_spec",
         mock_load_and_convert_spec,
     )
+    yield
+    mp.undo()
 
 
-@asynccontextmanager
-async def run_test_server(config):
-    """Context manager that runs the server in background and yields the URL."""
+async def _start_server(config, *, health_path="/health"):
+    """Start a uvicorn server, yield ``(base_url, cleanup_coro)``.
+
+    The caller is responsible for calling ``cleanup()`` after the test.
+    Health endpoint is inserted at ``{base_url}{health_path}``.
+    """
     gitea_client = GiteaClient(config)
     mcp = await create_mcp_server(gitea_client)
 
-    # Find a free port if http_port is 0
+    # Find free port
     if config.http_port == 0:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((config.http_host, 0))
@@ -55,152 +72,73 @@ async def run_test_server(config):
             port = s.getsockname()[1]
         config.http_port = port
 
-    # Create ASGI app with CORS middleware if needed
-    if config.http_cors:
-        from starlette.middleware import Middleware
-        from starlette.middleware.cors import CORSMiddleware
-
-        middleware = [
-            Middleware(
-                CORSMiddleware,
-                allow_origins=config.http_cors,
-                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-                allow_headers=[
-                    "mcp-protocol-version",
-                    "mcp-session-id",
-                    "Authorization",
-                    "Content-Type",
-                ],
-                expose_headers=["mcp-session-id"],
-            )
-        ]
-        app = mcp.http_app(path=config.http_path, middleware=middleware)
-    else:
-        app = mcp.http_app(path=config.http_path)
-
-    # Add health check endpoint (matches server.py workaround)
+    app = mcp.http_app(path=config.http_path)
     from starlette.responses import JSONResponse
     from starlette.routing import Route
 
     async def health_check(_):
         return JSONResponse({"status": "ok"})
 
-    app.routes.insert(0, Route("/health", endpoint=health_check, methods=["GET"]))
+    app.routes.insert(0, Route(health_path, endpoint=health_check, methods=["GET"]))
 
-    # Start uvicorn server in background
     import uvicorn
 
-    config_uvicorn = uvicorn.Config(
-        app=app,
-        host=config.http_host,
-        port=config.http_port,
-        log_level="error",
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app=app, host=config.http_host, port=config.http_port, log_level="error",
+        )
     )
-    server = uvicorn.Server(config_uvicorn)
-
-    # Run server in background task
     server_task = asyncio.create_task(server.serve())
+    await asyncio.sleep(0.5)
 
-    try:
-        # Wait a moment for server to start
-        await asyncio.sleep(0.5)
-        yield f"http://{config.http_host}:{config.http_port}"
-    finally:
-        # Shutdown server
+    base_url = f"http://{config.http_host}:{config.http_port}"
+
+    async def _cleanup():
         await server.shutdown()
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task
         await gitea_client.close()
 
+    return base_url, _cleanup
+
 
 @pytest.mark.slow
-class TestHTTPTransport:
-    """Integration tests for HTTP transport."""
+class TestRealHttpServer:
+    """Real uvicorn HTTP smoke tests.
+
+    Each test starts its own uvicorn server (the ~0.5s startup cost is
+    acceptable since these are few and xdist runs them in parallel with
+    other modules).
+    """
 
     @pytest.mark.asyncio
-    async def test_health_endpoint_returns_ok(self):
-        """Test that /health returns {"status": "ok"}."""
+    async def test_health_endpoint(self):
+        """Real uvicorn serves the /health endpoint correctly (full-stack smoke test)."""
         config = SimpleConfig(transport_type="http", http_port=0)
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.get(f"{base_url}/health")
-            assert response.status_code == 200
-            assert response.json() == {"status": "ok"}
-
-    @pytest.mark.asyncio
-    async def test_health_endpoint_content_type(self):
-        """Test that /health returns application/json."""
-        config = SimpleConfig(transport_type="http", http_port=0)
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.get(f"{base_url}/health")
-            assert response.headers["Content-Type"] == "application/json"
-
-    @pytest.mark.asyncio
-    async def test_mcp_endpoint_exists(self):
-        """Test that MCP endpoint is available at configured path."""
-        config = SimpleConfig(transport_type="http", http_port=0, http_path="/mcp")
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{base_url}/mcp",
-                json={"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1},
-                headers={"Content-Type": "application/json"},
-            )
-            assert response.status_code in (200, 406, 500)
-
-    @pytest.mark.asyncio
-    async def test_custom_path_is_respected(self):
-        """Test that custom HTTP_PATH is used."""
-        config = SimpleConfig(transport_type="http", http_port=0, http_path="/api/mcp")
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.get(f"{base_url}/health")
-            assert response.status_code == 200
-
-            response = await client.post(
-                f"{base_url}/api/mcp",
-                json={"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1},
-                headers={"Content-Type": "application/json"},
-            )
-            assert response.status_code in (200, 406, 500)
-
-    @pytest.mark.asyncio
-    async def test_cors_headers_present(self):
-        """Test that CORS headers are present when configured."""
-        config = SimpleConfig(transport_type="http", http_port=0, http_cors=["https://example.com"])
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.options(
-                f"{base_url}/health",
-                headers={
-                    "Origin": "https://example.com",
-                    "Access-Control-Request-Method": "GET",
-                },
-            )
-            assert response.status_code == 200
-            assert "access-control-allow-origin" in response.headers
-            assert response.headers["access-control-allow-origin"] == "https://example.com"
-
-    @pytest.mark.asyncio
-    async def test_cors_wildcard_not_used(self):
-        """Test that wildcard CORS is not set by default (security)."""
-        config = SimpleConfig(transport_type="http", http_port=0, http_cors=None)
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.options(
-                f"{base_url}/health",
-                headers={
-                    "Origin": "https://evil.com",
-                    "Access-Control-Request-Method": "GET",
-                },
-            )
-            assert "access-control-allow-origin" not in response.headers
+        base_url, cleanup = await _start_server(config)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{base_url}/health")
+                assert response.status_code == 200
+                assert response.json() == {"status": "ok"}
+                assert response.headers["Content-Type"] == "application/json"
+        finally:
+            await cleanup()
 
     @pytest.mark.asyncio
     async def test_graceful_shutdown(self):
-        """Test that server can be shut down cleanly."""
+        """Server can be shut down cleanly, becoming unreachable after shutdown."""
         config = SimpleConfig(transport_type="http", http_port=0)
-        async with run_test_server(config) as base_url, httpx.AsyncClient() as client:
-            response = await client.get(f"{base_url}/health")
-            assert response.status_code == 200
+        base_url, cleanup = await _start_server(config)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{base_url}/health")
+                assert response.status_code == 200
+        finally:
+            await cleanup()
 
-        # After context exit, server should be shut down
+        # After cleanup, server should be unreachable
         with pytest.raises((httpx.RequestError, ConnectionRefusedError)):
             async with httpx.AsyncClient() as client:
                 await client.get(f"{base_url}/health", timeout=1.0)

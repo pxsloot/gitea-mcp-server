@@ -73,7 +73,7 @@ class TestJSONFormatter:
         assert result["request_id"] == "abc-123"
         assert result["user"] == "admin"
 
-    @pytest.mark.parametrize("sensitive_key", list(SENSITIVE_KEYS))
+    @pytest.mark.parametrize("sensitive_key", sorted(SENSITIVE_KEYS))
     def test_sensitive_keys_are_redacted(self, sensitive_key):
         formatter = JSONFormatter()
         record = logging.LogRecord(

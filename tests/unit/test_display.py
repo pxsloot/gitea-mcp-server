@@ -1,17 +1,28 @@
 """Tests for display formatters (tools/display.py).
 
-Covers gap areas not yet exercised by resource tests:
+Covers:
     - call_formatter error path (unknown formatter)
     - _format_user_markdown created_at fallback
+    - _format_repo_markdown
+    - _format_issues_markdown, _format_pulls_markdown, _format_release_markdown
+    - Formatter edge cases
+    - Tool/resource formatting consistency
 """
+
 
 import pytest
 
+from gitea_mcp_server.format import _build_server_info_markdown
 from gitea_mcp_server.tools.display import (
     _FORMATTER_META,
     _FORMATTERS,
+    _ISSUE_FIELDS,
     _build_labels_markdown,
+    _format_issues_markdown,
     _format_labels_markdown,
+    _format_pulls_markdown,
+    _format_release_markdown,
+    _format_repo_markdown,
     _format_user_markdown,
     call_formatter,
     register_formatter,
@@ -132,3 +143,505 @@ class TestBuildLabelsMarkdown:
         result = _build_labels_markdown(data, "myorg", "myrepo", detail="full")
         assert "myorg/myrepo" in result
         assert "bug" in result
+
+
+class TestFormatRepoMarkdown:
+    """Tests for _format_repo_markdown."""
+
+    def test_formats_repo_completely(self):
+        """Test repository is formatted with all fields."""
+        repo = {
+            "full_name": "owner/repo",
+            "description": "Test repo",
+            "owner": {"login": "owner"},
+            "html_url": "https://example.com/owner/repo",
+            "default_branch": "main",
+            "stargazers_count": 42,
+            "forks_count": 10,
+            "open_issues_count": 5,
+            "size": 1024,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-15T00:00:00Z",
+            "topics": ["test", "example"],
+            "license": {"name": "MIT"},
+        }
+        result = _format_repo_markdown(repo)
+
+        assert "# owner/repo" in result
+        assert "| Description | Test repo |" in result
+        # Owner renders as compact_ref flat row (login), not a nested section
+        assert "| Owner | owner |" in result
+        assert "## Owner" not in result
+        assert "| Stargazers Count | 42 |" in result
+        assert "test" in result
+        assert "example" in result
+        assert "## License" in result
+
+    def test_handles_missing_fields(self):
+        """Test repo with missing optional fields."""
+        repo = {
+            "full_name": "owner/repo",
+            "owner": {"login": "owner"},
+            "html_url": "https://example.com/owner/repo",
+        }
+        result = _format_repo_markdown(repo)
+
+        assert "# owner/repo" in result
+        assert "| Property | Value |" in result
+        # Owner renders as compact_ref flat row
+        assert "| Owner | owner |" in result
+        assert "## Owner" not in result
+
+
+class TestResourceFormatters:
+    """Tests for other formatting functions."""
+
+    def test_format_issues_markdown_empty(self):
+        """Test empty issues list."""
+        result = _format_issues_markdown([])
+        assert "# Issues" in result
+        assert "*None*" in result
+
+    def test_format_pulls_markdown_with_data(self):
+        """Test pull request formatting."""
+        pull = {
+            "number": 1,
+            "title": "Test PR",
+            "state": "open",
+            "user": {"login": "contributor"},
+            "created_at": "2024-01-01T00:00:00Z",
+            "base": {"label": "main", "ref": "main"},
+            "head": {"label": "feature", "ref": "feature"},
+            "comments": 5,
+            "html_url": "https://example.com/pr/1",
+        }
+        result = _format_pulls_markdown([pull])
+
+        assert "# Pull Requests" in result
+        assert "| Number | 1 |" in result
+        assert "| Title | Test PR |" in result
+        assert "| State | open |" in result
+        # base/head render as compact_ref flat rows showing branch name
+        assert "| Base | main |" in result
+        assert "| Head | feature |" in result
+        assert "## Base" not in result
+
+    def test_format_user_markdown_regular_user(self):
+        """Test user profile formatting."""
+
+        user = {
+            "login": "johndoe",
+            "full_name": "John Doe",
+            "html_url": "https://example.com/johndoe",
+            "public_repos": 10,
+            "followers_count": 5,
+            "following_count": 3,
+            "created_at": "2024-01-01T00:00:00Z",
+            "bio": "Software developer",
+            "location": "NYC",
+            "website": "https://johndoe.com",
+        }
+        result = _format_user_markdown(user)
+
+        assert "# johndoe" in result
+        assert "| Full Name | John Doe |" in result
+        assert "| Public Repos | 10 |" in result
+        assert "| Bio | Software developer |" in result
+
+    def test_format_user_markdown_organization(self):
+        """Test organization profile formatting."""
+
+        org = {
+            "login": "myorg",
+            "type": "Organization",
+            "html_url": "https://example.com/myorg",
+            "public_repos": 25,
+            "description": "A test organization",
+        }
+        result = _format_user_markdown(org)
+
+        assert "# myorg" in result
+        assert "| Type | Organization |" in result
+
+
+class TestFormatterGaps:
+    """Tests for missing formatter edge cases."""
+
+    def test_format_issues_markdown_with_total(self):
+        issues = [
+            {
+                "number": 1,
+                "title": "Bug",
+                "state": "open",
+                "user": {"login": "dev1"},
+                "created_at": "2024-01-01T00:00:00Z",
+                "comments": 0,
+                "labels": [],
+                "html_url": "https://example.com/issue/1",
+            }
+        ]
+        result = _format_issues_markdown(issues)
+
+        # Formatter derives title from data: "Issues - {count} items"
+        assert "Issues - 1 items" in result
+        assert "| Number | 1 |" in result
+        assert "| Title | Bug |" in result
+
+    def test_format_issues_markdown_with_labels(self):
+        """Issues with labels include label names in output."""
+        issues = [
+            {
+                "number": 2,
+                "title": "Feature",
+                "state": "open",
+                "user": {"login": "dev2"},
+                "created_at": "2024-02-01T00:00:00Z",
+                "comments": 3,
+                "labels": [{"name": "bug"}, {"name": "enhancement"}],
+                "html_url": "https://example.com/issue/2",
+            }
+        ]
+        result = _format_issues_markdown(issues)
+        # Labels render as compact_ref flat row (comma-separated names)
+        assert "| Labels | bug, enhancement |" in result
+        assert "## Labels" not in result
+
+    def test_format_issues_markdown_extra_type_issues(self):
+        """Issues formatter with extra={'type': 'issues'} uses 'Issues' title."""
+        issues = [{"number": 1, "title": "Bug", "state": "open"}]
+        result = _format_issues_markdown(issues, extra={"type": "issues"})
+        assert "Issues - 1 items" in result
+
+    def test_format_issues_markdown_extra_type_pulls(self):
+        """Issues formatter with extra={'type': 'pulls'} uses 'Pull Requests' title."""
+        issues = [{"number": 1, "title": "Bug", "state": "open"}]
+        result = _format_issues_markdown(issues, extra={"type": "pulls"})
+        assert "Pull Requests - 1 items" in result
+
+    def test_format_issues_markdown_extra_type_fallback_when_data_is_str(self):
+        """Issues formatter falls back to generic title when data is collapsed strings."""
+        result = _format_issues_markdown(["$ref:Issue"], extra=None)
+        assert "Issues and Pull Requests - 1 items" in result
+
+    def test_format_issues_markdown_fallback_scan_detects_prs(self):
+        """Fallback scanning detects pull requests when items have pull_request dict."""
+        issues = [
+            {"number": 1, "title": "Issue", "state": "open"},
+            {"number": 2, "title": "PR", "state": "open", "pull_request": {"id": 1}},
+        ]
+        result = _format_issues_markdown(issues, extra=None)
+        # Item has pull_request truthy → "Issues and Pull Requests"
+        assert "Issues and Pull Requests - 2 items" in result
+
+    def test_format_issues_markdown_no_prs(self):
+        """Formatter defaults to 'Issues' when no pull_request keys exist."""
+        issues = [{"number": 1, "title": "Bug", "state": "open"}]
+        result = _format_issues_markdown(issues, extra=None)
+        assert "Issues - 1 items" in result
+
+    def test_format_pulls_markdown_empty(self):
+        result = _format_pulls_markdown([])
+
+        assert "# Pull Requests" in result
+        assert "Pull Requests" in result
+        assert "*None*" in result
+
+    def test_format_release_markdown_full(self):
+        releases = [{
+            "tag_name": "v1.0.0",
+            "name": "Version 1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2024-01-01T00:00:00Z",
+            "published_at": "2024-01-02T00:00:00Z",
+            "body": "Release notes here",
+        }]
+        result = _format_release_markdown(releases)
+
+        assert "# v1.0.0" in result
+        assert "| Name | Version 1.0.0 |" in result
+        assert "| Draft | False |" in result
+        assert "| Prerelease | False |" in result
+        assert "| Body | Release notes here |" in result
+
+    def test_format_release_markdown_missing_name(self):
+        releases = [{
+            "tag_name": "v1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2024-01-01T00:00:00Z",
+            "published_at": "2024-01-02T00:00:00Z",
+            "body": "Body",
+        }]
+        result = _format_release_markdown(releases)
+
+        assert "| Tag Name | v1.0.0 |" in result
+
+    def test_format_release_markdown_missing_body(self):
+        releases = [{
+            "tag_name": "v1.0.0",
+            "name": "Version 1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2024-01-01T00:00:00Z",
+            "published_at": "2024-01-02T00:00:00Z",
+        }]
+        result = _format_release_markdown(releases)
+
+        assert "# v1.0.0" in result
+        assert "| Name | Version 1.0.0 |" in result
+
+    def test_format_release_markdown_draft_prerelease(self):
+        releases = [{
+            "tag_name": "v2.0.0-beta",
+            "name": "Beta",
+            "draft": True,
+            "prerelease": True,
+            "created_at": "2024-06-01T00:00:00Z",
+            "published_at": "2024-06-02T00:00:00Z",
+            "body": "Beta release",
+        }]
+        result = _format_release_markdown(releases)
+
+        assert "| Draft | True |" in result
+        assert "| Prerelease | True |" in result
+
+    def test_build_server_info_markdown(self):
+        spec = {
+            "info": {
+                "title": "Gitea API",
+                "version": "1.21.0",
+                "description": "Gitea API description.",
+            }
+        }
+        result = _build_server_info_markdown(spec)
+
+        assert "**Server Type**: Gitea API" in result
+        assert "**API Version**: 1.21.0" in result
+        assert "## Description" in result
+        assert "Gitea API description." in result
+
+    def test_build_server_info_markdown_no_description(self):
+        spec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
+        result = _build_server_info_markdown(spec)
+
+        assert "**Server Type**: Gitea API" in result
+        assert "## Description" not in result
+
+    def test_build_server_info_markdown_missing_info(self):
+        result = _build_server_info_markdown({})
+
+        assert "**Server Type**: Unknown" in result
+        assert "**API Version**: Unknown" in result
+
+
+class TestToolResourceConsistency:
+    """Verify that resource formatters and _format_as_markdown produce the same structure.
+
+    This is the core fix for issue #347: tool output and resource output
+    should use the same nested sub-table format for the same data.
+    """
+
+    def test_issue_format_consistent_with_shared_formatter(self):
+        """_format_issues_markdown delegates to _format_as_markdown with field_filter."""
+        from gitea_mcp_server.format import _format_as_markdown
+
+        issues = [
+            {
+                "number": 1,
+                "title": "Bug",
+                "state": "open",
+                "user": {"login": "dev1"},
+                "created_at": "2024-01-01T00:00:00Z",
+                "comments": 0,
+                "labels": [{"name": "bug"}],
+                "html_url": "https://example.com/issue/1",
+            }
+        ]
+        resource_result = _format_issues_markdown(issues)
+        direct_result = _format_as_markdown(
+            issues,
+            title="Issues - 1 items",
+            field_filter=_ISSUE_FIELDS,
+            item_title_key="title",
+        )
+        # Same structure: both produce nested sub-tables with the same fields
+        assert "| Number | 1 |" in resource_result
+        assert "| Title | Bug |" in resource_result
+        assert "## User" in resource_result
+        # The resource formatter wraps the title with count info; since test
+        # data lacks pull_request, title reads "Issues - N items"
+        assert "Issues - 1 items" in resource_result
+        # Labels render as compact_ref flat row (comma-separated names)
+        assert "| Labels | bug |" in resource_result
+
+    def test_issue_format_dynamic_title_without_pr(self):
+        """Issues without pull_request use 'Issues' title."""
+
+        issues = [
+            {"number": 1, "title": "Bug", "state": "open"},
+            {"number": 2, "title": "Feature", "state": "closed"},
+        ]
+        result = _format_issues_markdown(issues)
+        assert "Issues - 2 items" in result
+
+    def test_issue_format_dynamic_title_with_prs(self):
+        """Issues with pull_request entries use 'Issues and Pull Requests' title."""
+
+        items = [
+            {"number": 1, "title": "Bug", "state": "open", "pull_request": None},
+            {"number": 2, "title": "Fix", "state": "open", "pull_request": {"url": "/pr/2"}},
+        ]
+        result = _format_issues_markdown(items)
+        assert "Issues and Pull Requests - 2 items" in result
+
+    def test_issue_format_shows_pull_request_badge(self):
+        """pull_request field renders as Yes/No badge in issues list."""
+
+        items = [
+            {"number": 1, "title": "Bug", "state": "open", "pull_request": None},
+            {"number": 2, "title": "Fix", "state": "open", "pull_request": {"url": "/pr/2"}},
+        ]
+        result = _format_issues_markdown(items)
+        # The Bug (pull_request=None) should show No
+        assert "| Pull Request | No |" in result
+        # The Fix (pull_request=dict) should show Yes
+        assert "| Pull Request | Yes |" in result
+
+    def test_pull_format_consistent_with_shared_formatter(self):
+        """_format_pulls_markdown delegates to _format_as_markdown with field_filter."""
+
+        pulls = [
+            {
+                "number": 1,
+                "title": "Fix things",
+                "state": "open",
+                "user": {"login": "contributor"},
+                "created_at": "2024-01-01T00:00:00Z",
+                "base": {"label": "main", "repo": {"full_name": "org/repo"}, "ref": "main"},
+                "head": {"label": "feature", "repo": {"full_name": "fork/repo"}, "ref": "feature"},
+                "comments": 3,
+                "html_url": "https://example.com/pr/1",
+            }
+        ]
+        resource_result = _format_pulls_markdown(pulls)
+        assert "| Number | 1 |" in resource_result
+        assert "| Title | Fix things |" in resource_result
+        assert "| State | open |" in resource_result
+        # base/head render as compact_ref flat rows showing branch name
+        assert "| Base | main |" in resource_result
+        assert "| Head | feature |" in resource_result
+        assert "## Base" not in resource_result
+
+    def test_repo_format_consistent_with_shared_formatter(self):
+        """_format_repo_markdown delegates to _format_as_markdown with field_filter."""
+
+        repo = {
+            "full_name": "owner/repo",
+            "description": "Test repo",
+            "owner": {"login": "owner"},
+            "html_url": "https://example.com/owner/repo",
+            "default_branch": "main",
+        }
+        resource_result = _format_repo_markdown(repo)
+        assert "# owner/repo" in resource_result
+        assert "| Full Name | owner/repo |" in resource_result
+        assert "| Description | Test repo |" in resource_result
+        # Owner renders as compact_ref flat row (login), not a nested section
+        assert "| Owner | owner |" in resource_result
+        assert "## Owner" not in resource_result
+
+    def test_user_format_consistent_with_shared_formatter(self):
+        """_format_user_markdown delegates to _format_as_markdown with field_filter."""
+
+        user = {
+            "login": "johndoe",
+            "full_name": "John Doe",
+            "html_url": "https://example.com/johndoe",
+            "public_repos": 10,
+        }
+        resource_result = _format_user_markdown(user)
+        assert "# johndoe" in resource_result
+        assert "| Login | johndoe |" in resource_result
+        assert "| Full Name | John Doe |" in resource_result
+
+    def test_release_format_consistent_with_shared_formatter(self):
+        """_format_release_markdown delegates to _format_as_markdown with field_filter."""
+
+        releases = [{
+            "tag_name": "v1.0.0",
+            "name": "Version 1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2024-01-01T00:00:00Z",
+            "published_at": "2024-01-02T00:00:00Z",
+            "body": "Notes",
+        }]
+        resource_result = _format_release_markdown(releases)
+        assert "# v1.0.0" in resource_result
+        assert "| Tag Name | v1.0.0 |" in resource_result
+        assert "| Name | Version 1.0.0 |" in resource_result
+        assert "| Body | Notes |" in resource_result
+
+    def test_labels_format_contains_hints_and_scope(self):
+        """_format_labels_markdown includes accepted format, scoped info, and validation hints."""
+        from gitea_mcp_server.tools.display import _format_labels_markdown
+
+        labels = [
+            {
+                "id": 1,
+                "name": "bug",
+                "color": "ff0000",
+                "description": "Bug reports",
+                "exclusive": False,
+            },
+            {
+                "id": 5,
+                "name": "Kind/Feature",
+                "color": "00ff00",
+                "description": "New features",
+                "exclusive": True,
+            },
+            {
+                "id": 9,
+                "name": "Kind/Bug",
+                "color": "0000ff",
+                "description": "Bug by kind",
+                "exclusive": True,
+            },
+        ]
+        result = _format_labels_markdown(labels, extra={"owner": "test-owner", "repo": "test-repo"})
+        assert "# Labels for test-owner/test-repo" in result
+        assert "Accepted Format" in result
+        assert "Names" in result
+        assert "strings" in result
+        assert "IDs" in result
+        assert "integers" in result
+        assert "bug" in result
+        assert "Kind/Feature" in result
+        assert "(scope: " in result
+        assert "exclusive" in result.lower()
+        assert "validated" in result.lower()
+        assert "`#ff0000`" in result
+
+    def test_labels_format_concise_handles_collapsed_refs(self):
+        """_format_labels_markdown with detail=concise handles collapsed $ref:Label strings."""
+        from gitea_mcp_server.tools.display import _format_labels_markdown
+
+        # Simulate collapsed items from the display pipeline (detail=concise).
+        collapsed_labels = [
+            "$ref:Label",
+            "$ref:Label",
+            "$ref:Label",
+        ]
+        result = _format_labels_markdown(
+            collapsed_labels,
+            detail="concise",
+            extra={"owner": "test-owner", "repo": "test-repo"},
+        )
+        assert "# Labels for test-owner/test-repo" in result
+        assert "**Total**: 3 labels" in result
+        assert "Accepted Format" in result
+        assert "$ref:Label" in result
+        # Per-label detail sections should NOT appear for concise mode
+        assert "**Color**:" not in result

@@ -60,9 +60,11 @@ tests/
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
 │   ├── test_regression_316_dotfile_paths.py
+│   ├── test_resource_auto.py
+│   ├── test_resource_custom.py
+│   ├── test_resource_display.py
 │   ├── test_resource_factory.py
 │   ├── test_resource_meta.py
-│   ├── test_resources.py
 │   ├── test_schema_utils.py
 │   ├── test_scope.py
 │   ├── test_search_bm25.py
@@ -144,9 +146,9 @@ are noted explicitly.
 | Source module | Test file(s) | Zone | Notes |
 |---|---|---|---|
 | `resources/__init__.py` | — | — | Package marker |
-| `resources/auto.py` | `test_resources.py` | Unit | See #567 (planned split — same file tests multiple resource modules) |
-| `resources/custom.py` | `test_resources.py` | Unit | See #567 |
-| `resources/factory.py` | `test_resource_factory.py`, `test_resources.py` | Unit | Primarily `test_resource_factory.py` |
+| `resources/auto.py` | `test_resource_auto.py` | Unit | Split from `test_resources.py` (#567) |
+| `resources/custom.py` | `test_resource_custom.py` | Unit | Split from `test_resources.py` (#567) |
+| `resources/factory.py` | `test_resource_factory.py` | Unit | Primarily `test_resource_factory.py`; some integration tests now in `test_resource_display.py` and `test_resource_auto.py` |
 | `resources/meta.py` | `test_resource_meta.py` | Unit | 85% target |
 | `resources/scope.py` | `test_scope.py` | Unit | 13-line re-export of flat `scope.py` |
 
@@ -167,7 +169,7 @@ are noted explicitly.
 |---|---|---|---|
 | `tools/__init__.py` | — | — | Package init |
 | `tools/customize.py` | `test_tool_customize.py` | Unit | Title, category, hint generation |
-| `tools/display.py` | `test_display.py` | Unit | Domain-specific formatter registry |
+| `tools/display.py` | `test_display.py` | Unit | Domain-specific formatter registry; formatter edge cases and tool/resource consistency tests (split from `test_resources.py` #567) |
 | `tools/docs_tools.py` | `test_docs_tools.py` | Unit | DocManager, workflow guides |
 | `tools/errors.py` | `test_tool_errors.py` | Unit | Error translation, runtime validation runner |
 | `tools/examples.py` | `test_tool_examples.py` | Unit | Schema-to-example generation |
@@ -178,7 +180,7 @@ are noted explicitly.
 | `tools/label_transform.py` | `test_label_transform.py` | Unit | Runtime label transform (innermost transform) |
 | `tools/mcp_tools.py` | `test_mcp_tools.py`, `test_mcp_tools_wrapping.py` | Unit | Resource access tools, wrapping |
 | `tools/namespace.py` | `test_tool_namespace.py` | Unit | Prefix/suffix namespace transform |
-| `tools/resource_display.py` | `test_resources.py`, `test_mcp_tools.py` | Unit | No dedicated test file; tested indirectly |
+| `tools/resource_display.py` | `test_resource_display.py`, `test_mcp_tools.py` | Unit | Now has dedicated test file (split from `test_resources.py` #567) |
 | `tools/schemas.py` | `test_tool_schemas.py` | Unit | Output schema derivation, `$ref` resolution |
 | `tools/search.py` | `test_tool_search.py` | Unit | Synthetic tools, lazy loading, BM25 search integration |
 | `tools/tool_display.py` | `test_tool_display.py` | Unit | Tool result formatting entry point |

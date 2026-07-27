@@ -7,9 +7,13 @@ not specific server behaviour.  Real behavioural tests belong in
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 import respx
-from fastmcp import FastMCP
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
 
 from tests.integration.conftest import (
     BASE_TEST_URL,

@@ -233,7 +233,7 @@ class TestValidateOwnerRepo:
     """Tests for the validate_owner_repo function."""
 
     @pytest.mark.parametrize(
-        "value,field",
+        ("value", "field"),
         [
             ("owner", "owner"),
             ("my-repo", "owner"),
@@ -247,7 +247,7 @@ class TestValidateOwnerRepo:
         validate_owner_repo(value, field=field)
 
     @pytest.mark.parametrize(
-        "value,field",
+        ("value", "field"),
         [
             ("", "owner"),
             (" ", "repo"),
@@ -487,7 +487,7 @@ class TestValidatePagination:
         validate_pagination(page=None, per_page=None)
 
     @pytest.mark.parametrize(
-        "page, per_page",
+        ("page", "per_page"),
         [
             (1, 1),
             (1, 10),
@@ -502,7 +502,7 @@ class TestValidatePagination:
         validate_pagination(page=page, per_page=per_page)
 
     @pytest.mark.parametrize(
-        "page, per_page",
+        ("page", "per_page"),
         [
             (0, 10),
             (-1, 10),
@@ -515,7 +515,7 @@ class TestValidatePagination:
         assert exc.value.field == "page"
 
     @pytest.mark.parametrize(
-        "page, per_page",
+        ("page", "per_page"),
         [
             (1, 0),
             (1, -5),
@@ -554,7 +554,7 @@ class TestValidateState:
             validate_state(value, field="state")
 
     @pytest.mark.parametrize(
-        "value,expected_msg",
+        ("value", "expected_msg"),
         [
             ("pending", "must be one of"),
             ("merged", "must be one of"),

@@ -47,7 +47,7 @@ class TestConvertSwaggerToOpenAPI:
         assert "/ping" in result["paths"]
 
     def test_null_paths_becomes_empty_dict(self):
-        """paths: null in input should become paths: {} in output (#580)."""
+        """paths: null in input should become paths: {} in output."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
@@ -57,10 +57,24 @@ class TestConvertSwaggerToOpenAPI:
         assert result["paths"] == {}
 
     def test_missing_paths_becomes_empty_dict(self):
-        """Spec without paths key should get paths: {} in output (#580)."""
+        """Spec without paths key should get paths: {} in output."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
+        }
+        result = convert_swagger_to_openapi_v3(spec)
+        assert result["paths"] == {}
+
+    def test_non_dict_paths_becomes_empty_dict(self):
+        """paths as a non-dict (e.g. string) should become {} in output.
+
+        The guard in convert_swagger_to_openapi_v3 applies to any truthy
+        non-dict value, not just None/missing.
+        """
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": "not_a_dict",
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["paths"] == {}

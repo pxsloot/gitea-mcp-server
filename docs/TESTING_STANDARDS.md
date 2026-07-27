@@ -50,7 +50,7 @@ tests/
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
 │   ├── test_resource_meta.py
-├── test_resources.py
+│   ├── test_resources.py
 │   ├── test_scope.py
 │   ├── test_search_engine.py
 │   ├── test_spec_loader.py
@@ -81,12 +81,112 @@ tests/
 │   └── test_diff_endpoint.py
 ```
 
+### Source-to-Test Mapping
+
+Every production module in `gitea_mcp_server/` maps to one or more test files.
+This table is the canonical reference.  Modules with no dedicated test file
+are noted explicitly.
+
+> **Naming convention**: Unit test files follow `test_<module_name>.py` for
+> flat modules and `test_<abbrev>_<module>.py` for subpackage modules
+> (e.g., `tools/search.py` → `test_tool_search.py`).  Integration tests use
+> `test_<feature>.py`.  Cross-cutting or behavioral tests use
+> `test_<behavior>.py`.
+
+#### Flat modules (`gitea_mcp_server/`)
+
+| Source module | Test file(s) | Zone | Notes |
+|---|---|---|---|
+| `__init__.py` | — | — | Package marker (version string only) |
+| `cache_invalidation.py` | `test_cache_invalidation.py` | Unit + Integration | Both unit and integration test files |
+| `client.py` | `test_client.py`, `test_gitea_api.py`, `test_http_transport.py` | Unit | Three files cover the main class, `GiteaAPI`, and `HTTPTransport` |
+| `config.py` | `test_config.py` | Unit | 95% target |
+| `constants.py` | `test_constants.py` | Unit | 100% target |
+| `exceptions.py` | `test_exceptions.py` | Unit | 100% target |
+| `format.py` | `test_format.py` | Unit | 85% target |
+| `label_service.py` | `test_label_service.py`, `test_label_validation.py`, `test_label_transform.py` | Unit | Shared across label-related tests |
+| `logging_config.py` | `test_logging_config.py` | Unit | 80% target |
+| `models.py` | — | — | TypedDict types only (zero runtime code) |
+| `openapi_types.py` | — | — | TypedDict types only (zero runtime code) |
+| `pagination.py` | `test_pagination.py` | Unit | Pagination metadata and runner |
+| `schema_utils.py` | `test_schema_utils.py` | Unit | Shared JSON Schema utilities |
+| `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py` |
+| `search.py` | `test_search_engine.py` | Unit | Naming inconsistency — see #561 |
+| `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 70% target |
+| `validation.py` | `test_validation.py` | Unit | 95% target |
+
+#### `openapi_converter/` subpackage
+
+| Source module | Test file(s) | Zone | Notes |
+|---|---|---|---|
+| `openapi_converter/__init__.py` | — | — | Re-exports from `core.py` and `schema.py` |
+| `openapi_converter/core.py` | `openapi_converter/test_*.py` (8 files) | Unit | 95% target — spread across all 8 `openapi_converter/` test files |
+| `openapi_converter/schema.py` | `openapi_converter/test_definitions.py` | Unit | No dedicated `test_schema.py`; `convert_schema()` tested via package re-export |
+
+#### `resources/` subpackage
+
+| Source module | Test file(s) | Zone | Notes |
+|---|---|---|---|
+| `resources/__init__.py` | — | — | Package marker |
+| `resources/auto.py` | `test_resources.py` | Unit | See #567 (planned split — same file tests multiple resource modules) |
+| `resources/custom.py` | `test_resources.py` | Unit | See #567 |
+| `resources/factory.py` | `test_resource_factory.py`, `test_resources.py` | Unit | Primarily `test_resource_factory.py` |
+| `resources/meta.py` | `test_resource_meta.py` | Unit | 85% target |
+| `resources/scope.py` | `test_scope.py` | Unit | 13-line re-export of flat `scope.py` |
+
+#### `server_setup/` subpackage
+
+| Source module | Test file(s) | Zone | Notes |
+|---|---|---|---|
+| `server_setup/__init__.py` | — | — | Package marker (empty) |
+| `server_setup/http_server.py` | — | — | **No test coverage** |
+| `server_setup/mcp_builder.py` | `test_mcp_builder.py`, `test_tool_customize.py`, `test_tool_errors.py`, `test_tool_schemas.py`, `test_tool_filter.py` | Unit | 70% target; shared across customization tests |
+| `server_setup/mcp_extensions.py` | `test_mcp_extensions.py` | Unit | Extensions loading |
+| `server_setup/resource_setup.py` | `test_resources_integration.py` | Integration only | No unit test (patched in integration) |
+| `server_setup/spec_loader.py` | `test_spec_loader.py`, `test_tool_exclusion.py`, `test_tool_filter.py` | Unit | Spec loading, conversion orchestration |
+
+#### `tools/` subpackage
+
+| Source module | Test file(s) | Zone | Notes |
+|---|---|---|---|
+| `tools/__init__.py` | — | — | Package init |
+| `tools/customize.py` | `test_tool_customize.py` | Unit | Title, category, hint generation |
+| `tools/display.py` | `test_display.py` | Unit | Domain-specific formatter registry |
+| `tools/docs_tools.py` | `test_docs_tools.py` | Unit | DocManager, workflow guides |
+| `tools/errors.py` | `test_tool_errors.py` | Unit | Error translation, runtime validation runner |
+| `tools/examples.py` | `test_tool_examples.py` | Unit | Schema-to-example generation |
+| `tools/exclusion.py` | `test_tool_exclusion.py` | Unit | Pattern matching helpers |
+| `tools/extensions_metadata.py` | `test_extensions_metadata.py`, `test_mcp_extensions_integration.py` | Unit + Integration | YAML metadata override transform |
+| `tools/filter_info.py` | `test_filter_info.py` | Unit | Filter prediction, middleware |
+| `tools/labels.py` | `test_tool_labels.py`, `test_label_validation.py` | Unit | Schema-time label conversion |
+| `tools/label_transform.py` | `test_label_transform.py` | Unit | Runtime label transform (innermost transform) |
+| `tools/mcp_tools.py` | `test_mcp_tools.py`, `test_mcp_tools_wrapping.py` | Unit | Resource access tools, wrapping |
+| `tools/namespace.py` | `test_tool_namespace.py` | Unit | Prefix/suffix namespace transform |
+| `tools/resource_display.py` | `test_resources.py`, `test_mcp_tools.py` | Unit | No dedicated test file; tested indirectly |
+| `tools/schemas.py` | `test_tool_schemas.py` | Unit | Output schema derivation, `$ref` resolution |
+| `tools/search.py` | `test_tool_search.py` | Unit | Synthetic tools, lazy loading, BM25 search integration |
+| `tools/tool_display.py` | `test_tool_display.py` | Unit | Tool result formatting entry point |
+| `tools/type_info.py` | `test_type_info.py` | Unit | Type resolution and cross-reference tracking |
+| `tools/unified_search.py` | `test_unified_search.py` | Unit | 90% target; merged search across tools/docs/resources |
+| `tools/virtual_params.py` | `test_virtual_params.py` | Unit | Virtual parameter lifecycle (sudo, fetch_all) |
+
 ### Naming Conventions
 
-- **Test files**: `test_<module_name>.py`
-- **Test classes**: `Test<ComponentName>` (PascalCase)
-- **Test methods**: `test_<behavior_description>` (snake_case)
-- **Test fixtures**: Descriptive names, preferably noun-based
+- **Unit test files**: `test_<module_name>.py` for flat modules
+  (e.g., `client.py` → `test_client.py`).
+  For subpackage modules: `test_<abbrev>_<module>.py`
+  (e.g., `tools/search.py` → `test_tool_search.py`).
+- **Integration test files**: `test_<feature>.py`
+  (e.g., `test_lazy_loading.py`, `test_cache_invalidation.py`).
+- **Cross-cutting / behavioral test files**: `test_<behavior>.py`
+  (e.g., `test_mcp_tools_wrapping.py`, `test_label_validation.py`).
+- **Regression test files**: `test_regression_<issue_num>_<description>.py`
+  (e.g., `test_regression_316_dotfile_paths.py`).
+- **Test classes**: `Test<ComponentName>` (PascalCase).
+- **Test methods**: `test_<behavior_description>` (snake_case).
+- **Test fixtures**: Descriptive names, preferably noun-based.
+- **New test files**: Follow the existing convention for the module area.
+  When in doubt, refer to the source-to-test mapping table above.
 
 ## Test Layering
 

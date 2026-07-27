@@ -75,7 +75,7 @@ lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
-addopts = "-n auto --dist loadscope"
+addopts = "-n auto --dist loadscope --timeout=120 --timeout_method=thread"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
@@ -128,6 +128,7 @@ dev = [
     "types-PyYAML>=6.0.0.2024097",
     "jsonschema>=4.23.0",
     "hatch>=1.16.5",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.coverage.run]

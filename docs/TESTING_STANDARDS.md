@@ -803,6 +803,35 @@ Design notes for session-scoped fixtures under xdist:
   pattern (OS-assigned port) keeps each worker's HTTP server isolated.
 - **Avoid module-level imports** with side effects that execute at import
   time — each worker re-imports the test modules.
+- **``asyncio_default_fixture_loop_scope = "session"``**: This setting in
+  ``pyproject.toml`` matches the session-scoped ``event_loop`` fixture in
+  ``tests/conftest.py``. Without it, xdist workers would each create
+  per-function event loops, defeating the session-scoped loop. Async
+  fixtures that need a per-function loop should set
+  ``loop_scope="function"`` explicitly.
+
+### Timeout Safety
+
+The suite uses ``pytest-timeout`` with ``--timeout=120 --timeout_method=thread``
+(configured in ``pyproject.toml``). Any test hanging longer than 2 minutes is
+killed automatically, preventing a single stuck test from blocking the whole
+run (especially important with xdist workers).
+
+Use ``@pytest.mark.timeout(N)`` to override per-test — shorter for
+known-fast tests, longer for slow ones. The ``thread`` method is compatible
+with xdist and asyncio (``fork`` would break the event loop).
+
+```python
+# Override timeout for a specific test
+@pytest.mark.timeout(30)
+def test_slow_operation(self):
+    ...
+
+# Disable timeout entirely (use sparingly)
+@pytest.mark.timeout(None)
+def test_unbounded(self):
+    ...
+```
 
 ### Test Markers
 

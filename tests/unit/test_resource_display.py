@@ -257,28 +257,30 @@ class TestContextMetaKeysPipeline:
         assert "# Labels for acmecorp/widgets" in formatted
         assert "bug" in formatted
 
-    def test_mcp_read_resource_impl_extracts_extra(self):
-        """_mcp_read_resource_impl correctly strips known keys from meta.
+    def test_extract_extra_meta_known_and_extra(self):
+        """_extract_extra_meta returns extra keys, stripping known pipeline keys."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
-        Tests the extraction logic as a pure dict comprehension — no
-        FastMCP Context mocking needed.  This is the exact logic from
-        ``_mcp_read_resource_impl`` in ``mcp_tools.py``.
-        """
-        # meta with known keys + extra context keys
         meta = {
             "response_schema": {"type": "object"},
             "format_hint": "labels",
             "owner": "acme",
             "repo": "widgets",
         }
-        extra = {k: v for k, v in meta.items() if k not in ("response_schema", "format_hint")} or None
+        extra = _extract_extra_meta(meta)
         assert extra == {"owner": "acme", "repo": "widgets"}
 
-        # Only known keys → extra should be None
-        meta_only_known = {"response_schema": {}, "format_hint": "repo"}
-        extra2 = {k: v for k, v in meta_only_known.items() if k not in ("response_schema", "format_hint")} or None
-        assert extra2 is None
+    def test_extract_extra_meta_known_only(self):
+        """_extract_extra_meta returns None when only known keys are present."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
-        # Empty meta
-        extra3 = {k: v for k, v in {}.items() if k not in ("response_schema", "format_hint")} or None
-        assert extra3 is None
+        meta_only_known = {"response_schema": {}, "format_hint": "repository"}
+        extra = _extract_extra_meta(meta_only_known)
+        assert extra is None
+
+    def test_extract_extra_meta_empty(self):
+        """_extract_extra_meta returns None for empty meta dict."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
+
+        extra = _extract_extra_meta({})
+        assert extra is None

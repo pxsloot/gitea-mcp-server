@@ -1,6 +1,7 @@
 """Unit tests for search engine (indexing, call_tool, format, serializer)."""
 
 import contextlib
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -716,7 +717,7 @@ class TestFilterInfoIntegration:
     # ── tool_info → filter_info ──────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_tool_info_scope_filtered(self, scope_filter_info) -> None:
+    async def test_tool_info_scope_filtered(self, scope_filter_info: dict[str, Any]) -> None:
         """tool_info for scope-restricted tool returns scope message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -731,7 +732,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_exclude_filtered(self, exclude_filter_info) -> None:
+    async def test_tool_info_exclude_filtered(self, exclude_filter_info: dict[str, Any]) -> None:
         """tool_info for config-excluded tool returns exclusion message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -746,7 +747,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info) -> None:
+    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info: dict[str, Any]) -> None:
         """tool_info for deprecated tool returns deprecation message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -778,7 +779,7 @@ class TestFilterInfoIntegration:
     # ── call_tool → filter_info ──────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_call_tool_scope_filtered(self, scope_filter_info) -> None:
+    async def test_call_tool_scope_filtered(self, scope_filter_info: dict[str, Any]) -> None:
         """call_tool for scope-restricted tool raises scope error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -791,7 +792,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_exclude_filtered(self, exclude_filter_info) -> None:
+    async def test_call_tool_exclude_filtered(self, exclude_filter_info: dict[str, Any]) -> None:
         """call_tool for config-excluded tool raises exclusion error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -804,7 +805,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info) -> None:
+    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info: dict[str, Any]) -> None:
         """call_tool for deprecated tool raises deprecation error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)

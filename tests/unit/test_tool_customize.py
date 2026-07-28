@@ -128,7 +128,7 @@ class TestGenerateToolTitle:
         title = _generate_tool_title(route)
         assert title == "Unnamed Tool"
 
-    def test_unknown_domain_logs_warning_via_generate_tool_title(self, caplog) -> None:
+    def test_unknown_domain_logs_warning_via_generate_tool_title(self, caplog: pytest.LogCaptureFixture) -> None:
         """Warning is emitted through the generate_tool_title → _snake_to_title path."""
         import logging
 
@@ -170,7 +170,7 @@ class TestSnakeToTitle:
     def test_empty_string(self) -> None:
         assert _snake_to_title("") == "Unnamed Tool"
 
-    def test_unknown_domain_logs_warning(self, caplog) -> None:
+    def test_unknown_domain_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Unknown domain prefixes should log a warning."""
         import logging
 
@@ -182,7 +182,7 @@ class TestSnakeToTitle:
         assert "Unknown operationId domain 'deploy'" in caplog.records[0].message
         assert "deploy_create_environment" in caplog.records[0].message
 
-    def test_known_domain_does_not_log_warning(self, caplog) -> None:
+    def test_known_domain_does_not_log_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Known domain prefixes should not log a warning."""
         import logging
 

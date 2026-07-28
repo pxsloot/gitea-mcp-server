@@ -1,6 +1,7 @@
 """Unit tests for input validation functionality."""
 
 import re
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,7 +44,7 @@ class TestOwnerRepoPattern:
             "x" * 50,
         ],
     )
-    def test_valid_patterns(self, value) -> None:
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(OWNER_REPO_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -80,7 +81,7 @@ class TestOwnerRepoPattern:
             "name?question",
         ],
     )
-    def test_invalid_patterns(self, value) -> None:
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(OWNER_REPO_PATTERN, value) is None
 
 
@@ -103,7 +104,7 @@ class TestFilepathPattern:
             "a/b",
         ],
     )
-    def test_valid_patterns(self, value) -> None:
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(FILEPATH_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -117,7 +118,7 @@ class TestFilepathPattern:
             "name;with;semicolon",
         ],
     )
-    def test_invalid_patterns(self, value) -> None:
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(FILEPATH_PATTERN, value) is None
 
 
@@ -141,7 +142,7 @@ class TestRefPattern:
             "a" * 255,
         ],
     )
-    def test_valid_patterns(self, value) -> None:
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(REF_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -159,7 +160,7 @@ class TestRefPattern:
             "name;semicolon",
         ],
     )
-    def test_invalid_patterns(self, value) -> None:
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(REF_PATTERN, value) is None
 
 
@@ -177,7 +178,7 @@ class TestUsernamePattern:
             "x" * 50,
         ],
     )
-    def test_valid_patterns(self, value) -> None:
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(USERNAME_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -193,7 +194,7 @@ class TestUsernamePattern:
             "user name",
         ],
     )
-    def test_invalid_patterns(self, value) -> None:
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(USERNAME_PATTERN, value) is None
 
 
@@ -208,7 +209,7 @@ class TestSHAPattern:
             "0123456789abcdef0123456789abcdef01234567",
         ],
     )
-    def test_valid_shas(self, value) -> None:
+    def test_valid_shas(self, value: Any) -> None:
         assert re.fullmatch(SHA_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -225,7 +226,7 @@ class TestSHAPattern:
             "abcd1234",  # too short
         ],
     )
-    def test_invalid_shas(self, value) -> None:
+    def test_invalid_shas(self, value: Any) -> None:
         assert re.fullmatch(SHA_PATTERN, value) is None
 
 
@@ -243,7 +244,7 @@ class TestValidateOwnerRepo:
             ("name.with.dots", "repo"),
         ],
     )
-    def test_valid(self, value, field) -> None:
+    def test_valid(self, value: Any, field: str) -> None:
         validate_owner_repo(value, field=field)
 
     @pytest.mark.parametrize(
@@ -261,7 +262,7 @@ class TestValidateOwnerRepo:
             (None, "repo"),
         ],
     )
-    def test_invalid(self, value, field) -> None:
+    def test_invalid(self, value: Any, field: str) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_owner_repo(value, field=field)
         assert exc.value.field == field
@@ -285,7 +286,7 @@ class TestValidateFilepath:
             "file",
         ],
     )
-    def test_valid(self, value) -> None:
+    def test_valid(self, value: Any) -> None:
         validate_filepath(value, field="filepath")
 
     def test_rejects_absolute_path(self) -> None:
@@ -305,14 +306,14 @@ class TestValidateFilepath:
             "path/..",
         ],
     )
-    def test_rejects_parent_traversal(self, value) -> None:
+    def test_rejects_parent_traversal(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_filepath(value, field="filepath")
         assert exc.value.field == "filepath"
         assert ".." in str(exc.value)
 
     @pytest.mark.parametrize("value", ["", " ", 123, None])
-    def test_rejects_invalid_type_or_empty(self, value) -> None:
+    def test_rejects_invalid_type_or_empty(self, value: Any) -> None:
         with pytest.raises(ValidationError):
             validate_filepath(value, field="filepath")
 
@@ -336,7 +337,7 @@ class TestValidateRef:
             "user@method",
         ],
     )
-    def test_valid(self, value) -> None:
+    def test_valid(self, value: Any) -> None:
         validate_ref(value, field="ref")
 
     @pytest.mark.parametrize(
@@ -356,7 +357,7 @@ class TestValidateRef:
             None,
         ],
     )
-    def test_invalid(self, value) -> None:
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_ref(value, field="ref")
         assert exc.value.field == "ref"
@@ -369,7 +370,7 @@ class TestValidateUsername:
         "value",
         ["user", "john_doe", "jane-doe", "admin.user", "AUser123"],
     )
-    def test_valid(self, value) -> None:
+    def test_valid(self, value: Any) -> None:
         validate_username(value, field="username")
 
     @pytest.mark.parametrize(
@@ -385,7 +386,7 @@ class TestValidateUsername:
             "user name",
         ],
     )
-    def test_invalid(self, value) -> None:
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_username(value, field="username")
         assert exc.value.field == "username"
@@ -402,7 +403,7 @@ class TestValidateSHA:
             "0123456789abcdef0123456789abcdef01234567",
         ],
     )
-    def test_valid(self, value) -> None:
+    def test_valid(self, value: Any) -> None:
         validate_sha(value, field="sha")
 
     @pytest.mark.parametrize(
@@ -417,7 +418,7 @@ class TestValidateSHA:
             None,
         ],
     )
-    def test_invalid(self, value) -> None:
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_sha(value, field="sha")
         assert exc.value.field == "sha"
@@ -442,7 +443,7 @@ class TestValidateLabels:
             {"key": "value"},
         ],
     )
-    def test_invalid_not_list(self, value) -> None:
+    def test_invalid_not_list(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_labels(value, field="labels")
         assert exc.value.field == "labels"
@@ -462,7 +463,7 @@ class TestValidateLabels:
             ["   "],
         ],
     )
-    def test_empty_or_whitespace_string_not_allowed(self, value) -> None:
+    def test_empty_or_whitespace_string_not_allowed(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_labels(value, field="labels")
         assert "whitespace" in str(exc.value) or "Empty" in str(exc.value)
@@ -498,7 +499,7 @@ class TestValidatePagination:
             (50, None),
         ],
     )
-    def test_valid_combinations(self, page, per_page) -> None:
+    def test_valid_combinations(self, page: int, per_page: int) -> None:
         validate_pagination(page=page, per_page=per_page)
 
     @pytest.mark.parametrize(
@@ -509,7 +510,7 @@ class TestValidatePagination:
             (0, None),
         ],
     )
-    def test_invalid_page(self, page, per_page) -> None:
+    def test_invalid_page(self, page: int, per_page: int) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page=page, per_page=per_page)
         assert exc.value.field == "page"
@@ -525,7 +526,7 @@ class TestValidatePagination:
             (None, 101),
         ],
     )
-    def test_invalid_per_page(self, page, per_page) -> None:
+    def test_invalid_per_page(self, page: int, per_page: int) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page=page, per_page=per_page)
         assert exc.value.field == "per_page"
@@ -545,11 +546,11 @@ class TestValidateState:
     """Tests for the validate_state function."""
 
     @pytest.mark.parametrize("value", ["open", "closed", "all"])
-    def test_valid_states(self, value) -> None:
+    def test_valid_states(self, value: Any) -> None:
         validate_state(value, field="state")
 
     @pytest.mark.parametrize("value", ["OPEN", "Closed", "ALL"])
-    def test_case_sensitive(self, value) -> None:
+    def test_case_sensitive(self, value: Any) -> None:
         with pytest.raises(ValidationError):
             validate_state(value, field="state")
 
@@ -565,7 +566,7 @@ class TestValidateState:
             (None, "must be a string"),
         ],
     )
-    def test_invalid_states(self, value, expected_msg) -> None:
+    def test_invalid_states(self, value: Any, expected_msg) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_state(value, field="state")
         assert exc.value.field == "state"

@@ -7,6 +7,7 @@ import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool
 from mcp.types import ToolAnnotations
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -731,7 +732,7 @@ class TestToolWrappingTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_pipeline_emits_validate_span(self, trace_exporter) -> None:
+    async def test_pipeline_emits_validate_span(self, trace_exporter: InMemorySpanExporter) -> None:
         """Pipeline emits a ``{tool}.validate`` span with arg_count attribute."""
         transform = self.make_transform()
         tool = self.make_tool("test_tool")
@@ -766,7 +767,7 @@ class TestToolWrappingTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_spans_carry_tool_name_attribute(self, trace_exporter) -> None:
+    async def test_spans_carry_tool_name_attribute(self, trace_exporter: InMemorySpanExporter) -> None:
         """Validate and execute spans carry ``tool.name`` attribute."""
         transform = self.make_transform()
         tool = self.make_tool("attr_tool")
@@ -799,7 +800,7 @@ class TestToolWrappingTransformTelemetry:
                 assert span.attributes.get("http.method") == "GET"
 
     @pytest.mark.asyncio
-    async def test_validation_error_stops_pipeline(self, trace_exporter) -> None:
+    async def test_validation_error_stops_pipeline(self, trace_exporter: InMemorySpanExporter) -> None:
         """When validation fails, only the ``validate`` span is emitted."""
         from gitea_mcp_server.exceptions import ValidationError
 
@@ -842,7 +843,7 @@ class TestToolWrappingTransformTelemetry:
 class TestCreateOpenapiProvider:
     """Tests for create_openapi_provider - provider creation and deprecated route filtering."""
 
-    def test_deprecated_routes_are_filtered_out(self, caplog) -> None:
+    def test_deprecated_routes_are_filtered_out(self, caplog: pytest.LogCaptureFixture) -> None:
         """Deprecated routes are excluded via route_map_fn."""
         import logging
 
@@ -921,7 +922,7 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec=None, response_format="markdown") -> _ToolWrappingTransform:
+    def make_transform(self, openapi_spec=None, response_format: str ="markdown") -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
             response_format=response_format,
@@ -998,7 +999,7 @@ class TestToolWrappingTransform:
         """None from call_next passes through."""
         transform = self.make_transform()
 
-        async def call_next(name, version=None) -> None:
+        async def call_next(name: str, version: str =None) -> None:
             return None
 
         result = await transform.get_tool("test_tool", call_next)

@@ -31,12 +31,12 @@ class TestGiteaAPI:
         return HTTPTransport(config)
 
     @pytest.fixture
-    def api(self, transport) -> GiteaAPI:
+    def api(self, transport: HTTPTransport) -> GiteaAPI:
         """Create a GiteaAPI instance for testing."""
         return GiteaAPI(transport, "https://git.example.com/api/v1")
 
     @pytest.mark.asyncio
-    async def test_relative_url_construction(self, api) -> None:
+    async def test_relative_url_construction(self, api: GiteaAPI) -> None:
         """Test that relative paths are correctly appended to base_url."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/user").respond(200, json={"name": "testuser"})
@@ -45,7 +45,7 @@ class TestGiteaAPI:
             assert result["name"] == "testuser"
 
     @pytest.mark.asyncio
-    async def test_absolute_url_unchanged(self, api) -> None:
+    async def test_absolute_url_unchanged(self, api: GiteaAPI) -> None:
         """Test that absolute URLs are used as-is (should not be modified)."""
         with respx.mock() as mock:
             # Absolute URL to a different host - should be used as-is
@@ -69,7 +69,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_path_with_params(self, api) -> None:
+    async def test_path_with_params(self, api: GiteaAPI) -> None:
         """Test that query parameters are correctly added."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/repos").respond(200, json=[{"name": "repo1"}])
@@ -78,7 +78,7 @@ class TestGiteaAPI:
             assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    async def test_post_with_json_body(self, api) -> None:
+    async def test_post_with_json_body(self, api: GiteaAPI) -> None:
         """Test POST request with JSON body."""
         with respx.mock() as mock:
             mock.post("https://git.example.com/api/v1/repos").respond(
@@ -91,7 +91,7 @@ class TestGiteaAPI:
             assert result["name"] == "test-repo"
 
     @pytest.mark.asyncio
-    async def test_delegation_to_transport(self, transport, mocker: MockerFixture) -> None:
+    async def test_delegation_to_transport(self, transport: HTTPTransport, mocker: MockerFixture) -> None:
         """Test that GiteaAPI correctly delegates to transport."""
         api = GiteaAPI(transport, "https://git.example.com/api/v1")
 
@@ -108,7 +108,7 @@ class TestGiteaAPI:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_error_propagation(self, api) -> None:
+    async def test_error_propagation(self, api: GiteaAPI) -> None:
         """Test that errors from transport are propagated correctly."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/user").respond(
@@ -121,7 +121,7 @@ class TestGiteaAPI:
             assert exc_info.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_empty_path(self, api) -> None:
+    async def test_empty_path(self, api: GiteaAPI) -> None:
         """Test request with empty path (should just use base_url)."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1").respond(200, json={"ok": True})
@@ -130,7 +130,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_path_concatenation_edge_cases(self, api) -> None:
+    async def test_path_concatenation_edge_cases(self, api: GiteaAPI) -> None:
         """Test various path concatenation scenarios."""
         # Path starting with /
         with respx.mock() as mock:

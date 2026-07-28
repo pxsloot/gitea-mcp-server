@@ -182,7 +182,7 @@ class TestSyntheticToolMetadata:
         return [f"{prefix}{base}" if prefix else base for base in self._synthetic_base_names()]
 
     @pytest.mark.asyncio
-    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch) -> None:
+    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """ExtensionMetadataTransform should apply YAML description overrides to tools."""
         monkeypatch.setattr(
             "gitea_mcp_server.server_setup.spec_loader.load_mcp_extensions",

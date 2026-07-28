@@ -1,5 +1,7 @@
 """Integration tests for MCP extensions end-to-end."""
 
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -65,7 +67,7 @@ def minimal_spec() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec) -> None:
+async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec: dict[str, Any]) -> None:
     """Test that mcp_extensions.yaml parameter customizations propagate through spec to tools.
 
     Note: Tool-level metadata overrides (title, description, tags, hints) are handled
@@ -104,7 +106,7 @@ async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minim
     assert "Original description" in tool_names["issue_create_issue"].description
 
 
-def test_extensions_load_from_yaml_file(minimal_spec, tmp_path) -> None:
+def test_extensions_load_from_yaml_file(minimal_spec: dict[str, Any], tmp_path: Path) -> None:
     """Test that extensions are loaded from mcp_extensions.yaml."""
     # Create a temporary extensions file
     ext_content = """
@@ -121,7 +123,7 @@ tool_names:
 
 
 @pytest.mark.asyncio
-async def test_label_guidance_appendage_when_labels_present(minimal_spec) -> None:
+async def test_label_guidance_appendage_when_labels_present(minimal_spec: dict[str, Any]) -> None:
     """Test that LABEL_GUIDANCE is auto-appended to tools with labels parameter."""
     # No explicit description extension, rely on auto-guidance
     mock_gitea_client = MagicMock()

@@ -14,6 +14,7 @@ import json
 
 import pytest
 import respx
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from tests.integration.conftest import BASE_TEST_URL
@@ -190,7 +191,7 @@ class TestLabelConversion:
     def base_spec(self) -> dict:
         return _make_label_spec()
 
-    async def test_converts_string_labels_to_ids(self, mcp_server) -> None:
+    async def test_converts_string_labels_to_ids(self, mcp_server: FastMCP) -> None:
         """String label names are converted to integer IDs in the API request."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
             200,
@@ -212,7 +213,7 @@ class TestLabelConversion:
         sent = json.loads(api_route.calls[0].request.content)
         assert sent["labels"] == [1], f"Expected labels=[1], got {sent['labels']}"
 
-    async def test_preserves_valid_integers(self, mcp_server) -> None:
+    async def test_preserves_valid_integers(self, mcp_server: FastMCP) -> None:
         """Valid integer IDs that exist in the label map pass through unchanged.
 
         Unlike the old ``test_preserves_integer_labels`` (which returned an
@@ -240,7 +241,7 @@ class TestLabelConversion:
         sent = json.loads(api_route.calls[0].request.content)
         assert sent["labels"] == [42, 99]
 
-    async def test_unknown_integer_raises_validation_error(self, mcp_server) -> None:
+    async def test_unknown_integer_raises_validation_error(self, mcp_server: FastMCP) -> None:
         """Unknown integer IDs produce a human-readable ValidationError."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
             200, json=[{"id": 1, "name": "type/bug"}],
@@ -252,7 +253,7 @@ class TestLabelConversion:
                 {"owner": "owner", "repo": "repo", "title": "Test", "labels": [99999]},
             )
 
-    async def test_unknown_label_raises_validation_error(self, mcp_server) -> None:
+    async def test_unknown_label_raises_validation_error(self, mcp_server: FastMCP) -> None:
         """Unknown label names produce a human-readable ValidationError."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
             200, json=[{"id": 1, "name": "type/bug"}],
@@ -282,7 +283,7 @@ class TestPaginationMetadata:
     def base_spec(self) -> dict:
         return _make_pagination_spec()
 
-    async def test_paginated_result_has_metadata(self, mcp_server) -> None:
+    async def test_paginated_result_has_metadata(self, mcp_server: FastMCP) -> None:
         """Array response includes ``has_more``, ``next_offset``, ``total_count``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/items?page=1&limit=2").respond(
             200, json=[{"id": 1}, {"id": 2}],
@@ -298,7 +299,7 @@ class TestPaginationMetadata:
         # With 2 items and limit=2, result fills the page so has_more is True
         assert result.structured_content["has_more"] is True
 
-    async def test_paginated_result_no_more_when_partial_page(self, mcp_server) -> None:
+    async def test_paginated_result_no_more_when_partial_page(self, mcp_server: FastMCP) -> None:
         """When result length is less than limit, ``has_more`` is False."""
         respx.get(f"{BASE_TEST_URL}/api/v1/items").respond(
             200, json=[{"id": 1}],
@@ -328,7 +329,7 @@ class TestCacheInvalidationEndToEnd:
     def base_spec(self) -> dict:
         return _make_cache_spec()
 
-    async def test_write_invalidates_resource_cache(self, mcp_server) -> None:
+    async def test_write_invalidates_resource_cache(self, mcp_server: FastMCP) -> None:
         """After calling a write tool, the resource cache is cleared."""
         import httpx
 
@@ -379,7 +380,7 @@ class TestDeprecatedExclusion:
     def base_spec(self) -> dict:
         return _make_deprecated_spec()
 
-    async def test_deprecated_endpoint_is_excluded(self, mcp_server) -> None:
+    async def test_deprecated_endpoint_is_excluded(self, mcp_server: FastMCP) -> None:
         """A deprecated endpoint does not appear in the tool listing."""
         tools = await mcp_server.list_tools()
         tool_names = {t.name for t in tools}

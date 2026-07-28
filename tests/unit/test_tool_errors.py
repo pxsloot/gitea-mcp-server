@@ -1,6 +1,7 @@
 """Unit tests for HTTP error translation."""
 
 import logging
+from typing import Any, Never
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -18,7 +19,6 @@ from gitea_mcp_server.tools.errors import (
     _run_validation,
 )
 from gitea_mcp_server.validation import ValidationError
-from typing import Never
 
 
 class TestErrorHandlingEnhancement:
@@ -430,11 +430,11 @@ class TestRunValidation:
         with pytest.raises(ValidationError, match="page|per_page"):
             _run_validation({"page": 1, "per_page": 99999})
 
-    def test_validator_raises_type_error_wraps_cleanly(self, monkeypatch) -> None:
+    def test_validator_raises_type_error_wraps_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When a SINGLE_VALIDATOR raises TypeError, it should be wrapped as ValidationError."""
         from gitea_mcp_server.validation import SINGLE_VALIDATORS
 
-        def bad_validator(value, *, field) -> Never:
+        def bad_validator(value: Any, *, field: str) -> Never:
             raise TypeError
 
         monkeypatch.setitem(SINGLE_VALIDATORS, "owner", bad_validator)
@@ -533,7 +533,7 @@ class TestCatchAllErrorHandler:
             pytest.param(RuntimeError("boom"), "RuntimeError", id="RuntimeError"),
         ],
     )
-    async def test_all_exception_types_are_caught(self, exception, exc_name, caplog) -> None:
+    async def test_all_exception_types_are_caught(self, exception, exc_name, caplog: pytest.LogCaptureFixture) -> None:
         """All four exception types produce a user-friendly ValueError."""
         caplog.set_level(logging.ERROR)
 
@@ -542,7 +542,7 @@ class TestCatchAllErrorHandler:
         tool = MagicMock()
         tool.name = "my_tool"
 
-        async def failing_run(kwargs) -> Never:
+        async def failing_run(kwargs: Any) -> Never:
             raise exception
 
         tool.run = failing_run
@@ -561,7 +561,7 @@ class TestCatchAllErrorHandler:
         assert exc_name not in error_msg
 
     @pytest.mark.parametrize("exc_type", [KeyError, TypeError, AttributeError, RuntimeError])
-    async def test_log_contains_tool_context(self, exc_type, caplog) -> None:
+    async def test_log_contains_tool_context(self, exc_type, caplog: pytest.LogCaptureFixture) -> None:
         """Log message includes tool name, HTTP method, route, and arg keys."""
         caplog.set_level(logging.ERROR)
 
@@ -570,7 +570,7 @@ class TestCatchAllErrorHandler:
         tool = MagicMock()
         tool.name = "context_tool"
 
-        async def failing_run(kwargs) -> Never:
+        async def failing_run(kwargs: Any) -> Never:
             raise exc_type
 
         tool.run = failing_run
@@ -589,7 +589,7 @@ class TestCatchAllErrorHandler:
         assert any("/repos/{owner}/{repo}" in r.message for r in caplog.records)
         assert any("owner" in r.message for r in caplog.records)
 
-    async def test_component_without_name_falls_back(self, caplog) -> None:
+    async def test_component_without_name_falls_back(self, caplog: pytest.LogCaptureFixture) -> None:
         """When component has no ``name`` attribute, logs 'unknown'."""
         caplog.set_level(logging.ERROR)
 
@@ -602,7 +602,7 @@ class TestCatchAllErrorHandler:
         tool.name = "nameless"
         del tool.name
 
-        async def failing_run(kwargs) -> Never:
+        async def failing_run(kwargs: Any) -> Never:
             raise RuntimeError
 
         tool.run = failing_run

@@ -113,7 +113,7 @@ class TestFormatToolResultErrorRecovery:
             (ValueError, "bad value"),
         ],
     )
-    def test_markdown_recovers_from_all_exception_types(self, exc_cls, exc_msg) -> None:
+    def test_markdown_recovers_from_all_exception_types(self, exc_cls: type, exc_msg: str) -> None:
         """All 3 exception types from markdown path produce fallback."""
         data = {"key": "value"}
         with patch(
@@ -135,7 +135,7 @@ class TestFormatToolResultErrorRecovery:
             (ValueError, "bad value"),
         ],
     )
-    def test_json_recovers_from_all_exception_types(self, exc_cls, exc_msg) -> None:
+    def test_json_recovers_from_all_exception_types(self, exc_cls: type, exc_msg: str) -> None:
         """All 3 exception types from json path produce fallback."""
         data = {"key": "value"}
         with patch(
@@ -201,7 +201,7 @@ class TestFormatToolResultErrorRecovery:
 
     # --- Logger verification ---
 
-    def test_logger_warning_on_format_failure(self, caplog) -> None:
+    def test_logger_warning_on_format_failure(self, caplog: pytest.LogCaptureFixture) -> None:
         """logger.warning is called on format failure."""
         data = {"key": "value"}
         caplog.set_level(logging.WARNING)
@@ -215,7 +215,7 @@ class TestFormatToolResultErrorRecovery:
                 for record in caplog.records
             )
 
-    def test_logger_level_is_warning(self, caplog) -> None:
+    def test_logger_level_is_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Log record level is WARNING."""
         data = {"key": "value"}
         caplog.set_level(logging.WARNING)

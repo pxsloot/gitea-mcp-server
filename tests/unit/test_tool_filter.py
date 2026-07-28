@@ -339,7 +339,7 @@ class TestComputeExcludedRoutes:
 class TestProviderRouteMapFiltering:
     """Integration-level unit tests: filtered routes never become tools."""
 
-    def _make_provider(self, excluded_routes, response_format="markdown") -> OpenAPIProvider:
+    def _make_provider(self, excluded_routes, response_format: str ="markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         spec = {
@@ -365,7 +365,7 @@ class TestProviderRouteMapFiltering:
             response_format=response_format,
         )
 
-    def test_no_exclusions_keeps_all(self, caplog) -> None:
+    def test_no_exclusions_keeps_all(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
 
         caplog.set_level(logging.DEBUG)
@@ -373,7 +373,7 @@ class TestProviderRouteMapFiltering:
         assert provider is not None
         assert "Excluding filtered endpoint" not in caplog.text
 
-    def test_excluded_route_is_dropped(self, caplog) -> None:
+    def test_excluded_route_is_dropped(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
 
         caplog.set_level(logging.DEBUG)

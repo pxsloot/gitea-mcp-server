@@ -159,7 +159,7 @@ class TestComputeUrisToInvalidate:
         # Should return empty because patterns can't be substituted
         assert uris == []
 
-    def test_unknown_pattern_logs_warning(self, caplog) -> None:
+    def test_unknown_pattern_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Unknown pattern name logs a warning."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -180,7 +180,7 @@ class TestComputeUrisToInvalidate:
         await invalidate_cached_resources(mock_caching, [], "test_tool")
 
     @pytest.mark.asyncio
-    async def test_cache_delete_key_error_logged(self, caplog) -> None:
+    async def test_cache_delete_key_error_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """KeyError during cache delete is caught and logged."""
         import logging
         caplog.set_level(logging.WARNING)

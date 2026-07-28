@@ -1,5 +1,7 @@
 """Unit tests for OpenAPI converter - utility functions."""
 
+from typing import Any
+
 import pytest
 
 from gitea_mcp_server.openapi_converter import camel_to_snake
@@ -18,7 +20,7 @@ class TestCamelToSnake:
         ("issueCreateIssue", "issue_create_issue"),
         ("repoGetBranch", "repo_get_branch"),
     ])
-    def test_multiple_camel_phrases(self, input_str, expected) -> None:
+    def test_multiple_camel_phrases(self, input_str, expected: Any) -> None:
         assert camel_to_snake(input_str) == expected
 
     def test_consecutive_uppercase(self) -> None:

@@ -22,7 +22,7 @@ from mcp.types import ToolAnnotations
 
 
 def make_mock_tool(
-    name="test_tool",
+    name: str ="test_tool",
     tags=None,
     annotations=None,
     parameters=None,

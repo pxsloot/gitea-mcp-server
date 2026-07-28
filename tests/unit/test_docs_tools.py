@@ -1,6 +1,7 @@
 """Tests for docs_tools module."""
 
 import json as json_module
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -165,7 +166,7 @@ class TestDocManager:
 class TestDocManagerLoadEdgeCases:
     """Tests for DocManager._load edge cases."""
 
-    def test_guides_dir_not_found(self, caplog) -> None:
+    def test_guides_dir_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
         """When guides directory doesn't exist, warning is logged and no guides loaded."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -180,7 +181,7 @@ class TestDocManagerLoadEdgeCases:
             assert len(mgr._guides) == 0
             assert "Guides directory not found" in caplog.text
 
-    def test_load_exception_logged(self, caplog) -> None:
+    def test_load_exception_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Exception during _load is caught and logged."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -191,7 +192,7 @@ class TestDocManagerLoadEdgeCases:
             assert len(mgr._guides) == 0
             assert "Failed to load workflow guides" in caplog.text
 
-    def test_non_md_files_skipped(self, tmp_path, caplog) -> None:
+    def test_non_md_files_skipped(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Non-.md files in the guides directory are skipped."""
         import logging
         caplog.set_level(logging.DEBUG)

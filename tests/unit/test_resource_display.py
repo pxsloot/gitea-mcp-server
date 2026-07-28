@@ -37,7 +37,7 @@ class TestContextMetaKeysPipeline:
         return client
 
     @pytest.fixture
-    def issues_resource(self, mock_client) -> Any:
+    def issues_resource(self, mock_client: AsyncMock) -> Any:
         """Register and return the issues resource handler with context_meta_keys."""
         from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
@@ -70,7 +70,7 @@ class TestContextMetaKeysPipeline:
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
     @pytest.mark.asyncio
-    async def test_handler_meta_includes_forwarded_param(self, issues_resource, mock_client) -> None:
+    async def test_handler_meta_includes_forwarded_param(self, issues_resource: dict[str, Any], mock_client: AsyncMock) -> None:
         """Handler forwards context_meta_keys params (query or path) into ResourceContent.meta."""
         from fastmcp.resources import ResourceResult
 
@@ -87,7 +87,7 @@ class TestContextMetaKeysPipeline:
         assert meta.get("type") == "pulls"
 
     @pytest.mark.asyncio
-    async def test_handler_meta_omits_unmatched_context_param(self, issues_resource, mock_client) -> None:
+    async def test_handler_meta_omits_unmatched_context_param(self, issues_resource: dict[str, Any], mock_client: AsyncMock) -> None:
         """Handler does NOT forward params not listed in context_meta_keys."""
         from fastmcp.resources import ResourceResult
 
@@ -104,7 +104,7 @@ class TestContextMetaKeysPipeline:
         assert "format_hint" in meta
 
     @pytest.mark.asyncio
-    async def test_handler_meta_no_context_meta_keys(self, mock_client) -> None:
+    async def test_handler_meta_no_context_meta_keys(self, mock_client: AsyncMock) -> None:
         """Handler does NOT forward any extra meta when context_meta_keys is absent."""
         from fastmcp.resources import ResourceResult
 
@@ -199,7 +199,7 @@ class TestContextMetaKeysPipeline:
         assert "| Key | value |" in result
 
     @pytest.mark.asyncio
-    async def test_labels_handler_meta_forwards_owner_repo(self, mock_client) -> None:
+    async def test_labels_handler_meta_forwards_owner_repo(self, mock_client: AsyncMock) -> None:
         """Handler with context_meta_keys=["owner","repo"] forwards path params to meta."""
         from fastmcp.resources import ResourceResult
 

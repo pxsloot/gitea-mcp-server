@@ -1,5 +1,7 @@
 """Unit tests for OpenAPI converter - definitions and references."""
 
+from typing import Any
+
 from gitea_mcp_server.openapi_converter import (
     OptionalPropertyTransformer,
     RequestBodyBuilder,
@@ -222,7 +224,7 @@ class TestSchemaWalker:
         """Walker should invoke the callback for every schema node."""
         calls = []
 
-        def callback(schema, parent, key) -> None:
+        def callback(schema: Any, parent: Any, key: str) -> None:
             calls.append((schema["type"], key))
 
         schema = {
@@ -246,7 +248,7 @@ class TestSchemaWalker:
         """Walker should skip non-dict property values."""
         calls = []
 
-        def callback(schema, parent, key) -> None:
+        def callback(schema: Any, parent: Any, key: str) -> None:
             calls.append(1)
 
         schema = {
@@ -263,7 +265,7 @@ class TestSchemaWalker:
         """Walker should skip non-list combinator values."""
         calls = []
 
-        def callback(schema, parent, key) -> None:
+        def callback(schema: Any, parent: Any, key: str) -> None:
             calls.append(key)
 
         schema = {
@@ -280,7 +282,7 @@ class TestSchemaWalker:
         """Walker should visit patternProperties entries."""
         calls = []
 
-        def callback(schema, parent, key) -> None:
+        def callback(schema: Any, parent: Any, key: str) -> None:
             calls.append(key)
 
         schema = {
@@ -296,7 +298,7 @@ class TestSchemaWalker:
         """Walker should visit additionalProperties."""
         calls = []
 
-        def callback(schema, parent, key) -> None:
+        def callback(schema: Any, parent: Any, key: str) -> None:
             calls.append(key)
 
         schema = {

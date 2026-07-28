@@ -1,5 +1,7 @@
 """Tests for exception hierarchy and message formatting."""
 
+from typing import Never
+
 import pytest
 
 from gitea_mcp_server.exceptions import (
@@ -10,7 +12,6 @@ from gitea_mcp_server.exceptions import (
     ToolFilterError,
     ValidationError,
 )
-from typing import Never
 
 
 class TestGiteaMCPError:

@@ -13,8 +13,8 @@ stack and graceful shutdown.
 
 import asyncio
 import contextlib
-from typing import Generator
 import socket
+from collections.abc import Generator
 
 import httpx
 import pytest

@@ -15,6 +15,7 @@ Each test here MUST fail on the current broken code and pass after the fix.
 """
 
 import re
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ class TestFilesResourceUriTemplate:
         return AsyncMock()
 
     def test_files_uri_template_uses_wildcard_path(
-        self, mock_mcp, mock_client
+        self, mock_mcp: MagicMock, mock_client: AsyncMock
     ) -> None:
         """The files resource URI must use {path*} to match multi-segment paths."""
         register_custom_resources(mock_mcp, mock_client)
@@ -74,7 +75,7 @@ class TestFilepathPatternDotfiles:
             ".hidden/with/file.txt",
         ],
     )
-    def test_dotfile_paths_should_match_regex(self, value) -> None:
+    def test_dotfile_paths_should_match_regex(self, value: Any) -> None:
         assert re.fullmatch(FILEPATH_PATTERN, value) is not None, (
             f"Dotfile path {value!r} should match FILEPATH_PATTERN"
         )
@@ -86,7 +87,7 @@ class TestFilepathPatternDotfiles:
             "/etc/passwd",
         ],
     )
-    def test_truly_invalid_paths_still_rejected(self, value) -> None:
+    def test_truly_invalid_paths_still_rejected(self, value: Any) -> None:
         """Absolute paths (starting with /) must still fail, even after fix.
         Note: traversal like '../parent' is blocked by validate_filepath's
         '..' split check, not by the regex itself.
@@ -115,7 +116,7 @@ class TestValidateFilepathDotfiles:
             ".hidden/with/file.txt",
         ],
     )
-    def test_dotfile_paths_should_pass_validation(self, value) -> None:
+    def test_dotfile_paths_should_pass_validation(self, value: Any) -> None:
         validate_filepath(value, field="filepath")
 
     @pytest.mark.parametrize(
@@ -127,7 +128,7 @@ class TestValidateFilepathDotfiles:
             "",
         ],
     )
-    def test_truly_invalid_paths_still_rejected(self, value) -> None:
+    def test_truly_invalid_paths_still_rejected(self, value: Any) -> None:
         """Absolute and traversal paths must still be rejected."""
         with pytest.raises(ValidationError):
             validate_filepath(value, field="filepath")

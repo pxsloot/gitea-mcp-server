@@ -21,7 +21,7 @@ class TestConvertLabels:
         return AsyncMock(spec=LabelService)
 
     @pytest.mark.asyncio
-    async def test_converts_known_string_labels_to_ids(self, _gitea_client, _label_service) -> None:
+    async def test_converts_known_string_labels_to_ids(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """Known string label names should be converted to integer IDs."""
         _label_service.validate_and_convert.return_value = [1, 2]
 
@@ -34,7 +34,7 @@ class TestConvertLabels:
         )
 
     @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_strings(self, _gitea_client, _label_service) -> None:
+    async def test_raises_validation_error_for_unknown_strings(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """Unknown label names should raise ValidationError."""
         _label_service.validate_and_convert.side_effect = ValidationError(
             message="Unknown label name(s): ['type/nonexistent']", field="labels"
@@ -48,7 +48,7 @@ class TestConvertLabels:
         assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
-    async def test_passes_through_valid_integers(self, _gitea_client, _label_service) -> None:
+    async def test_passes_through_valid_integers(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """Valid integer IDs should pass through unchanged."""
         _label_service.validate_and_convert.return_value = [1, 2, 3]
 
@@ -61,7 +61,7 @@ class TestConvertLabels:
         )
 
     @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_integers(self, _gitea_client, _label_service) -> None:
+    async def test_raises_validation_error_for_unknown_integers(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """Unknown integer IDs should raise ValidationError."""
         _label_service.validate_and_convert.side_effect = ValidationError(
             message="Unknown label ID(s): [99999]", field="labels"
@@ -96,7 +96,7 @@ class TestConvertLabels:
         assert kwargs["labels"] == []
 
     @pytest.mark.asyncio
-    async def test_skips_when_owner_missing(self, _label_service) -> None:
+    async def test_skips_when_owner_missing(self, _label_service: LabelService) -> None:
         """When owner is missing, no conversion should happen."""
         kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
         await _convert_labels(kwargs, True, _label_service, AsyncMock())
@@ -104,7 +104,7 @@ class TestConvertLabels:
         _label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_gitea_client_missing(self, _label_service) -> None:
+    async def test_skips_when_gitea_client_missing(self, _label_service: LabelService) -> None:
         """When gitea_client is None, no conversion should happen."""
         kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
         await _convert_labels(kwargs, True, _label_service, gitea_client=None)
@@ -112,7 +112,7 @@ class TestConvertLabels:
         _label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_handles_mixed_strings_and_integers(self, _gitea_client, _label_service) -> None:
+    async def test_handles_mixed_strings_and_integers(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """Mixed string and integer labels should all be converted/preserved."""
         _label_service.validate_and_convert.return_value = [1, 42]
 
@@ -122,7 +122,7 @@ class TestConvertLabels:
         assert kwargs["labels"] == [1, 42]
 
     @pytest.mark.asyncio
-    async def test_uses_org_as_fallback_for_owner(self, _gitea_client, _label_service) -> None:
+    async def test_uses_org_as_fallback_for_owner(self, _gitea_client: AsyncMock, _label_service: LabelService) -> None:
         """When owner is absent but org is present, org should be used."""
         _label_service.validate_and_convert.return_value = [1]
 

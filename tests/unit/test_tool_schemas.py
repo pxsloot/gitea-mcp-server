@@ -568,26 +568,26 @@ class TestIsTextResponse:
             },
         }
 
-    def test_text_plain_endpoint_detected(self, text_spec) -> None:
+    def test_text_plain_endpoint_detected(self, text_spec: dict[str, Any]) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
 
-    def test_json_endpoint_not_text(self, text_spec) -> None:
+    def test_json_endpoint_not_text(self, text_spec: dict[str, Any]) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
 
-    def test_no_content_types_not_text(self, text_spec) -> None:
+    def test_no_content_types_not_text(self, text_spec: dict[str, Any]) -> None:
         assert _is_text_response(text_spec, "/no-content-types", "get") is False
 
-    def test_missing_path_returns_false(self, text_spec) -> None:
+    def test_missing_path_returns_false(self, text_spec: dict[str, Any]) -> None:
         assert _is_text_response(text_spec, "/nonexistent", "get") is False
 
-    def test_missing_method_returns_false(self, text_spec) -> None:
+    def test_missing_method_returns_false(self, text_spec: dict[str, Any]) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
-    def test_uppercase_method_normalized(self, text_spec) -> None:
+    def test_uppercase_method_normalized(self, text_spec: dict[str, Any]) -> None:
         """Uppercase method should be normalized to lowercase internally."""
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
 
-    def test_uppercase_json_endpoint_not_text(self, text_spec) -> None:
+    def test_uppercase_json_endpoint_not_text(self, text_spec: dict[str, Any]) -> None:
         """Uppercase method on JSON endpoint should still return False."""
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
 
@@ -704,22 +704,22 @@ class TestResponseHasNoContent:
             },
         }
 
-    def test_204_no_content_detected(self, empty_body_spec) -> None:
+    def test_204_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
         """204 No Content response should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
 
-    def test_202_no_content_detected(self, empty_body_spec) -> None:
+    def test_202_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
         """202 Accepted with no body should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
 
-    def test_205_no_content_detected(self, empty_body_spec) -> None:
+    def test_205_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
         """205 Reset Content should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
 
-    def test_200_with_ref_to_empty_response(self, empty_body_spec) -> None:
+    def test_200_with_ref_to_empty_response(self, empty_body_spec: dict[str, Any]) -> None:
         """200 with $ref to empty response should return True (merge endpoint scenario)."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -728,7 +728,7 @@ class TestResponseHasNoContent:
             "put",
         ) is True
 
-    def test_201_with_ref_to_empty_response(self, empty_body_spec) -> None:
+    def test_201_with_ref_to_empty_response(self, empty_body_spec: dict[str, Any]) -> None:
         """201 with $ref to empty response should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -737,7 +737,7 @@ class TestResponseHasNoContent:
             "put",
         ) is True
 
-    def test_200_inline_empty_not_detected(self, empty_body_spec) -> None:
+    def test_200_inline_empty_not_detected(self, empty_body_spec: dict[str, Any]) -> None:
         """200 inline with no content key should NOT be flagged (spec gap, not empty body).
 
         Only ``$ref``-based 200/201 responses are treated as explicit
@@ -751,7 +751,7 @@ class TestResponseHasNoContent:
             "post",
         ) is False
 
-    def test_201_inline_empty_not_detected(self, empty_body_spec) -> None:
+    def test_201_inline_empty_not_detected(self, empty_body_spec: dict[str, Any]) -> None:
         """201 inline with no content key should NOT be flagged (spec gap, not empty body)."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -760,27 +760,27 @@ class TestResponseHasNoContent:
             "post",
         ) is False
 
-    def test_json_endpoint_returns_false(self, empty_body_spec) -> None:
+    def test_json_endpoint_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
         """JSON endpoint with 200 should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
 
-    def test_get_with_200_returns_false(self, empty_body_spec) -> None:
+    def test_get_with_200_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
         """GET endpoint with 200 response should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
 
-    def test_response_with_content_returns_false(self, empty_body_spec) -> None:
+    def test_response_with_content_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
         """204 with content body should NOT be flagged as empty."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
 
-    def test_missing_path_returns_false(self, empty_body_spec) -> None:
+    def test_missing_path_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
         """Nonexistent path should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
 
-    def test_uppercase_method_normalized(self, empty_body_spec) -> None:
+    def test_uppercase_method_normalized(self, empty_body_spec: dict[str, Any]) -> None:
         """Uppercase method should be normalized to lowercase internally."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True

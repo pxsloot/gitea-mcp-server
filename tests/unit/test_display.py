@@ -10,6 +10,8 @@ Covers:
 """
 
 
+from typing import Any
+
 import pytest
 
 from gitea_mcp_server.format import _build_server_info_markdown
@@ -59,7 +61,7 @@ class TestCallFormatter:
         """Known formatter is called and returns expected output."""
 
         @register_formatter("test_formatter")
-        def _test_fmt(data, *, detail="full") -> str:
+        def _test_fmt(data: Any, *, detail: str ="full") -> str:
             return f"formatted: {data}"
 
         result = call_formatter("test_formatter", {"hello": "world"})
@@ -69,7 +71,7 @@ class TestCallFormatter:
         """Formatter registered with need_extra=True receives extra dict."""
 
         @register_formatter("test_extra", need_extra=True)
-        def _test_extra(data, *, detail="full", extra=None) -> str:
+        def _test_extra(data: Any, *, detail: str ="full", extra=None) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 
@@ -82,7 +84,7 @@ class TestCallFormatter:
         """Formatter that ignores detail still works."""
 
         @register_formatter("test_no_detail")
-        def _test_no_detail(data, **kwargs) -> str:
+        def _test_no_detail(data: Any, **kwargs) -> str:
             return f"ok:{data}"
 
         result = call_formatter("test_no_detail", 42)

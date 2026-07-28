@@ -1,5 +1,6 @@
 """Unit tests for MCP extensions processing."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -272,7 +273,7 @@ class TestApplyMcpExtensions:
 class TestLoadMcpExtensions:
     """Tests for the load_mcp_extensions function."""
 
-    def test_loads_yaml_file(self, tmp_path) -> None:
+    def test_loads_yaml_file(self, tmp_path: Path) -> None:
         yaml_content = """
 tool_names:
   create_issue:
@@ -291,7 +292,7 @@ tool_names:
             }
         }
 
-    def test_returns_empty_when_file_missing(self, tmp_path) -> None:
+    def test_returns_empty_when_file_missing(self, tmp_path: Path) -> None:
         nonexistent = tmp_path / "nonexistent.yaml"
 
         with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(nonexistent)}):
@@ -299,7 +300,7 @@ tool_names:
 
         assert result == {}
 
-    def test_returns_empty_when_file_empty(self, tmp_path) -> None:
+    def test_returns_empty_when_file_empty(self, tmp_path: Path) -> None:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("")
 
@@ -308,7 +309,7 @@ tool_names:
 
         assert result == {}
 
-    def test_handles_invalid_yaml(self, tmp_path) -> None:
+    def test_handles_invalid_yaml(self, tmp_path: Path) -> None:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("invalid: yaml: content:")
 
@@ -322,7 +323,7 @@ tool_names:
 class TestLoadMcpExtensionsEdgeCases:
     """Tests for edge cases in load_mcp_extensions."""
 
-    def test_project_root_not_found_falls_back_to_cwd(self, tmp_path) -> None:
+    def test_project_root_not_found_falls_back_to_cwd(self, tmp_path: Path) -> None:
         """When pyproject.toml is not found, fall back to cwd."""
         from pathlib import Path
         from unittest.mock import patch
@@ -347,7 +348,7 @@ class TestLoadMcpExtensionsEdgeCases:
             with pytest.raises(RuntimeError, match="Could not find project root"):
                 _find_project_root()
 
-    def test_os_error_on_read_propagates(self, tmp_path) -> None:
+    def test_os_error_on_read_propagates(self, tmp_path: Path) -> None:
         """OSError when reading extensions file propagates."""
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("tool_names:\n  test: {}")

@@ -7,6 +7,7 @@ pure dict-in/dict-out patterns with minimal OpenAPI spec fixtures.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -157,12 +158,12 @@ class TestComputeFilteredToolsInfo:
         assert result["filtered"] == {}
         assert result["available_scopes"] == []
 
-    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint) -> None:
+    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """available_scopes=None → no scope-based filtering."""
         result = compute_filtered_tools_info(spec_with_one_endpoint, available_scopes=None)
         assert result["filtered"] == {}
 
-    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint) -> None:
+    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """Token has read:repository → repo_get is visible."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -191,7 +192,7 @@ class TestComputeFilteredToolsInfo:
         assert "old_get_thing" in filtered
         assert filtered["old_get_thing"]["reason"] == "deprecated"
 
-    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint) -> None:
+    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """Exact name in exclude list → filtered as excluded."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -201,7 +202,7 @@ class TestComputeFilteredToolsInfo:
         assert "repo_get" in filtered
         assert filtered["repo_get"]["reason"] == "excluded"
 
-    def test_include_overrides_exclude(self, spec_with_one_endpoint) -> None:
+    def test_include_overrides_exclude(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """Tool matching both include and exclude → visible (include wins)."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -233,7 +234,7 @@ class TestComputeFilteredToolsInfo:
 
         assert len(filtered) == 3
 
-    def test_available_scopes_in_result(self, spec_with_one_endpoint) -> None:
+    def test_available_scopes_in_result(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """The available_scopes list should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -243,7 +244,7 @@ class TestComputeFilteredToolsInfo:
         assert "write:issue" in result["available_scopes"]
         assert len(result["available_scopes"]) == 2
 
-    def test_exclusion_config_in_result(self, spec_with_one_endpoint) -> None:
+    def test_exclusion_config_in_result(self, spec_with_one_endpoint: dict[str, Any]) -> None:
         """The exclusion config patterns should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -434,7 +435,7 @@ class TestFilteredToolMiddleware:
         return ctx
 
     @pytest.mark.asyncio
-    async def test_passes_through_for_visible_tool(self, scope_filter_info) -> None:
+    async def test_passes_through_for_visible_tool(self, scope_filter_info: dict[str, Any]) -> None:
         """Middleware should pass through for tools not in filter info."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,
@@ -459,7 +460,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_called_once_with(ctx)
 
     @pytest.mark.asyncio
-    async def test_scope_filtered_raises_tool_error(self, scope_filter_info) -> None:
+    async def test_scope_filtered_raises_tool_error(self, scope_filter_info: dict[str, Any]) -> None:
         """Scope-restricted tool should raise ToolError with scope message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,
@@ -473,7 +474,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info) -> None:
+    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info: dict[str, Any]) -> None:
         """Config-excluded tool should raise ToolError with exclusion message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=exclude_filter_info,
@@ -487,7 +488,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info) -> None:
+    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info: dict[str, Any]) -> None:
         """Deprecated tool should raise ToolError with deprecation message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=deprecated_filter_info,
@@ -501,7 +502,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_works_without_prefix(self, scope_filter_info) -> None:
+    async def test_works_without_prefix(self, scope_filter_info: dict[str, Any]) -> None:
         """Middleware works with unprefixed tool names."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,

@@ -11,8 +11,10 @@ Use these instead of defining inline spec dicts in test files, unless the
 test truly needs a unique spec shape that doesn't fit either level.
 """
 
+from gitea_mcp_server.openapi_types import SwaggerV2Spec
 
-def base_spec() -> dict:
+
+def base_spec() -> SwaggerV2Spec:
     """Minimal valid Swagger 2.0 spec with no endpoints.
 
     Override in a test class or module to add paths::
@@ -37,7 +39,7 @@ def base_spec() -> dict:
     }
 
 
-def minimal_spec() -> dict:
+def minimal_spec() -> SwaggerV2Spec:
     """Simplest possible Swagger 2.0 spec with one endpoint.
 
     Suitable for converter unit tests that verify basic output

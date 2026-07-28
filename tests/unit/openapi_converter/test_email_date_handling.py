@@ -1,9 +1,12 @@
 """Unit tests for OpenAPI converter - email and date format handling."""
 
+from typing import Any
+
 from gitea_mcp_server.openapi_converter import (
     _add_nullable_for_optional_refs,
     convert_swagger_to_openapi_v3,
 )
+from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 from gitea_mcp_server.schema_utils import schema_type_matches
 
 
@@ -12,13 +15,14 @@ class TestEmailFormatHandling:
 
     def test_email_field_with_format_becomes_anyof(self) -> None:
         """Test that format:email fields are converted to anyOf preserving format."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "email": {"type": "string", "format": "email", "description": "User email address"}
             },
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         # The schema is mutated in place
         email_schema = schema["properties"]["email"]
         assert "anyOf" in email_schema
@@ -42,12 +46,13 @@ class TestEmailFormatHandling:
 
     def test_required_email_field_excludes_null_and_empty(self) -> None:
         """Test that required email fields do NOT include null or empty string branches."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "required": ["email"],
             "properties": {"email": {"type": "string", "format": "email"}},
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         # Required field: should remain as simple format:email, NOT anyOf
         # Actually, it becomes anyOf with just the email branch
@@ -66,8 +71,9 @@ class TestEmailFormatHandling:
 
     def test_optional_email_field_includes_null(self) -> None:
         """Test that optional email fields include null branch."""
-        schema = {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        schema: dict[str, Any] = {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         assert "anyOf" in email_schema
         # Should have email, empty string, and null branches
@@ -77,7 +83,7 @@ class TestEmailFormatHandling:
 
     def test_email_preserves_other_constraints(self) -> None:
         """Test that other string constraints (minLength, pattern) are preserved on email branch."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "email": {
@@ -89,7 +95,8 @@ class TestEmailFormatHandling:
                 }
             },
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         email_branch = next((b for b in email_schema["anyOf"] if b.get("format") == "email"), None)
         assert email_branch is not None
@@ -104,7 +111,7 @@ class TestEmailFormatHandling:
         still match the string-type check so the email anyOf transformation
         is applied instead of just adding null to the type list.
         """
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "email": {
@@ -114,7 +121,8 @@ class TestEmailFormatHandling:
                 }
             },
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         # Should become anyOf, not remain a simple type list
         assert "anyOf" in email_schema, (
@@ -135,7 +143,7 @@ class TestEmailFormatHandling:
 
     def test_email_format_still_valid_openapi_3_1(self) -> None:
         """Test that a spec with email anyOf is valid OpenAPI 3.1."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -174,13 +182,14 @@ class TestDateFormatHandling:
 
     def test_optional_date_field_gets_nullable_type_no_anyof(self) -> None:
         """Test that optional format:date fields become nullable without anyOf."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "date_field": {"type": "string", "format": "date", "description": "Some date"}
             },
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         date_schema = schema["properties"]["date_field"]
         # Should NOT have anyOf
         assert "anyOf" not in date_schema
@@ -196,12 +205,13 @@ class TestDateFormatHandling:
 
     def test_required_date_field_stays_simple(self) -> None:
         """Required date field remains simple string with format, no null addition."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "required": ["date_field"],
             "properties": {"date_field": {"type": "string", "format": "date"}},
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         date_schema = schema["properties"]["date_field"]
         # Should NOT have anyOf
         assert "anyOf" not in date_schema
@@ -211,11 +221,12 @@ class TestDateFormatHandling:
 
     def test_optional_datetime_field_gets_nullable_type_no_anyof(self) -> None:
         """Test that optional format:date-time fields become nullable without anyOf."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {"datetime_field": {"type": "string", "format": "date-time"}},
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         dt_schema = schema["properties"]["datetime_field"]
         assert "anyOf" not in dt_schema
         assert dt_schema.get("type") == ["string", "null"] or dt_schema.get("type") == [
@@ -226,7 +237,7 @@ class TestDateFormatHandling:
 
     def test_date_time_integration_validates_openapi_3_1(self) -> None:
         """Test that a spec with date fields converts to valid OpenAPI 3.1."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -242,8 +253,7 @@ class TestDateFormatHandling:
             },
             "paths": {
                 "/events": {
-                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Event"}}}}
-                }
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Event"}}}}}
             },
         }
         result = convert_swagger_to_openapi_v3(spec)
@@ -273,13 +283,14 @@ class TestUuidFormatHandling:
 
     def test_optional_uuid_field_gets_nullable_type_no_anyof(self) -> None:
         """Optional format:uuid fields should be nullable without anyOf."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "token_id": {"type": "string", "format": "uuid", "description": "A UUID token"}
             },
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         uuid_schema = schema["properties"]["token_id"]
         assert "anyOf" not in uuid_schema
         assert uuid_schema.get("type") == ["string", "null"] or uuid_schema.get("type") == [
@@ -291,12 +302,13 @@ class TestUuidFormatHandling:
 
     def test_required_uuid_field_stays_simple(self) -> None:
         """Required uuid field remains simple string with format."""
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "required": ["token_id"],
             "properties": {"token_id": {"type": "string", "format": "uuid"}},
         }
-        _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
+        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        _add_nullable_for_optional_refs(spec)
         uuid_schema = schema["properties"]["token_id"]
         assert "anyOf" not in uuid_schema
         assert uuid_schema.get("type") == "string"
@@ -304,7 +316,7 @@ class TestUuidFormatHandling:
 
     def test_uuid_integration_validates_openapi_3_1(self) -> None:
         """Test that spec with uuid fields converts to valid OpenAPI 3.1."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -318,8 +330,7 @@ class TestUuidFormatHandling:
             },
             "paths": {
                 "/tokens/{id}": {
-                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Token"}}}}
-                }
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Token"}}}}}
             },
         }
         result = convert_swagger_to_openapi_v3(spec)

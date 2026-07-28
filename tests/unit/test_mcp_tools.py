@@ -335,6 +335,69 @@ class TestMcpReadResourceImpl:
         assert extra is None
 
     @pytest.mark.asyncio
+    async def test_extracts_meta_known_only_returns_none_extra(self):
+        """Should return None extra when meta has only known pipeline keys."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent(
+            "data",
+            meta={
+                "response_schema": {"type": "object"},
+                "format_hint": "repository",
+            },
+        )
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
+
+        assert raw == "data"
+        assert schema == {"type": "object"}
+        assert format_hint == "repository"
+        assert extra is None
+
+    @pytest.mark.asyncio
+    async def test_extracts_meta_unknown_only_returns_all_as_extra(self):
+        """Should treat all meta keys as extra when no known keys present."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent(
+            "data",
+            meta={"owner": "acme", "repo": "widgets"},
+        )
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
+
+        assert raw == "data"
+        assert schema is None
+        assert format_hint is None
+        assert extra == {"owner": "acme", "repo": "widgets"}
+
+    @pytest.mark.asyncio
+    async def test_extracts_meta_partial_known_keys(self):
+        """Should handle meta with only response_schema (no format_hint)."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent(
+            "data",
+            meta={"response_schema": {"type": "object"}},
+        )
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
+
+        assert raw == "data"
+        assert schema == {"type": "object"}
+        assert format_hint is None
+        assert extra is None
+
+    @pytest.mark.asyncio
     async def test_raises_for_missing_resource(self):
         """Should raise ValueError for non-existent resource."""
         from fastmcp.resources import ResourceResult

@@ -138,6 +138,24 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
 # ============================================================================
 
 
+# Known meta keys that carry display pipeline metadata rather than
+# extra context for formatters.  Everything else in meta is forwarded
+# as extra to the display pipeline.
+_KNOWN_META_KEYS: frozenset[str] = frozenset({"response_schema", "format_hint"})
+
+
+def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract non-known keys from a resource meta dict.
+
+    Strips keys that belong to the display pipeline
+    (``response_schema``, ``format_hint``) and returns everything else as
+    extra context for formatters.  Returns ``None`` when no extra keys
+    exist, matching the ``or None`` idiom used throughout the codebase.
+    """
+    extra = {k: v for k, v in meta.items() if k not in _KNOWN_META_KEYS}
+    return extra or None
+
+
 async def _mcp_read_resource_impl(
     ctx: Context, uri: str,
 ) -> tuple[Any, dict[str, Any] | None, str | None, dict[str, Any] | None]:
@@ -169,7 +187,7 @@ async def _mcp_read_resource_impl(
             schema = meta.get("response_schema")
             format_hint = meta.get("format_hint")
             # Everything except response_schema and format_hint is extra context
-            extra = {k: v for k, v in meta.items() if k not in ("response_schema", "format_hint")} or None
+            extra = _extract_extra_meta(meta)
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
@@ -673,6 +691,7 @@ def register_mcp_resource_tools(
 
 
 __all__ = [
+    "_extract_extra_meta",
     "_make_tool_schema_resource_handler",
     "_mcp_list_resources_impl",
     "_mcp_read_resource_impl",

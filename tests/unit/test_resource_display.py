@@ -257,11 +257,30 @@ class TestContextMetaKeysPipeline:
         assert "# Labels for acmecorp/widgets" in formatted
         assert "bug" in formatted
 
-    def test_mcp_read_resource_impl_extracts_extra(self):
-        """_mcp_read_resource_impl correctly strips known keys from meta."""
+    def test_extract_extra_meta_known_and_extra(self):
+        """_extract_extra_meta returns extra keys, stripping known pipeline keys."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
-        # We can't easily mock the FastMCP Context in a unit test,
-        # but we can verify the extraction logic directly by testing
-        # that the function's return shape matches expectations.
-        # The actual extraction is tested via the handler_meta tests above
-        # and the _format_resource_content tests below.
+        meta = {
+            "response_schema": {"type": "object"},
+            "format_hint": "labels",
+            "owner": "acme",
+            "repo": "widgets",
+        }
+        extra = _extract_extra_meta(meta)
+        assert extra == {"owner": "acme", "repo": "widgets"}
+
+    def test_extract_extra_meta_known_only(self):
+        """_extract_extra_meta returns None when only known keys are present."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
+
+        meta_only_known = {"response_schema": {}, "format_hint": "repository"}
+        extra = _extract_extra_meta(meta_only_known)
+        assert extra is None
+
+    def test_extract_extra_meta_empty(self):
+        """_extract_extra_meta returns None for empty meta dict."""
+        from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
+
+        extra = _extract_extra_meta({})
+        assert extra is None

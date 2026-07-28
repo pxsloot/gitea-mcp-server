@@ -13,7 +13,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from gitea_mcp_server.config import Config
+from gitea_mcp_server.config import Config, ConfigProtocol
 from gitea_mcp_server.constants import (
     HTTP_MAX_CONNECTIONS,
     HTTP_MAX_KEEPALIVE_CONNECTIONS,
@@ -124,7 +124,7 @@ async def _inject_sudo(request: httpx.Request) -> None:
 class HTTPTransport:
     """HTTP transport layer handling low-level client creation and retry logic."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProtocol):
         """Initialize transport with configuration.
 
         Args:
@@ -326,13 +326,13 @@ class GiteaAPI:
 class GiteaClient:
     """HTTP client wrapper for Gitea API with proper lifecycle management."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProtocol):
         self._config = config
         self.transport = HTTPTransport(config)
         self.api = GiteaAPI(self.transport, config.base_url)
 
     @property
-    def config(self) -> Config:
+    def config(self) -> ConfigProtocol:
         """Get the application configuration."""
         return self._config
 

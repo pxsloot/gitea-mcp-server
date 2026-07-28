@@ -585,12 +585,21 @@ The canonical `SimpleConfig` lives in `tests/conftest.py` and supports all confi
 Import it in tests that need a standard config. If a test file needs unique defaults
 (e.g., HTTP transport tests), pass keyword arguments at construction time.
 
+`SimpleConfig` satisfies the ``ConfigProtocol`` defined in ``gitea_mcp_server/config.py``
+via structural subtyping (PEP 544).  Production functions that accept ``ConfigProtocol``
+accept ``SimpleConfig`` automatically — no import of the real ``Config`` or Pydantic
+dependency is needed in test code.
+
 ```python
 # Good — canonical fixture from conftest.py
 @pytest.fixture
 def simple_config():
     return SimpleConfig(url="https://git.example.com", token="test_token")
 ```
+
+If a production function's signature changes from ``Config`` to ``ConfigProtocol``,
+all existing test call sites continue to work without modification because
+``SimpleConfig`` already satisfies the protocol structurally.
 
 ### Inline Data Fixtures
 

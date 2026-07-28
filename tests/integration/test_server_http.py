@@ -24,7 +24,7 @@ from tests.conftest import SimpleConfig
 
 def _http_config(**overrides: Any) -> SimpleConfig:
     """Create a SimpleConfig with HTTP transport defaults."""
-    defaults = {"transport_type": "http", "http_port": 0}
+    defaults: dict[str, Any] = {"transport_type": "http", "http_port": 0}
     defaults.update(overrides)
     return SimpleConfig(**defaults)
 

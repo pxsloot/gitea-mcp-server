@@ -2,13 +2,46 @@
 
 import logging
 import threading
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 from urllib.parse import urlparse
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from gitea_mcp_server.exceptions import ConfigError
+
+
+class ConfigProtocol(Protocol):
+    """Structural protocol for configuration objects.
+
+    Both :class:`Config` (Pydantic ``BaseSettings``) and test-only
+    ``SimpleConfig`` satisfy this protocol. Functions that only need
+    structural access to config fields should accept ``ConfigProtocol``
+    instead of ``Config`` so they accept both the real config (from
+    environment variables) and the test stub without type errors.
+
+    All fields mirror :class:`Config` exactly.
+    """
+
+    url: str
+    token: str
+    verify_ssl: bool
+    ssl_cert_file: str | None
+    log_level: str
+    log_format: str
+    tool_filtering_enabled: bool
+    enable_lazy_loading: bool
+    tool_prefix: str
+    transport_type: str
+    http_host: str
+    http_port: int
+    http_path: str
+    http_cors: list[str] | None
+    exclude_config_path: str | None
+    response_format: str
+
+    @property
+    def base_url(self) -> str: ...
 
 logger = logging.getLogger(__name__)
 

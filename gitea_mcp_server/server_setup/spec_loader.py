@@ -34,7 +34,7 @@ from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
-    from gitea_mcp_server.config import Config
+    from gitea_mcp_server.config import Config, ConfigProtocol
     from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ async def fetch_token_scopes(gitea_client: GiteaClient, token: str) -> set[str] 
 # ---------------------------------------------------------------------------
 
 
-async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[str, Any]:
+async def load_openapi_spec(gitea_client: GiteaClient, config: ConfigProtocol) -> dict[str, Any]:
     """Load OpenAPI spec from Gitea instance.
 
     Args:
@@ -203,7 +203,7 @@ async def load_openapi_spec(gitea_client: GiteaClient, config: Config) -> dict[s
 
 
 async def load_and_convert_spec(
-    gitea_client: GiteaClient, config: Config
+    gitea_client: GiteaClient, config: ConfigProtocol
 ) -> tuple[OpenAPISpec, dict[str, Any], dict[str, Any], set[tuple[str, str]]]:
     """Load Swagger spec, convert to OpenAPI v3, compute spec-level filtering.
 

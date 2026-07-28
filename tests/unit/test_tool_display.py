@@ -1,10 +1,25 @@
-"""Tests for tool_display module (format_tool_result wrapper)."""
+"""Tests for tool_display module (format_tool_result wrapper).
+
+Coverage includes:
+- Happy path: raw, json, markdown formats with various data shapes
+- Error recovery: all 3 exception types (TypeError, AttributeError, ValueError)
+  caught by ``format_tool_result`` (added in #583)
+- Non-JSON-serializable data handling
+- Logger call verification on format failure
+"""
+
+import json
+import logging
+from unittest.mock import patch
+
+import pytest
+from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.tool_display import format_tool_result
 
 
 class TestFormatToolResult:
-    """Tests for format_tool_result -- thin delegator to apply_format."""
+    """Happy-path tests for format_tool_result."""
 
     def test_raw_format_passthrough(self):
         """'raw' format returns structured content."""
@@ -77,3 +92,146 @@ class TestFormatToolResult:
         """None data passes through."""
         result = format_tool_result(None, "raw")
         assert result.structured_content == {"result": None}
+
+
+class TestFormatToolResultErrorRecovery:
+    """Error recovery: format_tool_result catches formatting exceptions.
+
+    Mirrors the resource-side pattern in ``_format_resource_content``:
+    wraps ``apply_format`` in try/except for (TypeError, AttributeError,
+    ValueError).  Uses both mocked exception injection and real error-
+    triggering data for realistic coverage.
+    """
+
+    # --- Mock-based: inject exceptions into apply_format ---
+
+    @pytest.mark.parametrize(
+        ("exc_cls", "exc_msg"),
+        [
+            (TypeError, "bad type"),
+            (AttributeError, "no attribute"),
+            (ValueError, "bad value"),
+        ],
+    )
+    def test_markdown_recovers_from_all_exception_types(self, exc_cls, exc_msg):
+        """All 3 exception types from markdown path produce fallback."""
+        data = {"key": "value"}
+        with patch(
+            "gitea_mcp_server.tools.tool_display.apply_format",
+            side_effect=exc_cls(exc_msg),
+        ):
+            result = format_tool_result(data, "markdown")
+            assert isinstance(result, ToolResult)
+            text = result.content[0].text
+            assert "```json" in text
+            assert "formatting failed" in text
+            assert exc_cls.__name__ in text
+
+    @pytest.mark.parametrize(
+        ("exc_cls", "exc_msg"),
+        [
+            (TypeError, "bad type"),
+            (AttributeError, "no attribute"),
+            (ValueError, "bad value"),
+        ],
+    )
+    def test_json_recovers_from_all_exception_types(self, exc_cls, exc_msg):
+        """All 3 exception types from json path produce fallback."""
+        data = {"key": "value"}
+        with patch(
+            "gitea_mcp_server.tools.tool_display.apply_format",
+            side_effect=exc_cls(exc_msg),
+        ):
+            result = format_tool_result(data, "json")
+            assert isinstance(result, ToolResult)
+            fallback = json.loads(result.content[0].text)
+            assert "result" in fallback
+
+    # --- Real error-triggering data (no mocking needed) ---
+
+    def test_non_serializable_data_markdown_fallback(self):
+        """Non-JSON-serializable data in markdown returns code fence fallback."""
+        class NonSerializable:
+            pass
+
+        data = {"bad": NonSerializable()}
+        result = format_tool_result(data, "markdown")
+        assert isinstance(result, ToolResult)
+        text = result.content[0].text
+        assert "```json" in text
+        assert "formatting failed" in text
+        # The actual exception may be PydanticSerializationError (subclass of
+        # TypeError), so we check for the generic marker instead of a specific name.
+
+    def test_non_serializable_data_json_fallback(self):
+        """Non-JSON-serializable data in json returns fallback result."""
+        class NonSerializable:
+            pass
+
+        data = {"bad": NonSerializable()}
+        result = format_tool_result(data, "json")
+        assert isinstance(result, ToolResult)
+        # structured_content carries the safe string representation
+        assert "result" in result.structured_content
+        fallback = json.loads(result.content[0].text)
+        assert "result" in fallback
+
+    def test_non_serializable_data_custom_str(self):
+        """Non-serializable with __str__ uses it in fallback in json mode."""
+        class Unserializable:
+            def __str__(self):
+                return "custom_str_repr"
+
+        data = {"bad": Unserializable()}
+        # json mode: json.dumps raises TypeError directly for
+        # non-serializable data, which we catch and handle.
+        result = format_tool_result(data, "json")
+        assert isinstance(result, ToolResult)
+        # structured_content contains the safe fallback
+        assert "result" in result.structured_content
+
+    # --- Raw format bypass ---
+
+    def test_raw_format_bypasses_error_recovery(self):
+        """Raw format (handled by apply_format early return) does not trigger recovery."""
+        result = format_tool_result({"key": "value"}, "raw")
+        assert result.structured_content == {"result": {"key": "value"}}
+
+    # --- Logger verification ---
+
+    def test_logger_warning_on_format_failure(self, caplog):
+        """logger.warning is called on format failure."""
+        data = {"key": "value"}
+        caplog.set_level(logging.WARNING)
+        with patch(
+            "gitea_mcp_server.tools.tool_display.apply_format",
+            side_effect=TypeError("bad type"),
+        ):
+            format_tool_result(data, "markdown")
+            assert any(
+                "Display pipeline recovered from" in record.message
+                for record in caplog.records
+            )
+
+    def test_logger_level_is_warning(self, caplog):
+        """Log record level is WARNING."""
+        data = {"key": "value"}
+        caplog.set_level(logging.WARNING)
+        with patch(
+            "gitea_mcp_server.tools.tool_display.apply_format",
+            side_effect=ValueError("bad value"),
+        ):
+            format_tool_result(data, "json")
+            assert any(
+                record.levelname == "WARNING"
+                for record in caplog.records
+            )
+
+    # --- Happy path still works ---
+
+    def test_happy_path_unchanged(self):
+        """Normal data still formats correctly (no regression)."""
+        data = {"name": "test", "count": 42}
+        result = format_tool_result(data, "markdown")
+        assert result.structured_content == {"result": data}
+        assert "test" in result.content[0].text

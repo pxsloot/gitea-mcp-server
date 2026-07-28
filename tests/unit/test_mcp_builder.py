@@ -1102,6 +1102,8 @@ class TestToolWrappingTransform:
     @pytest.mark.asyncio
     async def test_array_pagination_injection(self):
         """Array responses get pagination metadata."""
+        from gitea_mcp_server.pagination import pagination_ctx
+
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
         tool.output_schema = {
@@ -1111,32 +1113,30 @@ class TestToolWrappingTransform:
             },
         }
 
-        with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-        ):
-            from fastmcp.tools.base import ToolResult
-            from mcp.types import TextContent
+        pagination_ctx.set({"total_count": 1})
+        try:
+            with (
+                patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    new_callable=AsyncMock,
+                ) as mock_run,
+            ):
+                from fastmcp.tools.base import ToolResult
+                from mcp.types import TextContent
 
-            mock_run.return_value = ToolResult(
-                content=[TextContent(type="text", text="[item]")],
-                structured_content={"result": [{"id": 1}], "has_more": False},
-            )
+                mock_run.return_value = ToolResult(
+                    content=[TextContent(type="text", text="[item]")],
+                    structured_content={"result": [{"id": 1}], "has_more": False},
+                )
 
-            from gitea_mcp_server.pagination import pagination_ctx
+                result = await transform.list_tools([tool])
+                wrapped = result[0]
+                output = await wrapped.run(arguments={"page": 1})
 
-            pagination_ctx.set({"total_count": 1})
-
-            result = await transform.list_tools([tool])
-            wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1})
-
-            assert output.structured_content["has_more"] is False
-            assert output.structured_content["total_count"] == 1
-
+                assert output.structured_content["has_more"] is False
+                assert output.structured_content["total_count"] == 1
+        finally:
             pagination_ctx.set({})
 
     @pytest.mark.asyncio
@@ -1327,6 +1327,7 @@ class TestToolWrappingTransform:
         """
         from fastmcp.tools.base import ToolResult
 
+        from gitea_mcp_server.pagination import pagination_ctx
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform = self.make_transform()
@@ -1341,45 +1342,43 @@ class TestToolWrappingTransform:
 
         extracted = {"fetch_test": True}
 
-        with (
-            patch.dict(
-                "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
-                {
-                    "fetch_test": VirtualParam(
-                        schema={"type": "boolean"},
-                        default=False,
-                        description="",
-                        loop_hook=my_loop_hook,
-                    ),
-                },
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
-                return_value=True,
-            ),
-        ):
-            mock_run.return_value = ToolResult(
-                structured_content={"result": [{"id": 1}]},
-            )
+        pagination_ctx.set({"total_count": 1})
+        try:
+            with (
+                patch.dict(
+                    "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+                    {
+                        "fetch_test": VirtualParam(
+                            schema={"type": "boolean"},
+                            default=False,
+                            description="",
+                            loop_hook=my_loop_hook,
+                        ),
+                    },
+                ),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                ),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    new_callable=AsyncMock,
+                ) as mock_run,
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                    return_value=True,
+                ),
+            ):
+                mock_run.return_value = ToolResult(
+                    structured_content={"result": [{"id": 1}]},
+                )
 
-            from gitea_mcp_server.pagination import pagination_ctx
-
-            pagination_ctx.set({"total_count": 1})
-
-            # Call the pipeline directly with extracted
-            result = await transform._run_transform_pipeline(
-                {"page": 1, "limit": 10},
-                tool,
-                extracted=extracted,
-            )
-
+                # Call the pipeline directly with extracted
+                result = await transform._run_transform_pipeline(
+                    {"page": 1, "limit": 10},
+                    tool,
+                    extracted=extracted,
+                )
+        finally:
             pagination_ctx.set({})
 
         assert loop_hook_called
@@ -1437,6 +1436,7 @@ class TestFetchAllIntegration:
         """Full pipeline with fetch_all=True merges paginated results."""
         from fastmcp.tools.base import ToolResult
 
+        from gitea_mcp_server.pagination import pagination_ctx
         from gitea_mcp_server.tools.virtual_params import VirtualParam
 
         transform, tool = make_transform_and_tool
@@ -1460,42 +1460,40 @@ class TestFetchAllIntegration:
 
         extracted = {"fetch_all": True}
 
-        with (
-            patch.dict(
-                "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
-                {
-                    "fetch_all": VirtualParam(
-                        schema={"type": "boolean"},
-                        default=False,
-                        description="",
-                        loop_hook=_mock_fetch_all_hook,
-                    ),
-                },
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
-                return_value=True,
-            ),
-        ):
-            mock_run.side_effect = _mock_pages
+        pagination_ctx.set({"total_count": 30})
+        try:
+            with (
+                patch.dict(
+                    "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+                    {
+                        "fetch_all": VirtualParam(
+                            schema={"type": "boolean"},
+                            default=False,
+                            description="",
+                            loop_hook=_mock_fetch_all_hook,
+                        ),
+                    },
+                ),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                ),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    new_callable=AsyncMock,
+                ) as mock_run,
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                    return_value=True,
+                ),
+            ):
+                mock_run.side_effect = _mock_pages
 
-            from gitea_mcp_server.pagination import pagination_ctx
-
-            pagination_ctx.set({"total_count": 30})
-
-            result = await transform._run_transform_pipeline(
-                {"page": 1, "limit": 10, "owner": "test"},
-                tool,
-                extracted=extracted,
-            )
-
+                result = await transform._run_transform_pipeline(
+                    {"page": 1, "limit": 10, "owner": "test"},
+                    tool,
+                    extracted=extracted,
+                )
+        finally:
             pagination_ctx.set({})
 
         # 3 pages fetched total
@@ -1510,6 +1508,8 @@ class TestFetchAllIntegration:
     async def test_fetch_all_false_single_page(self, make_transform_and_tool):
         """fetch_all=False fetches only the first page (no loop)."""
         from fastmcp.tools.base import ToolResult
+
+        from gitea_mcp_server.pagination import pagination_ctx
 
         transform, tool = make_transform_and_tool
 
@@ -1526,31 +1526,29 @@ class TestFetchAllIntegration:
 
         extracted = {"fetch_all": False}
 
-        with (
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
-            ),
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
-                new_callable=AsyncMock,
-            ) as mock_run,
-            patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
-                return_value=True,
-            ),
-        ):
-            mock_run.side_effect = _mock_single
+        pagination_ctx.set({"total_count": 20})
+        try:
+            with (
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                ),
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    new_callable=AsyncMock,
+                ) as mock_run,
+                patch(
+                    "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                    return_value=True,
+                ),
+            ):
+                mock_run.side_effect = _mock_single
 
-            from gitea_mcp_server.pagination import pagination_ctx
-
-            pagination_ctx.set({"total_count": 20})
-
-            result = await transform._run_transform_pipeline(
-                {"page": 1, "limit": 10, "owner": "test"},
-                tool,
-                extracted=extracted,
-            )
-
+                result = await transform._run_transform_pipeline(
+                    {"page": 1, "limit": 10, "owner": "test"},
+                    tool,
+                    extracted=extracted,
+                )
+        finally:
             pagination_ctx.set({})
 
         # Only one page fetched

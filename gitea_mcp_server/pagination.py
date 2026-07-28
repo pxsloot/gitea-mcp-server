@@ -19,6 +19,21 @@ Usage::
 The :class:`PaginationRunner` encapsulates the fetch-loop logic for API
 tools that need to iterate over multiple pages via HTTP calls.  It is
 used by the ``_fetch_all_loop`` virtual-param hook.
+
+Module-level state warning
+--------------------------
+``pagination_ctx`` is a module-level :class:`~contextvars.ContextVar` by
+design — it bridges httpx event hooks (which have no access to tool kwargs)
+and the ``mcp_builder._ToolWrappingTransform`` pipeline (which has no access
+to httpx internals).  This is intentional and preferable to coupling to
+FastMCP internals.
+
+However, tests that simulate the event hook must reset ``pagination_ctx``
+after use, or rely on ``asyncio_default_test_loop_scope = "function"``
+(each async test gets its own event loop, thus its own
+``contextvars.Context``).  The suite-level autouse fixture
+``_reset_module_contexts`` in ``tests/conftest.py`` provides a deterministic
+reset for every test regardless of sync/async status.
 """
 
 import contextvars

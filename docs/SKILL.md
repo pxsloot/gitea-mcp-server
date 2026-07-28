@@ -88,7 +88,8 @@ One of two things should then happen:
 
 ### How to start working on an issue
 
-1. Read `docs/INDEX.md` to find the relevant doc
+1. **Read `docs/INDEX.md` first** — do not skip this step. It navigates you
+   to the right doc for your task.
 2. Read the doc for your task (see the "Start here if…" column in INDEX.md)
 3. Create a feature branch from `main`
 4. Make your changes — test, update docs, update the skill if needed

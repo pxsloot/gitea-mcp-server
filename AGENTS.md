@@ -5,6 +5,9 @@ consumers are agents like you. Every design decision — lazy loading, concise
 results, discovery-first patterns, tool naming conventions — optimises for
 agent clarity and token economy.
 
+**Start here.** Read AGENTS.md for orientation, then `docs/SKILL.md` for the
+developer handbook before making changes.
+
 ## What we build
 
 This project auto-generates ~400 tools and resources from Gitea/Forgejo's
@@ -27,6 +30,5 @@ The full documentation map — audience, type, topic ownership for every doc
 
 ## FastMCP documentation
 
-This project uses FastMCP extensively. Always use
-https://gofastmcp.com/llms.txt for current docs — training-memory FastMCP
-will be stale.
+This project uses FastMCP extensively. See `docs/SKILL.md` for up-to-date
+FastMCP documentation links.

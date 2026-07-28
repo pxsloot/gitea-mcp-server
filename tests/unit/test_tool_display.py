@@ -192,8 +192,8 @@ class TestFormatToolResultErrorRecovery:
 
     # --- Raw format bypass ---
 
-    def test_raw_format_passthrough_no_recovery_needed(self):
-        """'raw' format (handled by apply_format early return) still works."""
+    def test_raw_format_bypasses_error_recovery(self):
+        """Raw format (handled by apply_format early return) does not trigger recovery."""
         result = format_tool_result({"key": "value"}, "raw")
         assert result.structured_content == {"result": {"key": "value"}}
 

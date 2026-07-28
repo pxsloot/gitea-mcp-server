@@ -1,8 +1,9 @@
 """Tool result formatting entry point with error recovery.
 
-Thin mirror of ``tools/resource_display.py``.  Tools get their data already
-parsed from the HTTP JSON response, so no JSON parsing or formatter dispatch
-is needed — only delegation to ``format.py:apply_format``.
+Mirrors the resource-side pattern from ``tools/resource_display.py``.
+Tools get their data already parsed from the HTTP JSON response, so no
+JSON parsing or formatter dispatch is needed — only delegation to
+``format.py:apply_format`` with an added error recovery layer.
 
 **Error recovery**: Wraps ``apply_format`` in ``try/except (TypeError,
 AttributeError, ValueError)``, mirroring the resource-side pattern in

@@ -236,8 +236,11 @@ This project has four distinct test zones. Each demands a different approach.
 **Coverage target**: 95%+.
 
 ```python
+from gitea_mcp_server.openapi_types import SwaggerV2Spec
+
+
 def test_array_response_wrapped_in_result(self):
-    spec = {
+    spec: SwaggerV2Spec = {
         "swagger": "2.0",
         "info": {"title": "T", "version": "1"},
         "basePath": "/api",

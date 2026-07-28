@@ -14,7 +14,7 @@ class TestResourcesIntegration:
     """Integration tests for resources registration."""
 
     @pytest.mark.asyncio
-    async def test_resources_registered_on_server_creation(self):
+    async def test_resources_registered_on_server_creation(self) -> None:
         """Test that resources are automatically registered when server starts."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -55,7 +55,7 @@ class TestResourcesIntegration:
                 mock_custom.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_auto_generated_resources_use_gitea_uri_scheme(self):
+    async def test_auto_generated_resources_use_gitea_uri_scheme(self) -> None:
         """Test that auto-generated resources use the gitea:// scheme.
 
         All auto-generated resource URIs start with gitea:// regardless
@@ -115,7 +115,7 @@ class TestResourcesIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_custom_resources_register_expected_count(self):
+    async def test_custom_resources_register_expected_count(self) -> None:
         """Test that register_custom_resources registers the expected number of resources."""
         from gitea_mcp_server import resources as resources_pkg
 
@@ -127,7 +127,7 @@ class TestResourcesIntegration:
         assert mcp.resource.call_count == 12
 
     @pytest.mark.asyncio
-    async def test_custom_resources_include_expected_uris(self):
+    async def test_custom_resources_include_expected_uris(self) -> None:
         """Test that custom resources are registered with proper URIs."""
         from gitea_mcp_server import resources as resources_pkg
 

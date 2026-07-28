@@ -5,6 +5,7 @@ Covers JSONFormatter and setup_logging function.
 
 import json
 import logging
+from types import TracebackType
 
 import pytest
 
@@ -12,7 +13,7 @@ from gitea_mcp_server.logging_config import SENSITIVE_KEYS, JSONFormatter, setup
 
 
 class TestJSONFormatter:
-    def test_basic_format_produces_valid_json(self):
+    def test_basic_format_produces_valid_json(self) -> None:
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test_logger",
@@ -30,7 +31,7 @@ class TestJSONFormatter:
         assert result["message"] == "hello world"
 
     @staticmethod
-    def _capture_exc_info():
+    def _capture_exc_info() -> tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]:
         """Capture exception info for testing."""
         try:
             msg = "test error"
@@ -39,7 +40,7 @@ class TestJSONFormatter:
             import sys
             return sys.exc_info()
 
-    def test_format_with_exc_info(self):
+    def test_format_with_exc_info(self) -> None:
         formatter = JSONFormatter()
         exc_info = self._capture_exc_info()
         record = logging.LogRecord(
@@ -56,7 +57,7 @@ class TestJSONFormatter:
         assert "ValueError" in result["exception"]
         assert "test error" in result["exception"]
 
-    def test_format_with_extra_fields(self):
+    def test_format_with_extra_fields(self) -> None:
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -74,7 +75,7 @@ class TestJSONFormatter:
         assert result["user"] == "admin"
 
     @pytest.mark.parametrize("sensitive_key", sorted(SENSITIVE_KEYS))
-    def test_sensitive_keys_are_redacted(self, sensitive_key):
+    def test_sensitive_keys_are_redacted(self, sensitive_key) -> None:
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -89,7 +90,7 @@ class TestJSONFormatter:
         result = json.loads(formatter.format(record))
         assert result[sensitive_key] == "***REDACTED***"
 
-    def test_standard_attrs_are_not_emitted_as_extras(self):
+    def test_standard_attrs_are_not_emitted_as_extras(self) -> None:
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -110,7 +111,7 @@ class TestJSONFormatter:
         for key in standard_keys:
             assert key not in result, f"Standard key '{key}' leaked into extra fields"
 
-    def test_debug_level_log(self):
+    def test_debug_level_log(self) -> None:
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -126,7 +127,7 @@ class TestJSONFormatter:
 
 
 class TestSetupLogging:
-    def test_json_format_sets_json_formatter(self):
+    def test_json_format_sets_json_formatter(self) -> None:
         setup_logging(level="ERROR", log_format="json")
         root = logging.getLogger()
         found = any(
@@ -134,7 +135,7 @@ class TestSetupLogging:
         )
         assert found, "Expected JSONFormatter on at least one handler"
 
-    def test_text_format_sets_standard_formatter(self):
+    def test_text_format_sets_standard_formatter(self) -> None:
         setup_logging(level="ERROR", log_format="text")
         root = logging.getLogger()
         found = any(
@@ -144,22 +145,22 @@ class TestSetupLogging:
         )
         assert found, "Expected standard logging.Formatter on at least one handler"
 
-    def test_respects_log_level(self):
+    def test_respects_log_level(self) -> None:
         setup_logging(level="DEBUG", log_format="text")
         root = logging.getLogger()
         assert root.level == logging.DEBUG
 
-    def test_sets_httpx_to_warning(self):
+    def test_sets_httpx_to_warning(self) -> None:
         setup_logging(level="DEBUG", log_format="text")
         httpx_logger = logging.getLogger("httpx")
         assert httpx_logger.level == logging.WARNING
 
-    def test_sets_fastmcp_to_info(self):
+    def test_sets_fastmcp_to_info(self) -> None:
         setup_logging(level="DEBUG", log_format="text")
         fastmcp_logger = logging.getLogger("fastmcp")
         assert fastmcp_logger.level == logging.INFO
 
-    def test_removes_existing_handlers(self):
+    def test_removes_existing_handlers(self) -> None:
         root = logging.getLogger()
         initial_count = len(root.handlers)
         setup_logging(level="INFO", log_format="json")
@@ -170,7 +171,7 @@ class TestSetupLogging:
         assert len(root.handlers) <= final_handlers
         root.handlers.clear()
 
-    def test_text_format_has_correct_format_string(self):
+    def test_text_format_has_correct_format_string(self) -> None:
         setup_logging(level="ERROR", log_format="text")
         root = logging.getLogger()
         for handler in root.handlers:

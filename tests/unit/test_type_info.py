@@ -16,12 +16,12 @@ from gitea_mcp_server.tools.type_info import (
 class TestBuildTypeIndex:
     """Tests for build_type_index."""
 
-    def test_empty_spec_returns_empty(self):
+    def test_empty_spec_returns_empty(self) -> None:
         """Should return empty dict when spec has no components/schemas."""
         spec: dict = {"openapi": "3.1.0", "paths": {}}
         assert build_type_index(spec) == {}
 
-    def test_registers_all_types(self):
+    def test_registers_all_types(self) -> None:
         """Should register every type from components/schemas."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -44,7 +44,7 @@ class TestBuildTypeIndex:
         assert index["User"]["referenced_types"] == []
         assert index["Label"]["returned_by"] == []
 
-    def test_detects_nested_refs(self):
+    def test_detects_nested_refs(self) -> None:
         """Should detect $ref references between types."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -71,7 +71,7 @@ class TestBuildTypeIndex:
         assert "User" in index
         assert "User" in index["User"]["referenced_types"]
 
-    def test_cross_references_from_response(self):
+    def test_cross_references_from_response(self) -> None:
         """Should record which tools return a type in their response."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -110,7 +110,7 @@ class TestBuildTypeIndex:
         assert "User" in index
         assert "issue_get_issue" in index["User"]["returned_by"]
 
-    def test_cross_references_from_parameters(self):
+    def test_cross_references_from_parameters(self) -> None:
         """Should record which tools accept a type in their parameters."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -151,7 +151,7 @@ class TestBuildTypeIndex:
         assert "CreateUserOption" in index
         assert "admin_create_user" in index["CreateUserOption"]["accepted_by"]
 
-    def test_cross_references_from_request_body(self):
+    def test_cross_references_from_request_body(self) -> None:
         """Should record which tools accept a type via requestBody."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -191,7 +191,7 @@ class TestBuildTypeIndex:
         index = build_type_index(spec)
         assert "repo_create" in index["CreateRepoOption"]["accepted_by"]
 
-    def test_deduplicates_cross_references(self):
+    def test_deduplicates_cross_references(self) -> None:
         """Should deduplicate operationId entries in returned_by/accepted_by."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -232,7 +232,7 @@ class TestBuildTypeIndex:
         # should only appear once in returned_by.
         assert index["User"]["returned_by"] == ["issue_get_issue"]
 
-    def test_non_dict_schema_skipped(self):
+    def test_non_dict_schema_skipped(self) -> None:
         """Should skip non-dict schema entries."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -297,7 +297,7 @@ class TestResolveTypeInfo:
         },
     }
 
-    def test_resolves_known_type_concise(self):
+    def test_resolves_known_type_concise(self) -> None:
         """Should return compact type info for a known type."""
         index = build_type_index(self.SIMPLE_SPEC)
         result = resolve_type_info(self.SIMPLE_SPEC, index, "User", detail="concise")
@@ -315,7 +315,7 @@ class TestResolveTypeInfo:
         # concise should NOT have resolved_schema
         assert "resolved_schema" not in result
 
-    def test_resolves_known_type_full(self):
+    def test_resolves_known_type_full(self) -> None:
         """Should include resolved_schema when detail='full'."""
         index = build_type_index(self.SIMPLE_SPEC)
         result = resolve_type_info(self.SIMPLE_SPEC, index, "User", detail="full")
@@ -327,20 +327,20 @@ class TestResolveTypeInfo:
         # resolved_schema should have type, properties etc.
         assert "type" in result["resolved_schema"]
 
-    def test_returns_none_for_unknown_type(self):
+    def test_returns_none_for_unknown_type(self) -> None:
         """Should return None for a type not in the index."""
         index = build_type_index(self.SIMPLE_SPEC)
         result = resolve_type_info(self.SIMPLE_SPEC, index, "NonExistentType")
         assert result is None
 
-    def test_cross_references_include_returned_by(self):
+    def test_cross_references_include_returned_by(self) -> None:
         """Should include operationIds of tools that return this type."""
         index = build_type_index(self.SIMPLE_SPEC)
         result = resolve_type_info(self.SIMPLE_SPEC, index, "User")
         assert result is not None
         assert "issue_get_issue" in result["cross_references"]["returned_by"]
 
-    def test_no_returned_by_for_unused_type(self):
+    def test_no_returned_by_for_unused_type(self) -> None:
         """Should have empty returned_by for an unused type."""
         index = build_type_index(self.SIMPLE_SPEC)
         result = resolve_type_info(self.SIMPLE_SPEC, index, "Milestone")
@@ -352,7 +352,7 @@ class TestResolveTypeInfo:
 class TestResolveTypeInfoEdgeCases:
     """Tests for guard clauses and error handling in resolve_type_info."""
 
-    def test_non_dict_schema_returns_none(self):
+    def test_non_dict_schema_returns_none(self) -> None:
         """Non-dict schema in type index returns None."""
         index = {"TestType": {"schema": "not a dict", "returned_by": [], "accepted_by": [],
                                "referenced_types": []}}
@@ -364,7 +364,7 @@ class TestTryCtxHelpers:
     """Tests for _try_ctx_info and _try_ctx_report_progress error handling."""
 
     @pytest.mark.asyncio
-    async def test_try_ctx_info_handles_runtime_error(self):
+    async def test_try_ctx_info_handles_runtime_error(self) -> None:
         """_try_ctx_info catches RuntimeError gracefully."""
         from unittest.mock import AsyncMock
 
@@ -376,7 +376,7 @@ class TestTryCtxHelpers:
         ctx.info.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_try_ctx_info_handles_generic_exception(self):
+    async def test_try_ctx_info_handles_generic_exception(self) -> None:
         """_try_ctx_info catches any Exception gracefully."""
         from unittest.mock import AsyncMock
 
@@ -388,7 +388,7 @@ class TestTryCtxHelpers:
         ctx.info.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_try_ctx_report_progress_handles_runtime_error(self):
+    async def test_try_ctx_report_progress_handles_runtime_error(self) -> None:
         """_try_ctx_report_progress catches RuntimeError gracefully."""
         from unittest.mock import AsyncMock
 
@@ -400,7 +400,7 @@ class TestTryCtxHelpers:
         ctx.report_progress.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_try_ctx_report_progress_handles_generic_exception(self):
+    async def test_try_ctx_report_progress_handles_generic_exception(self) -> None:
         """_try_ctx_report_progress catches any Exception gracefully."""
         from unittest.mock import AsyncMock
 
@@ -417,13 +417,13 @@ class TestWalkResponseRefs:
 
     MINIMAL_SPEC: dict = {"openapi": "3.1.0", "components": {"schemas": {}}}
 
-    def test_non_dict_responses_early_return(self):
+    def test_non_dict_responses_early_return(self) -> None:
         """Non-dict responses triggers early return."""
         type_index: dict = {}
         _walk_response_refs(self.MINIMAL_SPEC, "not a dict", "op1", type_index)
         assert type_index == {}
 
-    def test_ref_in_response_is_resolved(self):
+    def test_ref_in_response_is_resolved(self) -> None:
         """$ref in response is resolved before content access."""
         type_index = {
             "User": {"schema": {"type": "object"}, "referenced_types": [],
@@ -464,7 +464,7 @@ class TestWalkResponseRefs:
         # so User should be marked as returned_by op1
         assert "op1" in type_index["User"]["returned_by"]
 
-    def test_non_dict_content_skipped(self):
+    def test_non_dict_content_skipped(self) -> None:
         """Response with non-dict content is skipped."""
         type_index: dict = {}
         _walk_response_refs(self.MINIMAL_SPEC, {
@@ -475,7 +475,7 @@ class TestWalkResponseRefs:
         }, "op1", type_index)
         assert type_index == {}
 
-    def test_non_dict_json_content_skipped(self):
+    def test_non_dict_json_content_skipped(self) -> None:
         """Response with non-dict JSON content is skipped."""
         type_index: dict = {}
         _walk_response_refs(self.MINIMAL_SPEC, {
@@ -492,13 +492,13 @@ class TestWalkResponseRefs:
 class TestWalkParameterRefs:
     """Guard clauses in _walk_parameter_refs."""
 
-    def test_non_list_parameters_early_return(self):
+    def test_non_list_parameters_early_return(self) -> None:
         """Non-list parameters triggers early return."""
         type_index: dict = {}
         _walk_parameter_refs("not a list", "op1", type_index)
         assert type_index == {}
 
-    def test_non_dict_param_skipped(self):
+    def test_non_dict_param_skipped(self) -> None:
         """Non-dict parameter in list is skipped gracefully."""
         type_index: dict = {}
         _walk_parameter_refs(["valid", 42, {"schema": {"type": "string"}}], "op1", type_index)
@@ -511,13 +511,13 @@ class TestWalkRequestBodyRefs:
 
     MINIMAL_SPEC: dict = {"openapi": "3.1.0"}
 
-    def test_non_dict_body_content_early_return(self):
+    def test_non_dict_body_content_early_return(self) -> None:
         """Non-dict body content triggers early return."""
         type_index: dict = {}
         _walk_request_body_refs({"content": "not a dict"}, "op1", type_index)
         assert type_index == {}
 
-    def test_non_dict_media_item_skipped(self):
+    def test_non_dict_media_item_skipped(self) -> None:
         """Non-dict media item in request body is skipped."""
         type_index: dict = {}
         _walk_request_body_refs({
@@ -531,7 +531,7 @@ class TestWalkRequestBodyRefs:
 class TestBuildTypeIndexEdgeCases:
     """Additional guard clauses in build_type_index."""
 
-    def test_non_dict_schemas_returns_empty(self):
+    def test_non_dict_schemas_returns_empty(self) -> None:
         """When components.schemas is not a dict, return empty."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -541,7 +541,7 @@ class TestBuildTypeIndexEdgeCases:
         result = build_type_index(spec)
         assert result == {}
 
-    def test_non_dict_path_item_skipped(self):
+    def test_non_dict_path_item_skipped(self) -> None:
         """Non-dict path item is skipped."""
         spec: dict = {
             "openapi": "3.1.0",
@@ -560,7 +560,7 @@ class TestBuildTypeIndexEdgeCases:
         # Only the valid path should be processed; no error for the invalid one
         assert isinstance(result, dict)
 
-    def test_empty_operation_id_skipped(self):
+    def test_empty_operation_id_skipped(self) -> None:
         """Operation without operationId is skipped."""
         spec: dict = {
             "openapi": "3.1.0",

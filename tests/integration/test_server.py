@@ -15,7 +15,7 @@ class TestServerIntegration:
     """Integration tests for the server setup."""
 
     @pytest.mark.asyncio
-    async def test_create_mcp_server(self):
+    async def test_create_mcp_server(self) -> None:
         """Test server creation with mocked config."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -41,7 +41,7 @@ class TestServerIntegration:
             assert mcp.name == "Gitea MCP Server"
 
     @pytest.mark.asyncio
-    async def test_server_instructions_present(self):
+    async def test_server_instructions_present(self) -> None:
         """Test that server instructions are properly set."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -76,7 +76,7 @@ class TestServerIntegration:
             assert "lazy loading" in instructions.lower() or "search" in instructions.lower()
 
     @pytest.mark.asyncio
-    async def test_server_tools_discovery(self):
+    async def test_server_tools_discovery(self) -> None:
         """Test that tools are discovered from OpenAPI spec."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -123,7 +123,7 @@ class TestServerIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_call_with_mock_client(self):
+    async def test_tool_call_with_mock_client(self) -> None:
         """Test calling a tool with a mocked HTTP client."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -164,7 +164,7 @@ class TestServerIntegration:
 class TestSyntheticToolMetadata:
     """Integration tests for synthetic tool metadata (descriptions, etc.)."""
 
-    def _synthetic_base_names(self):
+    def _synthetic_base_names(self) -> list[str]:
         return [
             "search",
             "search_tools",
@@ -182,7 +182,7 @@ class TestSyntheticToolMetadata:
         return [f"{prefix}{base}" if prefix else base for base in self._synthetic_base_names()]
 
     @pytest.mark.asyncio
-    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch):
+    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch) -> None:
         """ExtensionMetadataTransform should apply YAML description overrides to tools."""
         monkeypatch.setattr(
             "gitea_mcp_server.server_setup.spec_loader.load_mcp_extensions",
@@ -233,7 +233,7 @@ class TestSyntheticToolMetadata:
             )
 
     @pytest.mark.asyncio
-    async def test_synthetic_tools_have_descriptions(self):
+    async def test_synthetic_tools_have_descriptions(self) -> None:
         """All synthetic tools must have non-empty descriptions."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -277,7 +277,7 @@ class TestCustomResources:
     """Integration tests for custom resource reading."""
 
     @pytest.mark.asyncio
-    async def test_read_server_info(self):
+    async def test_read_server_info(self) -> None:
         """Regression test: reading gitea://server/info should succeed.
 
         The get_server_info() function takes no parameters (it closes over
@@ -312,7 +312,7 @@ class TestCustomResources:
             assert "9.9.9" in text
 
     @pytest.mark.asyncio
-    async def test_read_version(self):
+    async def test_read_version(self) -> None:
         """Read gitea://version returns server version."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -331,7 +331,7 @@ class TestCustomResources:
             assert "1.99.0" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_user(self):
+    async def test_read_user(self) -> None:
         """Read gitea://users/{username} returns formatted user."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -359,7 +359,7 @@ class TestCustomResources:
             assert "Alice" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_repository(self):
+    async def test_read_repository(self) -> None:
         """Read gitea://repos/{owner}/{repo} returns formatted repo."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -386,7 +386,7 @@ class TestCustomResources:
             assert "owner/repo" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_releases(self):
+    async def test_read_releases(self) -> None:
         """Read gitea://repos/{owner}/{repo}/releases returns formatted releases."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -412,7 +412,7 @@ class TestCustomResources:
             assert "v1.0" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_readme(self):
+    async def test_read_readme(self) -> None:
         """Read gitea://repos/{owner}/{repo}/readme returns README content."""
         import base64
 
@@ -437,7 +437,7 @@ class TestCustomResources:
             assert "Hello" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_issues_default(self):
+    async def test_read_issues_default(self) -> None:
         """Read gitea://repos/{owner}/{repo}/issues returns all issues."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -463,7 +463,7 @@ class TestCustomResources:
             assert "Bug" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_issues_with_state_param(self):
+    async def test_read_issues_with_state_param(self) -> None:
         """Read gitea://repos/{owner}/{repo}/issues?state=open passes state to API."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -495,7 +495,7 @@ class TestCustomResources:
             assert issues_route.called
 
     @pytest.mark.asyncio
-    async def test_read_token_scopes(self):
+    async def test_read_token_scopes(self) -> None:
         """Read gitea://token/scopes returns token scopes."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -522,7 +522,7 @@ class TestCustomResources:
             assert "write:issue" in result.contents[0].content
 
     @pytest.mark.asyncio
-    async def test_read_organization(self):
+    async def test_read_organization(self) -> None:
         """Read gitea://orgs/{orgname} returns formatted org."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -566,7 +566,7 @@ class TestToolFiltering:
         )
 
     @pytest.mark.asyncio
-    async def test_filtering_removes_admin_tools_for_non_admin_user(self):
+    async def test_filtering_removes_admin_tools_for_non_admin_user(self) -> None:
         """Test that admin tools are filtered out when user is not admin."""
         config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
@@ -606,7 +606,7 @@ class TestToolFiltering:
             )
 
     @pytest.mark.asyncio
-    async def test_filtering_keeps_admin_tools_for_admin_user(self):
+    async def test_filtering_keeps_admin_tools_for_admin_user(self) -> None:
         """Test that admin tools are kept when user is admin."""
         config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
@@ -647,7 +647,7 @@ class TestToolFiltering:
             )
 
     @pytest.mark.asyncio
-    async def test_filtering_disabled_when_config_false(self):
+    async def test_filtering_disabled_when_config_false(self) -> None:
         """Test that admin tools are kept when filtering is disabled."""
         config = self._make_config(tool_filtering_enabled=False)
         gitea_client = GiteaClient(config)
@@ -688,7 +688,7 @@ class TestToolFiltering:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_filtering_keeps_all_tools_on_user_fetch_error(self):
+    async def test_filtering_keeps_all_tools_on_user_fetch_error(self) -> None:
         """Test that all tools are kept if fetching user info fails."""
         config = self._make_config(tool_filtering_enabled=True)
         gitea_client = GiteaClient(config)
@@ -729,7 +729,7 @@ class TestServerEdgeCases:
     """Tests for server edge cases and error paths."""
 
     @pytest.mark.asyncio
-    async def test_load_instructions_fallback(self):
+    async def test_load_instructions_fallback(self) -> None:
         """FileNotFoundError in load_instructions returns fallback text."""
         from unittest.mock import patch
 
@@ -744,7 +744,7 @@ class TestServerEdgeCases:
             assert "Authentication" in result
             assert "lazy loading" in result.lower() or "search" in result.lower()
 
-    async def test_apply_permission_filter_exception_handled(self):
+    async def test_apply_permission_filter_exception_handled(self) -> None:
         """Exception in permission filtering doesn't crash server creation."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -769,7 +769,7 @@ class TestServerEdgeCases:
             assert mcp is not None
 
     @pytest.mark.asyncio
-    async def test_permission_filter_exception_fail_open(self):
+    async def test_permission_filter_exception_fail_open(self) -> None:
         """Exception in fetch_token_scopes is caught; filtering fails open.
 
         Scope filtering happens at spec-prep time inside
@@ -804,7 +804,7 @@ class TestServerEdgeCases:
             assert excluded_routes == set()
 
     @pytest.mark.asyncio
-    async def test_permission_filter_disabled_skips_scope_routes(self):
+    async def test_permission_filter_disabled_skips_scope_routes(self) -> None:
         """When filtering is disabled, scope-based routes are not excluded.
 
         Scopes are always fetched (for the ``gitea://token/scopes``
@@ -843,7 +843,7 @@ class TestServerEdgeCases:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_spec_loading_error_propagates(self):
+    async def test_spec_loading_error_propagates(self) -> None:
         """Spec loading error propagates as SpecError."""
         from gitea_mcp_server.exceptions import SpecError
 
@@ -860,7 +860,7 @@ class TestServerEdgeCases:
                 await create_mcp_server(gitea_client)
 
     @pytest.mark.asyncio
-    async def test_build_server_instructions_without_manifest(self):
+    async def test_build_server_instructions_without_manifest(self) -> None:
         """_build_server_instructions works when manifest is empty."""
         from gitea_mcp_server.server import _build_server_instructions
 
@@ -871,7 +871,7 @@ class TestServerEdgeCases:
     # Placeholder substitution tests
     # ------------------------------------------------------------------
 
-    def test_substitute_placeholders_known(self):
+    def test_substitute_placeholders_known(self) -> None:
         """Known placeholders are replaced."""
         from gitea_mcp_server.server import substitute_placeholders
 
@@ -881,7 +881,7 @@ class TestServerEdgeCases:
         )
         assert result == "Hello Agent, prefix is gitea_"
 
-    def test_substitute_placeholders_unknown(self):
+    def test_substitute_placeholders_unknown(self) -> None:
         """Unknown placeholders pass through unchanged."""
         from gitea_mcp_server.server import substitute_placeholders
 
@@ -891,7 +891,7 @@ class TestServerEdgeCases:
         )
         assert result == "Hello Agent, {{UNKNOWN}} stays"
 
-    def test_substitute_placeholders_empty_values(self):
+    def test_substitute_placeholders_empty_values(self) -> None:
         """Empty values dict returns text unchanged."""
         from gitea_mcp_server.server import substitute_placeholders
 
@@ -899,7 +899,7 @@ class TestServerEdgeCases:
         result = substitute_placeholders(text, {})
         assert result == text
 
-    def test_substitute_placeholders_no_placeholders(self):
+    def test_substitute_placeholders_no_placeholders(self) -> None:
         """Text with no placeholders is returned unchanged."""
         from gitea_mcp_server.server import substitute_placeholders
 
@@ -907,7 +907,7 @@ class TestServerEdgeCases:
         result = substitute_placeholders(text, {"NAME": "Agent"})
         assert result == text
 
-    def test_substitute_placeholders_multiple_same(self):
+    def test_substitute_placeholders_multiple_same(self) -> None:
         """Same placeholder appearing multiple times is replaced everywhere."""
         from gitea_mcp_server.server import substitute_placeholders
 
@@ -918,7 +918,7 @@ class TestServerEdgeCases:
         assert result == "xa xb xc"
 
     @pytest.mark.asyncio
-    async def test_build_server_instructions_with_placeholders(self):
+    async def test_build_server_instructions_with_placeholders(self) -> None:
         """_build_server_instructions substitutes placeholders before returning."""
         from gitea_mcp_server.server import _build_server_instructions
 
@@ -934,7 +934,7 @@ class TestServerEdgeCases:
         assert "{{USER_LOGIN}}" not in result
 
     @pytest.mark.asyncio
-    async def test_served_instructions_no_unresolved_placeholders(self):
+    async def test_served_instructions_no_unresolved_placeholders(self) -> None:
         """Served instructions contain NO unresolved {{}} placeholders.
 
         After substitution, every ``{{PLACEHOLDER}}`` must be resolved.
@@ -970,7 +970,7 @@ class TestServerEdgeCases:
         assert "{{" not in result, f"Unresolved placeholder found in: {result}"
 
     @pytest.mark.asyncio
-    async def test_served_instructions_no_frontmatter(self):
+    async def test_served_instructions_no_frontmatter(self) -> None:
         """Served instructions start with '#', not YAML frontmatter."""
         from gitea_mcp_server.server import _build_server_instructions
 
@@ -980,7 +980,7 @@ class TestServerEdgeCases:
         )
 
     @pytest.mark.asyncio
-    async def test_served_instructions_line_budget(self):
+    async def test_served_instructions_line_budget(self) -> None:
         """Served instructions respect the line-count budget (<= 300 lines).
 
         The budget protects the agent-context economy. Raise it deliberately
@@ -1006,7 +1006,7 @@ class TestServerEdgeCases:
         )
 
     @pytest.mark.asyncio
-    async def test_served_instructions_key_anchors(self):
+    async def test_served_instructions_key_anchors(self) -> None:
         """Served instructions contain key anchor phrases from the #461 review."""
         from gitea_mcp_server.server import _build_server_instructions
 
@@ -1029,7 +1029,7 @@ class TestServerEdgeCases:
             )
 
     @pytest.mark.asyncio
-    async def test_exclusion_noop_when_no_config(self):
+    async def test_exclusion_noop_when_no_config(self) -> None:
         """No exclude config means no excluded routes from exclusion (spec-prep)."""
         from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 
@@ -1055,7 +1055,7 @@ class TestServerEdgeCases:
             assert excluded_routes == set()
 
     @pytest.mark.asyncio
-    async def test_exclusion_with_config_excludes_routes(self):
+    async def test_exclusion_with_config_excludes_routes(self) -> None:
         """Exclusion config produces excluded routes at spec-prep time."""
         from unittest.mock import patch
 
@@ -1091,7 +1091,7 @@ class TestServerEdgeCases:
                 assert ("/admin/settings", "GET") in excluded_routes
 
     @pytest.mark.asyncio
-    async def test_setup_tool_discovery_with_lazy_loading(self):
+    async def test_setup_tool_discovery_with_lazy_loading(self) -> None:
         """_setup_tool_discovery adds search + namespace transforms when lazy loading enabled."""
         from unittest.mock import MagicMock, patch
 
@@ -1113,7 +1113,7 @@ class TestServerEdgeCases:
             mock_register.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_setup_tool_discovery_without_lazy_loading(self):
+    async def test_setup_tool_discovery_without_lazy_loading(self) -> None:
         """_setup_tool_discovery skips search transform when lazy loading disabled."""
         from unittest.mock import MagicMock, patch
 
@@ -1132,7 +1132,7 @@ class TestServerEdgeCases:
             mock_register.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_main_async_config_error(self):
+    async def test_main_async_config_error(self) -> None:
         """main_async handles config initialization errors gracefully."""
         from unittest.mock import patch
 
@@ -1144,7 +1144,7 @@ class TestServerEdgeCases:
             assert exc.value.code == 1
 
     @pytest.mark.asyncio
-    async def test_mcp_disable_hides_tools_from_listing(self):
+    async def test_mcp_disable_hides_tools_from_listing(self) -> None:
         """mcp.disable() causes tools to be absent from server.list_tools()."""
         from fastmcp import FastMCP
 
@@ -1176,7 +1176,7 @@ class TestServerEdgeCases:
         assert "secret_tool" not in names_after
 
     @pytest.mark.asyncio
-    async def test_mcp_disable_raises_not_found_on_call(self):
+    async def test_mcp_disable_raises_not_found_on_call(self) -> None:
         """Calling a disabled tool raises NotFoundError."""
         from fastmcp import FastMCP
         from fastmcp.exceptions import NotFoundError
@@ -1193,7 +1193,7 @@ class TestServerEdgeCases:
             await server.call_tool("my_tool")
 
     @pytest.mark.asyncio
-    async def test_mcp_disable_hides_resources(self):
+    async def test_mcp_disable_hides_resources(self) -> None:
         """mcp.disable() with resource keys hides resources from listing."""
         from fastmcp import FastMCP
 
@@ -1223,7 +1223,7 @@ class TestServerEdgeCases:
         assert "data://secret" not in uris_after
 
     @pytest.mark.asyncio
-    async def test_mcp_disable_hides_resource_templates(self):
+    async def test_mcp_disable_hides_resource_templates(self) -> None:
         """mcp.disable() with template keys hides templates from listing."""
         from fastmcp import FastMCP
 
@@ -1273,7 +1273,7 @@ class TestServerEdgeCases:
                 mock_main_async.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_main_async_create_server_exception_exits(self):
+    async def test_main_async_create_server_exception_exits(self) -> None:
         """main_async exits with code 1 when create_mcp_server fails."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1291,7 +1291,7 @@ class TestServerEdgeCases:
                     mock_client.return_value.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_main_async_stdio_transport(self):
+    async def test_main_async_stdio_transport(self) -> None:
         """main_async with stdio transport calls run_stdio_async."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1310,7 +1310,7 @@ class TestServerEdgeCases:
                 mock_mcp.run_stdio_async.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_main_async_keyboard_interrupt_handled(self):
+    async def test_main_async_keyboard_interrupt_handled(self) -> None:
         """main_async handles KeyboardInterrupt gracefully."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1328,7 +1328,7 @@ class TestServerEdgeCases:
                 await main_async()  # Should not raise
 
     @pytest.mark.asyncio
-    async def test_create_mcp_server_generic_exception_wrapped(self):
+    async def test_create_mcp_server_generic_exception_wrapped(self) -> None:
         """create_mcp_server wraps non-SpecError exceptions in SpecError."""
         from unittest.mock import patch
 
@@ -1349,7 +1349,7 @@ class TestServerEdgeCases:
                 await create_mcp_server(gitea_client)
 
     @pytest.mark.asyncio
-    async def test_create_mcp_server_forgejo_server_type(self):
+    async def test_create_mcp_server_forgejo_server_type(self) -> None:
         """Server type placeholder is set to Forgejo when spec says 'forgejo'."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -1373,7 +1373,7 @@ class TestServerEdgeCases:
             assert mcp is not None
 
     @pytest.mark.asyncio
-    async def test_create_mcp_server_version_as_string(self):
+    async def test_create_mcp_server_version_as_string(self) -> None:
         """Server version string path when /version returns a string."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -1401,7 +1401,7 @@ class TestServerEdgeCases:
             assert mcp is not None
 
     @pytest.mark.asyncio
-    async def test_apply_virtual_param_scope_filter_exception(self):
+    async def test_apply_virtual_param_scope_filter_exception(self) -> None:
         """_apply_virtual_param_scope_filter handles exceptions gracefully."""
         from unittest.mock import patch
 
@@ -1429,7 +1429,7 @@ class TestServerStartupFailures:
     """
 
     @pytest.mark.asyncio
-    async def test_corrupt_spec_raises_spec_error(self):
+    async def test_corrupt_spec_raises_spec_error(self) -> None:
         """Server creation with a corrupt (non-JSON) swagger spec raises SpecError."""
         from gitea_mcp_server.exceptions import SpecError
 
@@ -1454,7 +1454,7 @@ class TestServerStartupFailures:
                 await create_mcp_server(gitea_client)
 
     @pytest.mark.asyncio
-    async def test_unreachable_server_raises_spec_error(self):
+    async def test_unreachable_server_raises_spec_error(self) -> None:
         """Server creation with an unreachable Gitea URL raises SpecError."""
         import httpx
 
@@ -1478,7 +1478,7 @@ class TestServerStartupFailures:
                 await create_mcp_server(gitea_client)
 
     @pytest.mark.asyncio
-    async def test_unauthorized_spec_fetch_raises_spec_error(self):
+    async def test_unauthorized_spec_fetch_raises_spec_error(self) -> None:
         """Server creation with a 401 on the swagger endpoint raises SpecError."""
         from gitea_mcp_server.exceptions import SpecError
 

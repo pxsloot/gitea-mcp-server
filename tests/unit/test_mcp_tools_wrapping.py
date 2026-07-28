@@ -29,7 +29,7 @@ class TestFunctionToolResultWrapping:
     }
 
     @pytest.mark.asyncio
-    async def test_convert_result_wraps_dict_with_x_fastmcp(self):
+    async def test_convert_result_wraps_dict_with_x_fastmcp(self) -> None:
         """convert_result should wrap return value in {'result': ...}."""
 
         tool = Tool(
@@ -46,7 +46,7 @@ class TestFunctionToolResultWrapping:
         assert result.structured_content == {"result": {"resources": [{"uri": "gitea://test"}], "count": 1}}
 
     @pytest.mark.asyncio
-    async def test_convert_result_wraps_array_with_x_fastmcp(self):
+    async def test_convert_result_wraps_array_with_x_fastmcp(self) -> None:
         """convert_result should wrap arrays too."""
 
         tool = Tool(
@@ -63,7 +63,7 @@ class TestFunctionToolResultWrapping:
         assert result.structured_content == {"result": [{"id": 1}, {"id": 2}]}
 
     @pytest.mark.asyncio
-    async def test_convert_result_sets_meta_when_wrapping(self):
+    async def test_convert_result_sets_meta_when_wrapping(self) -> None:
         """When wrapping, meta should be set to bypass MCP SDK validation."""
 
         tool = Tool(
@@ -78,7 +78,7 @@ class TestFunctionToolResultWrapping:
 
         assert result.meta == {"fastmcp": {"wrap_result": True}}
 
-    def test_convert_result_no_wrap_without_flag(self):
+    def test_convert_result_no_wrap_without_flag(self) -> None:
         """Without x-fastmcp-wrap-result, structured_content should not be wrapped."""
 
         schema = {
@@ -108,7 +108,7 @@ class TestFunctionToolResultWrapping:
         assert result.meta is None
 
     @pytest.mark.asyncio
-    async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self):
+    async def test_to_mcp_result_returns_calltoolresult_when_meta_set(self) -> None:
         """When meta is set (wrapping active), to_mcp_result should return
         CallToolResult directly to bypass MCP SDK output validation."""
 

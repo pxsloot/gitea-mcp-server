@@ -14,7 +14,7 @@ from gitea_mcp_server.server_setup.mcp_extensions import (
 class TestApplyMcpExtensions:
     """Tests for the apply_mcp_extensions function."""
 
-    def test_does_not_apply_title_or_description_at_spec_level(self):
+    def test_does_not_apply_title_or_description_at_spec_level(self) -> None:
         """title/description overrides are handled by ExtensionMetadataTransform, not here."""
         spec = {
             "paths": {
@@ -43,7 +43,7 @@ class TestApplyMcpExtensions:
         assert op["description"] == "Original description"
         assert "x-mcp" not in op
 
-    def test_applies_parameter_customization(self):
+    def test_applies_parameter_customization(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -82,7 +82,7 @@ class TestApplyMcpExtensions:
         assert "examples" in param
         assert param["examples"] == ["Bug: Something broke", "Feature: Add something"]
 
-    def test_handles_multiple_parameters(self):
+    def test_handles_multiple_parameters(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -113,7 +113,7 @@ class TestApplyMcpExtensions:
         assert params[0]["description"] == "Custom title desc"
         assert params[1]["description"] == "Custom body desc"
 
-    def test_skips_unknown_tool_names(self):
+    def test_skips_unknown_tool_names(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -137,7 +137,7 @@ class TestApplyMcpExtensions:
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
         assert op["summary"] == "Original title"
 
-    def test_removes_x_mcp_after_processing(self):
+    def test_removes_x_mcp_after_processing(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -156,7 +156,7 @@ class TestApplyMcpExtensions:
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
         assert "x-mcp" not in op
 
-    def test_handles_missing_operation_id_in_spec(self):
+    def test_handles_missing_operation_id_in_spec(self) -> None:
         spec = {
             "paths": {
                 "/some/path": {
@@ -173,7 +173,7 @@ class TestApplyMcpExtensions:
 
         assert spec["paths"]["/some/path"]["post"]["summary"] == "No op ID"
 
-    def test_applies_only_provided_parameters(self):
+    def test_applies_only_provided_parameters(self) -> None:
         """Only parameters field is processed at spec level; title/description are ignored."""
         spec = {
             "paths": {
@@ -207,7 +207,7 @@ class TestApplyMcpExtensions:
         assert op["description"] == "Original description"
         assert op["parameters"][0]["description"] == "Custom body desc"
 
-    def test_handles_empty_extensions(self):
+    def test_handles_empty_extensions(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -225,7 +225,7 @@ class TestApplyMcpExtensions:
         op = spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
         assert op["summary"] == "Original"
 
-    def test_merges_multiple_operation_parameters(self):
+    def test_merges_multiple_operation_parameters(self) -> None:
         spec = {
             "paths": {
                 "/repos/{owner}/{repo}/issues": {
@@ -272,7 +272,7 @@ class TestApplyMcpExtensions:
 class TestLoadMcpExtensions:
     """Tests for the load_mcp_extensions function."""
 
-    def test_loads_yaml_file(self, tmp_path):
+    def test_loads_yaml_file(self, tmp_path) -> None:
         yaml_content = """
 tool_names:
   create_issue:
@@ -291,7 +291,7 @@ tool_names:
             }
         }
 
-    def test_returns_empty_when_file_missing(self, tmp_path):
+    def test_returns_empty_when_file_missing(self, tmp_path) -> None:
         nonexistent = tmp_path / "nonexistent.yaml"
 
         with patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(nonexistent)}):
@@ -299,7 +299,7 @@ tool_names:
 
         assert result == {}
 
-    def test_returns_empty_when_file_empty(self, tmp_path):
+    def test_returns_empty_when_file_empty(self, tmp_path) -> None:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("")
 
@@ -308,7 +308,7 @@ tool_names:
 
         assert result == {}
 
-    def test_handles_invalid_yaml(self, tmp_path):
+    def test_handles_invalid_yaml(self, tmp_path) -> None:
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("invalid: yaml: content:")
 
@@ -322,7 +322,7 @@ tool_names:
 class TestLoadMcpExtensionsEdgeCases:
     """Tests for edge cases in load_mcp_extensions."""
 
-    def test_project_root_not_found_falls_back_to_cwd(self, tmp_path):
+    def test_project_root_not_found_falls_back_to_cwd(self, tmp_path) -> None:
         """When pyproject.toml is not found, fall back to cwd."""
         from pathlib import Path
         from unittest.mock import patch
@@ -335,7 +335,7 @@ class TestLoadMcpExtensionsEdgeCases:
             result = load_mcp_extensions()
             assert result == {}
 
-    def test_runtime_error_from_find_project_root(self):
+    def test_runtime_error_from_find_project_root(self) -> None:
         """_find_project_root raises RuntimeError when no pyproject.toml found."""
         from unittest.mock import patch
 
@@ -347,7 +347,7 @@ class TestLoadMcpExtensionsEdgeCases:
             with pytest.raises(RuntimeError, match="Could not find project root"):
                 _find_project_root()
 
-    def test_os_error_on_read_propagates(self, tmp_path):
+    def test_os_error_on_read_propagates(self, tmp_path) -> None:
         """OSError when reading extensions file propagates."""
         yaml_file = tmp_path / "mcp_extensions.yaml"
         yaml_file.write_text("tool_names:\n  test: {}")
@@ -360,7 +360,7 @@ class TestLoadMcpExtensionsEdgeCases:
                 with pytest.raises(OSError, match="Permission denied"):
                     load_mcp_extensions()
 
-    def test_apply_parameter_extensions_skips_missing_name(self):
+    def test_apply_parameter_extensions_skips_missing_name(self) -> None:
         """apply_mcp_extensions skips parameter extensions with no name."""
         spec = {
             "paths": {
@@ -392,7 +392,7 @@ class TestLoadMcpExtensionsEdgeCases:
         param = spec["paths"]["/test"]["post"]["parameters"][0]
         assert param["description"] == "Original"
 
-    def test_apply_skips_non_dict_path_item(self):
+    def test_apply_skips_non_dict_path_item(self) -> None:
         """apply_mcp_extensions skips path items that are not dicts."""
         spec = {
             "paths": {
@@ -409,7 +409,7 @@ class TestLoadMcpExtensionsEdgeCases:
         # Non-dict path is skipped, no crash
         assert spec["paths"]["/valid"]["get"]["operationId"] == "get_valid"
 
-    def test_apply_skips_invalid_operation_types(self):
+    def test_apply_skips_invalid_operation_types(self) -> None:
         """apply_mcp_extensions skips non-dict operations or invalid methods."""
         spec = {
             "paths": {
@@ -427,7 +427,7 @@ class TestLoadMcpExtensionsEdgeCases:
         # description is not applied at spec level; get_test's params/x-mcp aren't set either
         assert "description" not in spec["paths"]["/test"]["get"]
 
-    def test_apply_with_empty_tool_names(self):
+    def test_apply_with_empty_tool_names(self) -> None:
         """apply_mcp_extensions with no tool_names returns early."""
         spec = {"paths": {}}
         apply_mcp_extensions(spec, extensions={"tool_names": {}})

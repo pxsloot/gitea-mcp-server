@@ -31,22 +31,22 @@ except (OSError, json.JSONDecodeError) as e:
 class TestConvertSwaggerToOpenAPI:
     """Full integration tests for conversion."""
 
-    def test_output_version_is_3_1_1(self):
+    def test_output_version_is_3_1_1(self) -> None:
         """Converted spec should have OpenAPI version 3.1.1."""
         result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert result["openapi"] == "3.1.1"
 
-    def test_basepath_becomes_server_url(self):
+    def test_basepath_becomes_server_url(self) -> None:
         """Swagger basePath should become OpenAPI server URL."""
         result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert result["servers"][0]["url"] == "/api/v1"
 
-    def test_paths_are_preserved(self):
+    def test_paths_are_preserved(self) -> None:
         """All paths from Swagger spec should be preserved in output."""
         result = convert_swagger_to_openapi_v3(_minimal_spec())
         assert "/ping" in result["paths"]
 
-    def test_non_dict_paths_becomes_empty_dict(self):
+    def test_non_dict_paths_becomes_empty_dict(self) -> None:
         """paths as a non-dict (e.g. string) should become {} in output.
 
         The guard in convert_swagger_to_openapi_v3 applies to any truthy
@@ -60,7 +60,7 @@ class TestConvertSwaggerToOpenAPI:
         result = convert_swagger_to_openapi_v3(spec)
         assert result["paths"] == {}
 
-    def test_full_spec_with_definitions(self):
+    def test_full_spec_with_definitions(self) -> None:
         """Definitions should be converted to components.schemas."""
         spec = {
             "swagger": "2.0",
@@ -84,18 +84,18 @@ class TestConvertSwaggerToOpenAPI:
         assert "schemas" in result["components"]
         assert "Pet" in result["components"]["schemas"]
 
-    def test_invalid_swagger_version(self):
+    def test_invalid_swagger_version(self) -> None:
         """Non-Swagger-2.0 input should raise SpecError."""
         spec = {"openapi": "3.0.0"}
         with pytest.raises(SpecError, match="Expected Swagger 2.0"):
             convert_swagger_to_openapi_v3(spec)
 
-    def test_invalid_input_type(self):
+    def test_invalid_input_type(self) -> None:
         """Non-dict input should raise SpecError."""
         with pytest.raises(SpecError, match="must be a dictionary"):
             convert_swagger_to_openapi_v3("not a dict")
 
-    def test_load_real_swagger_file(self):
+    def test_load_real_swagger_file(self) -> None:
         """Test loading the actual swagger.v1.json file."""
         spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
         with spec_path.open() as f:
@@ -106,7 +106,7 @@ class TestConvertSwaggerToOpenAPI:
         assert "paths" in result
         assert len(result["paths"]) > 0
 
-    def test_real_swagger_has_no_x_go_vendor_extensions(self):
+    def test_real_swagger_has_no_x_go_vendor_extensions(self) -> None:
         """Converted real swagger spec should have no x-go-* vendor extensions.
 
         Gitea's Swagger spec leaks Go struct internals (x-go-name,
@@ -135,7 +135,7 @@ class TestConvertSwaggerToOpenAPI:
         leaks = _find_x_go(result)
         assert not leaks, f"Found x-go-* vendor extensions in converted spec: {leaks}"
 
-    def test_real_swagger_preserves_operation_level_x_fields(self):
+    def test_real_swagger_preserves_operation_level_x_fields(self) -> None:
         """Converted real swagger should preserve operation-level x-* fields.
 
         Operation-level vendor extensions (x-original-content-types, x-mcp)
@@ -177,7 +177,7 @@ class TestConvertSwaggerToOpenAPI:
         # JSON endpoint should NOT have x-original-content-types (only non-JSON)
         assert "x-original-content-types" not in result["paths"]["/json"]["get"]
 
-    def test_valid_openapi_3_1_schema(self):
+    def test_valid_openapi_3_1_schema(self) -> None:
         """Test that the converted spec is valid against OpenAPI 3.1 schema."""
         spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
 
@@ -192,7 +192,7 @@ class TestConvertSwaggerToOpenAPI:
         except jsonschema.ValidationError as e:
             pytest.fail(f"OpenAPI spec validation failed: {e.message}")
 
-    def test_conversion_enriches_array_responses(self):
+    def test_conversion_enriches_array_responses(self) -> None:
         """Converted spec should have array response schemas wrapped in result."""
         spec = {
             "swagger": "2.0",
@@ -220,7 +220,7 @@ class TestConvertSwaggerToOpenAPI:
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "array"
 
-    def test_conversion_wraps_object_responses(self):
+    def test_conversion_wraps_object_responses(self) -> None:
         """Object-type response schemas should also be wrapped in result."""
         spec = {
             "swagger": "2.0",
@@ -249,7 +249,7 @@ class TestConvertSwaggerToOpenAPI:
         assert schema["properties"]["result"]["type"] == "object"
         assert "id" in schema["properties"]["result"]["properties"]
 
-    def test_text_plain_response_not_wrapped(self):
+    def test_text_plain_response_not_wrapped(self) -> None:
         """text/plain responses should remain as string schema, not wrapped in result.
 
         When a Swagger operation has ``produces: ['text/plain']``, the response
@@ -333,17 +333,17 @@ class TestConvertSwaggerToOpenAPI:
             },
         }
 
-    def test_text_plain_endpoint_has_x_original_content_types(self):
+    def test_text_plain_endpoint_has_x_original_content_types(self) -> None:
         """text/plain endpoints should have x-original-content-types preserved."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert result["paths"]["/diff"]["get"].get("x-original-content-types") == ["text/plain"]
 
-    def test_json_endpoint_does_not_have_x_original_content_types(self):
+    def test_json_endpoint_does_not_have_x_original_content_types(self) -> None:
         """JSON endpoints should not have x-original-content-types marker."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/json"]["get"]
 
-    def test_no_produces_endpoint_lacks_x_original_content_types(self):
+    def test_no_produces_endpoint_lacks_x_original_content_types(self) -> None:
         """Endpoints without produces should not have x-original-content-types."""
         result = convert_swagger_to_openapi_v3(self._make_x_original_spec())
         assert "x-original-content-types" not in result["paths"]["/no-produces"]["get"]
@@ -352,7 +352,7 @@ class TestConvertSwaggerToOpenAPI:
 class TestEnrichResponseSchemas:
     """Tests for _wrap_success_response_schemas function."""
 
-    def test_wraps_array_schema(self):
+    def test_wraps_array_schema(self) -> None:
         """Array response schemas should be wrapped in result object."""
         spec = {
             "paths": {
@@ -377,7 +377,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "array"
 
-    def test_wraps_object_schema(self):
+    def test_wraps_object_schema(self) -> None:
         """Object response schemas should be wrapped in result object."""
         spec = {
             "paths": {
@@ -402,7 +402,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
 
-    def test_stays_unwrapped_when_ref_cannot_be_resolved(self):
+    def test_stays_unwrapped_when_ref_cannot_be_resolved(self) -> None:
         """$ref schemas with unresolvable targets should remain unchanged."""
         spec = {
             "paths": {
@@ -425,7 +425,7 @@ class TestEnrichResponseSchemas:
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert "$ref" in schema
 
-    def test_wraps_ref_schema(self):
+    def test_wraps_ref_schema(self) -> None:
         """$ref response schemas should be resolved and wrapped in result."""
         spec = {
             "paths": {
@@ -459,7 +459,7 @@ class TestEnrichResponseSchemas:
         assert "id" in schema["properties"]["result"]["properties"]
         assert "$ref" not in schema
 
-    def test_wraps_response_ref(self):
+    def test_wraps_response_ref(self) -> None:
         """Response-level $ref is left as-is; component schema gets wrapped.
 
         Note: The converter does NOT inline response-level $ref: it preserves
@@ -509,7 +509,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "version" in schema["properties"]["result"]["properties"]
 
-    def test_wraps_primitive_schema(self):
+    def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""
         spec = {
             "paths": {
@@ -534,7 +534,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "string"
 
-    def test_wraps_component_responses_inline(self):
+    def test_wraps_component_responses_inline(self) -> None:
         """Component-level response schemas should also be wrapped."""
         spec = {
             "components": {
@@ -554,7 +554,7 @@ class TestEnrichResponseSchemas:
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
 
-    def test_wraps_component_responses_ref(self):
+    def test_wraps_component_responses_ref(self) -> None:
         """Component responses with $ref should be resolved and wrapped."""
         spec = {
             "components": {
@@ -581,7 +581,7 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
 
-    def test_skips_204_no_content(self):
+    def test_skips_204_no_content(self) -> None:
         """204 No Content responses should be skipped (no content to wrap)."""
         spec = {
             "paths": {
@@ -597,13 +597,13 @@ class TestEnrichResponseSchemas:
         _wrap_success_response_schemas(spec)
         assert "content" not in spec["paths"]["/item/{id}"]["delete"]["responses"]["204"]
 
-    def test_handles_empty_spec_gracefully(self):
+    def test_handles_empty_spec_gracefully(self) -> None:
         """Empty spec should not cause errors during wrapping."""
         spec: dict = {}
         _wrap_success_response_schemas(spec)
         assert spec == {}
 
-    def test_wraps_201_created_responses(self):
+    def test_wraps_201_created_responses(self) -> None:
         """201 Created responses should be wrapped like 200 responses."""
         spec = {
             "paths": {
@@ -627,7 +627,7 @@ class TestEnrichResponseSchemas:
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
 
-    def test_wraps_multiple_methods_on_same_path(self):
+    def test_wraps_multiple_methods_on_same_path(self) -> None:
         """Multiple HTTP methods on the same path should each get wrapping."""
         spec = {
             "paths": {
@@ -666,7 +666,7 @@ class TestEnrichResponseSchemas:
         assert "result" in post_schema["properties"]
         assert "id" in post_schema["properties"]["result"]["properties"]
 
-    def test_skips_text_plain_content(self):
+    def test_skips_text_plain_content(self) -> None:
         """text/plain content types should NOT be wrapped in result."""
         spec = {
             "paths": {
@@ -695,10 +695,10 @@ class TestEnrichResponseSchemas:
 class TestSecuritySchemeConverter:
     """Tests for SecuritySchemeConverter."""
 
-    def _converter(self):
+    def _converter(self) -> SecuritySchemeConverter:
         return SecuritySchemeConverter()
 
-    def test_basic_auth(self):
+    def test_basic_auth(self) -> None:
         """basic type should become http scheme basic."""
         sec_defs = {
             "basicAuth": {"type": "basic"},
@@ -707,7 +707,7 @@ class TestSecuritySchemeConverter:
         assert result["basicAuth"]["type"] == "http"
         assert result["basicAuth"]["scheme"] == "basic"
 
-    def test_api_key_with_in(self):
+    def test_api_key_with_in(self) -> None:
         """apiKey type should preserve name and in fields."""
         sec_defs = {
             "apiKey": {"type": "apiKey", "name": "X-API-Key", "in": "header"},
@@ -717,7 +717,7 @@ class TestSecuritySchemeConverter:
         assert result["apiKey"]["name"] == "X-API-Key"
         assert result["apiKey"]["in"] == "header"
 
-    def test_api_key_defaults(self):
+    def test_api_key_defaults(self) -> None:
         """apiKey without name/in should use defaults."""
         sec_defs = {
             "apiKey": {"type": "apiKey"},
@@ -727,7 +727,7 @@ class TestSecuritySchemeConverter:
         assert "name" not in result["apiKey"]
         assert "in" not in result["apiKey"]
 
-    def test_oauth2_implicit(self):
+    def test_oauth2_implicit(self) -> None:
         """oauth2 with flow=implicit should produce authorizationUrl."""
         sec_defs = {
             "oauth": {
@@ -744,7 +744,7 @@ class TestSecuritySchemeConverter:
         assert flows["implicit"]["authorizationUrl"] == "https://example.com/auth"
         assert flows["implicit"]["scopes"] == {"read": "read access"}
 
-    def test_oauth2_password(self):
+    def test_oauth2_password(self) -> None:
         """oauth2 with flow=password should produce tokenUrl."""
         sec_defs = {
             "oauth": {
@@ -761,7 +761,7 @@ class TestSecuritySchemeConverter:
         assert flows["password"]["tokenUrl"] == "https://example.com/token"
         assert flows["password"]["scopes"] == {"write": "write access"}
 
-    def test_oauth2_client_credentials(self):
+    def test_oauth2_client_credentials(self) -> None:
         """oauth2 with flow=clientCredentials should produce tokenUrl."""
         sec_defs = {
             "oauth": {
@@ -778,7 +778,7 @@ class TestSecuritySchemeConverter:
         assert flows["clientCredentials"]["tokenUrl"] == "https://example.com/token"
         assert flows["clientCredentials"]["scopes"] == {"admin": "admin access"}
 
-    def test_oauth2_authorization_code(self):
+    def test_oauth2_authorization_code(self) -> None:
         """oauth2 with flow=authorizationCode should produce both urls."""
         sec_defs = {
             "oauth": {
@@ -797,7 +797,7 @@ class TestSecuritySchemeConverter:
         assert flows["authorizationCode"]["tokenUrl"] == "https://example.com/token"
         assert flows["authorizationCode"]["scopes"] == {"all": "full access"}
 
-    def test_security_defs_without_flow(self):
+    def test_security_defs_without_flow(self) -> None:
         """oauth2 without flow key should produce empty flows."""
         sec_defs = {
             "oauth": {
@@ -808,7 +808,7 @@ class TestSecuritySchemeConverter:
         assert result["oauth"]["type"] == "oauth2"
         assert "flows" not in result["oauth"]
 
-    def test_non_dict_details_skipped(self):
+    def test_non_dict_details_skipped(self) -> None:
         """Non-dict security definition entries should be skipped."""
         sec_defs = {
             "bad": "not a dict",
@@ -816,7 +816,7 @@ class TestSecuritySchemeConverter:
         result = self._converter().convert(sec_defs)
         assert result == {}
 
-    def test_description_preserved(self):
+    def test_description_preserved(self) -> None:
         """Description field in security definitions should be preserved."""
         sec_defs = {
             "token": {
@@ -829,7 +829,7 @@ class TestSecuritySchemeConverter:
         result = self._converter().convert(sec_defs)
         assert result["token"]["description"] == "API tokens must be prepended with 'token' followed by a space."
 
-    def test_description_preserved_for_basic_auth(self):
+    def test_description_preserved_for_basic_auth(self) -> None:
         """Description should be preserved for basic auth type."""
         sec_defs = {
             "basic": {
@@ -840,7 +840,7 @@ class TestSecuritySchemeConverter:
         result = self._converter().convert(sec_defs)
         assert result["basic"]["description"] == "Basic HTTP authentication"
 
-    def test_description_preserved_for_oauth2(self):
+    def test_description_preserved_for_oauth2(self) -> None:
         """Description should be preserved for OAuth2 type."""
         sec_defs = {
             "oauth": {
@@ -857,25 +857,25 @@ class TestSecuritySchemeConverter:
 class TestBasePathToServerConverter:
     """Tests for BasePathToServerConverter."""
 
-    def test_with_host(self):
+    def test_with_host(self) -> None:
         """When host is present, should construct full URL."""
         spec = {"basePath": "/api/v1", "host": "git.example.com", "schemes": ["https"]}
         BasePathToServerConverter().convert(spec)
         assert spec.get("servers") == [{"url": "https://git.example.com/api/v1"}]
 
-    def test_without_host(self):
+    def test_without_host(self) -> None:
         """Without host, should use basePath only."""
         spec = {"basePath": "/api/v1"}
         BasePathToServerConverter().convert(spec)
         assert spec.get("servers") == [{"url": "/api/v1"}]
 
-    def test_without_base_path(self):
+    def test_without_base_path(self) -> None:
         """Without basePath, should do nothing."""
         spec = {"host": "git.example.com"}
         BasePathToServerConverter().convert(spec)
         assert "servers" not in spec
 
-    def test_default_scheme(self):
+    def test_default_scheme(self) -> None:
         """When no schemes given, default to http."""
         spec = {"basePath": "/api", "host": "git.example.com"}
         BasePathToServerConverter().convert(spec)

@@ -27,7 +27,7 @@ from gitea_mcp_server.tools.search import (
 class TestSearchableText:
     """Tests for _extract_searchable_text_enhanced."""
 
-    def test_name_is_boosted(self):
+    def test_name_is_boosted(self) -> None:
         """Tool name should appear SEARCH_NAME_BOOST times in the extracted text."""
         tool = Tool(
             name="gitea_user_get_current",
@@ -37,7 +37,7 @@ class TestSearchableText:
         result = _extract_searchable_text_enhanced(tool)
         assert result.count("gitea_user_get_current") == SEARCH_NAME_BOOST
 
-    def test_no_side_effects_on_empty_fields(self):
+    def test_no_side_effects_on_empty_fields(self) -> None:
         """Should handle tools with minimal fields gracefully."""
         tool = Tool(
             name="minimal_tool",
@@ -69,7 +69,7 @@ class TestCallToolOutputSchema:
         return result
 
     @pytest.mark.asyncio
-    async def test_call_tool_has_output_schema(self):
+    async def test_call_tool_has_output_schema(self) -> None:
         """call_tool should have an output_schema set with type object and result property."""
         tool = await self._get_call_tool()
         assert tool is not None, "call_tool not registered"
@@ -79,7 +79,7 @@ class TestCallToolOutputSchema:
         assert "x-fastmcp-wrap-result" not in tool.output_schema
 
     @pytest.mark.asyncio
-    async def test_call_tool_result_property_accepts_any_type(self):
+    async def test_call_tool_result_property_accepts_any_type(self) -> None:
         """The 'result' property must not have a restrictive type constraint
         (accepts both objects and arrays since it proxies any tool)."""
         tool = await self._get_call_tool()
@@ -117,7 +117,7 @@ class TestToolInfoOutputSchema:
         return result
 
     @pytest.mark.asyncio
-    async def test_tool_info_has_output_schema(self):
+    async def test_tool_info_has_output_schema(self) -> None:
         """tool_info should have an output_schema set with type object and result property."""
         tool = await self._get_tool_info()
         assert tool is not None, "tool_info not registered"
@@ -126,7 +126,7 @@ class TestToolInfoOutputSchema:
         assert "result" in tool.output_schema["properties"]
 
     @pytest.mark.asyncio
-    async def test_tool_info_output_example_accepts_array(self):
+    async def test_tool_info_output_example_accepts_array(self) -> None:
         """tool_info's output_example property must accept arrays (tool schemas return list examples)."""
         tool = await self._get_tool_info()
         assert tool is not None, "tool_info not registered"
@@ -154,7 +154,7 @@ class TestCallToolRuntimeBehavior:
     """
 
     @pytest.mark.asyncio
-    async def test_call_tool_passes_toolresult_through(self):
+    async def test_call_tool_passes_toolresult_through(self) -> None:
         """call_tool is a transparent proxy that returns the inner result unchanged."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -172,7 +172,7 @@ class TestCallToolRuntimeBehavior:
         assert result is inner_result
 
     @pytest.mark.asyncio
-    async def test_call_tool_passes_through_json_format(self):
+    async def test_call_tool_passes_through_json_format(self) -> None:
         """call_tool passes through a JSON-formatted result unchanged (format handled by inner tool)."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -192,7 +192,7 @@ class TestCallToolRuntimeBehavior:
         assert result.structured_content == data
 
     @pytest.mark.asyncio
-    async def test_call_tool_passes_through_raw_result(self):
+    async def test_call_tool_passes_through_raw_result(self) -> None:
         """call_tool passes through a raw-formatted result unchanged (format handled by inner tool)."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -210,7 +210,7 @@ class TestCallToolRuntimeBehavior:
         assert result is inner_result
 
     @pytest.mark.asyncio
-    async def test_call_tool_no_double_wrap(self):
+    async def test_call_tool_no_double_wrap(self) -> None:
         """call_tool must pass the ToolResult through without double-wrapping."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -232,7 +232,7 @@ class TestCallToolRuntimeBehavior:
         )
 
     @pytest.mark.asyncio
-    async def test_call_tool_preserves_user_meta_from_inner_tool(self):
+    async def test_call_tool_preserves_user_meta_from_inner_tool(self) -> None:
         """call_tool should preserve meta from the inner tool's ToolResult."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -251,7 +251,7 @@ class TestCallToolRuntimeBehavior:
         assert result.meta == inner_meta
 
     @pytest.mark.asyncio
-    async def test_call_tool_rejects_self_call_bare(self):
+    async def test_call_tool_rejects_self_call_bare(self) -> None:
         """call_tool should reject calling itself via bare name."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -261,7 +261,7 @@ class TestCallToolRuntimeBehavior:
             await _call_tool_impl("call_tool", {}, mock_ctx)
 
     @pytest.mark.asyncio
-    async def test_call_tool_rejects_self_call_prefixed(self):
+    async def test_call_tool_rejects_self_call_prefixed(self) -> None:
         """call_tool should reject calling itself via prefixed name."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -271,7 +271,7 @@ class TestCallToolRuntimeBehavior:
             await _call_tool_impl("gitea_call_tool", {}, mock_ctx, tool_prefix="gitea_")
 
     @pytest.mark.asyncio
-    async def test_call_tool_parses_json_string_arguments(self):
+    async def test_call_tool_parses_json_string_arguments(self) -> None:
         """String arguments should be parsed as JSON before forwarding."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -286,7 +286,7 @@ class TestCallToolRuntimeBehavior:
         )
 
     @pytest.mark.asyncio
-    async def test_call_tool_rejects_non_dict_and_non_string_arguments(self):
+    async def test_call_tool_rejects_non_dict_and_non_string_arguments(self) -> None:
         """Arguments that are neither dict nor None nor a JSON string should be rejected."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -299,7 +299,7 @@ class TestCallToolRuntimeBehavior:
             await _call_tool_impl("gitea_test_tool", 42, mock_ctx)
 
     @pytest.mark.asyncio
-    async def test_call_tool_rejects_invalid_json(self):
+    async def test_call_tool_rejects_invalid_json(self) -> None:
         """Invalid JSON string arguments should be rejected."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -309,7 +309,7 @@ class TestCallToolRuntimeBehavior:
             await _call_tool_impl("gitea_test_tool", "{bad json}", mock_ctx)
 
     @pytest.mark.asyncio
-    async def test_call_tool_handles_none_arguments(self):
+    async def test_call_tool_handles_none_arguments(self) -> None:
         """None arguments should be forwarded as None."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -322,7 +322,7 @@ class TestCallToolRuntimeBehavior:
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
 
     @pytest.mark.asyncio
-    async def test_call_tool_routes_array_result_from_inner_tool(self):
+    async def test_call_tool_routes_array_result_from_inner_tool(self) -> None:
         """When inner tool returns an array wrapped in {"result": [...]}, pass through."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -342,7 +342,7 @@ class TestCallToolRuntimeBehavior:
 class TestCompactSearchSerializer:
     """Tests for _compact_search_serializer function."""
 
-    def test_returns_name_and_description_only(self):
+    def test_returns_name_and_description_only(self) -> None:
         """Search results should only include name and description."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -363,7 +363,7 @@ class TestCompactSearchSerializer:
         assert "output_schema" not in result[0]
         assert "output_example" not in result[0]
 
-    def test_handles_empty_fields(self):
+    def test_handles_empty_fields(self) -> None:
         """Should handle tools with minimal fields."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -377,7 +377,7 @@ class TestCompactSearchSerializer:
         assert result[0]["name"] == "minimal_tool"
         assert result[0]["description"] == ""
 
-    def test_handles_multiple_tools(self):
+    def test_handles_multiple_tools(self) -> None:
         """Should serialize multiple tools correctly."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -390,7 +390,7 @@ class TestCompactSearchSerializer:
         assert result[0]["name"] == "tool_a"
         assert result[1]["name"] == "tool_b"
 
-    def test_omits_annotations_when_null(self):
+    def test_omits_annotations_when_null(self) -> None:
         """Should omit annotations key when tool has no annotations."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -402,7 +402,7 @@ class TestCompactSearchSerializer:
         result = _compact_search_serializer([tool])
         assert "annotations" not in result[0]
 
-    def test_includes_annotations_when_present(self):
+    def test_includes_annotations_when_present(self) -> None:
         """Should include annotations key when tool has annotations."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -421,7 +421,7 @@ class TestCompactSearchSerializer:
         assert "annotations" in result[0]
         assert result[0]["annotations"]["title"] == "Test Tool"
 
-    def test_omits_annotations_when_all_fields_null(self):
+    def test_omits_annotations_when_all_fields_null(self) -> None:
         """Should omit annotations key when all annotation fields are None."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -442,7 +442,7 @@ class TestCompactSearchSerializer:
         assert ann.get("title") is None
         assert ann.get("readOnlyHint") is None
 
-    def test_includes_tags_when_present(self):
+    def test_includes_tags_when_present(self) -> None:
         """Should include tags key when tool has tags."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -455,7 +455,7 @@ class TestCompactSearchSerializer:
         result = _compact_search_serializer([tool])
         assert set(result[0]["tags"]) == {"issue", "repository"}
 
-    def test_includes_hints_when_true(self):
+    def test_includes_hints_when_true(self) -> None:
         """Should include hint annotations when they are True."""
         from gitea_mcp_server.tools.search import _compact_search_serializer
 
@@ -478,7 +478,7 @@ class TestCompactSearchSerializer:
 class TestSearchableTextExtended:
     """Extended tests for _extract_searchable_text_enhanced."""
 
-    def test_includes_tags(self):
+    def test_includes_tags(self) -> None:
         """Tool tags should appear in the extracted text."""
         from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
 
@@ -492,7 +492,7 @@ class TestSearchableTextExtended:
         assert "issue" in result
         assert "repository" in result
 
-    def test_includes_category_aliases(self):
+    def test_includes_category_aliases(self) -> None:
         """Tags that match SEARCH_CATEGORY_ALIASES should include expanded aliases."""
         from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES
         from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
@@ -507,7 +507,7 @@ class TestSearchableTextExtended:
         for alias in SEARCH_CATEGORY_ALIASES["issue"].split():
             assert alias in result
 
-    def test_includes_annotation_title(self):
+    def test_includes_annotation_title(self) -> None:
         """Tool annotations.title should appear in the extracted text."""
         from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
 
@@ -520,7 +520,7 @@ class TestSearchableTextExtended:
         result = _extract_searchable_text_enhanced(tool)
         assert "My Custom Title" in result
 
-    def test_includes_parameter_descriptions(self):
+    def test_includes_parameter_descriptions(self) -> None:
         """Parameter descriptions should appear in the extracted text."""
         from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
 
@@ -543,7 +543,7 @@ class TestCallToolRuntimeBehaviorExtended:
     """Extended tests for call_tool runtime behavior."""
 
     @pytest.mark.asyncio
-    async def test_call_tool_passes_through_regardless_of_output_schema(self):
+    async def test_call_tool_passes_through_regardless_of_output_schema(self) -> None:
         """call_tool ignores the tool's output_schema - the inner tool handles its own formatting."""
         from gitea_mcp_server.tools.search import _call_tool_impl
 
@@ -565,7 +565,7 @@ class TestToolInfo:
     """Tests for the tool_info synthetic tool."""
 
     @pytest.mark.asyncio
-    async def test_tool_info_returns_schema(self):
+    async def test_tool_info_returns_schema(self) -> None:
         """tool_info should return the schema for a known tool."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -587,7 +587,7 @@ class TestToolInfo:
         assert schema["description"] == "A known tool"
 
     @pytest.mark.asyncio
-    async def test_tool_info_detail_full_includes_output_schema(self):
+    async def test_tool_info_detail_full_includes_output_schema(self) -> None:
         """tool_info with detail='full' should include output_schema."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -624,7 +624,7 @@ class TestToolInfo:
         assert schema["output_schema"]["type"] == "object"
 
     @pytest.mark.asyncio
-    async def test_tool_info_detail_concise_excludes_output_schema(self):
+    async def test_tool_info_detail_concise_excludes_output_schema(self) -> None:
         """tool_info with detail='concise' (default) should NOT include output_schema."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -653,7 +653,7 @@ class TestToolInfo:
         assert "output_schema" not in schema
 
     @pytest.mark.asyncio
-    async def test_tool_info_not_found(self):
+    async def test_tool_info_not_found(self) -> None:
         """tool_info should raise ValueError for unknown tool."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -716,7 +716,7 @@ class TestFilterInfoIntegration:
     # ── tool_info → filter_info ──────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_tool_info_scope_filtered(self, scope_filter_info):
+    async def test_tool_info_scope_filtered(self, scope_filter_info) -> None:
         """tool_info for scope-restricted tool returns scope message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -731,7 +731,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_exclude_filtered(self, exclude_filter_info):
+    async def test_tool_info_exclude_filtered(self, exclude_filter_info) -> None:
         """tool_info for config-excluded tool returns exclusion message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -746,7 +746,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info):
+    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info) -> None:
         """tool_info for deprecated tool returns deprecation message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -761,7 +761,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_filtered_falls_back_to_not_found(self):
+    async def test_tool_info_filtered_falls_back_to_not_found(self) -> None:
         """Without filter info, tool_info still gives generic 'not found'."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -778,7 +778,7 @@ class TestFilterInfoIntegration:
     # ── call_tool → filter_info ──────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_call_tool_scope_filtered(self, scope_filter_info):
+    async def test_call_tool_scope_filtered(self, scope_filter_info) -> None:
         """call_tool for scope-restricted tool raises scope error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -791,7 +791,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_exclude_filtered(self, exclude_filter_info):
+    async def test_call_tool_exclude_filtered(self, exclude_filter_info) -> None:
         """call_tool for config-excluded tool raises exclusion error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -804,7 +804,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info):
+    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info) -> None:
         """call_tool for deprecated tool raises deprecation error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -817,7 +817,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_filtered_falls_back_to_not_found(self):
+    async def test_call_tool_filtered_falls_back_to_not_found(self) -> None:
         """Without filter info, call_tool still gives generic 'not found'."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -830,7 +830,7 @@ class TestFilterInfoIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_not_found_without_prefix(self):
+    async def test_call_tool_not_found_without_prefix(self) -> None:
         """Without tool_prefix, call_tool still gives generic 'not found'."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -847,7 +847,7 @@ class TestSearchToolsSyntheticTool:
     """Tests for the search_tools synthetic tool."""
 
     @pytest.mark.asyncio
-    async def test_search_tools_category_filter_invalid(self):
+    async def test_search_tools_category_filter_invalid(self) -> None:
         """search_tools with invalid category should raise ValueError."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -858,7 +858,7 @@ class TestSearchToolsSyntheticTool:
             await _search_tools_impl("test query", "invalid", "markdown", mock_ctx, transform)
 
     @pytest.mark.asyncio
-    async def test_search_tools_with_no_results(self):
+    async def test_search_tools_with_no_results(self) -> None:
         """search_tools with no matches should show cross-linking hints."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -872,7 +872,7 @@ class TestSearchToolsSyntheticTool:
         assert "No tools found" in text or "search_docs" in text
 
     @pytest.mark.asyncio
-    async def test_search_tools_with_results_and_cross_links(self):
+    async def test_search_tools_with_results_and_cross_links(self) -> None:
         """search_tools with results should show cross-linking hints."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -892,7 +892,7 @@ class TestSearchToolsSyntheticTool:
         assert "Cross-linking" in text or "search_docs" in text
 
     @pytest.mark.asyncio
-    async def test_search_tools_with_category_filter(self):
+    async def test_search_tools_with_category_filter(self) -> None:
         """search_tools with valid category should filter results."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -921,7 +921,7 @@ class TestSearchToolsSyntheticTool:
 class TestTolerantBM25Search:
     """Tests for TolerantBM25Search."""
 
-    def test_search_returns_ranked_results(self):
+    def test_search_returns_ranked_results(self) -> None:
         """TolerantBM25Search should return ranked tools by relevance."""
         from gitea_mcp_server.tools.search import TolerantBM25Search
 
@@ -934,7 +934,7 @@ class TestTolerantBM25Search:
         assert len(results) >= 1
         assert results[0].name == "tool_a"
 
-    def test_search_with_limit(self):
+    def test_search_with_limit(self) -> None:
         """TolerantBM25Search should respect max_results limit."""
         from gitea_mcp_server.tools.search import TolerantBM25Search
 
@@ -951,7 +951,7 @@ class TestTolerantSearchTransform:
     """Tests for TolerantSearchTransform."""
 
     @pytest.mark.asyncio
-    async def test_transform_tools_pins_synthetic_tagged_tools(self):
+    async def test_transform_tools_pins_synthetic_tagged_tools(self) -> None:
         """transform_tools should only pin tools with the synthetic tag."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -1180,7 +1180,7 @@ class TestSearchResourcesSyntheticTool:
     """Tests for the search_resources synthetic tool via _search_resources_impl."""
 
     @pytest.mark.asyncio
-    async def test_searches_resource_by_uri(self):
+    async def test_searches_resource_by_uri(self) -> None:
         """Resource URI should be searchable via search_resources."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
@@ -1203,7 +1203,7 @@ class TestSearchResourcesSyntheticTool:
         assert results[0]["uri"] == "gitea://wiki/guide"
 
     @pytest.mark.asyncio
-    async def test_searches_resource_by_name(self):
+    async def test_searches_resource_by_name(self) -> None:
         """Resource name should still be searchable (baseline check)."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
@@ -1226,7 +1226,7 @@ class TestSearchResourcesSyntheticTool:
         assert results[0]["name"] == "Server Version"
 
     @pytest.mark.asyncio
-    async def test_markdown_includes_cross_link_footer(self):
+    async def test_markdown_includes_cross_link_footer(self) -> None:
         """Markdown output should include cross-linking hints footer."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
@@ -1250,7 +1250,7 @@ class TestSearchResourcesSyntheticTool:
         assert "search_tools" in text
 
     @pytest.mark.asyncio
-    async def test_empty_result_has_helpful_hint(self):
+    async def test_empty_result_has_helpful_hint(self) -> None:
         """Empty search results should include helpful cross-linking message."""
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
@@ -1268,7 +1268,7 @@ class TestSearchResourcesSyntheticTool:
         assert result.structured_content["result"] == []
 
     @pytest.mark.asyncio
-    async def test_raw_format(self):
+    async def test_raw_format(self) -> None:
         """search_resources format=raw returns structured_content with result array."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
@@ -1298,7 +1298,7 @@ class TestSearchAndSlice:
     def _make_texts(self, count: int) -> list[str]:
         return [f"item_{i} description" for i in range(count)]
 
-    def test_first_page(self):
+    def test_first_page(self) -> None:
         """First page should return the first `limit` items."""
         page_items, total = _search_and_slice(
             self._make_items(50), self._make_texts(50), "description", page=1, limit=10
@@ -1307,7 +1307,7 @@ class TestSearchAndSlice:
         assert len(page_items) == 10
         assert page_items[0]["name"] == "item_0"
 
-    def test_second_page(self):
+    def test_second_page(self) -> None:
         """Second page should return items 10-19."""
         page_items, total = _search_and_slice(
             self._make_items(50), self._make_texts(50), "description", page=2, limit=10
@@ -1316,7 +1316,7 @@ class TestSearchAndSlice:
         assert len(page_items) == 10
         assert page_items[0]["name"] == "item_10"
 
-    def test_last_partial_page(self):
+    def test_last_partial_page(self) -> None:
         """Last page with fewer than limit items should still work."""
         page_items, total = _search_and_slice(
             self._make_items(25), self._make_texts(25), "description", page=3, limit=10
@@ -1324,7 +1324,7 @@ class TestSearchAndSlice:
         assert total == 25
         assert len(page_items) == 5
 
-    def test_page_out_of_range(self):
+    def test_page_out_of_range(self) -> None:
         """Page beyond available results returns empty list with correct total."""
         page_items, total = _search_and_slice(
             self._make_items(5), self._make_texts(5), "description", page=10, limit=10
@@ -1332,13 +1332,13 @@ class TestSearchAndSlice:
         assert total == 5
         assert page_items == []
 
-    def test_empty_items(self):
+    def test_empty_items(self) -> None:
         """Empty items list returns ([], 0)."""
         page_items, total = _search_and_slice([], [], "query", page=1, limit=10)
         assert total == 0
         assert page_items == []
 
-    def test_query_ranks_by_relevance(self):
+    def test_query_ranks_by_relevance(self) -> None:
         """Items matching the query should be ranked above non-matching."""
         items = [
             {"id": 1, "name": "alpha"},
@@ -1351,7 +1351,7 @@ class TestSearchAndSlice:
         assert total >= 1
         assert page_items[0]["name"] == "alpha"
 
-    def test_limit_one(self):
+    def test_limit_one(self) -> None:
         """limit=1 should return exactly one item per page."""
         items = self._make_items(5)
         texts = self._make_texts(5)
@@ -1360,7 +1360,7 @@ class TestSearchAndSlice:
         assert len(page_items) == 1
         assert page_items[0]["name"] == "item_0"
 
-    def test_mismatched_items_and_texts(self):
+    def test_mismatched_items_and_texts(self) -> None:
         """Mismatched items/texts should not crash (BM25 will handle gracefully)."""
         items = self._make_items(3)
         texts = [*self._make_texts(3), "extra"]  # more texts than items
@@ -1369,7 +1369,7 @@ class TestSearchAndSlice:
         assert total == 3
         assert len(page_items) == 3
 
-    def test_attaches_normalized_score(self):
+    def test_attaches_normalized_score(self) -> None:
         """Each result item carries a normalized `score` (0.0-1.0, top == 1.0)."""
         items = [
             {"id": 1, "name": "alpha"},
@@ -1393,63 +1393,63 @@ class TestSearchAndSlice:
 class TestNameMatches:
     """Tests for _name_matches helper."""
 
-    def test_exact_match_with_prefix(self):
+    def test_exact_match_with_prefix(self) -> None:
         """Query matching full prefixed name returns True."""
         assert _name_matches("user get current", "gitea_user_get_current", "gitea_")
 
-    def test_exact_match_without_prefix(self):
+    def test_exact_match_without_prefix(self) -> None:
         """Query matching full unprefixed name returns True."""
         assert _name_matches("user get current", "user_get_current", "gitea_")
 
-    def test_prefix_match(self):
+    def test_prefix_match(self) -> None:
         """Query that is a token-boundary prefix of the name returns True."""
         assert _name_matches("issue create", "gitea_issue_create_issue", "gitea_")
 
-    def test_verb_first_order(self):
+    def test_verb_first_order(self) -> None:
         """Verb-first query ('create issue') matches domain-first name via swap."""
         assert _name_matches("create issue", "gitea_issue_create_issue", "gitea_")
 
-    def test_verb_first_three_tokens(self):
+    def test_verb_first_three_tokens(self) -> None:
         """Verb-first 3-token query matches via first-two swap."""
         assert _name_matches("create issue label", "gitea_issue_create_label", "gitea_")
 
-    def test_prefix_match_with_query_including_prefix(self):
+    def test_prefix_match_with_query_including_prefix(self) -> None:
         """Query that includes the prefix still matches."""
         assert _name_matches("gitea user get current", "gitea_user_get_current", "gitea_")
 
-    def test_partial_token_matches_via_prefix(self):
+    def test_partial_token_matches_via_prefix(self) -> None:
         """Partial token 'cr' matches 'create' because it's a valid prefix."""
         assert _name_matches("issue cr", "gitea_issue_create_issue", "gitea_")
 
-    def test_no_match(self):
+    def test_no_match(self) -> None:
         """Query that doesn't match returns False."""
         assert not _name_matches("create issue", "gitea_user_get_current", "gitea_")
 
-    def test_empty_query(self):
+    def test_empty_query(self) -> None:
         """Empty query returns False."""
         assert not _name_matches("", "gitea_user_get_current", "gitea_")
 
-    def test_single_token_not_boosted(self):
+    def test_single_token_not_boosted(self) -> None:
         """Single-token query returns False (BM25 handles it)."""
         assert not _name_matches("user", "gitea_user_get_current", "gitea_")
 
-    def test_no_prefix_configured(self):
+    def test_no_prefix_configured(self) -> None:
         """With empty tool_prefix, unprefixed names match."""
         assert _name_matches("user get current", "user_get_current", "")
 
-    def test_custom_prefix(self):
+    def test_custom_prefix(self) -> None:
         """Non-default prefix is stripped correctly."""
         assert _name_matches("user get current", "forgejo_user_get_current", "forgejo_")
 
-    def test_underscore_normalization(self):
+    def test_underscore_normalization(self) -> None:
         """Underscores in query are treated as spaces."""
         assert _name_matches("user_get_current", "gitea_user_get_current", "gitea_")
 
-    def test_case_insensitive(self):
+    def test_case_insensitive(self) -> None:
         """Matching is case-insensitive."""
         assert _name_matches("USER GET CURRENT", "gitea_user_get_current", "gitea_")
 
-    def test_query_longer_than_name(self):
+    def test_query_longer_than_name(self) -> None:
         """Query with more tokens than name returns False."""
         assert not _name_matches("user get current extra", "gitea_user_get_current", "gitea_")
 
@@ -1463,7 +1463,7 @@ class TestSearchAndSliceNameMatch:
     def _make_texts(self, items: list[dict]) -> list[str]:
         return [f"{i['name']} {i['description']}" for i in items]
 
-    def test_exact_match_ranks_first(self):
+    def test_exact_match_ranks_first(self) -> None:
         """Exact name match ranks above BM25 results."""
         items = self._make_items([
             "gitea_user_current_check_following",
@@ -1479,7 +1479,7 @@ class TestSearchAndSliceNameMatch:
         assert page_items[0]["name"] == "gitea_user_get_current"
         assert page_items[0]["score"] == 1.0
 
-    def test_verb_first_ranks_among_name_matches(self):
+    def test_verb_first_ranks_among_name_matches(self) -> None:
         """Verb-first query ('create issue') puts exact tool among name-match results."""
         items = self._make_items([
             "gitea_issue_create_issue_attachment",
@@ -1499,7 +1499,7 @@ class TestSearchAndSliceNameMatch:
             for item in page_items
         )
 
-    def test_prefix_match_ranks_first(self):
+    def test_prefix_match_ranks_first(self) -> None:
         """Token-boundary prefix match ranks above BM25 results."""
         items = self._make_items([
             "gitea_user_current_check_following",
@@ -1513,7 +1513,7 @@ class TestSearchAndSliceNameMatch:
         assert page_items[0]["name"] == "gitea_user_get_current"
         assert page_items[0]["score"] == 1.0
 
-    def test_no_prefix_configured(self):
+    def test_no_prefix_configured(self) -> None:
         """Without prefix, unprefixed names match."""
         items = self._make_items([
             "user_current_check_following",
@@ -1526,7 +1526,7 @@ class TestSearchAndSliceNameMatch:
         )
         assert page_items[0]["name"] == "user_get_current"
 
-    def test_custom_prefix(self):
+    def test_custom_prefix(self) -> None:
         """Non-default prefix is handled correctly."""
         items = self._make_items([
             "forgejo_user_current_check_following",
@@ -1539,7 +1539,7 @@ class TestSearchAndSliceNameMatch:
         )
         assert page_items[0]["name"] == "forgejo_user_get_current"
 
-    def test_broad_query_returns_only_single_token(self):
+    def test_broad_query_returns_only_single_token(self) -> None:
         """Single-token query like 'user' is NOT boosted (BM25 handles it)."""
         items = self._make_items([
             "gitea_user_get_current",
@@ -1560,7 +1560,7 @@ class TestSearchAndSliceNameMatch:
         for item in page_items:
             assert "user" in item["name"]
 
-    def test_no_name_match_falls_back_to_bm25(self):
+    def test_no_name_match_falls_back_to_bm25(self) -> None:
         """When no name matches, BM25 handles ranking (regression test)."""
         items = self._make_items([
             "gitea_repo_create",
@@ -1580,7 +1580,7 @@ class TestSearchAndSliceNameMatch:
         assert "gitea_issue_create" in names
         assert "gitea_pull_create" in names
 
-    def test_mixed_name_match_and_bm25(self):
+    def test_mixed_name_match_and_bm25(self) -> None:
         """Name matches come first, BM25 results follow."""
         items = self._make_items([
             "gitea_user_get_current",      # name match
@@ -1598,7 +1598,7 @@ class TestSearchAndSliceNameMatch:
         assert total == 3
         assert len(page_items) == 3
 
-    def test_total_count_includes_name_matches(self):
+    def test_total_count_includes_name_matches(self) -> None:
         """total_count includes both name matches and BM25 results."""
         items = self._make_items([
             "gitea_user_get_current",      # name match
@@ -1619,7 +1619,7 @@ class TestSearchToolsPagination:
     """Pagination metadata assertions for search_tools."""
 
     @pytest.mark.asyncio
-    async def test_search_tools_pagination_metadata_present(self):
+    async def test_search_tools_pagination_metadata_present(self) -> None:
         """search_tools result should include has_more/next_offset/total_count."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -1642,7 +1642,7 @@ class TestSearchToolsPagination:
         assert sc["total_count"] == 25
 
     @pytest.mark.asyncio
-    async def test_search_tools_pagination_last_page(self):
+    async def test_search_tools_pagination_last_page(self) -> None:
         """Last page of search_tools should have has_more=False."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -1661,7 +1661,7 @@ class TestSearchToolsPagination:
         assert sc["total_count"] == 25
 
     @pytest.mark.asyncio
-    async def test_search_tools_page_out_of_range_message(self):
+    async def test_search_tools_page_out_of_range_message(self) -> None:
         """Out-of-range page should return a helpful message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform
 
@@ -1684,7 +1684,7 @@ class TestSearchResourcesPagination:
     """Pagination metadata assertions for search_resources."""
 
     @pytest.mark.asyncio
-    async def test_search_resources_pagination_metadata_present(self):
+    async def test_search_resources_pagination_metadata_present(self) -> None:
         """search_resources result should include has_more/next_offset/total_count."""
         ctx = MagicMock(spec=Context)
         resources = []
@@ -1713,7 +1713,7 @@ class TestSearchResourcesPagination:
         assert sc["total_count"] == 25
 
     @pytest.mark.asyncio
-    async def test_search_resources_pagination_last_page(self):
+    async def test_search_resources_pagination_last_page(self) -> None:
         """Last page of search_resources should have has_more=False."""
         ctx = MagicMock(spec=Context)
         resources = []
@@ -1738,7 +1738,7 @@ class TestSearchResourcesPagination:
         assert sc["total_count"] == 25
 
     @pytest.mark.asyncio
-    async def test_search_resources_page_out_of_range_message(self):
+    async def test_search_resources_page_out_of_range_message(self) -> None:
         """Out-of-range page should return a helpful message."""
         ctx = MagicMock(spec=Context)
         resources = []
@@ -1766,7 +1766,7 @@ class TestSearchResourcesPagination:
 class TestEmptyResultsMessage:
     """Tests for _empty_results_message helper."""
 
-    def test_with_cross_link_hints(self):
+    def test_with_cross_link_hints(self) -> None:
         """Empty results message includes cross-linking hints."""
         from gitea_mcp_server.tools.search import _empty_results_message
 
@@ -1778,7 +1778,7 @@ class TestEmptyResultsMessage:
         assert "search_docs" in result
         assert "search_resources" in result
 
-    def test_without_cross_link_hints(self):
+    def test_without_cross_link_hints(self) -> None:
         """Empty results message without hints omits hint section."""
         from gitea_mcp_server.tools.search import _empty_results_message
 
@@ -1786,7 +1786,7 @@ class TestEmptyResultsMessage:
         assert "No results found for 'test query'" in result
         assert "Cross-linking" not in result
 
-    def test_empty_cross_link_hints(self):
+    def test_empty_cross_link_hints(self) -> None:
         """Empty dict of hints omits hint section."""
         from gitea_mcp_server.tools.search import _empty_results_message
 
@@ -1799,7 +1799,7 @@ class TestFindToolByName:
     """Tests for _find_tool_by_name helper."""
 
     @pytest.mark.asyncio
-    async def test_finds_prefixed_tool(self):
+    async def test_finds_prefixed_tool(self) -> None:
         """Prefixed tool name is found."""
         from gitea_mcp_server.tools.search import _find_tool_by_name
 
@@ -1812,7 +1812,7 @@ class TestFindToolByName:
         ctx.fastmcp.get_tool.assert_awaited_once_with("gitea_test_tool")
 
     @pytest.mark.asyncio
-    async def test_finds_unprefixed_tool_with_prefix_fallback(self):
+    async def test_finds_unprefixed_tool_with_prefix_fallback(self) -> None:
         """Unprefixed name falls back to prefixed variant."""
         from gitea_mcp_server.tools.search import _find_tool_by_name
 
@@ -1826,7 +1826,7 @@ class TestFindToolByName:
         assert ctx.fastmcp.get_tool.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_not_found(self):
+    async def test_returns_none_when_not_found(self) -> None:
         """Returns None when tool not found in any form."""
         from gitea_mcp_server.tools.search import _find_tool_by_name
 
@@ -1841,17 +1841,17 @@ class TestFindToolByName:
 class TestFormatFilteredToolsNote:
     """Tests for _format_filtered_tools_note."""
 
-    def test_none_filtered_info_returns_empty(self):
+    def test_none_filtered_info_returns_empty(self) -> None:
         """None filtered_tools_info returns empty string."""
         result = _format_filtered_tools_note(None)
         assert result == ""
 
-    def test_empty_filtered_returns_empty(self):
+    def test_empty_filtered_returns_empty(self) -> None:
         """Empty filtered dict returns empty string."""
         result = _format_filtered_tools_note({"filtered": {}})
         assert result == ""
 
-    def test_scope_restricted_count(self):
+    def test_scope_restricted_count(self) -> None:
         """Scope-restricted tools are counted."""
         result = _format_filtered_tools_note({
             "filtered": {
@@ -1861,7 +1861,7 @@ class TestFormatFilteredToolsNote:
         })
         assert "2 scope-restricted" in result
 
-    def test_excluded_count(self):
+    def test_excluded_count(self) -> None:
         """Config-excluded tools are counted."""
         result = _format_filtered_tools_note({
             "filtered": {
@@ -1870,7 +1870,7 @@ class TestFormatFilteredToolsNote:
         })
         assert "1 config-excluded" in result
 
-    def test_deprecated_count(self):
+    def test_deprecated_count(self) -> None:
         """Deprecated tools are counted."""
         result = _format_filtered_tools_note({
             "filtered": {
@@ -1879,7 +1879,7 @@ class TestFormatFilteredToolsNote:
         })
         assert "1 deprecated" in result
 
-    def test_combined_counts(self):
+    def test_combined_counts(self) -> None:
         """Multiple reason types are combined in the note."""
         result = _format_filtered_tools_note({
             "filtered": {
@@ -1893,7 +1893,7 @@ class TestFormatFilteredToolsNote:
         assert "1 config-excluded" in result
         assert "1 deprecated" in result
 
-    def test_unknown_reason_not_counted(self):
+    def test_unknown_reason_not_counted(self) -> None:
         """Unknown reason type is not counted."""
         result = _format_filtered_tools_note({
             "filtered": {
@@ -1908,7 +1908,7 @@ class TestToolInfoImplPrefixFallback:
     """Tests for _tool_info_impl prefix fallback (line 604)."""
 
     @pytest.mark.asyncio
-    async def test_unprefixed_name_adds_prefixed_candidate(self):
+    async def test_unprefixed_name_adds_prefixed_candidate(self) -> None:
         """Unprefixed name should add prefixed version as candidate."""
 
         # Create a minimal real Tool with version attribute
@@ -1936,7 +1936,7 @@ class TestSearchToolsWithFilteredInfo:
     """Tests for _search_tools_impl with filtered_tools_info."""
 
     @pytest.mark.asyncio
-    async def test_markdown_format_with_filtered_note(self):
+    async def test_markdown_format_with_filtered_note(self) -> None:
         """Markdown search includes filtered-tools note with results."""
         ctx = MagicMock(spec=Context)
         transform = MagicMock(spec=TolerantSearchTransform)
@@ -1973,7 +1973,7 @@ class TestTolerantSearchTransformSearch:
     """Tests for TolerantSearchTransform._search method."""
 
     @pytest.mark.asyncio
-    async def test_search_delegates_to_searcher(self):
+    async def test_search_delegates_to_searcher(self) -> None:
         """_search should delegate to internal BM25 searcher."""
         tools = [
             Tool(

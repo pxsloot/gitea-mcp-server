@@ -21,14 +21,14 @@ from gitea_mcp_server.tools.tool_display import format_tool_result
 class TestFormatToolResult:
     """Happy-path tests for format_tool_result."""
 
-    def test_raw_format_passthrough(self):
+    def test_raw_format_passthrough(self) -> None:
         """'raw' format returns structured content."""
         result = format_tool_result({"key": "value"}, "raw")
         assert result.structured_content == {"result": {"key": "value"}}
         # raw format may include empty or json text content; verify structure
         assert isinstance(result.structured_content, dict)
 
-    def test_json_format(self):
+    def test_json_format(self) -> None:
         """'json' format produces indented JSON in text content."""
         result = format_tool_result({"key": "value"}, "json")
         assert result.structured_content == {"result": {"key": "value"}}
@@ -37,7 +37,7 @@ class TestFormatToolResult:
         assert '"key"' in text
         assert '"value"' in text
 
-    def test_markdown_format_default(self):
+    def test_markdown_format_default(self) -> None:
         """'markdown' format produces markdown text."""
         data = {"name": "test", "count": 42}
         result = format_tool_result(data, "markdown")
@@ -47,7 +47,7 @@ class TestFormatToolResult:
         assert "test" in text
         assert "42" in text
 
-    def test_concise_detail_collapses_schema(self):
+    def test_concise_detail_collapses_schema(self) -> None:
         """detail=concise with schema collapses nested objects."""
         data = {"id": 1, "user": {"login": "alice", "id": 99}}
         schema = {
@@ -62,7 +62,7 @@ class TestFormatToolResult:
         # Nested user should be collapsed to $ref
         assert "$ref:User" in text
 
-    def test_concise_detail_no_schema_no_collapse(self):
+    def test_concise_detail_no_schema_no_collapse(self) -> None:
         """detail=concise without schema leaves data intact."""
         data = {"id": 1, "nested": {"key": "val"}}
         result = format_tool_result(data, "json", detail="concise", schema=None)
@@ -70,25 +70,25 @@ class TestFormatToolResult:
         assert '"key"' in text
         assert '"val"' in text
 
-    def test_list_data_formats_correctly(self):
+    def test_list_data_formats_correctly(self) -> None:
         """List data is wrapped in result and formatted."""
         data = [{"id": 1}, {"id": 2}]
         result = format_tool_result(data, "json")
         assert result.structured_content == {"result": data}
 
-    def test_returns_tool_result_type(self):
+    def test_returns_tool_result_type(self) -> None:
         """Return value is a ToolResult instance."""
         from fastmcp.tools.base import ToolResult
 
         result = format_tool_result({"a": 1}, "raw")
         assert isinstance(result, ToolResult)
 
-    def test_empty_dict(self):
+    def test_empty_dict(self) -> None:
         """Empty dict formats without error."""
         result = format_tool_result({}, "markdown")
         assert result.structured_content == {"result": {}}
 
-    def test_none_data(self):
+    def test_none_data(self) -> None:
         """None data passes through."""
         result = format_tool_result(None, "raw")
         assert result.structured_content == {"result": None}
@@ -113,7 +113,7 @@ class TestFormatToolResultErrorRecovery:
             (ValueError, "bad value"),
         ],
     )
-    def test_markdown_recovers_from_all_exception_types(self, exc_cls, exc_msg):
+    def test_markdown_recovers_from_all_exception_types(self, exc_cls, exc_msg) -> None:
         """All 3 exception types from markdown path produce fallback."""
         data = {"key": "value"}
         with patch(
@@ -135,7 +135,7 @@ class TestFormatToolResultErrorRecovery:
             (ValueError, "bad value"),
         ],
     )
-    def test_json_recovers_from_all_exception_types(self, exc_cls, exc_msg):
+    def test_json_recovers_from_all_exception_types(self, exc_cls, exc_msg) -> None:
         """All 3 exception types from json path produce fallback."""
         data = {"key": "value"}
         with patch(
@@ -149,7 +149,7 @@ class TestFormatToolResultErrorRecovery:
 
     # --- Real error-triggering data (no mocking needed) ---
 
-    def test_non_serializable_data_markdown_fallback(self):
+    def test_non_serializable_data_markdown_fallback(self) -> None:
         """Non-JSON-serializable data in markdown returns code fence fallback."""
         class NonSerializable:
             pass
@@ -163,7 +163,7 @@ class TestFormatToolResultErrorRecovery:
         # The actual exception may be PydanticSerializationError (subclass of
         # TypeError), so we check for the generic marker instead of a specific name.
 
-    def test_non_serializable_data_json_fallback(self):
+    def test_non_serializable_data_json_fallback(self) -> None:
         """Non-JSON-serializable data in json returns fallback result."""
         class NonSerializable:
             pass
@@ -177,10 +177,10 @@ class TestFormatToolResultErrorRecovery:
         fallback = json.loads(result.content[0].text)
         assert "result" in fallback
 
-    def test_non_serializable_data_custom_str(self):
+    def test_non_serializable_data_custom_str(self) -> None:
         """Non-serializable with __str__ uses it in fallback in json mode."""
         class Unserializable:
-            def __str__(self):
+            def __str__(self) -> str:
                 return "custom_str_repr"
 
         data = {"bad": Unserializable()}
@@ -194,14 +194,14 @@ class TestFormatToolResultErrorRecovery:
 
     # --- Raw format bypass ---
 
-    def test_raw_format_bypasses_error_recovery(self):
+    def test_raw_format_bypasses_error_recovery(self) -> None:
         """Raw format (handled by apply_format early return) does not trigger recovery."""
         result = format_tool_result({"key": "value"}, "raw")
         assert result.structured_content == {"result": {"key": "value"}}
 
     # --- Logger verification ---
 
-    def test_logger_warning_on_format_failure(self, caplog):
+    def test_logger_warning_on_format_failure(self, caplog) -> None:
         """logger.warning is called on format failure."""
         data = {"key": "value"}
         caplog.set_level(logging.WARNING)
@@ -215,7 +215,7 @@ class TestFormatToolResultErrorRecovery:
                 for record in caplog.records
             )
 
-    def test_logger_level_is_warning(self, caplog):
+    def test_logger_level_is_warning(self, caplog) -> None:
         """Log record level is WARNING."""
         data = {"key": "value"}
         caplog.set_level(logging.WARNING)
@@ -231,7 +231,7 @@ class TestFormatToolResultErrorRecovery:
 
     # --- Happy path still works ---
 
-    def test_happy_path_unchanged(self):
+    def test_happy_path_unchanged(self) -> None:
         """Normal data still formats correctly (no regression)."""
         data = {"name": "test", "count": 42}
         result = format_tool_result(data, "markdown")

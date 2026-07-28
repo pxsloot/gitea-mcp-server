@@ -28,15 +28,15 @@ class TestLabelTransform:
     """Tests for LabelTransform as a FastMCP Transform."""
 
     @pytest.fixture
-    def label_service(self):
+    def label_service(self) -> AsyncMock:
         return AsyncMock(spec=LabelService)
 
     @pytest.fixture
-    def gitea_client(self):
+    def gitea_client(self) -> AsyncMock:
         return AsyncMock()
 
     @pytest.fixture
-    def transform(self, label_service, gitea_client):
+    def transform(self, label_service, gitea_client) -> LabelTransform:
         return LabelTransform(
             label_service=label_service,
             gitea_client=gitea_client,
@@ -68,29 +68,29 @@ class TestLabelTransform:
         return self._tool_registry.get(name)
 
     @pytest.mark.asyncio
-    async def test_is_transform_subclass(self):
+    async def test_is_transform_subclass(self) -> None:
         """LabelTransform should be a Transform subclass."""
         assert issubclass(LabelTransform, Transform)
 
     @pytest.mark.asyncio
-    async def test_list_tools_passes_through(self, transform):
+    async def test_list_tools_passes_through(self, transform) -> None:
         """list_tools should return tools unchanged."""
         tools = [Tool(name="a", parameters={}), Tool(name="b", parameters={})]
         result = await transform.list_tools(tools)
         assert result is tools  # same list reference
 
     @pytest.mark.asyncio
-    async def test_get_tool_returns_none_for_unknown(self, transform):
+    async def test_get_tool_returns_none_for_unknown(self, transform) -> None:
         """get_tool returns None when call_next returns None."""
 
-        async def call_next(name, *, version=None):
+        async def call_next(name, *, version=None) -> None:
             return None
 
         result = await transform.get_tool("nonexistent", call_next)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_tool_passes_through_without_labels(self, transform):
+    async def test_get_tool_passes_through_without_labels(self, transform) -> None:
         """get_tool returns the tool unchanged when has_labels is False."""
         tool = self.make_tool("no_labels", has_labels=False)
 
@@ -101,7 +101,7 @@ class TestLabelTransform:
         assert result is tool  # same object, not wrapped
 
     @pytest.mark.asyncio
-    async def test_get_tool_wraps_labels_tool(self, transform):
+    async def test_get_tool_wraps_labels_tool(self, transform) -> None:
         """get_tool returns a wrapped tool when has_labels is True."""
         tool = self.make_tool("labels_tool", has_labels=True)
 
@@ -114,7 +114,7 @@ class TestLabelTransform:
         assert result.meta == tool.meta  # metadata preserved
 
     @pytest.mark.asyncio
-    async def test_label_conversion_runs_before_execution(self, transform, label_service):
+    async def test_label_conversion_runs_before_execution(self, transform, label_service) -> None:
         """The wrapped tool should call validate_and_convert before the HTTP call."""
         label_service.validate_and_convert.return_value = [1, 42]
 
@@ -148,7 +148,7 @@ class TestLabelTransform:
         assert executed  # HTTP call happened
 
     @pytest.mark.asyncio
-    async def test_unknown_labels_raise_value_error(self, transform, label_service):
+    async def test_unknown_labels_raise_value_error(self, transform, label_service) -> None:
         """Unknown labels should produce a ValueError (agent-friendly)."""
         label_service.validate_and_convert.side_effect = ValidationError(
             message="Unknown label name(s): ['nonexistent']", field="labels",
@@ -172,7 +172,7 @@ class TestLabelTransform:
         run_spy.assert_not_awaited()  # HTTP call never happened
 
     @pytest.mark.asyncio
-    async def test_no_gitea_client_skips_conversion(self):
+    async def test_no_gitea_client_skips_conversion(self) -> None:
         """When gitea_client is None, no validation should happen."""
         label_service = AsyncMock(spec=LabelService)
         transform = LabelTransform(
@@ -199,7 +199,7 @@ class TestLabelTransform:
         run_spy.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_no_labels_in_args_skips_conversion(self, transform, label_service):
+    async def test_no_labels_in_args_skips_conversion(self, transform, label_service) -> None:
         """When labels key is absent from args, no conversion."""
         tool = self.make_tool("labels_tool", has_labels=True)
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
@@ -225,50 +225,50 @@ class TestConvertLabelsInline:
     """Tests for _convert_labels_inline helper used inside LabelTransform."""
 
     @pytest.fixture
-    def label_service(self):
+    def label_service(self) -> AsyncMock:
         return AsyncMock(spec=LabelService)
 
     @pytest.fixture
-    def gitea_client(self):
+    def gitea_client(self) -> AsyncMock:
         return AsyncMock()
 
     @pytest.mark.asyncio
-    async def test_skips_when_labels_empty(self, label_service, gitea_client):
+    async def test_skips_when_labels_empty(self, label_service, gitea_client) -> None:
         """Empty labels list -> no conversion."""
         kwargs = {"labels": []}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_labels_absent(self, label_service, gitea_client):
+    async def test_skips_when_labels_absent(self, label_service, gitea_client) -> None:
         """No labels key -> no conversion."""
         kwargs = {"owner": "o", "repo": "r"}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_owner_missing(self, label_service, gitea_client):
+    async def test_skips_when_owner_missing(self, label_service, gitea_client) -> None:
         """No owner/org -> no conversion."""
         kwargs = {"repo": "r", "labels": ["bug"]}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_repo_missing(self, label_service, gitea_client):
+    async def test_skips_when_repo_missing(self, label_service, gitea_client) -> None:
         """No repo -> no conversion."""
         kwargs = {"owner": "o", "labels": ["bug"]}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_client(self, label_service):
+    async def test_skips_when_no_client(self, label_service) -> None:
         """No gitea_client -> no conversion."""
         kwargs = {"owner": "o", "repo": "r", "labels": ["bug"]}
         await _convert_labels_inline(kwargs, label_service, gitea_client=None)
         label_service.validate_and_convert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_uses_org_fallback(self, label_service, gitea_client):
+    async def test_uses_org_fallback(self, label_service, gitea_client) -> None:
         """org parameter is used as fallback for owner."""
         label_service.validate_and_convert.return_value = [1]
         kwargs = {"org": "my-org", "repo": "r", "labels": ["bug"]}
@@ -278,7 +278,7 @@ class TestConvertLabelsInline:
         )
 
     @pytest.mark.asyncio
-    async def test_converts_labels_in_place(self, label_service, gitea_client):
+    async def test_converts_labels_in_place(self, label_service, gitea_client) -> None:
         """Labels are converted and written back to kwargs."""
         label_service.validate_and_convert.return_value = [1, 2]
         kwargs = {"owner": "o", "repo": "r", "labels": ["bug", "feature"]}
@@ -295,15 +295,15 @@ class TestLabelTransformTelemetry:
     """Tests for OTEL spans emitted from LabelTransform._wrap_tool."""
 
     @pytest.fixture
-    def label_service(self):
+    def label_service(self) -> AsyncMock:
         return AsyncMock(spec=LabelService)
 
     @pytest.fixture
-    def gitea_client(self):
+    def gitea_client(self) -> AsyncMock:
         return AsyncMock()
 
     @pytest.fixture
-    def transform(self, label_service, gitea_client):
+    def transform(self, label_service, gitea_client) -> LabelTransform:
         return LabelTransform(
             label_service=label_service,
             gitea_client=gitea_client,
@@ -330,7 +330,7 @@ class TestLabelTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_emits_validate_labels_span(self, transform, label_service, trace_exporter):
+    async def test_emits_validate_labels_span(self, transform, label_service, trace_exporter) -> None:
         """Wrapping a label tool emits a ``{tool}.validate_labels`` span."""
         label_service.validate_and_convert.return_value = [1, 42]
 
@@ -358,7 +358,7 @@ class TestLabelTransformTelemetry:
     @pytest.mark.asyncio
     async def test_no_validate_labels_span_when_no_labels(
         self, transform, trace_exporter
-    ):
+    ) -> None:
         """When has_labels is False, no validate_labels span is emitted."""
         tool = self.make_tool("no_labels", has_labels=False)
         async def call_next(name, *, version=None):
@@ -377,7 +377,7 @@ class TestLabelTransformTelemetry:
     @pytest.mark.asyncio
     async def test_validate_labels_span_has_tool_name_attribute(
         self, transform, label_service, trace_exporter
-    ):
+    ) -> None:
         """The validate_labels span carries a ``tool.name`` attribute."""
         label_service.validate_and_convert.return_value = [1]
 
@@ -405,7 +405,7 @@ class TestLabelTransformTelemetry:
     @pytest.mark.asyncio
     async def test_validate_labels_span_sets_error_on_failure(
         self, transform, label_service, trace_exporter
-    ):
+    ) -> None:
         """When label conversion fails, the span records an error attribute."""
         label_service.validate_and_convert.side_effect = ValidationError(
             message="Unknown label: bad", field="labels",
@@ -437,7 +437,7 @@ class TestLabelTransformTelemetry:
     @pytest.mark.asyncio
     async def test_validate_labels_span_counts_label_types(
         self, transform, label_service, trace_exporter
-    ):
+    ) -> None:
         """The validate_labels span carries label.count, label.integers, label.strings."""
         label_service.validate_and_convert.return_value = [1, 2, 42]
 
@@ -466,7 +466,7 @@ class TestLabelTransformTelemetry:
     @pytest.mark.asyncio
     async def test_validate_labels_span_without_labels_arg(
         self, transform, trace_exporter
-    ):
+    ) -> None:
         """When no labels passed, spans still emit but with no count attrs."""
         tool = self.make_tool("nolabel_tool", has_labels=True)
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))

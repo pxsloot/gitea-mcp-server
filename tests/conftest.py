@@ -46,7 +46,7 @@ class SimpleConfig:
         http_cors=None,
         exclude_config_path=None,
         response_format="markdown",
-    ):
+    ) -> None:
         self.url = url.rstrip("/")
         self.token = token
         self.verify_ssl = verify_ssl
@@ -74,7 +74,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 
 @pytest.fixture(scope="session")
-def event_loop():
+def event_loop() -> asyncio.AbstractEventLoop:
     """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
@@ -82,7 +82,7 @@ def event_loop():
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Path) -> Path:
     """Create a temporary workspace with sample files."""
     return tmp_path
 
@@ -127,7 +127,7 @@ def trace_exporter() -> Any:
 
 
 @pytest.fixture
-def swagger_spec_fixture():
+def swagger_spec_fixture() -> dict[str, Any]:
     """Load the swagger spec for tests."""
     spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
     if not spec_path.exists():
@@ -138,7 +138,7 @@ def swagger_spec_fixture():
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_contexts():
+def _reset_module_contexts() -> None:
     """Reset module-level ContextVars before each test.
 
     Prevents cross-test pollution via module-level ContextVars that act as

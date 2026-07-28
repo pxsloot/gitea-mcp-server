@@ -20,7 +20,7 @@ class TestCacheInvalidationIntegration:
     """Integration tests for cache invalidation using respx mocks."""
 
     @pytest.mark.asyncio
-    async def test_issue_edit_invalidation_mapping(self):
+    async def test_issue_edit_invalidation_mapping(self) -> None:
         """Test that issue_edit_issue is mapped to invalidate issues resources."""
 
         # Manually register for this test (server does this automatically on startup)
@@ -39,7 +39,7 @@ class TestCacheInvalidationIntegration:
         assert set(uris) == set(expected)
 
     @pytest.mark.asyncio
-    async def test_pr_create_invalidation_mapping(self):
+    async def test_pr_create_invalidation_mapping(self) -> None:
         """Test that PR creation invalidates pulls resources."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -56,7 +56,7 @@ class TestCacheInvalidationIntegration:
         assert set(uris) == set(expected)
 
     @pytest.mark.asyncio
-    async def test_repo_edit_invalidation_mapping(self):
+    async def test_repo_edit_invalidation_mapping(self) -> None:
         """Test that repo edit invalidates repo resource."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -69,7 +69,7 @@ class TestCacheInvalidationIntegration:
         assert uris == ["gitea://repos/myorg/myrepo"]
 
     @pytest.mark.asyncio
-    async def test_file_content_invalidation_mapping(self):
+    async def test_file_content_invalidation_mapping(self) -> None:
         """Test file content operations use filepath parameter correctly."""
         from gitea_mcp_server.cache_invalidation import (
             register_tool_invalidation,
@@ -87,7 +87,7 @@ class TestCacheInvalidationIntegration:
         assert "gitea://repos/org/repo/files/README.md" in uris
 
     @pytest.mark.asyncio
-    async def test_label_operations_invalidation(self):
+    async def test_label_operations_invalidation(self) -> None:
         """Test label CRUD invalidates labels, issues, and pulls."""
         patterns = _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/labels", "POST")
         assert set(patterns) == {"labels", "issues_list", "pulls_list"}
@@ -96,7 +96,7 @@ class TestCacheInvalidationIntegration:
         assert set(patterns) == {"labels", "issues_list", "pulls_list"}
 
     @pytest.mark.asyncio
-    async def test_path_based_pattern_mapping_coverage(self):
+    async def test_path_based_pattern_mapping_coverage(self) -> None:
         """Comprehensive test of path-based pattern mapping."""
         # Issues
         assert _compute_tool_invalidation_patterns("/repos/{owner}/{repo}/issues", "POST") == [
@@ -159,7 +159,7 @@ class TestCacheInvalidationIntegration:
 class TestCacheKeyConsistency:
     """Test that cache key computation matches FastMCP's algorithm."""
 
-    def test_cache_key_matches_fastmcp_format(self):
+    def test_cache_key_matches_fastmcp_format(self) -> None:
         """Verify our cache key matches FastMCP's ``_make_read_resource_cache_key``.
 
         The key includes the auth partition prefix to match the format
@@ -172,7 +172,7 @@ class TestCacheKeyConsistency:
 
         assert _compute_cache_key(uri, auth_key=auth_key) == expected
 
-    def test_different_uris_different_keys(self):
+    def test_different_uris_different_keys(self) -> None:
         """Different URIs should produce different cache keys."""
         from gitea_mcp_server.cache_invalidation import _compute_cache_key
 
@@ -184,21 +184,21 @@ class TestCacheKeyConsistency:
 class TestTemplateSubstitution:
     """Test URI template substitution logic."""
 
-    def test_simple_substitution(self):
+    def test_simple_substitution(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "myorg", "repo": "myrepo"}
         assert _substitute_template(template, params) == "gitea://repos/myorg/myrepo/issues"
 
-    def test_filepath_substitution(self):
+    def test_filepath_substitution(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/files/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
         assert _substitute_template(template, params) == "gitea://repos/org/repo/files/src/main.py"
 
-    def test_missing_parameter_raises(self):
+    def test_missing_parameter_raises(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/issues"
@@ -206,7 +206,7 @@ class TestTemplateSubstitution:
         with pytest.raises(ValueError, match="Missing parameters"):
             _substitute_template(template, params)
 
-    def test_extra_parameters_ignored(self):
+    def test_extra_parameters_ignored(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/issues"
@@ -217,7 +217,7 @@ class TestTemplateSubstitution:
 class TestToolInvalidationCoverage:
     """Test that all important write tools are covered."""
 
-    def test_pr_write_tools_are_mapped(self):
+    def test_pr_write_tools_are_mapped(self) -> None:
         """All PR write operations should have invalidation patterns."""
         # The mapping uses the actual operationId from swagger, e.g., "repoCreatePullRequest"
         # and the path-based registration should cover them
@@ -232,7 +232,7 @@ class TestToolInvalidationCoverage:
             assert patterns, f"Path {path} should produce invalidation patterns"
             assert "pulls_list" in patterns
 
-    def test_repo_write_tools_are_mapped(self):
+    def test_repo_write_tools_are_mapped(self) -> None:
         """Repository write operations should invalidate repo resource."""
         paths_and_methods = [
             ("/repos/{owner}/{repo}", "PUT"),

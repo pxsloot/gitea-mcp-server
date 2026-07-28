@@ -6,7 +6,7 @@ from gitea_mcp_server.openapi_converter import _convert_components, convert_para
 class TestConvertParameters:
     """Tests for the convert_parameters function."""
 
-    def test_simple_parameter(self):
+    def test_simple_parameter(self) -> None:
         """Query parameter with type should be wrapped in schema."""
         params = [{"name": "page", "in": "query", "type": "integer", "description": "Page number"}]
         result = convert_parameters(params)
@@ -19,13 +19,13 @@ class TestConvertParameters:
         # Description stays at top level
         assert result[0]["description"] == "Page number"
 
-    def test_body_parameter_removed(self):
+    def test_body_parameter_removed(self) -> None:
         """Body parameters should be removed during parameter conversion."""
         params = [{"name": "body", "in": "body", "schema": {"type": "object"}}]
         result = convert_parameters(params)
         assert len(result) == 0  # Body params are skipped
 
-    def test_formData_parameter(self):
+    def test_formData_parameter(self) -> None:
         """formData parameters should be removed; non-formData params preserved."""
         params = [
             {"name": "file", "in": "formData", "type": "string"},
@@ -37,7 +37,7 @@ class TestConvertParameters:
         assert len(result) == 1
         assert result[0]["name"] == "query"
 
-    def test_parameter_with_schema(self):
+    def test_parameter_with_schema(self) -> None:
         """Parameter with existing schema should preserve and normalize it."""
         params = [{"name": "user", "in": "query", "schema": {"type": "string", "minLength": 1}}]
         result = convert_parameters(params)
@@ -49,7 +49,7 @@ class TestConvertParameters:
         assert "type" not in result[0]
         assert "minLength" not in result[0]
 
-    def test_collection_format_removed(self):
+    def test_collection_format_removed(self) -> None:
         """collectionFormat should be stripped from converted parameters."""
         params = [{"name": "ids", "in": "query", "type": "array", "items": {"type": "integer"}, "collectionFormat": "csv"}]
         result = convert_parameters(params)
@@ -57,7 +57,7 @@ class TestConvertParameters:
         assert result[0]["name"] == "ids"
         assert result[0]["schema"]["type"] == "array"
 
-    def test_parameter_without_schema_fields(self):
+    def test_parameter_without_schema_fields(self) -> None:
         """Parameter without schema or type fields should get empty schema."""
         params = [{"name": "empty", "in": "query"}]
         result = convert_parameters(params)
@@ -68,7 +68,7 @@ class TestConvertParameters:
 class TestConvertComponents:
     """Tests for _convert_components function."""
 
-    def test_parameters_as_dict(self):
+    def test_parameters_as_dict(self) -> None:
         """Parameters as a dict should be converted to named entries."""
         spec = {
             "parameters": {
@@ -81,7 +81,7 @@ class TestConvertComponents:
         assert result["parameters"]["page"]["name"] == "page"
         assert result["parameters"]["page"]["in"] == "query"
 
-    def test_parameters_as_list(self):
+    def test_parameters_as_list(self) -> None:
         """Parameters as a list should also be converted."""
         spec = {
             "parameters": [
@@ -94,7 +94,7 @@ class TestConvertComponents:
         assert "page" in result["parameters"]
         assert "limit" in result["parameters"]
 
-    def test_parameters_neither_dict_nor_list(self):
+    def test_parameters_neither_dict_nor_list(self) -> None:
         """Parameters as neither dict nor list should be skipped."""
         spec = {
             "parameters": "just a string",
@@ -102,7 +102,7 @@ class TestConvertComponents:
         result = _convert_components(spec)
         assert "parameters" not in result
 
-    def test_empty_parameters_skipped(self):
+    def test_empty_parameters_skipped(self) -> None:
         """Empty parameters list should be skipped."""
         spec = {
             "parameters": {},
@@ -110,7 +110,7 @@ class TestConvertComponents:
         result = _convert_components(spec)
         assert "parameters" not in result
 
-    def test_security_definitions_converted(self):
+    def test_security_definitions_converted(self) -> None:
         """securityDefinitions should be converted to securitySchemes."""
         spec = {
             "securityDefinitions": {
@@ -125,7 +125,7 @@ class TestConvertComponents:
 class TestVendorExtensionStripping:
     """Tests for vendor extension (x-*) stripping in parameter conversion."""
 
-    def test_parameter_level_x_fields_stripped(self):
+    def test_parameter_level_x_fields_stripped(self) -> None:
         """convert_parameters should strip x-* keys from parameter objects."""
         params = [
             {
@@ -145,7 +145,7 @@ class TestVendorExtensionStripping:
         assert result[0]["description"] == "owner of the repo"
         assert "schema" in result[0]
 
-    def test_parameter_schema_x_fields_stripped(self):
+    def test_parameter_schema_x_fields_stripped(self) -> None:
         """convert_parameters should strip x-* keys from parameter schema sub-object."""
         params = [
             {
@@ -159,7 +159,7 @@ class TestVendorExtensionStripping:
         assert "x-go-name" not in result[0]["schema"]
         assert result[0]["schema"]["type"] == "string"
 
-    def test_parameter_schema_fields_from_type_stripped(self):
+    def test_parameter_schema_fields_from_type_stripped(self) -> None:
         """convert_parameters should strip x-* when schema is built from type fields."""
         params = [
             {

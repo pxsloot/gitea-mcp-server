@@ -29,7 +29,7 @@ def make_mock_tool(
     output_schema=None,
     description="",
     **kwargs,
-):
+) -> MagicMock:
     """Create a MagicMock with OpenAPITool spec for unit tests.
 
     Parameters
@@ -70,7 +70,7 @@ def make_mock_tool(
     return tool
 
 
-def make_mock_route(path="/test", method="GET", summary="Test", operation_id="test_op"):
+def make_mock_route(path="/test", method="GET", summary="Test", operation_id="test_op") -> MagicMock:
     """Create a MagicMock route for unit tests.
 
     Parameters

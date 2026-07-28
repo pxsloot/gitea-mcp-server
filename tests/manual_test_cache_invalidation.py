@@ -27,13 +27,13 @@ def compute_cache_key(uri: str) -> str:
     return hashlib.sha256(uri.encode()).hexdigest()
 
 
-def print_section(title: str):
+def print_section(title: str) -> None:
     print(f"\n{'=' * 60}")
     print(f" {title}")
     print("=" * 60)
 
 
-def main():
+def main() -> None:
     print_section("Cache Invalidation Manual Test")
 
     # 1. Show the invalidation mapping

@@ -57,7 +57,7 @@ def _setup_mcp() -> tuple[MagicMock, Any]:
 class TestUnifiedSearchAnnotations:
     """Tests annotation metadata on the unified search tool."""
 
-    def test_search_tool_has_description(self):
+    def test_search_tool_has_description(self) -> None:
         """search tool must have a non-empty description."""
         from gitea_mcp_server.tools.unified_search import register_unified_search
 
@@ -73,7 +73,7 @@ class TestUnifiedSearchAnnotations:
         desc = call_kwargs.get("description")
         assert desc, f"search.description should be non-empty, got: {desc!r}"
 
-    def test_search_has_openworld_false(self):
+    def test_search_has_openworld_false(self) -> None:
         """search tool should have openWorldHint=False."""
         from gitea_mcp_server.tools.unified_search import register_unified_search
 

@@ -1,5 +1,6 @@
 """Unit tests for GiteaAPI class."""
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +16,7 @@ class TestGiteaAPI:
     """Tests for the GiteaAPI class."""
 
     @pytest.fixture
-    def config(self):
+    def config(self) -> Generator[Config, None, None]:
         """Create a test configuration."""
         with pytest.MonkeyPatch.context() as mp:
             mp.setenv("GITEA_URL", "https://git.example.com")
@@ -25,17 +26,17 @@ class TestGiteaAPI:
             yield Config.get()
 
     @pytest.fixture
-    def transport(self, config):
+    def transport(self, config) -> HTTPTransport:
         """Create a transport for testing."""
         return HTTPTransport(config)
 
     @pytest.fixture
-    def api(self, transport):
+    def api(self, transport) -> GiteaAPI:
         """Create a GiteaAPI instance for testing."""
         return GiteaAPI(transport, "https://git.example.com/api/v1")
 
     @pytest.mark.asyncio
-    async def test_relative_url_construction(self, api):
+    async def test_relative_url_construction(self, api) -> None:
         """Test that relative paths are correctly appended to base_url."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/user").respond(200, json={"name": "testuser"})
@@ -44,7 +45,7 @@ class TestGiteaAPI:
             assert result["name"] == "testuser"
 
     @pytest.mark.asyncio
-    async def test_absolute_url_unchanged(self, api):
+    async def test_absolute_url_unchanged(self, api) -> None:
         """Test that absolute URLs are used as-is (should not be modified)."""
         with respx.mock() as mock:
             # Absolute URL to a different host - should be used as-is
@@ -54,7 +55,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_base_url_trailing_slash_handling(self, config):
+    async def test_base_url_trailing_slash_handling(self, config) -> None:
         """Test that base_url trailing slashes are properly handled."""
         # Create API with base_url that has trailing slash
         transport = HTTPTransport(config)
@@ -68,7 +69,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_path_with_params(self, api):
+    async def test_path_with_params(self, api) -> None:
         """Test that query parameters are correctly added."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/repos").respond(200, json=[{"name": "repo1"}])
@@ -77,7 +78,7 @@ class TestGiteaAPI:
             assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    async def test_post_with_json_body(self, api):
+    async def test_post_with_json_body(self, api) -> None:
         """Test POST request with JSON body."""
         with respx.mock() as mock:
             mock.post("https://git.example.com/api/v1/repos").respond(
@@ -90,7 +91,7 @@ class TestGiteaAPI:
             assert result["name"] == "test-repo"
 
     @pytest.mark.asyncio
-    async def test_delegation_to_transport(self, transport, mocker: MockerFixture):
+    async def test_delegation_to_transport(self, transport, mocker: MockerFixture) -> None:
         """Test that GiteaAPI correctly delegates to transport."""
         api = GiteaAPI(transport, "https://git.example.com/api/v1")
 
@@ -107,7 +108,7 @@ class TestGiteaAPI:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_error_propagation(self, api):
+    async def test_error_propagation(self, api) -> None:
         """Test that errors from transport are propagated correctly."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1/user").respond(
@@ -120,7 +121,7 @@ class TestGiteaAPI:
             assert exc_info.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_empty_path(self, api):
+    async def test_empty_path(self, api) -> None:
         """Test request with empty path (should just use base_url)."""
         with respx.mock() as mock:
             mock.get("https://git.example.com/api/v1").respond(200, json={"ok": True})
@@ -129,7 +130,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_path_concatenation_edge_cases(self, api):
+    async def test_path_concatenation_edge_cases(self, api) -> None:
         """Test various path concatenation scenarios."""
         # Path starting with /
         with respx.mock() as mock:

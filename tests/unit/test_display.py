@@ -50,26 +50,26 @@ def _clean_formatters() -> None:
 class TestCallFormatter:
     """Tests for call_formatter."""
 
-    def test_unknown_formatter_raises(self):
+    def test_unknown_formatter_raises(self) -> None:
         """Unknown formatter name raises ValueError."""
         with pytest.raises(ValueError, match="No formatter registered for 'nonexistent'"):
             call_formatter("nonexistent", {"key": "value"})
 
-    def test_known_formatter_invoked(self):
+    def test_known_formatter_invoked(self) -> None:
         """Known formatter is called and returns expected output."""
 
         @register_formatter("test_formatter")
-        def _test_fmt(data, *, detail="full"):
+        def _test_fmt(data, *, detail="full") -> str:
             return f"formatted: {data}"
 
         result = call_formatter("test_formatter", {"hello": "world"})
         assert "formatted:" in result
 
-    def test_formatter_with_extra_needed(self):
+    def test_formatter_with_extra_needed(self) -> None:
         """Formatter registered with need_extra=True receives extra dict."""
 
         @register_formatter("test_extra", need_extra=True)
-        def _test_extra(data, *, detail="full", extra=None):
+        def _test_extra(data, *, detail="full", extra=None) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 
@@ -78,11 +78,11 @@ class TestCallFormatter:
         )
         assert "ctx=my_context" in result
 
-    def test_formatter_without_detail(self):
+    def test_formatter_without_detail(self) -> None:
         """Formatter that ignores detail still works."""
 
         @register_formatter("test_no_detail")
-        def _test_no_detail(data, **kwargs):
+        def _test_no_detail(data, **kwargs) -> str:
             return f"ok:{data}"
 
         result = call_formatter("test_no_detail", 42)
@@ -92,7 +92,7 @@ class TestCallFormatter:
 class TestFormatUserMarkdown:
     """Tests for _format_user_markdown edge cases."""
 
-    def test_created_fallback(self):
+    def test_created_fallback(self) -> None:
         """When 'created_at' absent but 'created' present, use 'created'."""
         data = {
             "login": "testuser",
@@ -104,7 +104,7 @@ class TestFormatUserMarkdown:
         assert "2024-06-01" in result
         assert "| Created At |" in result or "created_at" in result.lower()
 
-    def test_created_at_present_no_fallback(self):
+    def test_created_at_present_no_fallback(self) -> None:
         """When 'created_at' is present, 'created' is ignored."""
         data = {
             "login": "testuser",
@@ -119,7 +119,7 @@ class TestFormatUserMarkdown:
 class TestFormatLabelsMarkdownEdgeCases:
     """Edge cases for _format_labels_markdown."""
 
-    def test_empty_data_labels(self):
+    def test_empty_data_labels(self) -> None:
         """Empty labels list produces 'no labels' message."""
         result = _format_labels_markdown(
             [],
@@ -128,7 +128,7 @@ class TestFormatLabelsMarkdownEdgeCases:
         )
         assert "No labels configured for this repository" in result
 
-    def test_empty_data_labels_no_extra(self):
+    def test_empty_data_labels_no_extra(self) -> None:
         """Empty labels list with no extra still works (uses ? placeholders)."""
         result = _format_labels_markdown([], detail="full")
         assert "?/?" in result
@@ -137,7 +137,7 @@ class TestFormatLabelsMarkdownEdgeCases:
 class TestBuildLabelsMarkdown:
     """Tests for _build_labels_markdown shorthand."""
 
-    def test_build_labels_markdown(self):
+    def test_build_labels_markdown(self) -> None:
         """_build_labels_markdown delegates correctly."""
         data = [{"id": 1, "name": "bug", "color": "ff0000", "description": "A bug"}]
         result = _build_labels_markdown(data, "myorg", "myrepo", detail="full")
@@ -148,7 +148,7 @@ class TestBuildLabelsMarkdown:
 class TestFormatRepoMarkdown:
     """Tests for _format_repo_markdown."""
 
-    def test_formats_repo_completely(self):
+    def test_formats_repo_completely(self) -> None:
         """Test repository is formatted with all fields."""
         repo = {
             "full_name": "owner/repo",
@@ -177,7 +177,7 @@ class TestFormatRepoMarkdown:
         assert "example" in result
         assert "## License" in result
 
-    def test_handles_missing_fields(self):
+    def test_handles_missing_fields(self) -> None:
         """Test repo with missing optional fields."""
         repo = {
             "full_name": "owner/repo",
@@ -196,13 +196,13 @@ class TestFormatRepoMarkdown:
 class TestResourceFormatters:
     """Tests for other formatting functions."""
 
-    def test_format_issues_markdown_empty(self):
+    def test_format_issues_markdown_empty(self) -> None:
         """Test empty issues list."""
         result = _format_issues_markdown([])
         assert "# Issues" in result
         assert "*None*" in result
 
-    def test_format_pulls_markdown_with_data(self):
+    def test_format_pulls_markdown_with_data(self) -> None:
         """Test pull request formatting."""
         pull = {
             "number": 1,
@@ -226,7 +226,7 @@ class TestResourceFormatters:
         assert "| Head | feature |" in result
         assert "## Base" not in result
 
-    def test_format_user_markdown_regular_user(self):
+    def test_format_user_markdown_regular_user(self) -> None:
         """Test user profile formatting."""
 
         user = {
@@ -248,7 +248,7 @@ class TestResourceFormatters:
         assert "| Public Repos | 10 |" in result
         assert "| Bio | Software developer |" in result
 
-    def test_format_user_markdown_organization(self):
+    def test_format_user_markdown_organization(self) -> None:
         """Test organization profile formatting."""
 
         org = {
@@ -267,7 +267,7 @@ class TestResourceFormatters:
 class TestFormatterGaps:
     """Tests for missing formatter edge cases."""
 
-    def test_format_issues_markdown_with_total(self):
+    def test_format_issues_markdown_with_total(self) -> None:
         issues = [
             {
                 "number": 1,
@@ -287,7 +287,7 @@ class TestFormatterGaps:
         assert "| Number | 1 |" in result
         assert "| Title | Bug |" in result
 
-    def test_format_issues_markdown_with_labels(self):
+    def test_format_issues_markdown_with_labels(self) -> None:
         """Issues with labels include label names in output."""
         issues = [
             {
@@ -306,24 +306,24 @@ class TestFormatterGaps:
         assert "| Labels | bug, enhancement |" in result
         assert "## Labels" not in result
 
-    def test_format_issues_markdown_extra_type_issues(self):
+    def test_format_issues_markdown_extra_type_issues(self) -> None:
         """Issues formatter with extra={'type': 'issues'} uses 'Issues' title."""
         issues = [{"number": 1, "title": "Bug", "state": "open"}]
         result = _format_issues_markdown(issues, extra={"type": "issues"})
         assert "Issues - 1 items" in result
 
-    def test_format_issues_markdown_extra_type_pulls(self):
+    def test_format_issues_markdown_extra_type_pulls(self) -> None:
         """Issues formatter with extra={'type': 'pulls'} uses 'Pull Requests' title."""
         issues = [{"number": 1, "title": "Bug", "state": "open"}]
         result = _format_issues_markdown(issues, extra={"type": "pulls"})
         assert "Pull Requests - 1 items" in result
 
-    def test_format_issues_markdown_extra_type_fallback_when_data_is_str(self):
+    def test_format_issues_markdown_extra_type_fallback_when_data_is_str(self) -> None:
         """Issues formatter falls back to generic title when data is collapsed strings."""
         result = _format_issues_markdown(["$ref:Issue"], extra=None)
         assert "Issues and Pull Requests - 1 items" in result
 
-    def test_format_issues_markdown_fallback_scan_detects_prs(self):
+    def test_format_issues_markdown_fallback_scan_detects_prs(self) -> None:
         """Fallback scanning detects pull requests when items have pull_request dict."""
         issues = [
             {"number": 1, "title": "Issue", "state": "open"},
@@ -333,20 +333,20 @@ class TestFormatterGaps:
         # Item has pull_request truthy → "Issues and Pull Requests"
         assert "Issues and Pull Requests - 2 items" in result
 
-    def test_format_issues_markdown_no_prs(self):
+    def test_format_issues_markdown_no_prs(self) -> None:
         """Formatter defaults to 'Issues' when no pull_request keys exist."""
         issues = [{"number": 1, "title": "Bug", "state": "open"}]
         result = _format_issues_markdown(issues, extra=None)
         assert "Issues - 1 items" in result
 
-    def test_format_pulls_markdown_empty(self):
+    def test_format_pulls_markdown_empty(self) -> None:
         result = _format_pulls_markdown([])
 
         assert "# Pull Requests" in result
         assert "Pull Requests" in result
         assert "*None*" in result
 
-    def test_format_release_markdown_full(self):
+    def test_format_release_markdown_full(self) -> None:
         releases = [{
             "tag_name": "v1.0.0",
             "name": "Version 1.0.0",
@@ -364,7 +364,7 @@ class TestFormatterGaps:
         assert "| Prerelease | False |" in result
         assert "| Body | Release notes here |" in result
 
-    def test_format_release_markdown_missing_name(self):
+    def test_format_release_markdown_missing_name(self) -> None:
         releases = [{
             "tag_name": "v1.0.0",
             "draft": False,
@@ -377,7 +377,7 @@ class TestFormatterGaps:
 
         assert "| Tag Name | v1.0.0 |" in result
 
-    def test_format_release_markdown_missing_body(self):
+    def test_format_release_markdown_missing_body(self) -> None:
         releases = [{
             "tag_name": "v1.0.0",
             "name": "Version 1.0.0",
@@ -391,7 +391,7 @@ class TestFormatterGaps:
         assert "# v1.0.0" in result
         assert "| Name | Version 1.0.0 |" in result
 
-    def test_format_release_markdown_draft_prerelease(self):
+    def test_format_release_markdown_draft_prerelease(self) -> None:
         releases = [{
             "tag_name": "v2.0.0-beta",
             "name": "Beta",
@@ -406,7 +406,7 @@ class TestFormatterGaps:
         assert "| Draft | True |" in result
         assert "| Prerelease | True |" in result
 
-    def test_build_server_info_markdown(self):
+    def test_build_server_info_markdown(self) -> None:
         spec = {
             "info": {
                 "title": "Gitea API",
@@ -421,14 +421,14 @@ class TestFormatterGaps:
         assert "## Description" in result
         assert "Gitea API description." in result
 
-    def test_build_server_info_markdown_no_description(self):
+    def test_build_server_info_markdown_no_description(self) -> None:
         spec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
         result = _build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result
         assert "## Description" not in result
 
-    def test_build_server_info_markdown_missing_info(self):
+    def test_build_server_info_markdown_missing_info(self) -> None:
         result = _build_server_info_markdown({})
 
         assert "**Server Type**: Unknown" in result
@@ -442,7 +442,7 @@ class TestToolResourceConsistency:
     should use the same nested sub-table format for the same data.
     """
 
-    def test_issue_format_consistent_with_shared_formatter(self):
+    def test_issue_format_consistent_with_shared_formatter(self) -> None:
         """_format_issues_markdown delegates to _format_as_markdown with field_filter."""
         from gitea_mcp_server.format import _format_as_markdown
 
@@ -475,7 +475,7 @@ class TestToolResourceConsistency:
         # Labels render as compact_ref flat row (comma-separated names)
         assert "| Labels | bug |" in resource_result
 
-    def test_issue_format_dynamic_title_without_pr(self):
+    def test_issue_format_dynamic_title_without_pr(self) -> None:
         """Issues without pull_request use 'Issues' title."""
 
         issues = [
@@ -485,7 +485,7 @@ class TestToolResourceConsistency:
         result = _format_issues_markdown(issues)
         assert "Issues - 2 items" in result
 
-    def test_issue_format_dynamic_title_with_prs(self):
+    def test_issue_format_dynamic_title_with_prs(self) -> None:
         """Issues with pull_request entries use 'Issues and Pull Requests' title."""
 
         items = [
@@ -495,7 +495,7 @@ class TestToolResourceConsistency:
         result = _format_issues_markdown(items)
         assert "Issues and Pull Requests - 2 items" in result
 
-    def test_issue_format_shows_pull_request_badge(self):
+    def test_issue_format_shows_pull_request_badge(self) -> None:
         """pull_request field renders as Yes/No badge in issues list."""
 
         items = [
@@ -508,7 +508,7 @@ class TestToolResourceConsistency:
         # The Fix (pull_request=dict) should show Yes
         assert "| Pull Request | Yes |" in result
 
-    def test_pull_format_consistent_with_shared_formatter(self):
+    def test_pull_format_consistent_with_shared_formatter(self) -> None:
         """_format_pulls_markdown delegates to _format_as_markdown with field_filter."""
 
         pulls = [
@@ -533,7 +533,7 @@ class TestToolResourceConsistency:
         assert "| Head | feature |" in resource_result
         assert "## Base" not in resource_result
 
-    def test_repo_format_consistent_with_shared_formatter(self):
+    def test_repo_format_consistent_with_shared_formatter(self) -> None:
         """_format_repo_markdown delegates to _format_as_markdown with field_filter."""
 
         repo = {
@@ -551,7 +551,7 @@ class TestToolResourceConsistency:
         assert "| Owner | owner |" in resource_result
         assert "## Owner" not in resource_result
 
-    def test_user_format_consistent_with_shared_formatter(self):
+    def test_user_format_consistent_with_shared_formatter(self) -> None:
         """_format_user_markdown delegates to _format_as_markdown with field_filter."""
 
         user = {
@@ -565,7 +565,7 @@ class TestToolResourceConsistency:
         assert "| Login | johndoe |" in resource_result
         assert "| Full Name | John Doe |" in resource_result
 
-    def test_release_format_consistent_with_shared_formatter(self):
+    def test_release_format_consistent_with_shared_formatter(self) -> None:
         """_format_release_markdown delegates to _format_as_markdown with field_filter."""
 
         releases = [{
@@ -583,7 +583,7 @@ class TestToolResourceConsistency:
         assert "| Name | Version 1.0.0 |" in resource_result
         assert "| Body | Notes |" in resource_result
 
-    def test_labels_format_contains_hints_and_scope(self):
+    def test_labels_format_contains_hints_and_scope(self) -> None:
         """_format_labels_markdown includes accepted format, scoped info, and validation hints."""
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
@@ -624,7 +624,7 @@ class TestToolResourceConsistency:
         assert "validated" in result.lower()
         assert "`#ff0000`" in result
 
-    def test_labels_format_concise_handles_collapsed_refs(self):
+    def test_labels_format_concise_handles_collapsed_refs(self) -> None:
         """_format_labels_markdown with detail=concise handles collapsed $ref:Label strings."""
         from gitea_mcp_server.tools.display import _format_labels_markdown
 

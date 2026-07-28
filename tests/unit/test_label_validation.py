@@ -1,6 +1,7 @@
 """Unit tests for label validation and auto-conversion functionality."""
 
 import asyncio
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -35,13 +36,13 @@ class TestLabelCache:
     """Tests for label cache infrastructure."""
 
     @pytest.fixture(autouse=True)
-    def clear_cache(self):
+    def clear_cache(self) -> Generator[None, None, None]:
         """Clear the label service cache before each test."""
         _label_service.clear_cache()
         yield
         _label_service.clear_cache()
 
-    def test_cache_miss_fetches_and_caches(self):
+    def test_cache_miss_fetches_and_caches(self) -> None:
         """Cache miss should fetch labels and populate cache."""
         client = MagicMock()
         client.request = AsyncMock(
@@ -63,7 +64,7 @@ class TestLabelCache:
         # Verify client was called correctly
         client.request.assert_called_once_with("GET", "/repos/owner/repo/labels")
 
-    def test_cache_hit_returns_cached(self):
+    def test_cache_hit_returns_cached(self) -> None:
         """Second call with same repo should hit cache."""
         client = MagicMock()
         client.request = AsyncMock(
@@ -80,7 +81,7 @@ class TestLabelCache:
         # Should only call API once (cache hit second time)
         assert client.request.call_count == 1
 
-    def test_different_repos_separate_cache_entries(self):
+    def test_different_repos_separate_cache_entries(self) -> None:
         """Different (owner, repo) pairs should have separate cache entries."""
         client = MagicMock()
         client.request = AsyncMock(
@@ -95,7 +96,7 @@ class TestLabelCache:
 
         assert client.request.call_count == 2
 
-    def test_cache_ttl_expires(self):
+    def test_cache_ttl_expires(self) -> None:
         """Cache entries should expire after TTL."""
         # Save original TTL
         original_ttl = _label_service._cache_ttl
@@ -120,7 +121,7 @@ class TestLabelCache:
         # Restore TTL
         _label_service._cache_ttl = original_ttl
 
-    def test_case_insensitive_matching(self):
+    def test_case_insensitive_matching(self) -> None:
         """Label name lookup should be case-insensitive."""
         client = MagicMock()
         client.request = AsyncMock(
@@ -139,7 +140,7 @@ class TestLabelCache:
         assert name_map["bug"]["id"] == 1
         assert name_map["enhancement"]["id"] == 2
 
-    def test_id_map_populated(self):
+    def test_id_map_populated(self) -> None:
         """ID map should be populated alongside name map."""
         client = MagicMock()
         client.request = AsyncMock(
@@ -163,7 +164,7 @@ class TestLabelServiceValidateAndConvert:
     """Tests for LabelService.validate_and_convert."""
 
     @pytest.fixture(autouse=True)
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         _label_service.clear_cache()
 
     def _make_client(self, labels_data):
@@ -172,7 +173,7 @@ class TestLabelServiceValidateAndConvert:
         return client
 
     @pytest.mark.asyncio
-    async def test_converts_known_strings(self):
+    async def test_converts_known_strings(self) -> None:
         """Known string label names should be converted to integer IDs."""
         client = self._make_client([
             {"id": 1, "name": "bug"},
@@ -184,7 +185,7 @@ class TestLabelServiceValidateAndConvert:
         assert result == [1, 2]
 
     @pytest.mark.asyncio
-    async def test_passes_through_valid_integers(self):
+    async def test_passes_through_valid_integers(self) -> None:
         """Integer IDs that exist in the label map should pass through."""
         client = self._make_client([
             {"id": 1, "name": "bug"},
@@ -196,7 +197,7 @@ class TestLabelServiceValidateAndConvert:
         assert result == [1, 42]
 
     @pytest.mark.asyncio
-    async def test_raises_for_unknown_integer(self):
+    async def test_raises_for_unknown_integer(self) -> None:
         """Unknown integer ID should raise ValidationError."""
         client = self._make_client([
             {"id": 1, "name": "bug"},
@@ -210,7 +211,7 @@ class TestLabelServiceValidateAndConvert:
         assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
-    async def test_raises_for_unknown_string(self):
+    async def test_raises_for_unknown_string(self) -> None:
         """Unknown string label should raise ValidationError."""
         client = self._make_client([
             {"id": 1, "name": "bug"},
@@ -223,7 +224,7 @@ class TestLabelServiceValidateAndConvert:
         assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
-    async def test_raises_for_mixed_unknowns(self):
+    async def test_raises_for_mixed_unknowns(self) -> None:
         """Both unknown strings and integers should be reported in one error."""
         client = self._make_client([
             {"id": 1, "name": "bug"},
@@ -238,7 +239,7 @@ class TestLabelServiceValidateAndConvert:
         assert "owner/repo" in msg
 
     @pytest.mark.asyncio
-    async def test_empty_labels_returns_empty_list(self):
+    async def test_empty_labels_returns_empty_list(self) -> None:
         """Empty labels list should return empty list."""
         client = self._make_client([])
         result = await _label_service.validate_and_convert(
@@ -247,7 +248,7 @@ class TestLabelServiceValidateAndConvert:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_case_insensitive_string_lookup(self):
+    async def test_case_insensitive_string_lookup(self) -> None:
         """String label lookup should be case-insensitive."""
         client = self._make_client([
             {"id": 5, "name": "Kind/Enhancement"},
@@ -263,11 +264,11 @@ class TestLabelServiceFormatAvailable:
     """Tests for LabelService.format_available."""
 
     @pytest.fixture(autouse=True)
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         _label_service.clear_cache()
 
     @pytest.mark.asyncio
-    async def test_groups_labels_by_prefix(self):
+    async def test_groups_labels_by_prefix(self) -> None:
         """Labels with same prefix should be grouped together."""
         client = MagicMock()
         client.request = AsyncMock(return_value=[
@@ -283,7 +284,7 @@ class TestLabelServiceFormatAvailable:
         assert "status/triage" in result
 
     @pytest.mark.asyncio
-    async def test_labels_without_prefix(self):
+    async def test_labels_without_prefix(self) -> None:
         """Labels without a '/' should be grouped under empty prefix."""
         client = MagicMock()
         client.request = AsyncMock(return_value=[
@@ -299,7 +300,7 @@ class TestLabelServiceFormatAvailable:
 class TestUpdateLabelsSchema:
     """Tests for the _update_labels_schema function."""
 
-    def test_updates_integer_type_to_union(self):
+    def test_updates_integer_type_to_union(self) -> None:
         """Schema with integer items.type should become [string, integer]."""
         tool = MagicMock()
         tool.parameters = {
@@ -316,7 +317,7 @@ class TestUpdateLabelsSchema:
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
-    def test_updates_string_type_to_union(self):
+    def test_updates_string_type_to_union(self) -> None:
         """Schema with string items.type should become [string, integer]."""
         tool = MagicMock()
         tool.parameters = {
@@ -333,7 +334,7 @@ class TestUpdateLabelsSchema:
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
-    def test_preserves_existing_union(self):
+    def test_preserves_existing_union(self) -> None:
         """Schema already with union type should not be modified."""
         tool = MagicMock()
         tool.parameters = {
@@ -350,7 +351,7 @@ class TestUpdateLabelsSchema:
         labels_schema = tool.parameters["properties"]["labels"]
         assert labels_schema["items"]["type"] == ["string", "integer"]
 
-    def test_skips_non_array_labels(self):
+    def test_skips_non_array_labels(self) -> None:
         """If labels is not array type, schema should not be modified."""
         tool = MagicMock()
         tool.parameters = {
@@ -364,7 +365,7 @@ class TestUpdateLabelsSchema:
         # Should remain unchanged
         assert tool.parameters["properties"]["labels"]["type"] == "string"
 
-    def test_skips_no_labels_property(self):
+    def test_skips_no_labels_property(self) -> None:
         """Tool without labels property should not be modified."""
         tool = MagicMock()
         tool.parameters = {
@@ -379,7 +380,7 @@ class TestUpdateLabelsSchema:
         # Should remain unchanged
         assert "labels" not in tool.parameters["properties"]
 
-    def test_skips_no_parameters(self):
+    def test_skips_no_parameters(self) -> None:
         """Tool without parameters attribute should not crash."""
         tool = MagicMock()
         # No parameters attribute
@@ -388,7 +389,7 @@ class TestUpdateLabelsSchema:
         # Should not raise
         _update_labels_schema(tool)
 
-    def test_skips_empty_parameters(self):
+    def test_skips_empty_parameters(self) -> None:
         """Tool with None parameters should not crash."""
         tool = MagicMock()
         tool.parameters = None
@@ -396,7 +397,7 @@ class TestUpdateLabelsSchema:
         # Should not raise
         _update_labels_schema(tool)
 
-    def test_updates_schema_during_customize(self):
+    def test_updates_schema_during_customize(self) -> None:
         """_customize_metadata should trigger schema update for tools with labels."""
         from fastmcp.server.providers.openapi import OpenAPITool
 

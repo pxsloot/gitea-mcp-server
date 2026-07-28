@@ -1,5 +1,6 @@
 """Unit tests for cache invalidation functionality."""
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,7 +21,7 @@ from gitea_mcp_server.tools.customize import (
 
 
 @pytest.fixture(autouse=True)
-def clear_invalidation_map():
+def clear_invalidation_map() -> Generator[None, None, None]:
     """Clear the invalidation map before each test."""
     TOOL_INVALIDATION_MAP.clear()
     yield
@@ -30,7 +31,7 @@ def clear_invalidation_map():
 class TestComputeCacheKey:
     """Tests for _compute_cache_key function."""
 
-    def test_consistent_hashing(self):
+    def test_consistent_hashing(self) -> None:
         """Same URI produces same hash."""
         uri = "gitea://repos/owner/repo/issues"
         key1 = _compute_cache_key(uri)
@@ -38,7 +39,7 @@ class TestComputeCacheKey:
         assert key1 == key2
         assert len(key1) == 64  # SHA256 hex digest length
 
-    def test_different_uris_different_keys(self):
+    def test_different_uris_different_keys(self) -> None:
         """Different URIs produce different hashes."""
         uri1 = "gitea://repos/owner/repo/issues"
         uri2 = "gitea://repos/owner/repo/pulls"
@@ -50,35 +51,35 @@ class TestComputeCacheKey:
 class TestSubstituteTemplate:
     """Tests for _substitute_template function."""
 
-    def test_simple_substitution(self):
+    def test_simple_substitution(self) -> None:
         """Basic parameter substitution."""
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "myorg", "repo": "myrepo"}
         result = _substitute_template(template, params)
         assert result == "gitea://repos/myorg/myrepo/issues"
 
-    def test_multiple_parameters(self):
+    def test_multiple_parameters(self) -> None:
         """Multiple parameters are all substituted."""
         template = "gitea://repos/{owner}/{repo}/files/{path}"
         params = {"owner": "org", "repo": "repo", "path": "src/main.py"}
         result = _substitute_template(template, params)
         assert result == "gitea://repos/org/repo/files/src/main.py"
 
-    def test_missing_parameter_raises(self):
+    def test_missing_parameter_raises(self) -> None:
         """Missing required parameter raises ValueError."""
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org"}  # missing repo
         with pytest.raises(ValueError, match="Missing parameters"):
             _substitute_template(template, params)
 
-    def test_extra_parameters_ignored(self):
+    def test_extra_parameters_ignored(self) -> None:
         """Extra parameters not in template are ignored."""
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org", "repo": "repo", "extra": "ignored"}
         result = _substitute_template(template, params)
         assert result == "gitea://repos/org/repo/issues"
 
-    def test_wildcard_parameter(self):
+    def test_wildcard_parameter(self) -> None:
         """Wildcard parameters are handled."""
         template = "gitea://repos/{owner}/{repo}/files/{path*}"
         params = {"owner": "org", "repo": "repo", "path": "docs/guide/intro.md"}
@@ -89,7 +90,7 @@ class TestSubstituteTemplate:
 class TestComputeUrisToInvalidate:
     """Tests for compute_uris_to_invalidate function."""
 
-    def test_issue_edit_invalidates_issues(self):
+    def test_issue_edit_invalidates_issues(self) -> None:
         """issue_edit_issue invalidates issues list."""
         register_tool_invalidation(
             "issue_edit_issue", ["issues_list"]
@@ -101,7 +102,7 @@ class TestComputeUrisToInvalidate:
         ]
         assert set(uris) == set(expected)
 
-    def test_issue_create_invalidates_issues(self):
+    def test_issue_create_invalidates_issues(self) -> None:
         """issue_create_repo_issue invalidates issues list."""
         register_tool_invalidation("issue_create_repo_issue", ["issues_list"])
         arguments = {"owner": "org", "repo": "repo", "title": "Bug"}
@@ -111,7 +112,7 @@ class TestComputeUrisToInvalidate:
         ]
         assert set(uris) == set(expected)
 
-    def test_pr_create_invalidates_pulls(self):
+    def test_pr_create_invalidates_pulls(self) -> None:
         """pull_request_create invalidates pulls list."""
         register_tool_invalidation("pull_request_create", ["pulls_list"])
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
@@ -121,20 +122,20 @@ class TestComputeUrisToInvalidate:
         ]
         assert set(uris) == set(expected)
 
-    def test_unknown_tool_returns_empty(self):
+    def test_unknown_tool_returns_empty(self) -> None:
         """Unknown tool returns empty list."""
         arguments = {"owner": "org", "repo": "repo"}
         uris = compute_uris_to_invalidate("unknown_tool", arguments)
         assert uris == []
 
-    def test_repo_edit_invalidates_repo_resource(self):
+    def test_repo_edit_invalidates_repo_resource(self) -> None:
         """repo_edit invalidates repository resource."""
         register_tool_invalidation("repo_edit", ["repo"])
         arguments = {"owner": "org", "repo": "repo"}
         uris = compute_uris_to_invalidate("repo_edit", arguments)
         assert uris == ["gitea://repos/org/repo"]
 
-    def test_file_operation_invalidates_file_resource(self):
+    def test_file_operation_invalidates_file_resource(self) -> None:
         """repo_create_content invalidates file resource with correct path."""
         register_tool_invalidation("repo_create_content", ["files"])
         arguments = {
@@ -147,7 +148,7 @@ class TestComputeUrisToInvalidate:
         assert any("README.md" in uri for uri in uris)
         assert "gitea://repos/org/repo/files/README.md" in uris
 
-    def test_missing_parameters_skipped(self):
+    def test_missing_parameters_skipped(self) -> None:
         """If required parameters are missing, pattern is skipped gracefully."""
         register_tool_invalidation(
             "issue_edit_issue", ["issues_list"]
@@ -158,7 +159,7 @@ class TestComputeUrisToInvalidate:
         # Should return empty because patterns can't be substituted
         assert uris == []
 
-    def test_unknown_pattern_logs_warning(self, caplog):
+    def test_unknown_pattern_logs_warning(self, caplog) -> None:
         """Unknown pattern name logs a warning."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -179,7 +180,7 @@ class TestComputeUrisToInvalidate:
         await invalidate_cached_resources(mock_caching, [], "test_tool")
 
     @pytest.mark.asyncio
-    async def test_cache_delete_key_error_logged(self, caplog):
+    async def test_cache_delete_key_error_logged(self, caplog) -> None:
         """KeyError during cache delete is caught and logged."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -202,7 +203,7 @@ class TestCacheInvalidationMiddleware:
     """Tests for CacheInvalidationMiddleware behavior."""
 
     @pytest.mark.asyncio
-    async def test_successful_tool_invalidates_cache(self):
+    async def test_successful_tool_invalidates_cache(self) -> None:
         """Successful tool call triggers cache invalidation."""
         mock_cache = AsyncMock()
         mock_cache.get.return_value = MagicMock()
@@ -227,7 +228,7 @@ class TestCacheInvalidationMiddleware:
         assert mock_cache.delete.called
 
     @pytest.mark.asyncio
-    async def test_error_tool_no_invalidation(self):
+    async def test_error_tool_no_invalidation(self) -> None:
         """Failed tool call does not invalidate cache."""
         mock_cache = AsyncMock()
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
@@ -247,7 +248,7 @@ class TestCacheInvalidationMiddleware:
         assert not mock_cache.delete.called
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_no_invalidation(self):
+    async def test_unknown_tool_no_invalidation(self) -> None:
         """Tool not in invalidation map does not trigger invalidation."""
         mock_cache = AsyncMock()
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
@@ -267,7 +268,7 @@ class TestCacheInvalidationMiddleware:
         assert not mock_cache.delete.called
 
     @pytest.mark.asyncio
-    async def test_missing_read_resource_cache_graceful(self):
+    async def test_missing_read_resource_cache_graceful(self) -> None:
         """Graceful degradation when _read_resource_cache attribute is missing."""
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
         del mock_caching._read_resource_cache
@@ -299,7 +300,7 @@ class TestCacheInvalidationMiddleware:
 class TestComputeToolInvalidationPatterns:
     """Tests for _compute_tool_invalidation_patterns from server module."""
 
-    def test_issue_paths_invalidate_issues(self):
+    def test_issue_paths_invalidate_issues(self) -> None:
         """Paths under /issues trigger invalidations for issues resources."""
         assert self.compute("/repos/{owner}/{repo}/issues", "POST") == [
             "issues_list",
@@ -311,7 +312,7 @@ class TestComputeToolInvalidationPatterns:
             "issues_list",
         ]
 
-    def test_pull_paths_invalidate_pulls(self):
+    def test_pull_paths_invalidate_pulls(self) -> None:
         """Paths under /pulls trigger invalidations for pulls resources."""
         assert self.compute("/repos/{owner}/{repo}/pulls", "POST") == [
             "pulls_list",
@@ -323,20 +324,20 @@ class TestComputeToolInvalidationPatterns:
             "pulls_list",
         ]
 
-    def test_repo_path_invalidates_repo(self):
+    def test_repo_path_invalidates_repo(self) -> None:
         """Direct repo modification invalidates repository resource."""
         assert self.compute("/repos/{owner}/{repo}", "PUT") == ["repo"]
         assert self.compute("/repos/{owner}/{repo}", "DELETE") == ["repo"]
         assert self.compute("/repos/{owner}/{repo}", "PATCH") == ["repo"]
 
-    def test_file_contents_invalidate_files(self):
+    def test_file_contents_invalidate_files(self) -> None:
         """File contents modifications invalidate file resource."""
         assert self.compute("/repos/{owner}/{repo}/contents/README.md", "PUT") == ["files"]
         assert self.compute("/repos/{owner}/{repo}/contents/src/main.py", "DELETE") == ["files"]
         # GET does not invalidate
         assert self.compute("/repos/{owner}/{repo}/contents/README.md", "GET") == []
 
-    def test_label_operations_invalidate_labels_issues_and_pulls(self):
+    def test_label_operations_invalidate_labels_issues_and_pulls(self) -> None:
         """Label CRUD affects labels, issues, and pull requests."""
         assert self.compute("/repos/{owner}/{repo}/labels", "POST") == [
             "labels",
@@ -354,7 +355,7 @@ class TestComputeToolInvalidationPatterns:
             "pulls_list",
         ]
 
-    def test_milestone_operations_invalidate_issues_and_pulls(self):
+    def test_milestone_operations_invalidate_issues_and_pulls(self) -> None:
         """Milestone CRUD affects both issues and pull requests."""
         assert self.compute("/repos/{owner}/{repo}/milestones", "POST") == [
             "issues_list",
@@ -369,17 +370,17 @@ class TestComputeToolInvalidationPatterns:
             "pulls_list",
         ]
 
-    def test_release_operations_invalidate_repo(self):
+    def test_release_operations_invalidate_repo(self) -> None:
         """Release CRUD affects repository resource."""
         assert self.compute("/repos/{owner}/{repo}/releases", "POST") == ["repo"]
         assert self.compute("/repos/{owner}/{repo}/releases/v1.0", "DELETE") == ["repo"]
 
-    def test_topic_operations_invalidate_repo(self):
+    def test_topic_operations_invalidate_repo(self) -> None:
         """Topic changes affect repository resource."""
         assert self.compute("/repos/{owner}/{repo}/topics", "PUT") == ["repo"]
         assert self.compute("/repos/{owner}/{repo}/topics", "DELETE") == ["repo"]
 
-    def test_safe_methods_return_empty(self):
+    def test_safe_methods_return_empty(self) -> None:
         """Safe methods (GET, HEAD, OPTIONS) do not invalidate."""
         assert self.compute("/repos/{owner}/{repo}/issues", "GET") == []
         assert self.compute("/repos/{owner}/{repo}/issues", "HEAD") == []
@@ -394,7 +395,7 @@ class TestIntegration:
     """Integration tests for cache invalidation."""
 
     @pytest.mark.asyncio
-    async def test_close_issue_invalidates_resources(self):
+    async def test_close_issue_invalidates_resources(self) -> None:
         """Closing an issue via issue_edit_issue invalidates relevant caches."""
         mock_cache = AsyncMock()
         mock_cache.get.return_value = MagicMock()
@@ -430,7 +431,7 @@ class TestClearLabelServiceCache:
     """Tests for CacheInvalidationMiddleware._clear_label_service_cache."""
 
     @pytest.mark.asyncio
-    async def test_label_uri_clears_label_cache(self):
+    async def test_label_uri_clears_label_cache(self) -> None:
         """URI ending with /labels clears LabelService cache for that repo."""
         from unittest.mock import AsyncMock, MagicMock
 
@@ -459,7 +460,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_called_once_with("myorg", "myrepo")
 
     @pytest.mark.asyncio
-    async def test_non_label_uri_does_not_clear_label_cache(self):
+    async def test_non_label_uri_does_not_clear_label_cache(self) -> None:
         """URI not ending with /labels does not clear LabelService cache."""
         from unittest.mock import AsyncMock, MagicMock
 
@@ -487,7 +488,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_no_label_service_skips_gracefully(self):
+    async def test_no_label_service_skips_gracefully(self) -> None:
         """When label_service is None, no error is raised."""
         from unittest.mock import AsyncMock, MagicMock
 
@@ -543,7 +544,7 @@ class TestClearLabelServiceCache:
         return mock_context, mock_call_next
 
     @pytest.mark.asyncio
-    async def test_uri_too_few_parts_skips(self):
+    async def test_uri_too_few_parts_skips(self) -> None:
         """URI with fewer than _MIN_LABEL_URI_PARTS parts does not call clear_cache_for."""
         from unittest.mock import patch
 
@@ -563,7 +564,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_uri_not_gitea_scheme_skips(self):
+    async def test_uri_not_gitea_scheme_skips(self) -> None:
         """URI where parts[1] is not empty string skips.
 
         URIs like ``gitea:repos/owner/repo/labels`` (missing ``//``) produce
@@ -587,7 +588,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_uri_not_repos_segment_skips(self):
+    async def test_uri_not_repos_segment_skips(self) -> None:
         """URI where parts[2] is not 'repos' skips."""
         from unittest.mock import patch
 
@@ -607,7 +608,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_uri_with_empty_owner_skips(self):
+    async def test_uri_with_empty_owner_skips(self) -> None:
         """URI with empty owner (parts[3] == '') skips."""
         from unittest.mock import patch
 
@@ -627,7 +628,7 @@ class TestClearLabelServiceCache:
         label_service.clear_cache_for.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_uri_with_empty_repo_skips(self):
+    async def test_uri_with_empty_repo_skips(self) -> None:
         """URI with empty repo (parts[4] == '') skips."""
         from unittest.mock import patch
 

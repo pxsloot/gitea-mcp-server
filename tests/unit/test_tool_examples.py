@@ -15,7 +15,7 @@ from gitea_mcp_server.tools.examples import (
 class TestSchemaToExample:
     """Tests for _schema_to_example function."""
 
-    def test_object_with_properties(self):
+    def test_object_with_properties(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -34,7 +34,7 @@ class TestSchemaToExample:
         assert result["active"] is True
         assert result["score"] == 0.0
 
-    def test_uses_schema_example(self):
+    def test_uses_schema_example(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -46,7 +46,7 @@ class TestSchemaToExample:
         result = _schema_to_example(schema)
         assert result["color"] == "00aabb"
 
-    def test_array_type(self):
+    def test_array_type(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -58,13 +58,13 @@ class TestSchemaToExample:
         assert len(result) == 1
         assert result[0] == "example"
 
-    def test_string_with_enum(self):
+    def test_string_with_enum(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": "string", "enum": ["open", "closed"]}
         assert _schema_to_example(schema) == "open"
 
-    def test_string_with_format_date_time(self):
+    def test_string_with_format_date_time(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": "string", "format": "date-time"}
@@ -72,7 +72,7 @@ class TestSchemaToExample:
         assert "2024-01-01" in result
         assert "T" in result
 
-    def test_anyof_skips_null(self):
+    def test_anyof_skips_null(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -83,13 +83,13 @@ class TestSchemaToExample:
         }
         assert _schema_to_example(schema) == "example"
 
-    def test_type_list_skips_null(self):
+    def test_type_list_skips_null(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {"type": ["null", "string"]}
         assert _schema_to_example(schema) == "example"
 
-    def test_depth_limit(self):
+    def test_depth_limit(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -112,7 +112,7 @@ class TestSchemaToExample:
         # At max_depth, nested objects return {}
         assert result["a"]["b"] == {}
 
-    def test_property_count_limit(self):
+    def test_property_count_limit(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -122,18 +122,18 @@ class TestSchemaToExample:
         result = _schema_to_example(schema, max_properties=5)
         assert len(result) == 5
 
-    def test_null_type(self):
+    def test_null_type(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         assert _schema_to_example({"type": "null"}) is None
 
-    def test_non_dict_schema_raises(self):
+    def test_non_dict_schema_raises(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         with pytest.raises(AttributeError):
             _schema_to_example("not a dict")  # type: ignore[arg-type]
 
-    def test_nested_object_in_array(self):
+    def test_nested_object_in_array(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         schema = {
@@ -152,12 +152,12 @@ class TestSchemaToExample:
         assert result[0]["id"] == 0
         assert result[0]["label"] == "bug"
 
-    def test_empty_object(self):
+    def test_empty_object(self) -> None:
         from gitea_mcp_server.tools.examples import _schema_to_example
 
         assert _schema_to_example({"type": "object", "properties": {}}) == {}
 
-    def test_serialize_tool_schema_uses_output_example(self):
+    def test_serialize_tool_schema_uses_output_example(self) -> None:
         """_serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
@@ -185,7 +185,7 @@ class TestSchemaToExample:
         assert result["output_example"]["id"] == 0
         assert result["output_example"]["name"] == "example-name"
 
-    def test_serialize_tool_schema_no_output_schema(self):
+    def test_serialize_tool_schema_no_output_schema(self) -> None:
         """_serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
 
@@ -200,19 +200,19 @@ class TestSchemaToExample:
         assert "output_example" not in result
         assert "output_schema" not in result
 
-    def test_example_string_email_format(self):
+    def test_example_string_email_format(self) -> None:
         """_example_string with format=email should return user@example.com."""
         assert _example_string({"format": "email"}) == "user@example.com"
 
-    def test_example_string_uri_format(self):
+    def test_example_string_uri_format(self) -> None:
         """_example_string with format=uri should return https://example.com."""
         assert _example_string({"format": "uri"}) == "https://example.com"
 
-    def test_example_string_plain(self):
+    def test_example_string_plain(self) -> None:
         """_example_string without format/enum/prop_name should return 'example'."""
         assert _example_string({}) == "example"
 
-    def test_schema_to_example_oneOf_skips_null(self):
+    def test_schema_to_example_oneOf_skips_null(self) -> None:
         """oneOf should work like anyOf, skipping null types."""
         schema = {
             "oneOf": [
@@ -222,7 +222,7 @@ class TestSchemaToExample:
         }
         assert _schema_to_example(schema) == 0
 
-    def test_schema_to_example_oneOf_first_non_null(self):
+    def test_schema_to_example_oneOf_first_non_null(self) -> None:
         """oneOf should return example for the first non-null option."""
         schema = {
             "oneOf": [
@@ -232,28 +232,28 @@ class TestSchemaToExample:
         }
         assert _schema_to_example(schema) == "example"
 
-    def test_type_list_all_null(self):
+    def test_type_list_all_null(self) -> None:
         """When type is a list and all entries are 'null', schema_type should become 'null'."""
         schema = {"type": ["null", "null"]}
         assert _schema_to_example(schema) is None
 
-    def test_unrecognized_type_returns_none(self):
+    def test_unrecognized_type_returns_none(self) -> None:
         """When schema_type is not recognized, return None."""
         assert _schema_to_example({"type": "file"}) is None
 
-    def test_empty_array_items(self):
+    def test_empty_array_items(self) -> None:
         """_example_array with empty items dict should return empty list."""
         assert _example_array({"items": {}}, 0, 3, 15) == []
 
-    def test_array_missing_items(self):
+    def test_array_missing_items(self) -> None:
         """_example_array without items key should return empty list."""
         assert _example_array({}, 0, 3, 15) == []
 
-    def test_object_no_properties(self):
+    def test_object_no_properties(self) -> None:
         """_example_object without properties should return empty dict."""
         assert _example_object({}, 0, 3, 15) == {}
 
-    def test_serialize_tool_schema_with_tags(self):
+    def test_serialize_tool_schema_with_tags(self) -> None:
         """_serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
 
@@ -268,7 +268,7 @@ class TestSchemaToExample:
         assert "tags" in result
         assert set(result["tags"]) == {"issue", "repository"}
 
-    def test_serialize_tool_schema_with_version(self):
+    def test_serialize_tool_schema_with_version(self) -> None:
         """_serialize_tool_schema should include version when present."""
         from fastmcp.tools.base import Tool
 
@@ -282,7 +282,7 @@ class TestSchemaToExample:
         result = _serialize_tool_schema(tool)
         assert result["version"] == "2.0"
 
-    def test_serialize_tool_schema_with_open_world_hint(self):
+    def test_serialize_tool_schema_with_open_world_hint(self) -> None:
         """_serialize_tool_schema should include openWorldHint when True."""
         from fastmcp.tools.base import Tool
         from mcp.types import ToolAnnotations
@@ -301,7 +301,7 @@ class TestSchemaToExample:
 class TestSchemaToCompactExample:
     """Tests for _schema_to_compact_example."""
 
-    def test_ref_emits_dict_with_type_name(self):
+    def test_ref_emits_dict_with_type_name(self) -> None:
         """$ref should emit {"$ref": "TypeName"} instead of inlining."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -309,7 +309,7 @@ class TestSchemaToCompactExample:
         result = _schema_to_compact_example(schema)
         assert result == {"$ref": "User"}
 
-    def test_ref_uses_last_path_segment(self):
+    def test_ref_uses_last_path_segment(self) -> None:
         """$ref should extract the tail of the path as the type name."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -317,7 +317,7 @@ class TestSchemaToCompactExample:
         result = _schema_to_compact_example(schema)
         assert result == {"$ref": "SomeDeeplyNestedType"}
 
-    def test_max_depth_returns_placeholder(self):
+    def test_max_depth_returns_placeholder(self) -> None:
         """At max_depth, should return '{...}'."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -341,7 +341,7 @@ class TestSchemaToCompactExample:
         # a -> depth 1, b -> depth 2 (hits max_depth), returns {...}
         assert result["a"]["b"] == "{...}"
 
-    def test_anyof_skips_null_first_option(self):
+    def test_anyof_skips_null_first_option(self) -> None:
         """anyOf should pick the first non-null option."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -353,7 +353,7 @@ class TestSchemaToCompactExample:
         }
         assert _schema_to_compact_example(schema) == "example"
 
-    def test_oneof_skips_null(self):
+    def test_oneof_skips_null(self) -> None:
         """oneOf should work like anyOf, skipping null types."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -365,33 +365,33 @@ class TestSchemaToCompactExample:
         }
         assert _schema_to_compact_example(schema) == 0
 
-    def test_type_list_skips_null(self):
+    def test_type_list_skips_null(self) -> None:
         """type as a list should skip 'null' entries."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         schema = {"type": ["null", "string"]}
         assert _schema_to_compact_example(schema) == "example"
 
-    def test_type_list_all_null(self):
+    def test_type_list_all_null(self) -> None:
         """When type list is all null, should return None."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         assert _schema_to_compact_example({"type": ["null", "null"]}) is None
 
-    def test_uses_schema_example(self):
+    def test_uses_schema_example(self) -> None:
         """schema 'example' field should be used."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         schema = {"type": "string", "example": "custom-value"}
         assert _schema_to_compact_example(schema) == "custom-value"
 
-    def test_object_with_no_properties(self):
+    def test_object_with_no_properties(self) -> None:
         """Empty object should return '{...}'."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         assert _schema_to_compact_example({"type": "object", "properties": {}}) == "{...}"
 
-    def test_array_with_ref_items(self):
+    def test_array_with_ref_items(self) -> None:
         """Array of $ref items should return [{"$ref": "Type"}]."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -402,7 +402,7 @@ class TestSchemaToCompactExample:
         result = _schema_to_compact_example(schema)
         assert result == [{"$ref": "Branch"}]
 
-    def test_array_with_literal_items(self):
+    def test_array_with_literal_items(self) -> None:
         """Array of literal items should return example values."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -413,14 +413,14 @@ class TestSchemaToCompactExample:
         result = _schema_to_compact_example(schema)
         assert result == ["example"]
 
-    def test_string_with_enum(self):
+    def test_string_with_enum(self) -> None:
         """Enum strings should use the first enum value."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         schema = {"type": "string", "enum": ["open", "closed"]}
         assert _schema_to_compact_example(schema) == "open"
 
-    def test_string_with_format_date_time(self):
+    def test_string_with_format_date_time(self) -> None:
         """date-time format should generate a timestamp."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -429,7 +429,7 @@ class TestSchemaToCompactExample:
         assert "2024-01-01" in result
         assert "T" in result
 
-    def test_leaf_types(self):
+    def test_leaf_types(self) -> None:
         """Leaf types should return example values."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -438,19 +438,19 @@ class TestSchemaToCompactExample:
         assert _schema_to_compact_example({"type": "boolean"}) is True
         assert _schema_to_compact_example({"type": "null"}) is None
 
-    def test_unrecognized_type_returns_none(self):
+    def test_unrecognized_type_returns_none(self) -> None:
         """Unknown type should return None."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         assert _schema_to_compact_example({"type": "file"}) is None
 
-    def test_empty_array_items(self):
+    def test_empty_array_items(self) -> None:
         """Array with empty items should return empty list."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         assert _schema_to_compact_example({"type": "array", "items": {}}) == []
 
-    def test_serialize_tool_schema_with_raw_meta(self):
+    def test_serialize_tool_schema_with_raw_meta(self) -> None:
         """_serialize_tool_schema should use raw meta schema for compact example."""
 
         tool = Tool(
@@ -493,7 +493,7 @@ class TestSchemaToCompactExample:
         assert result["output_example"]["user"] == {"$ref": "User"}
         assert result["output_example"]["id"] == 0
 
-    def test_serialize_tool_schema_no_raw_meta_fallback(self):
+    def test_serialize_tool_schema_no_raw_meta_fallback(self) -> None:
         """Without raw meta, _serialize_tool_schema falls back to old behavior."""
 
         tool = Tool(
@@ -520,7 +520,7 @@ class TestSchemaToCompactExample:
 
     # ── Bare $ref resolution tests (issue #446) ──────────────────────────
 
-    def test_bare_ref_resolved_at_depth_zero(self):
+    def test_bare_ref_resolved_at_depth_zero(self) -> None:
         """Bare $ref at depth=0 with openapi_spec should resolve one level."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -552,7 +552,7 @@ class TestSchemaToCompactExample:
         # Nested $ref stays compact at depth >= 1
         assert result["subject"] == {"$ref": "Subject"}
 
-    def test_bare_ref_not_resolved_without_spec(self):
+    def test_bare_ref_not_resolved_without_spec(self) -> None:
         """Bare $ref without openapi_spec should still emit placeholder."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -560,7 +560,7 @@ class TestSchemaToCompactExample:
         result = _schema_to_compact_example(schema)
         assert result == {"$ref": "NotificationThread"}
 
-    def test_ref_not_resolved_at_depth_one(self):
+    def test_ref_not_resolved_at_depth_one(self) -> None:
         """$ref at depth > 0 should still emit placeholder even with spec."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -586,7 +586,7 @@ class TestSchemaToCompactExample:
         # author is at depth 1, should stay as placeholder
         assert result["author"] == {"$ref": "User"}
 
-    def test_array_of_ref_resolved_at_depth_zero(self):
+    def test_array_of_ref_resolved_at_depth_zero(self) -> None:
         """Array with $ref items at depth=0 should resolve items with spec."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -614,7 +614,7 @@ class TestSchemaToCompactExample:
         assert result[0]["id"] == 0
         assert result[0]["unread"] is True
 
-    def test_serialize_bare_ref_with_openapi_spec(self):
+    def test_serialize_bare_ref_with_openapi_spec(self) -> None:
         """_serialize_tool_schema with bare $ref output resolves with spec."""
 
         spec = {
@@ -658,7 +658,7 @@ class TestSchemaToCompactExample:
         assert result["output_example"][0]["id"] == 0
         assert result["output_example"][0]["unread"] is True
 
-    def test_bare_ref_falls_back_on_resolution_failure(self):
+    def test_bare_ref_falls_back_on_resolution_failure(self) -> None:
         """Bare $ref that cannot be resolved should fall through to placeholder."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
@@ -672,7 +672,7 @@ class TestSchemaToCompactExample:
 class TestLookupStringExampleSuffix:
     """Tests for _lookup_string_example suffix pattern matching (line 66)."""
 
-    def test_suffix_pattern_matches_url(self):
+    def test_suffix_pattern_matches_url(self) -> None:
         """_lookup_string_example matches suffix patterns like _url."""
         from gitea_mcp_server.tools.examples import _lookup_string_example
 
@@ -680,14 +680,14 @@ class TestLookupStringExampleSuffix:
         result = _lookup_string_example("html_url")
         assert result == "https://example.com/path"
 
-    def test_suffix_pattern_matches_sha(self):
+    def test_suffix_pattern_matches_sha(self) -> None:
         """_lookup_string_example matches suffix patterns like _sha."""
         from gitea_mcp_server.tools.examples import _lookup_string_example
 
         result = _lookup_string_example("commit_sha")
         assert result == "abc123def456"
 
-    def test_suffix_pattern_matches_id(self):
+    def test_suffix_pattern_matches_id(self) -> None:
         """_lookup_string_example matches suffix patterns like _id."""
         from gitea_mcp_server.tools.examples import _lookup_string_example
 

@@ -156,7 +156,7 @@ class TestValidationErrors:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_repo_spec()
 
     async def test_empty_owner_rejected(self, mcp_server) -> None:
@@ -202,7 +202,7 @@ class TestAPIErrorTranslation:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_repo_spec()
 
     async def test_404_includes_spec_description_and_body(self, mcp_server) -> None:
@@ -276,7 +276,7 @@ class TestResultWrapping:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_version_spec()
 
     async def test_array_response_is_wrapped_in_result(self, mcp_server) -> None:
@@ -323,7 +323,7 @@ class TestResourceErrors:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_empty_spec()
 
     async def test_resource_404_produces_structured_error(self, mcp_server) -> None:
@@ -375,7 +375,7 @@ class TestNonJsonEndpoint:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_diff_spec()
 
     async def test_text_response_does_not_trigger_output_validation_error(

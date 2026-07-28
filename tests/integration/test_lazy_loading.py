@@ -15,7 +15,7 @@ class TestLazyLoading:
     """Tests for lazy loading with search transform."""
 
     @pytest.mark.asyncio
-    async def test_lazy_loading_reduces_tool_count(self):
+    async def test_lazy_loading_reduces_tool_count(self) -> None:
         """Test that lazy loading reduces the number of tools to synthetic + pinned."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -71,7 +71,7 @@ class TestLazyLoading:
             )
 
     @pytest.mark.asyncio
-    async def test_lazy_loading_with_tool_filtering(self):
+    async def test_lazy_loading_with_tool_filtering(self) -> None:
         """Test lazy loading works with tool filtering enabled."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -127,7 +127,7 @@ class TestLazyLoading:
             assert len(tool_names) <= 10, f"Got {len(tool_names)} tools: {tool_names}"
 
     @pytest.mark.asyncio
-    async def test_search_tools_returns_matching_tools(self):
+    async def test_search_tools_returns_matching_tools(self) -> None:
         """Test that search_tools actually finds tools by keyword."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -197,7 +197,7 @@ class TestLazyLoading:
             assert f"{prefix}user_current_list_repos" in repos_names, f"Expected {prefix}user_current_list_repos in {repos_names}"
 
     @pytest.mark.asyncio
-    async def test_search_works_after_list_tools_cache_priming(self):
+    async def test_search_works_after_list_tools_cache_priming(self) -> None:
         """Regression test: cache poisoning bug. search_tools should work even after list_tools has been called."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -257,7 +257,7 @@ class TestLazyLoading:
             )
 
     @pytest.mark.asyncio
-    async def test_search_discovers_pull_request_tools_with_various_queries(self):
+    async def test_search_discovers_pull_request_tools_with_various_queries(self) -> None:
         """Test that pull request tools are discoverable with various query patterns."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -342,7 +342,7 @@ class TestLazyLoading:
             )
 
     @pytest.mark.asyncio
-    async def test_search_discovers_issue_tools_with_various_queries(self):
+    async def test_search_discovers_issue_tools_with_various_queries(self) -> None:
         """Test that issue tools are discoverable with various query patterns."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -402,7 +402,7 @@ class TestLazyLoading:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_proxy_dispatches_synthetic_tools(self):
+    async def test_call_tool_proxy_dispatches_synthetic_tools(self) -> None:
         """Test that call_tool can dispatch search_tools and tool_info, but blocks self-call."""
         config = SimpleConfig(
             url="https://git.example.com",
@@ -472,7 +472,7 @@ class TestLowLevelProtocolValidation:
     """
 
     @pytest.mark.asyncio
-    async def test_synthetic_tools_pass_low_level_validation(self):
+    async def test_synthetic_tools_pass_low_level_validation(self) -> None:
         """All visible synthetic tools called through the MCP low-level handler
         must produce ``structuredContent`` that validates against their
         ``outputSchema`` (no ``ValidationError``)."""
@@ -548,7 +548,7 @@ class TestLowLevelProtocolValidation:
                 )
 
     @pytest.mark.asyncio
-    async def test_call_tool_via_low_level_passes_validation(self):
+    async def test_call_tool_via_low_level_passes_validation(self) -> None:
         """call_tool (the proxy) called through the low-level handler must
         validate for both object-returning and array-returning proxied tools."""
         config = SimpleConfig(
@@ -608,7 +608,7 @@ class TestFilteredToolMiddleware:
     to filtered tools and returns helpful error messages."""
 
     @pytest.mark.asyncio
-    async def test_filtered_tool_raises_tool_error(self):
+    async def test_filtered_tool_raises_tool_error(self) -> None:
         """Calling a scope-filtered tool raises ToolError with scope message.
 
         The middleware intercepts before any HTTP call, so no API mock is
@@ -666,7 +666,7 @@ class TestFilteredToolMiddleware:
                 )
 
     @pytest.mark.asyncio
-    async def test_visible_synthetic_tool_passes_through(self):
+    async def test_visible_synthetic_tool_passes_through(self) -> None:
         """Calling a visible synthetic tool passes through the middleware."""
         config = SimpleConfig(
             url="https://git.example.com",

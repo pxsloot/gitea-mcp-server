@@ -24,21 +24,21 @@ class TestRegisterCustomResources:
     """Tests for register_custom_resources."""
 
     @pytest.fixture
-    def mock_mcp(self):
+    def mock_mcp(self) -> MagicMock:
         """Create a mock FastMCP instance."""
         return MagicMock(spec=FastMCP)
 
     @pytest.fixture
-    def mock_gitea_client(self):
+    def mock_gitea_client(self) -> AsyncMock:
         """Create a mock GiteaClient."""
         return AsyncMock()
 
-    async def test_registers_all_custom_resources(self, mock_mcp, mock_gitea_client):
+    async def test_registers_all_custom_resources(self, mock_mcp, mock_gitea_client) -> None:
         """Test that all expected custom resources are registered."""
         register_custom_resources(mock_mcp, mock_gitea_client)
         assert mock_mcp.resource.call_count == 12
 
-    async def test_custom_resources_have_expected_uris(self, mock_mcp, mock_gitea_client):
+    async def test_custom_resources_have_expected_uris(self, mock_mcp, mock_gitea_client) -> None:
         """Test that the 12 custom resources have the expected URI templates."""
         register_custom_resources(mock_mcp, mock_gitea_client)
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
@@ -61,7 +61,7 @@ class TestRegisterCustomResources:
 
     async def test_registers_all_custom_resources_with_server_info_md(
         self, mock_mcp, mock_gitea_client
-    ):
+    ) -> None:
         """Test that 13 custom resources are registered when server_info_md is provided."""
         register_custom_resources(
             mock_mcp,
@@ -73,7 +73,7 @@ class TestRegisterCustomResources:
 
     async def test_custom_resources_include_server_info_uri(
         self, mock_mcp, mock_gitea_client
-    ):
+    ) -> None:
         """Test that gitea://server/info is registered when server_info_md is provided."""
         register_custom_resources(
             mock_mcp,
@@ -94,14 +94,14 @@ class TestCustomResourceStringResponsePaths:
     """
 
     @pytest.fixture
-    def mock_gitea_client_str(self):
+    def mock_gitea_client_str(self) -> AsyncMock:
         """GiteaClient that returns string (text) responses."""
         client = AsyncMock()
         client.config.token = "test-token"
         return client
 
     @pytest.fixture
-    def captured_resources(self, mock_gitea_client_str):
+    def captured_resources(self, mock_gitea_client_str) -> dict:
         """Register custom resources and capture the resulting functions keyed by URI.
 
         Uses mock_gitea_client_str so all resource functions close over it.
@@ -157,7 +157,7 @@ class TestCustomResourceStringResponsePaths:
         return registered
 
     @pytest.mark.asyncio
-    async def test_get_repository_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_repository_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for repos."""
         func = captured_resources["gitea://repos/{owner}/{repo}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string response")
@@ -165,7 +165,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string response"
 
     @pytest.mark.asyncio
-    async def test_get_readme_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_readme_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for readme."""
         func = captured_resources["gitea://repos/{owner}/{repo}/readme"]
         mock_gitea_client_str.request = AsyncMock(return_value="string readme")
@@ -173,7 +173,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string readme"
 
     @pytest.mark.asyncio
-    async def test_get_readme_nondict_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_readme_nondict_response(self, captured_resources, mock_gitea_client_str) -> None:
         """Non-dict, non-string response returns str(response)."""
         func = captured_resources["gitea://repos/{owner}/{repo}/readme"]
         mock_gitea_client_str.request = AsyncMock(return_value=42)
@@ -181,7 +181,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "42"
 
     @pytest.mark.asyncio
-    async def test_get_readme_no_encoding(self, captured_resources, mock_gitea_client_str):
+    async def test_get_readme_no_encoding(self, captured_resources, mock_gitea_client_str) -> None:
         """Dict without 'base64' encoding returns content field directly."""
         func = captured_resources["gitea://repos/{owner}/{repo}/readme"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "Hello World"})
@@ -189,7 +189,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "Hello World"
 
     @pytest.mark.asyncio
-    async def test_list_repo_issues_invalid_state(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_issues_invalid_state(self, captured_resources, mock_gitea_client_str) -> None:
         """Invalid state parameter raises ResourceError."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
@@ -201,7 +201,7 @@ class TestCustomResourceStringResponsePaths:
         assert error_data["resource_type"] == "issues"
 
     @pytest.mark.asyncio
-    async def test_list_repo_issues_invalid_type(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_issues_invalid_type(self, captured_resources, mock_gitea_client_str) -> None:
         """Invalid type parameter raises ResourceError."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
@@ -214,7 +214,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_issues_string_response(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """isinstance(data, str) returns string directly for issues."""
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string issues")
@@ -222,7 +222,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string issues"
 
     @pytest.mark.asyncio
-    async def test_list_repo_pulls_invalid_state(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_pulls_invalid_state(self, captured_resources, mock_gitea_client_str) -> None:
         """Invalid state parameter for pulls raises ResourceError."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
@@ -234,7 +234,7 @@ class TestCustomResourceStringResponsePaths:
         assert error_data["resource_type"] == "pulls"
 
     @pytest.mark.asyncio
-    async def test_list_repo_pulls_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_pulls_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for pulls."""
         func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string pulls")
@@ -242,7 +242,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string pulls"
 
     @pytest.mark.asyncio
-    async def test_get_file_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_file_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for file."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string file")
@@ -250,7 +250,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string file"
 
     @pytest.mark.asyncio
-    async def test_get_file_nondict_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_file_nondict_response(self, captured_resources, mock_gitea_client_str) -> None:
         """Non-dict, non-string file response returns str(response)."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[1, 2, 3])
@@ -258,7 +258,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "[1, 2, 3]"
 
     @pytest.mark.asyncio
-    async def test_get_file_encoding_base64(self, captured_resources, mock_gitea_client_str):
+    async def test_get_file_encoding_base64(self, captured_resources, mock_gitea_client_str) -> None:
         """File with base64 encoding decodes content."""
 
         encoded = base64.b64encode(b"file content").decode()
@@ -270,7 +270,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "file content"
 
     @pytest.mark.asyncio
-    async def test_get_file_no_encoding(self, captured_resources, mock_gitea_client_str):
+    async def test_get_file_no_encoding(self, captured_resources, mock_gitea_client_str) -> None:
         """File with no encoding returns content field directly."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "plain text"})
@@ -278,7 +278,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "plain text"
 
     @pytest.mark.asyncio
-    async def test_get_file_with_ref_param(self, captured_resources, mock_gitea_client_str):
+    async def test_get_file_with_ref_param(self, captured_resources, mock_gitea_client_str) -> None:
         """File with ref parameter passes ref to the API."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "ref content"})
@@ -291,7 +291,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_releases_string_response(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """isinstance(data, str) returns string directly for releases."""
         func = captured_resources["gitea://repos/{owner}/{repo}/releases{?draft,q}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string releases")
@@ -299,7 +299,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string releases"
 
     @pytest.mark.asyncio
-    async def test_list_repo_releases_empty(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_releases_empty(self, captured_resources, mock_gitea_client_str) -> None:
         """Empty releases list returns raw JSON empty array."""
         func = captured_resources["gitea://repos/{owner}/{repo}/releases{?draft,q}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[])
@@ -307,7 +307,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "[]"
 
     @pytest.mark.asyncio
-    async def test_get_user_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_user_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for user."""
         func = captured_resources["gitea://users/{username}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string user")
@@ -317,7 +317,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_get_current_user_string_response(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """isinstance(data, str) returns string directly for current user."""
         func = captured_resources["gitea://user"]
         mock_gitea_client_str.request = AsyncMock(return_value="string current user")
@@ -325,7 +325,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string current user"
 
     @pytest.mark.asyncio
-    async def test_get_current_user_dict_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_current_user_dict_response(self, captured_resources, mock_gitea_client_str) -> None:
         """Dict response from get_current_user returns formatted user."""
         func = captured_resources["gitea://user"]
         mock_gitea_client_str.request = AsyncMock(
@@ -340,7 +340,7 @@ class TestCustomResourceStringResponsePaths:
         assert "testuser" in result
 
     @pytest.mark.asyncio
-    async def test_get_org_string_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_org_string_response(self, captured_resources, mock_gitea_client_str) -> None:
         """isinstance(data, str) returns string directly for org."""
         func = captured_resources["gitea://orgs/{orgname}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string org")
@@ -348,14 +348,14 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string org"
 
     @pytest.mark.asyncio
-    async def test_get_version_returns_precomputed_string(self, captured_resources):
+    async def test_get_version_returns_precomputed_string(self, captured_resources) -> None:
         """Version returns the pre-computed string, no API call on read."""
         func = captured_resources["gitea://version"]
         result = await func()
         assert result == "1.0.0"
 
     @pytest.mark.asyncio
-    async def test_token_scopes_returns_none_when_no_scopes(self, captured_resources):
+    async def test_token_scopes_returns_none_when_no_scopes(self, captured_resources) -> None:
         """token/scopes returns null scopes when available_scopes is None."""
         func = captured_resources["gitea://token/scopes"]
         result = await func()
@@ -363,7 +363,7 @@ class TestCustomResourceStringResponsePaths:
         assert data["scopes"] is None
 
     @pytest.mark.asyncio
-    async def test_token_scopes_returns_sorted_scopes(self, mock_gitea_client_str):
+    async def test_token_scopes_returns_sorted_scopes(self, mock_gitea_client_str) -> None:
         """token/scopes returns sorted scopes from pre-computed available_scopes."""
         from fastmcp.resources import ResourceResult
 
@@ -393,7 +393,7 @@ class TestCustomResourceStringResponsePaths:
         assert data["scopes"] == ["read:repository", "sudo", "write:issue"]
 
     @pytest.mark.asyncio
-    async def test_server_info_returns_precomputed_markdown(self, mock_gitea_client_str):
+    async def test_server_info_returns_precomputed_markdown(self, mock_gitea_client_str) -> None:
         """server/info returns pre-built markdown, no openapi_spec needed on read."""
         from fastmcp.resources import ResourceResult
 
@@ -425,7 +425,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_issues_with_state_param(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """Issues with state='open' passes state param to API."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
@@ -439,7 +439,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_issues_with_type_param(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """Issues with type='pulls' sends type param to API."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/issues{?state,type}"]
@@ -454,7 +454,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_pulls_with_state_param(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """Pulls with state='closed' passes state param to API."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/pulls{?state}"]
@@ -466,7 +466,7 @@ class TestCustomResourceStringResponsePaths:
         assert kwargs.get("params") == {"state": "closed"}
 
     @pytest.mark.asyncio
-    async def test_get_repository_dict_response(self, captured_resources, mock_gitea_client_str):
+    async def test_get_repository_dict_response(self, captured_resources, mock_gitea_client_str) -> None:
         """Repository dict response returns raw JSON."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}"]
@@ -486,7 +486,7 @@ class TestCustomResourceStringResponsePaths:
     @pytest.mark.asyncio
     async def test_list_repo_labels_string_response(
         self, captured_resources, mock_gitea_client_str
-    ):
+    ) -> None:
         """isinstance(data, str) returns string directly for labels."""
         func = captured_resources["gitea://repos/{owner}/{repo}/labels"]
         mock_gitea_client_str.request = AsyncMock(return_value="string labels")
@@ -494,7 +494,7 @@ class TestCustomResourceStringResponsePaths:
         assert result == "string labels"
 
     @pytest.mark.asyncio
-    async def test_list_repo_labels_dict_response(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_labels_dict_response(self, captured_resources, mock_gitea_client_str) -> None:
         """Labels dict response returns raw JSON."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/labels"]
@@ -519,7 +519,7 @@ class TestCustomResourceStringResponsePaths:
         assert json.loads(result) == expected
 
     @pytest.mark.asyncio
-    async def test_list_repo_labels_empty(self, captured_resources, mock_gitea_client_str):
+    async def test_list_repo_labels_empty(self, captured_resources, mock_gitea_client_str) -> None:
         """Empty labels list returns raw JSON empty array."""
 
         func = captured_resources["gitea://repos/{owner}/{repo}/labels"]

@@ -187,7 +187,7 @@ class TestLabelConversion:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_label_spec()
 
     async def test_converts_string_labels_to_ids(self, mcp_server) -> None:
@@ -279,7 +279,7 @@ class TestPaginationMetadata:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_pagination_spec()
 
     async def test_paginated_result_has_metadata(self, mcp_server) -> None:
@@ -325,7 +325,7 @@ class TestCacheInvalidationEndToEnd:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_cache_spec()
 
     async def test_write_invalidates_resource_cache(self, mcp_server) -> None:
@@ -376,7 +376,7 @@ class TestDeprecatedExclusion:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_deprecated_spec()
 
     async def test_deprecated_endpoint_is_excluded(self, mcp_server) -> None:

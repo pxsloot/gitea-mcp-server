@@ -10,7 +10,7 @@ from gitea_mcp_server.schema_utils import schema_type_matches
 class TestEmailFormatHandling:
     """Tests for email format preservation with empty string and null support."""
 
-    def test_email_field_with_format_becomes_anyof(self):
+    def test_email_field_with_format_becomes_anyof(self) -> None:
         """Test that format:email fields are converted to anyOf preserving format."""
         schema = {
             "type": "object",
@@ -40,7 +40,7 @@ class TestEmailFormatHandling:
         # Description should be preserved at the top level
         assert email_schema.get("description") == "User email address"
 
-    def test_required_email_field_excludes_null_and_empty(self):
+    def test_required_email_field_excludes_null_and_empty(self) -> None:
         """Test that required email fields do NOT include null or empty string branches."""
         schema = {
             "type": "object",
@@ -64,7 +64,7 @@ class TestEmailFormatHandling:
         null_branch = next((b for b in any_of if schema_type_matches(b, "null")), None)
         assert null_branch is None
 
-    def test_optional_email_field_includes_null(self):
+    def test_optional_email_field_includes_null(self) -> None:
         """Test that optional email fields include null branch."""
         schema = {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}
         _add_nullable_for_optional_refs({"components": {"schemas": {"Test": schema}}})
@@ -75,7 +75,7 @@ class TestEmailFormatHandling:
         null_branch = next((b for b in email_schema["anyOf"] if schema_type_matches(b, "null")), None)
         assert null_branch is not None
 
-    def test_email_preserves_other_constraints(self):
+    def test_email_preserves_other_constraints(self) -> None:
         """Test that other string constraints (minLength, pattern) are preserved on email branch."""
         schema = {
             "type": "object",
@@ -97,7 +97,7 @@ class TestEmailFormatHandling:
         assert email_branch.get("maxLength") == 254
         assert email_branch.get("pattern") == "^[^@]+@[^@]+\\.[^@]+$"
 
-    def test_optional_email_with_type_list_transformed_correctly(self):
+    def test_optional_email_with_type_list_transformed_correctly(self) -> None:
         """Email with type ``[\"string\", \"null\"]`` still receives anyOf transformation.
 
         Type-as-list form (e.g. from a schema that was pre-normalized) must
@@ -133,7 +133,7 @@ class TestEmailFormatHandling:
         assert null_branch is not None
         assert email_schema.get("description") == "User email"
 
-    def test_email_format_still_valid_openapi_3_1(self):
+    def test_email_format_still_valid_openapi_3_1(self) -> None:
         """Test that a spec with email anyOf is valid OpenAPI 3.1."""
         spec = {
             "swagger": "2.0",
@@ -172,7 +172,7 @@ class TestDateFormatHandling:
     use anyOf with an empty string branch.
     """
 
-    def test_optional_date_field_gets_nullable_type_no_anyof(self):
+    def test_optional_date_field_gets_nullable_type_no_anyof(self) -> None:
         """Test that optional format:date fields become nullable without anyOf."""
         schema = {
             "type": "object",
@@ -194,7 +194,7 @@ class TestDateFormatHandling:
         # Description should be preserved
         assert date_schema.get("description") == "Some date"
 
-    def test_required_date_field_stays_simple(self):
+    def test_required_date_field_stays_simple(self) -> None:
         """Required date field remains simple string with format, no null addition."""
         schema = {
             "type": "object",
@@ -209,7 +209,7 @@ class TestDateFormatHandling:
         assert date_schema.get("type") == "string"
         assert date_schema.get("format") == "date"
 
-    def test_optional_datetime_field_gets_nullable_type_no_anyof(self):
+    def test_optional_datetime_field_gets_nullable_type_no_anyof(self) -> None:
         """Test that optional format:date-time fields become nullable without anyOf."""
         schema = {
             "type": "object",
@@ -224,7 +224,7 @@ class TestDateFormatHandling:
         ]
         assert dt_schema.get("format") == "date-time"
 
-    def test_date_time_integration_validates_openapi_3_1(self):
+    def test_date_time_integration_validates_openapi_3_1(self) -> None:
         """Test that a spec with date fields converts to valid OpenAPI 3.1."""
         spec = {
             "swagger": "2.0",
@@ -271,7 +271,7 @@ class TestUuidFormatHandling:
     without anyOf.
     """
 
-    def test_optional_uuid_field_gets_nullable_type_no_anyof(self):
+    def test_optional_uuid_field_gets_nullable_type_no_anyof(self) -> None:
         """Optional format:uuid fields should be nullable without anyOf."""
         schema = {
             "type": "object",
@@ -289,7 +289,7 @@ class TestUuidFormatHandling:
         assert uuid_schema.get("format") == "uuid"
         assert uuid_schema.get("description") == "A UUID token"
 
-    def test_required_uuid_field_stays_simple(self):
+    def test_required_uuid_field_stays_simple(self) -> None:
         """Required uuid field remains simple string with format."""
         schema = {
             "type": "object",
@@ -302,7 +302,7 @@ class TestUuidFormatHandling:
         assert uuid_schema.get("type") == "string"
         assert uuid_schema.get("format") == "uuid"
 
-    def test_uuid_integration_validates_openapi_3_1(self):
+    def test_uuid_integration_validates_openapi_3_1(self) -> None:
         """Test that spec with uuid fields converts to valid OpenAPI 3.1."""
         spec = {
             "swagger": "2.0",

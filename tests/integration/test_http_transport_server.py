@@ -13,6 +13,7 @@ stack and graceful shutdown.
 
 import asyncio
 import contextlib
+from typing import Generator
 import socket
 
 import httpx
@@ -24,7 +25,7 @@ from tests.conftest import SimpleConfig
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _patch_spec_loader():
+def _patch_spec_loader() -> Generator[None, None, None]:
     """Patch the OpenAPI spec loader once for this module.
 
     Module-scoped to avoid leaking the patch to other test modules.
@@ -93,7 +94,7 @@ async def _start_server(config, *, health_path="/health"):
 
     base_url = f"http://{config.http_host}:{config.http_port}"
 
-    async def _cleanup():
+    async def _cleanup() -> None:
         await server.shutdown()
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -113,7 +114,7 @@ class TestRealHttpServer:
     """
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self):
+    async def test_health_endpoint(self) -> None:
         """Real uvicorn serves the /health endpoint correctly (full-stack smoke test)."""
         config = SimpleConfig(transport_type="http", http_port=0)
         base_url, cleanup = await _start_server(config)
@@ -127,7 +128,7 @@ class TestRealHttpServer:
             await cleanup()
 
     @pytest.mark.asyncio
-    async def test_graceful_shutdown(self):
+    async def test_graceful_shutdown(self) -> None:
         """Server can be shut down cleanly, becoming unreachable after shutdown."""
         config = SimpleConfig(transport_type="http", http_port=0)
         base_url, cleanup = await _start_server(config)

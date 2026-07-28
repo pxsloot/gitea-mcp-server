@@ -161,7 +161,7 @@ def _tool_map(tools: list[Tool]) -> dict[str, Tool]:
 
 # Module-level base_spec fixture shared by all test classes.
 @pytest.fixture
-def base_spec():
+def base_spec() -> dict:
     return _make_annotation_spec()
 
 
@@ -291,7 +291,7 @@ class TestOpenWorldHintAPITools:
     ]
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize("tool_name", _API_TOOLS)
@@ -381,7 +381,7 @@ class TestCategoryTags:
     ]
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize(("tool_name", "expected_category"), _CATEGORY_CASES)

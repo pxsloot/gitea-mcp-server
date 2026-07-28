@@ -151,18 +151,18 @@ def spec_with_mixed_endpoints() -> dict:
 class TestComputeFilteredToolsInfo:
     """Main computation function that iterates the spec."""
 
-    def test_empty_spec_returns_empty_result(self, empty_spec):
+    def test_empty_spec_returns_empty_result(self, empty_spec) -> None:
         """No paths → no filtered operations."""
         result = compute_filtered_tools_info(empty_spec)
         assert result["filtered"] == {}
         assert result["available_scopes"] == []
 
-    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint):
+    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint) -> None:
         """available_scopes=None → no scope-based filtering."""
         result = compute_filtered_tools_info(spec_with_one_endpoint, available_scopes=None)
         assert result["filtered"] == {}
 
-    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint):
+    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint) -> None:
         """Token has read:repository → repo_get is visible."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -170,7 +170,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint):
+    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint) -> None:
         """Token lacks sudo → admin_list_users is scope-restricted."""
         result = compute_filtered_tools_info(
             spec_with_admin_endpoint,
@@ -181,7 +181,7 @@ class TestComputeFilteredToolsInfo:
         assert filtered["admin_list_users"]["reason"] == "scope"
         assert filtered["admin_list_users"]["required_scope"] == "sudo"
 
-    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint):
+    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint) -> None:
         """Endpoint with deprecated:true → filtered as deprecated."""
         result = compute_filtered_tools_info(
             spec_with_deprecated_endpoint,
@@ -191,7 +191,7 @@ class TestComputeFilteredToolsInfo:
         assert "old_get_thing" in filtered
         assert filtered["old_get_thing"]["reason"] == "deprecated"
 
-    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint):
+    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint) -> None:
         """Exact name in exclude list → filtered as excluded."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -201,7 +201,7 @@ class TestComputeFilteredToolsInfo:
         assert "repo_get" in filtered
         assert filtered["repo_get"]["reason"] == "excluded"
 
-    def test_include_overrides_exclude(self, spec_with_one_endpoint):
+    def test_include_overrides_exclude(self, spec_with_one_endpoint) -> None:
         """Tool matching both include and exclude → visible (include wins)."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -209,7 +209,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints):
+    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints) -> None:
         """Verify that different endpoints are filtered for different reasons."""
         result = compute_filtered_tools_info(
             spec_with_mixed_endpoints,
@@ -233,7 +233,7 @@ class TestComputeFilteredToolsInfo:
 
         assert len(filtered) == 3
 
-    def test_available_scopes_in_result(self, spec_with_one_endpoint):
+    def test_available_scopes_in_result(self, spec_with_one_endpoint) -> None:
         """The available_scopes list should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -243,7 +243,7 @@ class TestComputeFilteredToolsInfo:
         assert "write:issue" in result["available_scopes"]
         assert len(result["available_scopes"]) == 2
 
-    def test_exclusion_config_in_result(self, spec_with_one_endpoint):
+    def test_exclusion_config_in_result(self, spec_with_one_endpoint) -> None:
         """The exclusion config patterns should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -252,7 +252,7 @@ class TestComputeFilteredToolsInfo:
         assert result["exclusion_config"]["exclude"] == ["foo"]
         assert result["exclusion_config"]["include"] == ["bar"]
 
-    def test_post_method_write_scope(self):
+    def test_post_method_write_scope(self) -> None:
         """POST endpoints require write: scope."""
         spec = {
             "openapi": "3.1.0",
@@ -291,35 +291,35 @@ class TestComputeFilteredToolsInfo:
 class TestGetFilteredToolInfo:
     """Lookup helper — finds a tool's filter info by name."""
 
-    def test_none_data_returns_none(self):
+    def test_none_data_returns_none(self) -> None:
         """Passing None for filtered_tools_info returns None."""
         assert get_filtered_tool_info("any_tool", None) is None
 
-    def test_empty_filtered_returns_none(self):
+    def test_empty_filtered_returns_none(self) -> None:
         """Empty filtered dict returns None."""
         info = {"filtered": {}}
         assert get_filtered_tool_info("any_tool", info) is None
 
-    def test_tool_not_in_filtered_returns_none(self):
+    def test_tool_not_in_filtered_returns_none(self) -> None:
         """Tool not in the filtered set returns None."""
         info = {"filtered": {"other_tool": {"reason": "scope"}}}
         assert get_filtered_tool_info("my_tool", info) is None
 
-    def test_finds_tool_by_bare_name(self):
+    def test_finds_tool_by_bare_name(self) -> None:
         """Bare operationId matches directly."""
         info = {"filtered": {"repo_get": {"reason": "deprecated"}}}
         result = get_filtered_tool_info("repo_get", info)
         assert result is not None
         assert result["reason"] == "deprecated"
 
-    def test_strips_prefix_to_find_tool(self):
+    def test_strips_prefix_to_find_tool(self) -> None:
         """Prefixed name is stripped before lookup."""
         info = {"filtered": {"repo_get": {"reason": "scope", "required_scope": "sudo"}}}
         result = get_filtered_tool_info("gitea_repo_get", info, tool_prefix="gitea_")
         assert result is not None
         assert result["reason"] == "scope"
 
-    def test_prefix_not_stripped_if_no_match(self,):
+    def test_prefix_not_stripped_if_no_match(self,) -> None:
         """If prefix is not present, look up with the bare name."""
         info = {"filtered": {"repo_get": {"reason": "deprecated"}}}
         result = get_filtered_tool_info("repo_get", info, tool_prefix="gitea_")
@@ -335,7 +335,7 @@ class TestGetFilteredToolInfo:
 class TestBuildFilteredToolsMessage:
     """Agent-facing error message formatting."""
 
-    def test_scope_reason_mentions_required_scope(self):
+    def test_scope_reason_mentions_required_scope(self) -> None:
         """Scope-filtered message includes 'Required scope'."""
         entry = {"reason": "scope", "required_scope": "sudo"}
         msg = build_filtered_tools_message("admin_list_users", entry)
@@ -343,7 +343,7 @@ class TestBuildFilteredToolsMessage:
         assert "sudo" in msg
         assert "restricted by your token scopes" in msg
 
-    def test_scope_reason_includes_available_scopes(self):
+    def test_scope_reason_includes_available_scopes(self) -> None:
         """When filtered_tools_info has available_scopes, include them."""
         entry = {"reason": "scope", "required_scope": "sudo"}
         info = {"available_scopes": ["read:repository", "write:issue"]}
@@ -351,28 +351,28 @@ class TestBuildFilteredToolsMessage:
         assert "read:repository" in msg
         assert "write:issue" in msg
 
-    def test_scope_reason_without_available_scopes(self):
+    def test_scope_reason_without_available_scopes(self) -> None:
         """Scope message works even when filtered_tools_info is None."""
         entry = {"reason": "scope", "required_scope": "sudo"}
         msg = build_filtered_tools_message("admin_list_users", entry)
         assert "sudo" in msg
         assert "search_tools()" in msg
 
-    def test_excluded_reason(self):
+    def test_excluded_reason(self) -> None:
         """Excluded message mentions server configuration."""
         entry = {"reason": "excluded"}
         msg = build_filtered_tools_message("repo_get_hidden", entry)
         assert "repo_get_hidden" in msg
         assert "excluded by server configuration" in msg
 
-    def test_deprecated_reason(self):
+    def test_deprecated_reason(self) -> None:
         """Deprecated message mentions Gitea API deprecation."""
         entry = {"reason": "deprecated"}
         msg = build_filtered_tools_message("old_get_thing", entry)
         assert "old_get_thing" in msg
         assert "deprecated by the Gitea API" in msg
 
-    def test_unknown_reason(self):
+    def test_unknown_reason(self) -> None:
         """Unknown reason produces a generic message."""
         entry = {"reason": "some_weird_reason"}
         msg = build_filtered_tools_message("mystery_tool", entry)
@@ -434,7 +434,7 @@ class TestFilteredToolMiddleware:
         return ctx
 
     @pytest.mark.asyncio
-    async def test_passes_through_for_visible_tool(self, scope_filter_info):
+    async def test_passes_through_for_visible_tool(self, scope_filter_info) -> None:
         """Middleware should pass through for tools not in filter info."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,
@@ -448,7 +448,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_called_once_with(ctx)
 
     @pytest.mark.asyncio
-    async def test_passes_through_when_no_filter_info(self):
+    async def test_passes_through_when_no_filter_info(self) -> None:
         """Middleware should pass through when filtered_tools_info is None."""
         middleware = FilteredToolMiddleware(filtered_tools_info=None)
         ctx = self._make_mock_context("gitea_admin_create_user")
@@ -459,7 +459,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_called_once_with(ctx)
 
     @pytest.mark.asyncio
-    async def test_scope_filtered_raises_tool_error(self, scope_filter_info):
+    async def test_scope_filtered_raises_tool_error(self, scope_filter_info) -> None:
         """Scope-restricted tool should raise ToolError with scope message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,
@@ -473,7 +473,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info):
+    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info) -> None:
         """Config-excluded tool should raise ToolError with exclusion message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=exclude_filter_info,
@@ -487,7 +487,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info):
+    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info) -> None:
         """Deprecated tool should raise ToolError with deprecation message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=deprecated_filter_info,
@@ -501,7 +501,7 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_works_without_prefix(self, scope_filter_info):
+    async def test_works_without_prefix(self, scope_filter_info) -> None:
         """Middleware works with unprefixed tool names."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,

@@ -6,7 +6,7 @@ from gitea_mcp_server.openapi_converter import convert_paths
 class TestConvertPaths:
     """Tests for the convert_paths function."""
 
-    def test_simple_get(self):
+    def test_simple_get(self) -> None:
         """Simple GET path with no parameters should be preserved."""
         paths = {
             "/users": {
@@ -22,7 +22,7 @@ class TestConvertPaths:
         assert "/users" in result
         assert result["/users"]["get"]["summary"] == "List users"
 
-    def test_post_with_body(self):
+    def test_post_with_body(self) -> None:
         """POST with body parameter should produce requestBody."""
         paths = {
             "/users": {
@@ -37,7 +37,7 @@ class TestConvertPaths:
         assert "requestBody" in op
         assert "application/json" in op["requestBody"]["content"]
 
-    def test_post_with_formData(self):
+    def test_post_with_formData(self) -> None:
         """POST with formData parameters should produce multipart requestBody."""
         paths = {
             "/upload": {
@@ -62,7 +62,7 @@ class TestConvertPaths:
         assert "name" in schema["properties"]
         assert schema["required"] == ["name"]
 
-    def test_mixed_parameters(self):
+    def test_mixed_parameters(self) -> None:
         """Test POST with both query parameters and body parameters."""
         paths = {
             "/search": {
@@ -82,7 +82,7 @@ class TestConvertPaths:
         # Should have requestBody from the body parameter
         assert "requestBody" in op
 
-    def test_delete_has_no_request_body(self):
+    def test_delete_has_no_request_body(self) -> None:
         """DELETE operations should never include requestBody, even with body/formData params."""
         paths = {
             "/items/{id}": {

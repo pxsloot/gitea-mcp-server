@@ -24,6 +24,7 @@ from gitea_mcp_server.tools.label_transform import (
 
 
 class TestLabelTransform:
+    _tool_registry: dict = {}
     """Tests for LabelTransform as a FastMCP Transform."""
 
     @pytest.fixture

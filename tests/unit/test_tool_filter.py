@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gitea_mcp_server.scope import has_sufficient_scope
-from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
+from gitea_mcp_server.server_setup.mcp_builder import OpenAPIProvider, create_openapi_provider
 from gitea_mcp_server.server_setup.spec_loader import (
     _compute_excluded_routes,
     _match_active_token,
@@ -339,7 +339,7 @@ class TestComputeExcludedRoutes:
 class TestProviderRouteMapFiltering:
     """Integration-level unit tests: filtered routes never become tools."""
 
-    def _make_provider(self, excluded_routes, response_format="markdown") -> MagicMock:
+    def _make_provider(self, excluded_routes, response_format="markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         spec = {

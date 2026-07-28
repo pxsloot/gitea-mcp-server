@@ -141,7 +141,7 @@ class TestCustomResourceStringResponsePaths:
                                 kwargs.setdefault(_param_names[i], arg)
                     result = await func(**kwargs)
                     if isinstance(result, ResourceResult):
-                        return result.contents[0].content
+                        return str(result.contents[0].content)
                     return str(result)
                 registered[uri] = wrapper
                 return func
@@ -375,7 +375,7 @@ class TestCustomResourceStringResponsePaths:
                 async def wrapper(*args: object, **kwargs: object) -> str:
                     result = await func(*args, **kwargs)
                     if isinstance(result, ResourceResult):
-                        return result.contents[0].content
+                        return str(result.contents[0].content)
                     return str(result)
                 registered[uri] = wrapper
                 return func
@@ -386,8 +386,9 @@ class TestCustomResourceStringResponsePaths:
             mcp, mock_gitea_client_str,
             available_scopes={"write:issue", "read:repository", "sudo"},
         )
-        func = registered["gitea://token/scopes"]
-        result = await func()
+        func_callable = registered["gitea://token/scopes"]
+        assert callable(func_callable)
+        result = await func_callable()
         data = json.loads(result)
         assert data["scopes"] == ["read:repository", "sudo", "write:issue"]
 
@@ -404,7 +405,7 @@ class TestCustomResourceStringResponsePaths:
                 async def wrapper(*args: object, **kwargs: object) -> str:
                     result = await func(*args, **kwargs)
                     if isinstance(result, ResourceResult):
-                        return result.contents[0].content
+                        return str(result.contents[0].content)
                     return str(result)
                 registered[uri] = wrapper
                 return func
@@ -417,6 +418,7 @@ class TestCustomResourceStringResponsePaths:
             server_info_md=expected_md,
         )
         func = registered["gitea://server/info"]
+        assert callable(func)
         result = await func()
         assert result == expected_md
 

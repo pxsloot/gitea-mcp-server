@@ -113,6 +113,15 @@ ignore_missing_imports = true
 module = "yaml"
 ignore_missing_imports = true
 
+# Phase 0: Safety-net overrides for tests/.
+# These are temporary and will be removed in subsequent phases:
+#   Phase 1 — removes disallow_untyped_defs / disallow_incomplete_defs
+#   Phase 5 — removes the entire block once all categories are clean
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
 [dependency-groups]
 dev = [
     "opentelemetry-sdk>=1.30.0",

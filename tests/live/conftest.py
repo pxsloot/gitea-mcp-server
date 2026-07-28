@@ -23,6 +23,11 @@ will **skip** if no reachable Gitea instance is found.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
 import base64
 import os
 import shutil
@@ -218,7 +223,7 @@ def _destroy_test_data() -> None:
 
 
 @pytest.fixture(scope="module")
-def live_test_data() -> tuple[int, str, str, str]:
+def live_test_data() -> Generator[tuple[int, str, str, str], None, None]:
     """Create and tear down test data for a live integration test session.
 
     Returns ``(pr_number, owner, repo, branch)``.

@@ -17,6 +17,7 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/437
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 import pytest
 from fastmcp import Client
@@ -25,6 +26,9 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from tests.live.conftest import live_available
+
+if TYPE_CHECKING:
+    from tests.conftest import SimpleConfig
 
 # ---------------------------------------------------------------------------
 # Scenario 1 — fastmcp.Client over stdio
@@ -38,7 +42,7 @@ class TestFastMCPClientTransport:
     @pytest.mark.live
     async def test_text_diff_no_validation_error(
         self,
-        live_config: object,
+        live_config: SimpleConfig,
         server_args: list[str],
         live_test_data: tuple[int, str, str, str],
     ) -> None:
@@ -86,7 +90,7 @@ class TestRawMCPClientSession:
     @pytest.mark.live
     async def test_mcp_sdk_transport_no_validation_error(
         self,
-        live_config: object,
+        live_config: SimpleConfig,
         server_args: list[str],
         live_test_data: tuple[int, str, str, str],
     ) -> None:
@@ -145,7 +149,7 @@ class TestCallToolProxy:
     @pytest.mark.live
     async def test_through_call_tool_proxy_no_validation_error(
         self,
-        live_config: object,
+        live_config: SimpleConfig,
         server_args: list[str],
         live_test_data: tuple[int, str, str, str],
     ) -> None:

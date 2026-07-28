@@ -63,6 +63,10 @@ uv run pytest tests/integration/
 
 # Live end-to-end tests (need real Gitea instance + .env.dev.local)
 uv run pytest tests/live/
+
+# Type-check test code (separate from `make test` — established but not yet clean)
+# See pyproject.toml for the safety-net override.
+make test-types
 ```
 
 See `docs/TESTING_STANDARDS.md` for full details.

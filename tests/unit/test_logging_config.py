@@ -177,5 +177,7 @@ class TestSetupLogging:
             if isinstance(handler.formatter, logging.Formatter) and not isinstance(
                 handler.formatter, JSONFormatter
             ):
+                assert handler.formatter is not None
+                assert handler.formatter._fmt is not None
                 assert "%(asctime)s" in handler.formatter._fmt
                 return

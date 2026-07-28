@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import jsonschema
+import jsonschema  # type: ignore[import-untyped]
 import pytest
 
 from gitea_mcp_server.exceptions import SpecError

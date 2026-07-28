@@ -318,6 +318,7 @@ class TestMakeApiResourceHandler:
             format_hint="repository",
         )
 
+        assert handler is not None
         result = await handler(owner="test-owner", repo="test-repo")
 
         assert isinstance(result, ResourceResult)
@@ -339,6 +340,7 @@ class TestMakeApiResourceHandler:
             api_path="/repos/{owner}/{repo}",
         )
 
+        assert handler is not None
         result = await handler(owner="test-owner", repo="test-repo")
 
         assert isinstance(result, ResourceResult)
@@ -359,6 +361,7 @@ class TestMakeApiResourceHandler:
             api_path="/user",
         )
 
+        assert handler is not None
         result = await handler()
         assert isinstance(result, ResourceResult)
         meta = result.contents[0].meta
@@ -378,6 +381,7 @@ class TestMakeApiResourceHandler:
             format_hint="repository",
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         meta = result.contents[0].meta
         assert meta is not None
@@ -412,6 +416,7 @@ class TestMakeApiResourceErrorHandling:
             error_message="Repository '{owner}/{repo}' not found.",
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="my-org", repo="my-repo")
 
@@ -439,6 +444,7 @@ class TestMakeApiResourceErrorHandling:
             api_path="/repos/{owner}/{repo}",
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r")
 
@@ -459,6 +465,7 @@ class TestMakeApiResourceErrorHandling:
             api_path="/repos/{owner}/{repo}",
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r")
 
@@ -491,6 +498,7 @@ class TestMakeApiResourceErrorHandling:
             ),
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="my-org", repo="my-repo", type="issues")
 
@@ -523,6 +531,7 @@ class TestMakeApiResourceErrorHandling:
             ),
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="my-org", repo="my-repo", type="pulls")
 
@@ -555,6 +564,7 @@ class TestMakeApiResourceErrorHandling:
             ),
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="my-org", repo="my-repo")
 
@@ -622,6 +632,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r", state="open")
         assert isinstance(result, ResourceResult)
         # Verify the API call was made with params={"state": "open"}
@@ -645,6 +656,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", state="open")
         # The path should remain /repos/o/r/issues (no {state} substitution)
         client.request.assert_called_once()
@@ -667,6 +679,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", state=None)
         client.request.assert_called_once()
         _, kwargs = client.request.call_args
@@ -691,6 +704,7 @@ class TestMakeApiResourceQueryParams:
             resource_type="issues",
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r", state="invalid")
 
@@ -717,6 +731,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r", state="open")
         assert isinstance(result, ResourceResult)
         client.request.assert_called_once()
@@ -737,6 +752,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", draft="true", q="search term")
         client.request.assert_called_once()
         _, kwargs = client.request.call_args
@@ -758,6 +774,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", draft=None, q="urgent")
         client.request.assert_called_once()
         _, kwargs = client.request.call_args
@@ -779,6 +796,7 @@ class TestMakeApiResourceQueryParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", draft="true", q=None)
         client.request.assert_called_once()
         args, kwargs = client.request.call_args
@@ -811,6 +829,7 @@ class TestMakeApiResourceContextMetaKeys:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="myorg", repo="myrepo")
         assert isinstance(result, ResourceResult)
         assert result.contents
@@ -837,6 +856,7 @@ class TestMakeApiResourceContextMetaKeys:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="myorg", repo="myrepo", type="pulls")
         assert isinstance(result, ResourceResult)
         assert result.contents
@@ -867,6 +887,7 @@ class TestMakeApiResourceContextMetaKeys:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         assert isinstance(result, ResourceResult)
         assert result.contents
@@ -894,6 +915,7 @@ class TestMakeApiResourceContextMetaKeys:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r", type=None)
         assert isinstance(result, ResourceResult)
         assert result.contents
@@ -937,6 +959,7 @@ class TestMakeApiResourceContextParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="myorg", repo="myrepo", state="open", display_hint="pulls")
         client.request.assert_called_once()
         _, kwargs = client.request.call_args
@@ -965,6 +988,7 @@ class TestMakeApiResourceContextParams:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="myorg", repo="myrepo", display_hint="pulls")
         assert isinstance(result, ResourceResult)
         assert result.contents
@@ -991,6 +1015,7 @@ class TestMakeApiResourceContextParams:
             resource_type="issues",
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r", display_hint="invalid")
 
@@ -1018,6 +1043,7 @@ class TestMakeApiResourceContextParams:
             ),
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r", display_hint="issues")
         assert isinstance(result, ResourceResult)
         client.request.assert_called_once()
@@ -1044,6 +1070,7 @@ class TestMakeApiResourceContextParams:
         )
 
         # Valid context param value
+        assert handler is not None
         result = await handler(owner="o", repo="r", state="open", display_hint="pulls")
         assert isinstance(result, ResourceResult)
 
@@ -1066,6 +1093,7 @@ class TestMakeApiResourceContextParams:
             ),
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r", display_hint="invalid")
 
@@ -1091,6 +1119,7 @@ class TestMakeApiResourceContextParams:
             ),
         )
 
+        assert handler is not None
         await handler(owner="o", repo="r", state="open", display_hint="pulls")
         client.request.assert_called_once()
         args, _ = client.request.call_args
@@ -1229,6 +1258,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._hook,
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         assert isinstance(result, ResourceResult)
         content = result.contents[0]
@@ -1249,6 +1279,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._hook,
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         content = result.contents[0]
         assert content.mime_type == "text/plain"
@@ -1268,6 +1299,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._hook,
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         meta = result.contents[0].meta
         assert meta is None or "response_schema" not in meta
@@ -1294,6 +1326,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._hook,
         )
 
+        assert handler is not None
         with pytest.raises(ResourceError) as exc:
             await handler(owner="o", repo="r")
 
@@ -1327,6 +1360,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._list_item_count_hook,
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r")
         content = result.contents[0]
         assert content.mime_type == "text/plain"
@@ -1350,6 +1384,7 @@ class TestMakeApiResourceHandlerHook:
             handler_hook=self._hook,
         )
 
+        assert handler is not None
         result = await handler(owner="o", repo="r", path="f.py", ref="main")
         assert isinstance(result, ResourceResult)
         content = result.contents[0]

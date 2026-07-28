@@ -10,7 +10,7 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/332
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import respx
@@ -474,7 +474,7 @@ class TestToolInfoAnnotations:
         *,
         read_only: bool,
         open_world: bool,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Fetch tool annotations via tool_info and verify all 4 hints are correct."""
         result = await server.call_tool(
             "gitea_tool_info",
@@ -496,7 +496,7 @@ class TestToolInfoAnnotations:
         assert annotations.get("openWorldHint") is open_world, (
             f"{tool_name}.openWorldHint: expected {open_world}, got {annotations}"
         )
-        return annotations
+        return cast("dict[str, Any]", annotations)
 
     async def test_synthetic_local_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
         """Local synthetic tool (search_tools): read_only=True, open_world=False."""

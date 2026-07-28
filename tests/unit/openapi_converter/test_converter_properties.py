@@ -596,31 +596,32 @@ class TestRoundTripCompleteness:
 # ===========================================================================
 
 
+@st.composite
+def _param_strategy(draw: st.DrawFn) -> dict[str, Any]:
+    """Generate a single Swagger parameter dict."""
+    param_in = draw(st.sampled_from(["path", "query", "header"]))
+    param_name = draw(st.text(min_size=1, max_size=8, alphabet=st.characters(
+        whitelist_categories=["Ll", "Lu", "Nd"],
+    )))
+    param_type = draw(st.sampled_from(["string", "integer", "boolean"]))
+    param = {
+        "in": param_in,
+        "name": param_name,
+        "type": param_type,
+        "required": draw(st.booleans()),
+    }
+    if param_in == "path":
+        param["required"] = True
+    # Add optional description
+    if draw(st.booleans()):
+        param["description"] = draw(st.text(max_size=20))
+    return param
+
+
 class TestParameterConversionPreserved:
     """Path, query, and header parameters must survive with correct fields."""
 
-    @st.composite
-    def _param(draw: st.DrawFn) -> dict[str, Any]:
-        """Generate a single Swagger parameter dict."""
-        param_in = draw(st.sampled_from(["path", "query", "header"]))
-        param_name = draw(st.text(min_size=1, max_size=8, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd"],
-        )))
-        param_type = draw(st.sampled_from(["string", "integer", "boolean"]))
-        param = {
-            "in": param_in,
-            "name": param_name,
-            "type": param_type,
-            "required": draw(st.booleans()),
-        }
-        if param_in == "path":
-            param["required"] = True
-        # Add optional description
-        if draw(st.booleans()):
-            param["description"] = draw(st.text(max_size=20))
-        return param
-
-    @given(params=st.lists(_param(), min_size=1, max_size=5, unique_by=lambda p: (p.get("in"), p.get("name"))))
+    @given(params=st.lists(_param_strategy(), min_size=1, max_size=5, unique_by=lambda p: (p.get("in"), p.get("name"))))
     def test_parameters_preserve_in_and_name(self, params: list[dict[str, Any]]) -> None:
         """Each parameter must survive with the correct ``in`` and ``name`` fields."""
         spec = _make_spec(paths={

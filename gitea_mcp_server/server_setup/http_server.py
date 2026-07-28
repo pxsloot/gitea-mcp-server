@@ -12,7 +12,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from gitea_mcp_server.config import Config, ConfigProtocol
+from gitea_mcp_server.config import ConfigProtocol
 
 logger = logging.getLogger(__name__)
 

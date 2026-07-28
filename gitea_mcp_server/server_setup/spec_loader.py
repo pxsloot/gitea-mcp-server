@@ -34,7 +34,7 @@ from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
-    from gitea_mcp_server.config import Config, ConfigProtocol
+    from gitea_mcp_server.config import ConfigProtocol
     from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from gitea_mcp_server.config import Config, ConfigProtocol
+from gitea_mcp_server.config import ConfigProtocol
 from gitea_mcp_server.constants import (
     HTTP_MAX_CONNECTIONS,
     HTTP_MAX_KEEPALIVE_CONNECTIONS,

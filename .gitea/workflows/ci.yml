@@ -54,6 +54,17 @@ jobs:
           cd /app
           mypy gitea_mcp_server
 
+  typecheck-tests:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Type check
+        run: |
+          cd /app
+          mypy tests
+
   test:
     needs: [build]
     runs-on: self-hosted

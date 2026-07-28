@@ -158,10 +158,12 @@ class TestCORSConfiguration:
     def _get_middleware(self, app):
         """Return (user_middleware, CORSMiddleware instance) from a Starlette app."""
         user_mw = getattr(app, "user_middleware", [])
+        cors_mw = None
         for mw in user_mw:
             if isinstance(mw, StarletteMiddleware) and mw.cls is CORSMiddleware:
-                return user_mw, mw  # type: ignore[unreachable]
-        return user_mw, None
+                cors_mw = mw  # type: ignore[unreachable]
+                break
+        return user_mw, cors_mw
 
     @pytest.mark.asyncio
     async def test_cors_middleware_on_mcp_app_when_configured(self, captured_app, monkeypatch):

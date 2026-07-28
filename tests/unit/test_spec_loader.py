@@ -36,7 +36,7 @@ def spec_url() -> str:
 
 
 @pytest.fixture
-def valid_spec() -> dict:
+def valid_spec() -> dict[str, Any]:
     return {
         "swagger": "2.0",
         "info": {"title": "Gitea API", "version": "1.0"},

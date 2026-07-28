@@ -11,7 +11,7 @@ Scenarios 5 (permission filtering) and 6 (non-JSON handling) are covered in
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import respx
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _make_label_spec() -> dict:
+def _make_label_spec() -> dict[str, Any]:
     """Return a Swagger spec with a ``POST /repos/{owner}/{repo}/issues`` endpoint
     that accepts a ``labels`` array in the body.
     """
@@ -64,7 +64,7 @@ def _make_label_spec() -> dict:
     }
 
 
-def _make_pagination_spec() -> dict:
+def _make_pagination_spec() -> dict[str, Any]:
     """Return a Swagger spec with a ``GET /items`` endpoint returning an array
     response - exercises the pagination metadata injection path.
     """
@@ -97,7 +97,7 @@ def _make_pagination_spec() -> dict:
     }
 
 
-def _make_cache_spec() -> dict:
+def _make_cache_spec() -> dict[str, Any]:
     """Return a Swagger spec with GET + PUT on ``/repos/{owner}/{repo}``.
 
     The GET has a schema so ``output_schema`` is set; the PUT is a write
@@ -150,7 +150,7 @@ def _make_cache_spec() -> dict:
     }
 
 
-def _make_deprecated_spec() -> dict:
+def _make_deprecated_spec() -> dict[str, Any]:
     """Return a Swagger spec with one normal and one deprecated endpoint."""
     return {
         "swagger": "2.0",
@@ -191,7 +191,7 @@ class TestLabelConversion:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_label_spec()
 
     async def test_converts_string_labels_to_ids(self, mcp_server: FastMCP) -> None:
@@ -283,7 +283,7 @@ class TestPaginationMetadata:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_pagination_spec()
 
     async def test_paginated_result_has_metadata(self, mcp_server: FastMCP) -> None:
@@ -329,7 +329,7 @@ class TestCacheInvalidationEndToEnd:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_cache_spec()
 
     async def test_write_invalidates_resource_cache(self, mcp_server: FastMCP) -> None:
@@ -380,7 +380,7 @@ class TestDeprecatedExclusion:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_deprecated_spec()
 
     async def test_deprecated_endpoint_is_excluded(self, mcp_server: FastMCP) -> None:

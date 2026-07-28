@@ -103,7 +103,7 @@ class TestCustomResourceStringResponsePaths:
         return client
 
     @pytest.fixture
-    def captured_resources(self, mock_gitea_client_str: AsyncMock) -> dict:
+    def captured_resources(self, mock_gitea_client_str: AsyncMock) -> dict[str, Any]:
         """Register custom resources and capture the resulting functions keyed by URI.
 
         Uses mock_gitea_client_str so all resource functions close over it.

@@ -16,7 +16,7 @@ def _tool_dict(tools: list[Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def minimal_spec() -> dict:
+def minimal_spec() -> dict[str, Any]:
     """Minimal OpenAPI spec with two operations."""
     return {
         "openapi": "3.1.0",

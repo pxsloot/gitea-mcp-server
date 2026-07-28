@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 import pytest
 import respx
 
@@ -157,13 +160,13 @@ def _make_annotation_spec() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _tool_map(tools: list[Tool]) -> dict[str, Tool]:
+def _tool_map(tools: Sequence[Tool]) -> dict[str, Tool]:
     return {t.name: t for t in tools}
 
 
 # Module-level base_spec fixture shared by all test classes.
 @pytest.fixture
-def base_spec() -> dict:
+def base_spec() -> dict[str, Any]:
     return _make_annotation_spec()
 
 
@@ -293,7 +296,7 @@ class TestOpenWorldHintAPITools:
     ]
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize("tool_name", _API_TOOLS)
@@ -383,7 +386,7 @@ class TestCategoryTags:
     ]
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize(("tool_name", "expected_category"), _CATEGORY_CASES)

@@ -65,17 +65,9 @@ uv run pytest tests/integration/
 uv run pytest tests/live/
 
 # Type-check test code (separate from `make test`)
-# Phase 0 added safety-net overrides in pyproject.toml that suppress
-# disallow_untyped_defs / disallow_incomplete_defs for tests/*.
+# Phase 1 removed the tests.* mypy override; the full project config
+# (disallow_untyped_defs = true) now applies to test code.
 make test-types
-
-> **Note**: The `tests.*` per-module override (`disallow_untyped_defs = false`)
-> takes precedence over CLI flags like `--disallow-untyped-defs`. To see the
-> actual `no-untyped-def` errors as they would appear without the override,
-> bypass the project config:
-> ```bash
-> mypy --config-file /dev/null --disallow-untyped-defs tests/
-> ```
 
 See `docs/TESTING_STANDARDS.md` for full details.
 

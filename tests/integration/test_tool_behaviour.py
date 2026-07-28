@@ -8,7 +8,7 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/331
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import respx
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _make_version_spec() -> dict:
+def _make_version_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with a ``/version`` endpoint.
 
     Note: There is intentionally **no response schema** on the 200 response.
@@ -50,7 +50,7 @@ def _make_version_spec() -> dict:
     }
 
 
-def _make_repo_spec() -> dict:
+def _make_repo_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with a ``/repos/{owner}/{repo}`` endpoint.
 
     Note: There is intentionally **no response schema** on the 200/404/403
@@ -83,7 +83,7 @@ def _make_repo_spec() -> dict:
     }
 
 
-def _make_empty_spec() -> dict:
+def _make_empty_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with no endpoints at all.
 
     Used by ``TestResourceErrors`` - resource tests don't need any tools,
@@ -100,7 +100,7 @@ def _make_empty_spec() -> dict:
     }
 
 
-def _make_diff_spec() -> dict:
+def _make_diff_spec() -> dict[str, Any]:
     """Return a Swagger spec with the real text/plain diff/patch download endpoint.
 
     Mirrors the actual Gitea operation ``repoDownloadPullDiffOrPatch`` at
@@ -161,7 +161,7 @@ class TestValidationErrors:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_repo_spec()
 
     async def test_empty_owner_rejected(self, mcp_server: FastMCP) -> None:
@@ -207,7 +207,7 @@ class TestAPIErrorTranslation:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_repo_spec()
 
     async def test_404_includes_spec_description_and_body(self, mcp_server: FastMCP) -> None:
@@ -281,7 +281,7 @@ class TestResultWrapping:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_version_spec()
 
     async def test_array_response_is_wrapped_in_result(self, mcp_server: FastMCP) -> None:
@@ -328,7 +328,7 @@ class TestResourceErrors:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_empty_spec()
 
     async def test_resource_404_produces_structured_error(self, mcp_server: FastMCP) -> None:
@@ -380,7 +380,7 @@ class TestNonJsonEndpoint:
     """
 
     @pytest.fixture
-    def base_spec(self) -> dict:
+    def base_spec(self) -> dict[str, Any]:
         return _make_diff_spec()
 
     async def test_text_response_does_not_trigger_output_validation_error(

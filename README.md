@@ -128,7 +128,9 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/ARCHITECTURE.md](docs/A
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
-The [AGENTS.md](AGENTS.md) has detailed rules for agent contributors.
+Start with [AGENTS.md](AGENTS.md) for project onboarding. The
+[docs/SKILL.md](docs/SKILL.md) has the developer handbook with conventions,
+workflows, and checklists for agent contributors.
 
 ## Changelog
 

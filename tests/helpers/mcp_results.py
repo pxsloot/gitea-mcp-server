@@ -226,4 +226,8 @@ def extract_resource_text(result: object) -> str:
     contents = getattr(result, "contents", None)
     assert contents is not None, f"Expected result with .contents, got {type(result).__name__}"
     assert len(contents) > 0, "Expected at least one resource content"
-    return contents[0].content
+    content = contents[0].content
+    assert isinstance(content, str), (
+        f"Expected str content, got {type(content).__name__}"
+    )
+    return content

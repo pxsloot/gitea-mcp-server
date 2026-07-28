@@ -12,12 +12,12 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from gitea_mcp_server.config import Config
+from gitea_mcp_server.config import ConfigProtocol
 
 logger = logging.getLogger(__name__)
 
 
-async def run_http_server(mcp: FastMCP, config: Config) -> None:
+async def run_http_server(mcp: FastMCP, config: ConfigProtocol) -> None:
     """Run the MCP server over HTTP transport.
 
     Configures CORS middleware (if origins specified), adds a health check

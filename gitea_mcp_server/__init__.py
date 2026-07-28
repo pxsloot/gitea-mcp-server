@@ -3,7 +3,7 @@
 __version__ = "0.3.0"
 __author__ = "Peter"
 
-from gitea_mcp_server.config import Config
+from gitea_mcp_server.config import Config, ConfigProtocol
 from gitea_mcp_server.exceptions import (
     ConfigError,
     GiteaAPIError,
@@ -16,6 +16,7 @@ from gitea_mcp_server.exceptions import (
 __all__ = [
     "Config",
     "ConfigError",
+    "ConfigProtocol",
     "GiteaAPIError",
     "GiteaMCPError",
     "SpecError",

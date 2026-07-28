@@ -48,6 +48,7 @@ truth. Other mentions point here.
 
 | Topic | Canonical home |
 |-------|---------------|
+| Config / ConfigProtocol | `config.py` (source) + `TESTING_STANDARDS.md` (test pattern / SimpleConfig) |
 | Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (design decisions) |
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
 | Module map | `ARCHITECTURE.md` |

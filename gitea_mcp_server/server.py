@@ -22,7 +22,7 @@ from fastmcp.server.middleware.caching import (
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
 from gitea_mcp_server.client import GiteaClient
-from gitea_mcp_server.config import Config
+from gitea_mcp_server.config import Config, ConfigProtocol
 from gitea_mcp_server.constants import (
     CACHE_MAX_ITEM_SIZE,
     CACHE_TTL_DEFAULT,
@@ -204,7 +204,7 @@ def _setup_middleware(
 
 def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this orchestration function
     mcp: FastMCP,
-    config: Config,
+    config: ConfigProtocol,
     doc_manager: DocManager,
     extensions: dict[str, Any] | None = None,
     openapi_spec: OpenAPISpec | None = None,
@@ -292,7 +292,7 @@ async def _apply_virtual_param_scope_filter(
 
 async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inherently has many steps (spec loading, middleware, tool setup, resource setup, instructions)
     gitea_client: GiteaClient,
-    config: Config | None = None,
+    config: ConfigProtocol | None = None,
     lifespan: Any = None,
 ) -> FastMCP:
     """Create the Gitea MCP server from OpenAPI spec.

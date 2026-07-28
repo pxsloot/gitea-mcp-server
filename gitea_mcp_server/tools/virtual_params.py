@@ -24,8 +24,8 @@ no other file changes needed.
     The ``format`` parameter is **not** implemented as a virtual param.
     It is promoted to a first-class concept handled directly in
     :func:`~gitea_mcp_server.server_setup.mcp_builder._ToolWrappingTransform._wrap`
-    and reads its default from :attr:`Config.response_format
-    <gitea_mcp_server.config.Config.response_format>`.
+    and reads its default from :attr:`ConfigProtocol.response_format
+    <gitea_mcp_server.config.ConfigProtocol.response_format>`.
     See ``gitea_mcp_server/format.py`` for the shared utility.
 """
 

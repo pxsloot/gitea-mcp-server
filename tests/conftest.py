@@ -43,7 +43,7 @@ class SimpleConfig:
         http_host: str = "127.0.0.1",
         http_port: int = 8080,
         http_path: str = "/mcp",
-        http_cors: bool | None = None,
+        http_cors: list[str] | None = None,
         exclude_config_path: str | None = None,
         response_format: str = "markdown",
     ) -> None:

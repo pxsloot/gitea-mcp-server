@@ -676,7 +676,7 @@ respx_mock.get(...).respond(...)
 
 ## ContextVar Testing Patterns
 
-The project uses module-level :class:`~contextvars.ContextVar` instances as
+The project uses module-level ``contextvars.ContextVar`` instances as
 side channels between httpx event hooks and the tool wrapping pipeline:
 
 - ``pagination_ctx`` (``gitea_mcp_server/pagination.py``): carries ``total_count``
@@ -692,12 +692,12 @@ but it means tests that simulate the event hook must handle ContextVar lifecycle
 A suite-level autouse fixture in ``tests/conftest.py`` resets both ContextVars
 before every test:
 
-.. code-block:: python
-
-    @pytest.fixture(autouse=True)
-    def _reset_module_contexts():
-        pagination_ctx.set({})
-        sudo_context.set(None)
+```python
+@pytest.fixture(autouse=True)
+def _reset_module_contexts():
+    pagination_ctx.set({})
+    sudo_context.set(None)
+```
 
 This provides a deterministic reset for every test regardless of sync/async
 status, making the suite robust against future ``asyncio_default_test_loop_scope``
@@ -709,26 +709,26 @@ Tests that set a ContextVar to a non-default value should wrap the test body
 in ``try/finally`` for local robustness, even though the suite-level fixture
 and ``asyncio_default_test_loop_scope = "function"`` both provide isolation:
 
-.. code-block:: python
-
-    # Good — try/finally for local cleanup
-    pagination_ctx.set({"total_count": 42})
-    try:
-        result = await some_function()
-        assert result == expected
-    finally:
-        pagination_ctx.set({})
-
-    # Also good — autouse fixture in a test class (scoped to the class)
-    @pytest.fixture(autouse=True)
-    def reset_pagination_ctx(self):
-        pagination_ctx.set({})
-
-    # Avoid — inline cleanup after assertions (skipped on test failure)
-    pagination_ctx.set({"total_count": 42})
+```python
+# Good — try/finally for local cleanup
+pagination_ctx.set({"total_count": 42})
+try:
     result = await some_function()
     assert result == expected
-    pagination_ctx.set({})  # ❌ skipped if assert fails
+finally:
+    pagination_ctx.set({})
+
+# Also good — autouse fixture in a test class (scoped to the class)
+@pytest.fixture(autouse=True)
+def reset_pagination_ctx(self):
+    pagination_ctx.set({})
+
+# Avoid — inline cleanup after assertions (skipped on test failure)
+pagination_ctx.set({"total_count": 42})
+result = await some_function()
+assert result == expected
+pagination_ctx.set({})  # ❌ skipped if assert fails
+```
 
 ### Why This Matters
 

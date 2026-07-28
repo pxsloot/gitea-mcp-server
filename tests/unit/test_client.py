@@ -417,12 +417,17 @@ class TestInjectSudo:
         """Does not modify URL when sudo_context is None."""
         from gitea_mcp_server.tools.virtual_params import sudo_context
 
+        # ContextVar is already None from suite-level fixture; keep try/finally
+        # for documentation consistency with other tests in this class.
         sudo_context.set(None)
-        request = httpx.Request("GET", "https://git.example.com/api/v1/user")
+        try:
+            request = httpx.Request("GET", "https://git.example.com/api/v1/user")
 
-        await _inject_sudo(request)
+            await _inject_sudo(request)
 
-        assert "sudo" not in dict(request.url.params)
+            assert "sudo" not in dict(request.url.params)
+        finally:
+            sudo_context.set(None)
 
     @pytest.mark.asyncio
     async def test_empty_string_is_no_op(self):

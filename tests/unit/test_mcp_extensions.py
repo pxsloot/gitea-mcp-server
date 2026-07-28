@@ -1,13 +1,18 @@
 """Unit tests for MCP extensions processing."""
 
-from pathlib import Path
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 import pytest
 import yaml
 
-from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_extensions import (
     apply_mcp_extensions,
     load_mcp_extensions,
@@ -82,7 +87,7 @@ class TestApplyMcpExtensions:
 
         from typing import cast
 
-        param = cast(dict[str, Any], spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0])
+        param = cast("dict[str, Any]", spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0])
         assert param["description"] == "Custom title parameter description"
         assert "examples" in param
         assert param["examples"] == ["Bug: Something broke", "Feature: Add something"]

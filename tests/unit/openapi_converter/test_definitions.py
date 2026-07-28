@@ -1,8 +1,11 @@
 """Unit tests for OpenAPI converter - definitions and references."""
 
-from typing import Any
+from __future__ import annotations
 
-from gitea_mcp_server.openapi_types import OpenAPISpec
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.openapi_converter import (
     OptionalPropertyTransformer,

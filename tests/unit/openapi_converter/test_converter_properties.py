@@ -22,14 +22,16 @@ Invariants tested (from #560, #581):
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
-from gitea_mcp_server.openapi_types import SwaggerV2Spec
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import SwaggerV2Spec
 
 # NOTE: None of these tests use ``@settings`` yet. Default hypothesis settings
 # (100 examples per @given, no deadline) are fine for the current size.  As
@@ -244,7 +246,7 @@ def _make_spec(
         spec["paths"] = paths
     if definitions is not None:
         spec["definitions"] = definitions
-    return spec
+    return cast("SwaggerV2Spec", spec)
 
 
 # ===========================================================================
@@ -770,7 +772,7 @@ class TestEdgeCases:
         - ``swagger`` field is removed
         - ``paths`` is coerced to ``{}``
         """
-        spec: SwaggerV2Spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}
+        spec: SwaggerV2Spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}  # type: ignore[typeddict-item]
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
         assert "swagger" not in result

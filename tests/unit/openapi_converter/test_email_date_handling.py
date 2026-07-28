@@ -1,12 +1,16 @@
 """Unit tests for OpenAPI converter - email and date format handling."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 from gitea_mcp_server.openapi_converter import (
     _add_nullable_for_optional_refs,
     convert_swagger_to_openapi_v3,
 )
-from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 from gitea_mcp_server.schema_utils import schema_type_matches
 
 

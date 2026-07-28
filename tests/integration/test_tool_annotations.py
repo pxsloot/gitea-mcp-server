@@ -18,9 +18,9 @@ import respx
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from fastmcp import FastMCP
     from fastmcp.tools.base import Tool
 
-from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server

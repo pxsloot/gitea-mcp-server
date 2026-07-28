@@ -8,12 +8,16 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/331
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 import respx
-from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError, ToolError
 
 from tests.integration.conftest import BASE_TEST_URL
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # Shared helpers

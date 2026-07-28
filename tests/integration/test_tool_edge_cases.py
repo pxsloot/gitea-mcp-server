@@ -11,13 +11,16 @@ Scenarios 5 (permission filtering) and 6 (non-JSON handling) are covered in
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import pytest
 import respx
-from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from tests.integration.conftest import BASE_TEST_URL
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # Shared helpers

@@ -5,8 +5,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import Tool
+from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
+from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
@@ -1000,7 +1000,7 @@ class TestToolWrappingTransform:
         """None from call_next passes through."""
         transform = self.make_transform()
 
-        async def call_next(name: str, version: str =None) -> None:
+        async def call_next(name: str, version: str | None = None) -> None:
             return None
 
         result = await transform.get_tool("test_tool", call_next)

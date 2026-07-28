@@ -1,6 +1,7 @@
 """Integration tests for the MCP server."""
 
 import logging
+from typing import Any
 
 import pytest
 import respx

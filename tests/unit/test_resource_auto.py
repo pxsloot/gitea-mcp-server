@@ -9,8 +9,8 @@ Covers:
     - Error handling (404, structured errors)
 """
 
-from collections.abc import Callable
 import json
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 

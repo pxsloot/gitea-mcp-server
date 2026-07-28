@@ -1,7 +1,7 @@
 """Tests for MCP resource tools."""
 
-from collections.abc import Callable
 import json as json_module
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 

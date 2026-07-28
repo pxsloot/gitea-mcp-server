@@ -9,9 +9,9 @@ Covers:
     - Server info resource
 """
 
-from collections.abc import Callable
 import base64
 import json
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 

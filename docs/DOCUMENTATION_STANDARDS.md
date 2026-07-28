@@ -6,11 +6,11 @@ covers: How we treat documentation -- audience split, the de-duplication invaria
 
 # Documentation Standards
 
-This document captures the *principles* behind how this project writes and
-maintains documentation. It is the contract for anyone adding, splitting, or
-trimming a doc. The machine-checkable map of what doc covers what lives in
-`docs/INDEX.md`; this file explains the *why* and the judgment calls a grep
-cannot catch.
+This document captures the *structural policies* that follow from the
+project's documentation philosophy (see `docs/SKILL.md`). It is the contract
+for anyone adding, splitting, or trimming a doc. The machine-checkable map
+of what doc covers what lives in `docs/INDEX.md`; this file explains the
+*structural rules* and the judgment calls a grep cannot catch.
 
 Read this before restructuring docs (e.g. work on issue #460 and its
 follow-ups).
@@ -110,7 +110,11 @@ says where to look is more valuable than one that tries to say everything.
 
 ## Relationship to other docs
 
+- `docs/SKILL.md` -- the philosophical foundation: why documentation is
+  treated as integral part of the codebase. This file derives its structural
+  policies from that foundation.
 - `docs/INDEX.md` -- the map of all docs, their audiences, and topic ownership.
 - `docs/AGENT_INSTRUCTIONS_STANDARDS.md` -- the contract for the injected agent
   doc specifically.
-- This file -- the contract for the documentation *set* as a whole.
+- This file -- the policies (audience split, de-duplication, Diátaxis) derived
+  from the philosophy in `docs/SKILL.md`.

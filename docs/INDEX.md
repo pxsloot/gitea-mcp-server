@@ -10,8 +10,8 @@ so you can pick the right one without reading everything.
 | Audience   | Who                                                                 | Primary docs            |
 |------------|---------------------------------------------------------------------|-------------------------|
 | `agent`    | An LLM agent using the tools at runtime (instructions injected on connect) | `agent_instructions.md` |
-| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS` |
-| `enduser`  | The person installing and wiring the server into their agent software | `README.md`, `AGENTS.md` |
+| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS`, `SKILL` |
+| `enduser`  | The person installing and wiring the server into their agent software | `README.md` |
 
 ## How the docs fit together
 
@@ -31,11 +31,12 @@ mention is a one-line pointer, not a copy.
 |-----|----------|------|--------|------------------|
 | `gitea_mcp_server/docs/agent_instructions.md` | agent | reference + how-to | Tool/resource naming grammar, discovery flow, issue/PR workflow skeletons, output formats, annotations, troubleshooting | You are an agent about to call a tool |
 | `README.md` | enduser | reference | Install, config env vars, transports (stdio/http/docker), quick start | You are installing or running the server |
-| `AGENTS.md` | developer, enduser | reference | Project rules, red flags, branch/PR workflow, skill loading | You are about to change code in this repo |
+| `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content-type handling, runtime flows | You need to understand how the server is built |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
 | `docs/TESTING_STANDARDS.md` | developer | reference | Test layout, zones, fixtures, mocking rules, coverage targets | You are writing or reviewing tests |
 | `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
+| `docs/SKILL.md` | developer | reference | Project conventions, workflows, checklists, FAQ, and documentation philosophy | You need the developer handbook — red flags, common tasks, checklists |
 | `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
 | `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
 | `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |

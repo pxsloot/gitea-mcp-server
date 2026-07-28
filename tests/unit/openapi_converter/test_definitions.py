@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
+
 from gitea_mcp_server.openapi_converter import (
     OptionalPropertyTransformer,
     RequestBodyBuilder,
@@ -176,8 +178,8 @@ class TestOptionalPropertyTransformer:
 
     def test_transform_email_format_optional(self) -> None:
         """Email format + optional should anyOf with empty/null."""
-        schema = {"type": "string", "format": "email"}
-        parent = {"properties": {"email": schema}, "required": ["id"]}
+        schema: dict[str, Any] = {"type": "string", "format": "email"}
+        parent: dict[str, Any] = {"properties": {"email": schema}, "required": ["id"]}
         transformer = OptionalPropertyTransformer()
         transformer(schema, parent, "email")
         assert "anyOf" in schema
@@ -224,8 +226,8 @@ class TestSchemaWalker:
         """Walker should invoke the callback for every schema node."""
         calls = []
 
-        def callback(schema: Any, parent: Any, key: str) -> None:
-            calls.append((schema["type"], key))
+        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+            calls.append((schema.get("type"), key))
 
         schema = {
             "type": "object",
@@ -248,7 +250,7 @@ class TestSchemaWalker:
         """Walker should skip non-dict property values."""
         calls = []
 
-        def callback(schema: Any, parent: Any, key: str) -> None:
+        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
             calls.append(1)
 
         schema = {
@@ -265,7 +267,7 @@ class TestSchemaWalker:
         """Walker should skip non-list combinator values."""
         calls = []
 
-        def callback(schema: Any, parent: Any, key: str) -> None:
+        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
             calls.append(key)
 
         schema = {
@@ -282,7 +284,7 @@ class TestSchemaWalker:
         """Walker should visit patternProperties entries."""
         calls = []
 
-        def callback(schema: Any, parent: Any, key: str) -> None:
+        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
             calls.append(key)
 
         schema = {
@@ -298,7 +300,7 @@ class TestSchemaWalker:
         """Walker should visit additionalProperties."""
         calls = []
 
-        def callback(schema: Any, parent: Any, key: str) -> None:
+        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
             calls.append(key)
 
         schema = {
@@ -352,7 +354,7 @@ class TestAddNullableForOptionalRefs:
 
     def test_adds_nullable_to_optional_refs(self) -> None:
         """Optional $ref schemas should get nullable anyOf wrapper."""
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "User": {

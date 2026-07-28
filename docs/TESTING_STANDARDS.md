@@ -461,7 +461,8 @@ Use `server.call_tool()` and `server.list_tools()` directly for full round-trips
 ```python
 async def test_tool_call_round_trip(self, mcp_server):
     result = await mcp_server.call_tool("gitea_issue_list_issues", {"owner": "o", "repo": "r"})
-    assert result[0].text
+    from tests.helpers.mcp_results import extract_text_content
+    assert extract_text_content(result.content)
 ```
 
 ### Testing the `resource_handler` Decorator
@@ -511,13 +512,21 @@ async def test_non_404_re_raised(self):
 
 ### Testing MCP Tool Call Results
 
-Tool results come back as lists of `ToolResult` or `TextContent`. Test both the text content and the structure.
+Tool results come back as ``ToolResult`` with a ``.content`` list of
+``TextContent | ImageContent | ...``.  Use the helpers in
+``tests/helpers/mcp_results.py`` to narrow the unions and avoid mypy
+``union-attr`` errors:
 
 ```python
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
+
 result = await mcp.call_tool("gitea_issue_list_issues", {"owner": "o", "repo": "r"})
-text_content = result[0]
-import json
-data = json.loads(text_content.text)
+
+# Extract text from the first content item
+text = extract_text_content(result.content)
+
+# Parse JSON content
+data = parse_json_content(result)
 assert data["result"]  # always wrapped in result
 ```
 
@@ -577,6 +586,8 @@ Put domain-specific helper functions in ``tests/helpers/``:
 - `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`
 - `tests/helpers/tool_names.py` — `extract_tool_names`
 - `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`
+- `tests/helpers/mcp_results.py` — `extract_text_content`, `assert_call_success`,
+  `get_structured`, `parse_json_content`, low-level MCP helpers
 
 ### Module-Level Fixtures
 

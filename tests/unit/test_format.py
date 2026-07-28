@@ -9,8 +9,6 @@ import json
 
 from fastmcp.tools.base import ToolResult
 
-from tests.helpers.mcp_results import extract_text_content, parse_json_content
-
 from gitea_mcp_server.format import (
     _collapse_data,
     _collapse_value,
@@ -27,6 +25,7 @@ from gitea_mcp_server.format import (
     apply_format,
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
 
 
 class TestSnakeToTitle:

@@ -9,8 +9,6 @@ from fastmcp import Context
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
 
-from tests.helpers.mcp_results import extract_text_content
-
 from gitea_mcp_server.constants import SEARCH_NAME_BOOST
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
@@ -25,6 +23,7 @@ from gitea_mcp_server.tools.search import (
     _tool_info_impl,
     register_synthetic_tools,
 )
+from tests.helpers.mcp_results import extract_text_content
 
 
 class TestSearchableText:

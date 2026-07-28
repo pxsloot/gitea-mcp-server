@@ -9,10 +9,9 @@ from unittest.mock import MagicMock
 import pytest
 from fastmcp.tools.base import ToolResult
 
-from tests.helpers.mcp_results import extract_text_from_content_items
-
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
+from tests.helpers.mcp_results import extract_text_from_content_items
 
 # Sample guide content for testing
 SAMPLE_FRONTMATTER = """\

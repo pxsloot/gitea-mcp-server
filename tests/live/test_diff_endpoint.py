@@ -26,7 +26,6 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from tests.helpers.mcp_results import extract_text_content
-
 from tests.live.conftest import live_available
 
 if TYPE_CHECKING:

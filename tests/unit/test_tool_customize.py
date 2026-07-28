@@ -7,8 +7,6 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
-from tests.helpers.mcp_results import extract_text_content
-
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -27,6 +25,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
+from tests.helpers.mcp_results import extract_text_content
 
 
 class TestCategorizeTool:

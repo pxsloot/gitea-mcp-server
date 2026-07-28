@@ -8,7 +8,11 @@ from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
-from tests.helpers.mcp_results import assert_low_level_success, get_low_level_structured, get_structured
+from tests.helpers.mcp_results import (
+    assert_low_level_success,
+    get_low_level_structured,
+    get_structured,
+)
 from tests.helpers.tool_names import extract_tool_names
 
 

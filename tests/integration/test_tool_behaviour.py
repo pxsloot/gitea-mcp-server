@@ -15,7 +15,6 @@ import respx
 from fastmcp.exceptions import ResourceError, ToolError
 
 from tests.helpers.mcp_results import extract_text_content
-
 from tests.integration.conftest import BASE_TEST_URL
 
 if TYPE_CHECKING:

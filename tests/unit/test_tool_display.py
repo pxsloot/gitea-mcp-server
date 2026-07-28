@@ -8,16 +8,14 @@ Coverage includes:
 - Logger call verification on format failure
 """
 
-import json
 import logging
 from unittest.mock import patch
 
 import pytest
 from fastmcp.tools.base import ToolResult
 
-from tests.helpers.mcp_results import extract_text_content, parse_json_content
-
 from gitea_mcp_server.tools.tool_display import format_tool_result
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
 
 
 class TestFormatToolResult:

@@ -9,8 +9,6 @@ import pytest
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
-from tests.helpers.mcp_results import extract_text_content, parse_json_content
-
 from gitea_mcp_server.tools.mcp_tools import (
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
@@ -20,6 +18,7 @@ from gitea_mcp_server.tools.resource_display import (
     _clean_resource_uri,
     _format_resource_content,
 )
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
 
 
 class TestCleanResourceUri:

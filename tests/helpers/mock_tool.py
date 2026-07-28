@@ -15,6 +15,7 @@ Usage::
     route = make_mock_route("/repos/{owner}/{repo}/issues", "GET")
 """
 
+from typing import Any
 from unittest.mock import MagicMock
 
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -22,13 +23,13 @@ from mcp.types import ToolAnnotations
 
 
 def make_mock_tool(
-    name: str ="test_tool",
-    tags=None,
-    annotations=None,
-    parameters=None,
-    output_schema=None,
-    description="",
-    **kwargs,
+    name: str = "test_tool",
+    tags: Any = None,
+    annotations: Any = None,
+    parameters: Any = None,
+    output_schema: Any = None,
+    description: str = "",
+    **kwargs: Any,
 ) -> MagicMock:
     """Create a MagicMock with OpenAPITool spec for unit tests.
 
@@ -70,7 +71,7 @@ def make_mock_tool(
     return tool
 
 
-def make_mock_route(path="/test", method="GET", summary="Test", operation_id="test_op") -> MagicMock:
+def make_mock_route(path: str = "/test", method: str = "GET", summary: str = "Test", operation_id: str = "test_op") -> MagicMock:
     """Create a MagicMock route for unit tests.
 
     Parameters

@@ -152,7 +152,7 @@ def spec_with_mixed_endpoints() -> dict:
 class TestComputeFilteredToolsInfo:
     """Main computation function that iterates the spec."""
 
-    def test_empty_spec_returns_empty_result(self, empty_spec) -> None:
+    def test_empty_spec_returns_empty_result(self, empty_spec: dict[str, Any]) -> None:
         """No paths → no filtered operations."""
         result = compute_filtered_tools_info(empty_spec)
         assert result["filtered"] == {}
@@ -171,7 +171,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint) -> None:
+    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint: dict[str, Any]) -> None:
         """Token lacks sudo → admin_list_users is scope-restricted."""
         result = compute_filtered_tools_info(
             spec_with_admin_endpoint,
@@ -182,7 +182,7 @@ class TestComputeFilteredToolsInfo:
         assert filtered["admin_list_users"]["reason"] == "scope"
         assert filtered["admin_list_users"]["required_scope"] == "sudo"
 
-    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint) -> None:
+    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint: dict[str, Any]) -> None:
         """Endpoint with deprecated:true → filtered as deprecated."""
         result = compute_filtered_tools_info(
             spec_with_deprecated_endpoint,
@@ -210,7 +210,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints) -> None:
+    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints: dict[str, Any]) -> None:
         """Verify that different endpoints are filtered for different reasons."""
         result = compute_filtered_tools_info(
             spec_with_mixed_endpoints,

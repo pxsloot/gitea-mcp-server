@@ -566,7 +566,7 @@ class TestValidateState:
             (None, "must be a string"),
         ],
     )
-    def test_invalid_states(self, value: Any, expected_msg) -> None:
+    def test_invalid_states(self, value: Any, expected_msg: str) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_state(value, field="state")
         assert exc.value.field == "state"

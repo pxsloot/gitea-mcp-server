@@ -33,7 +33,7 @@ class TestHTTPTransport:
             yield Config.get()
 
     @pytest.mark.asyncio
-    async def test_lazy_initialization(self, config) -> None:
+    async def test_lazy_initialization(self, config: Config) -> None:
         """Test that client is lazily initialized."""
         transport = HTTPTransport(config)
         # Internal client should be None initially
@@ -47,7 +47,7 @@ class TestHTTPTransport:
         assert client is client2
 
     @pytest.mark.asyncio
-    async def test_ssl_configuration_with_cert_file(self, config, mocker: MockerFixture) -> None:
+    async def test_ssl_configuration_with_cert_file(self, config: Config, mocker: MockerFixture) -> None:
         """Test SSL configuration when ssl_cert_file is set."""
         config.ssl_cert_file = "/path/to/ca-bundle.crt"
         transport = HTTPTransport(config)
@@ -65,7 +65,7 @@ class TestHTTPTransport:
         assert transport._client is not None
 
     @pytest.mark.asyncio
-    async def test_ssl_configuration_without_cert_file(self, config) -> None:
+    async def test_ssl_configuration_without_cert_file(self, config: Config) -> None:
         """Test SSL configuration when ssl_cert_file is not set."""
         config.ssl_cert_file = None
         config.verify_ssl = False
@@ -78,7 +78,7 @@ class TestHTTPTransport:
         # httpx.AsyncClient doesn't expose verify directly, so we trust it's set correctly
 
     @pytest.mark.asyncio
-    async def test_timeout_settings(self, config) -> None:
+    async def test_timeout_settings(self, config: Config) -> None:
         """Test that timeout settings are applied correctly."""
         transport = HTTPTransport(config)
         _ = transport.client
@@ -90,7 +90,7 @@ class TestHTTPTransport:
         assert client.timeout.pool == HTTP_TIMEOUT_POOL
 
     @pytest.mark.asyncio
-    async def test_headers(self, config) -> None:
+    async def test_headers(self, config: Config) -> None:
         """Test that authorization and content-type headers are set."""
         transport = HTTPTransport(config)
         _ = transport.client
@@ -103,7 +103,7 @@ class TestHTTPTransport:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_retry_on_retryable_exception(self, config) -> None:
+    async def test_retry_on_retryable_exception(self, config: Config) -> None:
         """Test that retry logic works for retryable exceptions."""
 
         transport = HTTPTransport(config)
@@ -124,7 +124,7 @@ class TestHTTPTransport:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_retry_stops_after_max_attempts(self, config) -> None:
+    async def test_retry_stops_after_max_attempts(self, config: Config) -> None:
         """Test that retry stops after max attempts."""
         transport = HTTPTransport(config)
 
@@ -138,7 +138,7 @@ class TestHTTPTransport:
                 await transport.request("GET", "https://git.example.com/api/v1/test")
 
     @pytest.mark.asyncio
-    async def test_error_conversion_http_status_error(self, config) -> None:
+    async def test_error_conversion_http_status_error(self, config: Config) -> None:
         """Test HTTPStatusError is converted to GiteaAPIError with message."""
         transport = HTTPTransport(config)
 
@@ -155,7 +155,7 @@ class TestHTTPTransport:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_error_conversion_request_error(self, config) -> None:
+    async def test_error_conversion_request_error(self, config: Config) -> None:
         """Test RequestError is converted to GiteaAPIError."""
         transport = HTTPTransport(config)
 
@@ -170,7 +170,7 @@ class TestHTTPTransport:
             assert "Request failed" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_json_vs_text_response(self, config) -> None:
+    async def test_json_vs_text_response(self, config: Config) -> None:
         """Test JSON and text response handling."""
         transport = HTTPTransport(config)
 
@@ -189,7 +189,7 @@ class TestHTTPTransport:
             assert result == "plain text"
 
     @pytest.mark.asyncio
-    async def test_close(self, config) -> None:
+    async def test_close(self, config: Config) -> None:
         """Test client close cleanup."""
         transport = HTTPTransport(config)
         _ = transport.client  # Initialize client
@@ -199,7 +199,7 @@ class TestHTTPTransport:
         assert transport._client is None
 
     @pytest.mark.asyncio
-    async def test_close_with_error(self, config, mocker: MockerFixture) -> None:
+    async def test_close_with_error(self, config: Config, mocker: MockerFixture) -> None:
         """Test that close handles errors gracefully."""
         transport = HTTPTransport(config)
         _ = transport.client

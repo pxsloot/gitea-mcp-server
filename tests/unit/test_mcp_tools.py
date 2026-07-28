@@ -1,6 +1,8 @@
 """Tests for MCP resource tools."""
 
+from collections.abc import Callable
 import json as json_module
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -503,8 +505,8 @@ class TestMcpReadResourceTool:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
@@ -875,8 +877,8 @@ class TestMcpListResourcesFormat:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
@@ -887,7 +889,7 @@ class TestMcpListResourcesFormat:
         return fn
 
     @pytest.mark.asyncio
-    async def test_raw_format(self, _mock_resource) -> None:
+    async def test_raw_format(self, _mock_resource: MagicMock) -> None:
         """format=raw should return ToolResult with structured_content and no content."""
         fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
@@ -902,7 +904,7 @@ class TestMcpListResourcesFormat:
         assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
-    async def test_json_format(self, _mock_resource) -> None:
+    async def test_json_format(self, _mock_resource: MagicMock) -> None:
         """format=json should produce pretty-printed JSON in content."""
         fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
@@ -920,7 +922,7 @@ class TestMcpListResourcesFormat:
         assert parsed["resources"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
-    async def test_markdown_format(self, _mock_resource) -> None:
+    async def test_markdown_format(self, _mock_resource: MagicMock) -> None:
         """format=markdown should produce markdown text in content."""
         fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
@@ -946,8 +948,8 @@ class TestMcpListResourcesTagTypeFilter:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
@@ -1118,14 +1120,14 @@ class TestToolSchemaResource:
         captured: dict[str, object] = {}
         resource_registry: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco
 
-        def resource_decorator(**kwargs):
-            def deco(fn):
+        def resource_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 resource_registry[fn.__name__] = fn
                 return fn
             return deco
@@ -1216,8 +1218,8 @@ class TestMcpListResourcesRawFormat:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco
@@ -1255,8 +1257,8 @@ class TestMcpListResourcesFetchAll:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
             return deco

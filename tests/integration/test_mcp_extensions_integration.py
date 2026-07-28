@@ -10,7 +10,7 @@ from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 
 
-def _tool_dict(tools):
+def _tool_dict(tools: list[Any]) -> dict[str, Any]:
     """Extract tool name -> tool mapping from provider.list_tools() result."""
     return {t.name: t for t in tools}
 

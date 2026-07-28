@@ -114,13 +114,13 @@ module = "yaml"
 ignore_missing_imports = true
 
 # Phase 0: Safety-net overrides for tests/.
-# These are temporary and will be removed in subsequent phases:
-#   Phase 1 — removes disallow_untyped_defs / disallow_incomplete_defs
-#   Phase 5 — removes the entire block once all categories are clean
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+# Phase 1 removed disallow_untyped_defs / disallow_incomplete_defs — 0
+# no-untyped-def errors remain across the entire test suite.
+# The overrides block will be removed entirely in Phase 5.
+# [[tool.mypy.overrides]]
+# module = "tests.*"
+# disallow_untyped_defs = false
+# disallow_incomplete_defs = false
 
 [dependency-groups]
 dev = [

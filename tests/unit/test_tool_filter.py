@@ -339,7 +339,7 @@ class TestComputeExcludedRoutes:
 class TestProviderRouteMapFiltering:
     """Integration-level unit tests: filtered routes never become tools."""
 
-    def _make_provider(self, excluded_routes, response_format: str ="markdown") -> OpenAPIProvider:
+    def _make_provider(self, excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         spec = {

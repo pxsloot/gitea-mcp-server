@@ -20,7 +20,7 @@ class TestCamelToSnake:
         ("issueCreateIssue", "issue_create_issue"),
         ("repoGetBranch", "repo_get_branch"),
     ])
-    def test_multiple_camel_phrases(self, input_str, expected: Any) -> None:
+    def test_multiple_camel_phrases(self, input_str: str, expected: Any) -> None:
         assert camel_to_snake(input_str) == expected
 
     def test_consecutive_uppercase(self) -> None:

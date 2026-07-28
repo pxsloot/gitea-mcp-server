@@ -553,7 +553,7 @@ class TestCustomResources:
 class TestToolFiltering:
     """Tests for tool permission filtering."""
 
-    def _make_config(self, **overrides):
+    def _make_config(self, **overrides: Any) -> SimpleConfig:
         """Create a SimpleConfig instance with given overrides."""
         return SimpleConfig(
             url="https://git.example.com",
@@ -1259,7 +1259,7 @@ class TestServerEdgeCases:
 
         task = None
 
-        def _run_on_current_loop(coro, *args, **kwargs):
+        def _run_on_current_loop(coro: Any, *args: Any, **kwargs: Any) -> Any:
             nonlocal task
             task = asyncio.ensure_future(coro)
             return task

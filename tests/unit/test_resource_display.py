@@ -44,8 +44,8 @@ class TestContextMetaKeysPipeline:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco
@@ -113,8 +113,8 @@ class TestContextMetaKeysPipeline:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco
@@ -209,8 +209,8 @@ class TestContextMetaKeysPipeline:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco

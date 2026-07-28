@@ -31,7 +31,7 @@ class TestGiteaClient:
             yield Config.get()
 
     @pytest.mark.asyncio
-    async def test_successful_request(self, config) -> None:
+    async def test_successful_request(self, config: Config) -> None:
         """Test a successful API request."""
         client = GiteaClient(config)
 
@@ -44,7 +44,7 @@ class TestGiteaClient:
             assert result["name"] == "testuser"
 
     @pytest.mark.asyncio
-    async def test_404_error(self, config) -> None:
+    async def test_404_error(self, config: Config) -> None:
         """Test 404 error handling."""
         client = GiteaClient(config)
 
@@ -58,7 +58,7 @@ class TestGiteaClient:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_500_error(self, config) -> None:
+    async def test_500_error(self, config: Config) -> None:
         """Test 500 error handling."""
         client = GiteaClient(config)
 
@@ -70,7 +70,7 @@ class TestGiteaClient:
             assert exc_info.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_connection_error(self, config) -> None:
+    async def test_connection_error(self, config: Config) -> None:
         """Test connection error (should retry then fail)."""
         client = GiteaClient(config)
 
@@ -82,7 +82,7 @@ class TestGiteaClient:
                 await client.request("GET", "/user")
 
     @pytest.mark.asyncio
-    async def test_successful_post_with_json(self, config) -> None:
+    async def test_successful_post_with_json(self, config: Config) -> None:
         """Test successful POST with JSON body."""
         client = GiteaClient(config)
 
@@ -97,7 +97,7 @@ class TestGiteaClient:
             assert result["name"] == "test-repo"
 
     @pytest.mark.asyncio
-    async def test_client_lifecycle(self, config) -> None:
+    async def test_client_lifecycle(self, config: Config) -> None:
         """Test client creation and cleanup."""
         client = GiteaClient(config)
         transport_client = client.transport.client
@@ -109,7 +109,7 @@ class TestGiteaClient:
         assert new_client is not None
 
     @pytest.mark.asyncio
-    async def test_multiple_requests_reuse_client(self, config) -> None:
+    async def test_multiple_requests_reuse_client(self, config: Config) -> None:
         """Test that multiple requests reuse the same transport."""
         client = GiteaClient(config)
 
@@ -125,7 +125,7 @@ class TestGiteaClient:
             assert str(transport_client.base_url) == "https://git.example.com/api/v1/"
 
     @pytest.mark.asyncio
-    async def test_absolute_url(self, config) -> None:
+    async def test_absolute_url(self, config: Config) -> None:
         """Test request with absolute URL."""
         client = GiteaClient(config)
 
@@ -138,14 +138,14 @@ class TestGiteaClient:
             assert isinstance(result, dict)
             assert result["ok"] is True
 
-    def test_initialization(self, config) -> None:
+    def test_initialization(self, config: Config) -> None:
         """Test client initialization."""
         client = GiteaClient(config)
         assert client._config is config
         assert client.transport is not None
 
     @pytest.mark.asyncio
-    async def test_context_manager(self, config) -> None:
+    async def test_context_manager(self, config: Config) -> None:
         """Test async context manager."""
         async with GiteaClient(config) as client:
             with respx.mock() as mock:
@@ -156,7 +156,7 @@ class TestGiteaClient:
                 assert result["name"] == "test"
 
     @pytest.mark.asyncio
-    async def test_429_with_retry_after_header(self, config) -> None:
+    async def test_429_with_retry_after_header(self, config: Config) -> None:
         """Test 429 rate limit respects Retry-After header."""
         client = GiteaClient(config)
 
@@ -181,7 +181,7 @@ class TestGiteaClient:
             assert result["name"] == "testuser"
 
     @pytest.mark.asyncio
-    async def test_429_without_retry_after_uses_exponential(self, config) -> None:
+    async def test_429_without_retry_after_uses_exponential(self, config: Config) -> None:
         """Test 429 without Retry-After falls back to exponential backoff."""
         client = GiteaClient(config)
 
@@ -196,7 +196,7 @@ class TestGiteaClient:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_429_retry_exhaustion(self, config) -> None:
+    async def test_429_retry_exhaustion(self, config: Config) -> None:
         """Test 429 responses exhaust retry limit and raise error with retry-after guidance."""
         client = GiteaClient(config)
 
@@ -216,7 +216,7 @@ class TestGiteaClient:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_429_retry_exhaustion_no_retry_after(self, config) -> None:
+    async def test_429_retry_exhaustion_no_retry_after(self, config: Config) -> None:
         """Test 429 exhaustion without Retry-After header says 'retry later'."""
         client = GiteaClient(config)
 
@@ -235,7 +235,7 @@ class TestGiteaClient:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_429_retry_exhaustion_invalid_retry_after(self, config) -> None:
+    async def test_429_retry_exhaustion_invalid_retry_after(self, config: Config) -> None:
         """Test 429 exhaustion with invalid Retry-After header."""
         client = GiteaClient(config)
 

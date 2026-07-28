@@ -35,7 +35,7 @@ def _patch_spec_loader() -> Generator[None, None, None]:
     """
     mp = pytest.MonkeyPatch()
 
-    async def mock_load_and_convert_spec(gitea_client, config=None):
+    async def mock_load_and_convert_spec(gitea_client: Any, config: Any = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], set[Any]]:
         return (
             {
                 "swagger": "2.0",
@@ -56,7 +56,7 @@ def _patch_spec_loader() -> Generator[None, None, None]:
     mp.undo()
 
 
-async def _start_server(config, *, health_path="/health"):
+async def _start_server(config: SimpleConfig, *, health_path: str = "/health") -> tuple[str, Any]:
     """Start a uvicorn server, yield ``(base_url, cleanup_coro)``.
 
     The caller is responsible for calling ``cleanup()`` after the test.
@@ -77,7 +77,7 @@ async def _start_server(config, *, health_path="/health"):
     from starlette.responses import JSONResponse
     from starlette.routing import Route
 
-    async def health_check(_):
+    async def health_check(_: Any) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
     app.routes.insert(0, Route(health_path, endpoint=health_check, methods=["GET"]))

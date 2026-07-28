@@ -1,5 +1,6 @@
 """Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
 
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -533,7 +534,7 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec, excluded_routes, response_format="markdown"):
+    def _provider(self, spec: dict[str, Any], excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
@@ -707,7 +708,7 @@ class TestRouteMapFiltering:
 class TestToolWrappingTransformTelemetry:
     """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
 
-    def make_transform(self, openapi_spec=None) -> _ToolWrappingTransform:
+    def make_transform(self, openapi_spec: dict[str, Any] | None = None) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
         )
@@ -922,13 +923,13 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec=None, response_format: str ="markdown") -> _ToolWrappingTransform:
+    def make_transform(self, openapi_spec: dict[str, Any] | None = None, response_format: str = "markdown") -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
             response_format=response_format,
         )
 
-    def make_tool(self, customized=True) -> Tool:
+    def make_tool(self, customized: bool = True) -> Tool:
         meta: dict[str, Any] = {}
         if customized:
             meta = {
@@ -975,7 +976,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=False)
 
-        async def call_next(name, version=None):
+        async def call_next(name: str, version: str | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
@@ -987,7 +988,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def call_next(name, version=None):
+        async def call_next(name: str, version: str | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
@@ -1233,7 +1234,7 @@ class TestToolWrappingTransform:
         tool = self.make_tool(customized=True)
         tool.name = "test_tool"
 
-        async def my_loop_hook(result, value, kwargs, execute_fn):
+        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             """Simple loop hook that fetches one more page and merges."""
             kwargs["page"] = 2
             next_result = await execute_fn(kwargs)
@@ -1293,7 +1294,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def bad_loop_hook(result, value, kwargs, execute_fn):
+        async def bad_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             await execute_fn({"page": 0})  # page < 1 is invalid
             return result
 
@@ -1336,7 +1337,7 @@ class TestToolWrappingTransform:
 
         loop_hook_called = False
 
-        async def my_loop_hook(result, value, kwargs, execute_fn):
+        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             nonlocal loop_hook_called
             loop_hook_called = True
             return result
@@ -1433,7 +1434,7 @@ class TestFetchAllIntegration:
         return transform, tool
 
     @pytest.mark.asyncio
-    async def test_fetch_all_merges_all_pages(self, make_transform_and_tool) -> None:
+    async def test_fetch_all_merges_all_pages(self, make_transform_and_tool: tuple) -> None:
         """Full pipeline with fetch_all=True merges paginated results."""
         from fastmcp.tools.base import ToolResult
 
@@ -1448,7 +1449,7 @@ class TestFetchAllIntegration:
         # _pipeline_with_context (initial page) or _execute_fn (subsequent).
         page_calls: list[int] = []
 
-        async def _mock_pages(kwargs, _tool, _spec, _path, _method):
+        async def _mock_pages(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             start = (page - 1) * 10 + 1
@@ -1506,7 +1507,7 @@ class TestFetchAllIntegration:
         assert result.structured_content["total_count"] == 30
 
     @pytest.mark.asyncio
-    async def test_fetch_all_false_single_page(self, make_transform_and_tool) -> None:
+    async def test_fetch_all_false_single_page(self, make_transform_and_tool: tuple) -> None:
         """fetch_all=False fetches only the first page (no loop)."""
         from fastmcp.tools.base import ToolResult
 
@@ -1516,7 +1517,7 @@ class TestFetchAllIntegration:
 
         page_calls: list[int] = []
 
-        async def _mock_single(kwargs, _tool, _spec, _path, _method):
+        async def _mock_single(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             return ToolResult(
@@ -1558,7 +1559,7 @@ class TestFetchAllIntegration:
         assert result.structured_content["has_more"] is True  # still has more
 
 
-async def _mock_fetch_all_hook(result, value, kwargs, execute_fn):
+async def _mock_fetch_all_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
     """Simple loop hook that fetches pages via execute_fn and merges."""
     from gitea_mcp_server.tools.virtual_params import _fetch_all_loop
 

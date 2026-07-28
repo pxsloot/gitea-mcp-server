@@ -26,7 +26,7 @@ class TestGiteaAPI:
             yield Config.get()
 
     @pytest.fixture
-    def transport(self, config) -> HTTPTransport:
+    def transport(self, config: Config) -> HTTPTransport:
         """Create a transport for testing."""
         return HTTPTransport(config)
 
@@ -55,7 +55,7 @@ class TestGiteaAPI:
             assert result["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_base_url_trailing_slash_handling(self, config) -> None:
+    async def test_base_url_trailing_slash_handling(self, config: Config) -> None:
         """Test that base_url trailing slashes are properly handled."""
         # Create API with base_url that has trailing slash
         transport = HTTPTransport(config)

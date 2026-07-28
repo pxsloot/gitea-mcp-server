@@ -1,6 +1,7 @@
 """Unit tests for cache invalidation functionality."""
 
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -220,7 +221,7 @@ class TestCacheInvalidationMiddleware:
             "issue_edit_issue", ["issues_list"]
         )
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -240,7 +241,7 @@ class TestCacheInvalidationMiddleware:
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=True)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -260,7 +261,7 @@ class TestCacheInvalidationMiddleware:
         mock_context.message.name = "some_unknown_tool"
         mock_context.message.arguments = {}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -281,7 +282,7 @@ class TestCacheInvalidationMiddleware:
 
         register_tool_invalidation("issue_edit_issue", ["issues_list"])
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -417,7 +418,7 @@ class TestIntegration:
             "state": "closed",
         }
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -451,7 +452,7 @@ class TestClearLabelServiceCache:
         mock_context.message.name = "repo_create_label"
         mock_context.message.arguments = {"owner": "myorg", "repo": "myrepo"}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -480,7 +481,7 @@ class TestClearLabelServiceCache:
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -505,7 +506,7 @@ class TestClearLabelServiceCache:
         mock_context.message.name = "repo_create_label"
         mock_context.message.arguments = {"owner": "org", "repo": "repo"}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         # Should not raise even though label_service is None
@@ -518,7 +519,7 @@ class TestClearLabelServiceCache:
     # produce well-formed gitea://repos/.../labels URIs).
     # ------------------------------------------------------------------
 
-    def _make_middleware(self, label_service=None):
+    def _make_middleware(self, label_service: Any = None) -> CacheInvalidationMiddleware:
         """Helper: create CacheInvalidationMiddleware with a mock cache and optional label_service."""
         from unittest.mock import AsyncMock, MagicMock
 
@@ -530,7 +531,7 @@ class TestClearLabelServiceCache:
         mock_caching._read_resource_cache = mock_cache
         return CacheInvalidationMiddleware(mock_caching, label_service=label_service)
 
-    def _make_context_and_call_next(self, tool_name="test_label_tool", arguments=None):
+    def _make_context_and_call_next(self, tool_name: str = "test_label_tool", arguments: dict[str, Any] | None = None) -> tuple[MagicMock, Any]:
         """Helper: create mock context and call_next for on_call_tool tests."""
         from unittest.mock import MagicMock
 
@@ -538,7 +539,7 @@ class TestClearLabelServiceCache:
         mock_context.message.name = tool_name
         mock_context.message.arguments = arguments or {}
 
-        async def mock_call_next(context):
+        async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
 
         return mock_context, mock_call_next

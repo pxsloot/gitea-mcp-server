@@ -6,6 +6,7 @@ the _fetch_all_loop hook, and integration with _ToolWrappingTransform._wrap().
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -727,7 +728,7 @@ class TestFetchAllLoop:
         )
         executed: list[int] = []
 
-        async def _fetch_page(kwargs):
+        async def _fetch_page(kwargs: dict[str, Any]) -> ToolResult:
             executed.append(kwargs["page"])
             # Page 2 returns 2 more items, no more pages
             return ToolResult(
@@ -766,7 +767,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _fetch_page(kwargs):
+        async def _fetch_page(kwargs: dict[str, Any]) -> ToolResult:
             p = kwargs["page"]
             items = page_data.get(p, [])
             return ToolResult(
@@ -800,7 +801,7 @@ class TestFetchAllLoop:
 
         call_count = 0
 
-        async def _never_ending(kwargs):
+        async def _never_ending(kwargs: dict[str, Any]) -> ToolResult:
             nonlocal call_count
             call_count += 1
             return ToolResult(
@@ -832,7 +833,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _short_page(_kwargs):
+        async def _short_page(_kwargs: dict[str, Any]) -> ToolResult:
             # Return fewer items than limit → heuristic says last page
             return ToolResult(
                 structured_content={
@@ -859,7 +860,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],

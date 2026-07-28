@@ -1,5 +1,6 @@
 """Unit tests for pagination header capture via event hooks and PaginationRunner."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -208,7 +209,7 @@ class TestPaginationRunner:
         """Two pages merged when has_more is True initially."""
         page_calls = []
 
-        async def _fetch(kwargs):
+        async def _fetch(kwargs: dict[str, Any]) -> ToolResult:
             page_calls.append(kwargs["page"])
             return ToolResult(
                 structured_content={
@@ -243,7 +244,7 @@ class TestPaginationRunner:
             3: [{"id": 5}],
         }
 
-        async def _fetch(kwargs):
+        async def _fetch(kwargs: dict[str, Any]) -> ToolResult:
             p = kwargs["page"]
             items = page_data.get(p, [])
             return ToolResult(
@@ -275,7 +276,7 @@ class TestPaginationRunner:
         many_items = [{"id": i} for i in range(10)]
         call_count = 0
 
-        async def _never_ending(kwargs):
+        async def _never_ending(kwargs: dict[str, Any]) -> ToolResult:
             nonlocal call_count
             call_count += 1
             return ToolResult(
@@ -307,7 +308,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_heuristic_when_has_more_missing(self) -> None:
         """Fall back to heuristic when response has no has_more."""
-        async def _short_page(_kwargs):
+        async def _short_page(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 3}],
@@ -331,7 +332,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_total_count_carried_forward(self) -> None:
         """total_count from server response is preserved in merged result."""
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
@@ -377,7 +378,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_preserves_meta(self) -> None:
         """PaginationRunner preserves meta from the original ToolResult."""
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(structured_content={"result": [{"id": 2}], "has_more": False})
 
         runner = PaginationRunner(_fetch)

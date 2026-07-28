@@ -139,7 +139,7 @@ class TestLoadAndConvertSpec:
                 lambda: {"tool_names": {}},
             )
 
-            def failing_apply(spec: dict[str, Any], ext) -> Never:
+            def failing_apply(spec: dict[str, Any], ext: Any) -> Never:
                 raise RuntimeError
 
             monkeypatch.setattr(

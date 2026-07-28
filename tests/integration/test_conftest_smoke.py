@@ -25,7 +25,7 @@ class TestCreateTestServer:
     """Smoke tests for the ``create_test_server`` factory function."""
 
     @pytest.mark.asyncio
-    async def test_create_minimal_server(self, simple_config, base_spec: dict) -> None:
+    async def test_create_minimal_server(self, simple_config: SimpleConfig, base_spec: dict) -> None:
         """Creating a server with an empty spec should succeed."""
         async with respx.mock() as mock:
             mock.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
@@ -34,7 +34,7 @@ class TestCreateTestServer:
             assert server.name == "Gitea MCP Server"
 
     @pytest.mark.asyncio
-    async def test_server_has_synthetic_tools_when_lazy_loading_disabled(self, simple_config, base_spec: dict) -> None:
+    async def test_server_has_synthetic_tools_when_lazy_loading_disabled(self, simple_config: SimpleConfig, base_spec: dict) -> None:
         """Without lazy loading, the default tool set should include synthetic and resource tools."""
         async with respx.mock() as mock:
             mock.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
@@ -99,6 +99,6 @@ class TestLazyConfigFixture:
     """Smoke tests for the ``lazy_config`` fixture."""
 
     @pytest.mark.asyncio
-    async def test_lazy_config_has_lazy_loading_enabled(self, lazy_config) -> None:
+    async def test_lazy_config_has_lazy_loading_enabled(self, lazy_config: SimpleConfig) -> None:
         """The lazy_config fixture should have lazy loading enabled."""
         assert lazy_config.enable_lazy_loading is True

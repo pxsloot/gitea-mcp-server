@@ -9,6 +9,7 @@ static GET). MCP route presence is verified by inspecting the route
 table.
 """
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -21,7 +22,7 @@ from gitea_mcp_server.server import main_async
 from tests.conftest import SimpleConfig
 
 
-def _http_config(**overrides):
+def _http_config(**overrides: Any) -> SimpleConfig:
     """Create a SimpleConfig with HTTP transport defaults."""
     defaults = {"transport_type": "http", "http_port": 0}
     defaults.update(overrides)
@@ -78,13 +79,13 @@ def captured_app(monkeypatch: pytest.MonkeyPatch) -> list:
 
     original_config_init = uvicorn.Config.__init__
 
-    def patched_config_init(self, app, **kwargs) -> None:
+    def patched_config_init(self: Any, app: Any, **kwargs: Any) -> None:
         apps.append(app)
         original_config_init(self, app=app, **kwargs)
 
     monkeypatch.setattr("uvicorn.Config.__init__", patched_config_init)
 
-    async def noop_serve(self) -> None:
+    async def noop_serve(self: Any) -> None:
         pass
 
     monkeypatch.setattr("uvicorn.Server.serve", noop_serve)
@@ -119,7 +120,7 @@ class TestHealthEndpoint:
 
 
 class TestRouteConfiguration:
-    def _find_route(self, app, path):
+    def _find_route(self, app: Any, path: str) -> Any:
         for route in app.routes:
             if route.path == path:
                 return route
@@ -156,7 +157,7 @@ class TestRouteConfiguration:
 
 
 class TestCORSConfiguration:
-    def _get_middleware(self, app):
+    def _get_middleware(self, app: Any) -> tuple[Any, Any]:
         """Return (user_middleware, CORSMiddleware instance) from a Starlette app."""
         user_mw = getattr(app, "user_middleware", [])
         cors_mw = None

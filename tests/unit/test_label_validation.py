@@ -17,17 +17,17 @@ from gitea_mcp_server.tools.labels import (
 _label_service = LabelService()
 
 
-async def _get_repository_label_map(owner, repo, client):
+async def _get_repository_label_map(owner: str, repo: str, client: Any) -> dict[int, dict[str, Any]]:
     """Fetch label map using the test label service."""
     return await _label_service.get_label_map(owner, repo, client)
 
 
-async def _get_repository_id_map(owner, repo, client):
+async def _get_repository_id_map(owner: str, repo: str, client: Any) -> dict[int, dict[str, Any]]:
     """Fetch ID map using the test label service."""
     return await _label_service.get_id_map(owner, repo, client)
 
 
-def _update_labels_schema(component):
+def _update_labels_schema(component: Any) -> dict[str, Any]:
     """Update labels schema."""
     return _update_labels_schema_impl(component)
 
@@ -167,7 +167,7 @@ class TestLabelServiceValidateAndConvert:
     def clear_cache(self) -> None:
         _label_service.clear_cache()
 
-    def _make_client(self, labels_data):
+    def _make_client(self, labels_data: list[dict[str, Any]]) -> MagicMock:
         client = MagicMock()
         client.request = AsyncMock(return_value=labels_data)
         return client

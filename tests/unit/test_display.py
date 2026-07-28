@@ -71,7 +71,7 @@ class TestCallFormatter:
         """Formatter registered with need_extra=True receives extra dict."""
 
         @register_formatter("test_extra", need_extra=True)
-        def _test_extra(data: Any, *, detail: str ="full", extra=None) -> str:
+        def _test_extra(data: Any, *, detail: str = "full", extra: dict[str, Any] | None = None) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 
@@ -84,7 +84,7 @@ class TestCallFormatter:
         """Formatter that ignores detail still works."""
 
         @register_formatter("test_no_detail")
-        def _test_no_detail(data: Any, **kwargs) -> str:
+        def _test_no_detail(data: Any, **kwargs: Any) -> str:
             return f"ok:{data}"
 
         result = call_formatter("test_no_detail", 42)

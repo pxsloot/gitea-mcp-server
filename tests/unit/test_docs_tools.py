@@ -1,7 +1,9 @@
 """Tests for docs_tools module."""
 
+from collections.abc import Callable
 import json as json_module
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -257,8 +259,8 @@ class TestRegisterDocTools:
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco
@@ -483,8 +485,8 @@ class TestDocResource:
         mcp = MagicMock()
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco
@@ -492,8 +494,8 @@ class TestDocResource:
         mcp.tool = tool_decorator
         resource_registry: dict[str, object] = {}
 
-        def resource_decorator(**kwargs):
-            def deco(fn):
+        def resource_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 resource_registry[fn.__name__] = fn
                 return fn
             return deco
@@ -537,8 +539,8 @@ class TestSearchDocsPagination:
         mcp = MagicMock()
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco

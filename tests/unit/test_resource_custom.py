@@ -9,6 +9,7 @@ Covers:
     - Server info resource
 """
 
+from collections.abc import Callable
 import base64
 import json
 from typing import Any
@@ -119,7 +120,7 @@ class TestCustomResourceStringResponsePaths:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, object] = {}
 
-        def resource_decorator(uri, **kwargs):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
             # Extract all param names from URI template for positional-to-keyword
             # conversion.  Matches ``{param}``, ``{param*}`` (greedy path),
             # ``{?param}`` (RFC 6570 optional query params), and RFC 6570
@@ -133,7 +134,7 @@ class TestCustomResourceStringResponsePaths:
                 if (stripped := part.strip())
             ]
 
-            def deco(func):
+            def deco(func: Callable) -> Callable:
                 async def wrapper(*args: object, **kwargs: object) -> str:
                     # Convert positional args to keyword if needed
                     if args:
@@ -371,8 +372,8 @@ class TestCustomResourceStringResponsePaths:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, object] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 async def wrapper(*args: object, **kwargs: object) -> str:
                     result = await func(*args, **kwargs)
                     if isinstance(result, ResourceResult):
@@ -401,8 +402,8 @@ class TestCustomResourceStringResponsePaths:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, object] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 async def wrapper(*args: object, **kwargs: object) -> str:
                     result = await func(*args, **kwargs)
                     if isinstance(result, ResourceResult):

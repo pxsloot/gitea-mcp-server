@@ -533,7 +533,7 @@ class TestCatchAllErrorHandler:
             pytest.param(RuntimeError("boom"), "RuntimeError", id="RuntimeError"),
         ],
     )
-    async def test_all_exception_types_are_caught(self, exception, exc_name, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_all_exception_types_are_caught(self, exception: Exception, exc_name: str, caplog: pytest.LogCaptureFixture) -> None:
         """All four exception types produce a user-friendly ValueError."""
         caplog.set_level(logging.ERROR)
 
@@ -561,7 +561,7 @@ class TestCatchAllErrorHandler:
         assert exc_name not in error_msg
 
     @pytest.mark.parametrize("exc_type", [KeyError, TypeError, AttributeError, RuntimeError])
-    async def test_log_contains_tool_context(self, exc_type, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_log_contains_tool_context(self, exc_type: type[Exception], caplog: pytest.LogCaptureFixture) -> None:
         """Log message includes tool name, HTTP method, route, and arg keys."""
         caplog.set_level(logging.ERROR)
 

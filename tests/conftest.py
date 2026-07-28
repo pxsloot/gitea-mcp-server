@@ -135,3 +135,33 @@ def swagger_spec_fixture():
 
     with spec_path.open() as f:
         return json.load(f)
+
+
+@pytest.fixture(autouse=True)
+def _reset_module_contexts():
+    """Reset module-level ContextVars before each test.
+
+    Prevents cross-test pollution via module-level ContextVars that act as
+    side channels between httpx event hooks and the tool wrapping pipeline.
+
+    Currently resets:
+    - ``pagination_ctx`` (``pagination.py``): carries ``total_count`` from
+      Gitea's ``X-Total-Count`` response header.
+    - ``sudo_context`` (``tools/virtual_params.py``): carries the sudo
+      username for admin operations.
+
+    These ContextVars are intentionally module-level — that is their design
+    (they bridge httpx hooks and FastMCP's transform pipeline without coupling
+    to framework internals).  But tests that set them need a safety net.
+
+    Current ``asyncio_default_test_loop_scope = "function"`` provides natural
+    isolation for async tests (each gets its own event loop, thus its own
+    ``contextvars.Context``).  This fixture adds a deterministic reset for
+    every test regardless of sync/async status, making the suite robust
+    against future loop-scope changes.
+    """
+    from gitea_mcp_server.pagination import pagination_ctx
+    from gitea_mcp_server.tools.virtual_params import sudo_context
+
+    pagination_ctx.set({})
+    sudo_context.set(None)

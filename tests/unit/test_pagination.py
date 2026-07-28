@@ -16,12 +16,6 @@ from gitea_mcp_server.pagination import (
 )
 
 
-@pytest.fixture(autouse=True)
-def reset_context():
-    """Reset pagination context before each test."""
-    pagination_ctx.set({})
-
-
 def _make_response(
     status_code: int = 200,
     headers: dict | None = None,
@@ -88,8 +82,8 @@ class TestCapturePaginationHeaders:
         assert pagination_ctx.get() == {}
 
     @pytest.mark.asyncio
-    async def test_context_isolation(self):
-        """Each task should have its own context (smoke test for concurrency)."""
+    async def test_capture_overrides_existing_value(self):
+        """capture_pagination_headers overwrites any pre-existing pagination_ctx value."""
         pagination_ctx.set({"total_count": 1})
         response = _make_response(headers={"X-Total-Count": "99"})
         await capture_pagination_headers(response)

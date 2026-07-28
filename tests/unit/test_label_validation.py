@@ -99,7 +99,7 @@ class TestLabelCache:
         """Cache entries should expire after TTL."""
         # Save original TTL
         original_ttl = _label_service._cache_ttl
-        _label_service._cache_ttl = 0.1  # 100ms
+        _label_service._cache_ttl = 0.1  # type: ignore[assignment]
 
         client = MagicMock()
         client.request = AsyncMock(

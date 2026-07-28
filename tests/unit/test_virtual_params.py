@@ -568,7 +568,7 @@ class TestVirtualParamLoopHookField:
         """A VirtualParam with loop_hook=None behaves like before."""
         vp = VirtualParam(schema={}, default=None, description="test", loop_hook=None)
         result = ToolResult(content=[TextContent(type="text", text="ok")])
-        new_result = vp.loop_hook(result, True, {}, lambda k: result) if vp.loop_hook else result
+        new_result = vp.loop_hook(result, True, {}, lambda k: result) if vp.loop_hook else result  # type: ignore[return-value,arg-type]
         assert new_result is result
 
 

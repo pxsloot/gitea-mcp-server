@@ -160,7 +160,7 @@ class TestCORSConfiguration:
         user_mw = getattr(app, "user_middleware", [])
         for mw in user_mw:
             if isinstance(mw, StarletteMiddleware) and mw.cls is CORSMiddleware:
-                return user_mw, mw
+                return user_mw, mw  # type: ignore[unreachable]
         return user_mw, None
 
     @pytest.mark.asyncio

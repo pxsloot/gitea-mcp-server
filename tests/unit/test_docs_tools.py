@@ -547,8 +547,10 @@ class TestSearchDocsPagination:
         register_doc_tools(mcp, mgr)
         fn = captured["search_docs"]
 
-        result = await fn(query="test", format="raw", page=1, limit=10)
+        result = await fn(query="test", format="raw", page=1, limit=10)  # type: ignore[operator]
+        assert result is not None
         sc = result.structured_content
+        assert sc is not None
         assert "has_more" in sc
         assert "next_offset" in sc
         assert "total_count" in sc

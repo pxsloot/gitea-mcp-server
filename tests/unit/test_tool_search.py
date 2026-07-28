@@ -64,7 +64,9 @@ class TestCallToolOutputSchema:
         register_synthetic_tools(mcp, transform)
         tools = await mcp.list_tools()
         tool_map = {t.name: t for t in tools}
-        return tool_map.get("call_tool")
+        result = tool_map.get("call_tool")
+        assert result is not None
+        return result
 
     @pytest.mark.asyncio
     async def test_call_tool_has_output_schema(self):
@@ -110,7 +112,9 @@ class TestToolInfoOutputSchema:
         register_synthetic_tools(mcp, transform)
         tools = await mcp.list_tools()
         tool_map = {t.name: t for t in tools}
-        return tool_map.get("tool_info")
+        result = tool_map.get("tool_info")
+        assert result is not None
+        return result
 
     @pytest.mark.asyncio
     async def test_tool_info_has_output_schema(self):
@@ -1629,6 +1633,7 @@ class TestSearchToolsPagination:
 
         result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=1, limit=10)
         sc = result.structured_content
+        assert sc is not None
         assert "has_more" in sc
         assert "next_offset" in sc
         assert "total_count" in sc
@@ -1699,6 +1704,7 @@ class TestSearchResourcesPagination:
 
         result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=1, limit=10)
         sc = result.structured_content
+        assert sc is not None
         assert "has_more" in sc
         assert "next_offset" in sc
         assert "total_count" in sc

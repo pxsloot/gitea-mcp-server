@@ -288,9 +288,12 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        result = await _mcp_read_resource_impl(ctx, "gitea://test")
+        text, schema, hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
 
-        assert result == ("Hello World", None, None, None)
+        assert text == "Hello World"
+        assert schema is None
+        assert hint is None
+        assert extra is None
         ctx.read_resource.assert_awaited_once_with("gitea://test")
 
     @pytest.mark.asyncio
@@ -428,9 +431,12 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        result = await _mcp_read_resource_impl(ctx, "gitea://test")
+        text, schema, hint, extra = await _mcp_read_resource_impl(ctx, "gitea://test")
 
-        assert result == ("Hello Bytes", None, None, None)
+        assert text == "Hello Bytes"
+        assert schema is None
+        assert hint is None
+        assert extra is None
         ctx.read_resource.assert_awaited_once_with("gitea://test")
 
 

@@ -171,12 +171,12 @@ class TestComputeUrisToInvalidate:
         assert "unknown_pattern" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_empty_uris_list_noop(self):
+    async def test_empty_uris_list_noop(self) -> None:
         """invalidate_cached_resources with empty list returns immediately."""
         from unittest.mock import MagicMock
 
         mock_caching = MagicMock()
-        result = await invalidate_cached_resources(mock_caching, [], "test_tool")
+        result = await invalidate_cached_resources(mock_caching, [], "test_tool")  # type: ignore[func-returns-value]
         assert result is None
 
     @pytest.mark.asyncio
@@ -287,21 +287,21 @@ class TestCacheInvalidationMiddleware:
         await middleware.on_call_tool(mock_context, mock_call_next)
 
     @pytest.mark.asyncio
-    async def test_invalidate_cached_resources_missing_attribute(self):
+    async def test_invalidate_cached_resources_missing_attribute(self) -> None:
         """invalidate_cached_resources handles missing _read_resource_cache gracefully."""
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
         del mock_caching._read_resource_cache
 
         result = await invalidate_cached_resources(
             mock_caching, ["gitea://repos/org/repo/issues"], "test_tool"
-        )
+        )  # type: ignore[func-returns-value]
         assert result is None
 
 
 class TestComputeToolInvalidationPatterns:
     """Tests for _compute_tool_invalidation_patterns from server module."""
 
-    from gitea_mcp_server.tools.customize import (
+    from gitea_mcp_server.tools.customize import (  # type: ignore[misc]
         compute_invalidation_patterns as _compute_tool_invalidation_patterns,
     )
 

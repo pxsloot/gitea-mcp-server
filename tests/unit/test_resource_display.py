@@ -9,6 +9,10 @@ Covers:
 """
 
 import json
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -38,7 +42,7 @@ class TestContextMetaKeysPipeline:
         from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
-        registered: dict[str, object] = {}
+        registered: dict[str, Callable[..., Any]] = {}
 
         def resource_decorator(uri, **kwargs):
             def deco(func):
@@ -107,7 +111,7 @@ class TestContextMetaKeysPipeline:
         from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
-        registered: dict[str, object] = {}
+        registered: dict[str, Callable[..., Any]] = {}
 
         def resource_decorator(uri, **kwargs):
             def deco(func):
@@ -134,6 +138,7 @@ class TestContextMetaKeysPipeline:
         assert handler is not None
 
         mock_client.request = AsyncMock(return_value={})
+        assert handler is not None
         result = await handler(owner="test", repo="test", state="open")
 
         assert isinstance(result, ResourceResult)
@@ -202,7 +207,7 @@ class TestContextMetaKeysPipeline:
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
         mcp = MagicMock(spec=FastMCP)
-        registered: dict[str, object] = {}
+        registered: dict[str, Callable[..., Any]] = {}
 
         def resource_decorator(uri, **kwargs):
             def deco(func):

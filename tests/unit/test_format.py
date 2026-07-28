@@ -1271,6 +1271,7 @@ class TestFormatPaginatedResult:
         items = [{"id": i} for i in range(25)]
         result = _format_paginated_result(items, 25, "raw", page=1, limit=10)
         for key in PAGINATION_KEYS:
+            assert result.structured_content is not None
             assert key in result.structured_content
 
     def test_empty_items_list(self):

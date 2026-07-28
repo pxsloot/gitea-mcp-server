@@ -172,6 +172,7 @@ class TestFormatToolResultErrorRecovery:
         result = format_tool_result(data, "json")
         assert isinstance(result, ToolResult)
         # structured_content carries the safe string representation
+        assert result.structured_content is not None
         assert "result" in result.structured_content
         fallback = json.loads(result.content[0].text)
         assert "result" in fallback
@@ -188,6 +189,7 @@ class TestFormatToolResultErrorRecovery:
         result = format_tool_result(data, "json")
         assert isinstance(result, ToolResult)
         # structured_content contains the safe fallback
+        assert result.structured_content is not None
         assert "result" in result.structured_content
 
     # --- Raw format bypass ---

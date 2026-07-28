@@ -9,6 +9,8 @@ import json
 
 from fastmcp.tools.base import ToolResult
 
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
+
 from gitea_mcp_server.format import (
     _collapse_data,
     _collapse_value,
@@ -1247,7 +1249,7 @@ class TestFormatPaginatedResult:
         )
         assert result.content is not None
         assert len(result.content) > 0
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "test" in text
         # Verify pagination metadata is in structured_content
         sc = result.structured_content
@@ -1260,7 +1262,7 @@ class TestFormatPaginatedResult:
             items, 1, "json", page=1, limit=10,
         )
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         parsed = json.loads(text)
         assert parsed[0]["name"] == "test"
         sc = result.structured_content
@@ -1290,7 +1292,7 @@ class TestFormatPaginatedResult:
             items, 1, "markdown", page=1, limit=10,
             markdown_extras=["**Extra section:** content"],
         )
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "**Extra section:** content" in text
 
 
@@ -1319,7 +1321,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="full", schema=schema)
         assert result.content is not None
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert isinstance(parsed["owner"], dict)
         assert parsed["owner"]["login"] == "user1"
 
@@ -1331,7 +1333,7 @@ class TestApplyFormatConcise:
             "properties": {"owner": {"$ref": "#/components/schemas/User"}},
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert parsed["owner"] == "$ref:User"
 
     def test_json_concise_collapses_ref_list(self) -> None:
@@ -1344,7 +1346,7 @@ class TestApplyFormatConcise:
             },
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert parsed["labels"] == "$ref:Label[2]"
 
     def test_json_concise_inline_not_collapsed(self) -> None:
@@ -1360,7 +1362,7 @@ class TestApplyFormatConcise:
             },
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert isinstance(parsed["config"], dict)
         assert parsed["config"]["host"] == "localhost"
 
@@ -1372,7 +1374,7 @@ class TestApplyFormatConcise:
             "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert parsed["name"] == "repo"
         assert parsed["description"] == "a test repo"
 
@@ -1398,7 +1400,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "markdown", detail="concise", schema=schema)
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "$ref:User" in text
         # Top-level scalars and inline props remain expanded
         assert "repo" in text
@@ -1407,7 +1409,7 @@ class TestApplyFormatConcise:
         """When schema is None, concise is a no-op (data unchanged)."""
         data = {"owner": {"id": 1, "login": "user1"}}
         result = apply_format(data, "json", detail="concise", schema=None)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert isinstance(parsed["owner"], dict)
         assert parsed["owner"]["login"] == "user1"
 

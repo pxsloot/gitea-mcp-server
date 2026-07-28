@@ -9,6 +9,8 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import Tool
 from mcp.types import TextContent
 
+from tests.helpers.mcp_results import parse_json_content
+
 from gitea_mcp_server.tools.docs_tools import DocManager
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 from gitea_mcp_server.tools.unified_search import register_unified_search
@@ -255,7 +257,7 @@ class TestUnifiedSearch:
 
         assert len(result.content) > 0
         assert isinstance(result.content[0], TextContent)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert isinstance(parsed, list)
 
     @pytest.mark.asyncio

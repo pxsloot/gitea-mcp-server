@@ -7,6 +7,8 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
+from tests.helpers.mcp_results import extract_text_content
+
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -713,4 +715,4 @@ class TestCustomizeComponentTextResponse:
             output = await wrapped.run(arguments={})
 
             assert output.structured_content == {"result": "raw text output"}
-            assert output.content[0].text == "raw text output"
+            assert extract_text_content(output.content) == "raw text output"

@@ -25,6 +25,8 @@ from fastmcp.client.transports import StdioTransport
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from tests.helpers.mcp_results import extract_text_content
+
 from tests.live.conftest import live_available
 
 if TYPE_CHECKING:
@@ -70,9 +72,9 @@ class TestFastMCPClientTransport:
 
         assert not result.is_error, (
             "Expected no output validation error over stdio, got: "
-            f"{result.content[0].text if result.content else 'empty'}"
+            f"{extract_text_content(result.content) if result.content else 'empty'}"
         )
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "diff --git" in text, (
             f"Expected raw diff text in result, got: {text[:120]!r}"
         )
@@ -124,9 +126,9 @@ class TestRawMCPClientSession:
 
         assert not result.isError, (
             "Expected no error via MCP SDK transport, got: "
-            f"{result.content[0].text[:200] if result.content else 'empty'}"
+            f"{extract_text_content(result.content) if result.content else 'empty'}"
         )
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "diff --git" in text, (
             f"Expected raw diff text, got: {text[:120]!r}"
         )
@@ -180,9 +182,9 @@ class TestCallToolProxy:
 
         assert not result.is_error, (
             "Expected no validation error through call_tool proxy, got: "
-            f"{result.content[0].text[:200] if result.content else 'empty'}"
+            f"{extract_text_content(result.content) if result.content else 'empty'}"
         )
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "diff --git" in text, (
             f"Expected raw diff text, got: {text[:120]!r}"
         )

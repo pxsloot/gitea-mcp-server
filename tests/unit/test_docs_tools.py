@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastmcp.tools.base import ToolResult
 
+from tests.helpers.mcp_results import extract_text_from_content_items
+
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 
@@ -329,7 +331,7 @@ class TestRegisterDocTools:
         assert isinstance(result, ToolResult)
         assert result.structured_content["result"] is not None
         assert result.content is not None
-        assert any("Test Guide" in str(c.text) for c in result.content)
+        assert "Test Guide" in extract_text_from_content_items(result.content)
 
     @pytest.mark.asyncio
     async def test_search_docs_raw_format(self) -> None:
@@ -345,7 +347,7 @@ class TestRegisterDocTools:
         result = await fn(query="test", format="json")
         assert isinstance(result, ToolResult)
         assert result.content is not None
-        text = "".join(c.text for c in result.content if hasattr(c, "text"))
+        text = extract_text_from_content_items(result.content)
         parsed = json_module.loads(text)
         assert isinstance(parsed, list)
         assert parsed[0]["name"] == "test"
@@ -417,7 +419,7 @@ class TestRegisterDocTools:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")
         assert result.content is not None
-        text = "".join(c.text for c in result.content)
+        text = extract_text_from_content_items(result.content)
         assert "Cross-linking hints" in text
         assert "search_tools" in text
         assert "search_resources" in text
@@ -427,7 +429,7 @@ class TestRegisterDocTools:
         fn = self._capture_tool("search_docs")
         result = await fn(query="zzz_nonexistent")
         assert result.content is not None
-        text = "".join(c.text for c in result.content)
+        text = extract_text_from_content_items(result.content)
         assert "No workflow guides found" in text
         assert "search_tools" in text
         assert "search_resources" in text

@@ -8,6 +8,7 @@ from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
+from tests.helpers.mcp_results import assert_low_level_success, get_low_level_structured, get_structured
 from tests.helpers.tool_names import extract_tool_names
 
 
@@ -182,7 +183,7 @@ class TestLazyLoading:
 
             # Search for "repo" - all tools contain "repo"
             search_repo = await mcp.call_tool(f"{prefix}search_tools", {"query": "repo"})
-            repo_tools = search_repo.structured_content.get("result", [])
+            repo_tools = get_structured(search_repo).get("result", [])
             repo_names = [t["name"] for t in repo_tools if isinstance(t, dict)]
 
             # Should find repo-related tools that contain the token "repo"
@@ -192,7 +193,7 @@ class TestLazyLoading:
 
             # Additionally, search for "repos" should find list_user_repos
             search_repos = await mcp.call_tool(f"{prefix}search_tools", {"query": "repos"})
-            repos_tools = search_repos.structured_content.get("result", [])
+            repos_tools = get_structured(search_repos).get("result", [])
             repos_names = [t["name"] for t in repos_tools if isinstance(t, dict)]
             assert f"{prefix}user_current_list_repos" in repos_names, f"Expected {prefix}user_current_list_repos in {repos_names}"
 
@@ -248,7 +249,7 @@ class TestLazyLoading:
 
             # Now search for "repo" - should still return real tool matches despite cache
             search_repo = await mcp.call_tool(f"{prefix}search_tools", {"query": "repo"})
-            repo_tools = search_repo.structured_content.get("result", [])
+            repo_tools = get_structured(search_repo).get("result", [])
             repo_names = [t["name"] for t in repo_tools if isinstance(t, dict)]
 
             # Should find tools containing "repo" (the expected ones from spec)
@@ -304,7 +305,7 @@ class TestLazyLoading:
 
             # Test 1: Query "pr" should find pull request tools
             search_pr = await mcp.call_tool(f"{prefix}search_tools", {"query": "pr"})
-            pr_tools = search_pr.structured_content.get("result", [])
+            pr_tools = get_structured(search_pr).get("result", [])
             pr_names = [t["name"] for t in pr_tools if isinstance(t, dict)]
 
             assert f"{prefix}repo_create_pull_request" in pr_names, (
@@ -316,7 +317,7 @@ class TestLazyLoading:
 
             # Test 2: Query "pull request" should find pull request tools
             search_pull = await mcp.call_tool(f"{prefix}search_tools", {"query": "pull request"})
-            pull_tools = search_pull.structured_content.get("result", [])
+            pull_tools = get_structured(search_pull).get("result", [])
             pull_names = [t["name"] for t in pull_tools if isinstance(t, dict)]
 
             assert f"{prefix}repo_create_pull_request" in pull_names, (
@@ -325,7 +326,7 @@ class TestLazyLoading:
 
             # Test 3: Query "create pr" should find repo_create_pull_request
             search_create_pr = await mcp.call_tool(f"{prefix}search_tools", {"query": "create pr"})
-            create_pr_tools = search_create_pr.structured_content.get("result", [])
+            create_pr_tools = get_structured(search_create_pr).get("result", [])
             create_pr_names = [t["name"] for t in create_pr_tools if isinstance(t, dict)]
 
             assert f"{prefix}repo_create_pull_request" in create_pr_names, (
@@ -334,7 +335,7 @@ class TestLazyLoading:
 
             # Test 4: Query "pull request create" should find the tool
             search_pr_create = await mcp.call_tool(f"{prefix}search_tools", {"query": "pull request create"})
-            pr_create_tools = search_pr_create.structured_content.get("result", [])
+            pr_create_tools = get_structured(search_pr_create).get("result", [])
             pr_create_names = [t["name"] for t in pr_create_tools if isinstance(t, dict)]
 
             assert f"{prefix}repo_create_pull_request" in pr_create_names, (
@@ -382,7 +383,7 @@ class TestLazyLoading:
 
             # Test 1: Query "issue" should find issue tools
             search_issue = await mcp.call_tool(f"{prefix}search_tools", {"query": "issue"})
-            issue_tools = search_issue.structured_content.get("result", [])
+            issue_tools = get_structured(search_issue).get("result", [])
             issue_names = [t["name"] for t in issue_tools if isinstance(t, dict)]
 
             assert f"{prefix}issue_create_issue" in issue_names, (
@@ -394,7 +395,7 @@ class TestLazyLoading:
 
             # Test 2: Query "create issue" should find create_issue
             search_create = await mcp.call_tool(f"{prefix}search_tools", {"query": "create issue"})
-            create_tools = search_create.structured_content.get("result", [])
+            create_tools = get_structured(search_create).get("result", [])
             create_names = [t["name"] for t in create_tools if isinstance(t, dict)]
 
             assert f"{prefix}issue_create_issue" in create_names, (
@@ -439,7 +440,7 @@ class TestLazyLoading:
                 f"{prefix}call_tool",
                 {"name": f"{prefix}search_tools", "arguments": {"query": "issue"}},
             )
-            tools = result.structured_content.get("result", [])
+            tools = get_structured(result).get("result", [])
             names = [t["name"] for t in tools if isinstance(t, dict)]
             assert f"{prefix}issue_list_issues" in names, (
                 f"Expected {prefix}issue_list_issues via call_tool proxy, got: {names}"
@@ -450,7 +451,7 @@ class TestLazyLoading:
                 f"{prefix}call_tool",
                 {"name": f"{prefix}tool_info", "arguments": {"name": f"{prefix}search_tools"}},
             )
-            info = info_result.structured_content.get("result", {})
+            info = get_structured(info_result).get("result", {})
             assert isinstance(info, dict), f"Expected dict from tool_info, got: {type(info)}"
             assert info.get("name") == f"{prefix}search_tools"
 
@@ -535,17 +536,10 @@ class TestLowLevelProtocolValidation:
                 )
                 result = await call_handler(req)
 
-                assert not result.root.isError, (
-                    f"{tool_name} raised low-level error: "
-                    f"{result.root.content[0].text if result.root.content else 'no content'}"
-                )
+                assert_low_level_success(result)
                 # structured_content must be present and contain "result"
-                assert result.root.structuredContent is not None, (
-                    f"{tool_name} has no structuredContent"
-                )
-                assert "result" in result.root.structuredContent, (
-                    f"{tool_name}.structuredContent missing 'result' key"
-                )
+                sc = get_low_level_structured(result)
+                assert "result" in sc
 
     @pytest.mark.asyncio
     async def test_call_tool_via_low_level_passes_validation(self) -> None:
@@ -593,11 +587,8 @@ class TestLowLevelProtocolValidation:
                 ),
             )
             result = await call_handler(req)
-            assert not result.root.isError, (
-                f"call_tool -> tool_info failed: "
-                f"{result.root.content[0].text if result.root.content else 'no content'}"
-            )
-            result_value = result.root.structuredContent.get("result", {})
+            assert_low_level_success(result)
+            result_value = get_low_level_structured(result).get("result", {})
             assert isinstance(result_value, dict), (
                 f"Expected dict from call_tool -> tool_info, got {type(result_value)}"
             )

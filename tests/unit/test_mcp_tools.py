@@ -9,6 +9,8 @@ import pytest
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
+
 from gitea_mcp_server.tools.mcp_tools import (
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
@@ -531,7 +533,7 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert len(tool_result.content) == 1
-        assert tool_result.content[0].text == "# Hello\n\nThis is **markdown**"
+        assert extract_text_content(tool_result.content) == "# Hello\n\nThis is **markdown**"
         # structured_content is present for schema compliance
         assert tool_result.structured_content is not None
         assert tool_result.structured_content["result"] == "# Hello\n\nThis is **markdown**"
@@ -560,7 +562,7 @@ class TestMcpReadResourceTool:
         assert "42" in result_text
         # content is present with text for display
         assert len(tool_result.content) == 1
-        assert "|" in tool_result.content[0].text
+        assert "|" in extract_text_content(tool_result.content)
 
     @pytest.mark.asyncio
     async def test_raw_format_has_raw_text(self) -> None:
@@ -577,7 +579,7 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert len(tool_result.content) == 1
-        assert tool_result.content[0].text == "raw markdown"
+        assert extract_text_content(tool_result.content) == "raw markdown"
         assert tool_result.structured_content is not None
         assert tool_result.structured_content["result"] == "raw markdown"
 
@@ -596,7 +598,7 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert len(tool_result.content) == 1
-        assert tool_result.content[0].text == '{"key": "val"}'
+        assert extract_text_content(tool_result.content) == '{"key": "val"}'
         assert tool_result.structured_content is not None
         assert tool_result.structured_content["result"] == '{"key": "val"}'
 
@@ -615,7 +617,7 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert len(tool_result.content) == 1
-        parsed = json_module.loads(tool_result.content[0].text)
+        parsed = parse_json_content(tool_result)
         assert parsed == {"result": "plain text"}
         assert tool_result.structured_content is not None
         parsed_result = json_module.loads(tool_result.structured_content["result"])
@@ -917,7 +919,7 @@ class TestMcpListResourcesFormat:
         assert isinstance(result, ToolResult)
         assert result.structured_content["result"]["count"] == 1
         assert len(result.content) == 1
-        parsed = json_module.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert parsed["count"] == 1
         assert parsed["resources"][0]["uri"] == "gitea://version"
 
@@ -935,8 +937,9 @@ class TestMcpListResourcesFormat:
         assert isinstance(result, ToolResult)
         assert result.structured_content["result"]["count"] == 1
         assert len(result.content) == 1
-        assert "|" in result.content[0].text
-        assert "version" in result.content[0].text.lower()
+        content_text = extract_text_content(result.content)
+        assert "|" in content_text
+        assert "version" in content_text.lower()
 
 
 class TestMcpListResourcesTagTypeFilter:

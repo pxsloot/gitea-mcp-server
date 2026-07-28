@@ -15,6 +15,7 @@ import respx
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+from tests.conftest import SimpleConfig
 from tests.integration.conftest import (
     BASE_TEST_URL,
     create_test_server,

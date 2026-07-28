@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
 if TYPE_CHECKING:
@@ -84,8 +84,6 @@ class TestApplyMcpExtensions:
         }
 
         apply_mcp_extensions(spec, extensions)
-
-        from typing import cast
 
         param = cast("dict[str, Any]", spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0])
         assert param["description"] == "Custom title parameter description"

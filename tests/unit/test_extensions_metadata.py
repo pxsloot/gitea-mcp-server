@@ -34,7 +34,7 @@ class TestExtensionMetadataTransform:
     }
 
     @pytest.mark.asyncio
-    async def test_list_tools_applies_description_override(self):
+    async def test_list_tools_applies_description_override(self) -> None:
         """list_tools should override description for matching tools."""
         transform = ExtensionMetadataTransform(self.TOOL_NAMES)
         tools = [
@@ -47,7 +47,7 @@ class TestExtensionMetadataTransform:
         assert result[1].description == "kept description"
 
     @pytest.mark.asyncio
-    async def test_list_tools_passthrough_unknown_tools(self):
+    async def test_list_tools_passthrough_unknown_tools(self) -> None:
         """list_tools should leave tools without overrides unchanged."""
         transform = ExtensionMetadataTransform({})
         tool = _make_tool("search", "original desc")
@@ -55,7 +55,7 @@ class TestExtensionMetadataTransform:
         assert result[0].description == "original desc"
 
     @pytest.mark.asyncio
-    async def test_list_tools_preserves_name_and_tags(self):
+    async def test_list_tools_preserves_name_and_tags(self) -> None:
         """list_tools should only modify description, not other fields."""
         transform = ExtensionMetadataTransform(self.TOOL_NAMES)
         tool = _make_tool("search", "old", tags={"synthetic"})
@@ -65,7 +65,7 @@ class TestExtensionMetadataTransform:
         assert result[0].description == "Unified search across tools, docs, and resources"
 
     @pytest.mark.asyncio
-    async def test_get_tool_applies_description_override(self):
+    async def test_get_tool_applies_description_override(self) -> None:
         """get_tool should override description for a matching tool."""
 
         async def call_next(name: str, **kwargs: Any) -> Tool | None:
@@ -77,7 +77,7 @@ class TestExtensionMetadataTransform:
         assert tool.description == "Unified search across tools, docs, and resources"
 
     @pytest.mark.asyncio
-    async def test_get_tool_passthrough_unknown_tool(self):
+    async def test_get_tool_passthrough_unknown_tool(self) -> None:
         """get_tool should return unchanged for tools without overrides."""
 
         async def call_next(name: str, **kwargs: Any) -> Tool | None:
@@ -89,7 +89,7 @@ class TestExtensionMetadataTransform:
         assert tool.description == "original desc"
 
     @pytest.mark.asyncio
-    async def test_get_tool_returns_none_when_missing(self):
+    async def test_get_tool_returns_none_when_missing(self) -> None:
         """get_tool should return None when downstream returns None."""
 
         async def call_next(name: str, **kwargs: Any) -> Tool | None:
@@ -100,7 +100,7 @@ class TestExtensionMetadataTransform:
         assert tool is None
 
     @pytest.mark.asyncio
-    async def test_list_tools_with_prefixed_names(self):
+    async def test_list_tools_with_prefixed_names(self) -> None:
         """list_tools should match prefixed names when prefix is set."""
         transform = ExtensionMetadataTransform(self.TOOL_NAMES, prefix="gitea_")
         tool = _make_tool("gitea_search", "old")
@@ -108,7 +108,7 @@ class TestExtensionMetadataTransform:
         assert result[0].description == "Unified search across tools, docs, and resources"
 
     @pytest.mark.asyncio
-    async def test_get_tool_with_prefixed_names(self):
+    async def test_get_tool_with_prefixed_names(self) -> None:
         """get_tool should match prefixed names when prefix is set."""
 
         async def call_next(name: str, **kwargs: Any) -> Tool | None:
@@ -120,7 +120,7 @@ class TestExtensionMetadataTransform:
         assert tool.description == "Unified search across tools, docs, and resources"
 
     @pytest.mark.asyncio
-    async def test_list_tools_also_matches_unprefixed_with_prefix(self):
+    async def test_list_tools_also_matches_unprefixed_with_prefix(self) -> None:
         """With prefix set, unprefixed names should also match."""
         transform = ExtensionMetadataTransform(self.TOOL_NAMES, prefix="gitea_")
         tool = _make_tool("search", "old")
@@ -128,7 +128,7 @@ class TestExtensionMetadataTransform:
         assert result[0].description == "Unified search across tools, docs, and resources"
 
     @pytest.mark.asyncio
-    async def test_get_tool_also_matches_unprefixed_with_prefix(self):
+    async def test_get_tool_also_matches_unprefixed_with_prefix(self) -> None:
         """With prefix set, unprefixed names should also match in get_tool."""
 
         async def call_next(name: str, **kwargs: Any) -> Tool | None:
@@ -144,7 +144,7 @@ class TestExtensionMetadataTransformNewFields:
     """Tests for the expanded field support in ExtensionMetadataTransform."""
 
     @pytest.mark.asyncio
-    async def test_overrides_title(self):
+    async def test_overrides_title(self) -> None:
         """title override should propagate to tool title."""
         transform = ExtensionMetadataTransform({"search": {"title": "Custom Title"}})
         tool = _make_tool("search", title="Old Title")
@@ -152,7 +152,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].title == "Custom Title"
 
     @pytest.mark.asyncio
-    async def test_overrides_tags(self):
+    async def test_overrides_tags(self) -> None:
         """tags override should propagate (YAML list coerced to set)."""
         transform = ExtensionMetadataTransform({"search": {"tags": ["custom", "tag"]}})
         tool = _make_tool("search", tags={"old"})
@@ -160,7 +160,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].tags == {"custom", "tag"}
 
     @pytest.mark.asyncio
-    async def test_overrides_read_only_hint(self):
+    async def test_overrides_read_only_hint(self) -> None:
         """readOnlyHint should propagate into ToolAnnotations."""
         transform = ExtensionMetadataTransform({"search": {"readOnlyHint": True}})
         tool = _make_tool("search")
@@ -169,7 +169,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.readOnlyHint is True
 
     @pytest.mark.asyncio
-    async def test_overrides_destructive_hint(self):
+    async def test_overrides_destructive_hint(self) -> None:
         """destructiveHint should propagate into ToolAnnotations."""
         transform = ExtensionMetadataTransform({"search": {"destructiveHint": False}})
         tool = _make_tool("search")
@@ -178,7 +178,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.destructiveHint is False
 
     @pytest.mark.asyncio
-    async def test_overrides_idempotent_hint(self):
+    async def test_overrides_idempotent_hint(self) -> None:
         """idempotentHint should propagate into ToolAnnotations."""
         transform = ExtensionMetadataTransform({"search": {"idempotentHint": True}})
         tool = _make_tool("search")
@@ -187,7 +187,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.idempotentHint is True
 
     @pytest.mark.asyncio
-    async def test_overrides_open_world_hint(self):
+    async def test_overrides_open_world_hint(self) -> None:
         """openWorldHint should propagate into ToolAnnotations."""
         transform = ExtensionMetadataTransform({"search": {"openWorldHint": False}})
         tool = _make_tool("search")
@@ -196,7 +196,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.openWorldHint is False
 
     @pytest.mark.asyncio
-    async def test_merges_annotations_with_existing(self):
+    async def test_merges_annotations_with_existing(self) -> None:
         """Annotation overrides merge with existing annotations, not replace them."""
         transform = ExtensionMetadataTransform({"search": {"idempotentHint": True}})
         existing = ToolAnnotations(readOnlyHint=True, destructiveHint=True)
@@ -208,7 +208,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.idempotentHint is True  # overridden
 
     @pytest.mark.asyncio
-    async def test_creates_annotations_when_none(self):
+    async def test_creates_annotations_when_none(self) -> None:
         """When tool has no annotations, override creates them."""
         transform = ExtensionMetadataTransform({"search": {"readOnlyHint": True}})
         tool = _make_tool("search", annotations=None)
@@ -217,7 +217,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.readOnlyHint is True
 
     @pytest.mark.asyncio
-    async def test_combined_component_and_annotation_overrides(self):
+    async def test_combined_component_and_annotation_overrides(self) -> None:
         """title, description, tags, and hints can all be overridden in one entry."""
         transform = ExtensionMetadataTransform({
             "search": {
@@ -238,7 +238,7 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].annotations.idempotentHint is True
 
     @pytest.mark.asyncio
-    async def test_override_does_not_clear_unspecified_fields(self):
+    async def test_override_does_not_clear_unspecified_fields(self) -> None:
         """Only fields present in the override are changed; others pass through."""
         transform = ExtensionMetadataTransform({"search": {"title": "Only Title"}})
         tool = _make_tool("search", description="Keep me", tags={"keep"})

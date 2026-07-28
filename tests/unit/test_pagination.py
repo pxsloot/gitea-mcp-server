@@ -1,5 +1,6 @@
 """Unit tests for pagination header capture via event hooks and PaginationRunner."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -33,56 +34,56 @@ class TestCapturePaginationHeaders:
     """Tests for capture_pagination_headers event hook."""
 
     @pytest.mark.asyncio
-    async def test_captures_x_total_count(self):
+    async def test_captures_x_total_count(self) -> None:
         """X-Total-Count header should be captured into context."""
         response = _make_response(headers={"X-Total-Count": "42"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {"total_count": 42}
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_x_total(self):
+    async def test_falls_back_to_x_total(self) -> None:
         """X-Total should be used when X-Total-Count is absent."""
         response = _make_response(headers={"X-Total": "99"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {"total_count": 99}
 
     @pytest.mark.asyncio
-    async def test_x_total_count_takes_priority(self):
+    async def test_x_total_count_takes_priority(self) -> None:
         """X-Total-Count takes priority over X-Total when both present."""
         response = _make_response(headers={"X-Total-Count": "50", "X-Total": "99"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {"total_count": 50}
 
     @pytest.mark.asyncio
-    async def test_skips_error_responses(self):
+    async def test_skips_error_responses(self) -> None:
         """Error responses (4xx/5xx) should not capture headers."""
         response = _make_response(status_code=404, headers={"X-Total-Count": "42"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {}
 
     @pytest.mark.asyncio
-    async def test_skips_3xx_responses(self):
+    async def test_skips_3xx_responses(self) -> None:
         """3xx redirect responses should not capture headers."""
         response = _make_response(status_code=304, headers={"X-Total-Count": "10"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {}
 
     @pytest.mark.asyncio
-    async def test_ignores_non_integer_values(self):
+    async def test_ignores_non_integer_values(self) -> None:
         """Non-integer header values should be silently ignored."""
         response = _make_response(headers={"X-Total-Count": "not-a-number"})
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {}
 
     @pytest.mark.asyncio
-    async def test_no_headers_no_change(self):
+    async def test_no_headers_no_change(self) -> None:
         """Context should remain default when no pagination headers present."""
         response = _make_response()
         await capture_pagination_headers(response)
         assert pagination_ctx.get() == {}
 
     @pytest.mark.asyncio
-    async def test_capture_overrides_existing_value(self):
+    async def test_capture_overrides_existing_value(self) -> None:
         """capture_pagination_headers overwrites any pre-existing pagination_ctx value."""
         pagination_ctx.set({"total_count": 1})
         response = _make_response(headers={"X-Total-Count": "99"})
@@ -93,7 +94,7 @@ class TestCapturePaginationHeaders:
 class TestPaginationHeadersConstant:
     """Tests for the PAGINATION_HEADERS constant."""
 
-    def test_order(self):
+    def test_order(self) -> None:
         """X-Total-Count should be checked before X-Total."""
         assert PAGINATION_HEADERS == ("X-Total-Count", "X-Total")
 
@@ -101,21 +102,21 @@ class TestPaginationHeadersConstant:
 class TestAddPaginationMetadata:
     """Tests for add_pagination_metadata helper."""
 
-    def test_with_total_count_has_more_true(self):
+    def test_with_total_count_has_more_true(self) -> None:
         """When total_count is known and there are more pages, has_more=True."""
         result = add_pagination_metadata({"result": [1, 2, 3]}, page=1, limit=10, total_count=42)
         assert result["has_more"] is True
         assert result["next_offset"] == 2
         assert result["total_count"] == 42
 
-    def test_with_total_count_has_more_false(self):
+    def test_with_total_count_has_more_false(self) -> None:
         """When total_count is known and we're past the last page, has_more=False."""
         result = add_pagination_metadata({"result": [1, 2]}, page=5, limit=10, total_count=42)
         assert result["has_more"] is False
         assert result["next_offset"] is None
         assert result["total_count"] == 42
 
-    def test_with_total_count_exact_last_page(self):
+    def test_with_total_count_exact_last_page(self) -> None:
         """When page*limit == total_count, has_more=False."""
         result = add_pagination_metadata({"result": [1, 2]}, page=5, limit=10, total_count=50)
         # page=5, limit=10 → page*limit = 50 which equals total_count → no more
@@ -123,41 +124,41 @@ class TestAddPaginationMetadata:
         assert result["next_offset"] is None
         assert result["total_count"] == 50
 
-    def test_no_total_count_heuristic_true(self):
+    def test_no_total_count_heuristic_true(self) -> None:
         """Without total_count, has_more=True when len(result) == limit."""
         result = add_pagination_metadata({"result": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}, page=1, limit=10)
         assert result["has_more"] is True
         assert result["next_offset"] == 2
         assert result["total_count"] is None
 
-    def test_no_total_count_heuristic_false(self):
+    def test_no_total_count_heuristic_false(self) -> None:
         """Without total_count, has_more=False when len(result) < limit."""
         result = add_pagination_metadata({"result": [1, 2, 3]}, page=1, limit=10)
         assert result["has_more"] is False
         assert result["next_offset"] is None
         assert result["total_count"] is None
 
-    def test_non_list_result_no_total_count(self):
+    def test_non_list_result_no_total_count(self) -> None:
         """When result is not a list and total_count is None, has_more=False."""
         result = add_pagination_metadata({"result": {"id": 1}}, page=1, limit=10)
         assert result["has_more"] is False
         assert result["next_offset"] is None
         assert result["total_count"] is None
 
-    def test_preserves_existing_keys(self):
+    def test_preserves_existing_keys(self) -> None:
         """Existing keys in structured_content should be preserved."""
         result = add_pagination_metadata({"result": [1], "foo": "bar"}, page=1, limit=10, total_count=1)
         assert result["foo"] == "bar"
         assert result["has_more"] is False
 
-    def test_zero_total_count(self):
+    def test_zero_total_count(self) -> None:
         """When total_count is 0, has_more=False and next_offset=None."""
         result = add_pagination_metadata({"result": []}, page=1, limit=10, total_count=0)
         assert result["has_more"] is False
         assert result["next_offset"] is None
         assert result["total_count"] == 0
 
-    def test_missing_result_key(self):
+    def test_missing_result_key(self) -> None:
         """When result key is missing, should still add pagination fields."""
         result = add_pagination_metadata({"foo": "bar"}, page=1, limit=10, total_count=5)
         # page=1, limit=10 → 1*10=10 > total_count=5 → has_more=False
@@ -176,7 +177,7 @@ class TestPaginationRunner:
     """Tests for PaginationRunner (loop-based auto-pagination for API tools)."""
 
     @pytest.mark.asyncio
-    async def test_fetch_all_false_passthrough(self):
+    async def test_fetch_all_false_passthrough(self) -> None:
         """When fetch_all=False, PaginationRunner is not used."""
         fetch_fn = AsyncMock()
         runner = PaginationRunner(fetch_fn)
@@ -186,7 +187,7 @@ class TestPaginationRunner:
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_single_page_has_more_false(self):
+    async def test_single_page_has_more_false(self) -> None:
         """When has_more is False on the first page, no extra fetches."""
         fetch_fn = AsyncMock()
         runner = PaginationRunner(fetch_fn)
@@ -204,11 +205,11 @@ class TestPaginationRunner:
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_two_pages_merged(self):
+    async def test_two_pages_merged(self) -> None:
         """Two pages merged when has_more is True initially."""
         page_calls = []
 
-        async def _fetch(kwargs):
+        async def _fetch(kwargs: dict[str, Any]) -> ToolResult:
             page_calls.append(kwargs["page"])
             return ToolResult(
                 structured_content={
@@ -235,7 +236,7 @@ class TestPaginationRunner:
         assert page_calls == [2]
 
     @pytest.mark.asyncio
-    async def test_three_pages_with_total_count(self):
+    async def test_three_pages_with_total_count(self) -> None:
         """Three pages merged with total_count preserved."""
         page_data = {
             1: [{"id": 1}, {"id": 2}],
@@ -243,7 +244,7 @@ class TestPaginationRunner:
             3: [{"id": 5}],
         }
 
-        async def _fetch(kwargs):
+        async def _fetch(kwargs: dict[str, Any]) -> ToolResult:
             p = kwargs["page"]
             items = page_data.get(p, [])
             return ToolResult(
@@ -270,12 +271,12 @@ class TestPaginationRunner:
         assert output.structured_content["total_count"] == 5
 
     @pytest.mark.asyncio
-    async def test_max_pages_cap(self):
+    async def test_max_pages_cap(self) -> None:
         """Stops after FETCH_ALL_MAX_PAGES pages (safety cap)."""
         many_items = [{"id": i} for i in range(10)]
         call_count = 0
 
-        async def _never_ending(kwargs):
+        async def _never_ending(kwargs: dict[str, Any]) -> ToolResult:
             nonlocal call_count
             call_count += 1
             return ToolResult(
@@ -305,9 +306,9 @@ class TestPaginationRunner:
         assert output.structured_content["total_count"] == 9999
 
     @pytest.mark.asyncio
-    async def test_heuristic_when_has_more_missing(self):
+    async def test_heuristic_when_has_more_missing(self) -> None:
         """Fall back to heuristic when response has no has_more."""
-        async def _short_page(_kwargs):
+        async def _short_page(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 3}],
@@ -329,9 +330,9 @@ class TestPaginationRunner:
         assert output.structured_content["has_more"] is False
 
     @pytest.mark.asyncio
-    async def test_total_count_carried_forward(self):
+    async def test_total_count_carried_forward(self) -> None:
         """total_count from server response is preserved in merged result."""
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
@@ -355,7 +356,7 @@ class TestPaginationRunner:
         assert len(output.structured_content["result"]) == 5
 
     @pytest.mark.asyncio
-    async def test_non_list_result_passthrough(self):
+    async def test_non_list_result_passthrough(self) -> None:
         """When result is not a list, PaginationRunner returns unchanged."""
         fetch_fn = AsyncMock()
         runner = PaginationRunner(fetch_fn)
@@ -365,7 +366,7 @@ class TestPaginationRunner:
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_no_structured_content_passthrough(self):
+    async def test_no_structured_content_passthrough(self) -> None:
         """When structured_content is None, PaginationRunner returns unchanged."""
         fetch_fn = AsyncMock()
         runner = PaginationRunner(fetch_fn)
@@ -375,9 +376,9 @@ class TestPaginationRunner:
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_preserves_meta(self):
+    async def test_preserves_meta(self) -> None:
         """PaginationRunner preserves meta from the original ToolResult."""
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(structured_content={"result": [{"id": 2}], "has_more": False})
 
         runner = PaginationRunner(_fetch)

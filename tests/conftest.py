@@ -29,24 +29,24 @@ class SimpleConfig:
 
     def __init__(
         self,
-        url="https://git.example.com",
-        token="test_token",
+        url: str = "https://git.example.com",
+        token: str = "test_token",
         *,
-        verify_ssl=False,
-        ssl_cert_file=None,
-        log_level="ERROR",
-        log_format="text",
-        tool_filtering_enabled=False,
-        enable_lazy_loading=False,
-        tool_prefix="gitea_",
-        transport_type="stdio",
-        http_host="127.0.0.1",
-        http_port=8080,
-        http_path="/mcp",
-        http_cors=None,
-        exclude_config_path=None,
-        response_format="markdown",
-    ):
+        verify_ssl: bool = False,
+        ssl_cert_file: str | None = None,
+        log_level: str = "ERROR",
+        log_format: str = "text",
+        tool_filtering_enabled: bool = False,
+        enable_lazy_loading: bool = False,
+        tool_prefix: str = "gitea_",
+        transport_type: str = "stdio",
+        http_host: str = "127.0.0.1",
+        http_port: int = 8080,
+        http_path: str = "/mcp",
+        http_cors: bool | None = None,
+        exclude_config_path: str | None = None,
+        response_format: str = "markdown",
+    ) -> None:
         self.url = url.rstrip("/")
         self.token = token
         self.verify_ssl = verify_ssl
@@ -74,7 +74,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 
 @pytest.fixture(scope="session")
-def event_loop():
+def event_loop() -> asyncio.AbstractEventLoop:
     """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
@@ -82,7 +82,7 @@ def event_loop():
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Path) -> Path:
     """Create a temporary workspace with sample files."""
     return tmp_path
 
@@ -127,7 +127,7 @@ def trace_exporter() -> Any:
 
 
 @pytest.fixture
-def swagger_spec_fixture():
+def swagger_spec_fixture() -> dict[str, Any]:
     """Load the swagger spec for tests."""
     spec_path = Path(__file__).parent.parent.parent / "swagger.v1.json"
     if not spec_path.exists():
@@ -138,7 +138,7 @@ def swagger_spec_fixture():
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_contexts():
+def _reset_module_contexts() -> None:
     """Reset module-level ContextVars before each test.
 
     Prevents cross-test pollution via module-level ContextVars that act as

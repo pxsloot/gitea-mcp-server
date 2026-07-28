@@ -1,6 +1,9 @@
 """Tests for docs_tools module."""
 
 import json as json_module
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -37,7 +40,7 @@ Content after bad frontmatter."""
 class TestDocGuide:
     """Tests for DocGuide class."""
 
-    def test_search_text_includes_all_fields(self):
+    def test_search_text_includes_all_fields(self) -> None:
         guide = DocGuide(
             name="test-guide",
             title="Test Guide",
@@ -58,7 +61,7 @@ class TestDocGuide:
 class TestDocManagerParseGuide:
     """Tests for DocManager._parse_guide static method."""
 
-    def test_parses_frontmatter(self):
+    def test_parses_frontmatter(self) -> None:
         guide = DocManager._parse_guide("test-guide", SAMPLE_FRONTMATTER)
         assert guide is not None
         assert guide.name == "test-guide"
@@ -67,7 +70,7 @@ class TestDocManagerParseGuide:
         assert guide.tags == ["test", "example", "guide"]
         assert "This is the body" in guide.markdown_body
 
-    def test_no_frontmatter(self):
+    def test_no_frontmatter(self) -> None:
         guide = DocManager._parse_guide("no-fm", SAMPLE_NO_FRONTMATTER)
         assert guide is not None
         assert guide.name == "no-fm"
@@ -76,7 +79,7 @@ class TestDocManagerParseGuide:
         assert guide.tags == []
         assert guide.markdown_body == SAMPLE_NO_FRONTMATTER
 
-    def test_invalid_yaml_uses_defaults(self):
+    def test_invalid_yaml_uses_defaults(self) -> None:
         guide = DocManager._parse_guide("bad-yaml", SAMPLE_INVALID_YAML)
         assert guide is not None
         assert guide.name == "bad-yaml"
@@ -96,18 +99,18 @@ class TestDocManager:
         mgr._search_engine = BM25SearchEngine()
         return mgr
 
-    def test_get_finds_by_name_case_insensitive(self):
+    def test_get_finds_by_name_case_insensitive(self) -> None:
         guide = DocGuide("Token-Scopes", "Token Scopes", "desc", [], "# content", "body")
         mgr = self._make_manager([guide])
         assert mgr.get("token-scopes") is guide
         assert mgr.get("TOKEN-SCOPES") is guide
         assert mgr.get("Token-Scopes") is guide
 
-    def test_get_returns_none_for_missing(self):
+    def test_get_returns_none_for_missing(self) -> None:
         mgr = self._make_manager([])
         assert mgr.get("nonexistent") is None
 
-    def test_search_returns_all_when_empty_query(self):
+    def test_search_returns_all_when_empty_query(self) -> None:
         guides = [
             DocGuide("guide-a", "Guide A", "desc a", ["t1"], "# a", "a"),
             DocGuide("guide-b", "Guide B", "desc b", ["t2"], "# b", "b"),
@@ -116,11 +119,11 @@ class TestDocManager:
         results = mgr.search("")
         assert len(results) == 2
 
-    def test_search_returns_empty_when_no_guides(self):
+    def test_search_returns_empty_when_no_guides(self) -> None:
         mgr = self._make_manager([])
         assert mgr.search("test") == []
 
-    def test_search_limits_results(self):
+    def test_search_limits_results(self) -> None:
         guides = [
             DocGuide(f"guide-{i}", f"Guide {i}", "desc", ["t"], "# content", "body")
             for i in range(20)
@@ -129,7 +132,7 @@ class TestDocManager:
         results = mgr.search("guide", max_results=5)
         assert len(results) <= 5
 
-    def test_search_returns_metadata_dicts(self):
+    def test_search_returns_metadata_dicts(self) -> None:
         guide = DocGuide("test-guide", "Test Guide", "A test guide", ["tag1"], "# content", "body")
         mgr = self._make_manager([guide])
         results = mgr.search("test")
@@ -140,11 +143,11 @@ class TestDocManager:
         assert entry["description"] == "A test guide"
         assert entry["tags"] == ["tag1"]
 
-    def test_manifest_markdown_empty_when_no_guides(self):
+    def test_manifest_markdown_empty_when_no_guides(self) -> None:
         mgr = self._make_manager([])
         assert mgr.get_manifest_markdown() == ""
 
-    def test_manifest_markdown_lists_guides(self):
+    def test_manifest_markdown_lists_guides(self) -> None:
         guide = DocGuide("test-guide", "Test Guide", "A test guide description", ["tag1"], "# content", "body")
         mgr = self._make_manager([guide])
         manifest = mgr.get_manifest_markdown()
@@ -153,7 +156,7 @@ class TestDocManager:
         assert "A test guide description" in manifest
         assert "search_docs" in manifest
 
-    def test_manifest_truncates_long_descriptions(self):
+    def test_manifest_truncates_long_descriptions(self) -> None:
         long_desc = "x" * 100
         guide = DocGuide("test-guide", "Test Guide", long_desc, [], "# content", "body")
         mgr = self._make_manager([guide])
@@ -165,7 +168,7 @@ class TestDocManager:
 class TestDocManagerLoadEdgeCases:
     """Tests for DocManager._load edge cases."""
 
-    def test_guides_dir_not_found(self, caplog):
+    def test_guides_dir_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
         """When guides directory doesn't exist, warning is logged and no guides loaded."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -180,7 +183,7 @@ class TestDocManagerLoadEdgeCases:
             assert len(mgr._guides) == 0
             assert "Guides directory not found" in caplog.text
 
-    def test_load_exception_logged(self, caplog):
+    def test_load_exception_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Exception during _load is caught and logged."""
         import logging
         caplog.set_level(logging.WARNING)
@@ -191,7 +194,7 @@ class TestDocManagerLoadEdgeCases:
             assert len(mgr._guides) == 0
             assert "Failed to load workflow guides" in caplog.text
 
-    def test_non_md_files_skipped(self, tmp_path, caplog):
+    def test_non_md_files_skipped(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Non-.md files in the guides directory are skipped."""
         import logging
         caplog.set_level(logging.DEBUG)
@@ -215,7 +218,7 @@ class TestDocManagerLoadEdgeCases:
 class TestDocManagerTagsAsString:
     """Tests for tags-as-string fallback in _parse_guide."""
 
-    def test_tags_as_string_converted_to_list(self):
+    def test_tags_as_string_converted_to_list(self) -> None:
         """When frontmatter tags is a string, it's converted to a single-element list."""
         raw = """---
 title: Test
@@ -226,7 +229,7 @@ Content here"""
         assert guide is not None
         assert guide.tags == ["just-one-tag"]
 
-    def test_tags_as_number_raises(self):
+    def test_tags_as_number_raises(self) -> None:
         """When frontmatter tags is a number, list() wrapping raises TypeError."""
         raw = """---
 title: Test
@@ -251,13 +254,13 @@ class TestRegisterDocTools:
         mgr._search_engine = BM25SearchEngine()
         return mgr
 
-    def _capture_tool(self, name: str):
+    def _capture_tool(self, name: str) -> object:
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco
@@ -268,14 +271,14 @@ class TestRegisterDocTools:
         assert fn is not None, f"Tool '{name}' not found"
         return fn
 
-    def test_registers_two_tools(self):
+    def test_registers_two_tools(self) -> None:
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
         register_doc_tools(mcp, self._make_manager())
         assert mcp.tool.call_count == 2
 
-    def test_tools_have_openworld_false(self):
+    def test_tools_have_openworld_false(self) -> None:
         """search_docs and read_doc should have openWorldHint=False."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
@@ -288,14 +291,14 @@ class TestRegisterDocTools:
             assert annotations is not None, f"{kwargs.get('name', 'unnamed')} missing annotations"
             assert annotations.openWorldHint is False, f"{kwargs.get('name', 'unnamed')}.openWorldHint should be False"
 
-    def test_registers_one_resource(self):
+    def test_registers_one_resource(self) -> None:
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
         register_doc_tools(mcp, self._make_manager())
         assert mcp.resource.call_count == 1
 
-    def test_resource_tags_include_guide_frontmatter_tags(self):
+    def test_resource_tags_include_guide_frontmatter_tags(self) -> None:
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
@@ -307,7 +310,7 @@ class TestRegisterDocTools:
         assert "docs" in tags, "base docs tag should be present"
         assert "guide" in tags, "base guide tag should be present"
 
-    def test_resource_description_includes_guide_topics(self):
+    def test_resource_description_includes_guide_topics(self) -> None:
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
@@ -320,7 +323,7 @@ class TestRegisterDocTools:
         assert "read_doc(topic)" in desc
 
     @pytest.mark.asyncio
-    async def test_search_docs_returns_markdown_by_default(self):
+    async def test_search_docs_returns_markdown_by_default(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")
         assert isinstance(result, ToolResult)
@@ -329,7 +332,7 @@ class TestRegisterDocTools:
         assert any("Test Guide" in str(c.text) for c in result.content)
 
     @pytest.mark.asyncio
-    async def test_search_docs_raw_format(self):
+    async def test_search_docs_raw_format(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test", format="raw")
         assert isinstance(result, ToolResult)
@@ -337,7 +340,7 @@ class TestRegisterDocTools:
         # ToolResult copies structured_content to content when content is None
 
     @pytest.mark.asyncio
-    async def test_search_docs_json_format(self):
+    async def test_search_docs_json_format(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test", format="json")
         assert isinstance(result, ToolResult)
@@ -348,26 +351,26 @@ class TestRegisterDocTools:
         assert parsed[0]["name"] == "test"
 
     @pytest.mark.asyncio
-    async def test_read_doc_returns_content(self):
+    async def test_read_doc_returns_content(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test")
         assert isinstance(result, ToolResult)
         assert "# Test" in result.structured_content["result"]
 
     @pytest.mark.asyncio
-    async def test_read_doc_case_insensitive(self):
+    async def test_read_doc_case_insensitive(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="TEST")
         assert "# Test" in result.structured_content["result"]
 
     @pytest.mark.asyncio
-    async def test_read_doc_not_found_raises(self):
+    async def test_read_doc_not_found_raises(self) -> None:
         fn = self._capture_tool("read_doc")
         with pytest.raises(ValueError, match="Guide 'unknown' not found"):
             await fn(topic="unknown")
 
     @pytest.mark.asyncio
-    async def test_read_doc_error_includes_available_guides(self):
+    async def test_read_doc_error_includes_available_guides(self) -> None:
         fn = self._capture_tool("read_doc")
         with pytest.raises(ValueError, match="Available guides:") as exc_info:
             await fn(topic="unknown")
@@ -377,14 +380,14 @@ class TestRegisterDocTools:
         assert "search_docs()" in msg
 
     @pytest.mark.asyncio
-    async def test_read_doc_raw_format(self):
+    async def test_read_doc_raw_format(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="raw")
         assert "# Test" in result.structured_content["result"]
         assert "Content" in result.structured_content["result"]
 
     @pytest.mark.asyncio
-    async def test_read_doc_raw_and_markdown_match(self):
+    async def test_read_doc_raw_and_markdown_match(self) -> None:
         """raw and markdown formats should return identical content (both with frontmatter)."""
         fn = self._capture_tool("read_doc")
         raw = await fn(topic="test", format="raw")
@@ -392,25 +395,25 @@ class TestRegisterDocTools:
         assert raw.structured_content["result"] == md.structured_content["result"]
 
     @pytest.mark.asyncio
-    async def test_read_doc_markdown_includes_frontmatter(self):
+    async def test_read_doc_markdown_includes_frontmatter(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="markdown")
         assert "# Test" in result.structured_content["result"]
 
     @pytest.mark.asyncio
-    async def test_search_docs_invalid_format_raises(self):
+    async def test_search_docs_invalid_format_raises(self) -> None:
         fn = self._capture_tool("search_docs")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
             await fn(query="test", format="xml")
 
     @pytest.mark.asyncio
-    async def test_read_doc_invalid_format_raises(self):
+    async def test_read_doc_invalid_format_raises(self) -> None:
         fn = self._capture_tool("read_doc")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
             await fn(topic="test", format="xml")
 
     @pytest.mark.asyncio
-    async def test_search_docs_markdown_includes_cross_link_footer(self):
+    async def test_search_docs_markdown_includes_cross_link_footer(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")
         assert result.content is not None
@@ -420,7 +423,7 @@ class TestRegisterDocTools:
         assert "search_resources" in text
 
     @pytest.mark.asyncio
-    async def test_search_docs_empty_result_has_helpful_hint(self):
+    async def test_search_docs_empty_result_has_helpful_hint(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="zzz_nonexistent")
         assert result.content is not None
@@ -431,7 +434,7 @@ class TestRegisterDocTools:
         assert result.structured_content is not None
         assert result.structured_content["result"] == []
 
-    def test_resource_tags_aggregated_across_multiple_guides(self):
+    def test_resource_tags_aggregated_across_multiple_guides(self) -> None:
         """Tags from multiple guides should all appear in resource template tags."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
@@ -454,7 +457,7 @@ class TestRegisterDocTools:
         assert "wiki" in desc
         assert "labels" in desc
 
-    def test_resource_description_includes_multiple_topics(self):
+    def test_resource_description_includes_multiple_topics(self) -> None:
         """Description should list all guide topics when multiple guides exist."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
@@ -478,12 +481,12 @@ class TestRegisterDocTools:
 class TestDocResource:
     """Tests for the doc resource function."""
 
-    def _capture_resource(self):
+    def _capture_resource(self) -> object:
         mcp = MagicMock()
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco
@@ -491,8 +494,8 @@ class TestDocResource:
         mcp.tool = tool_decorator
         resource_registry: dict[str, object] = {}
 
-        def resource_decorator(**kwargs):
-            def deco(fn):
+        def resource_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 resource_registry[fn.__name__] = fn
                 return fn
             return deco
@@ -503,13 +506,13 @@ class TestDocResource:
         return resource_registry["doc_resource"]
 
     @pytest.mark.asyncio
-    async def test_resource_returns_guide_content(self):
+    async def test_resource_returns_guide_content(self) -> None:
         fn = self._capture_resource()
         result = await fn(topic="test")
         assert "# Test" in result
 
     @pytest.mark.asyncio
-    async def test_resource_raises_for_unknown(self):
+    async def test_resource_raises_for_unknown(self) -> None:
         fn = self._capture_resource()
         from fastmcp.exceptions import ResourceError
         with pytest.raises(ResourceError):
@@ -520,7 +523,7 @@ class TestSearchDocsPagination:
     """Pagination metadata assertions for search_docs."""
 
     @pytest.mark.asyncio
-    async def test_search_docs_pagination_metadata_present(self):
+    async def test_search_docs_pagination_metadata_present(self) -> None:
         """search_docs result should include has_more/next_offset/total_count."""
         from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 
@@ -536,8 +539,8 @@ class TestSearchDocsPagination:
         mcp = MagicMock()
         captured: dict[str, object] = {}
 
-        def tool_decorator(**kwargs):
-            def deco(fn):
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
             return deco

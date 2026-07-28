@@ -12,13 +12,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 import pytest
 import respx
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from fastmcp import FastMCP
     from fastmcp.tools.base import Tool
+
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
@@ -155,13 +160,13 @@ def _make_annotation_spec() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _tool_map(tools: list[Tool]) -> dict[str, Tool]:
+def _tool_map(tools: Sequence[Tool]) -> dict[str, Tool]:
     return {t.name: t for t in tools}
 
 
 # Module-level base_spec fixture shared by all test classes.
 @pytest.fixture
-def base_spec():
+def base_spec() -> dict[str, Any]:
     return _make_annotation_spec()
 
 
@@ -173,28 +178,28 @@ def base_spec():
 class TestReadOnlyHint:
     """``readOnlyHint`` must be True for GET, False for write methods."""
 
-    async def test_get_is_read_only(self, mcp_server) -> None:
+    async def test_get_is_read_only(self, mcp_server: FastMCP) -> None:
         """GET endpoint → readOnlyHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_get"]
         assert t.annotations is not None
         assert t.annotations.readOnlyHint is True
 
-    async def test_post_is_not_read_only(self, mcp_server) -> None:
+    async def test_post_is_not_read_only(self, mcp_server: FastMCP) -> None:
         """POST endpoint → readOnlyHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_issue_create_issue"]
         assert t.annotations is not None
         assert t.annotations.readOnlyHint is False
 
-    async def test_put_is_not_read_only(self, mcp_server) -> None:
+    async def test_put_is_not_read_only(self, mcp_server: FastMCP) -> None:
         """PUT endpoint → readOnlyHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_update"]
         assert t.annotations is not None
         assert t.annotations.readOnlyHint is False
 
-    async def test_delete_is_not_read_only(self, mcp_server) -> None:
+    async def test_delete_is_not_read_only(self, mcp_server: FastMCP) -> None:
         """DELETE endpoint → readOnlyHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_delete"]
@@ -210,21 +215,21 @@ class TestReadOnlyHint:
 class TestDestructiveHint:
     """``destructiveHint`` must be True for DELETE, False for other methods."""
 
-    async def test_delete_is_destructive(self, mcp_server) -> None:
+    async def test_delete_is_destructive(self, mcp_server: FastMCP) -> None:
         """DELETE endpoint → destructiveHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_delete"]
         assert t.annotations is not None
         assert t.annotations.destructiveHint is True
 
-    async def test_post_is_not_destructive(self, mcp_server) -> None:
+    async def test_post_is_not_destructive(self, mcp_server: FastMCP) -> None:
         """POST endpoint → destructiveHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_issue_create_issue"]
         assert t.annotations is not None
         assert t.annotations.destructiveHint is False
 
-    async def test_get_is_not_destructive(self, mcp_server) -> None:
+    async def test_get_is_not_destructive(self, mcp_server: FastMCP) -> None:
         """GET endpoint → destructiveHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_get"]
@@ -240,28 +245,28 @@ class TestDestructiveHint:
 class TestIdempotentHint:
     """``idempotentHint`` must be True for GET/PUT/DELETE, False for POST."""
 
-    async def test_get_is_idempotent(self, mcp_server) -> None:
+    async def test_get_is_idempotent(self, mcp_server: FastMCP) -> None:
         """GET endpoint → idempotentHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_get"]
         assert t.annotations is not None
         assert t.annotations.idempotentHint is True
 
-    async def test_put_is_idempotent(self, mcp_server) -> None:
+    async def test_put_is_idempotent(self, mcp_server: FastMCP) -> None:
         """PUT endpoint → idempotentHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_update"]
         assert t.annotations is not None
         assert t.annotations.idempotentHint is True
 
-    async def test_delete_is_idempotent(self, mcp_server) -> None:
+    async def test_delete_is_idempotent(self, mcp_server: FastMCP) -> None:
         """DELETE endpoint → idempotentHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_repo_delete"]
         assert t.annotations is not None
         assert t.annotations.idempotentHint is True
 
-    async def test_post_is_not_idempotent(self, mcp_server) -> None:
+    async def test_post_is_not_idempotent(self, mcp_server: FastMCP) -> None:
         """POST endpoint → idempotentHint=False."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools["gitea_issue_create_issue"]
@@ -291,11 +296,11 @@ class TestOpenWorldHintAPITools:
     ]
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize("tool_name", _API_TOOLS)
-    async def test_api_tool_has_open_world_hint(self, mcp_server, tool_name: str) -> None:
+    async def test_api_tool_has_open_world_hint(self, mcp_server: FastMCP, tool_name: str) -> None:
         """API tool ``{tool_name}`` → openWorldHint=True."""
         tools = _tool_map(await mcp_server.list_tools())
         t = tools[tool_name]
@@ -328,7 +333,7 @@ class TestOpenWorldHintSyntheticTools:
     ``register_mcp_resource_tools()``.
     """
 
-    async def test_search_tools_is_local(self, search_mcp_server) -> None:
+    async def test_search_tools_is_local(self, search_mcp_server: FastMCP) -> None:
         """``search_tools`` operates on in-memory data → openWorldHint=False."""
         tools = _tool_map(await search_mcp_server.list_tools())
         t = tools.get("gitea_search_tools")
@@ -336,7 +341,7 @@ class TestOpenWorldHintSyntheticTools:
         assert t.annotations is not None
         assert t.annotations.openWorldHint is False
 
-    async def test_tool_info_is_local(self, search_mcp_server) -> None:
+    async def test_tool_info_is_local(self, search_mcp_server: FastMCP) -> None:
         """``tool_info`` queries in-memory catalog → openWorldHint=False."""
         tools = _tool_map(await search_mcp_server.list_tools())
         t = tools.get("gitea_tool_info")
@@ -344,7 +349,7 @@ class TestOpenWorldHintSyntheticTools:
         assert t.annotations is not None
         assert t.annotations.openWorldHint is False
 
-    async def test_call_tool_is_external(self, search_mcp_server) -> None:
+    async def test_call_tool_is_external(self, search_mcp_server: FastMCP) -> None:
         """``call_tool`` delegates to Gitea API → openWorldHint=True."""
         tools = _tool_map(await search_mcp_server.list_tools())
         t = tools.get("gitea_call_tool")
@@ -352,7 +357,7 @@ class TestOpenWorldHintSyntheticTools:
         assert t.annotations is not None
         assert t.annotations.openWorldHint is True
 
-    async def test_read_resource_is_external(self, search_mcp_server) -> None:
+    async def test_read_resource_is_external(self, search_mcp_server: FastMCP) -> None:
         """``read_resource`` fetches from Gitea API → openWorldHint=True."""
         tools = _tool_map(await search_mcp_server.list_tools())
         t = tools.get("gitea_read_resource")
@@ -381,12 +386,12 @@ class TestCategoryTags:
     ]
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_annotation_spec()
 
     @pytest.mark.parametrize(("tool_name", "expected_category"), _CATEGORY_CASES)
     async def test_category_tag(
-        self, mcp_server, tool_name: str, expected_category: str,
+        self, mcp_server: FastMCP, tool_name: str, expected_category: str,
     ) -> None:
         """``{tool_name}`` has category tag ``{expected_category}``."""
         tools = _tool_map(await mcp_server.list_tools())
@@ -498,31 +503,31 @@ class TestToolInfoAnnotations:
         )
         return cast("dict[str, Any]", annotations)
 
-    async def test_synthetic_local_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+    async def test_synthetic_local_tool_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
         """Local synthetic tool (search_tools): read_only=True, open_world=False."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_search_tools", read_only=True, open_world=False
         )
 
-    async def test_call_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+    async def test_call_tool_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
         """call_tool: read_only=False, open_world=True."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_call_tool", read_only=False, open_world=True
         )
 
-    async def test_read_resource_annotations_via_tool_info(self, search_mcp_server) -> None:
+    async def test_read_resource_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
         """read_resource: read_only=True, open_world=True."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_read_resource", read_only=True, open_world=True
         )
 
-    async def test_list_resources_annotations_via_tool_info(self, search_mcp_server) -> None:
+    async def test_list_resources_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
         """list_resources: read_only=True, open_world=False."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_list_resources", read_only=True, open_world=False
         )
 
-    async def test_api_tool_annotations_via_tool_info(self, search_mcp_server) -> None:
+    async def test_api_tool_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
         """tool_info returns correct annotations for an API tool."""
         result = await search_mcp_server.call_tool(
             "gitea_tool_info",

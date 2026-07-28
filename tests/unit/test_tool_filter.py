@@ -29,7 +29,7 @@ from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 class TestMatchActiveToken:
     """Tests for the _match_active_token helper function."""
 
-    def test_matches_by_last_eight(self):
+    def test_matches_by_last_eight(self) -> None:
         token_val = "my-secret-token"
         last_eight = token_val[-8:]
         tokens = [
@@ -39,18 +39,18 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result == {"read:repo"}
 
-    def test_no_match_returns_none(self):
+    def test_no_match_returns_none(self) -> None:
         tokens = [
             {"id": 1, "name": "t1", "token_last_eight": "aaaaaaaa", "scopes": ["read:a"]},
         ]
         result = _match_active_token(tokens, "no-match-token")
         assert result is None
 
-    def test_empty_tokens_list(self):
+    def test_empty_tokens_list(self) -> None:
         result = _match_active_token([], "some-token")
         assert result is None
 
-    def test_token_without_scopes_field(self):
+    def test_token_without_scopes_field(self) -> None:
         token_val = "no-scopes"
         last_eight = token_val[-8:]
         tokens = [
@@ -59,7 +59,7 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result is None
 
-    def test_skips_non_dict_token_entries(self):
+    def test_skips_non_dict_token_entries(self) -> None:
         token_val = "mix-token"
         last_eight = token_val[-8:]
         tokens = [
@@ -70,7 +70,7 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result == {"read:repo"}
 
-    def test_scopes_not_a_list_returns_none(self):
+    def test_scopes_not_a_list_returns_none(self) -> None:
         token_val = "str-scopes"
         last_eight = token_val[-8:]
         tokens = [
@@ -79,7 +79,7 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result is None
 
-    def test_empty_scopes_list_returns_none(self):
+    def test_empty_scopes_list_returns_none(self) -> None:
         token_val = "empty-sco"
         last_eight = token_val[-8:]
         tokens = [
@@ -88,7 +88,7 @@ class TestMatchActiveToken:
         result = _match_active_token(tokens, token_val)
         assert result is None
 
-    def test_matches_all_scope(self):
+    def test_matches_all_scope(self) -> None:
         token_val = "all-token-"
         last_eight = token_val[-8:]
         tokens = [
@@ -106,37 +106,37 @@ class TestMatchActiveToken:
 class TestHasSufficientScope:
     """Tests for the has_sufficient_scope helper function."""
 
-    def test_sudo_grants_any_scope(self):
+    def test_sudo_grants_any_scope(self) -> None:
         assert has_sufficient_scope("read:repository", {"sudo"}) is True
         assert has_sufficient_scope("write:issue", {"sudo"}) is True
         assert has_sufficient_scope("sudo", {"sudo"}) is True
 
-    def test_all_grants_any_scope(self):
+    def test_all_grants_any_scope(self) -> None:
         assert has_sufficient_scope("read:repository", {"all"}) is True
         assert has_sufficient_scope("write:issue", {"all"}) is True
         assert has_sufficient_scope("sudo", {"all"}) is True
         assert has_sufficient_scope(None, {"all"}) is True
 
-    def test_exact_read_scope_match(self):
+    def test_exact_read_scope_match(self) -> None:
         assert has_sufficient_scope("read:repository", {"read:repository"}) is True
 
-    def test_exact_write_scope_match(self):
+    def test_exact_write_scope_match(self) -> None:
         assert has_sufficient_scope("write:issue", {"write:issue"}) is True
 
-    def test_write_scope_grants_read(self):
+    def test_write_scope_grants_read(self) -> None:
         assert has_sufficient_scope("read:repository", {"write:repository"}) is True
 
-    def test_read_scope_does_not_grant_write(self):
+    def test_read_scope_does_not_grant_write(self) -> None:
         assert has_sufficient_scope("write:repository", {"read:repository"}) is False
 
-    def test_unrelated_scope_does_not_suffice(self):
+    def test_unrelated_scope_does_not_suffice(self) -> None:
         assert has_sufficient_scope("write:issue", {"read:repository"}) is False
 
-    def test_none_required_always_sufficient(self):
+    def test_none_required_always_sufficient(self) -> None:
         assert has_sufficient_scope(None, set()) is True
         assert has_sufficient_scope(None, {"read:repository"}) is True
 
-    def test_empty_available_is_insufficient(self):
+    def test_empty_available_is_insufficient(self) -> None:
         assert has_sufficient_scope("read:repository", set()) is False
 
 
@@ -149,14 +149,14 @@ class TestFetchTokenScopes:
     """Tests for fetch_token_scopes (now in spec_loader)."""
 
     @pytest.mark.asyncio
-    async def test_user_fetch_exception_returns_none(self):
+    async def test_user_fetch_exception_returns_none(self) -> None:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(side_effect=Exception("API error"))
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_tokens_not_a_list_returns_none(self):
+    async def test_tokens_not_a_list_returns_none(self) -> None:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -168,7 +168,7 @@ class TestFetchTokenScopes:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_token_match_none_returns_none(self):
+    async def test_token_match_none_returns_none(self) -> None:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -180,14 +180,14 @@ class TestFetchTokenScopes:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_non_dict_user_data_returns_none(self):
+    async def test_non_dict_user_data_returns_none(self) -> None:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(side_effect=["not a dict"])
         result = await fetch_token_scopes(mock_client, "test-token")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_successful_fetch_returns_scopes(self):
+    async def test_successful_fetch_returns_scopes(self) -> None:
         token_val = "test-t-token----"
         last_eight = token_val[-8:]
         mock_client = AsyncMock()
@@ -201,7 +201,7 @@ class TestFetchTokenScopes:
         assert result == {"read:repo", "write:issue"}
 
     @pytest.mark.asyncio
-    async def test_successful_fetch_all_scope(self):
+    async def test_successful_fetch_all_scope(self) -> None:
         token_val = "all-scope-token"
         last_eight = token_val[-8:]
         mock_client = AsyncMock()
@@ -215,7 +215,7 @@ class TestFetchTokenScopes:
         assert result == {"all"}
 
     @pytest.mark.asyncio
-    async def test_tokens_fetch_exception_returns_none(self):
+    async def test_tokens_fetch_exception_returns_none(self) -> None:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
             side_effect=[
@@ -227,7 +227,7 @@ class TestFetchTokenScopes:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_user_missing_login_uses_unknown(self):
+    async def test_user_missing_login_uses_unknown(self) -> None:
         token_val = "no-match-token"
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(
@@ -275,11 +275,11 @@ class TestComputeExcludedRoutes:
             "components": {"schemas": {}},
         }
 
-    def test_empty_filtered_info_returns_empty(self):
+    def test_empty_filtered_info_returns_empty(self) -> None:
         excluded = _compute_excluded_routes(self._spec(), {})
         assert excluded == set()
 
-    def test_excludes_scope_filtered_operation(self):
+    def test_excludes_scope_filtered_operation(self) -> None:
         filtered = compute_filtered_tools_info(
             self._spec(),
             available_scopes={"read:repository"},  # admin_list_users needs read:admin
@@ -290,7 +290,7 @@ class TestComputeExcludedRoutes:
         assert ("/admin/users", "GET") in excluded
         assert ("/repos/{owner}/{repo}", "GET") not in excluded
 
-    def test_excludes_deprecated_operation(self):
+    def test_excludes_deprecated_operation(self) -> None:
         filtered = compute_filtered_tools_info(
             self._spec(),
             available_scopes={"sudo"},  # sees everything
@@ -300,7 +300,7 @@ class TestComputeExcludedRoutes:
         excluded = _compute_excluded_routes(self._spec(), filtered)
         assert ("/old/endpoint", "POST") in excluded
 
-    def test_excludes_config_excluded_operation(self):
+    def test_excludes_config_excluded_operation(self) -> None:
         filtered = compute_filtered_tools_info(
             self._spec(),
             available_scopes={"sudo"},
@@ -310,7 +310,7 @@ class TestComputeExcludedRoutes:
         excluded = _compute_excluded_routes(self._spec(), filtered)
         assert ("/repos/{owner}/{repo}", "GET") in excluded
 
-    def test_include_overrides_exclude(self):
+    def test_include_overrides_exclude(self) -> None:
         filtered = compute_filtered_tools_info(
             self._spec(),
             available_scopes={"sudo"},
@@ -320,7 +320,7 @@ class TestComputeExcludedRoutes:
         excluded = _compute_excluded_routes(self._spec(), filtered)
         assert ("/repos/{owner}/{repo}", "GET") not in excluded
 
-    def test_matches_prefixed_operation_id(self):
+    def test_matches_prefixed_operation_id(self) -> None:
         filtered = compute_filtered_tools_info(
             self._spec(),
             available_scopes={"sudo"},
@@ -339,7 +339,7 @@ class TestComputeExcludedRoutes:
 class TestProviderRouteMapFiltering:
     """Integration-level unit tests: filtered routes never become tools."""
 
-    def _make_provider(self, excluded_routes, response_format="markdown") -> OpenAPIProvider:
+    def _make_provider(self, excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         spec = {
@@ -365,7 +365,7 @@ class TestProviderRouteMapFiltering:
             response_format=response_format,
         )
 
-    def test_no_exclusions_keeps_all(self, caplog):
+    def test_no_exclusions_keeps_all(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
 
         caplog.set_level(logging.DEBUG)
@@ -373,7 +373,7 @@ class TestProviderRouteMapFiltering:
         assert provider is not None
         assert "Excluding filtered endpoint" not in caplog.text
 
-    def test_excluded_route_is_dropped(self, caplog):
+    def test_excluded_route_is_dropped(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
 
         caplog.set_level(logging.DEBUG)
@@ -382,7 +382,7 @@ class TestProviderRouteMapFiltering:
         assert "Excluding filtered endpoint" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_filtered_route_not_in_tool_list(self):
+    async def test_filtered_route_not_in_tool_list(self) -> None:
         provider = self._make_provider({("/admin/users", "GET")})
         tools = await provider.list_tools()
         names = {t.name for t in tools}

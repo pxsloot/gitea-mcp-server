@@ -2,11 +2,12 @@
 
 Provides ``extract_tool_names`` to normalise tool listing output from
 various MCP structures (dict, list of objects, list of strings) into a
-plain list of name strings.
-"""
+plain list of name strings."""
+
+from typing import Any
 
 
-def extract_tool_names(tools):
+def extract_tool_names(tools: Any) -> list[str]:
     """Extract tool names from ``mcp.get_tools()`` return value.
 
     Handles the three structures MCP may return:

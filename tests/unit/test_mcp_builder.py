@@ -1,12 +1,14 @@
 """Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
 
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import Tool
+from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
+from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -23,14 +25,14 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 class TestCustomizeMetadata:
     """Tests for _customize_metadata - in-place metadata on OpenAPITools."""
 
-    def test_skips_non_openapi_tool(self):
+    def test_skips_non_openapi_tool(self) -> None:
         """Non-OpenAPITool components are skipped."""
         route = MagicMock(path="/test", summary="Test", operation_id="test_op", method="GET")
         resource = MagicMock(spec=object)
 
         _customize_metadata(route, resource, openapi_spec={})
 
-    def test_sets_title_and_annotations(self):
+    def test_sets_title_and_annotations(self) -> None:
         """Title and ToolAnnotations are set from route operationId."""
         route = MagicMock(
             path="/test", summary="List items", operation_id="list_items", method="GET"
@@ -50,7 +52,7 @@ class TestCustomizeMetadata:
         assert tool.annotations.title == "List Items"
         assert tool.annotations.readOnlyHint is True
 
-    def test_title_from_operation_id(self):
+    def test_title_from_operation_id(self) -> None:
         """Title is generated from operationId (not summary)."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -72,7 +74,7 @@ class TestCustomizeMetadata:
         assert tool.annotations.title == "Create Issue"
         assert "..." not in tool.annotations.title
 
-    def test_adds_annotations_from_dict(self):
+    def test_adds_annotations_from_dict(self) -> None:
         """Annotations dict is converted to ToolAnnotations."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -95,7 +97,7 @@ class TestCustomizeMetadata:
         assert tool.annotations.title == "List Issues"
         assert "issue" in tool.tags
 
-    def test_preserves_existing_toolannotations(self):
+    def test_preserves_existing_toolannotations(self) -> None:
         """Existing ToolAnnotations are preserved and updated."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}",
@@ -120,7 +122,7 @@ class TestCustomizeMetadata:
         assert tool.annotations.readOnlyHint is True
         assert "pull_request" in tool.tags
 
-    def test_category_detection_various_paths(self):
+    def test_category_detection_various_paths(self) -> None:
         """Category tag is inferred correctly from various route paths."""
         test_cases = [
             ("/repos/{owner}/{repo}/issues", "issue"),
@@ -150,7 +152,7 @@ class TestCustomizeMetadata:
                 f"Failed for {path}: category {expected_category} not in tags"
             )
 
-    def test_destructive_hint_from_method(self):
+    def test_destructive_hint_from_method(self) -> None:
         """DELETE method sets destructiveHint = True."""
         route = MagicMock(
             path="/repos/{owner}/{repo}",
@@ -171,7 +173,7 @@ class TestCustomizeMetadata:
 
         assert tool.annotations.destructiveHint is True
 
-    def test_sets_description(self):
+    def test_sets_description(self) -> None:
         """Description is preserved and updated."""
         route = MagicMock(path="/user", summary="Get user", operation_id="get_user", method="GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -187,7 +189,7 @@ class TestCustomizeMetadata:
 
         assert tool.description == "Original description"
 
-    def test_uses_component_description_not_doc(self):
+    def test_uses_component_description_not_doc(self) -> None:
         """Verify that component.description is used, not __doc__."""
         route = MagicMock(path="/test", summary="Test", operation_id="test_op", method="GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -205,7 +207,7 @@ class TestCustomizeMetadata:
         assert "Description from attribute" in tool.description
         assert "Docstring should be ignored" not in tool.description
 
-    def test_applies_label_guidance(self):
+    def test_applies_label_guidance(self) -> None:
         """Verify LABEL_GUIDANCE is appended for tools with labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -228,7 +230,7 @@ class TestCustomizeMetadata:
 
         assert LABEL_GUIDANCE.strip() in tool.description
 
-    def test_applies_label_guidance_nullable(self):
+    def test_applies_label_guidance_nullable(self) -> None:
         """Verify label guidance works with nullable array type ['array', 'null']."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -251,7 +253,7 @@ class TestCustomizeMetadata:
 
         assert LABEL_GUIDANCE.strip() in tool.description
 
-    def test_does_not_apply_label_guidance(self):
+    def test_does_not_apply_label_guidance(self) -> None:
         """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -272,7 +274,7 @@ class TestCustomizeMetadata:
 
         assert LABEL_GUIDANCE.strip() not in tool.description
 
-    def test_adds_labels_tag_for_label_tools(self):
+    def test_adds_labels_tag_for_label_tools(self) -> None:
         """Verify 'labels' tag is added to tools with labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -296,7 +298,7 @@ class TestCustomizeMetadata:
         assert "labels" in tool.tags
         assert "issue" in tool.tags  # original tag preserved
 
-    def test_does_not_add_labels_tag_without_labels(self):
+    def test_does_not_add_labels_tag_without_labels(self) -> None:
         """Verify 'labels' tag is NOT added when tool has no labels parameter."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -317,7 +319,7 @@ class TestCustomizeMetadata:
 
         assert "labels" not in tool.tags
 
-    def test_sets_meta_flags(self):
+    def test_sets_meta_flags(self) -> None:
         """Meta dict contains _META_CUSTOMIZED and _customization."""
         route = MagicMock(
             path="/repos/{owner}/{repo}", summary="Get repo", operation_id="get_repo", method="GET"
@@ -340,7 +342,7 @@ class TestCustomizeMetadata:
         assert tool.meta["_customization"]["has_labels"] is False
         assert tool.meta["_customization"]["is_text_response"] is False
 
-    def test_registers_invalidation_patterns_for_write(self):
+    def test_registers_invalidation_patterns_for_write(self) -> None:
         """Write methods register cache invalidation patterns."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -364,7 +366,7 @@ class TestCustomizeMetadata:
 
             mock_register.assert_called_once()
 
-    def test_read_method_does_not_register_invalidation(self):
+    def test_read_method_does_not_register_invalidation(self) -> None:
         """GET methods do not register cache invalidation."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -388,7 +390,7 @@ class TestCustomizeMetadata:
 
             mock_register.assert_not_called()
 
-    def test_output_schema_not_none_sets_wrap_flag(self):
+    def test_output_schema_not_none_sets_wrap_flag(self) -> None:
         """When output_schema is not None, x-fastmcp-wrap-result is set."""
         route = MagicMock(
             path="/repos/{owner}/{repo}",
@@ -414,7 +416,7 @@ class TestCustomizeMetadata:
             _customize_metadata(route, tool, openapi_spec={})
             assert tool.output_schema["x-fastmcp-wrap-result"] is True
 
-    def test_array_output_schema_adds_pagination_fields(self):
+    def test_array_output_schema_adds_pagination_fields(self) -> None:
         """Array output_schema gets pagination fields (has_more, next_offset, total_count)."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -456,7 +458,7 @@ class TestCustomizeMetadata:
             assert props["next_offset"]["type"] == "integer"
             assert props["total_count"]["type"] == "integer"
 
-    def test_text_plain_fallback_schema(self):
+    def test_text_plain_fallback_schema(self) -> None:
         """Text/plain endpoints get string output_schema when derive_output_schema returns None."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/pulls/{index}.{diffType}",
@@ -491,7 +493,7 @@ class TestCustomizeMetadata:
             # x-fastmcp-wrap-result should be set since output_schema is now not None
             assert tool.output_schema.get("x-fastmcp-wrap-result") is True
 
-    def test_json_endpoint_retains_derived_schema(self):
+    def test_json_endpoint_retains_derived_schema(self) -> None:
         """JSON endpoints keep their derived output_schema even when is_text_response is False."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
@@ -532,7 +534,7 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec, excluded_routes, response_format="markdown"):
+    def _provider(self, spec: dict[str, Any], excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
@@ -549,19 +551,19 @@ class TestRouteMapFiltering:
             response_format=response_format,
         )
 
-    def test_empty_paths(self):
+    def test_empty_paths(self) -> None:
         """Empty paths dict returns empty set."""
         spec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
         provider = self._provider(spec, set())
         assert provider is not None
 
-    def test_missing_paths(self):
+    def test_missing_paths(self) -> None:
         """Spec with no paths key returns empty set."""
         spec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
         provider = self._provider(spec, set())
         assert provider is not None
 
-    def test_non_dict_paths_rejected(self):
+    def test_non_dict_paths_rejected(self) -> None:
         """A non-dict paths value is rejected by FastMCP's spec validation."""
         spec = {"openapi": "3.1.1", "paths": "not_a_dict"}
         from gitea_mcp_server.label_service import LabelService
@@ -580,7 +582,7 @@ class TestRouteMapFiltering:
         else:
             pytest.fail("Expected FastMCP to reject non-dict paths")
 
-    def test_no_deprecated_returns_empty(self):
+    def test_no_deprecated_returns_empty(self) -> None:
         """No deprecated:true operations returns empty set."""
         spec = {
             "openapi": "3.1.1",
@@ -594,7 +596,7 @@ class TestRouteMapFiltering:
         provider = self._provider(spec, set())
         assert provider is not None
 
-    def test_single_deprecated_get(self):
+    def test_single_deprecated_get(self) -> None:
         """Single deprecated GET is excluded via route_map_fn."""
         spec = {
             "openapi": "3.1.1",
@@ -608,7 +610,7 @@ class TestRouteMapFiltering:
         provider = self._provider(spec, {("/user", "GET")})
         assert provider is not None
 
-    def test_multiple_deprecated_operations(self):
+    def test_multiple_deprecated_operations(self) -> None:
         """Multiple deprecated methods on same path are excluded."""
         spec = {
             "openapi": "3.1.1",
@@ -625,7 +627,7 @@ class TestRouteMapFiltering:
         )
         assert provider is not None
 
-    def test_multiple_paths_mixed(self):
+    def test_multiple_paths_mixed(self) -> None:
         """Deprecated across multiple paths, non-deprecated excluded."""
         spec = {
             "openapi": "3.1.1",
@@ -653,7 +655,7 @@ class TestRouteMapFiltering:
         )
         assert provider is not None
 
-    def test_deprecated_false_not_included(self):
+    def test_deprecated_false_not_included(self) -> None:
         """deprecated: false is treated as not deprecated (no exclusion)."""
         spec = {
             "openapi": "3.1.1",
@@ -666,7 +668,7 @@ class TestRouteMapFiltering:
         provider = self._provider(spec, set())
         assert provider is not None
 
-    def test_non_http_method_keys_ignored(self):
+    def test_non_http_method_keys_ignored(self) -> None:
         """Parameters key at path level is not treated as an operation."""
         spec = {
             "openapi": "3.1.1",
@@ -680,7 +682,7 @@ class TestRouteMapFiltering:
         provider = self._provider(spec, {("/repos/{owner}/{repo}", "GET")})
         assert provider is not None
 
-    def test_http_methods_comprehensive(self):
+    def test_http_methods_comprehensive(self) -> None:
         """All HTTP methods are properly excluded via route_map_fn."""
         spec = {
             "openapi": "3.1.1",
@@ -706,7 +708,7 @@ class TestRouteMapFiltering:
 class TestToolWrappingTransformTelemetry:
     """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
 
-    def make_transform(self, openapi_spec=None):
+    def make_transform(self, openapi_spec: dict[str, Any] | None = None) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
         )
@@ -731,7 +733,7 @@ class TestToolWrappingTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_pipeline_emits_validate_span(self, trace_exporter):
+    async def test_pipeline_emits_validate_span(self, trace_exporter: InMemorySpanExporter) -> None:
         """Pipeline emits a ``{tool}.validate`` span with arg_count attribute."""
         transform = self.make_transform()
         tool = self.make_tool("test_tool")
@@ -766,7 +768,7 @@ class TestToolWrappingTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_spans_carry_tool_name_attribute(self, trace_exporter):
+    async def test_spans_carry_tool_name_attribute(self, trace_exporter: InMemorySpanExporter) -> None:
         """Validate and execute spans carry ``tool.name`` attribute."""
         transform = self.make_transform()
         tool = self.make_tool("attr_tool")
@@ -799,7 +801,7 @@ class TestToolWrappingTransformTelemetry:
                 assert span.attributes.get("http.method") == "GET"
 
     @pytest.mark.asyncio
-    async def test_validation_error_stops_pipeline(self, trace_exporter):
+    async def test_validation_error_stops_pipeline(self, trace_exporter: InMemorySpanExporter) -> None:
         """When validation fails, only the ``validate`` span is emitted."""
         from gitea_mcp_server.exceptions import ValidationError
 
@@ -842,7 +844,7 @@ class TestToolWrappingTransformTelemetry:
 class TestCreateOpenapiProvider:
     """Tests for create_openapi_provider - provider creation and deprecated route filtering."""
 
-    def test_deprecated_routes_are_filtered_out(self, caplog):
+    def test_deprecated_routes_are_filtered_out(self, caplog: pytest.LogCaptureFixture) -> None:
         """Deprecated routes are excluded via route_map_fn."""
         import logging
 
@@ -882,7 +884,7 @@ class TestCreateOpenapiProvider:
         assert "Excluding filtered endpoint" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_response_format_propagates_to_tool_schema(self):
+    async def test_response_format_propagates_to_tool_schema(self) -> None:
         """response_format should flow into the tool's format parameter default."""
         from gitea_mcp_server.label_service import LabelService
 
@@ -921,13 +923,13 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec=None, response_format="markdown"):
+    def make_transform(self, openapi_spec: dict[str, Any] | None = None, response_format: str = "markdown") -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec or {},
             response_format=response_format,
         )
 
-    def make_tool(self, customized=True):
+    def make_tool(self, customized: bool = True) -> Tool:
         meta: dict[str, Any] = {}
         if customized:
             meta = {
@@ -950,7 +952,7 @@ class TestToolWrappingTransform:
         )
 
     @pytest.mark.asyncio
-    async def test_list_tools_passthrough_uncustomized(self):
+    async def test_list_tools_passthrough_uncustomized(self) -> None:
         """Uncustomized tools pass through without wrapping."""
         transform = self.make_transform()
         tool = self.make_tool(customized=False)
@@ -959,7 +961,7 @@ class TestToolWrappingTransform:
         assert result[0] is tool
 
     @pytest.mark.asyncio
-    async def test_list_tools_wraps_customized(self):
+    async def test_list_tools_wraps_customized(self) -> None:
         """Customized tools are wrapped (new Tool created)."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
@@ -969,24 +971,24 @@ class TestToolWrappingTransform:
         assert isinstance(result[0], Tool)
 
     @pytest.mark.asyncio
-    async def test_get_tool_passthrough_uncustomized(self):
+    async def test_get_tool_passthrough_uncustomized(self) -> None:
         """Uncustomized tools from call_next pass through."""
         transform = self.make_transform()
         tool = self.make_tool(customized=False)
 
-        async def call_next(name, version=None):
+        async def call_next(name: str, version: str | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
         assert result is tool
 
     @pytest.mark.asyncio
-    async def test_get_tool_wraps_customized(self):
+    async def test_get_tool_wraps_customized(self) -> None:
         """Customized tools from call_next are wrapped."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def call_next(name, version=None):
+        async def call_next(name: str, version: str | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("test_tool", call_next)
@@ -994,25 +996,25 @@ class TestToolWrappingTransform:
         assert isinstance(result, Tool)
 
     @pytest.mark.asyncio
-    async def test_get_tool_none_passthrough(self):
+    async def test_get_tool_none_passthrough(self) -> None:
         """None from call_next passes through."""
         transform = self.make_transform()
 
-        async def call_next(name, version=None):
+        async def call_next(name: str, version: str | None = None) -> None:
             return None
 
         result = await transform.get_tool("test_tool", call_next)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_list_tools_empty(self):
+    async def test_list_tools_empty(self) -> None:
         """Empty list passes through."""
         transform = self.make_transform()
         result = await transform.list_tools([])
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_wrapped_tool_preserves_metadata(self):
+    async def test_wrapped_tool_preserves_metadata(self) -> None:
         """Wrapped tool preserves name, tags, description, output_schema."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
@@ -1024,7 +1026,7 @@ class TestToolWrappingTransform:
         assert wrapped.output_schema == tool.output_schema
 
     @pytest.mark.asyncio
-    async def test_wrapped_tool_executes_transform_fn(self):
+    async def test_wrapped_tool_executes_transform_fn(self) -> None:
         """Calling the wrapped tool's run invokes the transform_fn."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
@@ -1055,7 +1057,7 @@ class TestToolWrappingTransform:
             assert output.structured_content == {"result": "ok"}
 
     @pytest.mark.asyncio
-    async def test_validation_error_blocks_execution(self):
+    async def test_validation_error_blocks_execution(self) -> None:
         """Validation error prevents tool execution."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
@@ -1072,7 +1074,7 @@ class TestToolWrappingTransform:
                 await wrapped.run(arguments={"name": ""})
 
     @pytest.mark.asyncio
-    async def test_text_response_wrapping(self):
+    async def test_text_response_wrapping(self) -> None:
         """is_text_response wraps unstructured content in result dict."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
@@ -1100,7 +1102,7 @@ class TestToolWrappingTransform:
             assert output.structured_content == {"result": "raw text"}
 
     @pytest.mark.asyncio
-    async def test_array_pagination_injection(self):
+    async def test_array_pagination_injection(self) -> None:
         """Array responses get pagination metadata."""
         from gitea_mcp_server.pagination import pagination_ctx
 
@@ -1140,7 +1142,7 @@ class TestToolWrappingTransform:
             pagination_ctx.set({})
 
     @pytest.mark.asyncio
-    async def test_apply_loop_hooks_passthrough_no_extracted(self):
+    async def test_apply_loop_hooks_passthrough_no_extracted(self) -> None:
         """_apply_loop_hooks returns result unchanged when extracted is None."""
         from fastmcp.tools.base import ToolResult
 
@@ -1157,7 +1159,7 @@ class TestToolWrappingTransform:
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_apply_loop_hooks_passthrough_empty_extracted(self):
+    async def test_apply_loop_hooks_passthrough_empty_extracted(self) -> None:
         """_apply_loop_hooks returns result unchanged when extracted is empty."""
         from fastmcp.tools.base import ToolResult
 
@@ -1174,7 +1176,7 @@ class TestToolWrappingTransform:
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_apply_loop_hooks_calls_hook(self):
+    async def test_apply_loop_hooks_calls_hook(self) -> None:
         """_apply_loop_hooks invokes registered loop hook with correct args."""
         from fastmcp.tools.base import ToolResult
 
@@ -1222,7 +1224,7 @@ class TestToolWrappingTransform:
         assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
 
     @pytest.mark.asyncio
-    async def test_apply_loop_hooks_execute_fn_reinvokes_http(self):
+    async def test_apply_loop_hooks_execute_fn_reinvokes_http(self) -> None:
         """The execute_fn passed to loop_hook calls _run_with_error_handling."""
         from fastmcp.tools.base import ToolResult
 
@@ -1232,7 +1234,7 @@ class TestToolWrappingTransform:
         tool = self.make_tool(customized=True)
         tool.name = "test_tool"
 
-        async def my_loop_hook(result, value, kwargs, execute_fn):
+        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             """Simple loop hook that fetches one more page and merges."""
             kwargs["page"] = 2
             next_result = await execute_fn(kwargs)
@@ -1283,7 +1285,7 @@ class TestToolWrappingTransform:
         assert output.structured_content["has_more"] is False
 
     @pytest.mark.asyncio
-    async def test_execute_fn_validates_kwargs(self):
+    async def test_execute_fn_validates_kwargs(self) -> None:
         """execute_fn validates kwargs, rejecting invalid values."""
         from fastmcp.tools.base import ToolResult
 
@@ -1292,7 +1294,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def bad_loop_hook(result, value, kwargs, execute_fn):
+        async def bad_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             await execute_fn({"page": 0})  # page < 1 is invalid
             return result
 
@@ -1318,7 +1320,7 @@ class TestToolWrappingTransform:
                 )
 
     @pytest.mark.asyncio
-    async def test_loop_hooks_chain_integration(self):
+    async def test_loop_hooks_chain_integration(self) -> None:
         """Pipeline with extracted loop hooks calls _apply_loop_hooks.
 
         Verifies that the full pipeline (transform_fn → _run_transform_pipeline
@@ -1335,7 +1337,7 @@ class TestToolWrappingTransform:
 
         loop_hook_called = False
 
-        async def my_loop_hook(result, value, kwargs, execute_fn):
+        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
             nonlocal loop_hook_called
             loop_hook_called = True
             return result
@@ -1432,7 +1434,7 @@ class TestFetchAllIntegration:
         return transform, tool
 
     @pytest.mark.asyncio
-    async def test_fetch_all_merges_all_pages(self, make_transform_and_tool):
+    async def test_fetch_all_merges_all_pages(self, make_transform_and_tool: tuple) -> None:
         """Full pipeline with fetch_all=True merges paginated results."""
         from fastmcp.tools.base import ToolResult
 
@@ -1447,7 +1449,7 @@ class TestFetchAllIntegration:
         # _pipeline_with_context (initial page) or _execute_fn (subsequent).
         page_calls: list[int] = []
 
-        async def _mock_pages(kwargs, _tool, _spec, _path, _method):
+        async def _mock_pages(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             start = (page - 1) * 10 + 1
@@ -1505,7 +1507,7 @@ class TestFetchAllIntegration:
         assert result.structured_content["total_count"] == 30
 
     @pytest.mark.asyncio
-    async def test_fetch_all_false_single_page(self, make_transform_and_tool):
+    async def test_fetch_all_false_single_page(self, make_transform_and_tool: tuple) -> None:
         """fetch_all=False fetches only the first page (no loop)."""
         from fastmcp.tools.base import ToolResult
 
@@ -1515,7 +1517,7 @@ class TestFetchAllIntegration:
 
         page_calls: list[int] = []
 
-        async def _mock_single(kwargs, _tool, _spec, _path, _method):
+        async def _mock_single(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             return ToolResult(
@@ -1557,7 +1559,7 @@ class TestFetchAllIntegration:
         assert result.structured_content["has_more"] is True  # still has more
 
 
-async def _mock_fetch_all_hook(result, value, kwargs, execute_fn):
+async def _mock_fetch_all_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
     """Simple loop hook that fetches pages via execute_fn and merges."""
     from gitea_mcp_server.tools.virtual_params import _fetch_all_loop
 

@@ -72,7 +72,7 @@ class TestRegisterTypeToolsTool:
     """Tests for the resolve_type tool registration."""
 
     @pytest.mark.asyncio
-    async def test_registers_tool(self, mcp: FastMCP):
+    async def test_registers_tool(self, mcp: FastMCP) -> None:
         """The resolve_type tool should be registered and callable."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -82,7 +82,7 @@ class TestRegisterTypeToolsTool:
         assert "resolve_type" in tool_names
 
     @pytest.mark.asyncio
-    async def test_tool_has_correct_annotations(self, mcp: FastMCP):
+    async def test_tool_has_correct_annotations(self, mcp: FastMCP) -> None:
         """The resolve_type tool should have read-only and idempotent hints."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -95,7 +95,7 @@ class TestRegisterTypeToolsTool:
         assert tool.annotations.destructiveHint is False
 
     @pytest.mark.asyncio
-    async def test_tool_has_synthetic_tag(self, mcp: FastMCP):
+    async def test_tool_has_synthetic_tag(self, mcp: FastMCP) -> None:
         """The resolve_type tool should have the synthetic tag."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -105,7 +105,7 @@ class TestRegisterTypeToolsTool:
         assert "synthetic" in tool.tags
 
     @pytest.mark.asyncio
-    async def test_tool_resolves_known_type(self, mcp: FastMCP):
+    async def test_tool_resolves_known_type(self, mcp: FastMCP) -> None:
         """resolve_type should return type info for a known type."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -115,7 +115,7 @@ class TestRegisterTypeToolsTool:
         assert "cross_references" in data
 
     @pytest.mark.asyncio
-    async def test_tool_errors_for_unknown_type(self, mcp: FastMCP):
+    async def test_tool_errors_for_unknown_type(self, mcp: FastMCP) -> None:
         """resolve_type should raise ToolError for an unknown type."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -123,7 +123,7 @@ class TestRegisterTypeToolsTool:
             await mcp.call_tool("resolve_type", {"name": "NonExistentType"})
 
     @pytest.mark.asyncio
-    async def test_tool_errors_when_no_spec(self, mcp: FastMCP):
+    async def test_tool_errors_when_no_spec(self, mcp: FastMCP) -> None:
         """resolve_type should error when openapi_spec is None."""
         register_type_tools(mcp, openapi_spec=None)
 
@@ -135,7 +135,7 @@ class TestRegisterTypeToolsResource:
     """Tests for the gitea://types/{typeName} resource registration."""
 
     @pytest.mark.asyncio
-    async def test_registers_resource_template(self, mcp: FastMCP):
+    async def test_registers_resource_template(self, mcp: FastMCP) -> None:
         """The type resource template should be registered."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -145,7 +145,7 @@ class TestRegisterTypeToolsResource:
         assert "gitea://types/{typeName}" in template_uris
 
     @pytest.mark.asyncio
-    async def test_resource_returns_known_type(self, mcp: FastMCP):
+    async def test_resource_returns_known_type(self, mcp: FastMCP) -> None:
         """Reading a known type should return JSON with name and schema."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -157,7 +157,7 @@ class TestRegisterTypeToolsResource:
         assert "cross_references" in data
 
     @pytest.mark.asyncio
-    async def test_resource_returns_full_detail_by_default(self, mcp: FastMCP):
+    async def test_resource_returns_full_detail_by_default(self, mcp: FastMCP) -> None:
         """By default, the resource should include resolved_schema (detail='full')."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -167,7 +167,7 @@ class TestRegisterTypeToolsResource:
         assert "resolved_schema" in data
 
     @pytest.mark.asyncio
-    async def test_resource_errors_for_unknown_type(self, mcp: FastMCP):
+    async def test_resource_errors_for_unknown_type(self, mcp: FastMCP) -> None:
         """Reading an unknown type should raise ResourceError."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -179,7 +179,7 @@ class TestRegisterTypeToolsCrossReferences:
     """Tests for cross-reference accuracy in the type tool and resource."""
 
     @pytest.mark.asyncio
-    async def test_cross_references_returned_by(self, mcp: FastMCP):
+    async def test_cross_references_returned_by(self, mcp: FastMCP) -> None:
         """Tool/resource should show which tools return the type."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
@@ -189,7 +189,7 @@ class TestRegisterTypeToolsCrossReferences:
         assert "issue_get_issue" in refs["returned_by"]
 
     @pytest.mark.asyncio
-    async def test_cross_references_in_resource(self, mcp: FastMCP):
+    async def test_cross_references_in_resource(self, mcp: FastMCP) -> None:
         """Resource should include the same cross-references."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 

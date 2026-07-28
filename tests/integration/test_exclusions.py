@@ -49,7 +49,7 @@ class TestExclusionIntegration:
     """Integration tests for the exclusion transform."""
 
     @pytest.mark.asyncio
-    async def test_exclude_admin_tools(self, tmp_path: Path):
+    async def test_exclude_admin_tools(self, tmp_path: Path) -> None:
         """Exclude patterns hide matching tools from the server's listing."""
         cfg = tmp_path / "exclude.yaml"
         cfg.write_text("exclude:\n  - gitea_admin_*")
@@ -68,7 +68,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_include_overrides_exclude(self, tmp_path: Path):
+    async def test_include_overrides_exclude(self, tmp_path: Path) -> None:
         """Include patterns override exclude, restoring a subset of excluded tools."""
         cfg = tmp_path / "override.yaml"
         cfg.write_text(
@@ -91,7 +91,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_no_config_file_no_filtering(self):
+    async def test_no_config_file_no_filtering(self) -> None:
         """Without a config path, all tools should be present."""
         config = SimpleConfig(exclude_config_path=None)
         gitea_client = GiteaClient(config)
@@ -106,7 +106,7 @@ class TestExclusionIntegration:
             assert "gitea_admin_get_users" in tool_names
 
     @pytest.mark.asyncio
-    async def test_exclude_star_with_include_whitelist(self, tmp_path: Path):
+    async def test_exclude_star_with_include_whitelist(self, tmp_path: Path) -> None:
         """Exclude everything, then whitelist specific tools via include.
 
         ``*`` must be quoted in YAML to avoid alias parsing.
@@ -136,7 +136,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_exclude_by_tag(self, tmp_path: Path):
+    async def test_exclude_by_tag(self, tmp_path: Path) -> None:
         """Exclude tools by tag prefix through the full server path."""
         cfg = tmp_path / "tag_exclude.yaml"
         cfg.write_text("exclude:\n  - tag:admin")
@@ -155,7 +155,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_excluded_tools_also_exclude_resources(self, tmp_path: Path):
+    async def test_excluded_tools_also_exclude_resources(self, tmp_path: Path) -> None:
         """When a tool is excluded by config, its corresponding auto-generated
         resource should also be excluded at registration time."""
         # Use paths with {path_params} that are NOT in the factory's
@@ -218,7 +218,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_exclude_with_unprefixed_pattern(self, tmp_path: Path):
+    async def test_exclude_with_unprefixed_pattern(self, tmp_path: Path) -> None:
         """Unprefixed patterns match the unprefixed operationId of tools.
 
         Since tools are already prefixed at transform time, an unprefixed
@@ -242,7 +242,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_scoped_tools_also_exclude_resources(self):
+    async def test_scoped_tools_also_exclude_resources(self) -> None:
         """When a tool is scope-filtered (token lacks required scope), its
         auto-generated resource template should also be excluded."""
         spec = {
@@ -317,7 +317,7 @@ class TestExclusionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_scoped_custom_resources_filtered(self):
+    async def test_scoped_custom_resources_filtered(self) -> None:
         """Custom resources whose required_scope is not satisfied by the token's
         available scopes should be skipped at registration time, while those
         with no required scope or a matching scope remain visible."""

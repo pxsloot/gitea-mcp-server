@@ -139,7 +139,7 @@ def _clear_registered_uris() -> None:
 class TestAutoDeriveSchema:
     """Tests for _auto_derive_schema."""
 
-    def test_returns_schema_for_known_endpoint(self):
+    def test_returns_schema_for_known_endpoint(self) -> None:
         spec = _make_mock_openapi_spec()
         schema = _auto_derive_schema(spec, "/repos/{owner}/{repo}", "get")
         assert schema is not None
@@ -147,15 +147,15 @@ class TestAutoDeriveSchema:
         assert "id" in schema["properties"]
         assert "name" in schema["properties"]
 
-    def test_returns_none_for_none_spec(self):
+    def test_returns_none_for_none_spec(self) -> None:
         assert _auto_derive_schema(None, "/path", "get") is None
 
-    def test_returns_none_for_missing_path(self):
+    def test_returns_none_for_missing_path(self) -> None:
         spec = _make_mock_openapi_spec()
         schema = _auto_derive_schema(spec, "/nonexistent", "get")
         assert schema is None
 
-    def test_schema_is_unwrapped(self):
+    def test_schema_is_unwrapped(self) -> None:
         """The returned schema should have the {result: ...} wrapper stripped."""
         spec = _make_mock_openapi_spec()
         schema = _auto_derive_schema(spec, "/repos/{owner}/{repo}", "get")
@@ -170,7 +170,7 @@ class TestAutoDeriveSchema:
 class TestMakeApiResourceRegistration:
     """Tests that make_api_resource registers resources correctly."""
 
-    def test_registers_resource(self):
+    def test_registers_resource(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -188,7 +188,7 @@ class TestMakeApiResourceRegistration:
         uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://repos/{owner}/{repo}" in uris
 
-    def test_registers_concrete_uri(self):
+    def test_registers_concrete_uri(self) -> None:
         """Concrete URIs (no {param}) should also register correctly."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -205,7 +205,7 @@ class TestMakeApiResourceRegistration:
         uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://user" in uris
 
-    def test_returns_none_when_scope_insufficient(self):
+    def test_returns_none_when_scope_insufficient(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -225,7 +225,7 @@ class TestMakeApiResourceRegistration:
             for c in mcp.resource.call_args_list
         )
 
-    def test_tracks_uri_in_registered_uris(self):
+    def test_tracks_uri_in_registered_uris(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -239,7 +239,7 @@ class TestMakeApiResourceRegistration:
         assert handler is not None
         assert _registered_uris == {"gitea://repos/{owner}/{repo}"}
 
-    def test_tags_are_caller_owned(self):
+    def test_tags_are_caller_owned(self) -> None:
         """Caller-provided tags are passed through unchanged (no auto-adder)."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -259,7 +259,7 @@ class TestMakeApiResourceRegistration:
                 assert "custom" in tags
                 break
 
-    def test_no_wrapper_tag_when_not_provided(self):
+    def test_no_wrapper_tag_when_not_provided(self) -> None:
         """No 'wrapper' tag appears unless the caller includes it."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -278,7 +278,7 @@ class TestMakeApiResourceRegistration:
                 assert "wrapper" not in tags
                 break
 
-    def test_adds_cache_ttl_to_meta(self):
+    def test_adds_cache_ttl_to_meta(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -306,7 +306,7 @@ class TestMakeApiResourceHandler:
     """Tests that the generated handler produces correct ResourceResults."""
 
     @pytest.mark.asyncio
-    async def test_handler_returns_json_resource_result_for_dict_response(self):
+    async def test_handler_returns_json_resource_result_for_dict_response(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"id": 1, "name": "test-repo"})
         spec = _make_mock_openapi_spec()
@@ -329,7 +329,7 @@ class TestMakeApiResourceHandler:
         assert data == {"id": 1, "name": "test-repo"}
 
     @pytest.mark.asyncio
-    async def test_handler_returns_text_resource_result_for_string_response(self):
+    async def test_handler_returns_text_resource_result_for_string_response(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response="plain text error")
         spec = _make_mock_openapi_spec()
@@ -350,7 +350,7 @@ class TestMakeApiResourceHandler:
         assert content.content == "plain text error"
 
     @pytest.mark.asyncio
-    async def test_handler_includes_response_schema_in_meta(self):
+    async def test_handler_includes_response_schema_in_meta(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"login": "dev"})
         spec = _make_mock_openapi_spec()
@@ -369,7 +369,7 @@ class TestMakeApiResourceHandler:
         assert "response_schema" in meta
 
     @pytest.mark.asyncio
-    async def test_handler_includes_format_hint_in_meta(self):
+    async def test_handler_includes_format_hint_in_meta(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={})
         spec = _make_mock_openapi_spec()
@@ -397,12 +397,12 @@ class TestMakeApiResourceErrorHandling:
     """Tests for error handling in generated handlers."""
 
     @pytest.mark.asyncio
-    async def test_404_raises_resource_error_not_found(self):
+    async def test_404_raises_resource_error_not_found(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
 
         class Mock404(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = HTTP_STATUS_NOT_FOUND
                 super().__init__("Not found")
 
@@ -426,12 +426,12 @@ class TestMakeApiResourceErrorHandling:
         assert error["resource_type"] == "api"
 
     @pytest.mark.asyncio
-    async def test_non_404_api_error_raises_api_error(self):
+    async def test_non_404_api_error_raises_api_error(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
 
         class Mock500(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = 500
                 super().__init__("Internal error")
 
@@ -453,7 +453,7 @@ class TestMakeApiResourceErrorHandling:
         assert "API error 500" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_unexpected_exception_raises_internal_error(self):
+    async def test_unexpected_exception_raises_internal_error(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         client.request = AsyncMock(side_effect=ValueError("boom"))
@@ -474,14 +474,14 @@ class TestMakeApiResourceErrorHandling:
         assert "Unexpected error" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_404_error_resource_type_issues(self):
+    async def test_404_error_resource_type_issues(self) -> None:
         """resource_type is 'issues' in error when type=issues."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
         class Mock404(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = HTTP_STATUS_NOT_FOUND
                 super().__init__("Not found")
 
@@ -507,14 +507,14 @@ class TestMakeApiResourceErrorHandling:
         assert error["resource_type"] == "issues"
 
     @pytest.mark.asyncio
-    async def test_404_error_resource_type_pulls(self):
+    async def test_404_error_resource_type_pulls(self) -> None:
         """resource_type is 'pulls' in error when type=pulls."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
         class Mock404(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = HTTP_STATUS_NOT_FOUND
                 super().__init__("Not found")
 
@@ -540,14 +540,14 @@ class TestMakeApiResourceErrorHandling:
         assert error["resource_type"] == "pulls"
 
     @pytest.mark.asyncio
-    async def test_404_error_resource_type_default(self):
+    async def test_404_error_resource_type_default(self) -> None:
         """resource_type defaults to factory's resource_type when type is absent."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
         class Mock404(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = HTTP_STATUS_NOT_FOUND
                 super().__init__("Not found")
 
@@ -581,7 +581,7 @@ class TestMakeApiResourceErrorHandling:
 class TestMakeApiResourceMissingEndpoint:
     """Tests that a missing endpoint results in a warning but still registers."""
 
-    def test_warns_and_registers_without_schema_for_missing_endpoint(self):
+    def test_warns_and_registers_without_schema_for_missing_endpoint(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()  # has /repos/{owner}/{repo} but not /orgs/{org}
@@ -599,7 +599,7 @@ class TestMakeApiResourceMissingEndpoint:
         uris = [call[0][0] for call in mcp.resource.call_args_list]
         assert "gitea://orgs/{orgname}" in uris
 
-    def test_registers_with_none_spec(self):
+    def test_registers_with_none_spec(self) -> None:
         """When openapi_spec is None, the resource should still register."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -617,7 +617,7 @@ class TestMakeApiResourceQueryParams:
     """Tests for query_params and query_param_validators in make_api_resource."""
 
     @pytest.mark.asyncio
-    async def test_query_params_extracted_into_params_dict(self):
+    async def test_query_params_extracted_into_params_dict(self) -> None:
         """query_params kwargs are extracted into params dict, not substituted into path."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1}])
@@ -641,7 +641,7 @@ class TestMakeApiResourceQueryParams:
         assert kwargs.get("params") == {"state": "open"}
 
     @pytest.mark.asyncio
-    async def test_query_params_not_substituted_into_path(self):
+    async def test_query_params_not_substituted_into_path(self) -> None:
         """query_params kwargs are NOT substituted into the path template."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1}])
@@ -664,7 +664,7 @@ class TestMakeApiResourceQueryParams:
         assert args[1] == "/repos/o/r/issues"
 
     @pytest.mark.asyncio
-    async def test_query_params_ignored_when_none(self):
+    async def test_query_params_ignored_when_none(self) -> None:
         """query_params with None value should not be included in params dict."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -687,7 +687,7 @@ class TestMakeApiResourceQueryParams:
         assert kwargs.get("params") is None
 
     @pytest.mark.asyncio
-    async def test_query_param_validation_raises_resource_error(self):
+    async def test_query_param_validation_raises_resource_error(self) -> None:
         """query_param_validators raises ResourceError for invalid values."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -715,7 +715,7 @@ class TestMakeApiResourceQueryParams:
         assert "closed" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_valid_query_param_passes_validation(self):
+    async def test_valid_query_param_passes_validation(self) -> None:
         """Valid query param values pass validation and make the API call."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -737,7 +737,7 @@ class TestMakeApiResourceQueryParams:
         client.request.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_multiple_query_params_all_extracted(self):
+    async def test_multiple_query_params_all_extracted(self) -> None:
         """Multiple query params are all extracted into the params dict."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1}])
@@ -759,7 +759,7 @@ class TestMakeApiResourceQueryParams:
         assert kwargs.get("params") == {"draft": "true", "q": "search term"}
 
     @pytest.mark.asyncio
-    async def test_some_query_params_none(self):
+    async def test_some_query_params_none(self) -> None:
         """Some query params with None value should not appear in params dict."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1}])
@@ -781,7 +781,7 @@ class TestMakeApiResourceQueryParams:
         assert kwargs.get("params") == {"q": "urgent"}
 
     @pytest.mark.asyncio
-    async def test_mixed_query_and_path_params(self):
+    async def test_mixed_query_and_path_params(self) -> None:
         """Path params and query params are handled correctly together."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1}])
@@ -813,7 +813,7 @@ class TestMakeApiResourceContextMetaKeys:
     """Tests for context_meta_keys forwarding in make_api_resource."""
 
     @pytest.mark.asyncio
-    async def test_path_params_forwarded_via_context_meta_keys(self):
+    async def test_path_params_forwarded_via_context_meta_keys(self) -> None:
         """Path params (owner, repo) are forwarded to ResourceContent.meta."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[{"id": 1, "name": "bug"}])
@@ -839,7 +839,7 @@ class TestMakeApiResourceContextMetaKeys:
         assert meta.get("repo") == "myrepo"
 
     @pytest.mark.asyncio
-    async def test_both_path_and_query_params_forwarded(self):
+    async def test_both_path_and_query_params_forwarded(self) -> None:
         """Both path and query params listed in context_meta_keys are forwarded."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -871,7 +871,7 @@ class TestMakeApiResourceContextMetaKeys:
         assert "state" not in meta
 
     @pytest.mark.asyncio
-    async def test_context_meta_keys_no_match_omits_extra(self):
+    async def test_context_meta_keys_no_match_omits_extra(self) -> None:
         """When no context_meta_keys match kwargs, no extra meta is added."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={})
@@ -898,7 +898,7 @@ class TestMakeApiResourceContextMetaKeys:
         assert "repo" not in meta
 
     @pytest.mark.asyncio
-    async def test_context_meta_keys_skips_none_values(self):
+    async def test_context_meta_keys_skips_none_values(self) -> None:
         """Params with None values are excluded from forwarded meta."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -942,7 +942,7 @@ class TestMakeApiResourceContextParams:
     """
 
     @pytest.mark.asyncio
-    async def test_context_params_not_sent_to_api(self):
+    async def test_context_params_not_sent_to_api(self) -> None:
         """context_params are NOT included in the params dict sent to the API."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -970,7 +970,7 @@ class TestMakeApiResourceContextParams:
         assert "display_hint" not in params
 
     @pytest.mark.asyncio
-    async def test_context_params_forwarded_via_meta(self):
+    async def test_context_params_forwarded_via_meta(self) -> None:
         """context_params values are forwarded via context_meta_keys into ResourceContent.meta."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -997,7 +997,7 @@ class TestMakeApiResourceContextParams:
         assert meta.get("display_hint") == "pulls"
 
     @pytest.mark.asyncio
-    async def test_context_param_validators_rejects_invalid(self):
+    async def test_context_param_validators_rejects_invalid(self) -> None:
         """context_param_validators raises ResourceError for invalid values."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1026,7 +1026,7 @@ class TestMakeApiResourceContextParams:
         assert "pulls" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_context_param_validators_accepts_valid(self):
+    async def test_context_param_validators_accepts_valid(self) -> None:
         """Valid context_param values pass validation."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -1049,7 +1049,7 @@ class TestMakeApiResourceContextParams:
         client.request.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_context_param_not_in_uri_still_validated(self):
+    async def test_context_param_not_in_uri_still_validated(self) -> None:
         """Context param not present in URI template is still validated and forwarded."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -1075,7 +1075,7 @@ class TestMakeApiResourceContextParams:
         assert isinstance(result, ResourceResult)
 
     @pytest.mark.asyncio
-    async def test_context_param_not_in_uri_rejects_invalid(self):
+    async def test_context_param_not_in_uri_rejects_invalid(self) -> None:
         """Context param not in URI template still raises validation error."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1102,7 +1102,7 @@ class TestMakeApiResourceContextParams:
         assert "display_hint" in error["message"]
 
     @pytest.mark.asyncio
-    async def test_context_params_not_substituted_into_path(self):
+    async def test_context_params_not_substituted_into_path(self) -> None:
         """context_params are NOT substituted into the API path."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response=[])
@@ -1127,7 +1127,7 @@ class TestMakeApiResourceContextParams:
         assert args[1] == "/repos/o/r/issues"
 
     @pytest.mark.asyncio
-    async def test_query_params_and_context_params_overlap_raises(self):
+    async def test_query_params_and_context_params_overlap_raises(self) -> None:
         """Overlapping keys in query_params and context_params raise ValueError."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1148,7 +1148,7 @@ class TestMakeApiResourceContextParams:
 class TestMakeApiResourceOptionalParams:
     """Tests for optional_params in make_api_resource."""
 
-    def test_optional_params_added_to_meta(self):
+    def test_optional_params_added_to_meta(self) -> None:
         """optional_params appears in the meta dict passed to mcp.resource()."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1172,7 +1172,7 @@ class TestMakeApiResourceOptionalParams:
                 ]
                 break
 
-    def test_optional_params_not_set_when_none(self):
+    def test_optional_params_not_set_when_none(self) -> None:
         """When optional_params is None, meta should not contain the key."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1205,7 +1205,7 @@ class TestMakeApiResourceHandlerHook:
             return response
         return f"processed:{response}"
 
-    def test_registers_with_text_plain_mime_type(self):
+    def test_registers_with_text_plain_mime_type(self) -> None:
         """handler_hook should register with mime_type='text/plain'."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1224,7 +1224,7 @@ class TestMakeApiResourceHandlerHook:
                 assert mime == "text/plain"
                 break
 
-    def test_registers_without_format_hint(self):
+    def test_registers_without_format_hint(self) -> None:
         """handler_hook resources should not set format_hint."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
@@ -1245,7 +1245,7 @@ class TestMakeApiResourceHandlerHook:
                 break
 
     @pytest.mark.asyncio
-    async def test_handler_hook_called_with_dict_response(self):
+    async def test_handler_hook_called_with_dict_response(self) -> None:
         """handler_hook receives the API response and its result becomes the content."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"content": "hello", "encoding": "base64"})
@@ -1266,7 +1266,7 @@ class TestMakeApiResourceHandlerHook:
         assert content.content == "processed:{'content': 'hello', 'encoding': 'base64'}"
 
     @pytest.mark.asyncio
-    async def test_handler_hook_called_with_string_response(self):
+    async def test_handler_hook_called_with_string_response(self) -> None:
         """handler_hook is called even when API returns a string."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response="raw error message")
@@ -1286,7 +1286,7 @@ class TestMakeApiResourceHandlerHook:
         assert content.content == "raw error message"
 
     @pytest.mark.asyncio
-    async def test_handler_hook_no_response_schema_in_meta(self):
+    async def test_handler_hook_no_response_schema_in_meta(self) -> None:
         """handler_hook resources should have no response_schema in content meta."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"content": "test"})
@@ -1305,13 +1305,13 @@ class TestMakeApiResourceHandlerHook:
         assert meta is None or "response_schema" not in meta
 
     @pytest.mark.asyncio
-    async def test_hook_resource_handles_404_error(self):
+    async def test_hook_resource_handles_404_error(self) -> None:
         """Error handling still works when handler_hook is set."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
 
         class Mock404(Exception):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.status_code = HTTP_STATUS_NOT_FOUND
                 super().__init__("Not found")
 
@@ -1343,7 +1343,7 @@ class TestMakeApiResourceHandlerHook:
         return f"processed:{response}"
 
     @pytest.mark.asyncio
-    async def test_handler_hook_called_with_list_response(self):
+    async def test_handler_hook_called_with_list_response(self) -> None:
         """handler_hook meaningfully processes a list API response (non-dict, non-str).
         
         Uses a hook that returns different output for list vs dict responses,
@@ -1368,7 +1368,7 @@ class TestMakeApiResourceHandlerHook:
         assert content.content == "3 items"
 
     @pytest.mark.asyncio
-    async def test_hook_resource_with_query_params(self):
+    async def test_hook_resource_with_query_params(self) -> None:
         """handler_hook works together with query_params."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"content": "ref content"})
@@ -1408,13 +1408,13 @@ class TestDecodeBase64Content:
     """
 
     @pytest.mark.asyncio
-    async def test_string_passthrough(self):
+    async def test_string_passthrough(self) -> None:
         """String responses are returned as-is."""
         result = await _decode_base64_content("plain text error")
         assert result == "plain text error"
 
     @pytest.mark.asyncio
-    async def test_base64_dict_decoding(self):
+    async def test_base64_dict_decoding(self) -> None:
         """Dict with encoding='base64' decodes the content field."""
         result = await _decode_base64_content(
             {"content": "SGVsbG8gV29ybGQ=", "encoding": "base64"}
@@ -1422,7 +1422,7 @@ class TestDecodeBase64Content:
         assert result == "Hello World"
 
     @pytest.mark.asyncio
-    async def test_non_base64_dict_returns_content_field(self):
+    async def test_non_base64_dict_returns_content_field(self) -> None:
         """Dict without base64 encoding returns the content field as-is."""
         result = await _decode_base64_content(
             {"content": "raw text content"}
@@ -1430,13 +1430,13 @@ class TestDecodeBase64Content:
         assert result == "raw text content"
 
     @pytest.mark.asyncio
-    async def test_base64_dict_missing_content_returns_empty_string(self):
+    async def test_base64_dict_missing_content_returns_empty_string(self) -> None:
         """Dict with encoding='base64' but no content key returns ''."""
         result = await _decode_base64_content({"encoding": "base64"})
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_base64_dict_none_content_returns_empty_string(self):
+    async def test_base64_dict_none_content_returns_empty_string(self) -> None:
         """Dict with encoding='base64' and content=None returns ''."""
         result = await _decode_base64_content(
             {"content": None, "encoding": "base64"}
@@ -1444,7 +1444,7 @@ class TestDecodeBase64Content:
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_non_dict_non_str_fallback(self):
+    async def test_non_dict_non_str_fallback(self) -> None:
         """Non-dict, non-str responses are stringified."""
         result = await _decode_base64_content(42)
         assert result == "42"
@@ -1470,7 +1470,7 @@ class TestMakeApiResourceUnregisteredFormatHint:
     """
 
     @pytest.mark.asyncio
-    async def test_unregistered_format_hint_registers_successfully(self):
+    async def test_unregistered_format_hint_registers_successfully(self) -> None:
         """Unknown format_hint does not prevent resource registration."""
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response={"name": "test"})
@@ -1488,7 +1488,7 @@ class TestMakeApiResourceUnregisteredFormatHint:
         assert isinstance(result, ResourceResult)
         assert result.contents
 
-    def test_unregistered_format_hint_in_meta(self):
+    def test_unregistered_format_hint_in_meta(self) -> None:
         """The unknown format_hint is stored in registration meta for discovery."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()

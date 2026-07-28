@@ -12,24 +12,24 @@ from gitea_mcp_server.search import (
 class TestTokenize:
     """Tests for _tokenize_len2."""
 
-    def test_basic_tokenization(self):
+    def test_basic_tokenization(self) -> None:
         """Basic lowercase splitting."""
         tokens = _tokenize_len2("Hello World Test")
         assert tokens == ["hello", "world", "test"]
 
-    def test_two_character_tokens_included(self):
+    def test_two_character_tokens_included(self) -> None:
         """2-char tokens like 'pr' are included."""
         tokens = _tokenize_len2("pr repo issue")
         assert "pr" in tokens
         assert "repo" in tokens
         assert "issue" in tokens
 
-    def test_single_character_excluded(self):
+    def test_single_character_excluded(self) -> None:
         """Single-character tokens are excluded."""
         tokens = _tokenize_len2("a b c hello")
         assert tokens == ["hello"]
 
-    def test_non_alphanumeric_split(self):
+    def test_non_alphanumeric_split(self) -> None:
         """Non-alphanumeric chars split tokens."""
         tokens = _tokenize_len2("gitea_user_get_current foo-bar")
         assert "gitea_user_get_current" not in tokens
@@ -38,11 +38,11 @@ class TestTokenize:
         assert "foo" in tokens
         assert "bar" in tokens
 
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         """Empty string returns empty list."""
         assert _tokenize_len2("") == []
 
-    def test_numbers_only(self):
+    def test_numbers_only(self) -> None:
         """Numbers are kept."""
         tokens = _tokenize_len2("issue 42")
         assert "42" in tokens
@@ -52,24 +52,24 @@ class TestTokenize:
 class TestExpandWordAliases:
     """Tests for _expand_word_aliases."""
 
-    def test_repo_expansion(self):
+    def test_repo_expansion(self) -> None:
         """'repo' expands to include 'repository' and 'repos'."""
         result = _expand_word_aliases("find repo")
         assert "repository" in result
         assert "repos" in result
 
-    def test_pr_expansion(self):
+    def test_pr_expansion(self) -> None:
         """'pr' expands to include 'pull request'."""
         result = _expand_word_aliases("create pr")
         assert "pull" in result
         assert "request" in result
 
-    def test_no_expansion_needed(self):
+    def test_no_expansion_needed(self) -> None:
         """Strings without aliases are unchanged."""
         result = _expand_word_aliases("hello world")
         assert result == "hello world"
 
-    def test_multiple_aliases(self):
+    def test_multiple_aliases(self) -> None:
         """Multiple aliases in same string all expand."""
         result = _expand_word_aliases("current user repo pr")
         assert "authenticated" in result
@@ -77,7 +77,7 @@ class TestExpandWordAliases:
         assert "repository" in result
         assert "pull" in result
 
-    def test_case_insensitive(self):
+    def test_case_insensitive(self) -> None:
         """Alias expansion is case-insensitive."""
         result = _expand_word_aliases("REPO")
         assert "repository" in result
@@ -86,20 +86,20 @@ class TestExpandWordAliases:
 class TestTextsHash:
     """Tests for _texts_hash."""
 
-    def test_consistent_hash(self):
+    def test_consistent_hash(self) -> None:
         """Same texts produce same hash."""
         texts = ["hello world", "foo bar"]
         h1 = _texts_hash(texts)
         h2 = _texts_hash(texts)
         assert h1 == h2
 
-    def test_different_texts_different_hash(self):
+    def test_different_texts_different_hash(self) -> None:
         """Different texts produce different hashes."""
         h1 = _texts_hash(["hello"])
         h2 = _texts_hash(["world"])
         assert h1 != h2
 
-    def test_order_independent(self):
+    def test_order_independent(self) -> None:
         """Hash is independent of input order."""
         h1 = _texts_hash(["a", "b"])
         h2 = _texts_hash(["b", "a"])
@@ -109,25 +109,25 @@ class TestTextsHash:
 class TestBM25Index:
     """Direct unit tests for the self-contained _BM25Index."""
 
-    def test_empty_index_returns_empty(self):
+    def test_empty_index_returns_empty(self) -> None:
         """Query on empty/unbuilt index returns empty list."""
         index = _BM25Index()
         assert index.query("test", 10) == []
 
-    def test_empty_query_returns_empty(self):
+    def test_empty_query_returns_empty(self) -> None:
         """Empty query string returns empty list."""
         index = _BM25Index()
         index.build(["hello world", "foo bar"])
         assert index.query("", 10) == []
 
-    def test_single_document_found(self):
+    def test_single_document_found(self) -> None:
         """Single document matching query is returned."""
         index = _BM25Index()
         index.build(["hello world"])
         results = index.query("hello", 10)
         assert results == [0]
 
-    def test_relevance_ranking(self):
+    def test_relevance_ranking(self) -> None:
         """Documents with more matches rank higher."""
         index = _BM25Index()
         index.build([
@@ -141,21 +141,21 @@ class TestBM25Index:
         assert results[0] == 1
         assert 2 not in results
 
-    def test_top_k_limits_results(self):
+    def test_top_k_limits_results(self) -> None:
         """top_k parameter limits number of results."""
         index = _BM25Index()
         index.build(["apple one", "apple two", "apple three", "orange"])
         results = index.query("apple", 2)
         assert len(results) <= 2
 
-    def test_non_matching_query_returns_empty(self):
+    def test_non_matching_query_returns_empty(self) -> None:
         """Query with no matches returns empty list."""
         index = _BM25Index()
         index.build(["hello world", "foo bar"])
         results = index.query("zzzzzzz", 10)
         assert results == []
 
-    def test_min_score_zero_returns_all_matches(self):
+    def test_min_score_zero_returns_all_matches(self) -> None:
         """min_score=0.0 returns every document with any overlap."""
         index = _BM25Index()
         index.build(["apple banana", "apple cherry", "orange grape"])
@@ -166,7 +166,7 @@ class TestBM25Index:
         # doc 2 has no match for "apple"
         assert 2 not in results
 
-    def test_min_score_filters_weak_matches(self):
+    def test_min_score_filters_weak_matches(self) -> None:
         """High min_score filters out lower-ranked documents."""
         index = _BM25Index()
         # doc 1 has "apple" twice - stronger match
@@ -179,7 +179,7 @@ class TestBM25Index:
         top_only = index.query("apple", 10, min_score=1.0)
         assert top_only == [1]  # only the strongest match
 
-    def test_min_score_one_returns_only_top(self):
+    def test_min_score_one_returns_only_top(self) -> None:
         """min_score=1.0 returns only the top-ranked document."""
         index = _BM25Index()
         index.build(["apple banana", "apple apple", "orange grape"])
@@ -187,7 +187,7 @@ class TestBM25Index:
         assert len(results) == 1
         assert results[0] == 1  # doc 1 has highest TF for "apple"
 
-    def test_min_score_with_top_k(self):
+    def test_min_score_with_top_k(self) -> None:
         """min_score and top_k interact correctly."""
         index = _BM25Index()
         index.build(["apple", "apple apple", "apple apple apple", "orange"])
@@ -195,7 +195,7 @@ class TestBM25Index:
         results = index.query("apple", top_k=2, min_score=1.0)
         assert len(results) == 1
 
-    def test_query_with_scores_returns_normalized_scores(self):
+    def test_query_with_scores_returns_normalized_scores(self) -> None:
         """query_with_scores returns (index, score) with top score == 1.0."""
         index = _BM25Index()
         index.build(["apple banana", "apple apple cherry"])
@@ -205,7 +205,7 @@ class TestBM25Index:
         assert scores[0] == 1.0  # top match normalized to 1.0
         assert 0.0 < scores[1] < 1.0  # weaker match below 1.0
 
-    def test_query_with_scores_out_of_range_raises(self):
+    def test_query_with_scores_out_of_range_raises(self) -> None:
         """min_score outside [0.0, 1.0] raises ValueError."""
         index = _BM25Index()
         index.build(["apple banana"])
@@ -216,7 +216,7 @@ class TestBM25Index:
         with pytest.raises(ValueError, match="min_score must be in"):
             index.query_with_scores("apple", 10, min_score=-0.1)
 
-    def test_query_bounds_check_raises(self):
+    def test_query_bounds_check_raises(self) -> None:
         """The list[int] query() also enforces the min_score bounds."""
         import pytest
 
@@ -229,7 +229,7 @@ class TestBM25Index:
 class TestBM25IndexTwoCharTokens:
     """Tests that _BM25Index supports 2-character tokens."""
 
-    def test_two_char_tokens_supported(self):
+    def test_two_char_tokens_supported(self) -> None:
         """2-char tokens like 'pr' are indexed and searchable."""
         index = _BM25Index()
         index.build(["create pr", "create pull request"])
@@ -240,7 +240,7 @@ class TestBM25IndexTwoCharTokens:
 class TestBM25SearchEngine:
     """Tests for BM25SearchEngine (higher-level wrapper)."""
 
-    def test_search_returns_indices(self):
+    def test_search_returns_indices(self) -> None:
         """search() returns ranked indices."""
         engine = BM25SearchEngine()
         texts = ["apple banana", "banana cherry", "cherry date"]
@@ -248,12 +248,12 @@ class TestBM25SearchEngine:
         assert 0 in results
         assert 1 in results
 
-    def test_search_with_empty_texts(self):
+    def test_search_with_empty_texts(self) -> None:
         """Empty texts list returns empty results."""
         engine = BM25SearchEngine()
         assert engine.search([], "test", 10) == []
 
-    def test_search_caches_and_rebuilds(self):
+    def test_search_caches_and_rebuilds(self) -> None:
         """Search rebuilds index when texts change."""
         engine = BM25SearchEngine()
         r1 = engine.search(["hello world"], "hello", 10)
@@ -262,7 +262,7 @@ class TestBM25SearchEngine:
         r2 = engine.search(["foo bar"], "hello", 10)
         assert r2 == []
 
-    def test_search_with_min_score_zero(self):
+    def test_search_with_min_score_zero(self) -> None:
         """min_score=0.0 returns all matches."""
         engine = BM25SearchEngine()
         texts = ["apple banana", "apple cherry", "orange grape"]
@@ -271,14 +271,14 @@ class TestBM25SearchEngine:
         assert 1 in results
         assert 2 not in results
 
-    def test_search_with_min_score_one(self):
+    def test_search_with_min_score_one(self) -> None:
         """min_score=1.0 returns only top match."""
         engine = BM25SearchEngine()
         texts = ["apple banana", "apple apple", "orange"]
         results = engine.search(texts, "apple", 10, min_score=1.0)
         assert results == [1]
 
-    def test_search_with_high_min_score_filters(self):
+    def test_search_with_high_min_score_filters(self) -> None:
         """High min_score filters weak matches."""
         engine = BM25SearchEngine()
         texts = ["apple banana", "apple apple apple", "apple cherry"]
@@ -288,7 +288,7 @@ class TestBM25SearchEngine:
         results_high = engine.search(texts, "apple", 10, min_score=1.0)
         assert len(results_high) < len(results_default)
 
-    def test_search_with_scores_returns_scores(self):
+    def test_search_with_scores_returns_scores(self) -> None:
         """search_with_scores returns (index, score) pairs."""
         engine = BM25SearchEngine()
         texts = ["apple banana", "apple apple cherry"]
@@ -296,7 +296,7 @@ class TestBM25SearchEngine:
         assert [i for i, _ in ranked] == [1, 0]
         assert next(s for _, s in ranked) == 1.0
 
-    def test_search_bounds_check_raises(self):
+    def test_search_bounds_check_raises(self) -> None:
         """min_score outside [0.0, 1.0] raises ValueError."""
         import pytest
 

@@ -8,18 +8,23 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/331
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import pytest
 import respx
 from fastmcp.exceptions import ResourceError, ToolError
 
 from tests.integration.conftest import BASE_TEST_URL
 
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_version_spec() -> dict:
+def _make_version_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with a ``/version`` endpoint.
 
     Note: There is intentionally **no response schema** on the 200 response.
@@ -45,7 +50,7 @@ def _make_version_spec() -> dict:
     }
 
 
-def _make_repo_spec() -> dict:
+def _make_repo_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with a ``/repos/{owner}/{repo}`` endpoint.
 
     Note: There is intentionally **no response schema** on the 200/404/403
@@ -78,7 +83,7 @@ def _make_repo_spec() -> dict:
     }
 
 
-def _make_empty_spec() -> dict:
+def _make_empty_spec() -> dict[str, Any]:
     """Return a minimal Swagger spec with no endpoints at all.
 
     Used by ``TestResourceErrors`` - resource tests don't need any tools,
@@ -95,7 +100,7 @@ def _make_empty_spec() -> dict:
     }
 
 
-def _make_diff_spec() -> dict:
+def _make_diff_spec() -> dict[str, Any]:
     """Return a Swagger spec with the real text/plain diff/patch download endpoint.
 
     Mirrors the actual Gitea operation ``repoDownloadPullDiffOrPatch`` at
@@ -156,10 +161,10 @@ class TestValidationErrors:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_repo_spec()
 
-    async def test_empty_owner_rejected(self, mcp_server) -> None:
+    async def test_empty_owner_rejected(self, mcp_server: FastMCP) -> None:
         """Empty owner string raises human-readable validation error."""
         with pytest.raises(ToolError, match="owner cannot be empty"):
             await mcp_server.call_tool(
@@ -167,7 +172,7 @@ class TestValidationErrors:
                 {"owner": "", "repo": "valid-repo"},
             )
 
-    async def test_empty_repo_rejected(self, mcp_server) -> None:
+    async def test_empty_repo_rejected(self, mcp_server: FastMCP) -> None:
         """Empty repo string raises human-readable validation error."""
         with pytest.raises(ToolError, match="repo cannot be empty"):
             await mcp_server.call_tool(
@@ -175,7 +180,7 @@ class TestValidationErrors:
                 {"owner": "valid-owner", "repo": ""},
             )
 
-    async def test_missing_required_parameter(self, mcp_server) -> None:
+    async def test_missing_required_parameter(self, mcp_server: FastMCP) -> None:
         """Missing required ``owner`` parameter is clearly reported."""
         with pytest.raises(ToolError, match="Missing required parameter"):
             await mcp_server.call_tool(
@@ -202,10 +207,10 @@ class TestAPIErrorTranslation:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_repo_spec()
 
-    async def test_404_includes_spec_description_and_body(self, mcp_server) -> None:
+    async def test_404_includes_spec_description_and_body(self, mcp_server: FastMCP) -> None:
         """A 404 response is translated to include the spec description and API body message."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/nonexistent/missing").respond(
             404,
@@ -222,7 +227,7 @@ class TestAPIErrorTranslation:
         # Response body message
         assert "could not be found" in msg, f"Expected body message in {msg!r}"
 
-    async def test_403_includes_permission_hint(self, mcp_server) -> None:
+    async def test_403_includes_permission_hint(self, mcp_server: FastMCP) -> None:
         """A 403 response is translated to include a permission hint."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/private/repo").respond(
             403,
@@ -237,7 +242,7 @@ class TestAPIErrorTranslation:
         assert "APINotFound" in msg, f"Expected spec description in {msg!r}"
         assert "Access denied" in msg, f"Expected body message in {msg!r}"
 
-    async def test_network_error_is_agent_friendly(self, mcp_server) -> None:
+    async def test_network_error_is_agent_friendly(self, mcp_server: FastMCP) -> None:
         """A connection-level error is reported as a network issue, not a crash.
 
         No API route is registered for the call - respx raises a transport
@@ -276,10 +281,10 @@ class TestResultWrapping:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_version_spec()
 
-    async def test_array_response_is_wrapped_in_result(self, mcp_server) -> None:
+    async def test_array_response_is_wrapped_in_result(self, mcp_server: FastMCP) -> None:
         """Array responses are auto-wrapped in ``{\"result\": [...]}``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json=[{"id": 1}])
         result = await mcp_server.call_tool("gitea_get_version", {})
@@ -287,7 +292,7 @@ class TestResultWrapping:
         assert "result" in result.structured_content
         assert isinstance(result.structured_content["result"], list)
 
-    async def test_object_response_is_json_in_text_content(self, mcp_server) -> None:
+    async def test_object_response_is_json_in_text_content(self, mcp_server: FastMCP) -> None:
         """Object responses appear as JSON in the text content."""
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.99.0"})
         result = await mcp_server.call_tool("gitea_get_version", {})
@@ -295,7 +300,7 @@ class TestResultWrapping:
         text = result.content[0].text
         assert '"version":"1.99.0"' in text, f"Expected version JSON in text: {text[:200]}"
 
-    async def test_paginated_result_includes_metadata(self, mcp_server) -> None:
+    async def test_paginated_result_includes_metadata(self, mcp_server: FastMCP) -> None:
         """Paginated responses include ``has_more`` and ``next_offset`` metadata."""
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json=[{"id": 1}])
         result = await mcp_server.call_tool("gitea_get_version", {})
@@ -323,10 +328,10 @@ class TestResourceErrors:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_empty_spec()
 
-    async def test_resource_404_produces_structured_error(self, mcp_server) -> None:
+    async def test_resource_404_produces_structured_error(self, mcp_server: FastMCP) -> None:
         """read_resource on a nonexistent repo returns ResourceError with details."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/nonexistent/missing").respond(404)
         with pytest.raises(ResourceError) as exc:
@@ -337,7 +342,7 @@ class TestResourceErrors:
             f"Expected resource identifier in {error_str}"
         )
 
-    async def test_resource_404_through_call_tool(self, mcp_server) -> None:
+    async def test_resource_404_through_call_tool(self, mcp_server: FastMCP) -> None:
         """Calling the ``read_resource`` synthetic tool on a missing URI also returns error.
 
         This works even with ``enable_lazy_loading=False`` (the default for
@@ -375,11 +380,11 @@ class TestNonJsonEndpoint:
     """
 
     @pytest.fixture
-    def base_spec(self):
+    def base_spec(self) -> dict[str, Any]:
         return _make_diff_spec()
 
     async def test_text_response_does_not_trigger_output_validation_error(
-        self, mcp_server,
+        self, mcp_server: FastMCP,
     ) -> None:
         """Non-JSON response does NOT raise an MCP SDK output validation error."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
@@ -399,7 +404,7 @@ class TestNonJsonEndpoint:
         assert result is not None
 
     async def test_text_response_wrapped_in_result_key(
-        self, mcp_server,
+        self, mcp_server: FastMCP,
     ) -> None:
         """Non-JSON response text is wrapped in ``{"result": text}``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
@@ -415,7 +420,7 @@ class TestNonJsonEndpoint:
         assert "diff --git" in result.structured_content["result"]
 
     async def test_text_response_content_is_not_empty(
-        self, mcp_server,
+        self, mcp_server: FastMCP,
     ) -> None:
         """Text content of the result is the raw diff text."""
         diff = (
@@ -439,7 +444,7 @@ class TestNonJsonEndpoint:
         assert text == diff, f"Expected raw diff, got: {text[:100]}"
 
     async def test_full_stack_text_validation_round_trip(
-        self, mcp_server,
+        self, mcp_server: FastMCP,
     ) -> None:
         """Full round-trip through MCP SDK validation for a text/plain endpoint.
 
@@ -484,7 +489,7 @@ class TestNonJsonEndpoint:
         assert result.content[0].text == diff
 
     async def test_transport_level_text_output_validation(
-        self, mcp_server,
+        self, mcp_server: FastMCP,
     ) -> None:
         """Drive a text/plain endpoint through real MCP transport to exercise
         the SDK ``LowLevelServer.call_tool`` output validation gate.

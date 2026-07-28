@@ -6,6 +6,7 @@ the _fetch_all_loop hook, and integration with _ToolWrappingTransform._wrap().
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -39,7 +40,7 @@ _FORMAT_VP = VirtualParam(
 class TestInjectInto:
     """Tests for inject_into - schema augmentation (mechanism, not format)."""
 
-    def test_adds_patched_entry_when_missing(self):
+    def test_adds_patched_entry_when_missing(self) -> None:
         """Adds a patched virtual param when not already in properties."""
         params: dict = {"properties": {}}
         with patch.dict(
@@ -52,7 +53,7 @@ class TestInjectInto:
         assert props["test_param"]["type"] == "string"
         assert props["test_param"]["default"] == "markdown"
 
-    def test_does_not_overwrite_existing_param(self):
+    def test_does_not_overwrite_existing_param(self) -> None:
         """Skips virtual param if tool already has a parameter with that name."""
         params: dict = {"properties": {"test_param": {"type": "integer"}}}
         with patch.dict(
@@ -62,7 +63,7 @@ class TestInjectInto:
             inject_into(params)
         assert params["properties"]["test_param"] == {"type": "integer"}
 
-    def test_no_op_when_empty_registry(self):
+    def test_no_op_when_empty_registry(self) -> None:
         """Does nothing when _VIRTUAL_PARAMS is empty."""
         params: dict = {"properties": {}}
         with patch.dict(
@@ -73,7 +74,7 @@ class TestInjectInto:
             inject_into(params)
         assert params["properties"] == {}
 
-    def test_handles_empty_parameters(self):
+    def test_handles_empty_parameters(self) -> None:
         """Works with an empty parameters dict, creating properties."""
         params: dict = {}
         with patch.dict(
@@ -92,7 +93,7 @@ class TestInjectInto:
 class TestApplyPreHooks:
     """Tests for apply_pre_hooks - pre-call side effects."""
 
-    def test_runs_pre_hook_with_value(self):
+    def test_runs_pre_hook_with_value(self) -> None:
         """Calls the pre_hook with the extracted value."""
         mock_hook = MagicMock()
         extracted = {"my_param": "hello"}
@@ -107,7 +108,7 @@ class TestApplyPreHooks:
             apply_pre_hooks(extracted)
         mock_hook.assert_called_once_with("hello")
 
-    def test_no_op_when_no_extracted_params(self):
+    def test_no_op_when_no_extracted_params(self) -> None:
         """Does nothing when extracted is empty."""
         mock_hook = MagicMock()
         with patch.dict(
@@ -121,7 +122,7 @@ class TestApplyPreHooks:
             apply_pre_hooks({})
         mock_hook.assert_not_called()
 
-    def test_handles_none_pre_hook(self):
+    def test_handles_none_pre_hook(self) -> None:
         """VirtualParam with pre_hook=None is a no-op."""
         extracted = {"my_param": "value"}
         with patch.dict(
@@ -135,7 +136,7 @@ class TestApplyPreHooks:
             # Should not raise
             apply_pre_hooks(extracted)
 
-    def test_runs_all_pre_hooks_in_order(self):
+    def test_runs_all_pre_hooks_in_order(self) -> None:
         """Calls multiple pre_hooks in registration order."""
         calls: list[str] = []
 
@@ -169,7 +170,7 @@ class TestApplyPreHooks:
 class TestSudoHooks:
     """Tests that the sudo pre/post hooks manage the context var correctly."""
 
-    def test_sudo_pre_hook_sets_context(self):
+    def test_sudo_pre_hook_sets_context(self) -> None:
         """_sudo_pre_hook sets sudo_context to the string value."""
         from gitea_mcp_server.tools.virtual_params import (
             _sudo_pre_hook,
@@ -180,7 +181,7 @@ class TestSudoHooks:
         _sudo_pre_hook("alice")
         assert sudo_context.get() == "alice"
 
-    def test_sudo_pre_hook_skips_none(self):
+    def test_sudo_pre_hook_skips_none(self) -> None:
         """_sudo_pre_hook does not set context when value is None."""
         from gitea_mcp_server.tools.virtual_params import (
             _sudo_pre_hook,
@@ -191,7 +192,7 @@ class TestSudoHooks:
         _sudo_pre_hook(None)
         assert sudo_context.get() == "previous"
 
-    def test_sudo_post_hook_clears_context(self):
+    def test_sudo_post_hook_clears_context(self) -> None:
         """_sudo_post_hook clears sudo_context."""
         from gitea_mcp_server.tools.virtual_params import (
             _sudo_post_hook,
@@ -204,7 +205,7 @@ class TestSudoHooks:
         assert sudo_context.get() is None
         assert returned is result  # Passthrough
 
-    def test_sudo_in_virtual_params_is_registered(self):
+    def test_sudo_in_virtual_params_is_registered(self) -> None:
         """sudo is registered in _VIRTUAL_PARAMS with pre and post hooks."""
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
@@ -236,35 +237,35 @@ class TestApplyScopeFilter:
 
         _VIRTUAL_PARAMS["sudo"].visible = self._original_sudo_visible
 
-    def test_hides_sudo_when_scope_missing(self):
+    def test_hides_sudo_when_scope_missing(self) -> None:
         """sudo hidden when 'sudo' not in available scopes."""
         apply_scope_filter({"read:repository"})
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
         assert _VIRTUAL_PARAMS["sudo"].visible is False
 
-    def test_shows_sudo_when_scope_present(self):
+    def test_shows_sudo_when_scope_present(self) -> None:
         """sudo shown when 'sudo' in available scopes."""
         apply_scope_filter({"sudo", "read:repository"})
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
         assert _VIRTUAL_PARAMS["sudo"].visible is True
 
-    def test_shows_sudo_when_all_present(self):
+    def test_shows_sudo_when_all_present(self) -> None:
         """sudo shown when 'all' in available scopes (full-access token)."""
         apply_scope_filter({"all"})
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
         assert _VIRTUAL_PARAMS["sudo"].visible is True
 
-    def test_inject_into_skips_sudo_when_hidden(self):
+    def test_inject_into_skips_sudo_when_hidden(self) -> None:
         """sudo not added to tool schema when hidden by scope filter."""
         apply_scope_filter({"read:repository"})
         params: dict = {"properties": {}}
         inject_into(params)
         assert "sudo" not in params["properties"]
 
-    def test_inject_into_includes_sudo_when_visible(self):
+    def test_inject_into_includes_sudo_when_visible(self) -> None:
         """sudo added to tool schema when visible (scope present)."""
         apply_scope_filter({"sudo"})
         params: dict = {"properties": {}}
@@ -273,7 +274,7 @@ class TestApplyScopeFilter:
         assert params["properties"]["sudo"]["type"] == "string"
         assert params["properties"]["sudo"]["minLength"] == 1
 
-    def test_leaves_unrestricted_params_untouched(self):
+    def test_leaves_unrestricted_params_untouched(self) -> None:
         """Params with required_scope=None are not affected by scope filter."""
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
@@ -285,19 +286,19 @@ class TestApplyScopeFilter:
 class TestRequiredScope:
     """Tests for the required_scope field on VirtualParam."""
 
-    def test_default_is_none(self):
+    def test_default_is_none(self) -> None:
         """required_scope defaults to None (no restriction)."""
         vp = VirtualParam(schema={}, default=None, description="test")
         assert vp.required_scope is None
 
-    def test_can_be_set(self):
+    def test_can_be_set(self) -> None:
         """required_scope can be set to a scope string."""
         vp = VirtualParam(
             schema={}, default=None, description="test", required_scope="sudo"
         )
         assert vp.required_scope == "sudo"
 
-    def test_sudo_in_registry_has_required_scope(self):
+    def test_sudo_in_registry_has_required_scope(self) -> None:
         """sudo virtual param has required_scope='sudo'."""
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
@@ -307,7 +308,7 @@ class TestRequiredScope:
 class TestSudoErrorPaths:
     """Error/safety path tests for sudo lifecycle."""
 
-    def test_extract_and_pre_hook_clear_post_hook_restores(self):
+    def test_extract_and_pre_hook_clear_post_hook_restores(self) -> None:
         """Full lifecycle: extract sets context, apply_to clears it."""
         from gitea_mcp_server.tools.virtual_params import (
             apply_pre_hooks,
@@ -334,7 +335,7 @@ class TestSudoErrorPaths:
         assert sudo_context.get() is None
         assert final is result  # passthrough
 
-    def test_extract_from_still_pops_sudo_when_hidden(self):
+    def test_extract_from_still_pops_sudo_when_hidden(self) -> None:
         """extract_from pops sudo from kwargs even when invisible."""
         from gitea_mcp_server.tools.virtual_params import (
             _VIRTUAL_PARAMS,
@@ -348,7 +349,7 @@ class TestSudoErrorPaths:
         assert extracted == {"sudo": "cheater"}
         _VIRTUAL_PARAMS["sudo"].visible = True
 
-    def test_post_hook_double_clear_is_safe(self):
+    def test_post_hook_double_clear_is_safe(self) -> None:
         """Calling post_hook when context is already None is safe (no-op)."""
         from gitea_mcp_server.tools.virtual_params import (
             _sudo_post_hook,
@@ -361,7 +362,7 @@ class TestSudoErrorPaths:
         assert sudo_context.get() is None
         assert returned is result  # passthrough
 
-    def test_extract_from_unknown_param_ignored(self):
+    def test_extract_from_unknown_param_ignored(self) -> None:
         """Unknown params in _VIRTUAL_PARAMS are ignored by extract_from."""
         from gitea_mcp_server.tools.virtual_params import extract_from
 
@@ -378,7 +379,7 @@ class TestSudoErrorPaths:
 class TestExtractFrom:
     """Tests for extract_from - pre-call parameter extraction (mechanism)."""
 
-    def test_pops_patched_param_and_returns_value(self):
+    def test_pops_patched_param_and_returns_value(self) -> None:
         """Pops 'format' from kwargs and returns {name: value}."""
         kwargs = {"owner": "test", "format": "markdown"}
         with patch.dict(
@@ -389,13 +390,13 @@ class TestExtractFrom:
         assert extracted == {"format": "markdown"}
         assert "format" not in kwargs
 
-    def test_returns_empty_dict_no_virtual_params(self):
+    def test_returns_empty_dict_no_virtual_params(self) -> None:
         """Returns {} when no virtual params are present."""
         kwargs = {"owner": "test", "repo": "r", "page": 1}
         extracted = extract_from(kwargs)
         assert extracted == {}
 
-    def test_removes_only_known_virtual_params(self):
+    def test_removes_only_known_virtual_params(self) -> None:
         """Pops every known virtual param from kwargs."""
         kwargs = {"owner": "test", "format": "json"}
         with patch.dict(
@@ -416,7 +417,7 @@ class TestExtractFrom:
 class TestApplyTo:
     """Tests for apply_to - post-call result transformation."""
 
-    def test_runs_post_hook_with_value(self):
+    def test_runs_post_hook_with_value(self) -> None:
         """Calls the post_hook with (result, value)."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
         transformed = ToolResult(
@@ -438,12 +439,12 @@ class TestApplyTo:
         hook.assert_called_once_with(result, "markdown")
         assert output is transformed
 
-    def test_returns_result_when_no_extracted_params(self):
+    def test_returns_result_when_no_extracted_params(self) -> None:
         """Returns result unchanged when extracted is empty."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
         assert apply_to(result, {}) is result
 
-    def test_handles_none_post_hook(self):
+    def test_handles_none_post_hook(self) -> None:
         """VirtualParam with post_hook=None is a no-op."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
         extracted = {"format": "json"}
@@ -466,14 +467,14 @@ class TestApplyTo:
 class TestGetLoopHooks:
     """Tests for get_loop_hooks - loop hook resolution from extracted values."""
 
-    def test_returns_empty_when_no_extracted_params(self):
+    def test_returns_empty_when_no_extracted_params(self) -> None:
         """Returns empty dict when extracted is empty."""
         from gitea_mcp_server.tools.virtual_params import get_loop_hooks
 
         hooks = get_loop_hooks({})
         assert hooks == {}
 
-    def test_returns_empty_when_no_loop_hook_registered(self):
+    def test_returns_empty_when_no_loop_hook_registered(self) -> None:
         """Returns empty when extracted params have no loop_hook."""
         from gitea_mcp_server.tools.virtual_params import get_loop_hooks
 
@@ -489,7 +490,7 @@ class TestGetLoopHooks:
             hooks = get_loop_hooks(extracted)
         assert hooks == {}
 
-    def test_returns_hook_when_loop_hook_registered(self):
+    def test_returns_hook_when_loop_hook_registered(self) -> None:
         """Returns (value, hook) for each param with a registered loop_hook."""
         from gitea_mcp_server.tools.virtual_params import get_loop_hooks
 
@@ -516,7 +517,7 @@ class TestGetLoopHooks:
         assert value is True
         assert hook is loop_hook
 
-    def test_returns_multiple_hooks(self):
+    def test_returns_multiple_hooks(self) -> None:
         """Returns entries for all params that have loop_hook set."""
         from gitea_mcp_server.tools.virtual_params import get_loop_hooks
 
@@ -551,12 +552,12 @@ class TestGetLoopHooks:
 class TestVirtualParamLoopHookField:
     """Tests for the loop_hook field on VirtualParam."""
 
-    def test_default_is_none(self):
+    def test_default_is_none(self) -> None:
         """loop_hook defaults to None for backward compatibility."""
         vp = VirtualParam(schema={}, default=None, description="test")
         assert vp.loop_hook is None
 
-    def test_can_set_loop_hook(self):
+    def test_can_set_loop_hook(self) -> None:
         """loop_hook can be set to a callable."""
         hook = AsyncMock()
         vp = VirtualParam(
@@ -564,7 +565,7 @@ class TestVirtualParamLoopHookField:
         )
         assert vp.loop_hook is hook
 
-    def test_loop_hook_none_is_noop(self):
+    def test_loop_hook_none_is_noop(self) -> None:
         """A VirtualParam with loop_hook=None behaves like before."""
         vp = VirtualParam(schema={}, default=None, description="test", loop_hook=None)
         result = ToolResult(content=[TextContent(type="text", text="ok")])
@@ -598,7 +599,7 @@ class TestWrapIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_injects_format_into_parameters(self):
+    async def test_injects_format_into_parameters(self) -> None:
         """_wrap() adds the format parameter to tool schema (promoted)."""
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
@@ -615,7 +616,7 @@ class TestWrapIntegration:
         assert "markdown" in fmt_schema["enum"]
 
     @pytest.mark.asyncio
-    async def test_format_extracted_before_execution(self):
+    async def test_format_extracted_before_execution(self) -> None:
         """Format is stripped from kwargs before the HTTP execution path."""
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
@@ -646,7 +647,7 @@ class TestWrapIntegration:
             assert call_kwargs == {"owner": "test"}
 
     @pytest.mark.asyncio
-    async def test_default_markdown_no_format_supplied(self):
+    async def test_default_markdown_no_format_supplied(self) -> None:
         """Default markdown when format is not supplied."""
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
@@ -680,28 +681,28 @@ class TestFetchAllLoop:
     """Tests for _fetch_all_loop — auto-pagination hook."""
 
     @pytest.mark.asyncio
-    async def test_fetch_all_false_passthrough(self):
+    async def test_fetch_all_false_passthrough(self) -> None:
         """fetch_all=False returns result unchanged."""
         result = ToolResult(structured_content={"result": [{"id": 1}], "has_more": True})
         output = await _fetch_all_loop(result, False, {}, _mock_execute_fn)
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_no_structured_content_passthrough(self):
+    async def test_no_structured_content_passthrough(self) -> None:
         """No structured_content returns result unchanged."""
         result = ToolResult(content=[TextContent(type="text", text="")])
         output = await _fetch_all_loop(result, True, {}, _mock_execute_fn)
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_non_list_result_passthrough(self):
+    async def test_non_list_result_passthrough(self) -> None:
         """Non-list result returns result unchanged."""
         result = ToolResult(structured_content={"result": {"id": 1}})
         output = await _fetch_all_loop(result, True, {}, _mock_execute_fn)
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_single_page_passthrough(self):
+    async def test_single_page_passthrough(self) -> None:
         """Single page (next_offset=None) returns result unchanged."""
         result = ToolResult(
             structured_content={
@@ -715,7 +716,7 @@ class TestFetchAllLoop:
         assert output is result
 
     @pytest.mark.asyncio
-    async def test_two_pages_merged(self):
+    async def test_two_pages_merged(self) -> None:
         """Two pages are merged into one result."""
         result = ToolResult(
             structured_content={
@@ -727,7 +728,7 @@ class TestFetchAllLoop:
         )
         executed: list[int] = []
 
-        async def _fetch_page(kwargs):
+        async def _fetch_page(kwargs: dict[str, Any]) -> ToolResult:
             executed.append(kwargs["page"])
             # Page 2 returns 2 more items, no more pages
             return ToolResult(
@@ -749,7 +750,7 @@ class TestFetchAllLoop:
         assert executed == [2]
 
     @pytest.mark.asyncio
-    async def test_three_pages_with_total_count(self):
+    async def test_three_pages_with_total_count(self) -> None:
         """Three pages merged with total_count preserved from last page."""
         page_data = {
             1: [{"id": 1}, {"id": 2}],
@@ -766,7 +767,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _fetch_page(kwargs):
+        async def _fetch_page(kwargs: dict[str, Any]) -> ToolResult:
             p = kwargs["page"]
             items = page_data.get(p, [])
             return ToolResult(
@@ -784,7 +785,7 @@ class TestFetchAllLoop:
         assert output.structured_content["total_count"] == 5
 
     @pytest.mark.asyncio
-    async def test_max_pages_cap(self):
+    async def test_max_pages_cap(self) -> None:
         """Stops after FETCH_ALL_MAX_PAGES pages (safety cap)."""
         # Simulate a server that always claims there are more pages.
         many_items = [{"id": i} for i in range(10)]
@@ -800,7 +801,7 @@ class TestFetchAllLoop:
 
         call_count = 0
 
-        async def _never_ending(kwargs):
+        async def _never_ending(kwargs: dict[str, Any]) -> ToolResult:
             nonlocal call_count
             call_count += 1
             return ToolResult(
@@ -821,7 +822,7 @@ class TestFetchAllLoop:
         assert output.structured_content["total_count"] == 9999
 
     @pytest.mark.asyncio
-    async def test_heuristic_when_has_more_missing(self):
+    async def test_heuristic_when_has_more_missing(self) -> None:
         """Fall back to heuristic when response has no has_more."""
         result = ToolResult(
             structured_content={
@@ -832,7 +833,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _short_page(_kwargs):
+        async def _short_page(_kwargs: dict[str, Any]) -> ToolResult:
             # Return fewer items than limit → heuristic says last page
             return ToolResult(
                 structured_content={
@@ -848,7 +849,7 @@ class TestFetchAllLoop:
         assert output.structured_content["has_more"] is False
 
     @pytest.mark.asyncio
-    async def test_total_count_carried_forward(self):
+    async def test_total_count_carried_forward(self) -> None:
         """total_count from server response is preserved in merged result."""
         result = ToolResult(
             structured_content={
@@ -859,7 +860,7 @@ class TestFetchAllLoop:
             },
         )
 
-        async def _fetch(_kwargs):
+        async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
                     "result": [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],

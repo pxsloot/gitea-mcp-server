@@ -1,6 +1,7 @@
 """Unit tests for input validation functionality."""
 
 import re
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,7 +44,7 @@ class TestOwnerRepoPattern:
             "x" * 50,
         ],
     )
-    def test_valid_patterns(self, value):
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(OWNER_REPO_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -80,7 +81,7 @@ class TestOwnerRepoPattern:
             "name?question",
         ],
     )
-    def test_invalid_patterns(self, value):
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(OWNER_REPO_PATTERN, value) is None
 
 
@@ -103,7 +104,7 @@ class TestFilepathPattern:
             "a/b",
         ],
     )
-    def test_valid_patterns(self, value):
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(FILEPATH_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -117,7 +118,7 @@ class TestFilepathPattern:
             "name;with;semicolon",
         ],
     )
-    def test_invalid_patterns(self, value):
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(FILEPATH_PATTERN, value) is None
 
 
@@ -141,7 +142,7 @@ class TestRefPattern:
             "a" * 255,
         ],
     )
-    def test_valid_patterns(self, value):
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(REF_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -159,7 +160,7 @@ class TestRefPattern:
             "name;semicolon",
         ],
     )
-    def test_invalid_patterns(self, value):
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(REF_PATTERN, value) is None
 
 
@@ -177,7 +178,7 @@ class TestUsernamePattern:
             "x" * 50,
         ],
     )
-    def test_valid_patterns(self, value):
+    def test_valid_patterns(self, value: Any) -> None:
         assert re.fullmatch(USERNAME_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -193,7 +194,7 @@ class TestUsernamePattern:
             "user name",
         ],
     )
-    def test_invalid_patterns(self, value):
+    def test_invalid_patterns(self, value: Any) -> None:
         assert re.fullmatch(USERNAME_PATTERN, value) is None
 
 
@@ -208,7 +209,7 @@ class TestSHAPattern:
             "0123456789abcdef0123456789abcdef01234567",
         ],
     )
-    def test_valid_shas(self, value):
+    def test_valid_shas(self, value: Any) -> None:
         assert re.fullmatch(SHA_PATTERN, value) is not None
 
     @pytest.mark.parametrize(
@@ -225,7 +226,7 @@ class TestSHAPattern:
             "abcd1234",  # too short
         ],
     )
-    def test_invalid_shas(self, value):
+    def test_invalid_shas(self, value: Any) -> None:
         assert re.fullmatch(SHA_PATTERN, value) is None
 
 
@@ -243,7 +244,7 @@ class TestValidateOwnerRepo:
             ("name.with.dots", "repo"),
         ],
     )
-    def test_valid(self, value, field):
+    def test_valid(self, value: Any, field: str) -> None:
         validate_owner_repo(value, field=field)
 
     @pytest.mark.parametrize(
@@ -261,7 +262,7 @@ class TestValidateOwnerRepo:
             (None, "repo"),
         ],
     )
-    def test_invalid(self, value, field):
+    def test_invalid(self, value: Any, field: str) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_owner_repo(value, field=field)
         assert exc.value.field == field
@@ -285,10 +286,10 @@ class TestValidateFilepath:
             "file",
         ],
     )
-    def test_valid(self, value):
+    def test_valid(self, value: Any) -> None:
         validate_filepath(value, field="filepath")
 
-    def test_rejects_absolute_path(self):
+    def test_rejects_absolute_path(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_filepath("/absolute/path", field="filepath")
         assert exc.value.field == "filepath"
@@ -305,14 +306,14 @@ class TestValidateFilepath:
             "path/..",
         ],
     )
-    def test_rejects_parent_traversal(self, value):
+    def test_rejects_parent_traversal(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_filepath(value, field="filepath")
         assert exc.value.field == "filepath"
         assert ".." in str(exc.value)
 
     @pytest.mark.parametrize("value", ["", " ", 123, None])
-    def test_rejects_invalid_type_or_empty(self, value):
+    def test_rejects_invalid_type_or_empty(self, value: Any) -> None:
         with pytest.raises(ValidationError):
             validate_filepath(value, field="filepath")
 
@@ -336,7 +337,7 @@ class TestValidateRef:
             "user@method",
         ],
     )
-    def test_valid(self, value):
+    def test_valid(self, value: Any) -> None:
         validate_ref(value, field="ref")
 
     @pytest.mark.parametrize(
@@ -356,7 +357,7 @@ class TestValidateRef:
             None,
         ],
     )
-    def test_invalid(self, value):
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_ref(value, field="ref")
         assert exc.value.field == "ref"
@@ -369,7 +370,7 @@ class TestValidateUsername:
         "value",
         ["user", "john_doe", "jane-doe", "admin.user", "AUser123"],
     )
-    def test_valid(self, value):
+    def test_valid(self, value: Any) -> None:
         validate_username(value, field="username")
 
     @pytest.mark.parametrize(
@@ -385,7 +386,7 @@ class TestValidateUsername:
             "user name",
         ],
     )
-    def test_invalid(self, value):
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_username(value, field="username")
         assert exc.value.field == "username"
@@ -402,7 +403,7 @@ class TestValidateSHA:
             "0123456789abcdef0123456789abcdef01234567",
         ],
     )
-    def test_valid(self, value):
+    def test_valid(self, value: Any) -> None:
         validate_sha(value, field="sha")
 
     @pytest.mark.parametrize(
@@ -417,7 +418,7 @@ class TestValidateSHA:
             None,
         ],
     )
-    def test_invalid(self, value):
+    def test_invalid(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_sha(value, field="sha")
         assert exc.value.field == "sha"
@@ -426,7 +427,7 @@ class TestValidateSHA:
 class TestValidateLabels:
     """Tests for the validate_labels function."""
 
-    def test_valid_list_of_strings(self):
+    def test_valid_list_of_strings(self) -> None:
         validate_labels(["bug", "enhancement"], field="labels")
         validate_labels(["label with spaces"], field="labels")
         validate_labels([123, "bug"], field="labels")
@@ -442,12 +443,12 @@ class TestValidateLabels:
             {"key": "value"},
         ],
     )
-    def test_invalid_not_list(self, value):
+    def test_invalid_not_list(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_labels(value, field="labels")
         assert exc.value.field == "labels"
 
-    def test_invalid_item_type(self):
+    def test_invalid_item_type(self) -> None:
         with pytest.raises(ValidationError):
             validate_labels([3.14], field="labels")
         with pytest.raises(ValidationError):
@@ -462,18 +463,18 @@ class TestValidateLabels:
             ["   "],
         ],
     )
-    def test_empty_or_whitespace_string_not_allowed(self, value):
+    def test_empty_or_whitespace_string_not_allowed(self, value: Any) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_labels(value, field="labels")
         assert "whitespace" in str(exc.value) or "Empty" in str(exc.value)
 
-    def test_string_too_long(self):
+    def test_string_too_long(self) -> None:
         long_label = "a" * 101
         with pytest.raises(ValidationError) as exc:
             validate_labels([long_label], field="labels")
         assert "exceeds maximum length" in str(exc.value)
 
-    def test_negative_int_id(self):
+    def test_negative_int_id(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_labels([-1], field="labels")
         assert "positive" in str(exc.value) or "negative" in str(exc.value)
@@ -482,7 +483,7 @@ class TestValidateLabels:
 class TestValidatePagination:
     """Tests for the validate_pagination function."""
 
-    def test_valid_none(self):
+    def test_valid_none(self) -> None:
         validate_pagination()  # no error
         validate_pagination(page=None, per_page=None)
 
@@ -498,7 +499,7 @@ class TestValidatePagination:
             (50, None),
         ],
     )
-    def test_valid_combinations(self, page, per_page):
+    def test_valid_combinations(self, page: int, per_page: int) -> None:
         validate_pagination(page=page, per_page=per_page)
 
     @pytest.mark.parametrize(
@@ -509,7 +510,7 @@ class TestValidatePagination:
             (0, None),
         ],
     )
-    def test_invalid_page(self, page, per_page):
+    def test_invalid_page(self, page: int, per_page: int) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page=page, per_page=per_page)
         assert exc.value.field == "page"
@@ -525,17 +526,17 @@ class TestValidatePagination:
             (None, 101),
         ],
     )
-    def test_invalid_per_page(self, page, per_page):
+    def test_invalid_per_page(self, page: int, per_page: int) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page=page, per_page=per_page)
         assert exc.value.field == "per_page"
 
-    def test_invalid_page_type(self):
+    def test_invalid_page_type(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page="1", per_page=10)
         assert "must be an integer" in str(exc.value)
 
-    def test_invalid_per_page_type(self):
+    def test_invalid_per_page_type(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_pagination(page=1, per_page="10")
         assert "must be an integer" in str(exc.value)
@@ -545,11 +546,11 @@ class TestValidateState:
     """Tests for the validate_state function."""
 
     @pytest.mark.parametrize("value", ["open", "closed", "all"])
-    def test_valid_states(self, value):
+    def test_valid_states(self, value: Any) -> None:
         validate_state(value, field="state")
 
     @pytest.mark.parametrize("value", ["OPEN", "Closed", "ALL"])
-    def test_case_sensitive(self, value):
+    def test_case_sensitive(self, value: Any) -> None:
         with pytest.raises(ValidationError):
             validate_state(value, field="state")
 
@@ -565,7 +566,7 @@ class TestValidateState:
             (None, "must be a string"),
         ],
     )
-    def test_invalid_states(self, value, expected_msg):
+    def test_invalid_states(self, value: Any, expected_msg: str) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_state(value, field="state")
         assert exc.value.field == "state"
@@ -575,7 +576,7 @@ class TestValidateState:
 class TestAugmentSchemaWithValidation:
     """Tests for the augment_schema_with_validation function."""
 
-    def test_adds_constraints_for_owner(self):
+    def test_adds_constraints_for_owner(self) -> None:
         component = MagicMock()
         component.parameters = {"properties": {"owner": {"type": "string"}}}
         augment_schema_with_validation(component)
@@ -587,7 +588,7 @@ class TestAugmentSchemaWithValidation:
         assert "pattern" in owner_schema
         assert owner_schema["pattern"] == OWNER_REPO_PATTERN
 
-    def test_adds_constraints_for_multiple_params(self):
+    def test_adds_constraints_for_multiple_params(self) -> None:
         component = MagicMock()
         component.parameters = {
             "properties": {
@@ -636,7 +637,7 @@ class TestAugmentSchemaWithValidation:
         assert props["per_page"]["minimum"] == 1
         assert props["per_page"]["maximum"] == 100
 
-    def test_preserves_existing_constraints(self):
+    def test_preserves_existing_constraints(self) -> None:
         component = MagicMock()
         component.parameters = {
             "properties": {
@@ -655,19 +656,19 @@ class TestAugmentSchemaWithValidation:
         page_schema = component.parameters["properties"]["page"]
         assert page_schema["minimum"] == 0  # not overridden
 
-    def test_skips_if_no_parameters(self):
+    def test_skips_if_no_parameters(self) -> None:
         component = MagicMock()
         component.parameters = None
         # Should not raise
         augment_schema_with_validation(component)
 
-    def test_skips_if_empty_parameters(self):
+    def test_skips_if_empty_parameters(self) -> None:
         component = MagicMock()
         component.parameters = {}
         # Should not raise, just return
         augment_schema_with_validation(component)
 
-    def test_skips_unknown_properties(self):
+    def test_skips_unknown_properties(self) -> None:
         component = MagicMock()
         component.parameters = {"properties": {"some_other_param": {"type": "string"}}}
         # Should not add any constraints to unknown param
@@ -675,7 +676,7 @@ class TestAugmentSchemaWithValidation:
         assert "some_other_param" in component.parameters["properties"]
         assert component.parameters["properties"]["some_other_param"] == {"type": "string"}
 
-    def test_skips_non_dict_existing_schema(self):
+    def test_skips_non_dict_existing_schema(self) -> None:
         """augment_schema_with_validation skips when existing_schema is not a dict (line 286)."""
         component = MagicMock()
         component.parameters = {
@@ -692,7 +693,7 @@ class TestAugmentSchemaWithValidation:
 class TestRunValidation:
     """Tests for _run_validation function."""
 
-    def test_missing_required_raises_validation_error(self):
+    def test_missing_required_raises_validation_error(self) -> None:
         """Missing required params should raise a clear validation error."""
         from gitea_mcp_server.tools.errors import (
             _run_validation,
@@ -703,7 +704,7 @@ class TestRunValidation:
         assert "owner" in str(exc.value)
         assert "repo" in str(exc.value)
 
-    def test_all_required_params_present_passes(self):
+    def test_all_required_params_present_passes(self) -> None:
         """No error when all required params are provided."""
         from gitea_mcp_server.tools.errors import _run_validation
 
@@ -712,19 +713,19 @@ class TestRunValidation:
             required_params=["owner", "repo"],
         )
 
-    def test_no_required_params_list_passes(self):
+    def test_no_required_params_list_passes(self) -> None:
         """No error when required_params is None."""
         from gitea_mcp_server.tools.errors import _run_validation
 
         _run_validation({"owner": "test"})
 
-    def test_empty_required_params_list_passes(self):
+    def test_empty_required_params_list_passes(self) -> None:
         """No error when required_params is empty."""
         from gitea_mcp_server.tools.errors import _run_validation
 
         _run_validation({"owner": "test"}, required_params=[])
 
-    def test_single_missing_required_param(self):
+    def test_single_missing_required_param(self) -> None:
         """A single missing required param should name it."""
         from gitea_mcp_server.tools.errors import (
             _run_validation,
@@ -735,7 +736,7 @@ class TestRunValidation:
         assert "owner" in str(exc.value)
         assert "Missing required parameter(s): owner" in str(exc.value)
 
-    def test_missing_required_enum_param_includes_enum_values(self):
+    def test_missing_required_enum_param_includes_enum_values(self) -> None:
         """Missing required enum param should include valid values in the error."""
         from gitea_mcp_server.tools.errors import (
             _run_validation,
@@ -758,7 +759,7 @@ class TestRunValidation:
         assert "diff" in msg
         assert "patch" in msg
 
-    def test_missing_required_param_without_enum_unchanged(self):
+    def test_missing_required_param_without_enum_unchanged(self) -> None:
         """Missing required param without enum should not add enum hint."""
         from gitea_mcp_server.tools.errors import (
             _run_validation,
@@ -776,7 +777,7 @@ class TestRunValidation:
         assert "owner" in msg
         assert "expected one of:" not in msg
 
-    def test_validation_still_runs_on_present_params(self):
+    def test_validation_still_runs_on_present_params(self) -> None:
         """Existing validation for present params should still run alongside missing check."""
         from gitea_mcp_server.tools.errors import (
             _run_validation,

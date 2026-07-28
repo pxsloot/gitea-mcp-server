@@ -9,10 +9,8 @@ Covers:
 """
 
 import json
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,22 +28,22 @@ class TestContextMetaKeysPipeline:
     """
 
     @pytest.fixture
-    def mock_client(self):
+    def mock_client(self) -> AsyncMock:
         """GiteaClient that returns JSON data."""
         client = AsyncMock()
         client.config.token = "test-token"
         return client
 
     @pytest.fixture
-    def issues_resource(self, mock_client):
+    def issues_resource(self, mock_client: AsyncMock) -> Any:
         """Register and return the issues resource handler with context_meta_keys."""
         from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco
@@ -70,7 +68,7 @@ class TestContextMetaKeysPipeline:
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
     @pytest.mark.asyncio
-    async def test_handler_meta_includes_forwarded_param(self, issues_resource, mock_client):
+    async def test_handler_meta_includes_forwarded_param(self, issues_resource: dict[str, Any], mock_client: AsyncMock) -> None:
         """Handler forwards context_meta_keys params (query or path) into ResourceContent.meta."""
         from fastmcp.resources import ResourceResult
 
@@ -87,7 +85,7 @@ class TestContextMetaKeysPipeline:
         assert meta.get("type") == "pulls"
 
     @pytest.mark.asyncio
-    async def test_handler_meta_omits_unmatched_context_param(self, issues_resource, mock_client):
+    async def test_handler_meta_omits_unmatched_context_param(self, issues_resource: dict[str, Any], mock_client: AsyncMock) -> None:
         """Handler does NOT forward params not listed in context_meta_keys."""
         from fastmcp.resources import ResourceResult
 
@@ -104,7 +102,7 @@ class TestContextMetaKeysPipeline:
         assert "format_hint" in meta
 
     @pytest.mark.asyncio
-    async def test_handler_meta_no_context_meta_keys(self, mock_client):
+    async def test_handler_meta_no_context_meta_keys(self, mock_client: AsyncMock) -> None:
         """Handler does NOT forward any extra meta when context_meta_keys is absent."""
         from fastmcp.resources import ResourceResult
 
@@ -113,8 +111,8 @@ class TestContextMetaKeysPipeline:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco
@@ -150,7 +148,7 @@ class TestContextMetaKeysPipeline:
         assert "state" not in meta
         assert meta.get("format_hint") == "repository"
 
-    def test_format_resource_content_with_extra_pulls(self):
+    def test_format_resource_content_with_extra_pulls(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Pull Requests' title."""
         from gitea_mcp_server.tools.resource_display import _format_resource_content
 
@@ -162,7 +160,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Pull Requests - 1 items" in result
 
-    def test_format_resource_content_with_extra_issues(self):
+    def test_format_resource_content_with_extra_issues(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Issues' title."""
         from gitea_mcp_server.tools.resource_display import _format_resource_content
 
@@ -174,7 +172,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Issues - 1 items" in result
 
-    def test_format_resource_content_without_extra_fallback(self):
+    def test_format_resource_content_without_extra_fallback(self) -> None:
         """Display pipeline falls back to scanning when extra is absent."""
         from gitea_mcp_server.tools.resource_display import _format_resource_content
 
@@ -186,7 +184,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Issues - 1 items" in result
 
-    def test_format_resource_content_without_format_hint(self):
+    def test_format_resource_content_without_format_hint(self) -> None:
         """Display pipeline ignores extra when no format_hint is provided."""
         from gitea_mcp_server.tools.resource_display import _format_resource_content
 
@@ -199,7 +197,7 @@ class TestContextMetaKeysPipeline:
         assert "| Key | value |" in result
 
     @pytest.mark.asyncio
-    async def test_labels_handler_meta_forwards_owner_repo(self, mock_client):
+    async def test_labels_handler_meta_forwards_owner_repo(self, mock_client: AsyncMock) -> None:
         """Handler with context_meta_keys=["owner","repo"] forwards path params to meta."""
         from fastmcp.resources import ResourceResult
 
@@ -209,8 +207,8 @@ class TestContextMetaKeysPipeline:
         mcp = MagicMock(spec=FastMCP)
         registered: dict[str, Callable[..., Any]] = {}
 
-        def resource_decorator(uri, **kwargs):
-            def deco(func):
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
             return deco
@@ -262,7 +260,7 @@ class TestContextMetaKeysPipeline:
         assert "# Labels for acmecorp/widgets" in formatted
         assert "bug" in formatted
 
-    def test_extract_extra_meta_known_and_extra(self):
+    def test_extract_extra_meta_known_and_extra(self) -> None:
         """_extract_extra_meta returns extra keys, stripping known pipeline keys."""
         from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
@@ -275,7 +273,7 @@ class TestContextMetaKeysPipeline:
         extra = _extract_extra_meta(meta)
         assert extra == {"owner": "acme", "repo": "widgets"}
 
-    def test_extract_extra_meta_known_only(self):
+    def test_extract_extra_meta_known_only(self) -> None:
         """_extract_extra_meta returns None when only known keys are present."""
         from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
@@ -283,7 +281,7 @@ class TestContextMetaKeysPipeline:
         extra = _extract_extra_meta(meta_only_known)
         assert extra is None
 
-    def test_extract_extra_meta_empty(self):
+    def test_extract_extra_meta_empty(self) -> None:
         """_extract_extra_meta returns None for empty meta dict."""
         from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 

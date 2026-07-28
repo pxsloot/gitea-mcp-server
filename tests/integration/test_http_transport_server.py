@@ -14,6 +14,8 @@ stack and graceful shutdown.
 import asyncio
 import contextlib
 import socket
+from collections.abc import Generator
+from typing import Any
 
 import httpx
 import pytest
@@ -24,7 +26,7 @@ from tests.conftest import SimpleConfig
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _patch_spec_loader():
+def _patch_spec_loader() -> Generator[None, None, None]:
     """Patch the OpenAPI spec loader once for this module.
 
     Module-scoped to avoid leaking the patch to other test modules.
@@ -34,7 +36,7 @@ def _patch_spec_loader():
     """
     mp = pytest.MonkeyPatch()
 
-    async def mock_load_and_convert_spec(gitea_client, config=None):
+    async def mock_load_and_convert_spec(gitea_client: Any, config: Any = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], set[Any]]:
         return (
             {
                 "swagger": "2.0",
@@ -55,7 +57,7 @@ def _patch_spec_loader():
     mp.undo()
 
 
-async def _start_server(config, *, health_path="/health"):
+async def _start_server(config: SimpleConfig, *, health_path: str = "/health") -> tuple[str, Any]:
     """Start a uvicorn server, yield ``(base_url, cleanup_coro)``.
 
     The caller is responsible for calling ``cleanup()`` after the test.
@@ -76,7 +78,7 @@ async def _start_server(config, *, health_path="/health"):
     from starlette.responses import JSONResponse
     from starlette.routing import Route
 
-    async def health_check(_):
+    async def health_check(_: Any) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
     app.routes.insert(0, Route(health_path, endpoint=health_check, methods=["GET"]))
@@ -93,7 +95,7 @@ async def _start_server(config, *, health_path="/health"):
 
     base_url = f"http://{config.http_host}:{config.http_port}"
 
-    async def _cleanup():
+    async def _cleanup() -> None:
         await server.shutdown()
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -113,7 +115,7 @@ class TestRealHttpServer:
     """
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self):
+    async def test_health_endpoint(self) -> None:
         """Real uvicorn serves the /health endpoint correctly (full-stack smoke test)."""
         config = SimpleConfig(transport_type="http", http_port=0)
         base_url, cleanup = await _start_server(config)
@@ -127,7 +129,7 @@ class TestRealHttpServer:
             await cleanup()
 
     @pytest.mark.asyncio
-    async def test_graceful_shutdown(self):
+    async def test_graceful_shutdown(self) -> None:
         """Server can be shut down cleanly, becoming unreachable after shutdown."""
         config = SimpleConfig(transport_type="http", http_port=0)
         base_url, cleanup = await _start_server(config)

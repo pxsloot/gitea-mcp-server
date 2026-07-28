@@ -33,7 +33,7 @@ from gitea_mcp_server.tools.resource_display import _format_resource_content
 class TestFormatIssuesMarkdownGuard:
     """Guard: _format_issues_markdown handles non-dict items."""
 
-    def test_non_dict_items_no_crash(self):
+    def test_non_dict_items_no_crash(self) -> None:
         """Non-dict items (strings) produce output, not AttributeError."""
         data = ["string item", "another string"]
         result = _format_issues_markdown(data, detail="full")
@@ -41,7 +41,7 @@ class TestFormatIssuesMarkdownGuard:
         # Should contain the generic title since items aren't dicts
         assert "Issues" in result or "Issues and Pull Requests" in result
 
-    def test_empty_list_no_crash(self):
+    def test_empty_list_no_crash(self) -> None:
         """Empty list produces output, not TypeError or crash."""
         data = []
         result = _format_issues_markdown(data, detail="full")
@@ -52,7 +52,7 @@ class TestFormatIssuesMarkdownGuard:
 class TestFormatLabelsMarkdownGuard:
     """Guard: _format_labels_markdown handles non-dict items."""
 
-    def test_non_dict_items_full_detail_no_crash(self):
+    def test_non_dict_items_full_detail_no_crash(self) -> None:
         """Non-dict items in full detail mode produce output, not AttributeError."""
         data = ["bug", "feature"]
         result = _format_labels_markdown(
@@ -63,7 +63,7 @@ class TestFormatLabelsMarkdownGuard:
         assert "- bug" in result
         assert "- feature" in result
 
-    def test_non_dict_items_concise_ok(self):
+    def test_non_dict_items_concise_ok(self) -> None:
         """Non-dict items in concise mode is already safe."""
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
@@ -76,13 +76,13 @@ class TestFormatLabelsMarkdownGuard:
 class TestFormatUserMarkdownGuard:
     """Guard: _format_user_markdown handles non-dict input."""
 
-    def test_non_dict_input_no_crash(self):
+    def test_non_dict_input_no_crash(self) -> None:
         """Non-dict input produces output, not TypeError."""
         data = "just a string"
         result = _format_user_markdown(data, detail="full")
         assert result.strip() != ""
 
-    def test_list_input_no_crash(self):
+    def test_list_input_no_crash(self) -> None:
         """List input produces output, not TypeError."""
         data = [{"login": "user1"}]
         result = _format_user_markdown(data, detail="full")
@@ -97,7 +97,7 @@ class TestFormatResourceContentPipelineFallback:
     readable fallback is returned instead of crashing.
     """
 
-    def test_pipeline_recovers_from_type_error(self):
+    def test_pipeline_recovers_from_type_error(self) -> None:
         """When apply_format raises TypeError, pipeline returns readable fallback."""
         raw = '{"key": "value"}'
         with patch(
@@ -107,7 +107,7 @@ class TestFormatResourceContentPipelineFallback:
             result = _format_resource_content(raw, "markdown")
             assert "key" in result or "value" in result or "fallback" in result.lower()
 
-    def test_pipeline_recovers_from_attribute_error(self):
+    def test_pipeline_recovers_from_attribute_error(self) -> None:
         """When apply_format raises AttributeError, pipeline returns readable fallback."""
         raw = '{"key": "value"}'
         with patch(
@@ -117,7 +117,7 @@ class TestFormatResourceContentPipelineFallback:
             result = _format_resource_content(raw, "markdown")
             assert result.strip() != ""
 
-    def test_pipeline_recovers_from_value_error(self):
+    def test_pipeline_recovers_from_value_error(self) -> None:
         """When apply_format raises ValueError, pipeline returns readable fallback."""
         raw = '{"key": "value"}'
         with patch(
@@ -127,7 +127,7 @@ class TestFormatResourceContentPipelineFallback:
             result = _format_resource_content(raw, "markdown")
             assert result.strip() != ""
 
-    def test_pipeline_recovers_json_format(self):
+    def test_pipeline_recovers_json_format(self) -> None:
         """When formatting fails in JSON mode, returns wrapped raw data."""
         raw = '{"key": "value"}'
         with patch(
@@ -138,7 +138,7 @@ class TestFormatResourceContentPipelineFallback:
             parsed = json.loads(result)
             assert parsed == {"result": raw}
 
-    def test_schema_object_data_list_end_to_end(self):
+    def test_schema_object_data_list_end_to_end(self) -> None:
         """Schema expects object but data is a list — pipeline produces output."""
         # This is the scenario from the issue description
         raw = "[]"
@@ -161,7 +161,7 @@ class TestApplyFormatRaiseOnNonSerializable:
     exception is raised when ``apply_format`` is called directly.
     """
 
-    def test_json_output_non_serializable_raises(self):
+    def test_json_output_non_serializable_raises(self) -> None:
         """Non-serializable data in JSON mode raises TypeError."""
         class Unserializable:
             pass
@@ -174,18 +174,18 @@ class TestApplyFormatRaiseOnNonSerializable:
 class TestFormatResourceContentJsonParseEdgeCases:
     """Non-JSON content edge cases in _format_resource_content."""
 
-    def test_plain_text_markdown_passthrough(self):
+    def test_plain_text_markdown_passthrough(self) -> None:
         """Plain text with format=markdown returns unchanged."""
         result = _format_resource_content("hello world", "markdown")
         assert result == "hello world"
 
-    def test_plain_text_json_wrapped(self):
+    def test_plain_text_json_wrapped(self) -> None:
         """Plain text with format=json wraps in result dict."""
         result = _format_resource_content("hello world", "json")
         parsed = json.loads(result)
         assert parsed == {"result": "hello world"}
 
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         """Empty string returns empty string for markdown."""
         result = _format_resource_content("", "markdown")
         assert result == ""
@@ -194,13 +194,13 @@ class TestFormatResourceContentJsonParseEdgeCases:
 class TestFormatPullsMarkdownGuard:
     """Guard: _format_pulls_markdown handles unexpected data shapes safely."""
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         """Empty list produces output, not crash."""
         from gitea_mcp_server.tools.display import _format_pulls_markdown
         result = _format_pulls_markdown([])
         assert "Pull Requests" in result
 
-    def test_non_dict_items_safe(self):
+    def test_non_dict_items_safe(self) -> None:
         """Non-dict items render through generic fallback, no crash."""
         from gitea_mcp_server.tools.display import _format_pulls_markdown
         result = _format_pulls_markdown(["just", "strings"])
@@ -210,13 +210,13 @@ class TestFormatPullsMarkdownGuard:
 class TestFormatReleaseMarkdownGuard:
     """Guard: _format_release_markdown handles unexpected data shapes safely."""
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         """Empty list produces output, not crash."""
         from gitea_mcp_server.tools.display import _format_release_markdown
         result = _format_release_markdown([])
         assert "Releases" in result
 
-    def test_non_dict_items_safe(self):
+    def test_non_dict_items_safe(self) -> None:
         """Non-dict items render through generic fallback, no crash."""
         from gitea_mcp_server.tools.display import _format_release_markdown
         result = _format_release_markdown(["tag1", "tag2"])
@@ -226,23 +226,23 @@ class TestFormatReleaseMarkdownGuard:
 class TestFormatAsMarkdownEdgeCases:
     """Edge cases for _format_as_markdown with unexpected data shapes."""
 
-    def test_none_data(self):
+    def test_none_data(self) -> None:
         """None data produces 'N/A'."""
         result = _format_as_markdown(None)
         assert result == "N/A"
 
-    def test_none_data_with_title(self):
+    def test_none_data_with_title(self) -> None:
         """None data with title still shows title and N/A."""
         result = _format_as_markdown(None, title="Test Title")
         assert "# Test Title" in result
         assert "N/A" in result
 
-    def test_bool_input(self):
+    def test_bool_input(self) -> None:
         """Boolean input produces string representation."""
         result = _format_as_markdown(True)
         assert result == "True"
 
-    def test_list_with_mixed_types(self):
+    def test_list_with_mixed_types(self) -> None:
         """Mixed-type list items render without crash."""
         result = _format_as_markdown([1, "two", None, {"key": "val"}])
         # None falls back to "N/A" in _format_simple_value

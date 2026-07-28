@@ -601,6 +601,13 @@ If a production function's signature changes from ``Config`` to ``ConfigProtocol
 all existing test call sites continue to work without modification because
 ``SimpleConfig`` already satisfies the protocol structurally.
 
+**Maintenance**: when adding or renaming a config field, update *both*
+``Config`` (the Pydantic ``BaseSettings``) and ``ConfigProtocol`` (the
+structural protocol) in lockstep — they must stay in sync.  ``SimpleConfig``
+will then automatically conform without changes so long as its signature
+already mirrors the protocol (it should — that is the whole point of the
+pattern).
+
 ### Inline Data Fixtures
 
 For small, test-specific data, define it inline in the test method. Don't extract shared fixtures for data used once.

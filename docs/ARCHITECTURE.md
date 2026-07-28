@@ -217,7 +217,7 @@ Agent reads a resource:
 
 | Module | Role | Public API |
 |--------|------|------------|
-| `config.py` | Pydantic settings from env vars (GITEA_URL, GITEA_TOKEN, etc.) | `Config` |
+| `config.py` | Pydantic settings from env vars (GITEA_URL, GITEA_TOKEN, etc.) + ConfigProtocol for structural typing | `Config`, `ConfigProtocol` |
 | `client.py` | httpx client with retry, rate-limit handling, SSL | `GiteaClient` |
 | `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 (split into `core.py` for conversion pipeline, `schema.py` for schema walker/transformers) | `convert_swagger_to_openapi_v3` |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, etc.) | 7 TypedDict types |

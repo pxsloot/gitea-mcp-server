@@ -29,6 +29,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_types import SwaggerV2Spec
 
 # NOTE: None of these tests use ``@settings`` yet. Default hypothesis settings
 # (100 examples per @given, no deadline) are fine for the current size.  As
@@ -227,7 +228,7 @@ def swagger_schema_with_nested_refs(
 def _make_spec(
     paths: dict[str, Any] | None = None,
     definitions: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> SwaggerV2Spec:
     """Return a minimal valid Swagger 2.0 spec with the given paths and definitions.
 
     Always includes ``swagger: "2.0"``, ``info``, and ``basePath``.
@@ -731,7 +732,7 @@ class TestEdgeCases:
         - ``basePath`` is converted to a ``servers`` entry
         - Missing ``paths`` key becomes ``paths: {}``
         """
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
             "basePath": "/api",
@@ -752,7 +753,7 @@ class TestEdgeCases:
         - ``paths`` is coerced to ``{}``
         - ``basePath`` is converted to a ``servers`` entry
         """
-        spec = {"swagger": "2.0", "basePath": "/api"}
+        spec: SwaggerV2Spec = {"swagger": "2.0", "basePath": "/api"}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
         assert "swagger" not in result
@@ -769,7 +770,7 @@ class TestEdgeCases:
         - ``swagger`` field is removed
         - ``paths`` is coerced to ``{}``
         """
-        spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}
+        spec: SwaggerV2Spec = {"swagger": "2.0", "info": "just a string", "basePath": "/api"}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
         assert "swagger" not in result
@@ -785,7 +786,7 @@ class TestEdgeCases:
         - ``info`` survives
         - ``paths`` is coerced to ``{}``
         """
-        spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}}
+        spec: SwaggerV2Spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}}
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
         assert "swagger" not in result
@@ -829,7 +830,7 @@ class TestEdgeCases:
             "paths": None,
             "definitions": None,
         }
-        result = convert_swagger_to_openapi_v3(spec)
+        result = convert_swagger_to_openapi_v3(spec)  # type: ignore[arg-type]
         assert result["openapi"] == "3.1.1"
         assert "swagger" not in result
         assert result["paths"] == {}

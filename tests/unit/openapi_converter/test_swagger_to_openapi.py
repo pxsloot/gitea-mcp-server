@@ -15,6 +15,7 @@ from gitea_mcp_server.openapi_converter import (
     _wrap_success_response_schemas,
     convert_swagger_to_openapi_v3,
 )
+from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 from tests.helpers.spec_fixtures import minimal_spec as _minimal_spec
 
 # Load OpenAPI 3.1 schema once
@@ -52,17 +53,17 @@ class TestConvertSwaggerToOpenAPI:
         The guard in convert_swagger_to_openapi_v3 applies to any truthy
         non-dict value, not just None/missing.
         """
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "T", "version": "1"},
-            "paths": "not_a_dict",
+            "paths": "not_a_dict",  # type: ignore[typeddict-item]
         }
         result = convert_swagger_to_openapi_v3(spec)
         assert result["paths"] == {}
 
     def test_full_spec_with_definitions(self) -> None:
         """Definitions should be converted to components.schemas."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -88,12 +89,12 @@ class TestConvertSwaggerToOpenAPI:
         """Non-Swagger-2.0 input should raise SpecError."""
         spec = {"openapi": "3.0.0"}
         with pytest.raises(SpecError, match="Expected Swagger 2.0"):
-            convert_swagger_to_openapi_v3(spec)
+            convert_swagger_to_openapi_v3(spec)  # type: ignore[arg-type]
 
     def test_invalid_input_type(self) -> None:
         """Non-dict input should raise SpecError."""
         with pytest.raises(SpecError, match="must be a dictionary"):
-            convert_swagger_to_openapi_v3("not a dict")
+            convert_swagger_to_openapi_v3("not a dict")  # type: ignore[arg-type]
 
     def test_load_real_swagger_file(self) -> None:
         """Test loading the actual swagger.v1.json file."""
@@ -141,7 +142,7 @@ class TestConvertSwaggerToOpenAPI:
         Operation-level vendor extensions (x-original-content-types, x-mcp)
         are not schema-level and must survive conversion.
         """
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -194,7 +195,7 @@ class TestConvertSwaggerToOpenAPI:
 
     def test_conversion_enriches_array_responses(self) -> None:
         """Converted spec should have array response schemas wrapped in result."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -222,7 +223,7 @@ class TestConvertSwaggerToOpenAPI:
 
     def test_conversion_wraps_object_responses(self) -> None:
         """Object-type response schemas should also be wrapped in result."""
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -255,7 +256,7 @@ class TestConvertSwaggerToOpenAPI:
         When a Swagger operation has ``produces: ['text/plain']``, the response
         should use ``text/plain`` content type and NOT be wrapped in ``result``.
         """
-        spec = {
+        spec: SwaggerV2Spec = {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
             "basePath": "/api",
@@ -295,7 +296,7 @@ class TestConvertSwaggerToOpenAPI:
         # x-original-content-types should be preserved
         assert path_item.get("x-original-content-types") == ["text/plain"]
 
-    def _make_x_original_spec(self) -> dict:
+    def _make_x_original_spec(self) -> SwaggerV2Spec:
         return {
             "swagger": "2.0",
             "info": {"title": "Test", "version": "1.0"},
@@ -354,7 +355,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_array_schema(self) -> None:
         """Array response schemas should be wrapped in result object."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/items": {
                     "get": {
@@ -379,7 +380,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_object_schema(self) -> None:
         """Object response schemas should be wrapped in result object."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/item": {
                     "get": {
@@ -404,7 +405,7 @@ class TestEnrichResponseSchemas:
 
     def test_stays_unwrapped_when_ref_cannot_be_resolved(self) -> None:
         """$ref schemas with unresolvable targets should remain unchanged."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/item": {
                     "get": {
@@ -427,7 +428,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_ref_schema(self) -> None:
         """$ref response schemas should be resolved and wrapped in result."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/item": {
                     "get": {
@@ -470,7 +471,7 @@ class TestEnrichResponseSchemas:
         component-level schema is still wrapped for shared response
         definitions that do carry content.
         """
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/version": {
                     "get": {
@@ -511,7 +512,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/health": {
                     "get": {
@@ -536,7 +537,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_component_responses_inline(self) -> None:
         """Component-level response schemas should also be wrapped."""
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "responses": {
                     "ItemList": {
@@ -556,7 +557,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_component_responses_ref(self) -> None:
         """Component responses with $ref should be resolved and wrapped."""
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "responses": {
                     "ItemDetail": {
@@ -583,7 +584,7 @@ class TestEnrichResponseSchemas:
 
     def test_skips_204_no_content(self) -> None:
         """204 No Content responses should be skipped (no content to wrap)."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/item/{id}": {
                     "delete": {
@@ -599,13 +600,13 @@ class TestEnrichResponseSchemas:
 
     def test_handles_empty_spec_gracefully(self) -> None:
         """Empty spec should not cause errors during wrapping."""
-        spec: dict = {}
+        spec: OpenAPISpec = {}
         _wrap_success_response_schemas(spec)
         assert spec == {}
 
     def test_wraps_201_created_responses(self) -> None:
         """201 Created responses should be wrapped like 200 responses."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/items": {
                     "post": {
@@ -629,7 +630,7 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_multiple_methods_on_same_path(self) -> None:
         """Multiple HTTP methods on the same path should each get wrapping."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/items": {
                     "get": {
@@ -668,7 +669,7 @@ class TestEnrichResponseSchemas:
 
     def test_skips_text_plain_content(self) -> None:
         """text/plain content types should NOT be wrapped in result."""
-        spec = {
+        spec: OpenAPISpec = {
             "paths": {
                 "/diff": {
                     "get": {
@@ -877,6 +878,6 @@ class TestBasePathToServerConverter:
 
     def test_default_scheme(self) -> None:
         """When no schemes given, default to http."""
-        spec = {"basePath": "/api", "host": "git.example.com"}
+        spec: dict[str, Any] = {"basePath": "/api", "host": "git.example.com"}
         BasePathToServerConverter().convert(spec)
         assert spec["servers"][0]["url"].startswith("http://")

@@ -96,8 +96,15 @@ tests/
 │   └── ...
 ├── live/
 │   ├── __init__.py
-│   ├── conftest.py         # Dotenv loading, skip-if-unreachable, test data lifecycle
-│   └── test_diff_endpoint.py
+│   ├── conftest.py         # Dotenv loading, MCPServerFactory, mcp_factory, admin_mcp
+│   ├── helpers.py          # Tool-based helpers: create_user, create_repo, …
+│   ├── test_admin.py       # ACT I: Admin creates users, orgs, teams
+│   ├── test_repos_branches_files.py  # ACT II: Repo owner workflow
+│   ├── test_issues_prs.py            # ACT III: Contributor workflow
+│   ├── test_scope_filtering.py       # ACT IV: Token scope enforcement
+│   ├── test_formatting.py            # ACT V: Output formatting & pagination
+│   ├── test_errors.py                # ACT VI: Error handling
+│   └── test_diff_endpoint.py         # Legacy: diff endpoint transport tests
 ```
 
 ### Source-to-Test Mapping
@@ -313,14 +320,99 @@ async def test_server_creates_tools_from_spec(self):
 
 ### Zone 5: Live End-to-End (tests/live/)
 
-**What it tests**: The full production path — real Gitea instance, real MCP server
-binary over stdio, real MCP transport. Exercises transport-level output
-validation that in-memory ``server.call_tool()`` bypasses.
+**What it tests**: The full production path — real Forgejo instance, real MCP
+server binary over stdio, raw MCP SDK transport. Exercises transport-level
+output validation that in-memory ``server.call_tool()`` bypasses.
 
 **Pattern**: Tests in ``tests/live/`` connect to a real Gitea/Forgejo instance,
-launch the MCP server binary over stdio, and call tools through
-``fastmcp.Client`` or the raw MCP SDK. Test data (user, repo, branch, PR) is
-created via the admin API and cleaned up on teardown.
+launch the MCP server binary over stdio, and call tools through the raw MCP SDK
+(``mcp.ClientSession`` via ``stdio_client``).  **Every call is an assertion**
+— test setup uses MCP tool calls, not raw HTTP.  The one exception is creating
+scope-limited tokens (``POST /users/{name}/tokens``) which requires Basic Auth
+with a password.
+
+**Design**: The suite is split by **actor role** (workflows), not by API domain:
+
+```
+tests/live/
+├── conftest.py              # Session fixtures, mcp_client() context manager
+├── helpers.py               # Tool-based helpers (create_user, create_repo, …)
+├── test_admin.py            # ACT I: Admin bootstraps users, orgs, teams
+├── test_repos_branches_files.py  # ACT II: Repo owner workflow
+├── test_issues_prs.py            # ACT III: Contributor workflow (issues, PRs)
+├── test_scope_filtering.py       # ACT IV: Token scope enforcement
+├── test_formatting.py            # ACT V: Output formatting & pagination
+├── test_errors.py                # ACT VI: Error handling
+└── test_diff_endpoint.py         # Legacy: diff endpoint transport tests
+```
+
+**Key design decisions** (documented because the patterns are intentional,
+not accidental):
+
+1. **One MCP server per test, not per token.** Each test function spawns its
+   own server via ``mcp_client()``.  This is deliberate: server startup (fetch
+   spec, convert, apply scope filters) IS part of the test.  A session-scoped
+   factory would skip that path.  The cost is runtime — the suite takes minutes,
+   not seconds.
+
+2. **Tests within an act are sequential.** Act I creates users that later acts
+   reference.  ``--dist loadscope`` keeps module tests in the same worker.
+   State between sequential tests within a class uses ``pytest.*`` attributes
+   (e.g., ``pytest.bug_issue_index``).  This is safe because those tests are
+   always collected and run together.
+
+3. **One token per test.** Every test that needs a user token calls
+   ``create_user_token()``.  This exercises the token-creation path (the one
+   httpx call) and keeps tests independent.  Token creation is cheap and the
+   test instance is ephemeral.
+
+4. **Only repos are cleaned up, not users or orgs.** Repos accumulate on disk
+   if left behind.  Users, orgs, and tokens live on a throwaway test instance
+   that is wiped between sessions.  Each test file's cleanup class deletes its
+   repos.
+
+5. **Fail-hard, not idempotent.** Live tests must surface failures, not
+   silently tolerate dirty state.  Cleanup must ensure a clean slate — each
+   scenario's setup calls ``purge_repo()`` (delete-before-create) so leftover
+   repos from an interrupted previous run don't cause spurious passes.
+   Helpers do NOT handle "already exists" / "conflict" — those are test bugs
+   or broken cleanup.
+
+6. **State-check before transform.** Before testing a search or format
+   operation, verify the underlying state via a direct list/read call
+   (e.g. ``gitea_issue_list_issues`` before ``gitea_issue_search_issues``).
+   This separates "is the data there?" from "does this operation work?"
+
+7. **Parallel-safe via ``xdist_group``.** Each scenario file carries a
+   module-level ``pytestmark = pytest.mark.xdist_group("live-act-<N>")``.
+   Tests within a file run sequentially on one worker; different scenarios
+   can run in parallel across workers.  Combined with ``--dist loadscope``
+   this gives scenario-level isolation without serializing the whole suite.
+
+**Infrastructure**:
+
+- ``conftest.py`` provides ``live_available`` (skipif marker),
+  ``gitea_url`` / ``admin_token`` / ``server_args`` (session fixtures),
+  and ``mcp_client(gitea_url, server_args, token)`` (async context manager
+  that spawns a server and yields an ``mcp.ClientSession``).
+- ``conftest.py`` also provides ``live_test_data`` (module fixture, used
+  only by the legacy ``test_diff_endpoint.py``).
+- ``helpers.py`` provides tool-based helper functions: ``ensure_user``,
+  ``ensure_org`` (create-or-find with clear error messages), ``create_repo``,
+  ``create_issue``, ``create_branch``, ``create_tag``, ``create_file``,
+  ``create_label``, ``create_milestone``, ``add_comment``,
+  ``create_pull_request``, ``create_commit_status``, ``delete_repo``,
+  ``purge_repo`` (delete-before-create pre-cleanup), and
+  ``create_user_token()`` (the one httpx call).
+
+**Bug regressions caught live**:
+
+| Regression | File | How |
+|------------|------|-----|
+| Commit status wrong state enum | ``test_repos_branches_files`` | Setting ``state=pending`` on a commit |
+| Param naming divergence (``filepath`` vs ``file_path``) | ``test_repos_branches_files`` | Calling ``gitea_repo_create_file`` with ``filepath`` |
+| Param naming divergence (``tag_name`` vs ``name``) | ``test_repos_branches_files`` | ``gitea_repo_create_tag`` accepts ``tag_name`` but response uses ``name`` |
+| Empty list renders ``_(empty)_`` | ``test_formatting`` | Fixed in ``_format_list_as_markdown`` — was ``*None*``
 
 **Prerequisite**: A running Gitea instance with credentials in
 ``.env.dev.local`` (written by ``gitea_dev_start.sh``).
@@ -333,7 +425,7 @@ gracefully when no Gitea instance is reachable (checked at collection time).
 uv run pytest tests/live/ -v
 
 # Automatically skips when Gitea is not running
-uv run pytest tests/live/ -v    # → 3 skipped
+uv run pytest tests/live/ -v    # → all skipped
 ```
 
 **Coverage target**: Not enforced (requires external service).

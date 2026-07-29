@@ -208,7 +208,7 @@ class TestResourceFormatters:
         """Test empty issues list."""
         result = _format_issues_markdown([])
         assert "# Issues" in result
-        assert "*None*" in result
+        assert "_(empty)_" in result
 
     def test_format_pulls_markdown_with_data(self) -> None:
         """Test pull request formatting."""
@@ -352,7 +352,7 @@ class TestFormatterGaps:
 
         assert "# Pull Requests" in result
         assert "Pull Requests" in result
-        assert "*None*" in result
+        assert "_(empty)_" in result
 
     def test_format_release_markdown_full(self) -> None:
         releases = [{

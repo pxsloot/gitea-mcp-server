@@ -241,7 +241,7 @@ def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schem
     lines: list[str] = []
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
-        lines.append(f"{indent}*None*")
+        lines.append(f"{indent}_(empty)_")
     # Flatten lists of {"$ref": "Type"} - render as bulleted $ref:X items.
     elif data and all(isinstance(v, dict) and set(v.keys()) == {"$ref"} for v in data):
         items = [f"$ref:{v['$ref']}" for v in data]

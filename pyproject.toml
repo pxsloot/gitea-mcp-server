@@ -82,6 +82,7 @@ python_functions = ["test_*"]
 markers = [
     "live: Tests that require a real Gitea/Forgejo instance (skipped if unavailable).",
     "slow: Tests that take >1s (HTTP server startup, retry timeouts, etc.). Use ``-m 'not slow'`` for fast iteration.",
+    "xdist_group: Tests in the same group run sequentially on the same worker (pytest-xdist).",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

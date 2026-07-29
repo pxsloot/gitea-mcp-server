@@ -1064,6 +1064,13 @@ class TestAugmentSchemaWithValidation:
         # Should not raise, just return
         augment_schema_with_validation(component)
 
+    def test_skips_if_no_properties(self) -> None:
+        """augment_schema_with_validation returns early when params has no properties."""
+        component = MagicMock()
+        component.parameters = {"$defs": {"X": {"type": "string"}}}
+        # No 'properties' key — should not raise
+        augment_schema_with_validation(component)
+
     def test_skips_unknown_properties(self) -> None:
         component = MagicMock()
         component.parameters = {"properties": {"some_other_param": {"type": "string"}}}

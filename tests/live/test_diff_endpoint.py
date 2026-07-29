@@ -12,6 +12,14 @@ All three scenarios require a real Gitea instance and real MCP server
 binary — see ``tests/live/conftest.py`` for setup instructions.
 
 See https://git.home.lan/mcp-server/gitea-mcp-server/issues/437
+
+Note
+----
+This is a legacy file that predates the 6-act design.  It uses its own
+``live_test_data`` module-scoped fixture (``_create_test_data`` in conftest)
+and ``live_config`` session fixture, not the ``mcp_client()`` pattern used
+by the other test files.  The 6-act tests in the other files supersede this
+approach.
 """
 
 from __future__ import annotations
@@ -27,6 +35,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.conftest import live_available
+
+pytestmark = pytest.mark.xdist_group("live-legacy-diff")
 
 if TYPE_CHECKING:
     from tests.conftest import SimpleConfig

@@ -63,7 +63,7 @@ jobs:
       - name: Type check
         run: |
           cd /app
-          mypy tests || true
+          mypy tests
 
   test:
     needs: [build]

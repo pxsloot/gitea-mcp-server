@@ -1139,7 +1139,7 @@ uv run pytest -m slow
    - **integration**: Multiple components wired together, real server creation
 5. Update this document if introducing new testing patterns
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
-7. Run `uv run pytest` before pushing — 1219+ tests should all pass
+7. Run `uv run pytest` before pushing — all tests should pass
 
 ## Test Code Linting
 
@@ -1151,6 +1151,52 @@ magic numbers in test data).
 Enforcement:
 - ``make test`` runs ``ruff check tests/`` before pytest
 - CI runs a dedicated ``lint-tests`` job
+
+## Test Code Type Checking
+
+Test code is type-checked with the same strict ``pyproject.toml`` mypy
+configuration as production code. No per-file overrides are needed — test
+code passes the full strict rule set including ``disallow_untyped_defs``,
+``disallow_incomplete_defs``, and ``warn_return_any``.
+
+### Running locally
+
+```bash
+# Run type checks on both production and test code
+make test-types
+
+# Or directly:
+uv run mypy gitea_mcp_server/
+uv run mypy tests/
+```
+
+### What's checked
+
+- **Return type annotations**: Every test function must have a return type
+  annotation (``-> None`` for void tests, ``-> dict[str, Any]`` for helpers).
+- **MCP result narrowing**: Tool results return as ``ToolResult`` with
+  ``TextContent | ImageContent | ...`` unions. Use the helpers in
+  ``tests/helpers/mcp_results.py`` to narrow these unions and avoid
+  ``union-attr`` errors:
+  ```python
+  from tests.helpers.mcp_results import extract_text_content, parse_json_content
+  result = await mcp.call_tool("gitea_issue_list_issues", {...})
+  text = extract_text_content(result.content)
+  data = parse_json_content(result)
+  ```
+- **OpenAPI spec typing**: Test fixtures that construct specs should use
+  the ``make_openapi_spec()`` factory (returns typed ``OpenAPISpec``).
+  See "Typed OpenAPI Spec Fixtures" above for the three-tier strategy.
+- **Mock helpers**: Use ``make_async_mock(SomeClass)`` and
+  ``make_magic_mock(some_callable)`` from ``tests/helpers/mock_tool.py``
+  to avoid mypy narrowing mocked objects to their spec type (which hides
+  ``.return_value``, ``.side_effect``, ``.assert_called_once_with``).
+
+### Enforcement
+
+- ``make test`` runs ``mypy tests/`` before pytest alongside production type checks
+- CI has dedicated ``typecheck-tests`` jobs in both Forgejo workflows
+  (``.gitea/workflows/ci.yml``) and GitHub Actions (``.github/workflows/ci.yml``)
 
 ## Coverage Enforcement
 

@@ -64,9 +64,7 @@ uv run pytest tests/integration/
 # Live end-to-end tests (need real Gitea instance + .env.dev.local)
 uv run pytest tests/live/
 
-# Type-check test code (separate from `make test`)
-# Phase 1 removed the tests.* mypy override; the full project config
-# (disallow_untyped_defs = true) now applies to test code.
+# Type-check test code (included in `make test`)
 make test-types
 
 See `docs/TESTING_STANDARDS.md` for full details.

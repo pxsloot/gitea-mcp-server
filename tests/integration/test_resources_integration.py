@@ -1,7 +1,5 @@
 """Integration tests for the MCP server with resources."""
 
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

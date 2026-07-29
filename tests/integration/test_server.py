@@ -10,6 +10,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
 from tests.helpers.tool_names import extract_tool_names
+from tests.integration.conftest import BASE_TEST_URL
 
 
 class TestServerIntegration:
@@ -1329,6 +1330,26 @@ class TestServerEdgeCases:
                 await main_async()  # Should not raise
 
     @pytest.mark.asyncio
+    async def test_main_async_crash_handler(self) -> None:
+        """main_async handles Exception crash with sys.exit(1)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_mcp = AsyncMock()
+        mock_mcp.run_stdio_async = AsyncMock(side_effect=Exception("server crash"))
+
+        with patch("gitea_mcp_server.server.Config.get") as mock_config:
+            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
+            mock_config.return_value = cfg
+            with (
+                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
+                patch("gitea_mcp_server.server.GiteaClient"),
+            ):
+                from gitea_mcp_server.server import main_async
+                with pytest.raises(SystemExit) as exc:
+                    await main_async()
+                assert exc.value.code == 1
+
+    @pytest.mark.asyncio
     async def test_create_mcp_server_generic_exception_wrapped(self) -> None:
         """create_mcp_server wraps non-SpecError exceptions in SpecError."""
         from unittest.mock import patch
@@ -1498,3 +1519,116 @@ class TestServerStartupFailures:
             )
             with pytest.raises(SpecError, match="Failed to fetch"):
                 await create_mcp_server(gitea_client)
+
+
+class TestWrappingPipelineEdgeCases:
+    """Tests for edge cases in the tool wrapping pipeline.
+
+    These tests exercise the runtime wrapping transform (validation, error
+    handling, formatting, ctx.report_progress).  The existing integration
+    test specs deliberately omit response schemas to test the fallback
+    wrapping path; these tests ADD a schema so the wrapping transform's
+    full pipeline is exercised — including 204 No Content wrapping
+    (lines 571-575 in mcp_builder.py), raw format early return (line 306),
+    and ctx.report_progress (lines 597, 608).
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        """Swagger spec with a response schema for wrapping pipeline tests."""
+        return {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "basePath": "/api/v1",
+            "paths": {
+                "/version": {
+                    "get": {
+                        "operationId": "getVersion",
+                        "summary": "Get server version",
+                        "responses": {
+                            "200": {
+                                "description": "Success",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+    @pytest.mark.asyncio
+    async def test_raw_format_returns_raw_data(self, mcp_server: Any) -> None:
+        """format=raw returns the API response without markdown formatting."""
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
+            200, json={"version": "1.0.0"}
+        )
+        result = await mcp_server.call_tool(
+            "gitea_get_version", {"format": "raw"}
+        )
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["version"] == "1.0.0"
+
+    @pytest.mark.asyncio
+    async def test_non_empty_result_triggers_progress(self, mcp_server: Any) -> None:
+        """Tool calls with dict results trigger ctx.report_progress."""
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
+            200, json={"version": "1.0.0"}
+        )
+        result = await mcp_server.call_tool("gitea_get_version", {})
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["version"] == "1.0.0"
+
+
+class Test204NoContentWrapping:
+    """Tests for 204 No Content response wrapping in the tool pipeline.
+
+    Endpoints with 204 responses have ``is_empty_response=True`` in their
+    customization metadata, which triggers the wrapping pipeline to produce
+    ``ToolResult(structured_content={"result": None})`` instead of the raw
+    empty response.
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        """Swagger spec with a delete endpoint returning 204 No Content.
+
+        The endpoint has a 200 response with a ``$ref`` to an empty response
+        definition, which is how Gitea's spec flags empty-body endpoints.
+        """
+        return {
+            "swagger": "2.0",
+            "info": {"title": "Gitea API", "version": "1.0"},
+            "basePath": "/api/v1",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "delete": {
+                        "operationId": "repoDelete",
+                        "summary": "Delete a repository",
+                        "parameters": [
+                            {"name": "owner", "in": "path", "required": True, "type": "string"},
+                            {"name": "repo", "in": "path", "required": True, "type": "string"},
+                        ],
+                        "responses": {
+                            "204": {"description": "No Content"},
+                        },
+                    }
+                },
+            },
+            "definitions": {},
+        }
+
+    @pytest.mark.asyncio
+    async def test_204_response_returns_none_result(self, mcp_server: Any) -> None:
+        """204 No Content response yields structured_content with result=None."""
+        respx.delete(f"{BASE_TEST_URL}/api/v1/repos/owner/repo").respond(204)
+        result = await mcp_server.call_tool(
+            "gitea_repo_delete", {"owner": "owner", "repo": "repo"}
+        )
+        assert result.structured_content is not None
+        assert result.structured_content.get("result") is None

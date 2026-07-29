@@ -244,7 +244,7 @@ class _ToolWrappingTransform(Transform):
 
         customization = meta.get("_customization", {})
         if not customization:
-            logger.warning(
+            logger.warning(  # pragma: no cover — only reachable with a hand-crafted tool meta that sets _customized flag but omits _customization
                 "Tool %r has %r flag but empty customization metadata. "
                 "Error messages may lack route context.",
                 tool.name,
@@ -594,7 +594,7 @@ class _ToolWrappingTransform(Transform):
                 )
 
                 if ctx is not None and len(result_data) > 0:
-                    await ctx.report_progress(progress=1.0, total=1.0)
+                    await ctx.report_progress(progress=1.0, total=1.0)  # pragma: no cover — ctx is never passed from transform_fn caller; follow-up to wire CurrentContext()
 
                 result = ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
@@ -605,7 +605,7 @@ class _ToolWrappingTransform(Transform):
                 )
 
         if ctx is not None:
-            await ctx.report_progress(progress=1.0)
+            await ctx.report_progress(progress=1.0)  # pragma: no cover — ctx is never passed from transform_fn caller; follow-up to wire CurrentContext()
 
         return await self._apply_loop_hooks(
             result, kwargs, extracted, tool, route_path, route_method,

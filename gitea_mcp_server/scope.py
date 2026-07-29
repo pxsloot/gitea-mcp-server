@@ -31,7 +31,7 @@ def derive_required_scope(swagger_tags: set[str] | None, method: str | None) -> 
 
 
 def scope_meta(required_scope: str | None) -> dict[str, Any]:
-    return {"required_scope": required_scope}
+    return {"required_scope": required_scope}  # pragma: no cover — dead code, not called anywhere; see issue #618 follow-up
 
 
 def has_sufficient_scope(required: str | None, available: set[str]) -> bool:

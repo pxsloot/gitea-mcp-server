@@ -343,7 +343,7 @@ def _set_handler_docstring(
                 else:
                     handler.__doc__ = f"Resource for {method} {api_path}"
 
-    if handler.__doc__ is None:
+    if handler.__doc__ is None:  # pragma: no cover — handler closures in make_api_resource always have docstrings; kept as safety net for manual handler creation
         handler.__doc__ = f"Resource for {method} {api_path}"
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from gitea_mcp_server.resources.meta import (
     DETAIL_CONCISE,
     DETAIL_FULL,
@@ -237,3 +239,41 @@ class TestResourceMeta:
 
         with pytest.raises(ValueError, match="Unknown size_hint"):
             default_detail_for("unknown")
+
+
+class TestCountSchemaProperties:
+    """Tests for _count_schema_properties helper."""
+
+    def test_none_returns_zero(self) -> None:
+        """None input returns 0."""
+        from gitea_mcp_server.resources.meta import _count_schema_properties
+        assert _count_schema_properties(None) == 0
+
+    def test_non_dict_returns_zero(self) -> None:
+        """Non-dict input (a string) returns 0."""
+        from gitea_mcp_server.resources.meta import _count_schema_properties
+        assert _count_schema_properties(cast("dict[str, Any] | None", "not_a_dict")) == 0
+
+
+class TestEstimateNestingDepth:
+    """Tests for _estimate_nesting_depth helper."""
+
+    def test_none_returns_zero(self) -> None:
+        """None input returns depth 0."""
+        from gitea_mcp_server.resources.meta import _estimate_nesting_depth
+        assert _estimate_nesting_depth(None) == 0
+
+    def test_additional_properties_dict_adds_depth(self) -> None:
+        """additionalProperties as a dict adds to nesting depth."""
+        from gitea_mcp_server.resources.meta import _estimate_nesting_depth
+        schema = {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+        }
+        depth = _estimate_nesting_depth(schema)
+        assert depth >= 2

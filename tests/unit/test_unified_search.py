@@ -342,5 +342,30 @@ class TestUnifiedSearch:
         assert "total_count" in result.structured_content
         assert result.structured_content["total_count"] >= 1
 
+    @pytest.mark.asyncio
+    async def test_page_out_of_range(self) -> None:
+        """Out-of-range page returns a helpful message."""
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        doc_manager = MagicMock(spec=DocManager)
+        doc_manager.search.return_value = []
+
+        search_transform = _make_search_transform([
+            _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+        ])
+
+        mcp, decorator = _setup_mcp()
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        registered_fn = decorator.call_args[0][0]
+        result = await registered_fn(query="issue", format="raw", ctx=ctx, page=10, limit=10)
+
+        assert result.structured_content is not None
+        hint = result.structured_content.get("_hint", "")
+        assert "Page 10 is out of range" in hint
+        assert result.structured_content["result"] == []
+
 
 __all__ = []

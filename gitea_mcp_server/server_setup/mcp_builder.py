@@ -10,6 +10,7 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.dependencies import CurrentContext
@@ -59,6 +60,38 @@ if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
 
 logger = logging.getLogger(__name__)
+
+
+async def _safe_ctx_info(ctx: Any | None, message: str, **kwargs: Any) -> None:
+    """Call ``ctx.info()`` if the MCP context and session are available.
+
+    When called inside an in-memory ``mcp.call_tool()``, FastMCP provides
+    a Context object whose ``session`` property raises ``RuntimeError``.
+    This helper silently degrades so observability is best-effort.
+    """
+    if ctx is None:
+        return
+    with suppress(RuntimeError):
+        await ctx.info(message, **kwargs)
+
+
+async def _safe_ctx_report_progress(
+    ctx: Any | None,
+    progress: float,
+    total: float | None = None,
+) -> None:
+    """Call ``ctx.report_progress()`` if the MCP context and session are available.
+
+    Same degradation pattern as :func:`_safe_ctx_info` — progress reporting
+    is best-effort, not guaranteed.
+    """
+    if ctx is None:
+        return
+    with suppress(RuntimeError):
+        if total is not None:
+            await ctx.report_progress(progress=progress, total=total)
+        else:
+            await ctx.report_progress(progress=progress)
 
 _META_CUSTOMIZED = "_customization_applied"
 """Flag in component.meta to avoid double-wrapping by the transform."""
@@ -294,10 +327,18 @@ class _ToolWrappingTransform(Transform):
             # that reach the output layer, not the HTTP execution path).
             fmt = kwargs.pop("format", fmt_default)
             detail = kwargs.pop("detail", "full")
+
+            # Resolve the current MCP Context so progress reporting and
+            # structured logging work inside the pipeline.  Outside an
+            # active session (e.g. in-memory ``mcp.call_tool()``), the
+            # context resolves to ``None`` and the pipeline degrades
+            # gracefully — progress is best-effort.
+            ctx = await self._resolve_current_context()
             result = await self._run_transform_pipeline(
                 kwargs,
                 tool,
                 extracted=virtual_values,
+                ctx=ctx,
             )
             result = apply_to(result, virtual_values)
 
@@ -331,6 +372,23 @@ class _ToolWrappingTransform(Transform):
             output_schema=tool.output_schema,
             meta=tool.meta,
         )
+
+    async def _resolve_current_context(self) -> Any | None:
+        """Resolve the current MCP Context if inside a request scope.
+
+        ``CurrentContext()`` raises ``RuntimeError`` when called outside an
+        active MCP session (e.g. in unit tests or in-memory
+        ``mcp.call_tool()``).  This helper catches that and returns ``None``,
+        matching the ``ctx=None`` contract of ``_pipeline_with_context``.
+
+        Returns:
+            The MCP ``Context`` object, or ``None`` if no session is active.
+        """
+        try:
+            async with CurrentContext() as ctx:
+                return ctx
+        except RuntimeError:
+            return None
 
     async def _apply_loop_hooks(  # noqa: PLR0913
         self,
@@ -423,11 +481,17 @@ class _ToolWrappingTransform(Transform):
         kwargs: dict[str, Any],
         tool: Tool,
         extracted: dict[str, Any] | None = None,
+        ctx: Any | None = None,
     ) -> ToolResult:
         """Run the full tool execution pipeline: validate, execute, wrap result.
 
         Label conversion is handled by the inner :class:`LabelTransform`
         that runs before this method is invoked via ``tool.run()``.
+
+        ``ctx`` is resolved by the caller (``transform_fn`` in :meth:`_wrap`)
+        and passed down so progress reporting and structured logging work
+        inside the pipeline.  When ``ctx`` is ``None`` (no active MCP session),
+        progress reporting and context logging degrade gracefully.
 
         Args:
             kwargs: The tool arguments from the agent.
@@ -436,6 +500,8 @@ class _ToolWrappingTransform(Transform):
                 :func:`~tools.virtual_params.extract_from`), passed through
                 so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
                 ``None`` or empty means no loop hooks to run.
+            ctx: The MCP ``Context`` object, or ``None`` if no session is
+                active.  Resolved by the caller via :meth:`_resolve_current_context`.
         """
         meta = tool.meta or {}
         customization = meta.get("_customization", {})
@@ -445,34 +511,17 @@ class _ToolWrappingTransform(Transform):
         is_empty_response = customization.get("is_empty_response", False)
         output_schema = tool.output_schema
 
-        # Resolve the current MCP Context if inside a request.
-        # CurrentContext() is an async context manager - outside a request
-        # context it raises RuntimeError, which we catch gracefully.
-        try:
-            async with CurrentContext() as ctx:
-                return await self._pipeline_with_context(
-                    kwargs,
-                    tool,
-                    ctx,
-                    route_path,
-                    route_method,
-                    is_text_response,
-                    is_empty_response,
-                    output_schema,
-                    extracted=extracted,
-                )
-        except RuntimeError:
-            return await self._pipeline_with_context(
-                kwargs,
-                tool,
-                None,
-                route_path,
-                route_method,
-                is_text_response,
-                is_empty_response,
-                output_schema,
-                extracted=extracted,
-            )
+        return await self._pipeline_with_context(
+            kwargs,
+            tool,
+            ctx,
+            route_path,
+            route_method,
+            is_text_response,
+            is_empty_response,
+            output_schema,
+            extracted=extracted,
+        )
 
     async def _pipeline_with_context(  # noqa: PLR0913
         self,
@@ -488,9 +537,10 @@ class _ToolWrappingTransform(Transform):
     ) -> ToolResult:
         """Run the tool execution pipeline with an optional Context.
 
-        Separated from _run_transform_pipeline so the CurrentContext() async
-        context manager is entered before any pipeline work (which may itself
-        be async).  ``ctx`` is ``None`` when no request context is active.
+        ``ctx`` is resolved by the caller (``transform_fn`` via
+        :meth:`_resolve_current_context`) and passed through.  ``ctx`` is
+        ``None`` when no request context is active (e.g. in-memory
+        ``mcp.call_tool()``).
 
         Args:
             extracted: Extracted virtual param values from
@@ -510,21 +560,20 @@ class _ToolWrappingTransform(Transform):
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 
-            if ctx is not None:
-                await ctx.info(
-                    f"Validated {tool.name}",
-                    extra={"arg_keys": list(kwargs.keys()), "valid": True},
-                )
+            await _safe_ctx_info(
+                ctx,
+                f"Validated {tool.name}",
+                extra={"arg_keys": list(kwargs.keys()), "valid": True},
+            )
         except ValidationError as e:
-            if ctx is not None:
-                await ctx.info(
-                    f"Validation failed for {tool.name}: {e}",
-                    extra={"error": str(e)},
-                )
+            await _safe_ctx_info(
+                ctx,
+                f"Validation failed for {tool.name}: {e}",
+                extra={"error": str(e)},
+            )
             raise ValueError(str(e)) from e
 
-        if ctx is not None:
-            await ctx.report_progress(progress=0.5)
+        await _safe_ctx_report_progress(ctx, progress=0.5)
 
         with tracer.start_as_current_span(f"{tool.name}.execute") as span:
             span.set_attribute("tool.name", tool.name)
@@ -538,11 +587,11 @@ class _ToolWrappingTransform(Transform):
                 route_method,
             )
 
-        if ctx is not None:
-            await ctx.info(
-                f"Executed {tool.name}: {route_method} {route_path}",
-                extra={"route": f"{route_method} {route_path}"},
-            )
+        await _safe_ctx_info(
+            ctx,
+            f"Executed {tool.name}: {route_method} {route_path}",
+            extra={"route": f"{route_method} {route_path}"},
+        )
 
         if (
             is_text_response
@@ -593,8 +642,8 @@ class _ToolWrappingTransform(Transform):
                     total_count=total_count,
                 )
 
-                if ctx is not None and len(result_data) > 0:
-                    await ctx.report_progress(progress=1.0, total=1.0)  # pragma: no cover — ctx is never passed from transform_fn caller; follow-up to wire CurrentContext()
+                if len(result_data) > 0:
+                    await _safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
 
                 result = ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
@@ -604,8 +653,7 @@ class _ToolWrappingTransform(Transform):
                     result, kwargs, extracted, tool, route_path, route_method,
                 )
 
-        if ctx is not None:
-            await ctx.report_progress(progress=1.0)  # pragma: no cover — ctx is never passed from transform_fn caller; follow-up to wire CurrentContext()
+        await _safe_ctx_report_progress(ctx, progress=1.0)
 
         return await self._apply_loop_hooks(
             result, kwargs, extracted, tool, route_path, route_method,

@@ -1,13 +1,14 @@
 """Unit tests for schema utilities (type detection, output schema, ref resolution)."""
 
 from copy import deepcopy
-from typing import Any
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _ToolWrappingTransform,
@@ -20,6 +21,7 @@ from gitea_mcp_server.tools.schemas import (
     derive_output_schema,
 )
 from tests.helpers.mcp_results import get_structured
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestSchemaTypeIsArray:
@@ -85,7 +87,7 @@ class TestIsObjectType:
 class TestDeriveOutputSchema:
     """Tests for derive_output_schema function."""
 
-    MINIMAL_SPEC: dict = {
+    MINIMAL_SPEC: OpenAPISpec = {
         "openapi": "3.1.0",
         "paths": {
             "/repos/{owner}/{repo}/issues/{index}": {
@@ -187,7 +189,7 @@ class TestDeriveOutputSchema:
     def test_ref_response_resolved(self) -> None:
         """Should resolve $ref in response to get the schema."""
 
-        spec_with_ref: dict = {
+        spec_with_ref: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/repos/{owner}/{repo}": {
@@ -260,7 +262,7 @@ class TestDeriveOutputSchema:
     def test_prefers_200_over_201(self) -> None:
         """Should prefer 200 over 201 when both are present."""
 
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -297,7 +299,7 @@ class TestDeriveOutputSchema:
     def test_falls_back_to_201_when_no_200(self) -> None:
         """Should fall back to 201 when no 200 response exists."""
 
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -336,7 +338,7 @@ class TestDeriveOutputSchema:
         tool.description = "Get an issue"
         tool.meta = {}
 
-        spec = deepcopy(self.MINIMAL_SPEC)
+        spec: OpenAPISpec = deepcopy(self.MINIMAL_SPEC)
         _wrap_success_response_schemas(spec)
         _customize_metadata(route, tool, openapi_spec=spec)
 
@@ -359,7 +361,7 @@ class TestDeriveOutputSchema:
         tool.description = "Test"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.output_schema is None
 
@@ -375,7 +377,7 @@ class TestDeriveOutputSchema:
         tool.description = "Merge a pull request"
         tool.meta = {}
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}/pulls/{index}/merge": {
@@ -493,7 +495,7 @@ class TestDeriveOutputSchema:
         tool.auth = None
         tool.serializer = None
 
-        spec = deepcopy(self.MINIMAL_SPEC)
+        spec: OpenAPISpec = deepcopy(self.MINIMAL_SPEC)
         _wrap_success_response_schemas(spec)
         _customize_metadata(route, tool, openapi_spec=spec)
         assert tool.output_schema is not None
@@ -522,8 +524,8 @@ class TestIsTextResponse:
     """Tests for _is_text_response function."""
 
     @pytest.fixture
-    def text_spec(self) -> dict[str, Any]:
-        return {
+    def text_spec(self) -> OpenAPISpec:
+        return cast("OpenAPISpec", {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
@@ -567,28 +569,28 @@ class TestIsTextResponse:
                     }
                 },
             },
-        }
+        })
 
-    def test_text_plain_endpoint_detected(self, text_spec: dict[str, Any]) -> None:
+    def test_text_plain_endpoint_detected(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
 
-    def test_json_endpoint_not_text(self, text_spec: dict[str, Any]) -> None:
+    def test_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
 
-    def test_no_content_types_not_text(self, text_spec: dict[str, Any]) -> None:
+    def test_no_content_types_not_text(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/no-content-types", "get") is False
 
-    def test_missing_path_returns_false(self, text_spec: dict[str, Any]) -> None:
+    def test_missing_path_returns_false(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/nonexistent", "get") is False
 
-    def test_missing_method_returns_false(self, text_spec: dict[str, Any]) -> None:
+    def test_missing_method_returns_false(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
-    def test_uppercase_method_normalized(self, text_spec: dict[str, Any]) -> None:
+    def test_uppercase_method_normalized(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
 
-    def test_uppercase_json_endpoint_not_text(self, text_spec: dict[str, Any]) -> None:
+    def test_uppercase_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method on JSON endpoint should still return False."""
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
 
@@ -597,8 +599,8 @@ class TestResponseHasNoContent:
     """Tests for _response_has_no_content function."""
 
     @pytest.fixture
-    def empty_body_spec(self) -> dict[str, Any]:
-        return {
+    def empty_body_spec(self) -> OpenAPISpec:
+        return cast("OpenAPISpec", {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}/issues/{index}": {
@@ -703,24 +705,24 @@ class TestResponseHasNoContent:
                     },
                 },
             },
-        }
+        })
 
-    def test_204_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_204_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """204 No Content response should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
 
-    def test_202_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_202_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """202 Accepted with no body should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
 
-    def test_205_no_content_detected(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_205_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """205 Reset Content should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
 
-    def test_200_with_ref_to_empty_response(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_200_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """200 with $ref to empty response should return True (merge endpoint scenario)."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -729,7 +731,7 @@ class TestResponseHasNoContent:
             "put",
         ) is True
 
-    def test_201_with_ref_to_empty_response(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_201_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """201 with $ref to empty response should return True."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -738,7 +740,7 @@ class TestResponseHasNoContent:
             "put",
         ) is True
 
-    def test_200_inline_empty_not_detected(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_200_inline_empty_not_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """200 inline with no content key should NOT be flagged (spec gap, not empty body).
 
         Only ``$ref``-based 200/201 responses are treated as explicit
@@ -752,7 +754,7 @@ class TestResponseHasNoContent:
             "post",
         ) is False
 
-    def test_201_inline_empty_not_detected(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_201_inline_empty_not_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """201 inline with no content key should NOT be flagged (spec gap, not empty body)."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(
@@ -761,27 +763,27 @@ class TestResponseHasNoContent:
             "post",
         ) is False
 
-    def test_json_endpoint_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_json_endpoint_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """JSON endpoint with 200 should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
 
-    def test_get_with_200_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_get_with_200_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """GET endpoint with 200 response should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
 
-    def test_response_with_content_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_response_with_content_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """204 with content body should NOT be flagged as empty."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
 
-    def test_missing_path_returns_false(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_missing_path_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """Nonexistent path should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
 
-    def test_uppercase_method_normalized(self, empty_body_spec: dict[str, Any]) -> None:
+    def test_uppercase_method_normalized(self, empty_body_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
         assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True
@@ -789,7 +791,7 @@ class TestResponseHasNoContent:
     def test_non_dict_responses_returns_false(self) -> None:
         """When responses is not a dict, should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
-        spec = {
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -798,25 +800,25 @@ class TestResponseHasNoContent:
                     }
                 }
             },
-        }
+        })
         assert _response_has_no_content(spec, "/test", "delete") is False
 
     def test_non_dict_path_item_returns_false(self) -> None:
         """When path_item is not a dict, should return False."""
         from gitea_mcp_server.tools.schemas import _response_has_no_content
-        spec = {
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/test": "not a dict",
             },
-        }
+        })
         assert _response_has_no_content(spec, "/test", "delete") is False
 
 
 class TestTextResponseOutputSchema:
     """Tests that text/plain endpoints get no output_schema."""
 
-    TEXT_SPEC: dict = {
+    TEXT_SPEC: OpenAPISpec = cast("OpenAPISpec", {
         "openapi": "3.1.1",
         "paths": {
             "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
@@ -852,7 +854,7 @@ class TestTextResponseOutputSchema:
                 }
             },
         },
-    }
+    })
 
     def _make_route(self, path: str, method: str = "GET") -> MagicMock:
         return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
@@ -896,7 +898,7 @@ class TestTextResponseOutputSchema:
 class TestDeepResolveSchema:
     """Tests for _deep_resolve_schema function."""
 
-    SPEC: dict = {
+    SPEC: OpenAPISpec = {
         "openapi": "3.1.0",
         "components": {
             "schemas": {
@@ -1005,7 +1007,7 @@ class TestDeepResolveSchema:
         """Circular $ref should not cause infinite recursion."""
         from gitea_mcp_server.tools.schemas import _deep_resolve_schema
 
-        circular_spec = {
+        circular_spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "Node": {
@@ -1027,7 +1029,7 @@ class TestDeepResolveSchema:
     def test_deep_resolve_applied_in_derive_output_schema(self) -> None:
         """derive_output_schema should deep-resolve nested refs."""
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/repos/{owner}/{repo}": {
@@ -1075,7 +1077,7 @@ class TestDeepResolveSchema:
 
     def test_deep_resolve_ref_resolves_to_non_dict(self) -> None:
         """When $ref resolves to non-dict, should keep the $ref key."""
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "Foo": "just a string",
@@ -1087,7 +1089,7 @@ class TestDeepResolveSchema:
 
     def test_deep_resolve_custom_dict_key(self) -> None:
         """Non-standard keys with dict values should be deep-resolved."""
-        spec = {"components": {"schemas": {"Bar": {"type": "string"}}}}
+        spec: OpenAPISpec = {"components": {"schemas": {"Bar": {"type": "string"}}}}
         schema = {
             "type": "object",
             "example": {"nested": {"$ref": "#/components/schemas/Bar"}},
@@ -1103,7 +1105,7 @@ class TestGetSuccessSchema:
         """When responses is not a dict, should return None."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1112,15 +1114,14 @@ class TestGetSuccessSchema:
                     }
                 }
             },
-        }
-        route = MagicMock(path="/test", method="GET")
+        })
         assert _get_success_schema(spec, "/test", "get") is None
 
     def test_ref_resolves_to_non_dict(self) -> None:
         """When $ref in response resolves to non-dict, should continue to next status code."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1153,7 +1154,7 @@ class TestGetSuccessSchema:
         """When content is not a dict, should continue."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1178,7 +1179,7 @@ class TestGetSuccessSchema:
         """When application/json content is not a dict, should continue."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1208,7 +1209,7 @@ class TestGetSuccessSchema:
         """When schema is not a dict, should continue."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1242,7 +1243,7 @@ class TestGetRawSuccessSchema:
         """resolve=False should return schema with $ref intact."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1288,7 +1289,7 @@ class TestGetRawSuccessSchema:
         """resolve=True (default) should deep-resolve $ref."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1335,7 +1336,7 @@ class TestGetRawSuccessSchema:
         """Text responses should return None regardless of resolve flag."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1352,7 +1353,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-        }
+        })
         assert _get_success_schema(spec, "/test", "get", resolve=False) is None
         assert _get_success_schema(spec, "/test", "get", resolve=True) is None
 
@@ -1360,14 +1361,14 @@ class TestGetRawSuccessSchema:
         """Missing path should return None."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {"openapi": "3.1.0", "paths": {}}
+        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
         assert _get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
 
     def test_missing_method_returns_none(self) -> None:
         """Missing method should return None."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {
@@ -1390,7 +1391,7 @@ class TestGetRawSuccessSchema:
         """Should prefer 200 status code over 201."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {

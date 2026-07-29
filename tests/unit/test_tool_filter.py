@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.server_setup.mcp_builder import OpenAPIProvider, create_openapi_provider
 from gitea_mcp_server.server_setup.spec_loader import (
@@ -248,7 +249,7 @@ class TestFetchTokenScopes:
 class TestComputeExcludedRoutes:
     """Tests for _compute_excluded_routes — the spec-level filter decision."""
 
-    def _spec(self) -> dict:
+    def _spec(self) -> OpenAPISpec:
         return {
             "openapi": "3.1.1",
             "info": {"title": "Test", "version": "1.0.0"},
@@ -342,7 +343,7 @@ class TestProviderRouteMapFiltering:
     def _make_provider(self, excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "info": {"title": "Test", "version": "1.0.0"},
             "paths": {

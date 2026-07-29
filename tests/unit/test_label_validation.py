@@ -1,8 +1,9 @@
 """Unit tests for label validation and auto-conversion functionality."""
 
+from __future__ import annotations
+
 import asyncio
-from collections.abc import Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,6 +11,11 @@ import pytest
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.server_setup.mcp_builder import _customize_metadata
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.labels import (
     update_labels_schema as _update_labels_schema_impl,
 )
@@ -426,7 +432,7 @@ class TestUpdateLabelsSchema:
         tool.serializer = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=cast("OpenAPISpec", {}))
 
         # Verify schema was updated
         labels_schema = tool.parameters["properties"]["labels"]

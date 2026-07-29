@@ -588,9 +588,50 @@ mypy errors and keep test code consistent:
 - `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`,
   `make_async_mock`, `make_magic_mock`
 - `tests/helpers/tool_names.py` — `extract_tool_names`
-- `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`
+- `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`, `make_openapi_spec`
 - `tests/helpers/mcp_results.py` — `extract_text_content`, `assert_call_success`,
   `get_structured`, `parse_json_content`, low-level MCP helpers
+
+### Typed OpenAPI Spec Fixtures
+
+Production functions accept ``OpenAPISpec`` (a TypedDict).  Test code that
+passes plain ``dict`` literals to these functions triggers ``arg-type`` mypy
+errors (was ~266 across the test suite).  The fix is a three-tier strategy:
+
+**Tier 1 — Factory helper**: ``make_openapi_spec(**overrides)`` in
+``tests/helpers/spec_fixtures.py`` creates a minimal valid post-conversion
+OpenAPI 3.1 spec typed as ``OpenAPISpec``.  Use this as the default
+construction path for specs::
+
+    spec = make_openapi_spec()
+    result = some_function(openapi_spec=spec)
+
+    spec = make_openapi_spec(paths={"/ping": {"get": ...}})
+    result = some_function(openapi_spec=spec)
+
+**Tier 2 — Annotated inline dicts**: When a test needs a unique spec shape
+that doesn't fit the factory, annotate the variable::
+
+    spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {...}}
+
+**Tier 3 — ``cast()`` for deliberately invalid specs**: Tests that pass
+malformed spec values (strings where dicts are expected, numeric keys,
+etc.) to exercise error paths must wrap in ``cast("OpenAPISpec", ...)``::
+
+    spec = cast("OpenAPISpec", {"paths": "not_a_dict"})
+    result = some_function(openapi_spec=spec)
+
+Two conventions apply project-wide:
+
+- ``cast()`` always uses the **string form** ``cast("OpenAPISpec", ...)``
+  (not bare ``cast(OpenAPISpec, ...)``) to satisfy ruff TC006.
+- Imports of ``OpenAPISpec`` are placed in ``if TYPE_CHECKING:`` blocks
+  when only needed for type annotations (see TC001).  Files that use
+  ``OpenAPISpec`` exclusively in annotations add ``from __future__ import
+  annotations`` to make lazy strings.
+
+Prefer Tier 1, fall back to Tier 2, use Tier 3 only when testing
+deliberately invalid spec shapes.
 
 ### Module-Level Fixtures
 

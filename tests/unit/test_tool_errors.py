@@ -1,13 +1,18 @@
 """Unit tests for HTTP error translation."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any, Never
+from typing import TYPE_CHECKING, Any, Never, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
 from mcp.types import ToolAnnotations
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -30,7 +35,7 @@ class TestErrorHandlingEnhancement:
         import httpx
 
         # Minimal OpenAPI spec with a 404 response definition for the endpoint
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/repos/{owner}/{repo}/pulls": {
                     "post": {
@@ -118,7 +123,7 @@ class TestErrorHandlingEnhancement:
     async def test_non_http_errors_unchanged(self) -> None:
         """Non-HTTP ValueErrors should be re-raised without modification."""
 
-        openapi_spec: dict[str, Any] = {"paths": {}}
+        openapi_spec: OpenAPISpec = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -151,7 +156,7 @@ class TestErrorHandlingEnhancement:
         """httpx.NetworkError (without response) should be formatted as a network issue."""
         import httpx
 
-        openapi_spec: dict[str, Any] = {"paths": {}}
+        openapi_spec: OpenAPISpec = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -186,7 +191,7 @@ class TestErrorHandlingEnhancement:
         """httpx.TimeoutException should be formatted as a timeout issue."""
         import httpx
 
-        openapi_spec: dict[str, Any] = {"paths": {}}
+        openapi_spec: OpenAPISpec = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -218,7 +223,7 @@ class TestErrorHandlingEnhancement:
     async def test_formats_unexpected_exception_cleanly(self) -> None:
         """Unexpected exceptions (RuntimeError, etc.) should be caught and formatted."""
 
-        openapi_spec: dict[str, Any] = {"paths": {}}
+        openapi_spec: OpenAPISpec = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -256,13 +261,13 @@ class TestLookupResponseDescription:
 
     def test_route_not_found_in_paths(self) -> None:
         """When route.path is not found in paths, should return fallback."""
-        openapi_spec: dict[str, Any] = {"paths": {}}
+        openapi_spec: OpenAPISpec = {"paths": {}}
         result = _lookup_response_description(openapi_spec, "/nonexistent", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_empty_method_falls_back(self) -> None:
         """When route.method is empty, should return fallback."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -278,7 +283,7 @@ class TestLookupResponseDescription:
 
     def test_status_code_not_in_responses(self) -> None:
         """When status code is not in operation responses, should return fallback."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -294,7 +299,7 @@ class TestLookupResponseDescription:
 
     def test_response_def_not_dict(self) -> None:
         """When response_def is not a dict, should return fallback."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -310,7 +315,7 @@ class TestLookupResponseDescription:
 
     def test_ref_resolution(self) -> None:
         """$ref in response_def should be resolved to get description."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -331,7 +336,7 @@ class TestLookupResponseDescription:
 
     def test_ref_resolution_resolved_not_dict(self) -> None:
         """When _resolve_ref returns non-dict, should fallback."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -352,7 +357,7 @@ class TestLookupResponseDescription:
 
     def test_ref_resolution_missing_description(self) -> None:
         """When resolved ref has no description, should fallback."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -373,7 +378,7 @@ class TestLookupResponseDescription:
 
     def test_ref_resolution_with_description_from_schema(self) -> None:
         """$ref pointing to a schema with description should work."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {
@@ -394,13 +399,13 @@ class TestLookupResponseDescription:
 
     def test_exception_during_lookup(self) -> None:
         """When a KeyError occurs during lookup, should return fallback."""
-        openapi_spec = {"paths": {0: "bad"}}
+        openapi_spec = cast("OpenAPISpec", {"paths": {0: "bad"}})
         result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
     def test_non_dict_paths_raises_attribute_error(self) -> None:
         """When paths is not a dict, .get() raises AttributeError → fallback."""
-        openapi_spec = {"paths": [1, 2, 3]}
+        openapi_spec = cast("OpenAPISpec", {"paths": [1, 2, 3]})
         result = _lookup_response_description(openapi_spec, "/test", "GET", 404)
         assert result == "HTTP error 404"
 
@@ -625,7 +630,7 @@ class TestErrorHandlingNonJson:
     @pytest.mark.asyncio
     async def test_non_json_error_body_formatted_cleanly(self) -> None:
         """When HTTP error response body is not valid JSON, should fall back to response.text."""
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
                     "get": {

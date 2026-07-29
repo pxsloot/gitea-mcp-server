@@ -1,24 +1,25 @@
 """Integration tests for MCP extensions end-to-end."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 
 
-def _tool_dict(tools: list[Any]) -> dict[str, Any]:
+def _tool_dict(tools: Any) -> dict[str, Any]:
     """Extract tool name -> tool mapping from provider.list_tools() result."""
     return {t.name: t for t in tools}
 
 
 @pytest.fixture
-def minimal_spec() -> dict[str, Any]:
+def minimal_spec() -> OpenAPISpec:
     """Minimal OpenAPI spec with two operations."""
-    return {
+    return cast("OpenAPISpec", {
         "openapi": "3.1.0",
         "info": {"title": "Test API", "version": "1.0.0"},
         "paths": {
@@ -63,11 +64,11 @@ def minimal_spec() -> dict[str, Any]:
                 }
             },
         },
-    }
+    })
 
 
 @pytest.mark.asyncio
-async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec: dict[str, Any]) -> None:
+async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec: OpenAPISpec) -> None:
     """Test that mcp_extensions.yaml parameter customizations propagate through spec to tools.
 
     Note: Tool-level metadata overrides (title, description, tags, hints) are handled
@@ -106,7 +107,7 @@ async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minim
     assert "Original description" in tool_names["issue_create_issue"].description
 
 
-def test_extensions_load_from_yaml_file(minimal_spec: dict[str, Any], tmp_path: Path) -> None:
+def test_extensions_load_from_yaml_file(minimal_spec: OpenAPISpec, tmp_path: Path) -> None:
     """Test that extensions are loaded from mcp_extensions.yaml."""
     # Create a temporary extensions file
     ext_content = """
@@ -123,7 +124,7 @@ tool_names:
 
 
 @pytest.mark.asyncio
-async def test_label_guidance_appendage_when_labels_present(minimal_spec: dict[str, Any]) -> None:
+async def test_label_guidance_appendage_when_labels_present(minimal_spec: OpenAPISpec) -> None:
     """Test that LABEL_GUIDANCE is auto-appended to tools with labels parameter."""
     # No explicit description extension, rely on auto-guidance
     mock_gitea_client = MagicMock()

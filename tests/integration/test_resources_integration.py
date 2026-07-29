@@ -1,5 +1,8 @@
 """Integration tests for the MCP server with resources."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,6 +11,9 @@ import respx
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
 class TestResourcesIntegration:
@@ -73,7 +79,7 @@ class TestResourcesIntegration:
         mock_config = MagicMock()
         mock_client._config = mock_config
 
-        spec = {
+        spec = cast("OpenAPISpec", {
             "paths": {
                 "/repos/{owner}/{repo}": {
                     "get": {
@@ -97,7 +103,7 @@ class TestResourcesIntegration:
                     }
                 },
             }
-        }
+        })
 
         resources_pkg.register_auto_generated_resources(
             mcp, mock_client, spec, skip_uris=set()

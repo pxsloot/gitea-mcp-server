@@ -1194,9 +1194,10 @@ uv run mypy tests/
 
 ### Enforcement
 
-- ``make test`` runs ``mypy tests/`` before pytest alongside production type checks
-- CI has dedicated ``typecheck-tests`` jobs in both Forgejo workflows
-  (``.gitea/workflows/ci.yml``) and GitHub Actions (``.github/workflows/ci.yml``)
+- ``make test`` runs ``mypy tests/`` before pytest, alongside production type checks
+- Forgejo CI (``.gitea/workflows/ci.yml``): dedicated ``typecheck-tests`` job
+- GitHub Actions (``.github/workflows/ci.yml``): ``mypy tests/`` step within the
+  ``test`` job
 
 ## Coverage Enforcement
 

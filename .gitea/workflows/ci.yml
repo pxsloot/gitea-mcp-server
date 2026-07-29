@@ -27,7 +27,7 @@ jobs:
     container:
       image: gitea-mcp-server:ci
     steps:
-      - name: Lint
+      - name: Lint (ruff)
         run: |
           cd /app
           ruff check gitea_mcp_server
@@ -38,7 +38,7 @@ jobs:
     container:
       image: gitea-mcp-server:ci
     steps:
-      - name: Lint tests
+      - name: Lint tests (ruff)
         run: |
           cd /app
           ruff check tests/
@@ -49,7 +49,7 @@ jobs:
     container:
       image: gitea-mcp-server:ci
     steps:
-      - name: Type check
+      - name: Type check (mypy)
         run: |
           cd /app
           mypy gitea_mcp_server
@@ -60,7 +60,7 @@ jobs:
     container:
       image: gitea-mcp-server:ci
     steps:
-      - name: Type check
+      - name: Type check tests (mypy)
         run: |
           cd /app
           mypy tests
@@ -71,7 +71,7 @@ jobs:
     container:
       image: gitea-mcp-server:ci
     steps:
-      - name: Test
+      - name: Test with coverage
         run: |
           cd /app
           pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing

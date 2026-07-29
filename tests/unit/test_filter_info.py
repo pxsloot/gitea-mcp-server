@@ -7,11 +7,14 @@ pure dict-in/dict-out patterns with minimal OpenAPI spec fixtures.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.exceptions import ToolError
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.tools.filter_info import (
     FilteredToolMiddleware,
@@ -26,7 +29,7 @@ from gitea_mcp_server.tools.filter_info import (
 
 
 @pytest.fixture
-def empty_spec() -> dict:
+def empty_spec() -> OpenAPISpec:
     """Minimal OpenAPI 3.1 spec with no paths."""
     return {
         "openapi": "3.1.0",
@@ -36,7 +39,7 @@ def empty_spec() -> dict:
 
 
 @pytest.fixture
-def spec_with_one_endpoint() -> dict:
+def spec_with_one_endpoint() -> OpenAPISpec:
     """Spec with a single GET /repos/{owner}/{repo} endpoint."""
     return {
         "openapi": "3.1.0",
@@ -57,7 +60,7 @@ def spec_with_one_endpoint() -> dict:
 
 
 @pytest.fixture
-def spec_with_deprecated_endpoint() -> dict:
+def spec_with_deprecated_endpoint() -> OpenAPISpec:
     """Spec with a deprecated endpoint."""
     return {
         "openapi": "3.1.0",
@@ -79,7 +82,7 @@ def spec_with_deprecated_endpoint() -> dict:
 
 
 @pytest.fixture
-def spec_with_admin_endpoint() -> dict:
+def spec_with_admin_endpoint() -> OpenAPISpec:
     """Spec with an admin-only endpoint."""
     return {
         "openapi": "3.1.0",
@@ -100,7 +103,7 @@ def spec_with_admin_endpoint() -> dict:
 
 
 @pytest.fixture
-def spec_with_mixed_endpoints() -> dict:
+def spec_with_mixed_endpoints() -> OpenAPISpec:
     """Spec with several endpoints: one visible, one scope-restricted,
     one deprecated, one config-excluded."""
     return {
@@ -152,18 +155,18 @@ def spec_with_mixed_endpoints() -> dict:
 class TestComputeFilteredToolsInfo:
     """Main computation function that iterates the spec."""
 
-    def test_empty_spec_returns_empty_result(self, empty_spec: dict[str, Any]) -> None:
+    def test_empty_spec_returns_empty_result(self, empty_spec: OpenAPISpec) -> None:
         """No paths → no filtered operations."""
         result = compute_filtered_tools_info(empty_spec)
         assert result["filtered"] == {}
         assert result["available_scopes"] == []
 
-    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """available_scopes=None → no scope-based filtering."""
         result = compute_filtered_tools_info(spec_with_one_endpoint, available_scopes=None)
         assert result["filtered"] == {}
 
-    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_sufficient_scope_no_filtering(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """Token has read:repository → repo_get is visible."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -171,7 +174,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint: dict[str, Any]) -> None:
+    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint: OpenAPISpec) -> None:
         """Token lacks sudo → admin_list_users is scope-restricted."""
         result = compute_filtered_tools_info(
             spec_with_admin_endpoint,
@@ -182,7 +185,7 @@ class TestComputeFilteredToolsInfo:
         assert filtered["admin_list_users"]["reason"] == "scope"
         assert filtered["admin_list_users"]["required_scope"] == "sudo"
 
-    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint: dict[str, Any]) -> None:
+    def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint: OpenAPISpec) -> None:
         """Endpoint with deprecated:true → filtered as deprecated."""
         result = compute_filtered_tools_info(
             spec_with_deprecated_endpoint,
@@ -192,7 +195,7 @@ class TestComputeFilteredToolsInfo:
         assert "old_get_thing" in filtered
         assert filtered["old_get_thing"]["reason"] == "deprecated"
 
-    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_exclusion_config_excludes_tool(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """Exact name in exclude list → filtered as excluded."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -202,7 +205,7 @@ class TestComputeFilteredToolsInfo:
         assert "repo_get" in filtered
         assert filtered["repo_get"]["reason"] == "excluded"
 
-    def test_include_overrides_exclude(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_include_overrides_exclude(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """Tool matching both include and exclude → visible (include wins)."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -210,7 +213,7 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints: dict[str, Any]) -> None:
+    def test_mixed_endpoints_multiple_reasons(self, spec_with_mixed_endpoints: OpenAPISpec) -> None:
         """Verify that different endpoints are filtered for different reasons."""
         result = compute_filtered_tools_info(
             spec_with_mixed_endpoints,
@@ -234,7 +237,7 @@ class TestComputeFilteredToolsInfo:
 
         assert len(filtered) == 3
 
-    def test_available_scopes_in_result(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_available_scopes_in_result(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """The available_scopes list should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -244,7 +247,7 @@ class TestComputeFilteredToolsInfo:
         assert "write:issue" in result["available_scopes"]
         assert len(result["available_scopes"]) == 2
 
-    def test_exclusion_config_in_result(self, spec_with_one_endpoint: dict[str, Any]) -> None:
+    def test_exclusion_config_in_result(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """The exclusion config patterns should be reflected in the result."""
         result = compute_filtered_tools_info(
             spec_with_one_endpoint,
@@ -255,7 +258,7 @@ class TestComputeFilteredToolsInfo:
 
     def test_post_method_write_scope(self) -> None:
         """POST endpoints require write: scope."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
             "paths": {

@@ -8,6 +8,7 @@ import respx
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestResourcesIntegration:
@@ -73,31 +74,29 @@ class TestResourcesIntegration:
         mock_config = MagicMock()
         mock_client._config = mock_config
 
-        spec = {
-            "paths": {
-                "/repos/{owner}/{repo}": {
-                    "get": {
-                        "summary": "Get repo details",
-                        "operationId": "getRepoDetails",
-                        "parameters": [
-                            {
-                                "name": "owner",
-                                "in": "path",
-                                "required": True,
-                                "schema": {"type": "string"},
-                            },
-                            {
-                                "name": "repo",
-                                "in": "path",
-                                "required": True,
-                                "schema": {"type": "string"},
-                            },
-                        ],
-                        "responses": {"200": {"description": "Success"}},
-                    }
-                },
-            }
-        }
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}": {
+                "get": {
+                    "summary": "Get repo details",
+                    "operationId": "getRepoDetails",
+                    "parameters": [
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                    ],
+                    "responses": {"200": {"description": "Success"}},
+                }
+            },
+        })
 
         resources_pkg.register_auto_generated_resources(
             mcp, mock_client, spec, skip_uris=set()

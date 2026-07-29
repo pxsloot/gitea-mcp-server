@@ -9,13 +9,18 @@ Covers:
     - Tool/resource formatting consistency
 """
 
+from __future__ import annotations
 
-from collections.abc import Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from gitea_mcp_server.format import _build_server_info_markdown
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
     _FORMATTER_META,
     _FORMATTERS,
@@ -410,7 +415,7 @@ class TestFormatterGaps:
         assert "| Prerelease | True |" in result
 
     def test_build_server_info_markdown(self) -> None:
-        spec = {
+        spec: OpenAPISpec = {
             "info": {
                 "title": "Gitea API",
                 "version": "1.21.0",
@@ -425,7 +430,7 @@ class TestFormatterGaps:
         assert "Gitea API description." in result
 
     def test_build_server_info_markdown_no_description(self) -> None:
-        spec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
+        spec: OpenAPISpec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
         result = _build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result

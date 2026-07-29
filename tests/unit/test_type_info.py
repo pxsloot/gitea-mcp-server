@@ -1,7 +1,10 @@
 """Tests for type_info module (build_type_index, resolve_type_info)."""
 
+from typing import cast
+
 import pytest
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import (
     _try_ctx_info,
     _try_ctx_report_progress,
@@ -11,6 +14,7 @@ from gitea_mcp_server.tools.type_info import (
     build_type_index,
     resolve_type_info,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestBuildTypeIndex:
@@ -18,12 +22,12 @@ class TestBuildTypeIndex:
 
     def test_empty_spec_returns_empty(self) -> None:
         """Should return empty dict when spec has no components/schemas."""
-        spec: dict = {"openapi": "3.1.0", "paths": {}}
+        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
         assert build_type_index(spec) == {}
 
     def test_registers_all_types(self) -> None:
         """Should register every type from components/schemas."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {},
             "components": {
@@ -46,7 +50,7 @@ class TestBuildTypeIndex:
 
     def test_detects_nested_refs(self) -> None:
         """Should detect $ref references between types."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {},
             "components": {
@@ -73,7 +77,7 @@ class TestBuildTypeIndex:
 
     def test_cross_references_from_response(self) -> None:
         """Should record which tools return a type in their response."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/issues/{id}": {
@@ -112,7 +116,7 @@ class TestBuildTypeIndex:
 
     def test_cross_references_from_parameters(self) -> None:
         """Should record which tools accept a type in their parameters."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/users": {
@@ -153,7 +157,7 @@ class TestBuildTypeIndex:
 
     def test_cross_references_from_request_body(self) -> None:
         """Should record which tools accept a type via requestBody."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/repos": {
@@ -193,7 +197,7 @@ class TestBuildTypeIndex:
 
     def test_deduplicates_cross_references(self) -> None:
         """Should deduplicate operationId entries in returned_by/accepted_by."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/issues/{id}": {
@@ -234,7 +238,7 @@ class TestBuildTypeIndex:
 
     def test_non_dict_schema_skipped(self) -> None:
         """Should skip non-dict schema entries."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {},
             "components": {
@@ -252,7 +256,7 @@ class TestBuildTypeIndex:
 class TestResolveTypeInfo:
     """Tests for resolve_type_info."""
 
-    SIMPLE_SPEC: dict = {
+    SIMPLE_SPEC: OpenAPISpec = {
         "openapi": "3.1.0",
         "paths": {
             "/issues/{id}": {
@@ -415,7 +419,7 @@ class TestTryCtxHelpers:
 class TestWalkResponseRefs:
     """Guard clauses in _walk_response_refs."""
 
-    MINIMAL_SPEC: dict = {"openapi": "3.1.0", "components": {"schemas": {}}}
+    MINIMAL_SPEC: OpenAPISpec = {"openapi": "3.1.0", "components": {"schemas": {}}}
 
     def test_non_dict_responses_early_return(self) -> None:
         """Non-dict responses triggers early return."""
@@ -429,9 +433,8 @@ class TestWalkResponseRefs:
             "User": {"schema": {"type": "object"}, "referenced_types": [],
                      "returned_by": [], "accepted_by": []},
         }
-        spec = {
-            **self.MINIMAL_SPEC,
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "responses": {
                     "UserResponse": {
                         "description": "User data",
@@ -454,7 +457,7 @@ class TestWalkResponseRefs:
                     },
                 },
             },
-        }
+        )
         _walk_response_refs(spec, {
             "200": {
                 "$ref": "#/components/responses/UserResponse",
@@ -509,7 +512,7 @@ class TestWalkParameterRefs:
 class TestWalkRequestBodyRefs:
     """Guard clauses in _walk_request_body_refs."""
 
-    MINIMAL_SPEC: dict = {"openapi": "3.1.0"}
+    MINIMAL_SPEC: OpenAPISpec = {"openapi": "3.1.0"}
 
     def test_non_dict_body_content_early_return(self) -> None:
         """Non-dict body content triggers early return."""
@@ -533,7 +536,7 @@ class TestBuildTypeIndexEdgeCases:
 
     def test_non_dict_schemas_returns_empty(self) -> None:
         """When components.schemas is not a dict, return empty."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "components": {"schemas": "not a dict"},
             "paths": {},
@@ -543,7 +546,7 @@ class TestBuildTypeIndexEdgeCases:
 
     def test_non_dict_path_item_skipped(self) -> None:
         """Non-dict path item is skipped."""
-        spec: dict = {
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/valid": {
@@ -555,14 +558,14 @@ class TestBuildTypeIndexEdgeCases:
                 "/invalid": "not a dict",
             },
             "components": {"schemas": {}},
-        }
+        })
         result = build_type_index(spec)
         # Only the valid path should be processed; no error for the invalid one
         assert isinstance(result, dict)
 
     def test_empty_operation_id_skipped(self) -> None:
         """Operation without operationId is skipped."""
-        spec: dict = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "paths": {
                 "/test": {

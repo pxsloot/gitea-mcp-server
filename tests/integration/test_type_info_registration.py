@@ -12,11 +12,12 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError, ToolError
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import register_type_tools
 from tests.helpers.mcp_results import get_structured
 
 # Minimal OpenAPI 3.1 spec with two types for testing
-_MINIMAL_SPEC: dict = {
+_MINIMAL_SPEC: OpenAPISpec = {
     "openapi": "3.1.0",
     "info": {"title": "Test", "version": "1.0"},
     "paths": {

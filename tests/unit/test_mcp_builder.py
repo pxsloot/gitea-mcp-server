@@ -1,7 +1,7 @@
 """Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,12 +11,14 @@ from mcp.types import ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _ToolWrappingTransform,
     create_openapi_provider,
 )
 from tests.helpers.mcp_results import get_structured
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
 # _customize_metadata
@@ -31,7 +33,7 @@ class TestCustomizeMetadata:
         route = MagicMock(path="/test", summary="Test", operation_id="test_op", method="GET")
         resource = MagicMock(spec=object)
 
-        _customize_metadata(route, resource, openapi_spec={})
+        _customize_metadata(route, resource, openapi_spec=make_openapi_spec())
 
     def test_sets_title_and_annotations(self) -> None:
         """Title and ToolAnnotations are set from route operationId."""
@@ -47,7 +49,7 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.annotations is not None
         assert tool.annotations.title == "List Items"
@@ -70,7 +72,7 @@ class TestCustomizeMetadata:
         tool.description = "Create a new issue"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.annotations.title == "Create Issue"
         assert "..." not in tool.annotations.title
@@ -92,7 +94,7 @@ class TestCustomizeMetadata:
         tool.description = "List issues"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert isinstance(tool.annotations, ToolAnnotations)
         assert tool.annotations.title == "List Issues"
@@ -116,7 +118,7 @@ class TestCustomizeMetadata:
         tool.description = "Get pull request"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert isinstance(tool.annotations, ToolAnnotations)
         assert tool.annotations.title == "Get Pull Request"
@@ -146,7 +148,7 @@ class TestCustomizeMetadata:
             tool.description = "Test"
             tool.meta = {}
 
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
             assert tool.annotations is not None
             assert expected_category in tool.tags, (
@@ -170,7 +172,7 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.annotations.destructiveHint is True
 
@@ -186,7 +188,7 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.description == "Original description"
 
@@ -203,7 +205,7 @@ class TestCustomizeMetadata:
         tool.__doc__ = "Docstring should be ignored"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert "Description from attribute" in tool.description
         assert "Docstring should be ignored" not in tool.description
@@ -227,7 +229,7 @@ class TestCustomizeMetadata:
         tool.description = "Create an issue"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert LABEL_GUIDANCE.strip() in tool.description
 
@@ -250,7 +252,7 @@ class TestCustomizeMetadata:
         tool.description = "Create an issue"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert LABEL_GUIDANCE.strip() in tool.description
 
@@ -271,7 +273,7 @@ class TestCustomizeMetadata:
         tool.description = "List issues"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert LABEL_GUIDANCE.strip() not in tool.description
 
@@ -294,7 +296,7 @@ class TestCustomizeMetadata:
         tool.description = "Create an issue"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert "labels" in tool.tags
         assert "issue" in tool.tags  # original tag preserved
@@ -316,7 +318,7 @@ class TestCustomizeMetadata:
         tool.description = "List issues"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert "labels" not in tool.tags
 
@@ -334,7 +336,7 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         assert tool.meta.get("_customization_applied") is True
         assert "_customization" in tool.meta
@@ -363,7 +365,7 @@ class TestCustomizeMetadata:
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder.register_tool_invalidation"
         ) as mock_register:
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
             mock_register.assert_called_once()
 
@@ -387,7 +389,7 @@ class TestCustomizeMetadata:
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder.register_tool_invalidation"
         ) as mock_register:
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
             mock_register.assert_not_called()
 
@@ -414,7 +416,7 @@ class TestCustomizeMetadata:
             "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
             return_value=output_schema,
         ):
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
             assert tool.output_schema["x-fastmcp-wrap-result"] is True
 
     def test_array_output_schema_adds_pagination_fields(self) -> None:
@@ -450,7 +452,7 @@ class TestCustomizeMetadata:
                 return_value=True,
             ),
         ):
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
             props = output_schema.setdefault("properties", {})
             assert "has_more" in props
             assert "next_offset" in props
@@ -486,7 +488,7 @@ class TestCustomizeMetadata:
                 return_value=True,
             ),
         ):
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
             assert tool.output_schema is not None
             assert tool.output_schema["type"] == "object"
@@ -520,7 +522,7 @@ class TestCustomizeMetadata:
             "gitea_mcp_server.server_setup.mcp_builder.derive_output_schema",
             return_value=derived_schema,
         ):
-            _customize_metadata(route, tool, openapi_spec={})
+            _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
             assert tool.output_schema is not None
             # Should be the derived schema, not the text/plain fallback
@@ -535,17 +537,17 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec: dict[str, Any], excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
+    def _provider(self, spec: OpenAPISpec, excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
-        spec = dict(spec)
-        spec.setdefault("info", {"title": "Test", "version": "1.0.0"})
-        spec.setdefault("components", {"schemas": {}})
+        spec_copy = cast("OpenAPISpec", dict(spec))
+        spec_copy.setdefault("info", {"title": "Test", "version": "1.0.0"})
+        spec_copy.setdefault("components", {"schemas": {}})
         mock_gitea_client = MagicMock()
         mock_gitea_client.client = MagicMock()
         return create_openapi_provider(
-            openapi_spec=spec,
+            openapi_spec=spec_copy,
             gitea_client=mock_gitea_client,
             label_service=LabelService(),
             excluded_routes=excluded_routes,
@@ -554,19 +556,19 @@ class TestRouteMapFiltering:
 
     def test_empty_paths(self) -> None:
         """Empty paths dict returns empty set."""
-        spec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
+        spec: OpenAPISpec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
         provider = self._provider(spec, set())
         assert provider is not None
 
     def test_missing_paths(self) -> None:
         """Spec with no paths key returns empty set."""
-        spec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
+        spec: OpenAPISpec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
         provider = self._provider(spec, set())
         assert provider is not None
 
     def test_non_dict_paths_rejected(self) -> None:
         """A non-dict paths value is rejected by FastMCP's spec validation."""
-        spec = {"openapi": "3.1.1", "paths": "not_a_dict"}
+        spec = cast("OpenAPISpec", {"openapi": "3.1.1", "paths": "not_a_dict"})
         from gitea_mcp_server.label_service import LabelService
 
         try:
@@ -585,7 +587,7 @@ class TestRouteMapFiltering:
 
     def test_no_deprecated_returns_empty(self) -> None:
         """No deprecated:true operations returns empty set."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/user": {
@@ -599,7 +601,7 @@ class TestRouteMapFiltering:
 
     def test_single_deprecated_get(self) -> None:
         """Single deprecated GET is excluded via route_map_fn."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/user": {
@@ -613,7 +615,7 @@ class TestRouteMapFiltering:
 
     def test_multiple_deprecated_operations(self) -> None:
         """Multiple deprecated methods on same path are excluded."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}": {
@@ -630,7 +632,7 @@ class TestRouteMapFiltering:
 
     def test_multiple_paths_mixed(self) -> None:
         """Deprecated across multiple paths, non-deprecated excluded."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/v1/old": {
@@ -658,7 +660,7 @@ class TestRouteMapFiltering:
 
     def test_deprecated_false_not_included(self) -> None:
         """deprecated: false is treated as not deprecated (no exclusion)."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/user": {
@@ -671,7 +673,7 @@ class TestRouteMapFiltering:
 
     def test_non_http_method_keys_ignored(self) -> None:
         """Parameters key at path level is not treated as an operation."""
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}": {
@@ -685,7 +687,8 @@ class TestRouteMapFiltering:
 
     def test_http_methods_comprehensive(self) -> None:
         """All HTTP methods are properly excluded via route_map_fn."""
-        spec = {
+        # cast needed: dict comprehension type-inference makes mypy too conservative
+        spec = cast("OpenAPISpec", {
             "openapi": "3.1.1",
             "paths": {
                 "/resource": {
@@ -693,7 +696,7 @@ class TestRouteMapFiltering:
                     for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")
                 },
             },
-        }
+        })
         expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
         provider = self._provider(spec, expected)
         assert provider is not None
@@ -709,9 +712,9 @@ class TestRouteMapFiltering:
 class TestToolWrappingTransformTelemetry:
     """Tests for custom OTEL spans emitted from _ToolWrappingTransform._run_transform_pipeline."""
 
-    def make_transform(self, openapi_spec: dict[str, Any] | None = None) -> _ToolWrappingTransform:
+    def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
-            openapi_spec=openapi_spec or {},
+            openapi_spec=openapi_spec if openapi_spec is not None else make_openapi_spec(),
         )
 
     def make_tool(self, name: str = "test_tool") -> Tool:
@@ -854,7 +857,7 @@ class TestCreateOpenapiProvider:
         from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 
         # Spec with a deprecated route
-        openapi_spec = {
+        openapi_spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "info": {"title": "Test", "version": "1.0.0"},
             "paths": {
@@ -889,7 +892,7 @@ class TestCreateOpenapiProvider:
         """response_format should flow into the tool's format parameter default."""
         from gitea_mcp_server.label_service import LabelService
 
-        spec = {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "info": {"title": "Test", "version": "1.0.0"},
             "paths": {
@@ -924,9 +927,9 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec: dict[str, Any] | None = None, response_format: str = "markdown") -> _ToolWrappingTransform:
+    def make_transform(self, openapi_spec: OpenAPISpec | None = None, response_format: str = "markdown") -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
-            openapi_spec=openapi_spec or {},
+            openapi_spec=openapi_spec if openapi_spec is not None else make_openapi_spec(),
             response_format=response_format,
         )
 
@@ -1399,7 +1402,7 @@ class TestFetchAllIntegration:
     @pytest.fixture
     def make_transform_and_tool(self) -> tuple[_ToolWrappingTransform, Tool]:
         """Create a transform and a minimal tool suitable for pagination tests."""
-        transform = _ToolWrappingTransform(openapi_spec={})
+        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
         tool = Tool(
             name="test_list_tool",
             description="A paginated list tool.",

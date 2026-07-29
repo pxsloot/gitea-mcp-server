@@ -1,9 +1,14 @@
 """Unit tests for schema-to-example generation."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pytest
 from fastmcp.tools.base import Tool
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.tools.examples import (
     _example_array,
@@ -526,7 +531,7 @@ class TestSchemaToCompactExample:
         """Bare $ref at depth=0 with openapi_spec should resolve one level."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "NotificationThread": {
@@ -566,7 +571,7 @@ class TestSchemaToCompactExample:
         """$ref at depth > 0 should still emit placeholder even with spec."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "User": {
@@ -592,7 +597,7 @@ class TestSchemaToCompactExample:
         """Array with $ref items at depth=0 should resolve items with spec."""
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "NotificationThread": {
@@ -619,7 +624,7 @@ class TestSchemaToCompactExample:
     def test_serialize_bare_ref_with_openapi_spec(self) -> None:
         """_serialize_tool_schema with bare $ref output resolves with spec."""
 
-        spec = {
+        spec: OpenAPISpec = {
             "components": {
                 "schemas": {
                     "NotificationThread": {
@@ -665,7 +670,7 @@ class TestSchemaToCompactExample:
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         # Spec without the referenced schema
-        spec: dict[str, Any] = {"components": {"schemas": {}}}
+        spec: OpenAPISpec = {"components": {"schemas": {}}}
         schema = {"$ref": "#/components/schemas/MissingType"}
         result = _schema_to_compact_example(schema, openapi_spec=spec)
         assert result == {"$ref": "MissingType"}

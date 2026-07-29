@@ -1,17 +1,53 @@
 """Shared Swagger/OpenAPI spec fixtures for tests.
 
-Provides reusable spec dictionaries at two granularities:
+Provides reusable spec dictionaries at three granularities:
 
 - ``base_spec``: minimal valid Swagger 2.0 spec with **no endpoints**.
   Used as a server configuration template for integration tests.
 - ``minimal_spec``: simplest possible spec with **one endpoint**.
   Used for converter unit tests that verify basic conversion behaviour.
+- ``make_openapi_spec``: minimal valid post-conversion OpenAPI 3.1 spec.
+  Used throughout the test suite where functions expect ``OpenAPISpec``.
+  Use this instead of inline dict literals to avoid mypy ``arg-type`` errors.
 
-Use these instead of defining inline spec dicts in test files, unless the
-test truly needs a unique spec shape that doesn't fit either level.
+Prefer ``make_openapi_spec()`` over inline ``dict`` literals for all
+post-conversion spec construction.  The factory returns ``OpenAPISpec``,
+which satisfies the type expected by production functions.
 """
 
-from gitea_mcp_server.openapi_types import SwaggerV2Spec
+from typing import Any, cast
+
+from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
+
+
+def make_openapi_spec(**overrides: Any) -> OpenAPISpec:
+    """Create a minimal valid post-conversion OpenAPI 3.1 spec for tests.
+
+    Returns a typed ``OpenAPISpec`` with sensible defaults that can be
+    overridden via keyword arguments.  Use this instead of inline dict
+    literals passed to functions expecting ``OpenAPISpec``::
+
+        # Good — typed, no mypy error:
+        spec = make_openapi_spec()
+        _customize_metadata(route, tool, openapi_spec=spec)
+
+        # Good — with custom paths:
+        spec = make_openapi_spec(paths={\"/ping\": {\"get\": ...}})
+
+        # Bad — plain dict triggers mypy arg-type:
+        spec = {\"openapi\": \"3.1.0\", ...}
+        _customize_metadata(route, tool, openapi_spec=spec)  # mypy error
+
+    The single ``cast()`` is hidden inside this factory rather than
+    repeated at every call site across the test suite (~266 occurrences).
+    """
+    base: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {},
+    }
+    base.update(overrides)
+    return cast("OpenAPISpec", base)
 
 
 def base_spec() -> SwaggerV2Spec:

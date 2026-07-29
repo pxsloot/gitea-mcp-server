@@ -435,7 +435,7 @@ class TestCustomizeMetadata:
         tool.meta = {}
 
         # Array output schema: type=array with items schema
-        output_schema = {
+        output_schema: dict[str, Any] = {
             "type": "array",
             "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
         }

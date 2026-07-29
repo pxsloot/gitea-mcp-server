@@ -5,7 +5,6 @@ from typing import cast
 import pytest
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from tests.helpers.spec_fixtures import make_openapi_spec
 from gitea_mcp_server.tools.type_info import (
     _try_ctx_info,
     _try_ctx_report_progress,
@@ -15,6 +14,7 @@ from gitea_mcp_server.tools.type_info import (
     build_type_index,
     resolve_type_info,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestBuildTypeIndex:

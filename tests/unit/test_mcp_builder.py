@@ -17,8 +17,8 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
     create_openapi_provider,
 )
-from tests.helpers.spec_fixtures import make_openapi_spec
 from tests.helpers.mcp_results import get_structured
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
 # _customize_metadata

@@ -12,13 +12,13 @@ from fastmcp.resources import ResourceResult
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.custom import _decode_base64_content
-from tests.helpers.spec_fixtures import make_openapi_spec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
     _registered_uris,
     make_api_resource,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -16,7 +16,6 @@ from tests.helpers.spec_fixtures import make_openapi_spec
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.labels import (
     update_labels_schema as _update_labels_schema_impl,
 )

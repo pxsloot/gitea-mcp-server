@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,9 +11,6 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
 from tests.helpers.spec_fixtures import make_openapi_spec
-
-if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
 class TestResourcesIntegration:

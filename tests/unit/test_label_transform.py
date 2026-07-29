@@ -441,7 +441,7 @@ class TestLabelTransformTelemetry:
         for span in spans:
             if span.name == "fail_tool.validate_labels":
                 assert (span.attributes or {}).get("error") is True
-                assert "Unknown label" in ((span.attributes or {}).get("error.message") or "")
+                assert "Unknown label" in str((span.attributes or {}).get("error.message", ""))
                 break
         else:
             pytest.fail("No 'fail_tool.validate_labels' span found")

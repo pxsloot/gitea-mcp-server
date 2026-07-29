@@ -255,10 +255,10 @@ class TestRegisterDocTools:
         mgr._search_engine = BM25SearchEngine()
         return mgr
 
-    def _capture_tool(self, name: str) -> object:
+    def _capture_tool(self, name: str) -> Callable[..., Any]:
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -482,9 +482,9 @@ class TestRegisterDocTools:
 class TestDocResource:
     """Tests for the doc resource function."""
 
-    def _capture_resource(self) -> object:
+    def _capture_resource(self) -> Callable[..., Any]:
         mcp = MagicMock()
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -493,7 +493,7 @@ class TestDocResource:
             return deco
 
         mcp.tool = tool_decorator
-        resource_registry: dict[str, object] = {}
+        resource_registry: dict[str, Callable[..., Any]] = {}
 
         def resource_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:

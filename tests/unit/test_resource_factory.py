@@ -15,6 +15,7 @@ from gitea_mcp_server.resources.custom import _decode_base64_content
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
+    _build_optional_param_signature,
     _registered_uris,
     make_api_resource,
 )
@@ -1507,3 +1508,104 @@ class TestMakeApiResourceUnregisteredFormatHint:
         # Verify the URI was registered (registration didn't fail)
         registered_uris = [args[0][0] for args in mcp.resource.call_args_list]
         assert any("unknown_fmt" in uri for uri in registered_uris)
+
+
+class TestBuildOptionalParamSignature:
+    """Tests for _build_optional_param_signature helper."""
+
+    def test_no_kwargs_returns_original(self) -> None:
+        """When handler has no **kwargs, the signature is returned unchanged."""
+        import inspect
+
+        def handler(a: int, b: str) -> None: ...
+
+        sig = inspect.signature(handler)
+        result = _build_optional_param_signature(sig, ["x", "y"])
+        assert result is sig
+
+    def test_all_params_already_exist_returns_original(self) -> None:
+        """When all optional params already exist, the signature is returned unchanged."""
+        import inspect
+
+        def handler(**kwargs: Any) -> None: ...
+
+        sig = inspect.signature(handler)
+        # 'kwargs' already exists, so new_params will be empty
+        result = _build_optional_param_signature(sig, ["kwargs"])
+        assert result is sig
+
+    def test_new_params_added_before_kwargs(self) -> None:
+        """New optional params are inserted before the **kwargs param."""
+        import inspect
+
+        def handler(**kwargs: Any) -> None: ...
+
+        sig = inspect.signature(handler)
+        result = _build_optional_param_signature(sig, ["x", "y"])
+        param_names = list(result.parameters.keys())
+        assert param_names == ["x", "y", "kwargs"]
+        assert result.parameters["x"].default is None
+        assert result.parameters["x"].kind == inspect.Parameter.KEYWORD_ONLY
+
+
+class TestMakeApiResourceConcreteUriContextMeta:
+    """Tests for context_meta_keys on concrete URI handlers."""
+
+    @pytest.mark.asyncio
+    async def test_concrete_uri_with_context_meta_keys_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """context_meta_keys on a concrete URI handler should log a warning but work."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"version": "1.0"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://version",
+            api_path="/version",
+            param_config=ResourceParamConfig(
+                context_meta_keys=["owner"],
+            ),
+        )
+
+        assert handler is not None
+        result = await handler()
+        assert isinstance(result, ResourceResult)
+
+        # The log should contain the warning
+        assert any("context_meta_keys" in r.message and "concrete" in r.message for r in caplog.records)
+
+
+class TestMakeApiResourceErrorMessageFormat:
+    """Tests for error_message format() fallback."""
+
+    @pytest.mark.asyncio
+    async def test_error_message_bad_format_placeholders(self) -> None:
+        """When error_message has wrong format keys, falls back to raw message."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        class Mock404(Exception):
+            def __init__(self) -> None:
+                self.status_code = HTTP_STATUS_NOT_FOUND
+                super().__init__("Not found")
+
+        client.request = AsyncMock(side_effect=Mock404())
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            error_message="Resource '{badkey}' not found.",
+        )
+
+        assert handler is not None
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r")
+
+        error = exc.value.args[0]
+        assert error["code"] == "NOT_FOUND"
+        # The raw message should be used (with bad format key still present)
+        assert "Resource '{badkey}' not found." in error["message"]

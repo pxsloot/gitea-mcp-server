@@ -199,6 +199,20 @@ class TestFormatToolResultErrorRecovery:
         result = format_tool_result({"key": "value"}, "raw")
         assert result.structured_content == {"result": {"key": "value"}}
 
+    # --- Circular reference trigger for inner fallback (lines 64-65) ---
+
+    def test_circular_reference_triggers_inner_json_fallback(self) -> None:
+        """Circular reference in data: both apply_format and inner json.dumps fail."""
+        data: dict = {}
+        data["self"] = data
+        result = format_tool_result(data, "json")
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is not None
+        assert "result" in result.structured_content
+        text = extract_text_content(result.content)
+        # str(data) for circular dict produces "{'self': {...}}"
+        assert "{...}" in text
+
     # --- Logger verification ---
 
     def test_logger_warning_on_format_failure(self, caplog: pytest.LogCaptureFixture) -> None:

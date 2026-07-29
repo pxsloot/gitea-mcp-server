@@ -247,10 +247,13 @@ class Config(BaseSettings):
             msg = f"Configuration error: {e}"
             raise ConfigError(msg) from e
 
-        # Additional validation after initialization
-        if not self.token:
+        # Additional validation after initialization.
+        # This is genuinely defensive: the @field_validator("token") already ensures
+        # non-empty before super().__init__() returns, making this branch unreachable.
+        # Kept as a belt-and-suspenders guard against Pydantic refactoring.
+        if not self.token:  # pragma: no cover — field_validator ensures non-empty
             msg = "GITEA_TOKEN is required - set in .env file or environment"
-            raise ConfigError(msg)
+            raise ConfigError(msg)  # pragma: no cover
 
     @model_validator(mode="after")
     def set_default_cors(self) -> "Config":

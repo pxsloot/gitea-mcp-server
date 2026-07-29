@@ -813,6 +813,43 @@ class TestResponseHasNoContent:
         })
         assert _response_has_no_content(spec, "/test", "delete") is False
 
+    def test_non_dict_operation_returns_false(self) -> None:
+        """When operation is not a dict, should return False (line 175)."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        spec = cast("OpenAPISpec", {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "delete": "not a dict",
+                },
+            },
+        })
+        assert _response_has_no_content(spec, "/test", "delete") is False
+
+    def test_ref_resolved_not_a_dict_continues(self) -> None:
+        """When a $ref resolves to a non-dict, the loop continues (line 199)."""
+        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        spec = cast("OpenAPISpec", {
+            "openapi": "3.1.0",
+            "paths": {
+                "/test": {
+                    "delete": {
+                        "responses": {
+                            "202": {"$ref": "#/components/responses/EmptyString"},
+                        },
+                    },
+                },
+            },
+            "components": {
+                "responses": {
+                    "EmptyString": "just a string, not a dict",
+                },
+            },
+        })
+        # The ref resolves to a non-dict string, so the loop continues
+        # and no response has no content, so it should return False
+        assert _response_has_no_content(spec, "/test", "delete") is False
+
 
 class TestTextResponseOutputSchema:
     """Tests that text/plain endpoints get no output_schema."""

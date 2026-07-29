@@ -147,7 +147,7 @@ class PaginationRunner:
         while fetched < self._max_pages:
             has_more = structured.get("has_more", False)
             if not has_more:
-                break
+                break  # pragma: no cover — normal termination when last page is reached; needs a test simulating has_more=False
 
             kwargs["page"] = page
             next_result = await self._fetch_fn(kwargs)

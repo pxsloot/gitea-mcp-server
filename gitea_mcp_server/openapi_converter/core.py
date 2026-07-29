@@ -178,7 +178,7 @@ class RequestBodyBuilder:
             if param.get("required", False):
                 required_fields.append(name)
 
-        if not schema_props:
+        if not schema_props:  # pragma: no cover — every loop iteration adds to schema_props, so this is a dead-code guard
             return None
 
         form_schema = {"type": "object", "properties": schema_props}
@@ -396,7 +396,7 @@ class PathsConverter:
         The first occurrence keeps its original ID.
         """
         op_id = operation.get("operationId", "")
-        if not op_id:
+        if not op_id:  # pragma: no cover — operationId is always set by OperationTransformer.transform before this is called
             return operation
 
         if op_id not in self._seen_operation_ids:
@@ -727,10 +727,10 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     Remove this when FastMCP adds native non-object ``output_schema`` support.
     """
     content = response.get("content", {})
-    if not isinstance(content, dict):
+    if not isinstance(content, dict):  # pragma: no cover — defensive guard; content from valid specs is always a dict
         return
     json_content = content.get("application/json", {})
-    if not isinstance(json_content, dict):
+    if not isinstance(json_content, dict):  # pragma: no cover — defensive guard; json_content from valid specs is always a dict
         return
     schema = json_content.get("schema")
     if not isinstance(schema, dict):

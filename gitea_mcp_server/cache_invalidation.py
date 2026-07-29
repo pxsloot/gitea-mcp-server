@@ -354,7 +354,7 @@ class CacheInvalidationMiddleware(Middleware):
             arguments: Tool arguments used to resolve the URIs (unused).
         """
         if self._label_service is None:
-            return
+            return  # pragma: no cover — guard; _label_service is set during middleware init, always present when invoked
         # URIs follow the resolved pattern: gitea://repos/{owner}/{repo}/labels
         # Parse directly from the path rather than trying to match templates
         # with substituted parameters.

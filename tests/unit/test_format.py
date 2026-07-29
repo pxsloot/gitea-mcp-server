@@ -25,6 +25,9 @@ from gitea_mcp_server.format import (
     _snake_to_title,
     apply_format,
 )
+from gitea_mcp_server.models import (
+    ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
+)
 from gitea_mcp_server.pagination import PAGINATION_KEYS
 from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
 
@@ -1444,3 +1447,51 @@ class TestFormatDateTime:
     def test_handles_invalid_format(self) -> None:
         """Test invalid format returns original string."""
         assert _format_datetime("not a date") == "not a date"
+
+
+class TestFormatListAsMarkdownRef:
+    """Tests for _format_list_as_markdown with $ref-flattened data."""
+
+    def test_ref_list_renders_bulleted_refs(self) -> None:
+        """List of {"$ref": "Type"} dicts renders as bulleted $ref:Type items."""
+        from gitea_mcp_server.format import _format_list_as_markdown
+
+        data = [{"$ref": "User"}, {"$ref": "Repo"}]
+        result = _format_list_as_markdown(data)
+        assert "$ref:User" in result
+        assert "$ref:Repo" in result
+        assert "- $ref:User" in result
+        assert "- $ref:Repo" in result
+
+
+class TestFormatDictAsMarkdownEmptyFieldFilter:
+    """Tests for _format_dict_as_markdown with empty field_filter."""
+
+    def test_empty_field_filter_falls_back_to_flat_table(self) -> None:
+        """When field_filter is empty but data exists, renders flat table."""
+        from gitea_mcp_server.format import _format_dict_as_markdown
+
+        data = {"a": 1, "b": 2}
+        result = _format_dict_as_markdown(data, field_filter={})
+        assert "| Property | Value |" in result
+        assert "| a | 1 |" in result
+        assert "| b | 2 |" in result
+
+
+class TestFormatToolInfoMarkdown:
+    """Tests for _format_tool_info_markdown."""
+
+    def test_output_schema_section_included(self) -> None:
+        """When output_schema is present, 'Output Schema' section is rendered."""
+        from gitea_mcp_server.format import _format_tool_info_markdown
+
+        schema: ToolSchemaResult = {
+            "name": "test_tool",
+            "description": "A test tool",
+            "parameters": {"properties": {"x": {"type": "string"}}, "required": []},
+            "output_schema": {"type": "object", "properties": {"result": {"type": "string"}}},
+        }
+        result = _format_tool_info_markdown(schema)
+        assert "## Output Schema" in result
+        assert "type" in result
+        assert "object" in result

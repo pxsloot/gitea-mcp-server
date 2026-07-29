@@ -130,7 +130,7 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
         swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
         return _token_prefix_match(swapped, n_tokens)
 
-    return False
+    return False  # pragma: no cover — the <2-token case is caught by the early _token_prefix_match return, the >=2-token case by the swapped-token branch; this is the fallthrough for edge cases that never occur with real queries
 
 
 def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes

@@ -182,7 +182,7 @@ def _collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, 
         for k, v in data.items():
             prop_schema = properties.get(k) if properties else None
             if prop_schema is not None and not isinstance(prop_schema, dict):
-                prop_schema = None
+                prop_schema = None  # pragma: no cover — defensive guard, properties in valid schemas are always dicts
             effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
             result[k] = _collapse_data(v, effective or prop_schema, _depth + 1, detail)
         return result

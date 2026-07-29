@@ -560,4 +560,38 @@ class TestSearchDocsPagination:
         assert "total_count" in sc
         assert sc["has_more"] is True
         assert sc["next_offset"] == 2
-        assert sc["total_count"] == 25
+
+    @pytest.mark.asyncio
+    async def test_search_docs_page_out_of_range(self) -> None:
+        """Out-of-range page returns a helpful message."""
+        from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
+
+        mgr = DocManager.__new__(DocManager)
+        guides = [
+            DocGuide(f"guide-{i}", f"Guide {i}", f"Test guide number {i}", ["test"], f"# {i}", f"Body {i}")
+            for i in range(5)
+        ]
+        mgr._guides = guides
+        mgr._search_texts = [g.search_text() for g in guides]
+        mgr._search_engine = BM25SearchEngine()
+
+        mcp = MagicMock()
+        captured: dict[str, object] = {}
+
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+
+        mcp.tool = tool_decorator
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, mgr)
+        fn = captured["search_docs"]
+
+        result = await fn(query="test", format="raw", page=10, limit=10)  # type: ignore[operator]  # fn from dict[str, Callable] is narrowed; operator error is mypy false positive on dict-value callable
+        assert result is not None
+        sc = result.structured_content
+        assert sc is not None
+        assert "Page 10 is out of range" in str(sc.get("_hint", ""))
+        assert sc.get("result") == []

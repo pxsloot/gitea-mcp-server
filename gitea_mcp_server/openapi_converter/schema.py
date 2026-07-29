@@ -101,7 +101,7 @@ class PropertyRequiredCollector:
                 else:
                     new_properties[prop_name] = dict(prop_schema)
             else:
-                new_properties[prop_name] = prop_schema
+                new_properties[prop_name] = prop_schema  # pragma: no cover — non-dict prop_schema guard; all valid schemas have dict properties
 
         return new_properties, required_fields
 

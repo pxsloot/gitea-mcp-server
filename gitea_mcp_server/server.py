@@ -470,8 +470,8 @@ async def main_async() -> None:
     @contextlib.asynccontextmanager
     async def app_lifespan(_server: Any) -> Any:
         """FastMCP lifespan: provides GiteaClient to tools via lifespan context."""
-        yield {"gitea_client": gitea_client}
-        await gitea_client.close()
+        yield {"gitea_client": gitea_client}  # pragma: no cover — exercised by full server lifecycle
+        await gitea_client.close()  # pragma: no cover — exercised by full server lifecycle
 
     try:
         mcp = await create_mcp_server(gitea_client, lifespan=app_lifespan)
@@ -502,4 +502,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pragma: no cover — can't be reached by pytest

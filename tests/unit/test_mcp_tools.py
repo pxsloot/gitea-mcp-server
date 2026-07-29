@@ -1055,6 +1055,36 @@ class TestMcpListResourcesTagTypeFilter:
         assert get_structured(result)["result"]["count"] == 1
         assert get_structured(result)["result"]["resources"][0]["uri"] == "gitea://version"
 
+    @pytest.mark.asyncio
+    async def test_tag_filter_no_match_returns_empty(self) -> None:
+        """list_resources with a tag that matches nothing returns helpful message."""
+        fn = self._capture_tool("list_resources")
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+
+        # No resources have the tag 'nonexistent'
+        r = MagicMock()
+        r.uri = "gitea://version"
+        r.name = "Version"
+        r.description = "Version"
+        r.mime_type = "text/plain"
+        r.tags = {"server"}
+        r.meta = None
+
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, tag="nonexistent")
+
+        assert result.structured_content is not None
+        sc = get_structured(result)
+        assert sc["result"]["count"] == 0
+        assert sc["result"]["resources"] == []
+        # Text content should indicate no resources found
+        assert result.content is not None
+        text = extract_text_content(result.content)
+        assert "No resources found" in text
+
 
 class TestExtractResourceContent:
     """Tests for _extract_resource_content helper."""

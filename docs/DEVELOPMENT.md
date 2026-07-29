@@ -126,14 +126,16 @@ The customization pipeline has two phases:
 1. **`_customize_metadata()`** in `server_setup/mcp_builder.py` — in-place
    metadata (title, annotations, hints, labels, invalidation) applied per-tool
    at startup via OpenAPIProvider's ``mcp_component_fn`` hook.
-2. **`_ToolWrappingTransform._run_transform_pipeline()`** in
-   `server_setup/mcp_builder.py` — runtime wrapping (validation, label
-   conversion, error handling, text wrapping, pagination) applied via a
-   provider-level ``Transform`` at query time.  The pipeline now also
-   injects the MCP ``Context`` object (via ``CurrentContext()``) for
-   ``ctx.info()`` logging and ``ctx.report_progress()`` calls at key
-   stages, and extracts the core logic into ``_pipeline_with_context(ctx)``
-   for clean separation.
+2. **`_ToolWrappingTransform._wrap()`** in
+   `server_setup/mcp_builder.py` — the ``transform_fn`` closure resolves the
+   MCP ``Context`` via ``_resolve_current_context()`` (which catches
+   ``RuntimeError`` from ``CurrentContext()`` outside an active session),
+   then threads it explicitly to ``_run_transform_pipeline(kwargs, tool,
+   extracted=..., ctx=ctx)`` and ultimately ``_pipeline_with_context()``.
+   Runtime wrapping (validation, label conversion, error handling, text
+   wrapping, pagination) all receive ``ctx`` for ``ctx.info()`` logging and
+   ``ctx.report_progress()`` calls at key stages, gracefully degraded to
+   no-ops when ``ctx`` is ``None``.
 
 Common customizations:
 
@@ -212,10 +214,11 @@ The lifecycle functions are called automatically in ``_wrap()``:
 2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
 3. ``apply_pre_hooks(extracted)`` — runs pre-hooks (e.g. set ContextVar via
    ``_sudo_pre_hook``)
-4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values)`` —
-   executes the HTTP call and pagination metadata, then invokes every
-   registered ``loop_hook`` with an ``execute_fn`` that re-invokes
-   ``_run_with_error_handling`` for subsequent pages
+4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values, ctx=ctx)`` —
+   executes the HTTP call and pagination metadata (with ``ctx`` for progress
+   reporting and logging), then invokes every registered ``loop_hook`` with an
+   ``execute_fn`` that re-invokes ``_run_with_error_handling`` for subsequent
+   pages
 5. ``apply_to(result, extracted)`` — runs post-hooks after the API call
 
 A ``loop_hook`` is how you implement params that need to **re-execute** the

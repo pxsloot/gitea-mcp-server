@@ -1584,6 +1584,43 @@ class TestWrappingPipelineEdgeCases:
         assert result.structured_content is not None
         assert result.structured_content["result"]["version"] == "1.0.0"
 
+    @pytest.mark.asyncio
+    async def test_ctx_report_progress_called(self, mcp_server: Any) -> None:
+        """ctx.report_progress and ctx.info are called during a tool call.
+
+        Verifies that the context resolution in transform_fn wires progress
+        reporting and structured logging through the pipeline.  Uses a mock
+        context to avoid depending on an active MCP session.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        mock_ctx = AsyncMock()
+        mock_ctx.info = AsyncMock()
+        mock_ctx.report_progress = AsyncMock()
+
+        class _MockCurrentContext:
+            """Context manager that returns mock_ctx on enter."""
+
+            async def __aenter__(self) -> AsyncMock:
+                return mock_ctx
+
+            async def __aexit__(self, *args: object) -> None:
+                pass
+
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
+            200, json={"version": "1.0.0"}
+        )
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.CurrentContext",
+            return_value=_MockCurrentContext(),
+        ):
+            result = await mcp_server.call_tool("gitea_get_version", {})
+
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["version"] == "1.0.0"
+        mock_ctx.info.assert_awaited()
+        mock_ctx.report_progress.assert_awaited()
+
 
 class Test204NoContentWrapping:
     """Tests for 204 No Content response wrapping in the tool pipeline.

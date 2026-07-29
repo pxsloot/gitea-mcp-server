@@ -456,13 +456,18 @@ The customization layers as applied during server startup:
       own close in the ``except`` block since lifespan is never entered on init
       failure.
 
-    - **Context injection**: ``_ToolWrappingTransform._run_transform_pipeline()``
-      uses ``CurrentContext()`` (an async context manager) to obtain the MCP
-      ``Context`` object inside the request scope.  The core pipeline was
-      extracted to ``_pipeline_with_context(ctx)``, letting ``_run_transform_pipeline``
-      handle the ``CurrentContext()`` boilerplate and gracefully degrade when
-      called outside a request (e.g., unit tests — ``CurrentContext()`` raises
-      ``RuntimeError``, caught and passed as ``ctx=None``).
+    - **Context injection**: ``_ToolWrappingTransform._wrap()`` resolves the
+      MCP ``Context`` inside the ``transform_fn`` closure via
+      ``_resolve_current_context()``, a helper that catches ``RuntimeError``
+      from ``CurrentContext()`` (raised outside an active session) and returns
+      ``None``.  The resolved ``ctx`` is passed explicitly to
+      ``_run_transform_pipeline(kwargs, tool, extracted=..., ctx=ctx)`` and
+      threaded through to ``_pipeline_with_context()``.  Context operations
+      (``ctx.info()``, ``ctx.report_progress()``) are wrapped in
+      ``_safe_ctx_info()`` and ``_safe_ctx_report_progress()`` helpers that
+      silently degrade when ``ctx.session`` is unavailable (e.g. in-memory
+      ``mcp.call_tool()`` tests).  This lets tests inject a mock context to
+      verify progress reporting without a real MCP session.
 
     - **Agent observability**: ``ctx.info()`` calls log validation results, label
       processing, and execution completion with structured ``extra`` dicts.
@@ -641,6 +646,7 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   └─▶ _ToolWrappingTransform (outermost)
         ├─▶ inject virtual params into schema (tools/virtual_params.py)
         ├─▶ extract virtual params from kwargs → stash
+        ├─▶ resolve MCP Context via _resolve_current_context()
         ├─▶ validate arguments (validation.py)
         ├─▶ log validation result (ctx.info)
         ├─▶ report execution progress (ctx.report_progress)

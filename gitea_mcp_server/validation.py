@@ -2,6 +2,20 @@
 
 This module provides validation functions and schema augmentation to ensure
 tool arguments meet Gitea API requirements before execution.
+
+Architecture — two layers of enum validation:
+
+1. **Schema-driven validation** (runtime in ``_run_validation``):
+   Before calling a hardcoded ``SINGLE_VALIDATORS`` entry, ``_run_validation``
+   checks whether the parameter's own JSON Schema defines an ``enum``. If it
+   does, validation uses that enum — no hardcoded values needed.
+
+2. **Description-to-enum inference** (schema time in
+   ``augment_schema_with_validation``): Some Gitea spec types (e.g.
+   ``CommitStatusState``) have no machine-readable ``enum`` — valid values
+   live only in the description as quoted strings. A second pass in
+   ``augment_schema_with_validation`` parses those descriptions and injects a
+   proper ``enum``, so both validation and agent-facing schemas work correctly.
 """
 
 import re
@@ -185,14 +199,147 @@ def validate_pagination(page: Any = None, per_page: Any = None) -> None:
             _raise_validation_error(msg, "per_page")
 
 
-def validate_state(value: Any, *, field: str) -> None:
-    """Validate an issue/PR state parameter."""
-    _validate_string(
-        value,
-        field=field,
-        allowed={"open", "closed", "all"},
-        error_message="{field} must be one of: open, closed, all",
-    )
+# ---------------------------------------------------------------------------
+# Schema-driven enum validation
+# ---------------------------------------------------------------------------
+
+
+def _collect_enum_values(schema: dict[str, Any]) -> list[Any] | None:
+    """Collect enum values from a schema, walking anyOf/oneOf if needed.
+
+    The resolved OpenAPI schema may place enum on the top-level object or
+    inside an ``anyOf``/``oneOf`` branch (e.g., ``{"anyOf": [{"type":
+    "string", "enum": [...]}, {"type": "null"}]}``).  This helper finds
+    whichever location has the values.
+
+    Args:
+        schema: The resolved JSON Schema dict for a parameter.
+
+    Returns:
+        The list of enum values, or ``None`` if no enum is defined
+        anywhere in the schema.
+    """
+    if "enum" in schema:
+        values = schema["enum"]
+        if isinstance(values, list):
+            return values
+        return None
+    for wrapper in ("anyOf", "oneOf"):
+        branches = schema.get(wrapper)
+        if isinstance(branches, list):
+            for branch in branches:
+                if isinstance(branch, dict) and "enum" in branch:
+                    values = branch["enum"]
+                    if isinstance(values, list):
+                        return values
+                    return None
+    return None
+
+
+def _validate_enum_from_schema(
+    value: Any,
+    *,
+    field: str,
+    enum_values: list[Any],
+) -> None:
+    """Validate a value against an enum list from the parameter's own schema.
+
+    Args:
+        value: The value to validate.
+        field: Parameter name for error messages.
+        enum_values: The allowed values from the schema's ``enum``.
+
+    Raises:
+        ValidationError: If the value is not in ``enum_values``.
+    """
+    if value not in enum_values:
+        valid = ", ".join(str(v) for v in enum_values)
+        _raise_validation_error(f"{field} must be one of: {valid}", field)
+
+
+# ---------------------------------------------------------------------------
+# Description-to-enum inference
+# ---------------------------------------------------------------------------
+
+# Regex: find all double-quoted strings in a description.
+_QUOTED_VALUE_RE = re.compile(r'"([^"]+)"')
+
+# Minimum number of quoted values needed in a description to consider it
+# an enum-like list rather than incidental prose.
+_MIN_ENUM_VALUES_FOR_INFERENCE = 2
+
+
+def _find_string_schema(schema: dict[str, Any]) -> dict[str, Any] | None:
+    """Walk ``anyOf``/``oneOf`` wrappers to find the first string-type schema.
+
+    Some parameters are wrapped in ``{"anyOf": [{"type": "string", ...},
+    {"type": "null"}]}``.  This helper drills through to find the actual
+    string-leaf schema.
+
+    Args:
+        schema: A resolved JSON Schema dict.
+
+    Returns:
+        The first string-typed sub-schema, or ``None``.
+    """
+    if schema.get("type") == "string":
+        return schema
+    for wrapper in ("anyOf", "oneOf"):
+        branches = schema.get(wrapper)
+        if isinstance(branches, list):
+            for branch in branches:
+                if isinstance(branch, dict):
+                    result = _find_string_schema(branch)
+                    if result is not None:
+                        return result
+    return None
+
+
+def _infer_enum_from_description(schema: dict[str, Any]) -> bool:
+    """Parse enum values from a description that lists quoted values.
+
+    Some Gitea spec types (e.g. ``CommitStatusState``) have no machine-
+    readable ``enum`` — the valid values are only documented in the
+    description as quoted strings::
+
+        CommitStatusState holds the state of a CommitStatus
+        It can be "pending", "success", "error", "failure" and "warning"
+
+    This function extracts those values and injects a proper ``enum`` key
+    into the schema so that schema-driven validation and agent-facing
+    ``tool_info`` both work correctly.
+
+    Works on flat schemas and inside ``anyOf``/``oneOf`` wrappers (drills
+    through to find the string branch).  Modifies *schema* in-place.
+
+    If the schema (or its string branch) already has an ``enum``, the
+    function is a no-op — the spec's own enum takes priority.
+
+    Args:
+        schema: A resolved JSON Schema dict for a parameter (mutated
+            in-place if enum values are found).
+
+    Returns:
+        ``True`` if an ``enum`` was added to the schema, ``False`` otherwise.
+    """
+    target = _find_string_schema(schema)
+    if target is None:
+        return False
+    if "enum" in target:
+        return False  # Already has an enum — spec is sufficient.
+
+    desc = target.get("description", "")
+    if not desc:
+        return False
+
+    quoted = _QUOTED_VALUE_RE.findall(desc)
+    # Require at least two quoted values to avoid false positives
+    # (e.g. a single referenced term in prose).
+    if len(quoted) < _MIN_ENUM_VALUES_FOR_INFERENCE:
+        return False
+
+    target["enum"] = quoted
+    return True
 
 
 # Mapping from parameter name to validator function
@@ -206,7 +353,6 @@ SINGLE_VALIDATORS: dict[str, Callable[..., None]] = {
     "ref": validate_ref,
     "sha": validate_sha,
     "labels": validate_labels,
-    "state": validate_state,
 }
 
 # Schema constraints to augment tool parameter definitions
@@ -246,9 +392,12 @@ SCHEMA_CONSTRAINTS: dict[str, dict[str, Any]] = {
         "maxLength": 40,
         "pattern": SHA_PATTERN,
     },
-    "state": {
-        "enum": ["open", "closed", "all"],
-    },
+    # NOTE: ``state`` is intentionally absent from SCHEMA_CONSTRAINTS.
+    # Parameter-specific enums come from the spec itself (e.g.
+    # issueListIssues has ``enum: [closed, open, all]``) or are inferred
+    # from the description via ``_infer_enum_from_description`` below
+    # (e.g. CommitStatusState).  Hardcoding state values here would
+    # silently break tools with a different ``state`` meaning.
     "page": {
         "minimum": 1,
         "type": "integer",
@@ -264,9 +413,19 @@ SCHEMA_CONSTRAINTS: dict[str, dict[str, Any]] = {
 def augment_schema_with_validation(component: OpenAPITool) -> None:
     """Add JSON schema constraints to tool parameters for agent visibility.
 
-    This function mutates the component's parameter schema by adding
-    minLength, maxLength, pattern, minimum, maximum, or enum constraints
-    for recognized parameter names.
+    Two passes:
+
+    1. **Structural constraints** — injects ``minLength``, ``maxLength``,
+       ``pattern``, ``minimum``, and ``maximum`` from
+       :data:`SCHEMA_CONSTRAINTS` for recognised parameter names.  These
+       are invariants (e.g. owner names are always 1-50 chars) that the
+       spec doesn't normally define.
+
+    2. **Description-to-enum inference** — for parameters whose resolved
+       schema still has no ``enum``, tries to extract valid values from
+       the description text (e.g. ``CommitStatusState`` lists values as
+       ``"pending", "success", ...`` in prose).  See
+       :func:`_infer_enum_from_description`.
 
     Args:
         component: The OpenAPITool to augment.
@@ -279,12 +438,20 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
     if not props:
         return
 
+    # Structural constraints from SCHEMA_CONSTRAINTS
     for name, constraints in SCHEMA_CONSTRAINTS.items():
         if name in props:
             existing_schema = props[name]
             if not isinstance(existing_schema, dict):
                 continue
-            # Merge constraints, only adding if not already present
             for key, value in constraints.items():
                 if key not in existing_schema:
                     existing_schema[key] = value
+
+    # Description-to-enum for params that still lack an enum
+    for existing_schema in props.values():
+        if not isinstance(existing_schema, dict):
+            continue
+        if _collect_enum_values(existing_schema) is not None:
+            continue
+        _infer_enum_from_description(existing_schema)

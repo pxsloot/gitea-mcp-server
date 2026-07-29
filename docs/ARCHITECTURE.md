@@ -259,7 +259,7 @@ The customization layers as applied during server startup:
 | 1. Annotations | `tools/customize.py` | title, category tag, readOnly/destructive/idempotent hints |
 | 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
 | 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
-| 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation |
+| 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation — two-layer enum system: **schema-driven** (validates any param against its own schema ``enum``) + **description inference** (injects ``enum`` from description text for spec types like ``CommitStatusState`` that lack machine-readable enums) |
 | 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
 | 6. Search/lazy loading | `tools/search.py` | Name-match + BM25 search with alias expansion, synthetic tools |
 | 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |

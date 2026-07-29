@@ -13,6 +13,10 @@ from gitea_mcp_server.validation import (
     REF_PATTERN,
     SHA_PATTERN,
     USERNAME_PATTERN,
+    _collect_enum_values,
+    _find_string_schema,
+    _infer_enum_from_description,
+    _validate_enum_from_schema,
     augment_schema_with_validation,
     validate_filepath,
     validate_labels,
@@ -20,7 +24,6 @@ from gitea_mcp_server.validation import (
     validate_pagination,
     validate_ref,
     validate_sha,
-    validate_state,
     validate_username,
 )
 
@@ -542,35 +545,124 @@ class TestValidatePagination:
         assert "must be an integer" in str(exc.value)
 
 
-class TestValidateState:
-    """Tests for the validate_state function."""
+class TestCollectEnumValues:
+    """Tests for _collect_enum_values."""
 
-    @pytest.mark.parametrize("value", ["open", "closed", "all"])
-    def test_valid_states(self, value: Any) -> None:
-        validate_state(value, field="state")
+    def test_top_level_enum(self) -> None:
+        schema = {"type": "string", "enum": ["a", "b"]}
+        assert _collect_enum_values(schema) == ["a", "b"]
 
-    @pytest.mark.parametrize("value", ["OPEN", "Closed", "ALL"])
-    def test_case_sensitive(self, value: Any) -> None:
+    def test_enum_in_anyof(self) -> None:
+        schema = {
+            "anyOf": [
+                {"type": "string", "enum": ["pending", "success"]},
+                {"type": "null"},
+            ]
+        }
+        assert _collect_enum_values(schema) == ["pending", "success"]
+
+    def test_enum_in_oneof(self) -> None:
+        schema = {
+            "oneOf": [
+                {"type": "string", "enum": ["x", "y"]},
+                {"type": "integer"},
+            ]
+        }
+        assert _collect_enum_values(schema) == ["x", "y"]
+
+    def test_no_enum(self) -> None:
+        schema = {"type": "string"}
+        assert _collect_enum_values(schema) is None
+
+    def test_empty_schema(self) -> None:
+        assert _collect_enum_values({}) is None
+
+
+class TestValidateEnumFromSchema:
+    """Tests for _validate_enum_from_schema."""
+
+    def test_valid_value(self) -> None:
+        _validate_enum_from_schema("a", field="test", enum_values=["a", "b", "c"])
+
+    def test_invalid_value(self) -> None:
+        with pytest.raises(ValidationError, match="must be one of"):
+            _validate_enum_from_schema("z", field="test", enum_values=["a", "b", "c"])
+
+    def test_case_sensitive(self) -> None:
         with pytest.raises(ValidationError):
-            validate_state(value, field="state")
+            _validate_enum_from_schema("A", field="test", enum_values=["a", "b"])
 
-    @pytest.mark.parametrize(
-        ("value", "expected_msg"),
-        [
-            ("pending", "must be one of"),
-            ("merged", "must be one of"),
-            ("openclosed", "must be one of"),
-            ("", "must be one of"),
-            (" ", "must be one of"),
-            (123, "must be a string"),
-            (None, "must be a string"),
-        ],
-    )
-    def test_invalid_states(self, value: Any, expected_msg: str) -> None:
-        with pytest.raises(ValidationError) as exc:
-            validate_state(value, field="state")
-        assert exc.value.field == "state"
-        assert expected_msg in str(exc.value)
+
+class TestFindStringSchema:
+    """Tests for _find_string_schema."""
+
+    def test_flat_string(self) -> None:
+        assert _find_string_schema({"type": "string"}) == {"type": "string"}
+
+    def test_non_string_type(self) -> None:
+        assert _find_string_schema({"type": "integer"}) is None
+
+    def test_through_anyof(self) -> None:
+        schema = {"anyOf": [{"type": "integer"}, {"type": "string", "description": "found"}]}
+        result = _find_string_schema(schema)
+        assert result is not None
+        assert result["description"] == "found"
+
+    def test_no_string_type(self) -> None:
+        schema = {"anyOf": [{"type": "integer"}, {"type": "boolean"}]}
+        assert _find_string_schema(schema) is None
+
+    def test_empty_schema(self) -> None:
+        assert _find_string_schema({}) is None
+
+
+class TestInferEnumFromDescription:
+    """Tests for _infer_enum_from_description."""
+
+    def test_commit_status_state_pattern(self) -> None:
+        schema = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "description": (
+                        "CommitStatusState holds the state of a CommitStatus\n"
+                        'It can be "pending", "success", "error", "failure" and "warning"'
+                    ),
+                },
+                {"type": "null"},
+            ]
+        }
+        assert _infer_enum_from_description(schema) is True
+        string_branch = schema["anyOf"][0]
+        assert string_branch["enum"] == ["pending", "success", "error", "failure", "warning"]
+
+    def test_already_has_enum(self) -> None:
+        schema = {"type": "string", "enum": ["open", "closed"], "description": "something"}
+        assert _infer_enum_from_description(schema) is False
+        assert schema["enum"] == ["open", "closed"]  # unchanged
+
+    def test_no_quoted_values(self) -> None:
+        schema = {"type": "string", "description": "A simple name"}
+        assert _infer_enum_from_description(schema) is False
+        assert "enum" not in schema
+
+    def test_single_quoted_value(self) -> None:
+        schema = {"type": "string", "description": 'Defaults to "auto"'}
+        assert _infer_enum_from_description(schema) is False
+        assert "enum" not in schema
+
+    def test_empty_description(self) -> None:
+        schema = {"type": "string", "description": ""}
+        assert _infer_enum_from_description(schema) is False
+
+    def test_no_description(self) -> None:
+        schema = {"type": "string"}
+        assert _infer_enum_from_description(schema) is False
+
+    def test_non_string_schema(self) -> None:
+        schema = {"type": "integer", "description": '"a", "b" and "c"'}
+        assert _infer_enum_from_description(schema) is False
+        assert "enum" not in schema
 
 
 class TestAugmentSchemaWithValidation:
@@ -629,8 +721,9 @@ class TestAugmentSchemaWithValidation:
         assert props["username"]["minLength"] == 1
         assert props["username"]["maxLength"] == 50
         assert props["username"]["pattern"] == USERNAME_PATTERN
-        # State
-        assert props["state"]["enum"] == ["open", "closed", "all"]
+        # State: no longer injected from SCHEMA_CONSTRAINTS; description
+        # inference is a no-op here because there's no description text.
+        assert "enum" not in props["state"]
         # Page
         assert props["page"]["minimum"] == 1
         # Per page
@@ -785,7 +878,7 @@ class TestRunValidation:
 
         with pytest.raises(ValidationError) as exc:
             _run_validation(
-                {"owner": "test", "state": "invalid_state"},
+                {"owner": "!!invalid!!", "page": 1},
                 required_params=["owner"],
             )
-        assert "must be one of" in str(exc.value)
+        assert "contains invalid characters" in str(exc.value)

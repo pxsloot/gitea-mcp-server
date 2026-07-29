@@ -721,8 +721,8 @@ class TestAugmentSchemaWithValidation:
         assert props["username"]["minLength"] == 1
         assert props["username"]["maxLength"] == 50
         assert props["username"]["pattern"] == USERNAME_PATTERN
-        # State: no longer injected from SCHEMA_CONSTRAINTS; description
-        # inference is a no-op here because there's no description text.
+        # State enum comes from the spec or description inference, neither
+        # of which applies to this bare ``{"type": "string"}`` fixture.
         assert "enum" not in props["state"]
         # Page
         assert props["page"]["minimum"] == 1

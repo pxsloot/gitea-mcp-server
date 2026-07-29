@@ -164,9 +164,30 @@ tool_names:
 
 ### 3. New validation function
 
-1. Add validator in `validation.py`
-2. Add to `SINGLE_VALIDATORS` dict keyed by parameter name
-3. The runtime pipeline `_ToolWrappingTransform._run_transform_pipeline()` in `server_setup/mcp_builder.py` automatically calls it
+The validation system has two layers. Most cases are handled automatically:
+
+**Schema-driven enum validation** (automatic): If a parameter's resolved
+JSON Schema defines an ``enum`` (either directly or inside an
+``anyOf``/``oneOf`` branch), ``_run_validation`` validates against that
+enum — no code needed.  This is the primary path: the spec defines the
+valid values, and validation follows.
+
+**Description-to-enum inference** (automatic): When a spec type (like
+``CommitStatusState``) has no machine-readable ``enum`` but lists valid
+values in its description as quoted strings (e.g. ``"pending",
+"success", ...``), ``augment_schema_with_validation`` parses the
+description and injects a proper ``enum``.  Both validation and agent-
+facing schemas then work correctly without hardcoded values.
+
+**Structural validators** (explicit registration needed only for pattern/
+length/type checks that the spec doesn't define):
+
+1. Add validator in ``validation.py``
+2. Add to ``SINGLE_VALIDATORS`` dict keyed by parameter name
+3. The runtime pipeline ``_ToolWrappingTransform`` in
+   ``server_setup/mcp_builder.py`` calls it automatically** when the
+   parameter has no schema-level ``enum`` (schema-driven validation
+   takes priority over hardcoded validators).
 
 ### 4. Cache invalidation pattern
 

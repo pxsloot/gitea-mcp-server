@@ -37,7 +37,10 @@ def _make_call_next(
     """Create a call_next that returns the given tool (or None for unknown).
 
     This eliminates the repetitive ``async def call_next(name, *, version=None):``
-    closure that every ``get_tool`` test would otherwise need.
+    closure that every ``get_tool`` test would otherwise need.  The ``name``
+    parameter is accepted (required by the ``GetToolNext`` protocol) but ignored
+    — the factory always returns the same tool regardless of which name is
+    requested.
     """
     async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
         return tool

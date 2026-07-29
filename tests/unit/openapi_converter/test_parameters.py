@@ -104,7 +104,7 @@ class TestConvertComponents:
 
     def test_empty_parameters_skipped(self) -> None:
         """Empty parameters list should be skipped."""
-        spec = {
+        spec: dict[str, dict[str, Any]] = {
             "parameters": {},
         }
         result = _convert_components(spec)

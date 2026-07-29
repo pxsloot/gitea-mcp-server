@@ -118,7 +118,7 @@ class TestErrorHandlingEnhancement:
     async def test_non_http_errors_unchanged(self) -> None:
         """Non-HTTP ValueErrors should be re-raised without modification."""
 
-        openapi_spec = {"paths": {}}
+        openapi_spec: dict[str, Any] = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -151,7 +151,7 @@ class TestErrorHandlingEnhancement:
         """httpx.NetworkError (without response) should be formatted as a network issue."""
         import httpx
 
-        openapi_spec = {"paths": {}}
+        openapi_spec: dict[str, Any] = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -186,7 +186,7 @@ class TestErrorHandlingEnhancement:
         """httpx.TimeoutException should be formatted as a timeout issue."""
         import httpx
 
-        openapi_spec = {"paths": {}}
+        openapi_spec: dict[str, Any] = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -218,7 +218,7 @@ class TestErrorHandlingEnhancement:
     async def test_formats_unexpected_exception_cleanly(self) -> None:
         """Unexpected exceptions (RuntimeError, etc.) should be caught and formatted."""
 
-        openapi_spec = {"paths": {}}
+        openapi_spec: dict[str, Any] = {"paths": {}}
 
         route = MagicMock(path="/test", method="POST", summary="Test", operation_id="test")
         tool = MagicMock(spec=OpenAPITool)
@@ -256,7 +256,7 @@ class TestLookupResponseDescription:
 
     def test_route_not_found_in_paths(self) -> None:
         """When route.path is not found in paths, should return fallback."""
-        openapi_spec = {"paths": {}}
+        openapi_spec: dict[str, Any] = {"paths": {}}
         result = _lookup_response_description(openapi_spec, "/nonexistent", "GET", 404)
         assert result == "HTTP error 404"
 

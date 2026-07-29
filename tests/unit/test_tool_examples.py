@@ -663,7 +663,7 @@ class TestSchemaToCompactExample:
         from gitea_mcp_server.tools.examples import _schema_to_compact_example
 
         # Spec without the referenced schema
-        spec = {"components": {"schemas": {}}}
+        spec: dict[str, Any] = {"components": {"schemas": {}}}
         schema = {"$ref": "#/components/schemas/MissingType"}
         result = _schema_to_compact_example(schema, openapi_spec=spec)
         assert result == {"$ref": "MissingType"}

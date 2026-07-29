@@ -17,6 +17,7 @@ Scenarios covered:
 """
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -43,7 +44,7 @@ class TestFormatIssuesMarkdownGuard:
 
     def test_empty_list_no_crash(self) -> None:
         """Empty list produces output, not TypeError or crash."""
-        data = []
+        data: list[Any] = []
         result = _format_issues_markdown(data, detail="full")
         assert result.strip() != ""
         assert "*None*" in result

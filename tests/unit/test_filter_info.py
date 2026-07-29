@@ -298,12 +298,12 @@ class TestGetFilteredToolInfo:
 
     def test_empty_filtered_returns_none(self) -> None:
         """Empty filtered dict returns None."""
-        info = {"filtered": {}}
+        info: dict[str, Any] = {"filtered": {}}
         assert get_filtered_tool_info("any_tool", info) is None
 
     def test_tool_not_in_filtered_returns_none(self) -> None:
         """Tool not in the filtered set returns None."""
-        info = {"filtered": {"other_tool": {"reason": "scope"}}}
+        info: dict[str, Any] = {"filtered": {"other_tool": {"reason": "scope"}}}
         assert get_filtered_tool_info("my_tool", info) is None
 
     def test_finds_tool_by_bare_name(self) -> None:

@@ -243,7 +243,7 @@ class TestConvertLabelsInline:
     @pytest.mark.asyncio
     async def test_skips_when_labels_empty(self, label_service: AsyncMock, gitea_client: AsyncMock) -> None:
         """Empty labels list -> no conversion."""
-        kwargs = {"labels": []}
+        kwargs: dict[str, Any] = {"labels": []}
         await _convert_labels_inline(kwargs, label_service, gitea_client)
         label_service.validate_and_convert.assert_not_called()
 

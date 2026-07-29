@@ -433,7 +433,7 @@ class TestResolveAnyOfSchema:
         assert result is schema
 
     def test_anyof_empty_list(self) -> None:
-        schema = {"anyOf": []}
+        schema: dict[str, Any] = {"anyOf": []}
         result = _resolve_anyof_schema(schema)
         assert result is schema
 
@@ -933,8 +933,8 @@ class TestFormatAsMarkdown:
 
     def test_expand_default_renders_nested_as_section(self) -> None:
         """Default render='expand' preserves existing nested-section behavior."""
-        data = {"user": {"id": 1, "login": "dev"}}
-        field_filter = {"user": {}}
+        data: dict[str, Any] = {"user": {"id": 1, "login": "dev"}}
+        field_filter: dict[str, Any] = {"user": {}}
         result = _format_as_markdown(data, field_filter=field_filter)
         assert "## User" in result or "**User:**" in result
         assert "dev" in result
@@ -962,8 +962,8 @@ class TestFormatAsMarkdown:
 
     def test_compact_ref_on_list_empty(self) -> None:
         """compact_ref on an empty list renders empty string."""
-        data = {"labels": []}
-        field_filter = {
+        data: dict[str, Any] = {"labels": []}
+        field_filter: dict[str, Any] = {
             "labels": {"render": "compact_ref", "template": "{name}"},
         }
         result = _format_as_markdown(data, field_filter=field_filter)

@@ -796,10 +796,10 @@ class TestToolWrappingTransformTelemetry:
         spans = trace_exporter.get_finished_spans()
         for span in spans:
             if span.name == "attr_tool.validate":
-                assert span.attributes.get("tool.name") == "attr_tool"
+                assert (span.attributes or {}).get("tool.name") == "attr_tool"
             if span.name == "attr_tool.execute":
-                assert span.attributes.get("http.route") == "/test"
-                assert span.attributes.get("http.method") == "GET"
+                assert (span.attributes or {}).get("http.route") == "/test"
+                assert (span.attributes or {}).get("http.method") == "GET"
 
     @pytest.mark.asyncio
     async def test_validation_error_stops_pipeline(self, trace_exporter: InMemorySpanExporter) -> None:

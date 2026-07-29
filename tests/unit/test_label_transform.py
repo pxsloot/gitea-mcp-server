@@ -112,6 +112,7 @@ class TestLabelTransform:
             return tool
 
         result = await transform.get_tool("labels_tool", call_next)
+        assert result is not None
         assert result is not tool  # wrapped - new object
         assert result.name == "labels_tool"
         assert result.meta == tool.meta  # metadata preserved
@@ -138,6 +139,7 @@ class TestLabelTransform:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         await wrapped.run(arguments={
             "owner": "test-owner",
@@ -165,6 +167,7 @@ class TestLabelTransform:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         with pytest.raises(ValueError, match="nonexistent"):
             await wrapped.run(arguments={
@@ -191,6 +194,7 @@ class TestLabelTransform:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         await wrapped.run(arguments={
             "owner": "test-owner",
@@ -212,6 +216,7 @@ class TestLabelTransform:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         await wrapped.run(arguments={"owner": "test-owner", "repo": "test-repo"})
 
@@ -345,6 +350,7 @@ class TestLabelTransformTelemetry:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         await wrapped.run(arguments={
             "owner": "test-owner",
@@ -393,6 +399,7 @@ class TestLabelTransformTelemetry:
             return spied_tool
 
         wrapped = await transform.get_tool("attr_tool", call_next)
+        assert wrapped is not None
         await wrapped.run(arguments={
             "owner": "o", "repo": "r", "labels": ["bug"],
         })
@@ -400,8 +407,8 @@ class TestLabelTransformTelemetry:
         spans = trace_exporter.get_finished_spans()
         for span in spans:
             if span.name == "attr_tool.validate_labels":
-                assert span.attributes.get("tool.name") == "attr_tool"
-                assert span.attributes.get("labels.has_labels") is True
+                assert (span.attributes or {}).get("tool.name") == "attr_tool"
+                assert (span.attributes or {}).get("labels.has_labels") is True
                 break
         else:
             pytest.fail("No 'attr_tool.validate_labels' span found")
@@ -423,6 +430,7 @@ class TestLabelTransformTelemetry:
             return spied_tool
 
         wrapped = await transform.get_tool("fail_tool", call_next)
+        assert wrapped is not None
 
         with pytest.raises(ValueError, match="Unknown label"):
             await wrapped.run(arguments={
@@ -432,8 +440,8 @@ class TestLabelTransformTelemetry:
         spans = trace_exporter.get_finished_spans()
         for span in spans:
             if span.name == "fail_tool.validate_labels":
-                assert span.attributes.get("error") is True
-                assert "Unknown label" in (span.attributes.get("error.message") or "")
+                assert (span.attributes or {}).get("error") is True
+                assert "Unknown label" in ((span.attributes or {}).get("error.message") or "")
                 break
         else:
             pytest.fail("No 'fail_tool.validate_labels' span found")
@@ -453,6 +461,7 @@ class TestLabelTransformTelemetry:
             return spied_tool
 
         wrapped = await transform.get_tool("count_tool", call_next)
+        assert wrapped is not None
         await wrapped.run(arguments={
             "owner": "o", "repo": "r", "labels": ["bug", "feature", 42],
         })
@@ -460,9 +469,9 @@ class TestLabelTransformTelemetry:
         spans = trace_exporter.get_finished_spans()
         for span in spans:
             if span.name == "count_tool.validate_labels":
-                assert span.attributes.get("label.count") == 3
-                assert span.attributes.get("label.integers") == 1
-                assert span.attributes.get("label.strings") == 2
+                assert (span.attributes or {}).get("label.count") == 3
+                assert (span.attributes or {}).get("label.integers") == 1
+                assert (span.attributes or {}).get("label.strings") == 2
                 break
         else:
             pytest.fail("No 'count_tool.validate_labels' span found")
@@ -480,6 +489,7 @@ class TestLabelTransformTelemetry:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
+        assert wrapped is not None
 
         await wrapped.run(arguments={
             "owner": "o", "repo": "r",
@@ -491,7 +501,7 @@ class TestLabelTransformTelemetry:
                 assert "label.count" not in (span.attributes or {})
                 assert "label.integers" not in (span.attributes or {})
                 assert "label.strings" not in (span.attributes or {})
-                assert span.attributes.get("labels.has_labels") is True
+                assert (span.attributes or {}).get("labels.has_labels") is True
                 break
         else:
             pytest.fail("No 'nolabel_tool.validate_labels' span found")

@@ -1,6 +1,5 @@
 """Tests for exception hierarchy and message formatting."""
 
-from typing import Never
 
 import pytest
 

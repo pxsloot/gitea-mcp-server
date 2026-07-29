@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from fastmcp import FastMCP
 from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.middleware.cors import CORSMiddleware
 

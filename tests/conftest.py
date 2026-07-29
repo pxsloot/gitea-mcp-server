@@ -13,8 +13,9 @@ Helper utilities (mock factories, output parsers, spec fixtures) live in
 import asyncio
 import json
 import logging
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator, cast
+from typing import Any, cast
 
 import pytest
 
@@ -134,7 +135,7 @@ def swagger_spec_fixture() -> dict[str, Any]:
         pytest.skip("swagger.v1.json not found")
 
     with spec_path.open() as f:
-        return cast(dict[str, Any], json.load(f))
+        return cast("dict[str, Any]", json.load(f))
 
 
 @pytest.fixture(autouse=True)

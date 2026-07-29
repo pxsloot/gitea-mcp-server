@@ -4,14 +4,12 @@ Covers ``make_async_mock`` and ``make_magic_mock``: happy paths,
 mock attribute access with spec, and edge cases (None spec).
 """
 
-from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from tests.helpers.mock_tool import make_async_mock, make_magic_mock
-
 
 # ---------------------------------------------------------------------------
 # Dummy spec types for testing
@@ -53,29 +51,20 @@ class TestMakeAsyncMock:
         mock.fetch.return_value = {"result": "ok"}
         assert mock.fetch.return_value == {"result": "ok"}
 
-    def test_method_side_effect_accessible(self) -> None:
+    @pytest.mark.asyncio
+    async def test_method_side_effect_accessible(self) -> None:
         """Mock method's side_effect is settable."""
         mock = make_async_mock(_DummyService)
         mock.fetch.side_effect = ValueError("fail")
-        import asyncio
 
         with pytest.raises(ValueError, match="fail"):
+            await mock.fetch()
 
-            async def call() -> None:
-                await mock.fetch()
-
-            asyncio.run(call())
-
-    def test_assert_awaited(self) -> None:
+    @pytest.mark.asyncio
+    async def test_assert_awaited(self) -> None:
         """Mock method supports assert_awaited_once_with."""
         mock = make_async_mock(_DummyService)
-        # Simulate an await
-        import asyncio
-
-        async def call() -> None:
-            await mock.fetch("key")
-
-        asyncio.run(call())
+        await mock.fetch("key")
         mock.fetch.assert_awaited_once_with("key")
 
     def test_assert_called_on_sync_method(self) -> None:

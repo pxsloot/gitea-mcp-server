@@ -73,8 +73,9 @@ from tests.helpers.spec_fixtures import base_spec as _base_spec
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-    from typing import Any
+
     from fastmcp import FastMCP
+
     from gitea_mcp_server.openapi_types import SwaggerV2Spec
 
 # ---------------------------------------------------------------------------

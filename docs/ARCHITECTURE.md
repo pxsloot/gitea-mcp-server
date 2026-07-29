@@ -8,7 +8,7 @@ covers: Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content
 
 ## Overview
 
-This server provides ~200 tools and resources for LLM agents to interact with
+This server provides ~400 tools and resources for LLM agents to interact with
 Gitea/Forgejo.  Tools and resources are **auto-generated** from the Gitea
 Swagger/OpenAPI spec, then **customized** with annotations, validation, label
 handling, and cache control.
@@ -312,7 +312,7 @@ The customization layers as applied during server startup:
    hand-registering each tool.
 
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
-   `search_tools` (name-match + BM25). This prevents context pollution from ~200 tools being
+   `search_tools` (name-match + BM25). This prevents context pollution from ~400 tools being
    listed at once.  All tools tagged `synthetic` are always pinned in
    `list_tools()` so agents can call them without searching.
 
@@ -401,7 +401,7 @@ The customization layers as applied during server startup:
     since TypedDict cannot express in-place shape transitions.
 
 11. **Auto-generated tool descriptions over hand-crafting** --
-    The server generates ~200 tools from the OpenAPI spec at startup.
+    The server generates ~400 tools from the OpenAPI spec at startup.
     Hand-crafting descriptions for all of them would be impractical and
     brittle (they'd drift from the spec).  Instead:
 

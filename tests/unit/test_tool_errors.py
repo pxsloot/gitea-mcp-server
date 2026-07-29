@@ -90,7 +90,11 @@ class TestErrorHandlingEnhancement:
         }
         mock_response.json.return_value = error_body
 
-        http_error = httpx.HTTPStatusError("404 Not Found", request=None, response=mock_response)
+        http_error = httpx.HTTPStatusError(
+            "404 Not Found",
+            request=None,  # type: ignore[arg-type]  # httpx requires Request but error-path
+            response=mock_response,  # construction has no real Request object
+        )
         value_error = ValueError(f"HTTP error 404: {mock_response.reason_phrase} - {error_body}")
         value_error.__cause__ = http_error
 
@@ -662,7 +666,11 @@ class TestErrorHandlingNonJson:
         mock_response.json.side_effect = ValueError("Not JSON")
         mock_response.text = "Internal Server Error: something went wrong"
 
-        http_error = httpx.HTTPStatusError("500 Error", request=None, response=mock_response)
+        http_error = httpx.HTTPStatusError(
+            "500 Error",
+            request=None,  # type: ignore[arg-type]  # httpx requires Request but error-path
+            response=mock_response,  # construction has no real Request object
+        )
         value_error = ValueError(f"HTTP error 500: {mock_response.reason_phrase}")
         value_error.__cause__ = http_error
 

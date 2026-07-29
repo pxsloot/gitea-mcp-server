@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Model Context Protocol server that provides ~200 auto-generated tools and
+Model Context Protocol server that provides ~400 auto-generated tools and
 resources for LLM agents to interact with **Gitea** and **Forgejo** instances.
 Built with [FastMCP](https://gofastmcp.com) 3.x.
 
@@ -17,7 +17,7 @@ Your Gitea/Forgejo instance
        ▼  (Swagger/OpenAPI spec)
   gitea-mcp-server
        │  ┌────────────────────────────┐
-       │  │ Auto-generates ~200 tools  │
+       │  │ Auto-generates ~400 tools  │
        │  │ from the API spec          │
        │  │ Adds lazy loading, scope   │
        │  │ filtering, annotations,    │

@@ -1,13 +1,14 @@
 """Unit tests for LabelTransform - FastMCP Transform wrapping label conversion."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock
 
 import pytest
-from fastmcp.server.transforms import Transform
+from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.label_service import LabelService
@@ -16,6 +17,10 @@ from gitea_mcp_server.tools.label_transform import (
     _convert_labels_inline,
 )
 from tests.helpers.mock_tool import make_async_mock
+
+if TYPE_CHECKING:
+    from fastmcp.utilities.versions import VersionSpec
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 # The session-scoped ``_init_otel_exporter`` and ``trace_exporter`` fixture
 # are defined in ``tests/conftest.py`` (shared across all test modules).
@@ -26,8 +31,23 @@ from tests.helpers.mock_tool import make_async_mock
 # ---------------------------------------------------------------------------
 
 
+def _make_call_next(
+    tool: Tool | None,
+) -> GetToolNext:
+    """Create a call_next that returns the given tool (or None for unknown).
+
+    This eliminates the repetitive ``async def call_next(name, *, version=None):``
+    closure that every ``get_tool`` test would otherwise need.  The ``name``
+    parameter is accepted (required by the ``GetToolNext`` protocol) but ignored
+    — the factory always returns the same tool regardless of which name is
+    requested.
+    """
+    async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
+        return tool
+    return call_next
+
+
 class TestLabelTransform:
-    _tool_registry: dict = {}
     """Tests for LabelTransform as a FastMCP Transform."""
 
     @pytest.fixture
@@ -66,10 +86,6 @@ class TestLabelTransform:
             annotations=ToolAnnotations(title=name),
         )
 
-    async def _call_next(self, name: str, *, version: str | None = None) -> Tool | None:
-        """Simulate the inner transform/provider returning tools by name."""
-        return self._tool_registry.get(name)
-
     @pytest.mark.asyncio
     async def test_is_transform_subclass(self) -> None:
         """LabelTransform should be a Transform subclass."""
@@ -85,33 +101,21 @@ class TestLabelTransform:
     @pytest.mark.asyncio
     async def test_get_tool_returns_none_for_unknown(self, transform: LabelTransform) -> None:
         """get_tool returns None when call_next returns None."""
-
-        async def call_next(name: str, *, version: str | None = None) -> None:
-            return None
-
-        result = await transform.get_tool("nonexistent", call_next)
+        result = await transform.get_tool("nonexistent", _make_call_next(None))
         assert result is None
 
     @pytest.mark.asyncio
     async def test_get_tool_passes_through_without_labels(self, transform: LabelTransform) -> None:
         """get_tool returns the tool unchanged when has_labels is False."""
         tool = self.make_tool("no_labels", has_labels=False)
-
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return tool
-
-        result = await transform.get_tool("no_labels", call_next)
+        result = await transform.get_tool("no_labels", _make_call_next(tool))
         assert result is tool  # same object, not wrapped
 
     @pytest.mark.asyncio
     async def test_get_tool_wraps_labels_tool(self, transform: LabelTransform) -> None:
         """get_tool returns a wrapped tool when has_labels is True."""
         tool = self.make_tool("labels_tool", has_labels=True)
-
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return tool
-
-        result = await transform.get_tool("labels_tool", call_next)
+        result = await transform.get_tool("labels_tool", _make_call_next(tool))
         assert result is not None
         assert result is not tool  # wrapped - new object
         assert result.name == "labels_tool"
@@ -135,10 +139,7 @@ class TestLabelTransform:
 
         spied_tool = Tool.from_tool(tool, transform_fn=spy_transform_fn)
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         await wrapped.run(arguments={
@@ -163,10 +164,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         with pytest.raises(ValueError, match="nonexistent"):
@@ -190,10 +188,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         await wrapped.run(arguments={
@@ -212,10 +207,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         await wrapped.run(arguments={"owner": "test-owner", "repo": "test-repo"})
@@ -345,11 +337,7 @@ class TestLabelTransformTelemetry:
         tool = self.make_tool("labels_tool", has_labels=True)
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
-
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         await wrapped.run(arguments={
@@ -371,10 +359,7 @@ class TestLabelTransformTelemetry:
     ) -> None:
         """When has_labels is False, no validate_labels span is emitted."""
         tool = self.make_tool("no_labels", has_labels=False)
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return tool
-
-        wrapped = await transform.get_tool("no_labels", call_next)
+        wrapped = await transform.get_tool("no_labels", _make_call_next(tool))
         assert wrapped is tool  # not wrapped - passes through
 
         spans = trace_exporter.get_finished_spans()
@@ -395,10 +380,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("attr_tool", call_next)
+        wrapped = await transform.get_tool("attr_tool", _make_call_next(spied_tool))
         assert wrapped is not None
         await wrapped.run(arguments={
             "owner": "o", "repo": "r", "labels": ["bug"],
@@ -426,10 +408,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("fail_tool", call_next)
+        wrapped = await transform.get_tool("fail_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         with pytest.raises(ValueError, match="Unknown label"):
@@ -457,10 +436,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("count_tool", call_next)
+        wrapped = await transform.get_tool("count_tool", _make_call_next(spied_tool))
         assert wrapped is not None
         await wrapped.run(arguments={
             "owner": "o", "repo": "r", "labels": ["bug", "feature", 42],
@@ -485,10 +461,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
-            return spied_tool
-
-        wrapped = await transform.get_tool("labels_tool", call_next)
+        wrapped = await transform.get_tool("labels_tool", _make_call_next(spied_tool))
         assert wrapped is not None
 
         await wrapped.run(arguments={

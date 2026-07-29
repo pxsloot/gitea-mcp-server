@@ -964,7 +964,7 @@ class TestTolerantSearchTransform:
             name="gitea_test",
             description="A test tool",
             parameters={"properties": {}},
-            tags=[],
+            tags=set(),
         )
         synthetic_tool = Tool(
             name="gitea_search_tools",

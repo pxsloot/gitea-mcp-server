@@ -23,6 +23,7 @@ from gitea_mcp_server.tools.search import (
     _tool_info_impl,
     register_synthetic_tools,
 )
+from tests.helpers.mcp_results import extract_text_content, get_structured
 
 
 class TestSearchableText:
@@ -85,6 +86,7 @@ class TestCallToolOutputSchema:
         (accepts both objects and arrays since it proxies any tool)."""
         tool = await self._get_call_tool()
         assert tool is not None, "call_tool not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
         result_schema = tool.output_schema["properties"]["result"]
         # Must not have a bare "type": "object" that rejects arrays
         has_any_of = "anyOf" in result_schema
@@ -131,6 +133,7 @@ class TestToolInfoOutputSchema:
         """tool_info's output_example property must accept arrays (tool schemas return list examples)."""
         tool = await self._get_tool_info()
         assert tool is not None, "tool_info not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
         result_schema = tool.output_schema["properties"]["result"]
         output_example_schema = result_schema.get("properties", {}).get("output_example", {})
         assert output_example_schema, "output_example missing from tool_info.result.properties"
@@ -869,7 +872,7 @@ class TestSearchToolsSyntheticTool:
 
         result = await _search_tools_impl("nonexistent", None, "markdown", mock_ctx, transform)
         assert result.structured_content is not None
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "No tools found" in text or "search_docs" in text
 
     @pytest.mark.asyncio
@@ -889,7 +892,7 @@ class TestSearchToolsSyntheticTool:
 
         result = await _search_tools_impl("issue", None, "markdown", mock_ctx, transform)
         assert result.structured_content is not None
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "Cross-linking" in text or "search_docs" in text
 
     @pytest.mark.asyncio
@@ -915,7 +918,7 @@ class TestSearchToolsSyntheticTool:
 
         result = await _search_tools_impl("list", "issue", "markdown", mock_ctx, transform)
         assert result.structured_content is not None
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "gitea_issue_list" in text or "Cross-linking" in text
 
 
@@ -1245,7 +1248,7 @@ class TestSearchResourcesSyntheticTool:
         result = await _search_resources_impl(query="version", format="markdown", ctx=ctx)
 
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "Cross-linking hints" in text
         assert "search_docs" in text
         assert "search_tools" in text
@@ -1261,7 +1264,7 @@ class TestSearchResourcesSyntheticTool:
         result = await _search_resources_impl(query="nothing", format="markdown", ctx=ctx)
 
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "No results found" in text or "No resources" in text
         assert "search_docs" in text
         assert "search_tools" in text
@@ -1656,7 +1659,7 @@ class TestSearchToolsPagination:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
         result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=3, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 25
@@ -1676,7 +1679,7 @@ class TestSearchToolsPagination:
 
         result = await _search_tools_impl("test", None, "markdown", mock_ctx, transform, page=10, limit=10)
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
         assert "total results: 5" in text
 
@@ -1733,7 +1736,7 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
         result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=3, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 25
@@ -1759,7 +1762,7 @@ class TestSearchResourcesPagination:
 
         result = await _search_resources_impl(query="test", format="markdown", ctx=ctx, page=10, limit=10)
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
         assert "total results: 5" in text
 
@@ -1966,7 +1969,7 @@ class TestSearchToolsWithFilteredInfo:
             filtered_tools_info=filtered_info, tool_prefix="gitea_",
         )
         assert result is not None
-        text = result.content[0].text if result.content else ""
+        text = extract_text_content(result.content) if result.content else ""
         assert "hidden from this listing" in text
 
 

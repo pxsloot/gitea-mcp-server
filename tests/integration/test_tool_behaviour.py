@@ -14,6 +14,7 @@ import pytest
 import respx
 from fastmcp.exceptions import ResourceError, ToolError
 
+from tests.helpers.mcp_results import extract_text_content
 from tests.integration.conftest import BASE_TEST_URL
 
 if TYPE_CHECKING:
@@ -297,7 +298,7 @@ class TestResultWrapping:
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.99.0"})
         result = await mcp_server.call_tool("gitea_get_version", {})
         assert len(result.content) > 0
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert '"version":"1.99.0"' in text, f"Expected version JSON in text: {text[:200]}"
 
     async def test_paginated_result_includes_metadata(self, mcp_server: FastMCP) -> None:
@@ -440,7 +441,7 @@ class TestNonJsonEndpoint:
             {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
         )
         assert len(result.content) > 0
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert text == diff, f"Expected raw diff, got: {text[:100]}"
 
     async def test_full_stack_text_validation_round_trip(
@@ -486,7 +487,7 @@ class TestNonJsonEndpoint:
         assert result.structured_content == {"result": diff}
         # The text content carries the raw diff.
         assert len(result.content) > 0
-        assert result.content[0].text == diff
+        assert extract_text_content(result.content) == diff
 
     async def test_transport_level_text_output_validation(
         self, mcp_server: FastMCP,
@@ -531,7 +532,7 @@ class TestNonJsonEndpoint:
         # will be True with "Output validation error" in the message.
         assert not result.is_error, (
             f"Expected no output validation error, got: "
-            f"{result.content[0].text if result.content else 'empty'}"
+            f"{extract_text_content(result.content) if result.content else 'empty'}"
         )
         # The client automatically unwraps ``{"result": <diff>}``.
         assert result.data == diff, (

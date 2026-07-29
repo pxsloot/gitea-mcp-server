@@ -8,7 +8,6 @@ Coverage includes:
 - Logger call verification on format failure
 """
 
-import json
 import logging
 from unittest.mock import patch
 
@@ -16,6 +15,7 @@ import pytest
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.tool_display import format_tool_result
+from tests.helpers.mcp_results import extract_text_content, parse_json_content
 
 
 class TestFormatToolResult:
@@ -33,7 +33,7 @@ class TestFormatToolResult:
         result = format_tool_result({"key": "value"}, "json")
         assert result.structured_content == {"result": {"key": "value"}}
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert '"key"' in text
         assert '"value"' in text
 
@@ -43,7 +43,7 @@ class TestFormatToolResult:
         result = format_tool_result(data, "markdown")
         assert result.structured_content == {"result": data}
         assert result.content is not None
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "test" in text
         assert "42" in text
 
@@ -58,7 +58,7 @@ class TestFormatToolResult:
             },
         }
         result = format_tool_result(data, "json", detail="concise", schema=schema)
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         # Nested user should be collapsed to $ref
         assert "$ref:User" in text
 
@@ -66,7 +66,7 @@ class TestFormatToolResult:
         """detail=concise without schema leaves data intact."""
         data = {"id": 1, "nested": {"key": "val"}}
         result = format_tool_result(data, "json", detail="concise", schema=None)
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert '"key"' in text
         assert '"val"' in text
 
@@ -122,7 +122,7 @@ class TestFormatToolResultErrorRecovery:
         ):
             result = format_tool_result(data, "markdown")
             assert isinstance(result, ToolResult)
-            text = result.content[0].text
+            text = extract_text_content(result.content)
             assert "```json" in text
             assert "formatting failed" in text
             assert exc_cls.__name__ in text
@@ -144,7 +144,7 @@ class TestFormatToolResultErrorRecovery:
         ):
             result = format_tool_result(data, "json")
             assert isinstance(result, ToolResult)
-            fallback = json.loads(result.content[0].text)
+            fallback = parse_json_content(result)
             assert "result" in fallback
 
     # --- Real error-triggering data (no mocking needed) ---
@@ -157,7 +157,7 @@ class TestFormatToolResultErrorRecovery:
         data = {"bad": NonSerializable()}
         result = format_tool_result(data, "markdown")
         assert isinstance(result, ToolResult)
-        text = result.content[0].text
+        text = extract_text_content(result.content)
         assert "```json" in text
         assert "formatting failed" in text
         # The actual exception may be PydanticSerializationError (subclass of
@@ -174,7 +174,7 @@ class TestFormatToolResultErrorRecovery:
         # structured_content carries the safe string representation
         assert result.structured_content is not None
         assert "result" in result.structured_content
-        fallback = json.loads(result.content[0].text)
+        fallback = parse_json_content(result)
         assert "result" in fallback
 
     def test_non_serializable_data_custom_str(self) -> None:
@@ -236,4 +236,4 @@ class TestFormatToolResultErrorRecovery:
         data = {"name": "test", "count": 42}
         result = format_tool_result(data, "markdown")
         assert result.structured_content == {"result": data}
-        assert "test" in result.content[0].text
+        assert "test" in extract_text_content(result.content)

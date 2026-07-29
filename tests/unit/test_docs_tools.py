@@ -11,6 +11,7 @@ from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
+from tests.helpers.mcp_results import extract_text_from_content_items, get_structured
 
 # Sample guide content for testing
 SAMPLE_FRONTMATTER = """\
@@ -327,16 +328,16 @@ class TestRegisterDocTools:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")
         assert isinstance(result, ToolResult)
-        assert result.structured_content["result"] is not None
+        assert get_structured(result)["result"] is not None
         assert result.content is not None
-        assert any("Test Guide" in str(c.text) for c in result.content)
+        assert "Test Guide" in extract_text_from_content_items(result.content)
 
     @pytest.mark.asyncio
     async def test_search_docs_raw_format(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test", format="raw")
         assert isinstance(result, ToolResult)
-        assert isinstance(result.structured_content["result"], list)
+        assert isinstance(get_structured(result)["result"], list)
         # ToolResult copies structured_content to content when content is None
 
     @pytest.mark.asyncio
@@ -345,7 +346,7 @@ class TestRegisterDocTools:
         result = await fn(query="test", format="json")
         assert isinstance(result, ToolResult)
         assert result.content is not None
-        text = "".join(c.text for c in result.content if hasattr(c, "text"))
+        text = extract_text_from_content_items(result.content)
         parsed = json_module.loads(text)
         assert isinstance(parsed, list)
         assert parsed[0]["name"] == "test"
@@ -355,13 +356,13 @@ class TestRegisterDocTools:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test")
         assert isinstance(result, ToolResult)
-        assert "# Test" in result.structured_content["result"]
+        assert "# Test" in get_structured(result)["result"]
 
     @pytest.mark.asyncio
     async def test_read_doc_case_insensitive(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="TEST")
-        assert "# Test" in result.structured_content["result"]
+        assert "# Test" in get_structured(result)["result"]
 
     @pytest.mark.asyncio
     async def test_read_doc_not_found_raises(self) -> None:
@@ -383,8 +384,8 @@ class TestRegisterDocTools:
     async def test_read_doc_raw_format(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="raw")
-        assert "# Test" in result.structured_content["result"]
-        assert "Content" in result.structured_content["result"]
+        assert "# Test" in get_structured(result)["result"]
+        assert "Content" in get_structured(result)["result"]
 
     @pytest.mark.asyncio
     async def test_read_doc_raw_and_markdown_match(self) -> None:
@@ -398,7 +399,7 @@ class TestRegisterDocTools:
     async def test_read_doc_markdown_includes_frontmatter(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="markdown")
-        assert "# Test" in result.structured_content["result"]
+        assert "# Test" in get_structured(result)["result"]
 
     @pytest.mark.asyncio
     async def test_search_docs_invalid_format_raises(self) -> None:
@@ -417,7 +418,7 @@ class TestRegisterDocTools:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")
         assert result.content is not None
-        text = "".join(c.text for c in result.content)
+        text = extract_text_from_content_items(result.content)
         assert "Cross-linking hints" in text
         assert "search_tools" in text
         assert "search_resources" in text
@@ -427,12 +428,12 @@ class TestRegisterDocTools:
         fn = self._capture_tool("search_docs")
         result = await fn(query="zzz_nonexistent")
         assert result.content is not None
-        text = "".join(c.text for c in result.content)
+        text = extract_text_from_content_items(result.content)
         assert "No workflow guides found" in text
         assert "search_tools" in text
         assert "search_resources" in text
         assert result.structured_content is not None
-        assert result.structured_content["result"] == []
+        assert get_structured(result)["result"] == []
 
     def test_resource_tags_aggregated_across_multiple_guides(self) -> None:
         """Tags from multiple guides should all appear in resource template tags."""

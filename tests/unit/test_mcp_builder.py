@@ -16,6 +16,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
     create_openapi_provider,
 )
+from tests.helpers.mcp_results import get_structured
 
 # ---------------------------------------------------------------------------
 # _customize_metadata
@@ -1078,6 +1079,7 @@ class TestToolWrappingTransform:
         """is_text_response wraps unstructured content in result dict."""
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
+        assert tool.meta is not None, "Expected tool.meta to be set"
         tool.meta["_customization"]["is_text_response"] = True
 
         with (
@@ -1136,8 +1138,8 @@ class TestToolWrappingTransform:
                 wrapped = result[0]
                 output = await wrapped.run(arguments={"page": 1})
 
-                assert output.structured_content["has_more"] is False
-                assert output.structured_content["total_count"] == 1
+                assert get_structured(output)["has_more"] is False
+                assert get_structured(output)["total_count"] == 1
         finally:
             pagination_ctx.set({})
 
@@ -1220,8 +1222,8 @@ class TestToolWrappingTransform:
         # execute_fn is a callable
         assert callable(args[3])
 
-        assert output.structured_content["has_more"] is False
-        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
+        assert get_structured(output)["has_more"] is False
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}]
 
     @pytest.mark.asyncio
     async def test_apply_loop_hooks_execute_fn_reinvokes_http(self) -> None:
@@ -1238,10 +1240,10 @@ class TestToolWrappingTransform:
             """Simple loop hook that fetches one more page and merges."""
             kwargs["page"] = 2
             next_result = await execute_fn(kwargs)
-            data = result.structured_content["result"]
-            data.extend(next_result.structured_content["result"])
-            result.structured_content["result"] = data
-            result.structured_content["has_more"] = False
+            data = get_structured(result)["result"]
+            data.extend(get_structured(next_result)["result"])
+            get_structured(result)["result"] = data
+            get_structured(result)["has_more"] = False
             return result
 
         result = ToolResult(
@@ -1281,8 +1283,8 @@ class TestToolWrappingTransform:
         assert call_kwargs["page"] == 2
 
         # Results merged
-        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
-        assert output.structured_content["has_more"] is False
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}]
+        assert get_structured(output)["has_more"] is False
 
     @pytest.mark.asyncio
     async def test_execute_fn_validates_kwargs(self) -> None:
@@ -1501,10 +1503,10 @@ class TestFetchAllIntegration:
         # 3 pages fetched total
         assert page_calls == [1, 2, 3]
         # All 30 items merged
-        assert len(result.structured_content["result"]) == 30
-        assert result.structured_content["has_more"] is False
-        assert result.structured_content["next_offset"] is None
-        assert result.structured_content["total_count"] == 30
+        assert len(get_structured(result)["result"]) == 30
+        assert get_structured(result)["has_more"] is False
+        assert get_structured(result)["next_offset"] is None
+        assert get_structured(result)["total_count"] == 30
 
     @pytest.mark.asyncio
     async def test_fetch_all_false_single_page(self, make_transform_and_tool: tuple) -> None:
@@ -1555,8 +1557,8 @@ class TestFetchAllIntegration:
 
         # Only one page fetched
         assert page_calls == [1]
-        assert len(result.structured_content["result"]) == 2
-        assert result.structured_content["has_more"] is True  # still has more
+        assert len(get_structured(result)["result"]) == 2
+        assert get_structured(result)["has_more"] is True  # still has more
 
 
 async def _mock_fetch_all_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:

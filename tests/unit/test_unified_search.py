@@ -12,6 +12,7 @@ from mcp.types import TextContent
 from gitea_mcp_server.tools.docs_tools import DocManager
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 from gitea_mcp_server.tools.unified_search import register_unified_search
+from tests.helpers.mcp_results import parse_json_content
 
 
 def _make_resource(uri: str, name: str, description: str, mime_type: str = "text/plain", tags: set[str] | None = None) -> SimpleNamespace:
@@ -234,7 +235,6 @@ class TestUnifiedSearch:
     @pytest.mark.asyncio
     async def test_format_json_returns_json_string(self) -> None:
         """format=json should return a JSON string in TextContent."""
-        import json
 
         ctx = MagicMock(spec=Context)
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
@@ -255,7 +255,7 @@ class TestUnifiedSearch:
 
         assert len(result.content) > 0
         assert isinstance(result.content[0], TextContent)
-        parsed = json.loads(result.content[0].text)
+        parsed = parse_json_content(result)
         assert isinstance(parsed, list)
 
     @pytest.mark.asyncio

@@ -591,6 +591,33 @@ class TestCollectEnumValues:
         }
         assert _collect_enum_values(schema) is None
 
+    def test_enum_through_unresolved_ref_returns_none(self) -> None:
+        """REGRESSION: _collect_enum_values can't see through unresolved $ref.
+
+        When a param schema uses ``anyOf`` with ``$ref`` branches (e.g.
+        ``gitea_repo_create_status``'s ``state`` param has ``anyOf`` with
+        ``{$ref: CommitStatusState}``), the $ref is unresolved at schema-
+        augmentation time.  _collect_enum_values cannot follow $ref to
+        find the enum on the referenced type.
+
+        This regression means the description-to-enum inference in
+        ``augment_schema_with_validation`` skips these params because
+        ``_collect_enum_values`` returns ``None`` (no enum found), but
+        ``_infer_enum_from_description`` also fails because
+        ``_find_string_schema`` can't follow $ref either.
+
+        See:
+            https://git.home.lan/mcp-server/gitea-mcp-server/issues/596
+            (state validation fix follow-up: $ref resolution before inference)
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        assert _collect_enum_values(schema) is None
+
 
 class TestValidateEnumFromSchema:
     """Tests for _validate_enum_from_schema."""
@@ -628,6 +655,22 @@ class TestFindStringSchema:
 
     def test_empty_schema(self) -> None:
         assert _find_string_schema({}) is None
+
+    def test_through_anyof_with_unresolved_ref_returns_none(self) -> None:
+        """REGRESSION: _find_string_schema can't follow $ref branches.
+
+        When an ``anyOf`` branch contains ``$ref`` instead of a resolved
+        type (e.g. ``{"$ref": "#/$defs/CommitStatusState"}``), the
+        function skips it because it has no ``type`` key.  This prevents
+        description-to-enum inference from working on unresolved schemas.
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        assert _find_string_schema(schema) is None
 
 
 class TestInferEnumFromDescription:
@@ -686,6 +729,29 @@ class TestInferEnumFromDescription:
         }
         assert _infer_enum_from_description(schema) is True
         assert schema["enum"] == ["pending", "success", "error"]
+
+    def test_through_anyof_with_unresolved_ref_returns_false(self) -> None:
+        """REGRESSION: inference fails when anyOf contains $ref instead of resolved type.
+
+        The actual ``gitea_repo_create_status`` param schema has::
+
+            {"anyOf": [{"$ref": "#/$defs/CommitStatusState"}, {"type": "null"}]}
+
+        Because ``_find_string_schema`` can't follow ``$ref``, the inference
+        silently returns ``False`` and no enum values are extracted from the
+        ``CommitStatusState`` description.  This means agents see no valid
+        state values for the commit status tool.
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        # Fails: _find_string_schema returns None, inference returns False
+        assert _infer_enum_from_description(schema) is False
+        # No enum injected anywhere in the schema
+        assert _collect_enum_values(schema) is None
 
 
 class TestAugmentSchemaWithValidation:
@@ -804,6 +870,73 @@ class TestAugmentSchemaWithValidation:
         augment_schema_with_validation(component)
         # The value should remain unchanged
         assert component.parameters["properties"]["owner"] == "not_a_dict"
+
+    def test_infers_enum_through_unresolved_ref_in_state_param(self) -> None:
+        """REGRESSION: state param with $ref must get enum from description inference.
+
+        ``gitea_repo_create_status`` has a ``state`` param whose schema
+        contains an ``anyOf`` with an unresolved ``$ref`` branch:
+
+            {"anyOf": [{"$ref": "#/$defs/CommitStatusState"}, {"type": "null"}]}
+
+        The ``$defs.CommitStatusState`` definition has a description with
+        quoted values (``"pending"``, ``"success"``, etc.) but no
+        machine-readable ``enum``.  ``augment_schema_with_validation`` must
+        resolve the ``$ref`` before running ``_infer_enum_from_description``
+        so agents see the valid commit status states.
+
+        See:
+            https://git.home.lan/mcp-server/gitea-mcp-server/issues/596
+        """
+        component = MagicMock()
+        component.parameters = {
+            "properties": {
+                "state": {
+                    "anyOf": [
+                        {"$ref": "#/$defs/CommitStatusState"},
+                        {"type": "null"},
+                    ],
+                },
+            },
+            "$defs": {
+                "CommitStatusState": {
+                    "type": "string",
+                    "description": (
+                        "CommitStatusState holds the state of a CommitStatus\n"
+                        'It can be "pending", "success", "error", "failure" and "warning"'
+                    ),
+                },
+            },
+        }
+        augment_schema_with_validation(component)
+        state_schema = component.parameters["properties"]["state"]
+        enum_vals = _collect_enum_values(state_schema)
+        assert enum_vals == [
+            "pending", "success", "error", "failure", "warning"
+        ], f"Expected commit status states, got {enum_vals}"
+
+    def test_preserves_existing_enum_on_issue_state_param(self) -> None:
+        """Issue tools' state param must keep its spec-defined enum.
+
+        ``gitea_issue_list_issues`` has a ``state`` query param with
+        ``enum: ["closed", "open", "all"]`` from the spec.  This must
+        not be overwritten or lost.
+        """
+        component = MagicMock()
+        component.parameters = {
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": ["closed", "open", "all"],
+                },
+            },
+        }
+        augment_schema_with_validation(component)
+        state_schema = component.parameters["properties"]["state"]
+        enum_vals = _collect_enum_values(state_schema)
+        assert enum_vals == ["closed", "open", "all"], (
+            f"Issue state enum overwritten! Got {enum_vals}"
+        )
 
 
 class TestRunValidation:

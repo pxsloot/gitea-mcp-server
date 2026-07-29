@@ -592,6 +592,61 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+_STATE_DEFINITION_DESC = (
+    'State of the target item.\n'
+    'Valid values: "open", "closed", "all"'
+)
+
+
+def _patch_missing_state_descriptions(schemas: dict[str, Any]) -> None:
+    """Add descriptions to ``state`` properties that lack them.
+
+    Several Gitea request-body definitions (``EditIssueOption``,
+    ``EditPullRequestOption``, ``EditMilestoneOption``) have a ``state``
+    property defined as bare ``{"type": "string"}`` with no description,
+    no ``enum``, and no ``$ref``.  Without a description, the
+    description-to-enum inference in ``validation.py`` cannot extract
+    the valid values (``"open"``, ``"closed"``, ``"all"``).
+
+    This function patches those definitions so the inference works
+    uniformly across all ``state``-bearing parameters.
+
+    The patch is intentionally conservative:
+    * Only touches properties named ``state``.
+    * Only when they have no ``description``, no ``enum``, and no
+      ``$ref`` — i.e., the Gitea API leaves them fully unconstrained.
+    * Only adds to the converted ``components/schemas`` dict — doesn't
+      touch the original ``swagger.v1.json``.
+
+    When Gitea upstream adds proper descriptions, enums, or ``$ref`` to
+    these definitions, the patch automatically skips them (the guard
+    conditions return ``True`` on ``description``/``enum``/``$ref``).
+    Remove this function once the Gitea spec covers all ``state``
+    properties.
+
+    Args:
+        schemas: The converted ``components/schemas`` dict (mutated in-place).
+    """
+    for schema in schemas.values():
+        if not isinstance(schema, dict):
+            continue
+        props = schema.get("properties")
+        if not isinstance(props, dict):
+            continue
+        state = props.get("state")
+        if not isinstance(state, dict):
+            continue
+        if state.get("description") or state.get("enum") or state.get("$ref"):
+            continue
+        logger.warning(
+            "Gitea spec gap: %s.state has no description/enum/$ref — "
+            "injecting fallback description for enum inference. "
+            "Remove _patch_missing_state_descriptions once upstream fixes this.",
+            props.get("title", "definition"),
+        )
+        state["description"] = _STATE_DEFINITION_DESC
+
+
 def convert_definitions(definitions: dict[str, Any]) -> dict[str, Any]:
     """Convert Swagger 2.0 definitions to OpenAPI 3.1 schemas."""
     converted = {}
@@ -600,7 +655,9 @@ def convert_definitions(definitions: dict[str, Any]) -> dict[str, Any]:
 
     result = {"definitions": converted}
     fixed = ReferenceFixer().fix(result)
-    return cast("dict[str, Any]", fixed["definitions"])
+    converted_schemas: dict[str, Any] = cast("dict[str, Any]", fixed["definitions"])
+    _patch_missing_state_descriptions(converted_schemas)
+    return converted_schemas
 
 
 def convert_paths(paths: dict[str, Any]) -> dict[str, Any]:

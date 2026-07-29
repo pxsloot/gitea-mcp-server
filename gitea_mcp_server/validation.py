@@ -26,6 +26,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 
 from gitea_mcp_server.constants import LABEL_MAX_LENGTH, PAGE_SIZE_MAX
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.schema_utils import schema_type_matches
 
 # Regex patterns for common Gitea parameters
 
@@ -280,8 +281,12 @@ def _find_string_schema(schema: dict[str, Any]) -> dict[str, Any] | None:
     """Walk ``anyOf``/``oneOf`` wrappers to find the first string-type schema.
 
     Some parameters are wrapped in ``{"anyOf": [{"type": "string", ...},
-    {"type": "null"}]}``.  This helper drills through to find the actual
+    {"type": "null"}]}`` while others have a flat ``{"type": ["string",
+    "null"]}``.  This helper drills through both forms to find the actual
     string-leaf schema.
+
+    Uses :func:`schema_type_matches` internally to handle ``type``-as-list
+    (e.g. ``["string", "null"]``).
 
     Args:
         schema: A resolved JSON Schema dict.
@@ -289,7 +294,7 @@ def _find_string_schema(schema: dict[str, Any]) -> dict[str, Any] | None:
     Returns:
         The first string-typed sub-schema, or ``None``.
     """
-    if schema.get("type") == "string":
+    if schema_type_matches(schema, "string"):
         return schema
     for wrapper in ("anyOf", "oneOf"):
         branches = schema.get(wrapper)
@@ -425,6 +430,111 @@ SCHEMA_CONSTRAINTS: dict[str, dict[str, Any]] = {
 }
 
 
+def _resolve_local_refs(
+    schema: dict[str, Any],
+    defs: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Resolve ``$ref`` pointers in *schema* using *defs*, returning a new dict.
+
+    Operates on the first level of ``anyOf``/``oneOf`` branches — does NOT
+    deep-resolve nested ``$ref`` pointers inside resolved types (the
+    inference only needs the description on the string branch).
+
+    When a branch contains ``{"$ref": "#/$defs/TypeName"}`` and *defs*
+    has ``TypeName``, the branch dict is replaced with the resolved
+    definition (so ``type``, ``description``, and ``enum`` become
+    directly accessible).
+
+    Args:
+        schema: The parameter schema (e.g. ``{"anyOf": [{"$ref": ...}]}``).
+        defs: The ``$defs`` dict from the tool's parameters, or ``None``.
+
+    Returns:
+        A new dict with ``$ref`` branches resolved (or the original dict
+        if no resolution was needed).
+    """
+    if not defs:
+        return schema
+
+    result = dict(schema)
+
+    for wrapper in ("anyOf", "oneOf"):
+        branches = result.get(wrapper)
+        if not isinstance(branches, list):
+            continue
+
+        resolved_branches: list[dict[str, Any]] = []
+        for branch in branches:
+            if not isinstance(branch, dict):
+                resolved_branches.append(branch)
+                continue
+
+            ref = branch.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                type_name = ref[len("#/$defs/"):]
+                resolved = defs.get(type_name)
+                if isinstance(resolved, dict):
+                    resolved_branches.append(dict(resolved))
+                    continue
+
+            resolved_branches.append(branch)
+
+        result[wrapper] = resolved_branches
+
+    return result
+
+
+def _inject_enum_into_defs(
+    existing_schema: dict[str, Any],
+    resolved: dict[str, Any],
+    defs: dict[str, Any] | None,
+) -> None:
+    """Copy enum from *resolved* into *existing_schema* and *defs*.
+
+    After ``_infer_enum_from_description`` adds an enum to the resolved
+    schema (where ``$ref`` was replaced with the actual type), this
+    function injects that enum back into:
+    1. The original ``$defs`` definition so ``$ref`` resolution benefits.
+    2. The original schema's ``$ref`` branch so direct access works.
+
+    Args:
+        existing_schema: The original (unresolved) param schema.
+        resolved: The ``$ref``-resolved copy (modified by inference).
+        defs: The ``$defs`` dict, or ``None``.
+    """
+    source_enum = _collect_enum_values(resolved)
+    if source_enum is None:
+        return
+    if _collect_enum_values(existing_schema) is not None:
+        return  # Already has enum — no injection needed.
+
+    # 1. Inject into the $defs definition so any downstream $ref
+    #    resolution produces a schema with the enum.
+    for wrapper in ("anyOf", "oneOf"):
+        branches = existing_schema.get(wrapper)
+        if not isinstance(branches, list):
+            continue
+        for branch in branches:
+            if not isinstance(branch, dict):
+                continue
+            ref = branch.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                type_name = ref[len("#/$defs/"):]
+                if defs and type_name in defs and "enum" not in defs[type_name]:
+                    defs[type_name]["enum"] = list(source_enum)
+
+    # 2. Inject into the $ref branch itself so direct access
+    #    (without $ref resolution) also sees the enum.
+    for wrapper in ("anyOf", "oneOf"):
+        existing_branches = existing_schema.get(wrapper)
+        resolved_branches = resolved.get(wrapper)
+        if not isinstance(existing_branches, list) or not isinstance(resolved_branches, list):
+            continue
+        for i, (eb, rb) in enumerate(zip(existing_branches, resolved_branches)):
+            if isinstance(eb, dict) and isinstance(rb, dict) and "enum" in rb and "enum" not in eb:
+                eb["enum"] = list(rb["enum"])
+
+
 def augment_schema_with_validation(component: OpenAPITool) -> None:
     """Add JSON schema constraints to tool parameters for agent visibility.
 
@@ -442,6 +552,16 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
        ``"pending", "success", ...`` in prose).  See
        :func:`_infer_enum_from_description`.
 
+       Before inference, any unresolved ``$ref`` pointers in the parameter
+       schema (e.g. ``{"$ref": "#/$defs/CommitStatusState"}`` inside
+       ``anyOf``) are resolved against the tool's ``$defs`` section so that
+       ``_find_string_schema`` can follow them to the actual string type.
+
+       If inference adds an enum to the resolved schema, it is injected
+       back into both the ``$defs`` definition and the original parameter
+       schema's ``$ref`` branch, so downstream consumers (``_run_validation``,
+       ``tool_info``) see the enum regardless of ``$ref`` resolution.
+
     Args:
         component: The OpenAPITool to augment.
     """
@@ -452,6 +572,8 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
     props = params.get("properties", {})
     if not props:
         return
+
+    defs: dict[str, Any] | None = params.get("$defs")
 
     # Structural constraints from SCHEMA_CONSTRAINTS
     for name, constraints in SCHEMA_CONSTRAINTS.items():
@@ -467,6 +589,12 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
     for existing_schema in props.values():
         if not isinstance(existing_schema, dict):
             continue
-        if _collect_enum_values(existing_schema) is not None:
+        # Resolve $ref so _collect_enum_values and _find_string_schema
+        # can see through to the actual type definition.
+        resolved = _resolve_local_refs(existing_schema, defs)
+        if _collect_enum_values(resolved) is not None:
+            # Spec already has an enum on the resolved type — skip.
             continue
-        _infer_enum_from_description(existing_schema)
+        if _infer_enum_from_description(resolved):
+            # Inference added enum to resolved schema — inject back.
+            _inject_enum_into_defs(existing_schema, resolved, defs)

@@ -76,6 +76,8 @@ if TYPE_CHECKING:
 
     from fastmcp import FastMCP
 
+    from gitea_mcp_server.openapi_types import SwaggerV2Spec
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -123,7 +125,7 @@ def lazy_config() -> SimpleConfig:
 
 
 @pytest.fixture
-def base_spec() -> dict:
+def base_spec() -> SwaggerV2Spec:
     """Minimal valid Swagger 2.0 spec with no endpoints.
 
     Delegates to the shared fixture in ``tests.helpers.spec_fixtures``.

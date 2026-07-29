@@ -13,13 +13,48 @@ Usage::
     tool.run = AsyncMock(return_value=ToolResult(structured_content={"result": []}))
 
     route = make_mock_route("/repos/{owner}/{repo}/issues", "GET")
+
+Mock helpers
+~~~~~~~~~~~~
+
+``make_async_mock`` and ``make_magic_mock`` create mocks with ``spec=``
+while preserving mock attribute access (``.return_value``, ``.side_effect``,
+``assert_called_once_with``, etc.).  Use these instead of bare
+``AsyncMock(spec=X)`` or ``MagicMock(spec=X)`` to avoid mypy narrowing the
+mock to the spec's type.  See ``test_label_transform.py`` and
+``test_tool_labels.py`` for usage.
 """
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastmcp.server.providers.openapi import OpenAPITool
 from mcp.types import ToolAnnotations
+
+
+def make_async_mock(spec: type[Any] | None = None) -> AsyncMock:
+    """Create an ``AsyncMock`` with optional ``spec``, preserving mock attributes.
+
+    Unlike ``AsyncMock(spec=X)`` (which mypy narrows to type ``X``, losing
+    access to ``.return_value``, ``.assert_called_once_with``, etc.), this
+    helper is typed as ``-> AsyncMock``, so callers see the mock type, not
+    the narrowed spec type::
+
+        svc = make_async_mock(LabelService)
+        svc.validate_and_convert.return_value = [1, 2]  # no attr-defined error
+    """
+    return AsyncMock(spec=spec)
+
+
+def make_magic_mock(spec: Any | None = None) -> MagicMock:
+    """Create a ``MagicMock`` with optional ``spec``, preserving mock attributes.
+
+    Same idea as ``make_async_mock`` but for synchronous ``MagicMock``::
+
+        mock_fn = make_magic_mock(resolve_label_names)
+        mock_fn.return_value = [1, 2]  # no attr-defined error
+    """
+    return MagicMock(spec=spec)
 
 
 def make_mock_tool(

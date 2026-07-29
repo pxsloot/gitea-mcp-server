@@ -1,6 +1,5 @@
 """Tests for exception hierarchy and message formatting."""
 
-from typing import Never
 
 import pytest
 
@@ -20,7 +19,7 @@ class TestGiteaMCPError:
     def test_is_base_exception(self) -> None:
         assert issubclass(GiteaMCPError, Exception)
 
-    def test_can_be_raised_and_caught(self) -> Never:
+    def test_can_be_raised_and_caught(self) -> None:
         msg = "base error"
         with pytest.raises(GiteaMCPError) as exc:
             raise GiteaMCPError(msg)

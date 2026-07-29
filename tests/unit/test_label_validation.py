@@ -18,7 +18,7 @@ from gitea_mcp_server.tools.labels import (
 _label_service = LabelService()
 
 
-async def _get_repository_label_map(owner: str, repo: str, client: Any) -> dict[int, dict[str, Any]]:
+async def _get_repository_label_map(owner: str, repo: str, client: Any) -> dict[str, dict[str, Any]]:
     """Fetch label map using the test label service."""
     return await _label_service.get_label_map(owner, repo, client)
 
@@ -28,9 +28,9 @@ async def _get_repository_id_map(owner: str, repo: str, client: Any) -> dict[int
     return await _label_service.get_id_map(owner, repo, client)
 
 
-def _update_labels_schema(component: Any) -> dict[str, Any]:
+def _update_labels_schema(component: Any) -> None:
     """Update labels schema."""
-    return _update_labels_schema_impl(component)
+    _update_labels_schema_impl(component)
 
 
 class TestLabelCache:

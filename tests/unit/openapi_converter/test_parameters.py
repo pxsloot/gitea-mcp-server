@@ -1,5 +1,7 @@
 """Unit tests for OpenAPI converter - parameter conversion."""
 
+from typing import Any
+
 from gitea_mcp_server.openapi_converter import _convert_components, convert_parameters
 
 
@@ -104,7 +106,7 @@ class TestConvertComponents:
 
     def test_empty_parameters_skipped(self) -> None:
         """Empty parameters list should be skipped."""
-        spec = {
+        spec: dict[str, dict[str, Any]] = {
             "parameters": {},
         }
         result = _convert_components(spec)

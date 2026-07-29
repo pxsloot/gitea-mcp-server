@@ -84,6 +84,7 @@ class TestHTTPTransport:
         _ = transport.client
 
         client = transport._client
+        assert client is not None
         assert client.timeout.connect == HTTP_TIMEOUT_CONNECT
         assert client.timeout.read == HTTP_TIMEOUT_READ
         assert client.timeout.write == HTTP_TIMEOUT_WRITE
@@ -96,6 +97,7 @@ class TestHTTPTransport:
         _ = transport.client
 
         client = transport._client
+        assert client is not None
         assert "Authorization" in client.headers
         assert client.headers["Authorization"] == f"token {config.token}"
         assert client.headers["Accept"] == "application/json"

@@ -500,11 +500,11 @@ class TestMcpReadResourceTool:
     structured_content wraps it in {"result": ...} for tool validation.
     """
 
-    def _capture_read_resource(self) -> object:
+    def _capture_read_resource(self) -> Callable[..., Any]:
         """Register resource tools and return the read_resource function."""
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -872,11 +872,11 @@ class TestMcpListResourcesFormat:
         resource_mock.meta = None  # prevent MagicMock leakage into required_scope
         return resource_mock
 
-    def _capture_tool(self, name: str) -> object:
+    def _capture_tool(self, name: str) -> Callable[..., Any]:
         """Register resource tools and return the named function."""
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -944,11 +944,11 @@ class TestMcpListResourcesFormat:
 class TestMcpListResourcesTagTypeFilter:
     """Tests for tag and type filtering in list_resources tool."""
 
-    def _capture_tool(self, name: str) -> object:
+    def _capture_tool(self, name: str) -> Callable[..., Any]:
         """Register resource tools and return the named function."""
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -1117,10 +1117,10 @@ class TestExtractResourceContent:
 class TestToolSchemaResource:
     """Tests for _tool_schema_resource."""
 
-    def _capture_resource_fn(self) -> object:
+    def _capture_resource_fn(self) -> Callable[..., Any]:
         mcp = MagicMock()
-        captured: dict[str, object] = {}
-        resource_registry: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
+        resource_registry: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -1215,10 +1215,10 @@ class TestToolSchemaResource:
 class TestMcpListResourcesRawFormat:
     """Tests for list_resources raw format output."""
 
-    def _capture_tool(self) -> object:
+    def _capture_tool(self) -> Callable[..., Any]:
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
@@ -1254,10 +1254,10 @@ class TestMcpListResourcesRawFormat:
 class TestMcpListResourcesFetchAll:
     """Regression tests for fetch_all parameter in list_resources."""
 
-    def _capture_tool(self) -> object:
+    def _capture_tool(self) -> Callable[..., Any]:
         mcp = MagicMock()
         mcp.resource = MagicMock(return_value=lambda f: f)
-        captured: dict[str, object] = {}
+        captured: dict[str, Callable[..., Any]] = {}
 
         def tool_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:

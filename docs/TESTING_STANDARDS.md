@@ -581,9 +581,12 @@ Put truly shared fixtures in `tests/conftest.py`:
 - `trace_exporter` — OpenTelemetry InMemorySpanExporter (cleared between tests)
 - `temp_workspace` — temporary workspace directory for file-based tests
 
-Put domain-specific helper functions in ``tests/helpers/``:
+Put domain-specific helper functions in ``tests/helpers/``.
+**Always use these helpers when the pattern fits** — they eliminate common
+mypy errors and keep test code consistent:
 
-- `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`
+- `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`,
+  `make_async_mock`, `make_magic_mock`
 - `tests/helpers/tool_names.py` — `extract_tool_names`
 - `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`
 - `tests/helpers/mcp_results.py` — `extract_text_content`, `assert_call_success`,
@@ -703,6 +706,44 @@ respx_mock = respx.mock()
 respx_mock.get(...).respond(...)
 # Forgot stop() — routes leak to next test
 ```
+
+### Mock helpers for spec'd mocks
+
+When you pass ``spec=SomeClass`` to ``AsyncMock`` or ``MagicMock``, mypy
+narrows the mock to the spec type, losing access to mock attributes
+(``.return_value``, ``.side_effect``, ``.assert_called_once_with``, etc.).
+Use the helpers in ``tests/helpers/mock_tool.py`` to avoid this:
+
+- **`make_async_mock(SomeClass)`** — returns an ``AsyncMock`` typed as
+  ``AsyncMock`` (not the spec type).  Mock method attributes are fully
+  accessible:
+  ```python
+  from tests.helpers.mock_tool import make_async_mock
+
+  svc = make_async_mock(LabelService)
+  svc.validate_and_convert.return_value = [1, 2]
+  svc.validate_and_convert.assert_called_once_with(...)
+  ```
+- **`make_magic_mock(some_callable)`** — same for synchronous ``MagicMock``:
+  ```python
+  from tests.helpers.mock_tool import make_magic_mock
+
+  fn = make_magic_mock(resolve_label_names)
+  fn.return_value = [1, 2]
+  fn.assert_called_once_with(...)
+  ```
+
+Always prefer these over bare ``AsyncMock(spec=X)`` / ``MagicMock(spec=X)``
+when the spec's type is a class or callable whose mock attributes you need
+to access.  Both helpers are tested in ``tests/unit/test_mock_helpers.py``.
+
+### Result narrowing helpers
+
+When testing MCP tool calls, the return types are unions (``TextContent |
+ImageContent | ...``, ``dict[str, Any] | None``).  Use the helpers in
+``tests/helpers/mcp_results.py`` to narrow these unions and avoid mypy
+``union-attr`` errors.  See the "Testing MCP Tool Call Results" section
+above for usage and ``tests/unit/test_mcp_results_helpers.py`` for tests.
 
 ## ContextVar Testing Patterns
 

@@ -509,12 +509,12 @@ class TestRunValidationParamProperties:
 
     def test_boolean_skip_does_not_affect_other_validators(self) -> None:
         """Other validators should still run even when labels is boolean."""
-        with pytest.raises(ValidationError, match="must be one of"):
+        with pytest.raises(ValidationError, match="contains invalid characters"):
             _run_validation(
-                {"labels": True, "state": "invalid"},
+                {"labels": True, "owner": "!!invalid!!"},
                 param_properties={
                     "labels": {"type": "boolean"},
-                    "state": {"type": "string"},
+                    "owner": {"type": "string"},
                 },
             )
 
@@ -527,6 +527,117 @@ class TestRunValidationParamProperties:
         """When param_properties is empty dict, validators should run."""
         with pytest.raises(ValidationError, match="must be a list"):
             _run_validation({"labels": True}, param_properties={})
+
+
+class TestSchemaDrivenEnumValidation:
+    """Tests for schema-driven enum validation in _run_validation.
+
+    When a parameter's schema defines an ``enum`` (either directly or via an
+    ``anyOf``/``oneOf`` branch), ``_run_validation`` should validate against
+    that enum and skip the hardcoded ``SINGLE_VALIDATORS`` entry.
+    """
+
+    def test_param_with_top_level_enum_accepts_valid(self) -> None:
+        """state with a top-level enum should accept valid values."""
+        _run_validation(
+            {"state": "pending"},
+            param_properties={
+                "state": {"type": "string", "enum": ["pending", "success", "error"]},
+            },
+        )
+
+    def test_param_with_top_level_enum_rejects_invalid(self) -> None:
+        """state with a top-level enum should reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _run_validation(
+                {"state": "bogus"},
+                param_properties={
+                    "state": {"type": "string", "enum": ["pending", "success", "error"]},
+                },
+            )
+
+    def test_param_with_enum_in_anyof_accepts_valid(self) -> None:
+        """state with enum in an anyOf branch should validate against it."""
+        _run_validation(
+            {"state": "success"},
+            param_properties={
+                "state": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "enum": ["pending", "success", "error", "failure", "warning"],
+                        },
+                        {"type": "null"},
+                    ]
+                },
+            },
+        )
+
+    def test_param_with_enum_in_anyof_rejects_invalid(self) -> None:
+        """state with enum in an anyOf branch should reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _run_validation(
+                {"state": "closed"},  # Valid for issues, NOT for commit status
+                param_properties={
+                    "state": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "enum": ["pending", "success", "error"],
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                },
+            )
+
+    def test_param_without_enum_uses_single_validator(self) -> None:
+        """When no enum is in the schema, the SINGLE_VALIDATORS entry should run."""
+        with pytest.raises(ValidationError, match="contains invalid characters"):
+            _run_validation(
+                {"owner": "!!invalid!!"},
+                param_properties={"owner": {"type": "string"}},
+            )
+
+    def test_owner_validation_still_works_with_enum_present(self) -> None:
+        """When enum is present but param also has a SINGLE_VALIDATORS entry,
+        the enum takes priority — but the param should still be checked."""
+        _run_validation(
+            {"owner": "valid-owner"},
+            param_properties={
+                "owner": {"type": "string", "enum": ["valid-owner", "other"]},
+            },
+        )
+
+    def test_issue_state_enum_from_spec(self) -> None:
+        """Tools with spec-defined enum (like issueListIssues) work correctly."""
+        _run_validation(
+            {"state": "open"},
+            param_properties={
+                "state": {"type": "string", "enum": ["closed", "open", "all"]},
+            },
+        )
+
+    def test_issue_state_invalid_from_spec(self) -> None:
+        """Tools with spec-defined enum reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _run_validation(
+                {"state": "bogus"},
+                param_properties={
+                    "state": {"type": "string", "enum": ["closed", "open", "all"]},
+                },
+            )
+
+    def test_missing_required_with_enum_shows_enum_in_error(self) -> None:
+        """When a required param with enum is missing, error shows the enum."""
+        with pytest.raises(ValidationError, match="expected one of"):
+            _run_validation(
+                {"owner": "test"},
+                required_params=["state"],
+                param_properties={
+                    "state": {"type": "string", "enum": ["open", "closed"]},
+                },
+            )
 
 
 @pytest.mark.asyncio

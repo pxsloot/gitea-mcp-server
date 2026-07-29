@@ -11,6 +11,8 @@ from gitea_mcp_server.tools.schemas import _resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
     ValidationError,
+    _collect_enum_values,
+    _validate_enum_from_schema,
     validate_pagination,
 )
 
@@ -101,28 +103,75 @@ def _param_is_boolean(properties: dict[str, Any] | None, name: str) -> bool:
     return False
 
 
+def _format_missing_params(
+    missing: list[str],
+    param_properties: dict[str, Any] | None,
+) -> str:
+    """Build a user-friendly error fragment for missing required parameters.
+
+    When a param's schema has an ``enum``, the message includes the
+    expected values so agents know what to provide.
+
+    Returns a string like ``"owner, state (expected one of: open, closed)"``.
+    """
+    parts: list[str] = []
+    for p in missing:
+        if param_properties and isinstance(param_properties.get(p), dict):
+            enum_vals = _collect_enum_values(param_properties[p])
+            if enum_vals:
+                parts.append(
+                    f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})"
+                )
+            else:
+                parts.append(p)
+        else:
+            parts.append(p)
+    return ", ".join(parts)
+
+
 def _run_validation(
     kwargs: dict[str, Any],
     required_params: list[str] | None = None,
     param_properties: dict[str, Any] | None = None,
 ) -> None:
+    """Validate tool arguments against registered validators and schema enums.
+
+    Validation dispatch order for each argument:
+
+    1. If the parameter's own JSON Schema defines an ``enum`` (either
+       directly or inside an ``anyOf``/``oneOf`` branch), validate against
+       that enum — no hardcoded validator needed.
+    2. If the parameter has a registered validator in
+       :data:`~gitea_mcp_server.validation.SINGLE_VALIDATORS`, call it.
+    3. If the parameter is a boolean type, skip validation (FastMCP handles
+       type coercion).
+
+    Step 1 enables tools like ``gitea_repo_create_status`` whose ``state``
+    parameter's valid values are resolved from the spec (or inferred from
+    its description) rather than hardcoded to issue-state values.
+
+    Args:
+        kwargs: The tool arguments from the agent.
+        required_params: List of required parameter names, or ``None``.
+        param_properties: The tool's ``parameters.properties`` dict, or
+            ``None``.  Used to access per-param schema for enum checks.
+    """
     missing = [p for p in (required_params or []) if p not in kwargs]
     if missing:
-        parts: list[str] = []
-        for p in missing:
-            if param_properties and isinstance(param_properties.get(p), dict):
-                enum_vals = param_properties[p].get("enum")
-                if enum_vals:
-                    parts.append(
-                        f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})"
-                    )
-                else:
-                    parts.append(p)
-            else:
-                parts.append(p)
-        msg = f"Missing required parameter(s): {', '.join(parts)}"
+        parts = _format_missing_params(missing, param_properties)
+        msg = f"Missing required parameter(s): {parts}"
         _raise_validation_error(msg, missing[0], ValueError(msg))
     for name, value in kwargs.items():
+        # Schema-driven enum validation: if the param's own schema defines
+        # an enum (resolved from the spec or inferred from description),
+        # validate against it.  This handles all tools, even those without
+        # a hardcoded validator entry (e.g. ``state`` on the commit status
+        # tool, whose enum comes from description inference).
+        if param_properties and isinstance(param_properties.get(name), dict):
+            enum_values = _collect_enum_values(param_properties[name])
+            if enum_values is not None:
+                _validate_enum_from_schema(value, field=name, enum_values=enum_values)
+                continue
         if name in SINGLE_VALIDATORS:
             if _param_is_boolean(param_properties, name):
                 continue

@@ -15,6 +15,7 @@ from gitea_mcp_server.pagination import (
     capture_pagination_headers,
     pagination_ctx,
 )
+from tests.helpers.mcp_results import get_structured
 
 
 def _make_response(
@@ -183,7 +184,7 @@ class TestPaginationRunner:
         runner = PaginationRunner(fetch_fn)
         result = ToolResult(structured_content={"result": [{"id": 1}]})
         output = await runner.run(result, {"page": 1})
-        assert output.structured_content["result"] == [{"id": 1}]
+        assert get_structured(output)["result"] == [{"id": 1}]
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
@@ -200,8 +201,8 @@ class TestPaginationRunner:
             },
         )
         output = await runner.run(result, {"page": 1, "limit": 10})
-        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}]
-        assert output.structured_content["has_more"] is False
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}]
+        assert get_structured(output)["has_more"] is False
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
@@ -230,9 +231,9 @@ class TestPaginationRunner:
             },
         )
         output = await runner.run(result, {"page": 1, "limit": 2})
-        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
-        assert output.structured_content["has_more"] is False
-        assert output.structured_content["total_count"] == 4
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+        assert get_structured(output)["has_more"] is False
+        assert get_structured(output)["total_count"] == 4
         assert page_calls == [2]
 
     @pytest.mark.asyncio
@@ -266,9 +267,9 @@ class TestPaginationRunner:
             },
         )
         output = await runner.run(result, {"page": 1, "limit": 2})
-        assert len(output.structured_content["result"]) == 5
-        assert output.structured_content["has_more"] is False
-        assert output.structured_content["total_count"] == 5
+        assert len(get_structured(output)["result"]) == 5
+        assert get_structured(output)["has_more"] is False
+        assert get_structured(output)["total_count"] == 5
 
     @pytest.mark.asyncio
     async def test_max_pages_cap(self) -> None:
@@ -301,9 +302,9 @@ class TestPaginationRunner:
         # First page + FETCH_ALL_MAX_PAGES - 1 additional calls
         assert call_count == FETCH_ALL_MAX_PAGES - 1
         total_items = 10 * FETCH_ALL_MAX_PAGES
-        assert len(output.structured_content["result"]) == total_items
-        assert output.structured_content["has_more"] is False
-        assert output.structured_content["total_count"] == 9999
+        assert len(get_structured(output)["result"]) == total_items
+        assert get_structured(output)["has_more"] is False
+        assert get_structured(output)["total_count"] == 9999
 
     @pytest.mark.asyncio
     async def test_heuristic_when_has_more_missing(self) -> None:
@@ -326,8 +327,8 @@ class TestPaginationRunner:
             },
         )
         output = await runner.run(result, {"page": 1, "limit": 10})
-        assert output.structured_content["result"] == [{"id": 1}, {"id": 2}, {"id": 3}]
-        assert output.structured_content["has_more"] is False
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}, {"id": 3}]
+        assert get_structured(output)["has_more"] is False
 
     @pytest.mark.asyncio
     async def test_total_count_carried_forward(self) -> None:
@@ -352,8 +353,8 @@ class TestPaginationRunner:
             },
         )
         output = await runner.run(result, {"page": 1, "limit": 10})
-        assert output.structured_content["total_count"] == 5
-        assert len(output.structured_content["result"]) == 5
+        assert get_structured(output)["total_count"] == 5
+        assert len(get_structured(output)["result"]) == 5
 
     @pytest.mark.asyncio
     async def test_non_list_result_passthrough(self) -> None:
@@ -362,7 +363,7 @@ class TestPaginationRunner:
         runner = PaginationRunner(fetch_fn)
         result = ToolResult(structured_content={"result": {"id": 1}})
         output = await runner.run(result, {"page": 1})
-        assert output.structured_content["result"] == {"id": 1}
+        assert get_structured(output)["result"] == {"id": 1}
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio

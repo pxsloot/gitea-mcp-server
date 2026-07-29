@@ -142,6 +142,23 @@ def parse_json_content(result: object) -> Any:
 # --- Low-level MCP protocol helpers (integration tests) ---
 
 
+def _safe_extract_error_text(root: object) -> str:
+    """Extract text from a low-level root for error messages.
+
+    Unlike ``extract_low_level_text``, this returns a safe default
+    when content is missing or not ``TextContent``, so it can be used
+    in assertion error messages without cascading assertion failures.
+    """
+    content = getattr(root, "content", None)
+    if not content:
+        return "no content"
+    # Try to extract via the public helper; fall back if not TextContent
+    try:
+        return extract_text_content(list(content))
+    except AssertionError:
+        return str(content)
+
+
 def assert_low_level_success(result: object) -> None:
     """Assert a low-level MCP call result succeeded.
 
@@ -159,7 +176,7 @@ def assert_low_level_success(result: object) -> None:
     assert root is not None, f"Expected result with .root, got {type(result).__name__}"
     assert not root.isError, (
         f"Low-level call failed: "
-        f"{root.content[0].text if root.content else 'no content'}"
+        f"{_safe_extract_error_text(root)}"
     )
 
 

@@ -18,7 +18,7 @@ from gitea_mcp_server.tools.resource_display import (
     _clean_resource_uri,
     _format_resource_content,
 )
-from tests.helpers.mcp_results import extract_text_content, parse_json_content
+from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
 
 
 class TestCleanResourceUri:
@@ -901,8 +901,8 @@ class TestMcpListResourcesFormat:
         result = await fn(ctx=ctx, format="raw")
 
         assert isinstance(result, ToolResult)
-        assert result.structured_content["result"]["count"] == 1
-        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+        assert get_structured(result)["result"]["count"] == 1
+        assert get_structured(result)["result"]["resources"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
     async def test_json_format(self, _mock_resource: MagicMock) -> None:
@@ -916,7 +916,7 @@ class TestMcpListResourcesFormat:
         result = await fn(ctx=ctx, format="json")
 
         assert isinstance(result, ToolResult)
-        assert result.structured_content["result"]["count"] == 1
+        assert get_structured(result)["result"]["count"] == 1
         assert len(result.content) == 1
         parsed = parse_json_content(result)
         assert parsed["count"] == 1
@@ -934,7 +934,7 @@ class TestMcpListResourcesFormat:
         result = await fn(ctx=ctx, format="markdown")
 
         assert isinstance(result, ToolResult)
-        assert result.structured_content["result"]["count"] == 1
+        assert get_structured(result)["result"]["count"] == 1
         assert len(result.content) == 1
         content_text = extract_text_content(result.content)
         assert "|" in content_text
@@ -990,8 +990,8 @@ class TestMcpListResourcesTagTypeFilter:
         result = await fn(ctx=ctx, tag="user")
 
         assert result.structured_content is not None
-        assert result.structured_content["result"]["count"] == 1
-        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://users/user"
+        assert get_structured(result)["result"]["count"] == 1
+        assert get_structured(result)["result"]["resources"][0]["uri"] == "gitea://users/user"
 
     @pytest.mark.asyncio
     async def test_type_filter(self) -> None:
@@ -1021,8 +1021,8 @@ class TestMcpListResourcesTagTypeFilter:
 
         result = await fn(ctx=ctx, type="template")
 
-        assert result.structured_content["result"]["count"] == 1
-        assert result.structured_content["result"]["resources"][0]["type"] == "template"
+        assert get_structured(result)["result"]["count"] == 1
+        assert get_structured(result)["result"]["resources"][0]["type"] == "template"
 
     @pytest.mark.asyncio
     async def test_type_and_tag_filter_combined(self) -> None:
@@ -1052,8 +1052,8 @@ class TestMcpListResourcesTagTypeFilter:
 
         result = await fn(ctx=ctx, tag="wrapper", type="resource")
 
-        assert result.structured_content["result"]["count"] == 1
-        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+        assert get_structured(result)["result"]["count"] == 1
+        assert get_structured(result)["result"]["resources"][0]["uri"] == "gitea://version"
 
 
 class TestExtractResourceContent:
@@ -1247,8 +1247,8 @@ class TestMcpListResourcesRawFormat:
 
         result = await fn(ctx=ctx, format="raw")
         assert result.structured_content is not None
-        assert result.structured_content["result"]["count"] == 1
-        assert result.structured_content["result"]["resources"][0]["uri"] == "gitea://version"
+        assert get_structured(result)["result"]["count"] == 1
+        assert get_structured(result)["result"]["resources"][0]["uri"] == "gitea://version"
 
 
 class TestMcpListResourcesFetchAll:

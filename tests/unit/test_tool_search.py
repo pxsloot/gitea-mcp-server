@@ -23,7 +23,7 @@ from gitea_mcp_server.tools.search import (
     _tool_info_impl,
     register_synthetic_tools,
 )
-from tests.helpers.mcp_results import extract_text_content
+from tests.helpers.mcp_results import extract_text_content, get_structured
 
 
 class TestSearchableText:
@@ -86,6 +86,7 @@ class TestCallToolOutputSchema:
         (accepts both objects and arrays since it proxies any tool)."""
         tool = await self._get_call_tool()
         assert tool is not None, "call_tool not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
         result_schema = tool.output_schema["properties"]["result"]
         # Must not have a bare "type": "object" that rejects arrays
         has_any_of = "anyOf" in result_schema
@@ -132,6 +133,7 @@ class TestToolInfoOutputSchema:
         """tool_info's output_example property must accept arrays (tool schemas return list examples)."""
         tool = await self._get_tool_info()
         assert tool is not None, "tool_info not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
         result_schema = tool.output_schema["properties"]["result"]
         output_example_schema = result_schema.get("properties", {}).get("output_example", {})
         assert output_example_schema, "output_example missing from tool_info.result.properties"
@@ -1657,7 +1659,7 @@ class TestSearchToolsPagination:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
         result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=3, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 25
@@ -1734,7 +1736,7 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
         result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=3, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 25

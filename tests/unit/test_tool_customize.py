@@ -25,7 +25,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
-from tests.helpers.mcp_results import extract_text_content
+from tests.helpers.mcp_results import extract_text_content, get_structured
 
 
 class TestCategorizeTool:
@@ -492,10 +492,10 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={"page": 1, "per_page": 30})
 
-            assert output.structured_content["has_more"] is True
-            assert output.structured_content["next_offset"] == 2
-            assert output.structured_content["total_count"] is None
-            assert len(output.structured_content["result"]) == 30
+            assert get_structured(output)["has_more"] is True
+            assert get_structured(output)["next_offset"] == 2
+            assert get_structured(output)["total_count"] is None
+            assert len(get_structured(output)["result"]) == 30
 
     @pytest.mark.asyncio
     async def test_has_more_false_when_result_less_than_per_page(self) -> None:
@@ -515,9 +515,9 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={"page": 1, "per_page": 30})
 
-            assert output.structured_content["has_more"] is False
-            assert output.structured_content["next_offset"] is None
-            assert output.structured_content["total_count"] is None
+            assert get_structured(output)["has_more"] is False
+            assert get_structured(output)["next_offset"] is None
+            assert get_structured(output)["total_count"] is None
 
     @pytest.mark.asyncio
     async def test_defaults_when_kwargs_missing(self) -> None:
@@ -538,8 +538,8 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={})
 
-            assert output.structured_content["has_more"] is True
-            assert output.structured_content["next_offset"] == 2
+            assert get_structured(output)["has_more"] is True
+            assert get_structured(output)["next_offset"] == 2
 
     @pytest.mark.asyncio
     async def test_uses_limit_parameter(self) -> None:
@@ -559,8 +559,8 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={"page": 1, "limit": 50})
 
-            assert output.structured_content["has_more"] is True
-            assert output.structured_content["next_offset"] == 2
+            assert get_structured(output)["has_more"] is True
+            assert get_structured(output)["next_offset"] == 2
 
     @pytest.mark.asyncio
     async def test_no_pagination_for_non_array_response(self) -> None:
@@ -604,7 +604,7 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={"page": 2, "per_page": 10})
 
-            assert output.structured_content["total_count"] is None
+            assert get_structured(output)["total_count"] is None
 
     @pytest.mark.asyncio
     async def test_total_count_from_headers(self) -> None:
@@ -626,10 +626,10 @@ class TestPaginationMetadata:
                 wrapped = result[0]
                 output = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
-                assert output.structured_content["total_count"] == 42
+                assert get_structured(output)["total_count"] == 42
                 # total_count=42, page=1, per_page=10 → more pages exist
-                assert output.structured_content["has_more"] is True
-                assert output.structured_content["next_offset"] == 2
+                assert get_structured(output)["has_more"] is True
+                assert get_structured(output)["next_offset"] == 2
         finally:
             pagination_ctx.set({})
 
@@ -652,7 +652,7 @@ class TestPaginationMetadata:
             wrapped = result[0]
             output = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
-            assert output.structured_content["result"] == original_data
+            assert get_structured(output)["result"] == original_data
 
 
 class TestPrepareAnnotationsEdgeCases:

@@ -25,7 +25,7 @@ from gitea_mcp_server.format import (
     apply_format,
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
-from tests.helpers.mcp_results import extract_text_content, parse_json_content
+from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
 
 
 class TestSnakeToTitle:
@@ -1200,7 +1200,7 @@ class TestFormatPaginatedResult:
         """When fetch_all=False, only returns the requested page."""
         items = [{"id": i} for i in range(25)]
         result = _format_paginated_result(items, 25, "raw", page=2, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert len(sc["result"]) == 10
         assert sc["result"][0]["id"] == 10
         assert sc["result"][-1]["id"] == 19
@@ -1212,7 +1212,7 @@ class TestFormatPaginatedResult:
         """Last page returns fewer items and has_more=False."""
         items = [{"id": i} for i in range(25)]
         result = _format_paginated_result(items, 25, "raw", page=3, limit=10)
-        sc = result.structured_content
+        sc = get_structured(result)
         assert len(sc["result"]) == 5
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
@@ -1224,7 +1224,7 @@ class TestFormatPaginatedResult:
         result = _format_paginated_result(
             items, 50, "raw", page=1, limit=10, fetch_all=True,
         )
-        sc = result.structured_content
+        sc = get_structured(result)
         assert len(sc["result"]) == 50
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
@@ -1235,7 +1235,7 @@ class TestFormatPaginatedResult:
         result = _format_paginated_result(
             [], 0, "raw", page=1, limit=10, fetch_all=True,
         )
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["result"] == []
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
@@ -1251,7 +1251,7 @@ class TestFormatPaginatedResult:
         text = extract_text_content(result.content)
         assert "test" in text
         # Verify pagination metadata is in structured_content
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["total_count"] == 1
 
     def test_json_format(self) -> None:
@@ -1264,7 +1264,7 @@ class TestFormatPaginatedResult:
         text = extract_text_content(result.content)
         parsed = json.loads(text)
         assert parsed[0]["name"] == "test"
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["total_count"] == 1
 
     def test_pagination_keys_in_structured_content(self) -> None:
@@ -1280,7 +1280,7 @@ class TestFormatPaginatedResult:
         result = _format_paginated_result(
             [], 0, "raw", page=1, limit=10,
         )
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["result"] == []
         assert sc["total_count"] == 0
 
@@ -1417,7 +1417,7 @@ class TestApplyFormatConcise:
         data = {"owner": {"id": 1, "login": "user1"}}
         result = apply_format(data, "raw", detail="concise", schema=None)
         # Raw returns structured_content only
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc is not None
         assert isinstance(sc["result"], dict)
         assert sc["result"]["owner"]["login"] == "user1"

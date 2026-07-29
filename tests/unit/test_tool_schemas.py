@@ -19,6 +19,7 @@ from gitea_mcp_server.tools.schemas import (
     _schema_type_is_array,
     derive_output_schema,
 )
+from tests.helpers.mcp_results import get_structured
 
 
 class TestSchemaTypeIsArray:
@@ -514,7 +515,7 @@ class TestDeriveOutputSchema:
             [wrapped] = await transform.list_tools([tool])
             actual = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
-            assert actual.structured_content["result"] == [{"id": 1}]
+            assert get_structured(actual)["result"] == [{"id": 1}]
 
 
 class TestIsTextResponse:
@@ -1582,6 +1583,7 @@ class TestUnwrapResultSchema:
             },
         }
         result = _unwrap_result_schema(wrapped)
+        assert result is not None, "Expected unwrapped schema to be present"
         assert result["properties"]["owner"]["$ref"] == "#/components/schemas/User"
         assert result["properties"]["repo"]["$ref"] == "#/components/schemas/Repository"
 

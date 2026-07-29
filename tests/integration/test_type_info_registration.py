@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError, ToolError
 
 from gitea_mcp_server.tools.type_info import register_type_tools
+from tests.helpers.mcp_results import get_structured
 
 # Minimal OpenAPI 3.1 spec with two types for testing
 _MINIMAL_SPEC: dict = {
@@ -110,7 +111,7 @@ class TestRegisterTypeToolsTool:
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
         result = await mcp.call_tool("resolve_type", {"name": "User"})
-        data = result.structured_content["result"]
+        data =         get_structured(result)["result"]
         assert data["name"] == "User"
         assert "cross_references" in data
 
@@ -184,7 +185,7 @@ class TestRegisterTypeToolsCrossReferences:
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
         result = await mcp.call_tool("resolve_type", {"name": "User"})
-        data = result.structured_content["result"]
+        data =         get_structured(result)["result"]
         refs = data["cross_references"]
         assert "issue_get_issue" in refs["returned_by"]
 

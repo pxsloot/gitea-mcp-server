@@ -1,7 +1,7 @@
 """Tests for the resource factory (``make_api_resource``)."""
 
 import json
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +12,7 @@ from fastmcp.resources import ResourceResult
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.custom import _decode_base64_content
+from tests.helpers.spec_fixtures import make_openapi_spec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
@@ -25,21 +26,67 @@ from gitea_mcp_server.resources.factory import (
 
 
 def _make_mock_openapi_spec(paths: dict | None = None) -> OpenAPISpec:
-    """Create a minimal OpenAPI 3.1 spec for testing."""
-    return cast("OpenAPISpec", {
-        "openapi": "3.1.0",
-        "info": {"title": "Test API", "version": "1.0.0"},
-        "paths": paths or {
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "operationId": "getRepo",
-                    "summary": "Get a repository",
-                    "responses": {
-                        "200": {
-                            "description": "Success",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
+    """Create a minimal OpenAPI 3.1 spec for testing.
+
+    Like ``make_openapi_spec()`` but with default test paths
+    (``/repos/{owner}/{repo}``, ``/user``, ``/repos/{owner}/{repo}/labels``).
+    """
+    default_paths = {
+        "/repos/{owner}/{repo}": {
+            "get": {
+                "operationId": "getRepo",
+                "summary": "Get a repository",
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "name": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "/user": {
+            "get": {
+                "operationId": "getCurrentUser",
+                "summary": "Get current user",
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "login": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "/repos/{owner}/{repo}/labels": {
+            "get": {
+                "operationId": "listLabels",
+                "summary": "List labels",
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
                                         "type": "object",
                                         "properties": {
                                             "id": {"type": "integer"},
@@ -52,54 +99,9 @@ def _make_mock_openapi_spec(paths: dict | None = None) -> OpenAPISpec:
                     },
                 },
             },
-            "/user": {
-                "get": {
-                    "operationId": "getCurrentUser",
-                    "summary": "Get current user",
-                    "responses": {
-                        "200": {
-                            "description": "Success",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "login": {"type": "string"},
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-            "/repos/{owner}/{repo}/labels": {
-                "get": {
-                    "operationId": "listLabels",
-                    "summary": "List labels",
-                    "responses": {
-                        "200": {
-                            "description": "Success",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "id": {"type": "integer"},
-                                                "name": {"type": "string"},
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
         },
-    })
+    }
+    return make_openapi_spec(paths=default_paths if paths is None else paths)
 
 
 def _make_mock_mcp() -> MagicMock:

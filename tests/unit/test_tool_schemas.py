@@ -525,9 +525,7 @@ class TestIsTextResponse:
 
     @pytest.fixture
     def text_spec(self) -> OpenAPISpec:
-        return cast("OpenAPISpec", {
-            "openapi": "3.1.1",
-            "paths": {
+        return make_openapi_spec(openapi="3.1.1", paths={
                 "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
                     "get": {
                         "x-original-content-types": ["text/plain"],
@@ -569,7 +567,7 @@ class TestIsTextResponse:
                     }
                 },
             },
-        })
+        )
 
     def test_text_plain_endpoint_detected(self, text_spec: OpenAPISpec) -> None:
         assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
@@ -600,7 +598,7 @@ class TestResponseHasNoContent:
 
     @pytest.fixture
     def empty_body_spec(self) -> OpenAPISpec:
-        return cast("OpenAPISpec", {
+        spec: OpenAPISpec = {
             "openapi": "3.1.1",
             "paths": {
                 "/repos/{owner}/{repo}/issues/{index}": {
@@ -705,7 +703,8 @@ class TestResponseHasNoContent:
                     },
                 },
             },
-        })
+        }
+        return spec
 
     def test_204_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """204 No Content response should return True."""
@@ -818,9 +817,7 @@ class TestResponseHasNoContent:
 class TestTextResponseOutputSchema:
     """Tests that text/plain endpoints get no output_schema."""
 
-    TEXT_SPEC: OpenAPISpec = cast("OpenAPISpec", {
-        "openapi": "3.1.1",
-        "paths": {
+    TEXT_SPEC: OpenAPISpec = make_openapi_spec(openapi="3.1.1", paths={
             "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
                 "get": {
                     "x-original-content-types": ["text/plain"],
@@ -854,7 +851,7 @@ class TestTextResponseOutputSchema:
                 }
             },
         },
-    })
+    )
 
     def _make_route(self, path: str, method: str = "GET") -> MagicMock:
         return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
@@ -1336,21 +1333,18 @@ class TestGetRawSuccessSchema:
         """Text responses should return None regardless of resolve flag."""
         from gitea_mcp_server.tools.schemas import _get_success_schema
 
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "OK",
-                                "content": {
-                                    "text/plain": {"schema": {"type": "string"}},
-                                },
+        spec = make_openapi_spec(openapi="3.1.0", paths={
+            "/test": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "text/plain": {"schema": {"type": "string"}},
                             },
                         },
-                        "x-original-content-types": ["text/plain"],
                     },
+                    "x-original-content-types": ["text/plain"],
                 },
             },
         })

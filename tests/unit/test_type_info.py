@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from tests.helpers.spec_fixtures import make_openapi_spec
 from gitea_mcp_server.tools.type_info import (
     _try_ctx_info,
     _try_ctx_report_progress,
@@ -432,9 +433,8 @@ class TestWalkResponseRefs:
             "User": {"schema": {"type": "object"}, "referenced_types": [],
                      "returned_by": [], "accepted_by": []},
         }
-        spec = cast("OpenAPISpec", {
-            **self.MINIMAL_SPEC,
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "responses": {
                     "UserResponse": {
                         "description": "User data",
@@ -457,7 +457,7 @@ class TestWalkResponseRefs:
                     },
                 },
             },
-        })
+        )
         _walk_response_refs(spec, {
             "200": {
                 "$ref": "#/components/responses/UserResponse",

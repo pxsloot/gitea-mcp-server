@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +11,7 @@ import pytest
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.server_setup.mcp_builder import _customize_metadata
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -432,7 +433,7 @@ class TestUpdateLabelsSchema:
         tool.serializer = None
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec=cast("OpenAPISpec", {}))
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
         # Verify schema was updated
         labels_schema = tool.parameters["properties"]["labels"]

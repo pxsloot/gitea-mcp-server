@@ -1,17 +1,19 @@
 """Integration tests for MCP extensions end-to-end."""
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from tests.helpers.spec_fixtures import make_openapi_spec
 from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 
 
-def _tool_dict(tools: Any) -> dict[str, Any]:
+def _tool_dict(tools: Sequence[Any]) -> dict[str, Any]:
     """Extract tool name -> tool mapping from provider.list_tools() result."""
     return {t.name: t for t in tools}
 
@@ -19,10 +21,7 @@ def _tool_dict(tools: Any) -> dict[str, Any]:
 @pytest.fixture
 def minimal_spec() -> OpenAPISpec:
     """Minimal OpenAPI spec with two operations."""
-    return cast("OpenAPISpec", {
-        "openapi": "3.1.0",
-        "info": {"title": "Test API", "version": "1.0.0"},
-        "paths": {
+    return make_openapi_spec(paths={
             "/repos/{owner}/{repo}/issues": {
                 "post": {
                     "operationId": "issue_create_issue",
@@ -64,7 +63,7 @@ def minimal_spec() -> OpenAPISpec:
                 }
             },
         },
-    })
+    )
 
 
 @pytest.mark.asyncio

@@ -601,25 +601,31 @@ errors (was ~266 across the test suite).  The fix is a three-tier strategy:
 **Tier 1 — Factory helper**: ``make_openapi_spec(**overrides)`` in
 ``tests/helpers/spec_fixtures.py`` creates a minimal valid post-conversion
 OpenAPI 3.1 spec typed as ``OpenAPISpec``.  Use this as the default
-construction path for specs::
+construction path for specs:
 
-    spec = make_openapi_spec()
-    result = some_function(openapi_spec=spec)
+```python
+spec = make_openapi_spec()
+result = some_function(openapi_spec=spec)
 
-    spec = make_openapi_spec(paths={"/ping": {"get": ...}})
-    result = some_function(openapi_spec=spec)
+spec = make_openapi_spec(paths={"/ping": {"get": ...}})
+result = some_function(openapi_spec=spec)
+```
 
 **Tier 2 — Annotated inline dicts**: When a test needs a unique spec shape
-that doesn't fit the factory, annotate the variable::
+that doesn't fit the factory, annotate the variable:
 
-    spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {...}}
+```python
+spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {...}}
+```
 
 **Tier 3 — ``cast()`` for deliberately invalid specs**: Tests that pass
 malformed spec values (strings where dicts are expected, numeric keys,
-etc.) to exercise error paths must wrap in ``cast("OpenAPISpec", ...)``::
+etc.) to exercise error paths must wrap in ``cast("OpenAPISpec", ...)``:
 
-    spec = cast("OpenAPISpec", {"paths": "not_a_dict"})
-    result = some_function(openapi_spec=spec)
+```python
+spec = cast("OpenAPISpec", {"paths": "not_a_dict"})
+result = some_function(openapi_spec=spec)
+```
 
 Two conventions apply project-wide:
 

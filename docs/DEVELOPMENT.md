@@ -185,7 +185,7 @@ length/type checks that the spec doesn't define):
 1. Add validator in ``validation.py``
 2. Add to ``SINGLE_VALIDATORS`` dict keyed by parameter name
 3. The runtime pipeline ``_ToolWrappingTransform`` in
-   ``server_setup/mcp_builder.py`` calls it automatically** when the
+   ``server_setup/mcp_builder.py`` calls it **automatically** when the
    parameter has no schema-level ``enum`` (schema-driven validation
    takes priority over hardcoded validators).
 

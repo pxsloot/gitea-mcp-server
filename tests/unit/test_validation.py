@@ -577,6 +577,20 @@ class TestCollectEnumValues:
     def test_empty_schema(self) -> None:
         assert _collect_enum_values({}) is None
 
+    def test_top_level_enum_non_list_returns_none(self) -> None:
+        """Defensive: if enum exists but is not a list, return None."""
+        assert _collect_enum_values({"enum": "not_a_list"}) is None
+
+    def test_anyof_enum_non_list_returns_none(self) -> None:
+        """Defensive: if anyOf branch has enum but it's not a list, return None."""
+        schema = {
+            "anyOf": [
+                {"type": "string", "enum": "bad_value"},
+                {"type": "null"},
+            ]
+        }
+        assert _collect_enum_values(schema) is None
+
 
 class TestValidateEnumFromSchema:
     """Tests for _validate_enum_from_schema."""
@@ -663,6 +677,15 @@ class TestInferEnumFromDescription:
         schema = {"type": "integer", "description": '"a", "b" and "c"'}
         assert _infer_enum_from_description(schema) is False
         assert "enum" not in schema
+
+    def test_deduplicates_duplicate_values(self) -> None:
+        """Duplicate quoted values should be deduplicated in the output enum."""
+        schema = {
+            "type": "string",
+            "description": 'Values: "pending", "success", "pending", "error"',
+        }
+        assert _infer_enum_from_description(schema) is True
+        assert schema["enum"] == ["pending", "success", "error"]
 
 
 class TestAugmentSchemaWithValidation:

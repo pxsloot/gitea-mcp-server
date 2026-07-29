@@ -59,16 +59,14 @@ def _validate_string(
     *,
     field: str,
     pattern: str | None = None,
-    allowed: set[str] | None = None,
     error_message: str | None = None,
 ) -> None:
-    """Validate a string parameter with optional pattern or allowed-values check.
+    """Validate a string parameter with optional regex pattern check.
 
     Args:
         value: The value to validate.
         field: The parameter name (used in error messages).
         pattern: Optional regex pattern for fullmatch validation.
-        allowed: Optional set of allowed values.
         error_message: Custom error message template with {field} placeholder.
 
     Raises:
@@ -80,10 +78,6 @@ def _validate_string(
         _raise_validation_error(f"{field} cannot be empty", field)
     if pattern is not None and not re.fullmatch(pattern, value):
         msg = error_message or f"{field} contains invalid characters"
-        _raise_validation_error(msg.format(field=field), field)
-    if allowed is not None and value not in allowed:
-        valid = ", ".join(sorted(allowed))
-        msg = error_message or f"{field} must be one of: {valid}"
         _raise_validation_error(msg.format(field=field), field)
 
 
@@ -212,6 +206,14 @@ def _collect_enum_values(schema: dict[str, Any]) -> list[Any] | None:
     "string", "enum": [...]}, {"type": "null"}]}``).  This helper finds
     whichever location has the values.
 
+    .. note::
+
+       Only the **first** enum found is returned.  In practice schemas
+       define at most one enum branch (the others are type-only, e.g.
+       ``"null"``), so this is sufficient.  If a future spec version
+       produces multiple branches with distinct enums, this function
+       should merge them into a union rather than returning the first.
+
     Args:
         schema: The resolved JSON Schema dict for a parameter.
 
@@ -262,6 +264,11 @@ def _validate_enum_from_schema(
 # ---------------------------------------------------------------------------
 
 # Regex: find all double-quoted strings in a description.
+# Heuristic: this catches values like ``"pending"`` but may misidentify
+# incidental prose with quoted terms (e.g. ``the "state" field...``).
+# The ``_MIN_ENUM_VALUES_FOR_INFERENCE`` threshold mitigates false
+# positives by requiring at least 2 quoted values.  If false positives
+# appear in practice, add comma/"and"/"or" adjacency verification.
 _QUOTED_VALUE_RE = re.compile(r'"([^"]+)"')
 
 # Minimum number of quoted values needed in a description to consider it
@@ -335,10 +342,18 @@ def _infer_enum_from_description(schema: dict[str, Any]) -> bool:
     quoted = _QUOTED_VALUE_RE.findall(desc)
     # Require at least two quoted values to avoid false positives
     # (e.g. a single referenced term in prose).
-    if len(quoted) < _MIN_ENUM_VALUES_FOR_INFERENCE:
+    # Deduplicate while preserving order — spec descriptions
+    # don't normally repeat values, but cheap insurance is cheap.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for v in quoted:
+        if v not in seen:
+            seen.add(v)
+            deduped.append(v)
+    if len(deduped) < _MIN_ENUM_VALUES_FOR_INFERENCE:
         return False
 
-    target["enum"] = quoted
+    target["enum"] = deduped
     return True
 
 

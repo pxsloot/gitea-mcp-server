@@ -191,6 +191,8 @@ def swagger_schema_with_nested_refs(
     root level — exercising ReferenceFixer across the full schema tree.
     """
     # At any recursion level, may produce a $ref instead of an inline schema
+    # hypothesis draw() overload doesn't match SearchStrategy[bool] covariance.
+    # st.booleans() is correct at runtime — hence the type: ignore below.
     if definition_names and draw(st.booleans()):  # type: ignore[arg-type]
         target = draw(st.sampled_from(definition_names))
         return {"$ref": f"#/definitions/{target}"}

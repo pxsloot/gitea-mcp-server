@@ -18,11 +18,19 @@ from gitea_mcp_server.tools.namespace import GiteaNamespace
 
 _V1 = "gitea://version"
 _V1_SPEC = VersionSpec(eq="1.0")
+_REPO_TEMPLATE = "gitea://repos/{owner}/{repo}"
+_REPO_URI = "gitea://repos/owner/repo"
+_NONEXISTENT = "gitea://nonexistent"
 
 
 @pytest.fixture
 def ns() -> GiteaNamespace:
     return GiteaNamespace(prefix="gitea_")
+
+
+def _make_repo_template() -> ResourceTemplate:
+    """Create a standard repository ResourceTemplate for test use."""
+    return ResourceTemplate(uri_template=_REPO_TEMPLATE, name="Repo", parameters={})
 
 
 @pytest.mark.asyncio
@@ -53,37 +61,37 @@ async def test_get_resource_without_version(ns: GiteaNamespace) -> None:
 @pytest.mark.asyncio
 async def test_get_resource_returns_none_when_not_found(ns: GiteaNamespace) -> None:
     call_next = AsyncMock(return_value=None)
-    result = await ns.get_resource("gitea://nonexistent", call_next)
+    result = await ns.get_resource(_NONEXISTENT, call_next)
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_list_resource_templates_returns_unchanged(ns: GiteaNamespace) -> None:
-    templates = [ResourceTemplate(uri_template="gitea://repos/{owner}/{repo}", name="Repo", parameters={})]
+    templates = [_make_repo_template()]
     result = await ns.list_resource_templates(templates)
     assert result is templates
     assert len(result) == 1
-    assert result[0].uri_template == "gitea://repos/{owner}/{repo}"
+    assert result[0].uri_template == _REPO_TEMPLATE
 
 
 @pytest.mark.asyncio
 async def test_get_resource_template_passes_version(ns: GiteaNamespace) -> None:
-    call_next = AsyncMock(return_value=ResourceTemplate(uri_template="gitea://repos/{owner}/{repo}", name="Repo", parameters={}))
-    result = await ns.get_resource_template("gitea://repos/owner/repo", call_next, version=_V1_SPEC)
+    call_next = AsyncMock(return_value=_make_repo_template())
+    result = await ns.get_resource_template(_REPO_URI, call_next, version=_V1_SPEC)
     assert result is not None
-    assert result.uri_template == "gitea://repos/{owner}/{repo}"
-    call_next.assert_called_once_with("gitea://repos/owner/repo", version=_V1_SPEC)
+    assert result.uri_template == _REPO_TEMPLATE
+    call_next.assert_called_once_with(_REPO_URI, version=_V1_SPEC)
 
 
 @pytest.mark.asyncio
 async def test_get_resource_template_without_version(ns: GiteaNamespace) -> None:
-    call_next = AsyncMock(return_value=ResourceTemplate(uri_template="gitea://repos/{owner}/{repo}", name="Repo", parameters={}))
-    result = await ns.get_resource_template("gitea://repos/owner/repo", call_next)
-    call_next.assert_called_once_with("gitea://repos/owner/repo", version=None)
+    call_next = AsyncMock(return_value=_make_repo_template())
+    result = await ns.get_resource_template(_REPO_URI, call_next)
+    call_next.assert_called_once_with(_REPO_URI, version=None)
 
 
 @pytest.mark.asyncio
 async def test_get_resource_template_returns_none_when_not_found(ns: GiteaNamespace) -> None:
     call_next = AsyncMock(return_value=None)
-    result = await ns.get_resource_template("gitea://nonexistent", call_next)
+    result = await ns.get_resource_template(_NONEXISTENT, call_next)
     assert result is None

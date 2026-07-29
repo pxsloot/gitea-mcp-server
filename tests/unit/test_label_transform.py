@@ -1,13 +1,14 @@
 """Unit tests for LabelTransform - FastMCP Transform wrapping label conversion."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp.server.transforms import Transform
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.label_service import LabelService
@@ -16,6 +17,10 @@ from gitea_mcp_server.tools.label_transform import (
     _convert_labels_inline,
 )
 from tests.helpers.mock_tool import make_async_mock
+
+if TYPE_CHECKING:
+    from fastmcp.utilities.versions import VersionSpec
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 # The session-scoped ``_init_otel_exporter`` and ``trace_exporter`` fixture
 # are defined in ``tests/conftest.py`` (shared across all test modules).
@@ -66,7 +71,7 @@ class TestLabelTransform:
             annotations=ToolAnnotations(title=name),
         )
 
-    async def _call_next(self, name: str, *, version: str | None = None) -> Tool | None:
+    async def _call_next(self, name: str, *, version: VersionSpec | None = None) -> Tool | None:
         """Simulate the inner transform/provider returning tools by name."""
         return self._tool_registry.get(name)
 
@@ -86,7 +91,7 @@ class TestLabelTransform:
     async def test_get_tool_returns_none_for_unknown(self, transform: LabelTransform) -> None:
         """get_tool returns None when call_next returns None."""
 
-        async def call_next(name: str, *, version: str | None = None) -> None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> None:
             return None
 
         result = await transform.get_tool("nonexistent", call_next)
@@ -97,7 +102,7 @@ class TestLabelTransform:
         """get_tool returns the tool unchanged when has_labels is False."""
         tool = self.make_tool("no_labels", has_labels=False)
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("no_labels", call_next)
@@ -108,7 +113,7 @@ class TestLabelTransform:
         """get_tool returns a wrapped tool when has_labels is True."""
         tool = self.make_tool("labels_tool", has_labels=True)
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return tool
 
         result = await transform.get_tool("labels_tool", call_next)
@@ -135,7 +140,7 @@ class TestLabelTransform:
 
         spied_tool = Tool.from_tool(tool, transform_fn=spy_transform_fn)
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
@@ -163,7 +168,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
@@ -190,7 +195,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
@@ -212,7 +217,7 @@ class TestLabelTransform:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
@@ -346,7 +351,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)
@@ -371,7 +376,7 @@ class TestLabelTransformTelemetry:
     ) -> None:
         """When has_labels is False, no validate_labels span is emitted."""
         tool = self.make_tool("no_labels", has_labels=False)
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return tool
 
         wrapped = await transform.get_tool("no_labels", call_next)
@@ -395,7 +400,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("attr_tool", call_next)
@@ -426,7 +431,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("fail_tool", call_next)
@@ -457,7 +462,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("count_tool", call_next)
@@ -485,7 +490,7 @@ class TestLabelTransformTelemetry:
         run_spy = AsyncMock(return_value=ToolResult(structured_content={"result": "ok"}))
         spied_tool = Tool.from_tool(tool, transform_fn=lambda **kw: run_spy(kw))
 
-        async def call_next(name: str, *, version: str | None = None) -> Tool | None:
+        async def call_next(name: str, *, version: VersionSpec | None = None) -> Tool | None:
             return spied_tool
 
         wrapped = await transform.get_tool("labels_tool", call_next)

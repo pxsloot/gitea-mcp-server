@@ -1,5 +1,7 @@
 """Unit tests for OpenAPI converter - parameter conversion."""
 
+from typing import Any
+
 from gitea_mcp_server.openapi_converter import _convert_components, convert_parameters
 
 

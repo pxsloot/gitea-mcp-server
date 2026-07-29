@@ -1,5 +1,7 @@
 """Unit tests for schema-to-example generation."""
 
+from typing import Any
+
 import pytest
 from fastmcp.tools.base import Tool
 

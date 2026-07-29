@@ -6,6 +6,7 @@ Covers all functions in __all__:
 """
 
 import json
+from typing import Any
 
 from fastmcp.tools.base import ToolResult
 

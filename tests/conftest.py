@@ -14,7 +14,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator, cast
 
 import pytest
 
@@ -74,7 +74,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> asyncio.AbstractEventLoop:
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
@@ -134,7 +134,7 @@ def swagger_spec_fixture() -> dict[str, Any]:
         pytest.skip("swagger.v1.json not found")
 
     with spec_path.open() as f:
-        return json.load(f)
+        return cast(dict[str, Any], json.load(f))
 
 
 @pytest.fixture(autouse=True)

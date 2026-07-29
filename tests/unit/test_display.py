@@ -10,7 +10,7 @@ Covers:
 """
 
 
-from typing import Any
+from typing import Any, Generator
 
 import pytest
 
@@ -32,7 +32,7 @@ from gitea_mcp_server.tools.display import (
 
 
 @pytest.fixture(autouse=True)
-def _clean_formatters() -> None:
+def _clean_formatters() -> Generator[None, None, None]:
     """Save and restore the global formatter registry around each test.
 
     Tests register ad-hoc formatters via ``@register_formatter`` which

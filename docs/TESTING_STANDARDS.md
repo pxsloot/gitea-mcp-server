@@ -158,7 +158,7 @@ are noted explicitly.
 | Source module | Test file(s) | Zone | Notes |
 |---|---|---|---|
 | `server_setup/__init__.py` | — | — | Package marker (empty) |
-| `server_setup/http_server.py` | — | — | **No test coverage** |
+| `server_setup/http_server.py` | `test_server_http.py`, `test_http_transport_server.py` | Integration | 100% — exercised via `main_async()` with HTTP transport and real uvicorn stack |
 | `server_setup/mcp_builder.py` | `test_mcp_builder.py`, `test_tool_customize.py`, `test_tool_errors.py`, `test_tool_schemas.py`, `test_tool_filter.py` | Unit | 70% target; shared across customization tests |
 | `server_setup/mcp_extensions.py` | `test_mcp_extensions.py` | Unit | Extensions loading |
 | `server_setup/resource_setup.py` | `test_resources_integration.py` | Integration only | No unit test (patched in integration) |
@@ -384,9 +384,10 @@ For each transform in the pipeline:
 - Custom resources: error handling (404, missing fields, API errors), Markdown formatting
 - Registry: CRUD operations for resource metadata
 - Scopes: correct mapping from HTTP method + tag → required scope
-- Resource handler decorator: test that `@resource_handler` wraps errors correctly,
-  formats `resource_id` and `error_message` from function parameters, and re-raises
-  non-404 exceptions transparently
+- Resource handler error handling: 404 → `ResourceError`, validation errors,
+  unexpected exception passthrough (see `test_resource_factory.py` tests named
+  ``test_404_raises_resource_error_not_found``, ``test_non_404_api_error_raises_api_error``,
+  ``test_unexpected_exception_raises_internal_error``)
 
 ### Server Setup / Wiring
 
@@ -465,49 +466,18 @@ async def test_tool_call_round_trip(self, mcp_server):
     assert extract_text_content(result.content)
 ```
 
-### Testing the `resource_handler` Decorator
+### Testing Error Handling in Resource Handlers
 
-The `@resource_handler(resource_type, id_format, error_message)` decorator wraps
-custom resource functions to eliminate the 10× try/except pattern. Test three
-scenarios:
+Resource endpoint functions are registered via
+``_register_endpoint_resource`` and its helpers in
+``resources/factory.py``. Error handling (404, validation,
+unexpected exceptions) is baked into the handler loop — see
+``test_resource_factory.py`` for coverage of all error paths:
 
-1. **Success path**: function returns normally, decorator passes through
-2. **404 error**: `_handle_not_found` converts it to `ResourceError` with correct fields
-3. **Non-404 error**: decorator re-raises the original exception
-
-The `id_format` and `error_message` templates use `str.format()` with the
-function's parameters (both positional and keyword). The decorator resolves
-parameter names via `inspect.signature`.
-
-```python
-async def test_success_path(self):
-    @resource_handler("repo", "{owner}/{repo}", "Not found: {owner}/{repo}")
-    async def my_resource(owner: str, repo: str):
-        return f"OK: {owner}/{repo}"
-
-    result = await my_resource("user", "my-repo")
-    assert result == "OK: user/my-repo"
-
-async def test_404_converted(self, config):
-    client = GiteaClient(config)
-    @resource_handler("repo", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
-    async def my_resource(owner: str, repo: str, gitea_client: GiteaClient):
-        return await gitea_client.request("GET", f"/repos/{owner}/{repo}")
-
-    async with respx.mock:
-        respx.get("https://git.example.com/api/v1/repos/user/missing").respond(404)
-        with pytest.raises(ResourceError) as exc:
-            await my_resource("user", "missing", client)
-        assert exc.value.data["resource_type"] == "repo"
-
-async def test_non_404_re_raised(self):
-    @resource_handler("repo", "{owner}/{repo}", "Repository '{owner}/{repo}' not found.")
-    async def my_resource(owner: str, repo: str):
-        raise ValueError("something else")
-
-    with pytest.raises(ValueError, match="something else"):
-        await my_resource("user", "my-repo")
-```
+- ``test_handler_returns_json_resource_result_for_dict_response``
+- ``test_404_raises_resource_error_not_found``
+- ``test_non_404_api_error_raises_api_error``
+- ``test_unexpected_exception_raises_internal_error``
 
 
 ### Testing MCP Tool Call Results

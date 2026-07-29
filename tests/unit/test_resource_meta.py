@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from gitea_mcp_server.resources.meta import (
     DETAIL_CONCISE,
     DETAIL_FULL,
@@ -248,9 +250,9 @@ class TestCountSchemaProperties:
         assert _count_schema_properties(None) == 0
 
     def test_non_dict_returns_zero(self) -> None:
-        """Non-dict input returns 0."""
+        """Non-dict input (a string) returns 0."""
         from gitea_mcp_server.resources.meta import _count_schema_properties
-        assert _count_schema_properties(None) == 0
+        assert _count_schema_properties(cast("dict[str, Any] | None", "not_a_dict")) == 0
 
 
 class TestEstimateNestingDepth:

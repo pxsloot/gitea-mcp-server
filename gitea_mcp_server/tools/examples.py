@@ -249,7 +249,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         return schema["example"]
 
     if schema_type == "object":
-        if depth >= max_depth:  # pragma: no cover — guarded by identical check in _schema_to_example caller; kept for symmetry with the _schema_to_example counterpart
+        if depth >= max_depth:  # pragma: no cover — shadowed by the identical guard at L226; kept defensively
             return "{...}"
         properties = schema.get("properties", {})
         if not properties:

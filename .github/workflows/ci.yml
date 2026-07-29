@@ -27,8 +27,14 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check gitea_mcp_server/
 
+      - name: Lint tests (ruff)
+        run: uv run ruff check tests/
+
       - name: Type check (mypy)
         run: uv run mypy gitea_mcp_server/
+
+      - name: Type check tests (mypy)
+        run: uv run mypy tests/
 
       - name: Test with coverage
         run: uv run pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing

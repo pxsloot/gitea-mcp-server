@@ -13,21 +13,22 @@ test:
 	ruff check gitea_mcp_server
 	ruff check tests/
 	mypy gitea_mcp_server
+	mypy tests/
 	pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 
-# Run type checking on both production and test code.
-# Separate from `test` because mypy tests/ is not yet clean (Phase 0).
-# As phases progress, errors will approach zero; Phase 5 merges into `test`.
+# Fast feedback: type checks only (no tests).
 test-types:
 	mypy gitea_mcp_server
 	mypy tests/
 
 docker-test:
-	docker run --rm localhost/gitea-mcp-server:ci ruff check gitea_mcp_server
-	docker run --rm localhost/gitea-mcp-server:ci ruff check tests/
-	docker run --rm localhost/gitea-mcp-server:ci mypy gitea_mcp_server
-	docker run --rm localhost/gitea-mcp-server:ci mypy tests/
-	docker run --rm localhost/gitea-mcp-server:ci pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
+	docker run --rm localhost/gitea-mcp-server:ci sh -c "\
+		ruff check gitea_mcp_server && \
+		ruff check tests/ && \
+		mypy gitea_mcp_server && \
+		mypy tests/ && \
+		pytest --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing \
+	"
 
 docker-build: ## Build the Docker image locally
 	docker build --progress=plain --target runner -t gitea-mcp-server:latest .

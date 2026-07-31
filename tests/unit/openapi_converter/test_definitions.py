@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pytest
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -576,3 +580,234 @@ class TestConvertSchemaWithTypeList:
         schema = {"type": ["array", "null"]}
         result = convert_schema(schema)
         assert result["type"] == ["array", "null"]
+
+
+class TestPatchMissingStateDescriptions:
+    """Tests for _patch_missing_state_descriptions — Gitea spec gap workaround.
+
+    Several Gitea definitions (EditIssueOption, EditPullRequestOption,
+    EditMilestoneOption) have a ``state`` property defined as bare
+    ``{"type": "string"}`` with no description, so the description-to-enum
+    inference in validation.py has nothing to parse.  This function injects
+    fallback descriptions so enum inference works.
+    """
+
+    @staticmethod
+    def _call_patch(schemas: dict[str, Any]) -> dict[str, Any]:
+        """Call _patch_missing_state_descriptions and return schemas for assertion."""
+        # Import is inline to follow existing test file pattern
+        from gitea_mcp_server.openapi_converter.core import (
+            _patch_missing_state_descriptions,
+        )
+
+        _patch_missing_state_descriptions(schemas)
+        return schemas
+
+    # ── happy path ──────────────────────────────────────────────────────
+
+    def test_injects_description_into_bare_state(self) -> None:
+        """Bare ``{type: string}`` state property gets description injected."""
+        schemas = {
+            "EditIssueOption": {
+                "title": "EditIssueOption",
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+        }
+        result = self._call_patch(schemas)
+        state = result["EditIssueOption"]["properties"]["state"]
+        assert "description" in state
+        assert "open" in state["description"]
+        assert "closed" in state["description"]
+
+    def test_injects_into_all_three_target_definitions(self) -> None:
+        """All three known bare-state definitions get descriptions."""
+        schemas = {
+            "EditIssueOption": {
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+            "EditPullRequestOption": {
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+            "EditMilestoneOption": {
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+        }
+        result = self._call_patch(schemas)
+        for name in schemas:
+            state = result[name]["properties"]["state"]
+            assert "description" in state, f"missing description in {name}.state"
+            assert "Valid values" in state["description"]
+
+    # ── conservative guards — skip when spec is fine ────────────────────
+
+    def test_skips_when_state_has_description(self) -> None:
+        """State with an existing description is left untouched."""
+        schemas = {
+            "SomeOption": {
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "type": "string",
+                        "description": "already described",
+                    },
+                },
+            },
+        }
+        result = self._call_patch(schemas)
+        state = result["SomeOption"]["properties"]["state"]
+        assert state["description"] == "already described"
+
+    def test_skips_when_state_has_enum(self) -> None:
+        """State with an existing enum is left untouched."""
+        schemas = {
+            "SomeOption": {
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "type": "string",
+                        "enum": ["open", "closed"],
+                    },
+                },
+            },
+        }
+        result = self._call_patch(schemas)
+        state = result["SomeOption"]["properties"]["state"]
+        assert "description" not in state  # no injection
+        assert state["enum"] == ["open", "closed"]
+
+    def test_skips_when_state_has_ref(self) -> None:
+        """State with a ``$ref`` is left untouched (spec is self-describing)."""
+        schemas = {
+            "CreateOption": {
+                "type": "object",
+                "properties": {
+                    "state": {"$ref": "#/components/schemas/CommitStatusState"},
+                },
+            },
+        }
+        result = self._call_patch(schemas)
+        state = result["CreateOption"]["properties"]["state"]
+        assert "description" not in state
+        assert "$ref" in state
+
+    # ── non-state properties are unaffected ─────────────────────────────
+
+    def test_does_not_touch_non_state_properties(self) -> None:
+        """Properties other than ``state`` are not modified."""
+        schemas = {
+            "EditIssueOption": {
+                "type": "object",
+                "properties": {
+                    "state": {"type": "string"},
+                    "title": {"type": "string"},  # no description
+                    "body": {"type": "string"},  # no description
+                },
+            },
+        }
+        result = self._call_patch(schemas)
+        props = result["EditIssueOption"]["properties"]
+        assert "description" in props["state"]  # injected
+        assert "description" not in props["title"]  # untouched
+        assert "description" not in props["body"]  # untouched
+
+    # ── defensive — non-dict values don't crash ─────────────────────────
+
+    def test_non_dict_schema_skipped(self) -> None:
+        """Non-dict schema values are skipped without error."""
+        schemas: dict[str, Any] = {
+            "NotADict": "just a string",
+        }
+        result = self._call_patch(schemas)  # must not raise
+        assert result["NotADict"] == "just a string"
+
+    def test_non_dict_properties_skipped(self) -> None:
+        """Schema with non-dict properties is skipped without error."""
+        schemas: dict[str, Any] = {
+            "WeirdSchema": {
+                "type": "object",
+                "properties": "not a dict",
+            },
+        }
+        result = self._call_patch(schemas)  # must not raise
+        assert result["WeirdSchema"]["properties"] == "not a dict"
+
+    def test_non_dict_state_skipped(self) -> None:
+        """State property that is not a dict is skipped without error."""
+        schemas: dict[str, Any] = {
+            "WeirdSchema": {
+                "type": "object",
+                "properties": {"state": "not a dict"},
+            },
+        }
+        result = self._call_patch(schemas)  # must not raise
+        assert result["WeirdSchema"]["properties"]["state"] == "not a dict"
+
+    def test_empty_schemas_does_nothing(self) -> None:
+        """Empty schemas dict causes no error."""
+        result = self._call_patch({})  # must not raise
+        assert result == {}
+
+    # ── integration through convert_definitions ─────────────────────────
+
+    def test_through_convert_definitions(self) -> None:
+        """The patch is applied as part of convert_definitions()."""
+        definitions = {
+            "EditIssueOption": {
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+        }
+        result = convert_definitions(definitions)
+        state = result["EditIssueOption"]["properties"]["state"]
+        assert "description" in state
+        assert "open" in state["description"]
+
+    # ── logging side-effect ─────────────────────────────────────────────
+
+    def test_logs_warning_when_patching(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Patching bare state definitions emits a warning log."""
+        schemas = {
+            "EditIssueOption": {
+                "title": "EditIssueOption",
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+        }
+        from gitea_mcp_server.openapi_converter.core import (
+            _patch_missing_state_descriptions,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            _patch_missing_state_descriptions(schemas)
+
+        assert len(caplog.records) == 1
+        assert "EditIssueOption.state" in caplog.records[0].message
+        assert "Gitea spec gap" in caplog.records[0].message
+
+    def test_skips_when_title_absent_falls_back_to_schema_name(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When schema has no title, the log uses the schema dict key name."""
+        schemas = {
+            "EditMilestoneOption": {
+                # No title field
+                "type": "object",
+                "properties": {"state": {"type": "string"}},
+            },
+        }
+        from gitea_mcp_server.openapi_converter.core import (
+            _patch_missing_state_descriptions,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            _patch_missing_state_descriptions(schemas)
+
+        assert len(caplog.records) == 1
+        # Falls back to the schema key name when title is absent
+        assert "EditMilestoneOption.state" in caplog.records[0].message

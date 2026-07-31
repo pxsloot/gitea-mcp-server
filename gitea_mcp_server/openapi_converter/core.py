@@ -594,7 +594,7 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 _STATE_DEFINITION_DESC = (
     'State of the target item.\n'
-    'Valid values: "open", "closed", "all"'
+    'Valid values: "open", "closed"'
 )
 
 

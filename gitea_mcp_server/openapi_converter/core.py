@@ -592,6 +592,14 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+# Descriptions injected into bare ``state`` properties so the
+# description-to-enum inference in ``validation.py`` can extract valid
+# values.  The values ``"open"`` and ``"closed"`` are the only two
+# ``StateType`` constants in the Forgejo source
+# (``modules/structs/issue.go``).  ``"all"`` is explicitly documented
+# there as "a query parameter filter value, not a valid object state"
+# — it belongs to list/filter query params (which already carry their
+# own ``enum`` in the spec), not mutation endpoints.
 _STATE_DEFINITION_DESC = (
     'State of the target item.\n'
     'Valid values: "open", "closed"'
@@ -606,10 +614,16 @@ def _patch_missing_state_descriptions(schemas: dict[str, Any]) -> None:
     property defined as bare ``{"type": "string"}`` with no description,
     no ``enum``, and no ``$ref``.  Without a description, the
     description-to-enum inference in ``validation.py`` cannot extract
-    the valid values (``"open"``, ``"closed"``, ``"all"``).
+    the valid values.
+
+    The valid states are ``"open"`` and ``"closed"`` — the only two
+    ``StateType`` constants in the Forgejo source.  ``"all"`` is not a
+    valid object state; it is a filter-only query parameter value (already
+    covered by the spec's own ``enum`` on list endpoints).  See the
+    comment on :data:`_STATE_DEFINITION_DESC` above.
 
     This function patches those definitions so the inference works
-    uniformly across all ``state``-bearing parameters.
+    uniformly across all ``state``-bearing mutation parameters.
 
     The patch is intentionally conservative:
     * Only touches properties named ``state``.

@@ -288,8 +288,16 @@ def _find_string_schema(schema: dict[str, Any]) -> dict[str, Any] | None:
     Uses :func:`schema_type_matches` internally to handle ``type``-as-list
     (e.g. ``["string", "null"]``).
 
+    .. note::
+
+       This function cannot follow ``$ref`` pointers — branches containing
+       ``{"$ref": "#/$defs/..."}`` will be skipped (no ``type`` key to
+       match).  Callers must resolve ``$ref`` before calling this function
+       (see :func:`_resolve_local_refs`).
+
     Args:
-        schema: A resolved JSON Schema dict.
+        schema: A resolved JSON Schema dict (any ``$ref`` should already
+            have been resolved by the caller).
 
     Returns:
         The first string-typed sub-schema, or ``None``.
@@ -436,17 +444,20 @@ def _resolve_local_refs(
 ) -> dict[str, Any]:
     """Resolve ``$ref`` pointers in *schema* using *defs*, returning a new dict.
 
-    Operates on the first level of ``anyOf``/``oneOf`` branches — does NOT
-    deep-resolve nested ``$ref`` pointers inside resolved types (the
-    inference only needs the description on the string branch).
+    Handles three cases:
 
-    When a branch contains ``{"$ref": "#/$defs/TypeName"}`` and *defs*
-    has ``TypeName``, the branch dict is replaced with the resolved
-    definition (so ``type``, ``description``, and ``enum`` become
-    directly accessible).
+    * **Top-level ``$ref``**: ``{"$ref": "#/$defs/TypeName"}`` → resolved
+      definition dict.
+    * **``$ref`` inside ``anyOf``/``oneOf``**: the branch dict is replaced
+      with the resolved definition.
+    * **Already-resolved schema**: returned as-is.
+
+    Does NOT deep-resolve nested ``$ref`` pointers inside resolved types
+    (the inference only needs the description on the string branch).
 
     Args:
-        schema: The parameter schema (e.g. ``{"anyOf": [{"$ref": ...}]}``).
+        schema: The parameter schema (e.g. ``{"anyOf": [{"$ref": ...}]}``
+            or ``{"$ref": "#/$defs/CommitStatusState"}``).
         defs: The ``$defs`` dict from the tool's parameters, or ``None``.
 
     Returns:
@@ -454,6 +465,15 @@ def _resolve_local_refs(
         if no resolution was needed).
     """
     if not defs:
+        return schema
+
+    # Top-level $ref (no anyOf/oneOf wrapper)
+    top_ref = schema.get("$ref")
+    if isinstance(top_ref, str) and top_ref.startswith("#/$defs/"):
+        type_name = top_ref[len("#/$defs/"):]
+        resolved_def = defs.get(type_name)
+        if isinstance(resolved_def, dict):
+            return dict(resolved_def)
         return schema
 
     result = dict(schema)
@@ -505,8 +525,11 @@ def _inject_enum_into_defs(
     source_enum = _collect_enum_values(resolved)
     if source_enum is None:
         return
-    if _collect_enum_values(existing_schema) is not None:
-        return  # Already has enum — no injection needed.
+    # No guard for _collect_enum_values(existing_schema) — the caller
+    # (augment_schema_with_validation) already checked resolved and
+    # skipped if it had an enum, so existing_schema cannot have a
+    # non-$ref enum at this point.  The injection passes below are
+    # idempotent (both check "enum" not in target before writing).
 
     # 1. Inject into the $defs definition so any downstream $ref
     #    resolution produces a schema with the enum.

@@ -1,4 +1,8 @@
-"""ACT VI — Error handling and edge cases.
+"""Error handling through the full transport stack.
+
+Tests that errors propagate correctly from the real Gitea API through
+the full MCP transport: APINotFound (404), validation errors, and
+unknown tool names through the ``gitea_call_tool`` proxy.
 
 What happens when errors come through the full stack — real Gitea API error
 responses, validation errors, and unknown tool names.  One test per error

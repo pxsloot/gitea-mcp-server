@@ -1,0 +1,960 @@
+"""Shared test-world — identities, server pool, and lazy state graph.
+
+This module serves two roles:
+
+1. **Canonical identities** (backward-compatible) — ``User``, ``DEV``,
+   ``PEER``, ``RO``, ``LIMITED``, scope constants, org/team names.
+   All existing test files import these unchanged.
+
+2. **World** (new — session-scoped fixture) — a lazy state graph that
+   replaces per-test server spawns with pooled servers and idempotent
+   ``need_*`` methods.  The first call to ``need_repo("dev", "x")``
+   creates the repo (testing the tool); every subsequent call returns
+   the cached ``RepoState`` without re-creating anything.
+
+Server pool design
+------------------
+Instead of ~86 ``mcp_client`` context managers (one per test function),
+the World starts **one server per token scope** and pools them:
+
++----------------+---------------------------+----------------------+
+| Token scope    | Started                   | Serves               |
++================+===========================+======================+
+| Admin (sudo)   | ``World.start()``         | ``need_user``,       |
+|                |                           | ``need_org``,        |
+|                |                           | ``need_team``        |
++----------------+---------------------------+----------------------+
+| DEV write      | First ``server_for(DEV,   | All repo/issue/PR    |
+|                | SCOPE_WRITE)``            | workflow tests       |
++----------------+---------------------------+----------------------+
+| RO read-only   | First ``server_for(RO,    | ``test_scope.py``    |
+|                | SCOPE_READ)``             |                      |
++----------------+---------------------------+----------------------+
+| LIMITED        | First ``server_for(       | ``test_scope.py``,   |
+|                | LIMITED, ...)``           | discovery tests      |
++----------------+---------------------------+----------------------+
+
+This drops server process spawns from ~86 to ~4, saving ~2 minutes.
+
+State graph
+-----------
+The World tracks what exists::
+
+    World
+    ├── _users  {"dev": {...}, "peer": {...}, ...}
+    ├── _orgs   {"live-org": {...}}
+    ├── _teams  {("live-org", "live-team"): {...}}
+    └── _repos  {"dev/workflow-repo": RepoState,
+                  "dev/issues-repo":   RepoState, ...}
+
+Each ``RepoState`` tracks branches, labels, milestones, issues, and tags
+inside that repo.  ``need_*`` methods are idempotent — create+verify
+the first time, return cached state every subsequent call.
+
+Design decisions
+----------------
+- **Server startup tested once per scope.**  The first ``server_for``
+  call starts a real stdio MCP server.  If that startup path breaks,
+  the first test that needs that server scope catches it.
+- **Token caching** (existing): ``get_token()`` caches tokens per
+  (user, scopes) key.  One mint per combination per suite run.
+- **Canonical scope lists**: ``SCOPE_WRITE``, ``SCOPE_READ``,
+  ``SCOPE_LIMITED`` — single source of truth.
+- **Only repos are cleaned up on re-create.**  Users, orgs, tokens,
+  and teams persist on the throwaway test instance.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, cast
+
+from tests.helpers.mcp_results import extract_text_content
+
+if TYPE_CHECKING:
+    from mcp import ClientSession
+
+_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
+
+# =============================================================================
+# Canonical scope lists
+# =============================================================================
+
+SCOPE_WRITE = ["write:repository", "write:issue", "write:user"]
+"""Full write access — the primary actor scopes."""
+
+SCOPE_READ = ["read:repository", "read:user", "read:issue"]
+"""Read-only access — for scope gating tests."""
+
+SCOPE_LIMITED = ["write:repository", "read:issue"]
+"""Partial write — can create repos but not issues."""
+
+# =============================================================================
+# Test identities
+# =============================================================================
+
+
+class User:
+    """A test user identity — username, password, email."""
+
+    __slots__ = ("email", "password", "username")
+
+    def __init__(self, base: str, password: str) -> None:
+        self.username = f"{base}-{_WORKER}"
+        self.password = password
+        self.email = f"{self.username}@live-test.local"
+
+
+DEV = User("live-dev", "dev-pass-007")
+"""Primary actor for workflow tests."""
+
+PEER = User("live-peer", "peer-pass-007")
+"""PR counterpart / second actor."""
+
+RO = User("live-ro", "ro-pass-007")
+"""Read-only victim for scope gating."""
+
+LIMITED = User("live-limited", "limited-pass-007")
+"""Partial-scope victim for scope gating."""
+
+ALL_USERS = (DEV, PEER, RO, LIMITED)
+
+# =============================================================================
+# Token cache — one token per (user, scopes) per suite run (backward-compat)
+# =============================================================================
+
+_tokens: dict[str, str] = {}
+
+
+async def get_token(url: str, user: User, scopes: list[str]) -> str:
+    """Get a cached token for *user* with *scopes*.  Mints on first call.
+
+    Tokens are cached per (username, sorted scopes) key for the lifetime
+    of the test suite run.  Subsequent calls for the same user+scopes
+    return the cached token without hitting the Gitea API.
+
+    This is the backward-compatible entry point — tests also call
+    ``World.token()`` (same cache, same behaviour).
+    """
+    key = f"{user.username}:{','.join(sorted(scopes))}"
+    if key in _tokens:
+        return _tokens[key]
+    from tests.live.helpers import create_user_token
+
+    token = await create_user_token(url, user.username, user.password, "cached-ci", scopes)
+    _tokens[key] = token
+    return token
+
+
+# =============================================================================
+# Org and team
+# =============================================================================
+
+ORG_NAME = f"live-org-{_WORKER}"
+"""Test organization name."""
+
+TEAM_NAME = f"live-team-{_WORKER}"
+"""Test team within the organization."""
+
+
+# =============================================================================
+# Internal helpers (no circular imports)
+# =============================================================================
+
+
+def _is_error(result: Any) -> bool:
+    """Check if an MCP tool call result indicates an error (has ``.isError``)."""
+    return bool(getattr(result, "isError", False))
+
+
+def _unwrap(result: Any) -> dict[str, Any]:
+    """Extract and parse JSON from a tool call result.
+
+    Raises ``TypeError`` if the parsed result is not a dict.
+    """
+    text = extract_text_content(result.content)
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        msg = f"Expected dict result, got {type(parsed).__name__}"
+        raise TypeError(msg)
+    return cast("dict[str, Any]", parsed)
+
+
+def _error_text(result: Any) -> str:
+    """Extract error text from a tool call result."""
+    content = getattr(result, "content", None)
+    if not content:
+        return ""
+    from mcp.types import TextContent
+
+    texts: list[str] = []
+    for item in content:
+        if isinstance(item, TextContent):
+            texts.append(item.text)
+        else:
+            texts.append(str(item))
+    return "\n".join(texts)
+
+
+def _assert_keys(data: dict[str, Any], *keys: str) -> None:
+    """Assert all *keys* are present in *data*."""
+    missing = [k for k in keys if k not in data]
+    if missing:
+        msg = f"Missing required keys: {missing}. Available: {sorted(data.keys())}"
+        raise AssertionError(msg)
+
+
+def _assert_key_types(data: dict[str, Any], **typed: type) -> None:
+    """Assert specific keys have the expected types.
+
+    Raises ``TypeError`` if a key has the wrong type.
+    """
+    for key, expected_type in typed.items():
+        actual = data.get(key)
+        if not isinstance(actual, expected_type):
+            msg = (
+                f"Key {key!r}: expected {expected_type.__name__}, "
+                f"got {type(actual).__name__} ({actual!r})"
+            )
+            raise TypeError(msg)
+
+
+def _assert_content(data: dict[str, Any], **expected: Any) -> None:
+    """Assert specific key-value pairs match exactly."""
+    for key, expected_val in expected.items():
+        actual = data.get(key)
+        if actual != expected_val:
+            msg = f"Key {key!r}: expected {expected_val!r}, got {actual!r}"
+            raise AssertionError(msg)
+
+
+# =============================================================================
+# RepoState — tracks what's inside a known repo
+# =============================================================================
+
+
+@dataclass
+class RepoState:
+    """Lazy state tracker for a single test repository.
+
+    Created by ``World.need_repo()``.  ``need_*`` methods are
+    idempotent — they create+verify the first time and return cached
+    state every subsequent call.
+
+    Attrs:
+        owner: Repository owner (login name).
+        name: Repository name.
+        data: Raw API response dict from ``create_repo``.
+        branches: ``{branch_name: branch_data}`` — created lazily.
+        labels: ``{label_name: label_data}`` — created lazily.
+        milestones: ``{milestone_title: milestone_data}`` — created lazily.
+        issues: ``{issue_number: issue_data}`` — created lazily.
+        tags: ``{tag_name: tag_data}`` — created lazily.
+    """
+
+    owner: str
+    name: str
+    data: dict[str, Any]
+
+    # Back-reference to the World — needed to call tools through the
+    # pooled server for this repo's owner+scopes.
+    _world: World = field(repr=False)
+    _user: User = field(repr=False)
+    _scopes: list[str] = field(repr=False)
+
+    branches: dict[str, dict[str, Any]] = field(default_factory=dict)
+    labels: dict[str, dict[str, Any]] = field(default_factory=dict)
+    milestones: dict[str, dict[str, Any]] = field(default_factory=dict)
+    issues: dict[int, dict[str, Any]] = field(default_factory=dict)
+    tags: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _files: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    """Files cached by ``{branch}:{path}`` key."""
+
+    async def _server(self) -> ClientSession:
+        """Get the pooled server for this repo's owner+scopes."""
+        return await self._world.server_for(self._user, self._scopes)
+
+    # ── need_* — idempotent create-or-return ──────────────────────────
+
+    async def need_branch(
+        self, name: str, *, old: str = "main"
+    ) -> dict[str, Any]:
+        """Ensure a branch exists.  Creates from *old* if not cached."""
+        if name in self.branches:
+            return self.branches[name]
+
+        mcp = await self._server()
+        result = await mcp.call_tool(
+            "gitea_repo_create_branch",
+            {
+                "owner": self.owner,
+                "repo": self.name,
+                "new_branch_name": name,
+                "old_branch_name": old,
+                "format": "json",
+            },
+        )
+        if _is_error(result):
+            msg = f"need_branch({name!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self.branches[name] = data
+        return data
+
+    async def need_file(
+        self,
+        path: str,
+        content: str,
+        *,
+        branch: str = "main",
+        message: str | None = None,
+    ) -> dict[str, Any]:
+        """Ensure a file exists on *branch*.  Creates if not cached.
+
+        Note the param name ``path`` (not ``filepath``) — the underlying
+        tool uses ``filepath`` (a known naming divergence).
+        """
+        file_key = f"{branch}:{path}"
+        if file_key in self._files:
+            return self._files[file_key]
+
+        import base64
+
+        mcp = await self._server()
+        encoded = base64.b64encode(content.encode()).decode()
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "filepath": path,
+            "content": encoded,
+            "branch": branch,
+            "format": "json",
+        }
+        if message:
+            kwargs["message"] = message
+
+        result = await mcp.call_tool("gitea_repo_create_file", kwargs)
+        if _is_error(result):
+            msg = f"need_file({path!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self._files[file_key] = data
+        return data
+
+    async def need_label(
+        self,
+        name: str,
+        color: str = "#000000",
+        *,
+        description: str | None = None,
+        exclusive: bool = False,
+    ) -> dict[str, Any]:
+        """Ensure a label exists.  Creates if not cached."""
+        if name in self.labels:
+            return self.labels[name]
+
+        mcp = await self._server()
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "name": name,
+            "color": color,
+            "exclusive": exclusive,
+            "format": "json",
+        }
+        if description:
+            kwargs["description"] = description
+
+        result = await mcp.call_tool("gitea_issue_create_label", kwargs)
+        if _is_error(result):
+            msg = f"need_label({name!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self.labels[name] = data
+        return data
+
+    async def need_milestone(
+        self,
+        title: str,
+        *,
+        description: str | None = None,
+        due_date: str | None = None,
+    ) -> dict[str, Any]:
+        """Ensure a milestone exists.  Creates if not cached."""
+        if title in self.milestones:
+            return self.milestones[title]
+
+        mcp = await self._server()
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "title": title,
+            "format": "json",
+        }
+        if description:
+            kwargs["description"] = description
+        if due_date:
+            kwargs["due_date"] = due_date
+
+        result = await mcp.call_tool("gitea_issue_create_milestone", kwargs)
+        if _is_error(result):
+            msg = f"need_milestone({title!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self.milestones[title] = data
+        return data
+
+    async def need_issue(
+        self,
+        title: str,
+        *,
+        body: str | None = None,
+        labels: list[int | str] | None = None,
+        milestone: int | None = None,
+        assignees: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Create an issue and cache it by number.
+
+        Issues are matched by *title* — if an issue with this title
+        already exists in the cache, it is returned.  This avoids
+        re-creating issues when a test is re-run on a persistent
+        throwaway instance.
+        """
+        # Check by title in cached issues
+        for cached in self.issues.values():
+            if cached.get("title") == title:
+                return cached
+
+        # Check if it exists in Gitea (created by a previous run)
+        mcp = await self._server()
+        list_result = await mcp.call_tool(
+            "gitea_issue_list_issues",
+            {"owner": self.owner, "repo": self.name, "format": "json"},
+        )
+        if not _is_error(list_result):
+            try:
+                text = extract_text_content(list_result.content)
+                existing = json.loads(text)
+                if isinstance(existing, list):
+                    for item in existing:
+                        if item.get("title") == title:
+                            self.issues[item["number"]] = item
+                            return cast("dict[str, Any]", item)
+            except (json.JSONDecodeError, AssertionError):
+                pass  # Create fresh
+
+        # Create new issue
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "title": title,
+            "format": "json",
+        }
+        if body:
+            kwargs["body"] = body
+        if labels:
+            kwargs["labels"] = labels
+        if milestone is not None:
+            kwargs["milestone"] = milestone
+        if assignees:
+            kwargs["assignees"] = assignees
+
+        result = await mcp.call_tool("gitea_issue_create_issue", kwargs)
+        if _is_error(result):
+            msg = f"need_issue({title!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self.issues[data["number"]] = data
+        return data
+
+    async def need_tag(
+        self,
+        name: str,
+        *,
+        target: str = "main",
+        message: str | None = None,
+    ) -> dict[str, Any]:
+        """Ensure a tag exists.  Creates if not cached.
+
+        Note: the tool parameter is ``tag_name`` but the API response
+        uses ``name`` — a known naming divergence.
+        """
+        if name in self.tags:
+            return self.tags[name]
+
+        mcp = await self._server()
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "tag_name": name,
+            "target": target,
+            "format": "json",
+        }
+        if message:
+            kwargs["message"] = message
+
+        result = await mcp.call_tool("gitea_repo_create_tag", kwargs)
+        if _is_error(result):
+            msg = f"need_tag({name!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self.tags[name] = data
+        return data
+
+
+# =============================================================================
+# World — server pool + lazy state graph
+# =============================================================================
+
+
+class World:
+    """Test world: shared state + per-test server connections.
+
+    The World persists across test function event loops at module level
+    (``conftest.py`` stores it in ``_world_state``).  State — users,
+    orgs, repos, tokens — is cached once and shared across all tests
+    in the module.  Server connections (``ClientSession``) are loop-bound
+    and recreated per test via ``_begin_session()`` / ``_end_session()``.
+
+    Usage::
+
+        # First test bootstraps:
+        async def test_X(world):
+            # world.start() already called by conftest fixture
+            repo = await world.need_repo(...)  # creates repo (tests tool)
+            mcp = await world.server_for(DEV, SCOPE_WRITE)
+            ...
+
+        # Subsequent tests get cached state:
+        async def test_Y(world):
+            repo = await world.need_repo(...)  # returns instantly
+            mcp = await world.server_for(DEV, SCOPE_WRITE)  # fresh connection
+            ...
+    """
+
+    def __init__(
+        self, gitea_url: str, admin_token: str, server_args: list[str]
+    ) -> None:
+        self._url = gitea_url
+        self._admin_token = admin_token
+        self._server_args = server_args
+
+        # ── Shared state (survives across event loops) ────────────────
+        # Token cache: (user, scopes) key → token string
+        self._token_cache: dict[str, str] = {}
+
+        # State graph nodes
+        self._users: dict[str, dict[str, Any]] = {}
+        self._orgs: dict[str, dict[str, Any]] = {}
+        self._teams: dict[str, dict[str, Any]] = {}
+        self._repos: dict[str, RepoState] = {}
+
+        # Bootstrap flag — start() called once
+        self._bootstrapped: bool = False
+
+        # ── Per-test connections (recreated each _begin_session) ──────
+        self._servers: dict[str, ClientSession] = {}
+        self._exit_stack: AsyncExitStack | None = None
+
+    # ── Per-test session lifecycle ────────────────────────────────────
+
+    def _begin_session(self) -> None:
+        """Create fresh server connections for the current test's event loop.
+
+        Must be called at the start of each test's ``world`` fixture
+        usage.  The previous session's connections are discarded (they
+        belonged to a different event loop).
+        """
+        self._servers = {}
+        self._exit_stack = AsyncExitStack()
+
+    async def _end_session(self) -> None:
+        """Close all server connections for the current test.
+
+        Swallows all cleanup errors — the test result is already
+        determined, and anyio cancel-scope noise, broken resource
+        errors, etc. are expected when tearing down stdio subprocess
+        connections across different asyncio tasks.
+        """
+        if self._exit_stack is None:
+            return
+        try:
+            await self._exit_stack.aclose()
+        except BaseException:
+            pass
+        finally:
+            self._exit_stack = None
+            self._servers = {}
+
+    # ── Bootstrap ─────────────────────────────────────────────────────
+
+    async def start(self) -> None:
+        """Bootstrap: create canonical users, org, team, verify tokens.
+
+        Called once per module (first test).  Uses its own session
+        (``_begin_session`` / ``_end_session``) to manage bootstrap
+        server connections.
+
+        Every creation is also a verification — required keys, types,
+        and content are asserted.  If bootstrap fails, all live tests
+        fail (the test instance is broken).
+        """
+        if self._bootstrapped:
+            return
+
+        self._begin_session()
+
+        try:
+            # ── Step 1: Start admin server ────────────────────────────
+            admin = await self.admin_server()
+
+            # ── Step 2: Create canonical users ────────────────────────
+            for user in ALL_USERS:
+                await self.need_user(user)
+
+            # ── Step 3: Create org ────────────────────────────────────
+            await self.need_org(ORG_NAME,
+                                full_name="Live Test Organization",
+                                description="Bootstrap org for live integration tests")
+            result = await admin.call_tool(
+                "gitea_org_get", {"org": ORG_NAME, "format": "json"}
+            )
+            if _is_error(result):
+                msg = f"Bootstrap: failed to read org '{ORG_NAME}': {_error_text(result)[:300]}"
+                raise AssertionError(msg)
+            org_data = _unwrap(result)
+            _assert_keys(org_data,
+                "id", "username", "name", "full_name", "description",
+                "avatar_url", "location", "website", "visibility",
+                "repo_admin_change_team_access",
+            )
+            _assert_key_types(org_data, id=int, username=str, name=str, visibility=str)
+            _assert_content(org_data, username=ORG_NAME)
+
+            # ── Step 4: Create team ───────────────────────────────────
+            team = await self.need_team(ORG_NAME, TEAM_NAME, permission="write",
+                                        units_map={
+                                            "repo.code": "write",
+                                            "repo.issues": "write",
+                                            "repo.pulls": "write",
+                                        })
+            assert "name" in team, (
+                f"Bootstrap: team response missing 'name' key: {sorted(team.keys())}"
+            )
+            assert team["name"] == TEAM_NAME, (
+                f"Bootstrap: expected team name {TEAM_NAME!r}, got {team.get('name')!r}"
+            )
+
+            # ── Step 5: Verify DEV token round-trip ───────────────────
+            dev_token = await self.token(DEV, SCOPE_WRITE)
+            dev_server = await self._start_server("__verify_dev__", dev_token)
+            current = await dev_server.call_tool(
+                "gitea_user_get_current", {"format": "json"}
+            )
+            if _is_error(current):
+                msg = f"Bootstrap: DEV token get_current failed: {_error_text(current)[:300]}"
+                raise AssertionError(msg)
+            current_data = _unwrap(current)
+            _assert_keys(current_data, "id", "login", "username", "email")
+            _assert_content(current_data, login=DEV.username, username=DEV.username)
+
+            self._bootstrapped = True
+        finally:
+            await self._end_session()
+
+    # ── Server pool (per-test connections) ────────────────────────────
+
+    async def admin_server(self) -> ClientSession:
+        """Get (or start) the admin MCP server for the current session.
+
+        Available for tests that need admin-level operations (e.g.,
+        running cron tasks like ``rebuild_issue_indexer``).
+        """
+        return await self._start_server("__admin__", self._admin_token)
+
+    async def server_for(
+        self, user: User, scopes: list[str]
+    ) -> ClientSession:
+        """Get (or start) an MCP server for *user* with *scopes*.
+
+        The server is keyed by the token string within the current
+        session — two (user, scopes) pairs that produce the same token
+        share the same server connection for the duration of this test.
+        """
+        token = await self.token(user, scopes)
+        key = f"__token__{token[:16]}"
+        if key not in self._servers:
+            await self._start_server(key, token)
+        return self._servers[key]
+
+    async def _start_server(
+        self, key: str, token: str
+    ) -> ClientSession:
+        """Start an MCP server process over stdio in the current loop."""
+        if self._exit_stack is None:
+            _msg = "World._begin_session() must be called before _start_server()"
+            raise RuntimeError(_msg)
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+
+        params = StdioServerParameters(
+            command=self._server_args[0],
+            args=self._server_args[1:],
+            env={
+                **os.environ,
+                "GITEA_URL": self._url,
+                "GITEA_TOKEN": token,
+                "TRANSPORT_TYPE": "stdio",
+            },
+        )
+
+        read, write = await self._exit_stack.enter_async_context(
+            stdio_client(params)
+        )
+        session: ClientSession = await self._exit_stack.enter_async_context(
+            ClientSession(read, write)
+        )
+        await session.initialize()
+        self._servers[key] = session
+        return session
+
+    # ── Token cache (shared across tests) ─────────────────────────────
+
+    async def token(self, user: User, scopes: list[str]) -> str:
+        """Get a cached token for *user* with *scopes*.  Mints on first call."""
+        key = f"{user.username}:{','.join(sorted(scopes))}"
+        if key in self._token_cache:
+            return self._token_cache[key]
+        from tests.live.helpers import create_user_token
+
+        token = await create_user_token(
+            self._url, user.username, user.password, "cached-ci", scopes
+        )
+        self._token_cache[key] = token
+        return token
+
+    # ── State graph: need_* — idempotent create-or-return ─────────────
+
+    async def need_user(self, user: User) -> dict[str, Any]:
+        """Ensure *user* exists on the Gitea instance. Idempotent.
+
+        Uses the admin server to call ``admin_create_user``.  Handles
+        the "already exists" case gracefully (user was created by a
+        previous run on the throwaway test instance).
+        """
+        if user.username in self._users:
+            return self._users[user.username]
+
+        admin = await self.admin_server()
+        result = await admin.call_tool("gitea_admin_create_user", {
+            "username": user.username,
+            "password": user.password,
+            "email": user.email,
+            "must_change_password": False,
+            "format": "json",
+        })
+        if _is_error(result):
+            text = _error_text(result)
+            if "already exists" in text.lower():
+                data = {"username": user.username, "email": user.email}
+                self._users[user.username] = data
+                return data
+            msg = f"Failed to create user '{user.username}': {text[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self._users[user.username] = data
+        return data
+
+    async def need_org(
+        self,
+        username: str,
+        *,
+        full_name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Ensure an organization exists. Idempotent."""
+        if username in self._orgs:
+            return self._orgs[username]
+
+        admin = await self.admin_server()
+        kwargs: dict[str, Any] = {"username": username, "format": "json"}
+        if full_name:
+            kwargs["full_name"] = full_name
+        if description:
+            kwargs["description"] = description
+
+        result = await admin.call_tool("gitea_org_create", kwargs)
+        if _is_error(result):
+            text = _error_text(result)
+            if "already exists" in text.lower():
+                data = {"username": username}
+                self._orgs[username] = data
+                return data
+            msg = f"Failed to create org '{username}': {text[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self._orgs[username] = data
+        return data
+
+    async def need_team(
+        self,
+        org: str,
+        name: str,
+        *,
+        permission: str = "read",
+        units_map: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Ensure a team exists within an organization. Idempotent."""
+        key = f"{org}/{name}"
+        if key in self._teams:
+            return self._teams[key]
+
+        admin = await self.admin_server()
+        kwargs: dict[str, Any] = {
+            "org": org,
+            "name": name,
+            "permission": permission,
+            "format": "json",
+        }
+        if units_map is None:
+            units_map = {
+                "repo.code": "write",
+                "repo.issues": "write",
+                "repo.pulls": "write",
+                "repo.releases": "write",
+            }
+        kwargs["units_map"] = units_map
+
+        result = await admin.call_tool("gitea_org_create_team", kwargs)
+        if _is_error(result):
+            text = _error_text(result)
+            if "already exists" in text.lower() or "conflict" in text.lower():
+                data = {"name": name}
+                self._teams[key] = data
+                return data
+            msg = f"Failed to create team '{name}' in '{org}': {text[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        self._teams[key] = data
+        return data
+
+    async def need_repo(
+        self,
+        owner: str,
+        name: str,
+        *,
+        user: User | None = None,
+        scopes: list[str] | None = None,
+        auto_init: bool = True,
+        description: str | None = None,
+        private: bool = False,
+        branch: str | None = None,
+        old_branch: str = "main",
+        files: dict[str, str] | None = None,
+        labels: dict[str, str] | None = None,
+    ) -> RepoState:
+        """Ensure a repository exists and return its ``RepoState``.
+
+        Idempotent — creates the repo on first call, returns cached
+        ``RepoState`` on every subsequent call.  If *branch*, *files*,
+        or *labels* are provided, those are ensured inside the repo
+        (also idempotent).
+
+        Args:
+            owner: Repository owner login.
+            name: Repository name.
+            user: The ``User`` who owns this repo.  Defaults to looking
+                up *owner* in the canonical user set.
+            scopes: Scopes for the owner's token.  Defaults to
+                ``SCOPE_WRITE``.
+            auto_init: Passed to ``gitea_create_current_user_repo``.
+            description: Optional repo description.
+            private: Whether the repo is private.
+            branch: Optional branch to create after repo creation.
+            old_branch: Source branch for *branch* creation (default "main").
+            files: ``{path: content}`` to create on *branch*.
+            labels: ``{name: color}`` labels to create.
+
+        Returns:
+            ``RepoState`` — the (cached or newly created) repo state.
+        """
+        key = f"{owner}/{name}"
+        if key in self._repos:
+            return self._repos[key]
+
+        # Resolve user and scopes
+        _user: User | None = user
+        if _user is None:
+            for candidate in ALL_USERS:
+                if candidate.username == owner:
+                    _user = candidate
+                    break
+            if _user is None:
+                msg = (
+                    f"Owner '{owner}' is not a canonical test user. "
+                    f"Pass ``user=User(...)`` explicitly."
+                )
+                raise ValueError(msg)
+        _scopes = scopes if scopes is not None else SCOPE_WRITE
+
+        # Ensure the user exists (fail-hard if creation fails)
+        await self.need_user(_user)
+
+        # Get a pooled server for this owner
+        mcp = await self.server_for(_user, _scopes)
+
+        # Purge before create — clean slate even after interrupted runs
+        from tests.live.helpers import purge_repo
+
+        await purge_repo(mcp, owner, name)
+
+        # Create the repo
+        kwargs: dict[str, Any] = {
+            "name": name, "auto_init": auto_init,
+            "private": private, "format": "json",
+        }
+        if description:
+            kwargs["description"] = description
+
+        result = await mcp.call_tool(
+            "gitea_create_current_user_repo", kwargs
+        )
+        if _is_error(result):
+            msg = f"need_repo({key!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        repo_data = _unwrap(result)
+
+        state = RepoState(
+            owner=owner, name=name, data=repo_data,
+            _world=self, _user=_user, _scopes=_scopes,
+        )
+        self._repos[key] = state
+
+        # Create branch + files + labels if requested
+        if branch is not None:
+            await state.need_branch(branch, old=old_branch)
+
+        if files is not None:
+            for path, content in files.items():
+                await state.need_file(
+                    path, content,
+                    branch=branch if branch is not None else "main",
+                )
+
+        if labels is not None:
+            for label_name, color in labels.items():
+                await state.need_label(label_name, color)
+
+        return state
+
+
+# =============================================================================
+# Concern registration (Phase 2+)
+# =============================================================================
+# Stub — will be populated when concern tests are rewritten.
+# Tests will call ``world.register("gitea_repo_get", owner=..., repo=...)
+# .cross_format().shape_keys(...)`` and concern tests will iterate over
+# the registry.

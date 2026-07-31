@@ -3,36 +3,41 @@
 Design decisions
 ----------------
 
-Each test spawns its own MCP server process (``mcp_client`` is a function-scoped
-context manager, not a session fixture).  This is deliberate: server startup
-(fetch spec, convert, apply scope filtering) IS part of the test.  A session-
-scoped factory would skip that path.  The cost is runtime.
+Two server-access patterns are available:
 
-Tests within an act (file) are sequential.  Act I creates users; later acts
-reference them.  ``--dist loadscope`` keeps module tests in the same worker.
-State between sequential tests within a class uses ``pytest.*`` attributes
-(see test_admin.py, test_issues_prs.py).  This is safe because those tests
-are always collected and run together.
+1. **``mcp_client`` context manager** (function-scoped, backward-compatible):
+   Each test spawns its own MCP server process.  Server startup (fetch
+   spec, convert, apply scope filtering) IS part of the test.  The cost
+    is runtime -- ~1.5-2.5s per test.
 
-Every test creates its own token via ``create_user_token()`` (the one httpx
-call in helpers.py).  This exercises the token-creation path and keeps tests
-independent.  Token creation is cheap and the test instance is ephemeral.
+2. **``world`` fixture** (function-scoped, backed by module-level state
+   cache):  A ``World`` object that pools MCP server connections within
+   a single test's event loop and caches state (users, repos, labels,
+   etc.) across tests.  ``need_repo`` creates the repo once and returns
+   the cached ``RepoState`` instantly on subsequent calls — setup is
+   declarative and free after the first test.
 
-Only repos are cleaned up (they accumulate on disk).  Users, orgs, and tokens
-live on a throwaway instance wiped between sessions.
+   Server connections are per-test (loop-bound — ``asyncio`` connections
+   can't be shared across ``function``-scoped test loops).  The speed
+   win comes from eliminating redundant setup tool calls, not from
+   cross-test connection pooling.
+
+Prefer the ``world`` fixture for new and rewritten tests.  The
+``mcp_client`` context manager remains for tests that need a completely
+fresh server (``test_errors.py``).
 
 Fixtures provided
 -----------------
 - ``gitea_url`` (session): the Gitea instance URL
 - ``admin_token`` (session): the admin bearer token from ``.env.dev.local``
 - ``server_args`` (session): command + args to start the MCP server over stdio
-
-The ``mcp_client`` async context manager starts a server process and connects
-to it.  Use it directly in test bodies.
+- ``world`` (function): a ``World`` with lazy state graph + fresh server per test
+- ``mcp_client`` (async context manager): spawn a server, yield a session
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
@@ -47,7 +52,11 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Generator
+    from collections.abc import AsyncIterator
+
+    from tests.live.world import World
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Load credentials
@@ -115,7 +124,68 @@ def server_args() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# MCP client context manager
+# World fixture — function-scoped, backed by module-level state cache
+# ---------------------------------------------------------------------------
+# Design note: ``asyncio_default_test_loop_scope=function`` means each
+# test runs in its own event loop.  Server connections (stdio subprocess
+# + ClientSession) are loop-bound and can't be shared across test loops.
+# But the World's *state* (users, repos, tokens, labels) is pure Python
+# data — we cache it in module-level storage so ``need_repo``, ``need_*``
+# return instantly on subsequent calls.
+#
+# Each test gets a fresh World instance with its own server connection,
+# but the state is shared.  Setup becomes declarative and free after the
+# first test that creates a given state node.
+
+# Module-level state cache — survives across test function event loops.
+_world_state: World | None = None
+_world_bootstrapped: bool = False
+
+
+@pytest.fixture
+async def world(
+    gitea_url: str, admin_token: str, server_args: list[str],
+) -> AsyncIterator[World]:
+    """Function-scoped World with lazy state graph.
+
+    The underlying state (users, orgs, repos, tokens) is cached at module
+    level — created once and shared across all tests in this module.
+    Each test gets its own server connection via ``_begin_session()``.
+
+    Bootstrap (user/org/team creation + token minting) runs once on the
+    first call.  Subsequent tests skip this — the state is already in
+    the cache.
+    """
+    global _world_state, _world_bootstrapped  # noqa: PLW0603
+
+    from tests.live.world import World
+
+    if _world_state is None:
+        _world_state = World(gitea_url, admin_token, server_args)
+
+    w = _world_state
+
+    # Bootstrap once — users, orgs, teams, token round-trip
+    if not _world_bootstrapped:
+        if not _gitea_reachable():
+            pytest.skip("Live Gitea instance not available.")
+
+        logger.info("World — bootstrapping users, org, team (once per module)")
+        await w.start()
+        _world_bootstrapped = True
+        logger.info("World ready — %d users, %d orgs bootstrapped",
+                     len(w._users), len(w._orgs))
+
+    # Begin per-test session — fresh server connections in this loop
+    w._begin_session()
+    try:
+        yield w
+    finally:
+        await w._end_session()
+
+
+# ---------------------------------------------------------------------------
+# MCP client context manager (backward-compatible, per-test server)
 # ---------------------------------------------------------------------------
 
 
@@ -157,6 +227,9 @@ async def mcp_client(
     The context manager handles cleanup gracefully even when the test
     inside it raises an exception — anyio cancel-scope noise on teardown
     is suppressed.
+
+    For new tests, prefer the ``world`` fixture — state is cached across
+    tests and setup is declarative.
     """
     with _suppress_anyio_cleanup():
         async with stdio_client(
@@ -174,101 +247,3 @@ async def mcp_client(
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 yield session
-
-
-# ---------------------------------------------------------------------------
-# Backward-compat fixtures (used by test_diff_endpoint.py)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def live_config(gitea_url: str, admin_token: str) -> Any:
-    from tests.conftest import SimpleConfig
-
-    return SimpleConfig(url=gitea_url, token=admin_token, log_level="ERROR")
-
-
-_LIVE_SUFFIX: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_LIVE_OWNER: str = f"bot-{_LIVE_SUFFIX}"
-_LIVE_OWNER_EMAIL: str = f"bot-{_LIVE_SUFFIX}@localhost.local"
-_LIVE_OWNER_PASS: str = "bot-pass"
-_LIVE_REPO: str = f"live-test-{_LIVE_SUFFIX}"
-_LIVE_BRANCH: str = "feature/test-content"
-
-
-def _create_test_data() -> tuple[int, str, str, str]:
-    """Create test user + repo + PR for test_diff_endpoint.py (legacy pattern)."""
-    import base64
-
-    headers = {"Authorization": f"token {LIVE_TOKEN}"}
-    api = httpx.Client(base_url=str(LIVE_URL), headers=headers, timeout=15)
-    try:
-        r = api.get(f"/api/v1/users/{_LIVE_OWNER}")
-        if r.status_code == 404:
-            r = api.post(
-                "/api/v1/admin/users",
-                json={
-                    "username": _LIVE_OWNER,
-                    "email": _LIVE_OWNER_EMAIL,
-                    "password": _LIVE_OWNER_PASS,
-                    "must_change_password": False,
-                },
-            )
-            r.raise_for_status()
-        sudo = {**headers, "sudo": _LIVE_OWNER}
-        r = api.get(f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}")
-        if r.status_code == 404:
-            r = api.post(
-                "/api/v1/user/repos",
-                json={
-                    "name": _LIVE_REPO,
-                    "auto_init": True,
-                    "private": False,
-                    "description": "Live integration test repository",
-                },
-                headers=sudo,
-            )
-            r.raise_for_status()
-        content_b64: str = base64.b64encode(
-            b"## Test content\n\nCreated by live integration tests.\n"
-        ).decode()
-        r = api.post(
-            f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}/contents/test-content.md",
-            json={
-                "content": content_b64,
-                "message": "Add test content for live integration tests",
-                "branch": "main",
-                "new_branch": _LIVE_BRANCH,
-            },
-            headers=sudo,
-        )
-        r.raise_for_status()
-        r = api.post(
-            f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}/pulls",
-            json={
-                "base": "main",
-                "head": _LIVE_BRANCH,
-                "title": "Test PR for live integration tests",
-                "body": "Created by the live integration test fixture.",
-            },
-            headers=sudo,
-        )
-        r.raise_for_status()
-        pr_number: int = r.json()["number"]
-        return pr_number, _LIVE_OWNER, _LIVE_REPO, _LIVE_BRANCH
-    finally:
-        api.close()
-
-
-def _destroy_test_data() -> None:
-    """Clean up test repo created by _create_test_data (legacy pattern)."""
-    headers = {"Authorization": f"token {LIVE_TOKEN}", "sudo": _LIVE_OWNER}
-    with httpx.Client(base_url=str(LIVE_URL), headers=headers, timeout=15) as api:
-        api.delete(f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}")
-
-
-@pytest.fixture(scope="module")
-def live_test_data() -> Generator[tuple[int, str, str, str], None, None]:
-    data = _create_test_data()
-    yield data
-    _destroy_test_data()

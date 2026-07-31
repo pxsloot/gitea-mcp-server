@@ -10,12 +10,11 @@ helpers to parse and return structured data.
 
 Design decisions
 ----------------
-- **Token per test**: Every test that needs a user token calls
-  ``create_user_token()`` independently.  This exercises the token-creation
-  path and keeps tests self-contained.  Token creation is cheap and the test
-  instance is ephemeral.
-- **No cleanup for tokens/users/orgs**: The Forgejo instance is a throwaway.
-  Only repos are deleted (they accumulate on disk otherwise).
+- **Cached tokens via world.get_token()**: Tokens are cached per (user, scopes)
+  key — one minted per combination per suite run.  ``create_user_token()`` is
+  called by ``world.get_token()`` on first use, exercising the token-creation
+  path at least once per combination while keeping logs manageable.
+- **No cleanup for tokens/users/orgs**: The Forgejo instance is a throwaway. \n  Only repos are deleted (they accumulate on disk otherwise).
 - **One httpx call**: ``create_user_token()`` is the only function that uses
   raw HTTP.  It uses Basic Auth against Forgejo's ``POST /users/{name}/tokens``
   endpoint, which requires password-based authentication (a bearer token
@@ -159,9 +158,8 @@ async def ensure_user(
                 f"Original error: {text[:300]}"
             )
             raise AssertionError(pytest_missing) from None
-        raise AssertionError(
-            f"Failed to create user '{username}': {text[:300]}"
-        ) from None
+        msg = f"Failed to create user '{username}': {text[:300]}"
+        raise AssertionError(msg) from None
     return _unwrap(result)
 
 
@@ -211,9 +209,8 @@ async def ensure_org(
         text = _error_text(result)
         if "already exists" in text.lower():
             return {"username": username}
-        raise AssertionError(
-            f"Failed to create org '{username}': {text[:300]}"
-        ) from None
+        msg = f"Failed to create org '{username}': {text[:300]}"
+        raise AssertionError(msg) from None
     return _unwrap(result)
 
 

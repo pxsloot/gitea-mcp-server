@@ -96,15 +96,19 @@ tests/
 │   └── ...
 ├── live/
 │   ├── __init__.py
-│   ├── conftest.py         # Dotenv loading, MCPServerFactory, mcp_factory, admin_mcp
+│   ├── conftest.py         # Dotenv loading, mcp_client CM, session fixtures
 │   ├── helpers.py          # Tool-based helpers: create_user, create_repo, …
-│   ├── test_admin.py       # ACT I: Admin creates users, orgs, teams
-│   ├── test_repos_branches_files.py  # ACT II: Repo owner workflow
-│   ├── test_issues_prs.py            # ACT III: Contributor workflow
-│   ├── test_scope_filtering.py       # ACT IV: Token scope enforcement
-│   ├── test_formatting.py            # ACT V: Output formatting & pagination
-│   ├── test_errors.py                # ACT VI: Error handling
-│   └── test_diff_endpoint.py         # Legacy: diff endpoint transport tests
+│   ├── world.py            # Shared test identities + token cache
+│   ├── assertions.py       # Shape/content/cross-format assertion helpers
+│   ├── test_world_setup.py      # Phase 1: Bootstraps 4 users, org, team
+│   ├── test_repo_workflow.py    # Phase 2a: Repos, branches, files, tags
+│   ├── test_issue_workflow.py   # Phase 2b: Issues, labels, milestones, search
+│   ├── test_pr_workflow.py      # Phase 2c: PRs, diff download, review comments
+│   ├── test_cross_format.py     # Phase 3a: Format equivalence edge cases
+│   ├── test_discovery.py        # Phase 3b: Synthetic tools live
+│   ├── test_resources.py        # Phase 3c: list_resources, read_resource
+│   ├── test_scope.py            # Phase 4a: Token scope enforcement
+│   └── test_errors.py           # Phase 4b: Error handling through transport
 ```
 
 ### Source-to-Test Mapping
@@ -331,88 +335,136 @@ launch the MCP server binary over stdio, and call tools through the raw MCP SDK
 scope-limited tokens (``POST /users/{name}/tokens``) which requires Basic Auth
 with a password.
 
-**Design**: The suite is split by **actor role** (workflows), not by API domain:
+**Design**: The suite is split by **concern** with a **bootstrapped world**
+that all tests share.  Two server-access patterns are available:
 
 ```
 tests/live/
-├── conftest.py              # Session fixtures, mcp_client() context manager
-├── helpers.py               # Tool-based helpers (create_user, create_repo, …)
-├── test_admin.py            # ACT I: Admin bootstraps users, orgs, teams
-├── test_repos_branches_files.py  # ACT II: Repo owner workflow
-├── test_issues_prs.py            # ACT III: Contributor workflow (issues, PRs)
-├── test_scope_filtering.py       # ACT IV: Token scope enforcement
-├── test_formatting.py            # ACT V: Output formatting & pagination
-├── test_errors.py                # ACT VI: Error handling
-└── test_diff_endpoint.py         # Legacy: diff endpoint transport tests
+├── conftest.py              # Session fixtures, world (pooled), mcp_client (per-test)
+├── helpers.py               # Tool-based helpers (purge_repo, create_user_token)
+├── world.py                 # World (server pool + lazy state graph) + identities
+├── assertions.py            # Shape/content/cross-format assertion helpers
+├── test_world_setup.py      # Phase 1: Bootstraps 4 users, org, team (→ World.start())
+├── test_repo_workflow.py    # Phase 2a: Repos, branches, files, tags, commit status
+├── test_issue_workflow.py   # Phase 2b: Labels, milestones, issues, comments, search
+├── test_pr_workflow.py      # Phase 2c: PRs, diff download, review comments
+├── test_cross_format.py     # Phase 3a: Format equivalence edge cases
+├── test_discovery.py        # Phase 3b: Synthetic tools (search_tools, tool_info, …)
+├── test_resources.py        # Phase 3c: list_resources, read_resource
+├── test_scope.py            # Phase 4a: Token scope enforcement
+└── test_errors.py           # Phase 4b: Error handling through transport
 ```
 
-**Key design decisions** (documented because the patterns are intentional,
-not accidental):
+**Server-access patterns**:
 
-1. **One MCP server per test, not per token.** Each test function spawns its
-   own server via ``mcp_client()``.  This is deliberate: server startup (fetch
-   spec, convert, apply scope filters) IS part of the test.  A session-scoped
-   factory would skip that path.  The cost is runtime — the suite takes minutes,
-   not seconds.
+1. **``mcp_client`` context manager** (backward-compatible).  Each test
+   function spawns its own server process over stdio.  Used by ``test_errors.py``
+   (fresh-server semantics needed) and by existing tests not yet rewritten
+   to use the World.  Server startup is tested each time.
 
-2. **Tests within an act are sequential.** Act I creates users that later acts
-   reference.  ``--dist loadscope`` keeps module tests in the same worker.
-   State between sequential tests within a class uses ``pytest.*`` attributes
-   (e.g., ``pytest.bug_issue_index``).  This is safe because those tests are
-   always collected and run together.
+2. **``world`` fixture** (recommended for new tests).  A session-scoped
+   ``World`` object that pools **one MCP server per token scope**.  The
+   admin server starts at fixture setup; user servers start on first
+   ``server_for(user, scopes)`` call.  Server startup is tested **once per
+   scope** — not once per test function.  This drops server process spawns
+   from ~86 to ~4, saving roughly two minutes.
 
-3. **One token per test.** Every test that needs a user token calls
-   ``create_user_token()``.  This exercises the token-creation path (the one
-   httpx call) and keeps tests independent.  Token creation is cheap and the
-   test instance is ephemeral.
+   The ``World`` also provides a **lazy state graph** with idempotent
+   ``need_*`` methods:
 
-4. **Only repos are cleaned up, not users or orgs.** Repos accumulate on disk
-   if left behind.  Users, orgs, and tokens live on a throwaway test instance
-   that is wiped between sessions.  Each test file's cleanup class deletes its
-   repos.
+   - ``world.need_user(user)`` — create a user (or return cached)
+   - ``world.need_org(name)`` — create an org (or return cached)
+   - ``world.need_team(org, name)`` — create a team (or return cached)
+   - ``world.need_repo(owner, name)`` — create a repo and return a ``RepoState``
+   - ``world.server_for(user, scopes)`` — get a pooled server for that token
 
-5. **Fail-hard, not idempotent.** Live tests must surface failures, not
-   silently tolerate dirty state.  Cleanup must ensure a clean slate — each
-   scenario's setup calls ``purge_repo()`` (delete-before-create) so leftover
-   repos from an interrupted previous run don't cause spurious passes.
-   Helpers do NOT handle "already exists" / "conflict" — those are test bugs
-   or broken cleanup.
+   ``RepoState`` tracks what's inside a known repo (branches, labels,
+   milestones, issues, tags) and provides idempotent ``need_branch``,
+   ``need_file``, ``need_label``, ``need_milestone``, ``need_issue``,
+   ``need_tag`` methods.  The first call creates + verifies the tool;
+   subsequent calls return cached state.
 
-6. **State-check before transform.** Before testing a search or format
-   operation, verify the underlying state via a direct list/read call
-   (e.g. ``gitea_issue_list_issues`` before ``gitea_issue_search_issues``).
-   This separates "is the data there?" from "does this operation work?"
+**Key design decisions**:
 
-7. **Parallel-safe via ``xdist_group``.** Each scenario file carries a
+1. **Server pooling — test once, reuse.**  The ``world`` fixture pools
+   one MCP server per token scope (admin, DEV write, RO read-only,
+   LIMITED partial).  Server startup (spec fetch, convert, scope filtering)
+   is tested once per scope.  This is sufficient — re-testing startup
+   86 times adds no coverage, only runtime.
+
+2. **Setup is a test once.**  ``world.need_repo("dev", "x")`` calls
+   ``gitea_create_current_user_repo`` the first time (testing it through
+   the full transport stack).  Subsequent calls return the cached
+   ``RepoState`` without re-creating anything.  The creation path is
+   tested exactly once per unique state node.
+
+3. **Cached tokens via ``World.token()`` / ``get_token()``.**  Tokens
+   are cached per (user, scopes) key — one minted per combination per
+   suite run.  This exercises the token-creation path at least once per
+   combination while keeping Gitea logs manageable.  The ``World.token()``
+   method and the module-level ``get_token()`` function share the same
+   cache.
+
+4. **Only repos are cleaned up.**  Repos accumulate on disk if left
+   behind.  Users, orgs, and tokens live on a throwaway test instance
+   wiped between sessions.  ``purge_repo()`` (delete-before-create)
+   runs in ``need_repo()`` to ensure a clean slate even after an
+   interrupted previous run.
+
+5. **Tests within a file are sequential.**  ``--dist loadscope`` keeps
+   module tests in the same worker.  State between sequential tests
+   within a class can use ``pytest.*`` attributes (for tests not yet
+   using the World) or ``RepoState`` (for tests using the World).
+
+6. **Parallel-safe via ``xdist_group``.**  Each scenario file carries a
    module-level ``pytestmark = pytest.mark.xdist_group("live-act-<N>")``.
    Tests within a file run sequentially on one worker; different scenarios
    can run in parallel across workers.  Combined with ``--dist loadscope``
    this gives scenario-level isolation without serializing the whole suite.
+   The ``world`` fixture is session-scoped per xdist worker — each worker
+   gets its own pool.
+
+7. **Cross-format equivalence.**  The ``assert_formats_equivalent`` helper
+   calls the same tool with ``format=json`` and ``format=markdown``, then
+   verifies that key leaf values from the JSON result appear in the markdown
+   output.  This proves that the two formats carry equivalent information
+   through the real transport — principle 5 of the live test design.
+
+8. **Shape/content assertions.**  Every tool call in a world-setup or
+   workflow test asserts not just "no error" but structural correctness:
+   required keys are present (``assert_keys``), key types are correct
+   (``assert_key_types``), and specific values match (``assert_content``).
+   See ``tests/live/assertions.py``.
 
 **Infrastructure**:
 
 - ``conftest.py`` provides ``live_available`` (skipif marker),
   ``gitea_url`` / ``admin_token`` / ``server_args`` (session fixtures),
-  and ``mcp_client(gitea_url, server_args, token)`` (async context manager
-  that spawns a server and yields an ``mcp.ClientSession``).
-- ``conftest.py`` also provides ``live_test_data`` (module fixture, used
-  only by the legacy ``test_diff_endpoint.py``).
-- ``helpers.py`` provides tool-based helper functions: ``ensure_user``,
-  ``ensure_org`` (create-or-find with clear error messages), ``create_repo``,
-  ``create_issue``, ``create_branch``, ``create_tag``, ``create_file``,
-  ``create_label``, ``create_milestone``, ``add_comment``,
-  ``create_pull_request``, ``create_commit_status``, ``delete_repo``,
-  ``purge_repo`` (delete-before-create pre-cleanup), and
-  ``create_user_token()`` (the one httpx call).
+  ``world`` (session-scoped World with pooled servers and lazy state graph),
+  and ``mcp_client(gitea_url, server_args, token)`` (per-test async context
+  manager, backward-compatible).
+- ``world.py`` defines the ``World`` class (server pool, lazy state graph,
+  idempotent ``need_*`` methods), ``RepoState`` (per-repo state tracker),
+  the canonical test identities (``DEV``, ``PEER``, ``RO``, ``LIMITED``),
+  scope constants (``SCOPE_WRITE``, ``SCOPE_READ``, ``SCOPE_LIMITED``),
+  org/team names, and the backward-compatible ``get_token()`` function.
+- ``assertions.py`` provides reusable shape/content/cross-format assertion
+  helpers: ``assert_keys``, ``assert_key_types``, ``assert_content``,
+  ``assert_result_ok``, ``assert_formats_equivalent``.
+- ``helpers.py`` provides tool-based helper functions:
+  ``create_user_token()`` (the one httpx call), ``purge_repo()``,
+  ``delete_repo()``, plus legacy helpers (``create_repo``, ``create_issue``,
+  etc.) used by tests not yet rewritten to use the World.
 
 **Bug regressions caught live**:
 
-| Regression | File | How |
-|------------|------|-----|
-| Commit status wrong state enum | ``test_repos_branches_files`` | Setting ``state=pending`` on a commit |
-| Param naming divergence (``filepath`` vs ``file_path``) | ``test_repos_branches_files`` | Calling ``gitea_repo_create_file`` with ``filepath`` |
-| Param naming divergence (``tag_name`` vs ``name``) | ``test_repos_branches_files`` | ``gitea_repo_create_tag`` accepts ``tag_name`` but response uses ``name`` |
-| Empty list renders ``_(empty)_`` | ``test_formatting`` | Fixed in ``_format_list_as_markdown`` — was ``*None*``
+| Regression | Where caught | How |
+|------------|-------------|-----|
+| Commit status wrong state enum | ``test_repo_workflow.py`` | Setting ``state=pending`` on a commit |
+| Param naming divergence (``filepath`` vs ``file_path``) | ``test_repo_workflow.py`` | Calling ``gitea_repo_create_file`` with ``filepath`` |
+| Param naming divergence (``tag_name`` vs ``name``) | ``test_repo_workflow.py`` | ``gitea_repo_create_tag`` accepts ``tag_name`` but response uses ``name`` |
+| Empty list renders ``_(empty)_`` | ``test_cross_format.py`` | Fixed in ``_format_list_as_markdown`` — was ``*None*``
+| Output validation error for text/plain diff | ``test_pr_workflow.py`` | Raw diff through ``gitea_repo_download_pull_diff_or_patch`` |
 
 **Prerequisite**: A running Gitea instance with credentials in
 ``.env.dev.local`` (written by ``gitea_dev_start.sh``).

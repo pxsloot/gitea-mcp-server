@@ -22,8 +22,6 @@ Design decisions
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from tests.helpers.mcp_results import extract_text_content
@@ -32,10 +30,7 @@ from tests.live.conftest import live_available
 from tests.live.helpers import delete_repo
 from tests.live.world import DEV, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-workflow-pr")
-
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_REPO = f"live-pr-{_WORKER}"
+_REPO = "live-pr-local"
 _BRANCH = "feature/pr-content"
 _PR_FILE = "pr-feature.py"
 _PR_BODY = """# PR feature

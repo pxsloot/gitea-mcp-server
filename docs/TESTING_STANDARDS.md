@@ -344,7 +344,8 @@ tests/live/
 ├── helpers.py               # Tool-based helpers (purge_repo, create_user_token)
 ├── world.py                 # World (server pool + lazy state graph) + identities
 ├── assertions.py            # Shape/content/cross-format assertion helpers
-├── test_world_setup.py      # Phase 1: Bootstraps 4 users, org, team (→ World.start())
+├── test_meta.py             # Metatests: bootstrap-once, cleanup verification
+├── test_world_setup.py      # Phase 1: Error-path tests for bootstrap
 ├── test_repo_workflow.py    # Phase 2a: Repos, branches, files, tags, commit status
 ├── test_issue_workflow.py   # Phase 2b: Labels, milestones, issues, comments, search
 ├── test_pr_workflow.py      # Phase 2c: PRs, diff download, review comments
@@ -359,15 +360,16 @@ tests/live/
 
 1. **``mcp_client`` context manager** (backward-compatible).  Each test
    function spawns its own server process over stdio.  Used by ``test_errors.py``
-   (fresh-server semantics needed) and by existing tests not yet rewritten
-   to use the World.  Server startup is tested each time.
+   (fresh-server semantics needed).  Server startup is tested each time.
 
-2. **``world`` fixture** (recommended for new tests).  A session-scoped
-   ``World`` object that pools **one MCP server per token scope**.  The
-   admin server starts at fixture setup; user servers start on first
-   ``server_for(user, scopes)`` call.  Server startup is tested **once per
-   scope** — not once per test function.  This drops server process spawns
-   from ~86 to ~4, saving roughly two minutes.
+2. **``world`` fixture** (recommended).  A session-scoped ``World`` object
+   that pools **one MCP server per token scope per session**.  The admin
+   server starts at fixture setup; user servers start on first
+   ``server_for(user, scopes)`` call.  With
+   ``asyncio_default_test_loop_scope = session`` (set in ``pyproject.toml``),
+   all tests share one event loop, so server connections live
+   across all modules — server startup is tested **once per session**,
+   not once per module or per test function.
 
    The ``World`` also provides a **lazy state graph** with idempotent
    ``need_*`` methods:
@@ -411,18 +413,21 @@ tests/live/
    runs in ``need_repo()`` to ensure a clean slate even after an
    interrupted previous run.
 
-5. **Tests within a file are sequential.**  ``--dist loadscope`` keeps
-   module tests in the same worker.  State between sequential tests
-   within a class can use ``pytest.*`` attributes (for tests not yet
-   using the World) or ``RepoState`` (for tests using the World).
+5. **Sequential execution — shared World.**  The suite runs
+   sequentially (no xdist).  One ``World`` fixture (session-scoped)
+   serves all test modules.  ``World.start()`` bootstraps users, org,
+   and team exactly once.  ``world.bootstrap_count`` is asserted to be
+   1 by a metatest.  State between sequential tests within a class uses
+   ``RepoState`` (the recommended pattern) or ``pytest.*`` attributes
+   (legacy, being phased out).
 
-6. **Parallel-safe via ``xdist_group``.**  Each scenario file carries a
-   module-level ``pytestmark = pytest.mark.xdist_group("live-act-<N>")``.
-   Tests within a file run sequentially on one worker; different scenarios
-   can run in parallel across workers.  Combined with ``--dist loadscope``
-   this gives scenario-level isolation without serializing the whole suite.
-   The ``world`` fixture is session-scoped per xdist worker — each worker
-   gets its own pool.
+6. **Async leak detection.**  An autouse fixture
+   ``_detect_async_leaks`` in ``tests/conftest.py`` runs after every
+   test.  It checks for new running asyncio tasks and fails the test
+   if any are found (skipping intentionally long-lived tasks named
+   ``world-server-*``).  Combined with the existing
+   ``_reset_module_contexts`` fixture (ContextVar reset), this guards
+   against state leakage with session-scoped event loops.
 
 7. **Cross-format equivalence.**  The ``assert_formats_equivalent`` helper
    calls the same tool with ``format=json`` and ``format=markdown``, then
@@ -451,10 +456,10 @@ tests/live/
 - ``assertions.py`` provides reusable shape/content/cross-format assertion
   helpers: ``assert_keys``, ``assert_key_types``, ``assert_content``,
   ``assert_result_ok``, ``assert_formats_equivalent``.
-- ``helpers.py`` provides tool-based helper functions:
+- ``helpers.py`` provides the minimal external helpers:
   ``create_user_token()`` (the one httpx call), ``purge_repo()``,
-  ``delete_repo()``, plus legacy helpers (``create_repo``, ``create_issue``,
-  etc.) used by tests not yet rewritten to use the World.
+  ``delete_repo()``.  All other tool calls (create_repo, create_branch,
+  etc.) are handled by ``RepoState.need_*`` methods.
 
 **Bug regressions caught live**:
 
@@ -488,7 +493,7 @@ uv run pytest tests/live/ -v    # → all skipped
 - **pytest-asyncio**: Async test support (`asyncio_mode = "auto"`)
 - **pytest-mock**: Mocking via `mocker` fixture
 - **pytest-cov**: Coverage measurement
-- **pytest-xdist**: Parallel test execution (`-n auto --dist loadscope` enabled by default)
+- **pytest-xdist**: Parallel test execution (available but not used by default — live tests run sequentially)
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
 - **hypothesis**: Property-based testing for converter invariants — ``$ref`` resolution, vendor-extension stripping, response wrapping, round-trip completeness, parameter preservation, and crash-safety on malformed input
@@ -1143,16 +1148,13 @@ def minimal_spec():
 ## Running Tests
 
 ```bash
-# Run all tests (parallel by default: -n auto --dist loadscope)
+# Run all tests (sequential by default)
 uv run pytest
-
-# Run sequentially (disable parallel workers for debugging)
-uv run pytest -n 0
 
 # Run with verbose output
 uv run pytest -v
 
-# Run specific test file (parallel still active; single file goes to one worker)
+# Run specific test file
 uv run pytest tests/unit/test_client.py
 
 # Run specific test by name
@@ -1161,52 +1163,40 @@ uv run pytest -k "test_async_operation"
 # Run with coverage
 uv run pytest --cov=gitea_mcp_server
 
-# Stop on first failure (kills all workers)
+# Stop on first failure
 uv run pytest -x
 
 # Run a specific module area
 uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/integration/
+
+# Live tests (require Gitea instance)
+uv run pytest tests/live/
 ```
 
-### Parallel Execution with pytest-xdist
+### Sequential Design
 
-The test suite runs with ``-n auto --dist loadscope`` by default (configured
-in ``pyproject.toml``). This distributes tests across CPU cores while keeping
-session-scoped fixtures in one worker per module:
+The suite runs sequentially by default (no ``xdist`` in ``addopts``).
+This keeps the live test infrastructure simple — one session-scoped
+``World`` serves all test modules, one event loop, no inter-worker
+coordination.
 
-- ``--dist loadscope`` groups tests by module scope, so session-scoped
-  fixtures (HTTP server, OTel exporter) are created once per worker instead
-  of once per test.
-- Each worker gets its own event loop via the session-scoped
-  ``event_loop`` fixture in ``tests/conftest.py``.
-- To debug a single file without the parallel overhead, pass ``-n 0``:
-  ``uv run pytest tests/unit/test_foo.py -xvs -n 0``.
+To run with parallel workers for faster execution:
 
-Design notes for session-scoped fixtures under xdist:
-
-- **Avoid inter-worker state**: Session fixtures must not depend on state
-  shared across workers (files, ports, global singletons). The ``http_port=0``
-  pattern (OS-assigned port) keeps each worker's HTTP server isolated.
-- **Avoid module-level imports** with side effects that execute at import
-  time — each worker re-imports the test modules.
-- **``asyncio_default_fixture_loop_scope = "session"``**: This setting in
-  ``pyproject.toml`` matches the session-scoped ``event_loop`` fixture in
-  ``tests/conftest.py``. Without it, xdist workers would each create
-  per-function event loops, defeating the session-scoped loop. Async
-  fixtures that need a per-function loop should set
-  ``loop_scope="function"`` explicitly.
+```bash
+uv run pytest -n auto
+```
 
 ### Timeout Safety
 
 The suite uses ``pytest-timeout`` with ``--timeout=120 --timeout_method=thread``
 (configured in ``pyproject.toml``). Any test hanging longer than 2 minutes is
 killed automatically, preventing a single stuck test from blocking the whole
-run (especially important with xdist workers).
+run.
 
 Use ``@pytest.mark.timeout(N)`` to override per-test — shorter for
 known-fast tests, longer for slow ones. The ``thread`` method is compatible
-with xdist and asyncio (``fork`` would break the event loop).
+with asyncio (``fork`` would break the event loop).
 
 ```python
 # Override timeout for a specific test

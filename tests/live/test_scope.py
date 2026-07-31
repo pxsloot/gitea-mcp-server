@@ -24,9 +24,6 @@ from tests.helpers.mcp_results import extract_text_content
 from tests.live.conftest import live_available
 from tests.live.world import DEV, RO, SCOPE_READ, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-scope")
-
-
 # ---------------------------------------------------------------------------
 # Tool visibility — list_tools + search_tools
 # ---------------------------------------------------------------------------

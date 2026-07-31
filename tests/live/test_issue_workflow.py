@@ -12,11 +12,11 @@ are idempotent: create + verify once, return cached state thereafter.
 Design decisions
 ----------------
 - **Sequential tests within classes**: Issue creation runs before
-  comment/edit/search tests.  ``--dist loadscope`` keeps module tests
-  in the same worker.  ``RepoState`` tracks issue numbers internally.
+   comment/edit/search tests.  ``RepoState`` tracks issue numbers internally.
 - **Search indexer**: ``TestIssueSearch`` uses ``world.admin_server()``
-  to call ``gitea_admin_cron_run`` and rebuild the bleve index, then
-  waits 4s.  No new server spawn needed — admin server is already pooled.
+   to call ``gitea_admin_cron_run`` and rebuild the bleve index, then
+   polls for results instead of a hard ``sleep(4)``.  No new server
+   spawn needed — admin server is already pooled.
 - **Cleanup**: ``TestCleanup`` deletes the repo at end.
 """
 
@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
 import pytest
 
@@ -34,10 +33,7 @@ from tests.live.conftest import live_available
 from tests.live.helpers import delete_repo
 from tests.live.world import DEV, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-workflow-issue")
-
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_REPO = f"live-issues-{_WORKER}"
+_REPO = "live-issues-local"
 _LABEL_BUG = "bug"
 _LABEL_FEATURE = "feature"
 _MILESTONE = "v1.0"
@@ -196,16 +192,25 @@ class TestIssueSearch:
         )
         assert not r.isError, f"Failed to rebuild indexer: {r}"
 
-        await asyncio.sleep(4)
-
+        # Poll until the search index picks up the issue (up to 8s)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_issue_search_issues",
-            {"q": "Safari", "state": "all", "format": "json"},
-        )
+        for _ in range(16):
+            result = await mcp.call_tool(
+                "gitea_issue_search_issues",
+                {"q": "Safari", "state": "all", "format": "json"},
+            )
+            if not result.isError:
+                text = extract_text_content(result.content)
+                if text != "[]":
+                    data = json.loads(text)
+                    if isinstance(data, list) and len(data) > 0:
+                        break
+            await asyncio.sleep(0.5)
+        else:
+            pytest.fail("Search did not find 'Safari' after 8s of polling")
+
         assert not result.isError
         text = extract_text_content(result.content)
-        assert text != "[]", f"Search returned empty for 'Safari': {text[:200]}"
         data = json.loads(text)
         assert isinstance(data, list), f"Expected JSON array, got {type(data)}"
         assert len(data) > 0, "Search returned zero results for 'Safari'"

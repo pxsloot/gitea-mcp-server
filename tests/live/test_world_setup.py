@@ -29,9 +29,6 @@ from tests.live.world import (
     World,
 )
 
-pytestmark = pytest.mark.xdist_group("live-world-setup")
-
-
 # ---------------------------------------------------------------------------
 # Error-path: team creation without required units_map
 # ---------------------------------------------------------------------------

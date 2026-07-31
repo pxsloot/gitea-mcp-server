@@ -6,37 +6,29 @@ Design decisions
 Two server-access patterns are available:
 
 1. **``mcp_client`` context manager** (function-scoped, backward-compatible):
-   Each test spawns its own MCP server process.  Server startup (fetch
-   spec, convert, apply scope filtering) IS part of the test.  The cost
-    is runtime -- ~1.5-2.5s per test.
+   Each test spawns its own MCP server process.
 
-2. **``world`` fixture** (function-scoped, backed by module-level state
-   cache):  A ``World`` object that pools MCP server connections within
-   a single test's event loop and caches state (users, repos, labels,
-   etc.) across tests.  ``need_repo`` creates the repo once and returns
-   the cached ``RepoState`` instantly on subsequent calls — setup is
-   declarative and free after the first test.
+2. **``world`` fixture** (session-scoped):  A ``World`` object with pooled
+   MCP servers and lazy state graph.  With ``asyncio_default_test_loop_scope
+   = session``, all tests share one event loop, so server connections live
+   across all modules.  ``need_repo`` creates the repo once and returns
+   the cached ``RepoState`` instantly on subsequent calls.
 
-   Server connections are per-test (loop-bound — ``asyncio`` connections
-   can't be shared across ``function``-scoped test loops).  The speed
-   win comes from eliminating redundant setup tool calls, not from
-   cross-test connection pooling.
-
-Prefer the ``world`` fixture for new and rewritten tests.  The
-``mcp_client`` context manager remains for tests that need a completely
-fresh server (``test_errors.py``).
+Prefer the ``world`` fixture for new and rewritten tests.
+The suite runs sequentially (no xdist) — one World serves all modules.
 
 Fixtures provided
 -----------------
 - ``gitea_url`` (session): the Gitea instance URL
 - ``admin_token`` (session): the admin bearer token from ``.env.dev.local``
 - ``server_args`` (session): command + args to start the MCP server over stdio
-- ``world`` (function): a ``World`` with lazy state graph + fresh server per test
+- ``world`` (session): a ``World`` with pooled servers and lazy state graph
 - ``mcp_client`` (async context manager): spawn a server, yield a session
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -124,64 +116,77 @@ def server_args() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# World fixture — function-scoped, backed by module-level state cache
+# World fixture — session-scoped, pooled servers across all modules
 # ---------------------------------------------------------------------------
-# Design note: ``asyncio_default_test_loop_scope=function`` means each
-# test runs in its own event loop.  Server connections (stdio subprocess
-# + ClientSession) are loop-bound and can't be shared across test loops.
-# But the World's *state* (users, repos, tokens, labels) is pure Python
-# data — we cache it in module-level storage so ``need_repo``, ``need_*``
-# return instantly on subsequent calls.
-#
-# Each test gets a fresh World instance with its own server connection,
-# but the state is shared.  Setup becomes declarative and free after the
-# first test that creates a given state node.
-
-# Module-level state cache — survives across test function event loops.
-_world_state: World | None = None
-_world_bootstrapped: bool = False
+# With ``asyncio_default_test_loop_scope = session``, all tests share
+# one event loop.  The World's server connections are created once and
+# survive across all modules.  State (users, orgs, repos, tokens) is
+# also cached across the entire session.
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 async def world(
     gitea_url: str, admin_token: str, server_args: list[str],
 ) -> AsyncIterator[World]:
-    """Function-scoped World with lazy state graph.
+    """Session-scoped World with pooled MCP servers and lazy state graph.
 
-    The underlying state (users, orgs, repos, tokens) is cached at module
-    level — created once and shared across all tests in this module.
-    Each test gets its own server connection via ``_begin_session()``.
-
-    Bootstrap (user/org/team creation + token minting) runs once on the
-    first call.  Subsequent tests skip this — the state is already in
-    the cache.
+    One World per test session.  Bootstraps canonical users, org, and
+    team on first use.  Pooled servers (one per token scope) stay alive
+    for all tests across all modules.
     """
-    global _world_state, _world_bootstrapped  # noqa: PLW0603
-
     from tests.live.world import World
 
-    if _world_state is None:
-        _world_state = World(gitea_url, admin_token, server_args)
+    if not _gitea_reachable():
+        pytest.skip("Live Gitea instance not available.")
 
-    w = _world_state
+    w = World(gitea_url, admin_token, server_args)
 
-    # Bootstrap once — users, orgs, teams, token round-trip
-    if not _world_bootstrapped:
-        if not _gitea_reachable():
-            pytest.skip("Live Gitea instance not available.")
+    logger.info("World — bootstrapping users, org, team (per session)")
+    await w.start()
+    logger.info("World ready — %d users, %d orgs bootstrapped",
+                 len(w._users), len(w._orgs))
 
-        logger.info("World — bootstrapping users, org, team (once per module)")
-        await w.start()
-        _world_bootstrapped = True
-        logger.info("World ready — %d users, %d orgs bootstrapped",
-                     len(w._users), len(w._orgs))
+    yield w
 
-    # Begin per-test session — fresh server connections in this loop
-    w._begin_session()
-    try:
-        yield w
-    finally:
-        await w._end_session()
+    logger.info("World — closing pooled servers")
+    await w.stop()
+
+
+# ---------------------------------------------------------------------------
+# Async leak detection — guard against session-scoped loop pollution
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+async def _detect_async_leaks(request: pytest.FixtureRequest) -> Any:
+    """Fail if a live test leaves user-created asyncio tasks behind.
+
+    With ``asyncio_default_test_loop_scope = "session"``, all live
+    tests share one event loop.  A leaked task from test A can cause
+    mysterious failures in test B twenty tests later.
+
+    Framework-internal tasks (``Task-N`` default names, ``mcp.*``
+    library names) and World server pool tasks (``world-server-*``)
+    are skipped.  Only tasks with explicit user-set names trigger a
+    failure.
+    """
+    loop = asyncio.get_running_loop()
+    pre = asyncio.all_tasks(loop)
+    yield
+    post = asyncio.all_tasks(loop)
+    leaked = [
+        t for t in post - pre
+        if not t.done()
+        and not t.get_name().startswith("Task-")       # framework default
+        and not t.get_name().startswith("world-server-")  # server pool
+        and not t.get_name().startswith("mcp.")         # MCP library internals
+    ]
+    if leaked:
+        names = ", ".join(t.get_name() for t in leaked)
+        pytest.fail(
+            f"Leaked {len(leaked)} user task(s) after "
+            f"{request.node.name}: {names}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -219,17 +224,8 @@ async def mcp_client(
 ) -> AsyncIterator[ClientSession]:
     """Async context manager: start an MCP server, yield a connected session.
 
-    Use this directly inside test functions::
-
-        async with mcp_client(gitea_url, server_args, token) as mcp:
-            result = await mcp.call_tool("gitea_user_get_current", {})
-
-    The context manager handles cleanup gracefully even when the test
-    inside it raises an exception — anyio cancel-scope noise on teardown
-    is suppressed.
-
-    For new tests, prefer the ``world`` fixture — state is cached across
-    tests and setup is declarative.
+    For new tests, prefer the ``world`` fixture — pooled servers stay
+    alive for the entire session.
     """
     with _suppress_anyio_cleanup():
         async with stdio_client(

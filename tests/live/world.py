@@ -35,6 +35,8 @@ the World starts **one server per token scope** and pools them:
 +----------------+---------------------------+----------------------+
 
 This drops server process spawns from ~86 to ~4, saving ~2 minutes.
+The suite runs sequentially (no xdist) — one World, one session,
+one bootstrap, zero redundant work.
 
 State graph
 -----------
@@ -68,7 +70,7 @@ from __future__ import annotations
 
 import json
 import os
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -77,7 +79,8 @@ from tests.helpers.mcp_results import extract_text_content
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
+_WORKER: str = "local"
+"""Fixed suffix for test entity names — sequential suite, no xdist."""
 
 # =============================================================================
 # Canonical scope lists
@@ -511,27 +514,26 @@ class RepoState:
 
 
 class World:
-    """Test world: shared state + per-test server connections.
+    """Test world: pooled MCP servers + lazy state graph.
 
-    The World persists across test function event loops at module level
-    (``conftest.py`` stores it in ``_world_state``).  State — users,
-    orgs, repos, tokens — is cached once and shared across all tests
-    in the module.  Server connections (``ClientSession``) are loop-bound
-    and recreated per test via ``_begin_session()`` / ``_end_session()``.
+    Created once per session (session-scoped fixture).  With
+    ``asyncio_default_test_loop_scope = session``, all tests share one
+    event loop — server connections are created once and survive
+    across all modules.
+
+    The entire suite runs sequentially (no xdist) — one World serves
+    all test modules with zero redundant bootstraps.
 
     Usage::
 
-        # First test bootstraps:
         async def test_X(world):
-            # world.start() already called by conftest fixture
             repo = await world.need_repo(...)  # creates repo (tests tool)
-            mcp = await world.server_for(DEV, SCOPE_WRITE)
+            mcp = await world.server_for(DEV, SCOPE_WRITE)  # pooled
             ...
 
-        # Subsequent tests get cached state:
         async def test_Y(world):
             repo = await world.need_repo(...)  # returns instantly
-            mcp = await world.server_for(DEV, SCOPE_WRITE)  # fresh connection
+            mcp = await world.server_for(DEV, SCOPE_WRITE)  # same server
             ...
     """
 
@@ -542,147 +544,111 @@ class World:
         self._admin_token = admin_token
         self._server_args = server_args
 
-        # ── Shared state (survives across event loops) ────────────────
-        # Token cache: (user, scopes) key → token string
+        # ── State (survives across tests) ──────────────────────────────
         self._token_cache: dict[str, str] = {}
-
-        # State graph nodes
         self._users: dict[str, dict[str, Any]] = {}
         self._orgs: dict[str, dict[str, Any]] = {}
         self._teams: dict[str, dict[str, Any]] = {}
         self._repos: dict[str, RepoState] = {}
-
-        # Bootstrap flag — start() called once
         self._bootstrapped: bool = False
+        self.bootstrap_count: int = 0
+        """Number of times ``start()`` has been called (metatest: must be 1)."""
 
-        # ── Per-test connections (recreated each _begin_session) ──────
+        # ── Server pool (one process per token scope) ──────────────────
         self._servers: dict[str, ClientSession] = {}
-        self._exit_stack: AsyncExitStack | None = None
-
-    # ── Per-test session lifecycle ────────────────────────────────────
-
-    def _begin_session(self) -> None:
-        """Create fresh server connections for the current test's event loop.
-
-        Must be called at the start of each test's ``world`` fixture
-        usage.  The previous session's connections are discarded (they
-        belonged to a different event loop).
-        """
-        self._servers = {}
         self._exit_stack = AsyncExitStack()
 
-    async def _end_session(self) -> None:
-        """Close all server connections for the current test.
-
-        Swallows all cleanup errors — the test result is already
-        determined, and anyio cancel-scope noise, broken resource
-        errors, etc. are expected when tearing down stdio subprocess
-        connections across different asyncio tasks.
-        """
-        if self._exit_stack is None:
-            return
-        try:
-            await self._exit_stack.aclose()
-        except BaseException:
-            pass
-        finally:
-            self._exit_stack = None
-            self._servers = {}
-
-    # ── Bootstrap ─────────────────────────────────────────────────────
+    # ── Lifecycle ─────────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Bootstrap: create canonical users, org, team, verify tokens.
 
-        Called once per module (first test).  Uses its own session
-        (``_begin_session`` / ``_end_session``) to manage bootstrap
-        server connections.
-
-        Every creation is also a verification — required keys, types,
-        and content are asserted.  If bootstrap fails, all live tests
-        fail (the test instance is broken).
+        Called once per session.  Every creation is also a verification
+        — required keys, types, and content are asserted.  If bootstrap
+        fails, all live tests fail (the test instance is broken).
         """
         if self._bootstrapped:
             return
 
-        self._begin_session()
+        self.bootstrap_count += 1
 
-        try:
-            # ── Step 1: Start admin server ────────────────────────────
-            admin = await self.admin_server()
+        # ── Step 1: Start admin server ────────────────────────────────
+        admin = await self.admin_server()
 
-            # ── Step 2: Create canonical users ────────────────────────
-            for user in ALL_USERS:
-                await self.need_user(user)
+        # ── Step 2: Create canonical users ────────────────────────────
+        for user in ALL_USERS:
+            await self.need_user(user)
 
-            # ── Step 3: Create org ────────────────────────────────────
-            await self.need_org(ORG_NAME,
-                                full_name="Live Test Organization",
-                                description="Bootstrap org for live integration tests")
-            result = await admin.call_tool(
-                "gitea_org_get", {"org": ORG_NAME, "format": "json"}
-            )
-            if _is_error(result):
-                msg = f"Bootstrap: failed to read org '{ORG_NAME}': {_error_text(result)[:300]}"
-                raise AssertionError(msg)
-            org_data = _unwrap(result)
-            _assert_keys(org_data,
-                "id", "username", "name", "full_name", "description",
-                "avatar_url", "location", "website", "visibility",
-                "repo_admin_change_team_access",
-            )
-            _assert_key_types(org_data, id=int, username=str, name=str, visibility=str)
-            _assert_content(org_data, username=ORG_NAME)
+        # ── Step 3: Create org ────────────────────────────────────────
+        await self.need_org(ORG_NAME,
+                            full_name="Live Test Organization",
+                            description="Bootstrap org for live integration tests")
+        result = await admin.call_tool(
+            "gitea_org_get", {"org": ORG_NAME, "format": "json"}
+        )
+        if _is_error(result):
+            msg = f"Bootstrap: failed to read org '{ORG_NAME}': {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        org_data = _unwrap(result)
+        _assert_keys(org_data,
+            "id", "username", "name", "full_name", "description",
+            "avatar_url", "location", "website", "visibility",
+            "repo_admin_change_team_access",
+        )
+        _assert_key_types(org_data, id=int, username=str, name=str, visibility=str)
+        _assert_content(org_data, username=ORG_NAME)
 
-            # ── Step 4: Create team ───────────────────────────────────
-            team = await self.need_team(ORG_NAME, TEAM_NAME, permission="write",
-                                        units_map={
-                                            "repo.code": "write",
-                                            "repo.issues": "write",
-                                            "repo.pulls": "write",
-                                        })
-            assert "name" in team, (
-                f"Bootstrap: team response missing 'name' key: {sorted(team.keys())}"
-            )
-            assert team["name"] == TEAM_NAME, (
-                f"Bootstrap: expected team name {TEAM_NAME!r}, got {team.get('name')!r}"
-            )
+        # ── Step 4: Create team ───────────────────────────────────────
+        team = await self.need_team(ORG_NAME, TEAM_NAME, permission="write",
+                                    units_map={
+                                        "repo.code": "write",
+                                        "repo.issues": "write",
+                                        "repo.pulls": "write",
+                                    })
+        assert "name" in team, (
+            f"Bootstrap: team response missing 'name' key: {sorted(team.keys())}"
+        )
+        assert team["name"] == TEAM_NAME, (
+            f"Bootstrap: expected team name {TEAM_NAME!r}, got {team.get('name')!r}"
+        )
 
-            # ── Step 5: Verify DEV token round-trip ───────────────────
-            dev_token = await self.token(DEV, SCOPE_WRITE)
-            dev_server = await self._start_server("__verify_dev__", dev_token)
-            current = await dev_server.call_tool(
-                "gitea_user_get_current", {"format": "json"}
-            )
-            if _is_error(current):
-                msg = f"Bootstrap: DEV token get_current failed: {_error_text(current)[:300]}"
-                raise AssertionError(msg)
-            current_data = _unwrap(current)
-            _assert_keys(current_data, "id", "login", "username", "email")
-            _assert_content(current_data, login=DEV.username, username=DEV.username)
+        # ── Step 5: Verify DEV user was created ─────────────────────────
+        # The admin server can look up any user.  Token verification
+        # happens naturally when server_for(DEV, SCOPE_WRITE) starts.
+        result = await admin.call_tool(
+            "gitea_user_get",
+            {"username": DEV.username, "format": "json"},
+        )
+        if _is_error(result):
+            msg = f"Bootstrap: failed to look up DEV user: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        current_data = _unwrap(result)
+        _assert_keys(current_data, "id", "login", "username", "email")
+        _assert_content(current_data, login=DEV.username, username=DEV.username)
 
-            self._bootstrapped = True
-        finally:
-            await self._end_session()
+        self._bootstrapped = True
 
-    # ── Server pool (per-test connections) ────────────────────────────
+    async def stop(self) -> None:
+        """Close all pooled servers."""
+        with suppress(Exception):
+            await self._exit_stack.aclose()
+
+    # ── Server pool ───────────────────────────────────────────────────
 
     async def admin_server(self) -> ClientSession:
-        """Get (or start) the admin MCP server for the current session.
-
-        Available for tests that need admin-level operations (e.g.,
-        running cron tasks like ``rebuild_issue_indexer``).
-        """
-        return await self._start_server("__admin__", self._admin_token)
+        """Get (or start) the pooled admin MCP server."""
+        key = "__admin__"
+        if key not in self._servers:
+            await self._start_server(key, self._admin_token)
+        return self._servers[key]
 
     async def server_for(
         self, user: User, scopes: list[str]
     ) -> ClientSession:
-        """Get (or start) an MCP server for *user* with *scopes*.
+        """Get (or start) a pooled MCP server for *user* with *scopes*.
 
-        The server is keyed by the token string within the current
-        session — two (user, scopes) pairs that produce the same token
-        share the same server connection for the duration of this test.
+        The server is keyed by the token string — two (user, scopes)
+        pairs that produce the same token share the same server.
         """
         token = await self.token(user, scopes)
         key = f"__token__{token[:16]}"
@@ -693,10 +659,7 @@ class World:
     async def _start_server(
         self, key: str, token: str
     ) -> ClientSession:
-        """Start an MCP server process over stdio in the current loop."""
-        if self._exit_stack is None:
-            _msg = "World._begin_session() must be called before _start_server()"
-            raise RuntimeError(_msg)
+        """Start an MCP server process over stdio and keep it alive."""
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
 

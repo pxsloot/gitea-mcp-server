@@ -36,8 +36,6 @@ import pytest
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.conftest import live_available, mcp_client
 
-pytestmark = pytest.mark.xdist_group("live-act-errors")
-
 _BOGUS_INDEX = 999999
 
 

@@ -75,14 +75,14 @@ lint.extend-select = ["I", "UP", "ASYNC", "BLE", "C4", "DTZ", "T10", "EM", "ISC"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
-addopts = "-n auto --dist loadscope --timeout=120 --timeout_method=thread"
+asyncio_default_test_loop_scope = "session"
+addopts = "--timeout=120 --timeout_method=thread"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 markers = [
     "live: Tests that require a real Gitea/Forgejo instance (skipped if unavailable).",
     "slow: Tests that take >1s (HTTP server startup, retry timeouts, etc.). Use ``-m 'not slow'`` for fast iteration.",
-    "xdist_group: Tests in the same group run sequentially on the same worker (pytest-xdist).",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

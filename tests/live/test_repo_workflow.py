@@ -24,8 +24,6 @@ Design decisions
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from tests.live.assertions import (
@@ -39,10 +37,7 @@ from tests.live.conftest import live_available
 from tests.live.helpers import delete_repo
 from tests.live.world import DEV, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-workflow-repo")
-
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_REPO = f"live-repo-{_WORKER}"
+_REPO = "live-repo-local"
 _BRANCH = "feature/new-stuff"
 _TAG = "v0.1.0"
 _FILE = "generated-info.md"

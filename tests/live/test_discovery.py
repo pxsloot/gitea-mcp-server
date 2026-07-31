@@ -23,9 +23,6 @@ from tests.live.assertions import assert_key_types, assert_keys, assert_result_o
 from tests.live.conftest import live_available
 from tests.live.world import DEV, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-discovery")
-
-
 # ---------------------------------------------------------------------------
 # search_tools — the primary discovery tool
 # ---------------------------------------------------------------------------

@@ -18,7 +18,6 @@ Design decisions
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -28,10 +27,7 @@ from tests.live.conftest import live_available
 from tests.live.helpers import delete_repo
 from tests.live.world import DEV, LIMITED, SCOPE_LIMITED, SCOPE_WRITE, World
 
-pytestmark = pytest.mark.xdist_group("live-resources")
-
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_REPO = f"live-res-{_WORKER}"
+_REPO = "live-res-local"
 
 
 # ---------------------------------------------------------------------------

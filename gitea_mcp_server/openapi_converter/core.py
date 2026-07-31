@@ -627,7 +627,7 @@ def _patch_missing_state_descriptions(schemas: dict[str, Any]) -> None:
     Args:
         schemas: The converted ``components/schemas`` dict (mutated in-place).
     """
-    for schema in schemas.values():
+    for schema_name, schema in schemas.items():
         if not isinstance(schema, dict):
             continue
         props = schema.get("properties")
@@ -642,7 +642,7 @@ def _patch_missing_state_descriptions(schemas: dict[str, Any]) -> None:
             "Gitea spec gap: %s.state has no description/enum/$ref — "
             "injecting fallback description for enum inference. "
             "Remove _patch_missing_state_descriptions once upstream fixes this.",
-            props.get("title", "definition"),
+            schema.get("title", schema_name),
         )
         state["description"] = _STATE_DEFINITION_DESC
 

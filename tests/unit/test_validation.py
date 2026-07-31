@@ -16,6 +16,8 @@ from gitea_mcp_server.validation import (
     _collect_enum_values,
     _find_string_schema,
     _infer_enum_from_description,
+    _inject_enum_into_defs,
+    _resolve_local_refs,
     _validate_enum_from_schema,
     augment_schema_with_validation,
     validate_filepath,
@@ -591,6 +593,33 @@ class TestCollectEnumValues:
         }
         assert _collect_enum_values(schema) is None
 
+    def test_enum_through_unresolved_ref_returns_none(self) -> None:
+        """REGRESSION: _collect_enum_values can't see through unresolved $ref.
+
+        When a param schema uses ``anyOf`` with ``$ref`` branches (e.g.
+        ``gitea_repo_create_status``'s ``state`` param has ``anyOf`` with
+        ``{$ref: CommitStatusState}``), the $ref is unresolved at schema-
+        augmentation time.  _collect_enum_values cannot follow $ref to
+        find the enum on the referenced type.
+
+        This regression means the description-to-enum inference in
+        ``augment_schema_with_validation`` skips these params because
+        ``_collect_enum_values`` returns ``None`` (no enum found), but
+        ``_infer_enum_from_description`` also fails because
+        ``_find_string_schema`` can't follow $ref either.
+
+        See:
+            https://git.home.lan/mcp-server/gitea-mcp-server/issues/596
+            (state validation fix follow-up: $ref resolution before inference)
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        assert _collect_enum_values(schema) is None
+
 
 class TestValidateEnumFromSchema:
     """Tests for _validate_enum_from_schema."""
@@ -628,6 +657,220 @@ class TestFindStringSchema:
 
     def test_empty_schema(self) -> None:
         assert _find_string_schema({}) is None
+
+    def test_through_anyof_with_unresolved_ref_returns_none(self) -> None:
+        """REGRESSION: _find_string_schema can't follow $ref branches.
+
+        When an ``anyOf`` branch contains ``$ref`` instead of a resolved
+        type (e.g. ``{"$ref": "#/$defs/CommitStatusState"}``), the
+        function skips it because it has no ``type`` key.  This prevents
+        description-to-enum inference from working on unresolved schemas.
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        assert _find_string_schema(schema) is None
+
+    def test_through_type_as_list(self) -> None:
+        """String detection works when type is a list (e.g. ["string", "null"]).
+
+        FastMCP inlines nullable body-schema fields as ``{"type": ["string",
+        "null"]}``.  ``_find_string_schema`` must handle this via
+        ``schema_type_matches``.
+        """
+        schema = {"type": ["string", "null"]}
+        result = _find_string_schema(schema)
+        assert result is not None
+        assert "string" in result["type"]
+
+    def test_through_anyof_with_type_as_list(self) -> None:
+        """String detection inside anyOf when branch uses type-as-list."""
+        schema = {
+            "anyOf": [
+                {"type": ["string", "null"], "description": "found"},
+                {"type": "null"},
+            ]
+        }
+        result = _find_string_schema(schema)
+        assert result is not None
+        assert result["description"] == "found"
+
+
+class TestResolveLocalRefs:
+    """Tests for _resolve_local_refs."""
+
+    def test_resolves_ref_in_anyof_branch(self) -> None:
+        """$ref in anyOf branch is replaced with the defs definition."""
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        defs = {
+            "CommitStatusState": {
+                "type": "string",
+                "description": "pending, success, error",
+            },
+        }
+        resolved = _resolve_local_refs(schema, defs)
+        branch = resolved["anyOf"][0]
+        assert branch["type"] == "string"
+        assert "pending" in branch["description"]
+
+    def test_skips_non_dict_branch(self) -> None:
+        """Non-dict branches in anyOf are passed through unchanged."""
+        schema = {
+            "anyOf": [
+                "not_a_dict",
+                {"type": "string"},
+            ]
+        }
+        # Use non-empty defs so _resolve_local_refs doesn't short-circuit
+        # at the ``if not defs: return schema`` guard.
+        defs = {"Dummy": {"type": "string"}}
+        resolved = _resolve_local_refs(schema, defs)
+        assert resolved["anyOf"][0] == "not_a_dict"
+        assert resolved["anyOf"][1] == {"type": "string"}
+
+    def test_returns_unchanged_when_defs_is_none(self) -> None:
+        """Schema is returned as-is when no $defs are available."""
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        resolved = _resolve_local_refs(schema, None)
+        assert resolved is schema  # Same object — no copy needed
+
+    def test_non_list_anyof_branch_is_skipped(self) -> None:
+        """anyOf that is not a list is left untouched."""
+        schema = {"anyOf": "not_a_list"}
+        resolved = _resolve_local_refs(schema, {"Type": {"type": "string"}})
+        assert resolved["anyOf"] == "not_a_list"
+
+    def test_resolves_top_level_ref(self) -> None:
+        """Top-level ``$ref`` (no anyOf/oneOf wrapper) is resolved directly."""
+        schema = {"$ref": "#/$defs/CommitStatusState"}
+        defs = {
+            "CommitStatusState": {
+                "type": "string",
+                "description": "pending, success, error",
+            },
+        }
+        resolved = _resolve_local_refs(schema, defs)
+        assert resolved["type"] == "string"
+        assert "pending" in resolved["description"]
+
+    def test_unresolvable_top_level_ref_returns_schema(self) -> None:
+        """Top-level ``$ref`` to unknown type returns schema unchanged."""
+        schema = {"$ref": "#/$defs/UnknownType"}
+        defs = {"CommitStatusState": {"type": "string"}}
+        resolved = _resolve_local_refs(schema, defs)
+        assert resolved is schema  # unchanged, not copied
+
+
+class TestInjectEnumIntoDefs:
+    """Tests for _inject_enum_into_defs."""
+
+    def test_injects_into_defs_and_branch(self) -> None:
+        """Enum from resolved schema is injected into $defs and $ref branch."""
+        existing_schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        resolved = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "description": 'states: "pending", "success"',
+                    "enum": ["pending", "success"],
+                },
+                {"type": "null"},
+            ]
+        }
+        defs: dict[str, Any] = {
+            "CommitStatusState": {
+                "type": "string",
+                "description": 'states: "pending", "success"',
+            },
+        }
+
+        _inject_enum_into_defs(existing_schema, resolved, defs)
+
+        # Injected into $defs definition
+        assert defs["CommitStatusState"]["enum"] == ["pending", "success"]
+
+        # Injected into the $ref branch
+        branch = existing_schema["anyOf"][0]
+        assert branch["enum"] == ["pending", "success"]
+
+    def test_skips_when_resolved_has_no_enum(self) -> None:
+        """No-op when the resolved schema lacks an enum."""
+        existing_schema: dict[str, Any] = {"type": "string"}
+        resolved: dict[str, Any] = {"type": "string"}
+        defs: dict[str, Any] = {}
+        # Must not raise
+        _inject_enum_into_defs(existing_schema, resolved, defs)
+
+    def test_skips_when_existing_already_has_enum(self) -> None:
+        """Existing enum on a non-$ref branch is not overwritten.
+
+        The injection passes are idempotent — both check ``"enum" not in
+        target`` before writing.  An existing_schema branch that already
+        declares an enum is left untouched.
+        """
+        existing_schema: dict[str, Any] = {
+            "anyOf": [
+                {"type": "string", "enum": ["open", "closed"]},
+                {"type": "null"},
+            ]
+        }
+        resolved: dict[str, Any] = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "description": 'states: "open", "closed"',
+                    "enum": ["open", "closed"],
+                },
+                {"type": "null"},
+            ]
+        }
+        defs: dict[str, Any] = {}
+        # Must not raise — injection passes skip the already-enumed branch
+        _inject_enum_into_defs(existing_schema, resolved, defs)
+        # Enum in existing_schema is unchanged
+        assert existing_schema["anyOf"][0]["enum"] == ["open", "closed"]
+
+    def test_non_dict_branch_in_existing_skipped(self) -> None:
+        """Non-dict branches in the $ref injection pass are skipped."""
+        existing_schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/Something"},
+                "not_a_dict",
+            ]
+        }
+        resolved = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "enum": ["a", "b"],
+                },
+                {"type": "null"},
+            ]
+        }
+        defs: dict[str, Any] = {
+            "Something": {"type": "string"},
+        }
+        # Must not raise on non-dict branch
+        _inject_enum_into_defs(existing_schema, resolved, defs)
+        assert defs["Something"]["enum"] == ["a", "b"]
 
 
 class TestInferEnumFromDescription:
@@ -687,9 +930,46 @@ class TestInferEnumFromDescription:
         assert _infer_enum_from_description(schema) is True
         assert schema["enum"] == ["pending", "success", "error"]
 
+    def test_through_anyof_with_unresolved_ref_returns_false(self) -> None:
+        """REGRESSION: inference fails when anyOf contains $ref instead of resolved type.
+
+        The actual ``gitea_repo_create_status`` param schema has::
+
+            {"anyOf": [{"$ref": "#/$defs/CommitStatusState"}, {"type": "null"}]}
+
+        Because ``_find_string_schema`` can't follow ``$ref``, the inference
+        silently returns ``False`` and no enum values are extracted from the
+        ``CommitStatusState`` description.  This means agents see no valid
+        state values for the commit status tool.
+        """
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/CommitStatusState"},
+                {"type": "null"},
+            ]
+        }
+        # Fails: _find_string_schema returns None, inference returns False
+        assert _infer_enum_from_description(schema) is False
+        # No enum injected anywhere in the schema
+        assert _collect_enum_values(schema) is None
+
 
 class TestAugmentSchemaWithValidation:
     """Tests for the augment_schema_with_validation function."""
+
+    def test_no_parameters_returns_early(self) -> None:
+        """Component with no ``parameters`` attribute returns without error."""
+        component = MagicMock()
+        del component.parameters  # Simulate missing parameters
+        # Must not raise
+        augment_schema_with_validation(component)
+
+    def test_empty_properties_returns_early(self) -> None:
+        """Component with empty ``properties`` returns without error."""
+        component = MagicMock()
+        component.parameters = {"properties": {}}
+        # Must not raise
+        augment_schema_with_validation(component)
 
     def test_adds_constraints_for_owner(self) -> None:
         component = MagicMock()
@@ -804,6 +1084,73 @@ class TestAugmentSchemaWithValidation:
         augment_schema_with_validation(component)
         # The value should remain unchanged
         assert component.parameters["properties"]["owner"] == "not_a_dict"
+
+    def test_infers_enum_through_unresolved_ref_in_state_param(self) -> None:
+        """REGRESSION: state param with $ref must get enum from description inference.
+
+        ``gitea_repo_create_status`` has a ``state`` param whose schema
+        contains an ``anyOf`` with an unresolved ``$ref`` branch:
+
+            {"anyOf": [{"$ref": "#/$defs/CommitStatusState"}, {"type": "null"}]}
+
+        The ``$defs.CommitStatusState`` definition has a description with
+        quoted values (``"pending"``, ``"success"``, etc.) but no
+        machine-readable ``enum``.  ``augment_schema_with_validation`` must
+        resolve the ``$ref`` before running ``_infer_enum_from_description``
+        so agents see the valid commit status states.
+
+        See:
+            https://git.home.lan/mcp-server/gitea-mcp-server/issues/596
+        """
+        component = MagicMock()
+        component.parameters = {
+            "properties": {
+                "state": {
+                    "anyOf": [
+                        {"$ref": "#/$defs/CommitStatusState"},
+                        {"type": "null"},
+                    ],
+                },
+            },
+            "$defs": {
+                "CommitStatusState": {
+                    "type": "string",
+                    "description": (
+                        "CommitStatusState holds the state of a CommitStatus\n"
+                        'It can be "pending", "success", "error", "failure" and "warning"'
+                    ),
+                },
+            },
+        }
+        augment_schema_with_validation(component)
+        state_schema = component.parameters["properties"]["state"]
+        enum_vals = _collect_enum_values(state_schema)
+        assert enum_vals == [
+            "pending", "success", "error", "failure", "warning"
+        ], f"Expected commit status states, got {enum_vals}"
+
+    def test_preserves_existing_enum_on_issue_state_param(self) -> None:
+        """Issue tools' state param must keep its spec-defined enum.
+
+        ``gitea_issue_list_issues`` has a ``state`` query param with
+        ``enum: ["closed", "open", "all"]`` from the spec.  This must
+        not be overwritten or lost.
+        """
+        component = MagicMock()
+        component.parameters = {
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": ["closed", "open", "all"],
+                },
+            },
+        }
+        augment_schema_with_validation(component)
+        state_schema = component.parameters["properties"]["state"]
+        enum_vals = _collect_enum_values(state_schema)
+        assert enum_vals == ["closed", "open", "all"], (
+            f"Issue state enum overwritten! Got {enum_vals}"
+        )
 
 
 class TestRunValidation:

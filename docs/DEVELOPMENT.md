@@ -179,6 +179,17 @@ values in its description as quoted strings (e.g. ``"pending",
 description and injects a proper ``enum``.  Both validation and agent-
 facing schemas then work correctly without hardcoded values.
 
+Before inference, any ``$ref`` pointers in parameter schemas are resolved
+against the tool's local ``$defs`` (see ``_resolve_local_refs`` docstring
+in ``validation.py``).  After inference succeeds, the inferred ``enum``
+is injected back into the ``$defs`` definition and the original ``$ref``
+branch (see ``_inject_enum_into_defs`` docstring).
+
+A Gitea spec gap — three definitions (``EditIssueOption``, …) with bare
+``{type: string}`` state fields — is patched with fallback descriptions
+during conversion (see ``_patch_missing_state_descriptions`` docstring in
+``openapi_converter/core.py``).
+
 **Structural validators** (explicit registration needed only for pattern/
 length/type checks that the spec doesn't define):
 

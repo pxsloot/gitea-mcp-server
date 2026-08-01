@@ -42,17 +42,12 @@ class TestConfig:
         )
 
         with patch.dict(os.environ, {}, clear=True):
-            # Set working directory to tmp_path so .env is found
-            os.chdir(tmp_path)
-            try:
-                # Clear singleton to force reload
-                Config._instance = None
-                config = Config.get()
-                assert config.url == "https://test.example.com"
-                assert config.token == "test_token_from_file"
-                assert config.log_level == "WARNING"
-            finally:
-                os.chdir("/")
+            # CWD is already tmp_path (set by isolate_from_project_dotenv fixture)
+            Config._instance = None
+            config = Config.get()
+            assert config.url == "https://test.example.com"
+            assert config.token == "test_token_from_file"
+            assert config.log_level == "WARNING"
 
     def test_missing_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test error when token is missing."""
@@ -374,6 +369,4 @@ class TestConfigEdgeCases:
         ):
             Config._instance = None
             config = Config.get()
-            # Pydantic will parse the JSON string as list via env parsing
-            # but http_cors validator also handles list type
-            assert config.http_cors is None or isinstance(config.http_cors, list)
+            assert config.http_cors == ["https://origin1.com", "https://origin2.com"]

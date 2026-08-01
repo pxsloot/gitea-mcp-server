@@ -842,6 +842,10 @@ Put truly shared fixtures in `tests/conftest.py`:
 - `event_loop` — session-scoped default event loop
 - `trace_exporter` — OpenTelemetry InMemorySpanExporter (cleared between tests)
 - `temp_workspace` — temporary workspace directory for file-based tests
+- `isolate_from_project_dotenv` — autouse fixture that changes CWD to ``tmp_path``
+  and resets ``Config._instance`` before every test, preventing the project's
+  ``.env`` file from leaking into test configs.  Applies suite-wide; no test file
+  needs its own copy.
 
 Put domain-specific helper functions in ``tests/helpers/``.
 **Always use these helpers when the pattern fits** — they eliminate common

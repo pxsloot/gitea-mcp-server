@@ -47,7 +47,7 @@ class TestFormatIssuesMarkdownGuard:
         data: list[Any] = []
         result = _format_issues_markdown(data, detail="full")
         assert result.strip() != ""
-        assert "*None*" in result
+        assert "_(empty)_" in result
 
 
 class TestFormatLabelsMarkdownGuard:
@@ -150,7 +150,7 @@ class TestFormatResourceContentPipelineFallback:
         result = _format_resource_content(raw, "markdown", detail="concise", schema=schema)
         assert result.strip() != ""
         # Should produce some readable output
-        assert "*None*" in result or "Empty" in result or "N/A" in result
+        assert "_(empty)_" in result or "Empty" in result or "N/A" in result
 
 
 class TestApplyFormatRaiseOnNonSerializable:

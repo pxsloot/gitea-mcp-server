@@ -155,11 +155,10 @@ def _reset_module_contexts() -> None:
     (they bridge httpx hooks and FastMCP's transform pipeline without coupling
     to framework internals).  But tests that set them need a safety net.
 
-    Current ``asyncio_default_test_loop_scope = "function"`` provides natural
-    isolation for async tests (each gets its own event loop, thus its own
-    ``contextvars.Context``).  This fixture adds a deterministic reset for
-    every test regardless of sync/async status, making the suite robust
-    against future loop-scope changes.
+    Current ``asyncio_default_test_loop_scope = "session"`` provides
+    event-loop-wide isolation for async tests.  This fixture adds a
+    deterministic reset for every test regardless of sync/async status,
+    making the suite robust against ContextVar leakage.
     """
     from gitea_mcp_server.pagination import pagination_ctx
     from gitea_mcp_server.tools.virtual_params import sudo_context

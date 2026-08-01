@@ -492,7 +492,7 @@ class TestFormatAsMarkdown:
 
     def test_empty_list(self) -> None:
         result = _format_as_markdown([])
-        assert "*None*" in result
+        assert "_(empty)_" in result
 
     def test_list_of_scalars_with_schema(self) -> None:
         schema = {"type": "array", "items": {"type": "string"}}

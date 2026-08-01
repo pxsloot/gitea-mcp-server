@@ -60,3 +60,4 @@ temp/
 .gitea-mcp-cli-history
 mcp_filter.yaml
 scripts/output/
+.coverage.*

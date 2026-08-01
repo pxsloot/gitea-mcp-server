@@ -45,13 +45,16 @@ TRANSPORT_TYPE=http uv run python -m gitea_mcp_server
 ## Running Tests
 
 ```bash
-# All tests (parallel by default: -n auto --dist loadscope)
+# All tests (sequential by default)
 uv run pytest
 
-# Disable parallel workers for single-file debugging
-uv run pytest -n 0
+# Parallel execution; live tests are worker-isolated and sequential per worker
+uv run pytest -n auto
 
-# Specific area (parallel still active; one file → one worker)
+# Optional explicit namespace for concurrent CI runs
+GITEA_LIVE_RUN_ID="ci-${CI_PIPELINE_ID:-local}" uv run pytest -n auto
+
+# Specific area
 uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/unit/test_tool_annotations.py -v
 

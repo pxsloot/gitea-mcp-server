@@ -96,8 +96,23 @@ tests/
 │   └── ...
 ├── live/
 │   ├── __init__.py
-│   ├── conftest.py         # Dotenv loading, skip-if-unreachable, test data lifecycle
-│   └── test_diff_endpoint.py
+│   ├── conftest.py              # Credentials, worker World, pooled MCP clients
+│   ├── helpers.py               # Token creation and repository pre-cleanup
+│   ├── world.py                 # Worker-local identities, graph, pool, lifecycle
+│   ├── dependency_graph.py      # Verified dependency cache
+│   ├── workflows.py             # Composable workflow facade
+│   ├── quality.py               # Orthogonal result-quality contracts
+│   ├── assertions.py            # Shape/content/cross-format helpers
+│   ├── test_admin_workflows.py  # Identity, organization, team administration
+│   ├── test_workflows.py        # Issue-label and issue-to-PR stories
+│   ├── test_repo_workflow.py    # Repository, branch, file, tag, status stories
+│   ├── test_issue_workflow.py   # Issue, label, milestone, comment, search stories
+│   ├── test_pr_workflow.py      # Pull request and diff stories
+│   ├── test_cross_format.py     # Format equivalence concern tests
+│   ├── test_discovery.py        # Synthetic discovery concern tests
+│   ├── test_resources.py        # Resource concern tests
+│   ├── test_scope.py            # Token scope concern tests
+│   └── test_errors.py           # Transport error-contract concern tests
 ```
 
 ### Source-to-Test Mapping
@@ -313,14 +328,290 @@ async def test_server_creates_tools_from_spec(self):
 
 ### Zone 5: Live End-to-End (tests/live/)
 
-**What it tests**: The full production path — real Gitea instance, real MCP server
-binary over stdio, real MCP transport. Exercises transport-level output
-validation that in-memory ``server.call_tool()`` bypasses.
+**What it tests**: The full production path — real Forgejo instance, real MCP
+server binary over stdio, raw MCP SDK transport. Exercises transport-level
+output validation that in-memory ``server.call_tool()`` bypasses.
 
 **Pattern**: Tests in ``tests/live/`` connect to a real Gitea/Forgejo instance,
-launch the MCP server binary over stdio, and call tools through
-``fastmcp.Client`` or the raw MCP SDK. Test data (user, repo, branch, PR) is
-created via the admin API and cleaned up on teardown.
+launch the MCP server binary over stdio, and call tools through the raw MCP SDK
+(``mcp.ClientSession`` via ``stdio_client``).  **Every call is an assertion**
+— test setup uses MCP tool calls, not raw HTTP.  The one exception is creating
+scope-limited tokens (``POST /users/{name}/tokens``) which requires Basic Auth
+with a password.
+
+**Design**: Live coverage is organized around user **workflows** (ordered sets
+of tools that achieve a goal) plus orthogonal quality contracts.  A workflow
+such as ``issue → pull request`` is also a natural reproduction story for a
+bug report.  The dependency graph materializes the required world, user,
+repository, and content nodes; each node is created and verified once per
+isolated test world, then reused as an established fact.
+
+The workflow files use the composable architecture: ``Workflow`` is a thin
+facade over the current ``World`` transport and ``RepoState`` operations, while
+the World-owned dependency graph materializes prerequisites.  New workflow
+tests must keep prerequisites in the graph and cleanup in World fixture
+lifecycle handling; do not add module globals, ``pytest.*`` state, or cleanup
+test methods.
+
+Quality contracts are independent of workflow composition and can be attached
+only where useful: result shape, result content, JSON/Markdown equivalence,
+scope behavior, and error content.  This avoids repeating the same checks in
+every workflow while ensuring that the agent-facing boundary is useful.
+
+Two server-access patterns are available:
+
+```
+tests/live/
+├── conftest.py              # Session fixtures, world (pooled), mcp_client (per-test)
+├── helpers.py               # Tool-based helpers (purge_repo, create_user_token)
+├── world.py                 # World (server pool + lazy state graph) + identities
+├── dependency_graph.py      # Async verified dependency cache
+├── workflows.py             # Workflow facade over World + graph
+├── quality.py               # Orthogonal result-quality contracts
+├── assertions.py            # Shape/content/cross-format assertion helpers
+├── test_meta.py             # Metatests: bootstrap and pool diagnostics
+├── test_admin_workflows.py  # Identity, organization, team administration
+├── test_world_setup.py      # Phase 1: Error-path tests for bootstrap
+├── test_repo_workflow.py    # Migrated: repos, branches, files, tags, statuses
+├── test_issue_workflow.py   # Migrated: labels, milestones, issues, comments, search
+├── test_pr_workflow.py      # Migrated: PRs, diff download, review comments
+├── test_cross_format.py     # Migrated concern: format equivalence edge cases
+├── test_discovery.py        # Migrated concern: synthetic discovery tools
+├── test_resources.py        # Migrated concern: list_resources, read_resource
+├── test_scope.py            # Scope enforcement concern tests
+└── test_errors.py           # Migrated concern: transport error contracts
+```
+
+**Server-access patterns**:
+
+1. **``mcp_client`` context manager** (backward-compatible).  Each test
+   function spawns its own server process over stdio.  Used by ``test_errors.py``
+   (fresh-server semantics needed).  Server startup is tested each time.
+
+2. **``world`` fixture** (recommended).  A session-scoped-per-worker
+   ``World`` object that pools **one MCP server per token scope**.  The admin
+   server starts at fixture setup; user servers start on the first
+   ``Workflow.client()`` or ``Workflow.call()`` call.  With
+   ``asyncio_default_test_loop_scope = session`` (set in ``pyproject.toml``),
+   tests assigned to one worker share an event loop and server connections.
+   Server startup is tested once per worker session, not once per test.
+
+   The World and Workflow facade provide a **lazy state graph** with
+   idempotent dependency methods:
+
+   - ``world.need_user(user)`` — create a user (or return cached)
+   - ``world.need_org(name)`` — create an org (or return cached)
+   - ``world.need_team(org, name)`` — create a team (or return cached)
+   - ``Workflow.ensure_repo(owner, name)`` — create and verify a repo through
+     the World-owned graph, returning a ``RepoState``
+   - ``world.server_for(user, scopes)`` — get a pooled server for that token
+
+   ``RepoState`` tracks what's inside a known repo (branches, labels,
+   milestones, issues, pull requests, and tags) and provides idempotent
+   ``need_branch``, ``need_file``, ``need_label``, ``need_milestone``,
+   ``need_issue``, ``need_tag``, and ``need_pull_request`` methods.  The first
+   call creates and verifies the tool; subsequent calls return cached state.
+
+**Key design decisions**:
+
+1. **Server pooling — test once, reuse.**  The ``world`` fixture pools
+   one MCP server per token scope (admin, DEV write, RO read-only,
+   LIMITED partial).  Server startup (spec fetch, convert, scope filtering)
+   is tested once per scope.  This is sufficient — re-testing startup
+   86 times adds no coverage, only runtime.
+
+2. **Setup is a test once.**  A dependency graph node calls
+   ``Workflow.ensure_repo("dev", "x")`` (or another ``ensure_*`` operation) the
+   first time and verifies its result through the full transport.  Subsequent
+   workflow steps reuse the verified node without repeating setup.  Concurrent
+   requests for one node share the same in-flight setup task.  The creation
+   path is tested exactly once per unique state node.
+
+3. **Cached tokens via ``World.token()`` / ``get_token()``.**  Tokens
+   are cached per (user, scopes) key — one minted per combination per
+   suite run.  This exercises the token-creation path at least once per
+   combination while keeping Gitea logs manageable.  The ``World.token()``
+   method and the module-level ``get_token()`` function share the same
+   cache.
+
+4. **Repository cleanup is lifecycle-owned.**  ``World.cleanup()`` deletes
+   every repository registered by that World before pooled servers close.
+   Cleanup attempts every repository and preserves an existing test failure if
+   teardown also encounters an error.  ``purge_repo()`` still runs before
+   creation to recover from interrupted runs.
+
+5. **Worker-local Worlds and isolation.**  The ``world`` fixture is
+   session-scoped per pytest worker.  ``World.start()`` bootstraps users, org,
+   and team once per worker, and worker/run-specific names prevent concurrent
+   workers or invocations from sharing Forgejo entities.  Tests assigned to
+   one worker execute sequentially; independent live stories may run in
+   parallel across workers.  New workflow tests must obtain prerequisites
+   through the graph and must not use module globals or ``pytest.*`` attributes
+   for state.
+
+6. **Async leak detection.**  An autouse fixture
+   ``_detect_async_leaks`` in ``tests/live/conftest.py`` runs after every
+   test.  It checks for new running asyncio tasks and fails the test
+   if any are found (skipping only known MCP and intentionally long-lived
+   ``world-server-*`` tasks).  Combined with the existing
+   ``_reset_module_contexts`` fixture (ContextVar reset), this guards
+   against state leakage with session-scoped event loops.
+
+7. **Cross-format equivalence.**  The ``assert_formats_equivalent`` helper
+   calls the same tool with ``format=json`` and ``format=markdown``, then
+   verifies that key leaf values from the JSON result appear in the markdown
+   output.  This proves that the two formats carry equivalent information
+   through the real transport — principle 5 of the live test design.
+
+8. **Shape/content assertions.**  Every tool call in a world-setup or
+   workflow test asserts not just "no error" but structural correctness:
+   required keys are present (``assert_keys``), key types are correct
+   (``assert_key_types``), and specific values match (``assert_content``).
+   See ``tests/live/assertions.py``.
+
+**Infrastructure**:
+
+- ``conftest.py`` provides ``live_available`` (skipif marker),
+  ``gitea_url`` / ``admin_token`` / ``server_args`` (session fixtures),
+  ``world`` (worker-local session World with pooled servers and lazy graph),
+  and ``mcp_client(gitea_url, server_args, token)`` (per-test async context
+  manager, backward-compatible).
+- ``world.py`` defines the ``World`` class (server pool, lazy state graph,
+  idempotent ``need_*`` methods), ``RepoState`` (per-repo state tracker),
+  the canonical test identities (``DEV``, ``PEER``, ``RO``, ``LIMITED``),
+  scope constants (``SCOPE_WRITE``, ``SCOPE_READ``, ``SCOPE_LIMITED``),
+  org/team names, and the backward-compatible ``get_token()`` function.
+- ``assertions.py`` provides reusable shape/content/cross-format assertion
+  helpers: ``assert_keys``, ``assert_key_types``, ``assert_content``,
+  ``assert_result_ok``, ``assert_formats_equivalent``.
+- ``helpers.py`` provides the minimal external helpers:
+   ``create_user_token()`` (the one httpx call) and ``purge_repo()``.  All other
+   tool calls are handled by Workflow dependencies or the World lifecycle.
+- ``dependency_graph.py`` provides ``DependencyGraph`` and ``NodeKey``.  A
+  factory is both setup and verification; successful values are cached and
+  failed factories remain retryable.
+- ``workflows.py`` provides ``Workflow.ensure_*`` dependency methods and
+  ``Workflow.call`` for target steps.  Workflow facades share the authoritative
+  graph owned by their worker-local ``World``; an explicit graph is supported
+  only for isolated unit tests.
+- ``quality.py`` provides composable ``JsonShape``, ``JsonContent``,
+  ``FormatsEquivalent``, ``TextContains``, and ``ErrorContent`` contracts.
+
+### How to add or change a live test
+
+Start by identifying the **story step** or **quality concern** being tested.
+Do not repeat an existing workflow merely to reach a resource: declare the
+prerequisites and let the World-owned graph reuse them.
+
+#### Add a step to a workflow
+
+For example, adding a label to an issue needs a repository, label, and issue.
+The setup calls are verified once; the final call is the behavior under test:
+
+```python
+from tests.live.assertions import assert_result_ok
+from tests.live.quality import JsonShape, FormatsEquivalent
+from tests.live.workflows import Workflow
+
+
+@pytest.mark.live
+async def test_add_label_to_issue(world: World) -> None:
+    workflow = Workflow(world)
+    repo = await workflow.ensure_repo(
+        DEV.username, "live-label-story", user=DEV, scopes=SCOPE_WRITE,
+    )
+    await workflow.ensure_label(repo, "bug", "#ff0000")
+    issue = await workflow.ensure_issue(repo, "Login fails")
+
+    result = await workflow.call(
+        DEV,
+        SCOPE_WRITE,
+        "gitea_issue_add_label",
+        {
+            "owner": DEV.username,
+            "repo": repo.name,
+            "index": issue["number"],
+            "labels": ["bug"],
+            "format": "json",
+        },
+        contracts=(JsonShape(list),),
+    )
+    assert_result_ok(result)
+
+    await workflow.call(
+        DEV,
+        SCOPE_WRITE,
+        "gitea_issue_get_issue",
+        {
+            "owner": DEV.username,
+            "repo": repo.name,
+            "index": issue["number"],
+        },
+        contracts=(FormatsEquivalent(),),
+    )
+```
+
+The World owns cleanup. Do not add a ``TestCleanup`` method or delete the
+repository manually in the test.
+
+#### Add an administration step
+
+Use ``ensure_org`` / ``ensure_team`` for graph dependencies and
+``admin_call`` for an admin-token operation:
+
+```python
+workflow = Workflow(world)
+await workflow.ensure_user(DEV)
+org = await workflow.ensure_org("live-org", full_name="Live Organization")
+team = await workflow.ensure_team(
+    org["username"], "developers", permission="write",
+    units_map={"repo.code": "write", "repo.issues": "write"},
+)
+result = await workflow.admin_call(
+    "gitea_org_get_team",
+    {"id": team["id"], "format": "json"},
+    contracts=(JsonShape(dict, keys=("id", "name", "permission")),),
+)
+```
+
+#### Add a quality concern
+
+Quality contracts are orthogonal to workflows. Use ``TextContains`` for raw
+text, ``ErrorContent`` for failures, ``JsonShape`` / ``JsonContent`` for JSON,
+and ``FormatsEquivalent`` for information-preservation checks. Attach only
+the contracts relevant to the behavior; do not apply every contract to every
+call.
+
+For tests requiring fresh server startup semantics, retain the
+``mcp_client`` fixture and apply the contract directly:
+
+```python
+async with mcp_client(gitea_url, server_args, admin_token) as mcp:
+    result = await mcp.call_tool("gitea_call_tool", arguments)
+    await ErrorContent(("not found",)).verify(
+        mcp, "gitea_call_tool", arguments, result,
+    )
+```
+
+#### Verification loop
+
+Run the smallest relevant test first, then the worker-isolated live suite:
+
+```bash
+uv run pytest tests/live/test_workflows.py -q
+uv run pytest tests/live/ -n 4 -q
+make test
+```
+
+**Bug regressions caught live**:
+
+| Regression | Where caught | How |
+|------------|-------------|-----|
+| Commit status wrong state enum | ``test_repo_workflow.py`` | Setting ``state=pending`` on a commit |
+| Param naming divergence (``filepath`` vs ``file_path``) | ``test_repo_workflow.py`` | Calling ``gitea_repo_create_file`` with ``filepath`` |
+| Param naming divergence (``tag_name`` vs ``name``) | ``test_repo_workflow.py`` | ``gitea_repo_create_tag`` accepts ``tag_name`` but response uses ``name`` |
+| Empty list renders ``_(empty)_`` | ``test_cross_format.py`` | Fixed in ``_format_list_as_markdown`` — was ``*None*``
+| Output validation error for text/plain diff | ``test_pr_workflow.py`` | Raw diff through ``gitea_repo_download_pull_diff_or_patch`` |
 
 **Prerequisite**: A running Gitea instance with credentials in
 ``.env.dev.local`` (written by ``gitea_dev_start.sh``).
@@ -333,7 +624,7 @@ gracefully when no Gitea instance is reachable (checked at collection time).
 uv run pytest tests/live/ -v
 
 # Automatically skips when Gitea is not running
-uv run pytest tests/live/ -v    # → 3 skipped
+uv run pytest tests/live/ -v    # → all skipped
 ```
 
 **Coverage target**: Not enforced (requires external service).
@@ -344,7 +635,8 @@ uv run pytest tests/live/ -v    # → 3 skipped
 - **pytest-asyncio**: Async test support (`asyncio_mode = "auto"`)
 - **pytest-mock**: Mocking via `mocker` fixture
 - **pytest-cov**: Coverage measurement
-- **pytest-xdist**: Parallel test execution (`-n auto --dist loadscope` enabled by default)
+- **pytest-xdist**: Parallel test execution. Live tests are sequential within
+  each worker and isolated across workers.
 - **respx**: HTTP request mocking for `httpx.AsyncClient`
 - **jsonschema**: Schema validation for OpenAPI 3.1 output
 - **hypothesis**: Property-based testing for converter invariants — ``$ref`` resolution, vendor-extension stripping, response wrapping, round-trip completeness, parameter preservation, and crash-safety on malformed input
@@ -999,16 +1291,13 @@ def minimal_spec():
 ## Running Tests
 
 ```bash
-# Run all tests (parallel by default: -n auto --dist loadscope)
+# Run all tests (sequential by default)
 uv run pytest
-
-# Run sequentially (disable parallel workers for debugging)
-uv run pytest -n 0
 
 # Run with verbose output
 uv run pytest -v
 
-# Run specific test file (parallel still active; single file goes to one worker)
+# Run specific test file
 uv run pytest tests/unit/test_client.py
 
 # Run specific test by name
@@ -1017,52 +1306,45 @@ uv run pytest -k "test_async_operation"
 # Run with coverage
 uv run pytest --cov=gitea_mcp_server
 
-# Stop on first failure (kills all workers)
+# Stop on first failure
 uv run pytest -x
 
 # Run a specific module area
 uv run pytest tests/unit/openapi_converter/
 uv run pytest tests/integration/
+
+# Live tests (require Gitea instance)
+uv run pytest tests/live/
 ```
 
-### Parallel Execution with pytest-xdist
+### Parallel and sequential design
 
-The test suite runs with ``-n auto --dist loadscope`` by default (configured
-in ``pyproject.toml``). This distributes tests across CPU cores while keeping
-session-scoped fixtures in one worker per module:
+Unit and integration tests are safe to distribute freely. Live tests share
+one pooled World per worker and therefore execute sequentially within that
+worker; run/worker-specific identities isolate workers from one another.
 
-- ``--dist loadscope`` groups tests by module scope, so session-scoped
-  fixtures (HTTP server, OTel exporter) are created once per worker instead
-  of once per test.
-- Each worker gets its own event loop via the session-scoped
-  ``event_loop`` fixture in ``tests/conftest.py``.
-- To debug a single file without the parallel overhead, pass ``-n 0``:
-  ``uv run pytest tests/unit/test_foo.py -xvs -n 0``.
+To run the full suite with parallel workers:
 
-Design notes for session-scoped fixtures under xdist:
+```bash
+uv run pytest -n auto
+```
 
-- **Avoid inter-worker state**: Session fixtures must not depend on state
-  shared across workers (files, ports, global singletons). The ``http_port=0``
-  pattern (OS-assigned port) keeps each worker's HTTP server isolated.
-- **Avoid module-level imports** with side effects that execute at import
-  time — each worker re-imports the test modules.
-- **``asyncio_default_fixture_loop_scope = "session"``**: This setting in
-  ``pyproject.toml`` matches the session-scoped ``event_loop`` fixture in
-  ``tests/conftest.py``. Without it, xdist workers would each create
-  per-function event loops, defeating the session-scoped loop. Async
-  fixtures that need a per-function loop should set
-  ``loop_scope="function"`` explicitly.
+For a live-only run with an explicit run namespace:
+
+```bash
+GITEA_LIVE_RUN_ID="ci-${CI_PIPELINE_ID:-local}" uv run pytest -n auto -m live
+```
 
 ### Timeout Safety
 
 The suite uses ``pytest-timeout`` with ``--timeout=120 --timeout_method=thread``
 (configured in ``pyproject.toml``). Any test hanging longer than 2 minutes is
 killed automatically, preventing a single stuck test from blocking the whole
-run (especially important with xdist workers).
+run.
 
 Use ``@pytest.mark.timeout(N)`` to override per-test — shorter for
 known-fast tests, longer for slow ones. The ``thread`` method is compatible
-with xdist and asyncio (``fork`` would break the event loop).
+with asyncio (``fork`` would break the event loop).
 
 ```python
 # Override timeout for a specific test

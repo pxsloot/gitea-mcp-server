@@ -1,70 +1,81 @@
-"""Live integration test fixtures — require a real Gitea instance.
+"""Live integration test fixtures — require a real Gitea/Forgejo instance.
 
-These tests connect to a real Gitea/Forgejo server, create test data
-(repos, branches, PRs), run MCP tool calls over stdio, and clean up.
+Design decisions
+----------------
 
-Environment setup
+Two server-access patterns are available:
+
+1. **``mcp_client`` context manager** (function-scoped, backward-compatible):
+   Each test spawns its own MCP server process.
+
+2. **``world`` fixture** (session-scoped per worker):  A ``World`` object with pooled
+   MCP servers and lazy state graph.  With ``asyncio_default_test_loop_scope
+   = session``, all tests share one event loop, so server connections live
+    within that worker.  ``Workflow.ensure_repo`` creates and verifies a repo
+    once, then returns the cached graph state on subsequent calls.
+
+Prefer the ``world`` fixture for new and rewritten tests. One World is
+created per pytest worker; tests assigned to that worker share pooled servers
+and execute sequentially. Worker/run-specific entity names make xdist safe.
+
+Fixtures provided
 -----------------
-- ``.env.dev.local`` (auto-loaded, written by ``gitea_dev_start.sh``)
-  or environment variables: ``GITEA_URL``, ``GITEA_TOKEN``,
-  ``GITEA_ADMIN_USER`` (default ``admin-user``).
-
-Usage::
-
-    # Start a test Gitea instance (first time or from scratch)
-    ./gitea_dev_start.sh
-
-    # Run live tests
-    uv run pytest tests/live/ -v
-
-Each test in this directory is marked with ``pytest.mark.live`` and
-will **skip** if no reachable Gitea instance is found.
+- ``gitea_url`` (session): the Gitea instance URL
+- ``admin_token`` (session): the admin bearer token from ``.env.dev.local``
+- ``server_args`` (session): command + args to start the MCP server over stdio
+- ``world`` (session): a ``World`` with pooled servers and lazy state graph
+- ``mcp_client`` (async context manager): spawn a server, yield a session
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
-
-import base64
+import asyncio
+import logging
 import os
 import shutil
 import sys
+from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
 from dotenv import load_dotenv
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from tests.conftest import SimpleConfig
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from tests.live.world import World
+
+logger = logging.getLogger(__name__)
+_ALLOWED_FRAMEWORK_COROUTINES = frozenset({"async_finalizer"})
+
+
+def _task_coroutine_name(task: asyncio.Task[Any]) -> str:
+    """Return a coroutine code name without assuming asyncio's union type."""
+    coroutine = task.get_coro()
+    code = getattr(coroutine, "cr_code", None)
+    return cast("str", getattr(code, "co_name", ""))
 
 # ---------------------------------------------------------------------------
-# Load credentials from .env.dev.local (written by gitea_dev_start.sh)
+# Load credentials
 # ---------------------------------------------------------------------------
 
 _env_path = Path(".env.dev.local")
 if _env_path.exists():
-    # override=True ensures .env.dev.local takes precedence over env vars
-    # that may have been set by the user's shell/IDE (e.g. pointing to a
-    # production instance).  The dev-local file is written by
-    # ``gitea_dev_start.sh`` and is the authoritative source for live tests.
     load_dotenv(_env_path, override=True)
 
 LIVE_URL: str | None = os.getenv("GITEA_URL")
 LIVE_TOKEN: str | None = os.getenv("GITEA_TOKEN")
-# Note: admin username is "admin-user" (defined in gitea_dev_start.sh).
-# The admin token from .env.dev.local has sudo scope so _create_test_data()
-# can act on behalf of the bot test user.
 
 # ---------------------------------------------------------------------------
-# Connectivity check (evaluated at collection time)
+# Connectivity check
 # ---------------------------------------------------------------------------
 
 
 def _gitea_reachable() -> bool:
-    """Return True if the Gitea instance is reachable with a valid token."""
     if not LIVE_URL or not LIVE_TOKEN:
         return False
     try:
@@ -89,148 +100,171 @@ live_available = pytest.mark.skipif(
 )
 
 # ---------------------------------------------------------------------------
-# Configuration fixture
+# Session-scoped fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
-def live_config() -> SimpleConfig:
-    """Configuration pointing at a real Gitea instance.
-
-    Loads URL and token from ``.env.dev.local`` (preferred) or environment
-    variables ``GITEA_URL`` and ``GITEA_TOKEN``.
-    """
-    return SimpleConfig(
-        url=str(LIVE_URL),
-        token=str(LIVE_TOKEN),
-        log_level="ERROR",
-    )
+def gitea_url() -> str:
+    assert LIVE_URL is not None, "GITEA_URL not set in .env.dev.local"
+    return LIVE_URL
 
 
-# ---------------------------------------------------------------------------
-# Server binary discovery
-# ---------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def admin_token() -> str:
+    assert LIVE_TOKEN is not None, "GITEA_TOKEN not set in .env.dev.local"
+    return LIVE_TOKEN
 
 
 @pytest.fixture(scope="session")
 def server_args() -> list[str]:
-    """Command and args to start the MCP server over stdio.
-
-    Uses the ``gitea-mcp`` console script entry point (defined in
-    ``pyproject.toml`` as ``gitea_mcp_server.server:main``).
-    Falls back to ``python -m gitea_mcp_server`` for compatibility.
-    """
     bin_path = shutil.which("gitea-mcp")
     if bin_path:
         return [bin_path]
-    # Fallback: try python -m (may not work if no __main__.py exists)
     return [sys.executable, "-m", "gitea_mcp_server"]
 
 
 # ---------------------------------------------------------------------------
-# Test data lifecycle — create user + repo + branch + PR, then clean up
+# World fixture — session-scoped per worker, pooled servers within that worker
 # ---------------------------------------------------------------------------
-
-# Use a fixed suffix so parallel workers don't collide.
-_LIVE_SUFFIX: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-_LIVE_OWNER: str = f"bot-{_LIVE_SUFFIX}"
-_LIVE_OWNER_EMAIL: str = f"bot-{_LIVE_SUFFIX}@localhost.local"
-_LIVE_OWNER_PASS: str = "bot-pass"
-_LIVE_REPO: str = f"live-test-{_LIVE_SUFFIX}"
-_LIVE_BRANCH: str = "feature/test-content"
+# With ``asyncio_default_test_loop_scope = session``, all tests share
+# one event loop.  The World's server connections are created once and
+# survive across the worker's tests. State (users, orgs, repos, tokens) is
+# also cached across that worker session.
 
 
-def _create_test_data() -> tuple[int, str, str, str]:
-    """Create user, repo, branch-with-content, and PR via the admin REST API.
+@pytest.fixture(scope="session")
+async def world(
+    gitea_url: str, admin_token: str, server_args: list[str],
+) -> AsyncIterator[World]:
+    """Session-scoped World with pooled MCP servers and lazy state graph.
 
-    Returns ``(pr_number, owner, repo, branch)`` so tests can use them
-    directly without worrying about test data naming.
+    One World per pytest worker. Bootstraps canonical users, org, and team
+    once. Pooled servers (one per token scope) stay alive for that worker.
     """
-    headers = {"Authorization": f"token {LIVE_TOKEN}"}
-    api = httpx.Client(base_url=str(LIVE_URL), headers=headers, timeout=15)
+    from tests.live.world import World
+
+    if not _gitea_reachable():
+        pytest.skip("Live Gitea instance not available.")
+
+    w = World(gitea_url, admin_token, server_args)
+
+    logger.info("World — bootstrapping users, org, team (per session)")
+    await w.start()
+    logger.info("World ready — %d users, %d orgs bootstrapped",
+                 len(w._users), len(w._orgs))
 
     try:
-        # Create the test user if it doesn't exist yet.
-        r = api.get(f"/api/v1/users/{_LIVE_OWNER}")
-        if r.status_code == 404:
-            r = api.post(
-                "/api/v1/admin/users",
-                json={
-                    "username": _LIVE_OWNER,
-                    "email": _LIVE_OWNER_EMAIL,
-                    "password": _LIVE_OWNER_PASS,
-                    "must_change_password": False,
-                },
-            )
-            r.raise_for_status()
-
-        # Create the repo with auto_init (has an initial commit on main).
-        sudo = {**headers, "sudo": _LIVE_OWNER}
-        r = api.get(f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}")
-        if r.status_code == 404:
-            r = api.post(
-                "/api/v1/user/repos",
-                json={
-                    "name": _LIVE_REPO,
-                    "auto_init": True,
-                    "private": False,
-                    "description": "Live integration test repository",
-                },
-                headers=sudo,
-            )
-            r.raise_for_status()
-
-        # Create a file on a new branch to produce a diff.
-        content_b64: str = base64.b64encode(
-            b"## Test content\n\nCreated by live integration tests.\n"
-        ).decode()
-        r = api.post(
-            f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}/contents/test-content.md",
-            json={
-                "content": content_b64,
-                "message": "Add test content for live integration tests",
-                "branch": "main",
-                "new_branch": _LIVE_BRANCH,
-            },
-            headers=sudo,
-        )
-        r.raise_for_status()
-
-        # Create the pull request.
-        r = api.post(
-            f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}/pulls",
-            json={
-                "base": "main",
-                "head": _LIVE_BRANCH,
-                "title": "Test PR for live integration tests",
-                "body": "Created by the live integration test fixture.",
-            },
-            headers=sudo,
-        )
-        r.raise_for_status()
-        pr_number: int = r.json()["number"]
-
-        return pr_number, _LIVE_OWNER, _LIVE_REPO, _LIVE_BRANCH
+        yield w
     finally:
-        api.close()
+        # Cleanup happens before server shutdown so the pooled clients remain
+        # available.  If pytest is already unwinding a test failure, report a
+        # cleanup problem without replacing the original failure.
+        active_error = sys.exc_info()[1]
+        try:
+            logger.info("World — cleaning repositories")
+            await w.cleanup()
+        except Exception:
+            if active_error is None:
+                raise
+            logger.exception("World cleanup failed while preserving test failure")
+        finally:
+            logger.info("World — closing pooled servers")
+            with suppress(Exception):
+                await w.stop()
 
 
-def _destroy_test_data() -> None:
-    """Delete the test repo (removes branches, PRs, everything)."""
-    headers = {"Authorization": f"token {LIVE_TOKEN}", "sudo": _LIVE_OWNER}
-    with httpx.Client(base_url=str(LIVE_URL), headers=headers, timeout=15) as api:
-        api.delete(f"/api/v1/repos/{_LIVE_OWNER}/{_LIVE_REPO}")
+# ---------------------------------------------------------------------------
+# Async leak detection — guard against session-scoped loop pollution
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def live_test_data() -> Generator[tuple[int, str, str, str], None, None]:
-    """Create and tear down test data for a live integration test session.
+@pytest.fixture(autouse=True)
+async def _detect_async_leaks(request: pytest.FixtureRequest) -> Any:
+    """Fail if a live test leaves user-created asyncio tasks behind.
 
-    Returns ``(pr_number, owner, repo, branch)``.
+    With ``asyncio_default_test_loop_scope = "session"``, all live
+    tests share one event loop.  A leaked task from test A can cause
+    mysterious failures in test B twenty tests later.
 
-    The fixture is module-scoped so all tests in one file share the same
-    test data — creating a PR is expensive.
+    Framework-internal tasks with known ``mcp.*`` names and World server pool
+    tasks (``world-server-*``) are skipped.  Default-named tasks are not
+    automatically trusted: a test-created task normally also has a ``Task-N``
+    name and must be awaited or cancelled explicitly.
     """
-    data = _create_test_data()
-    yield data
-    _destroy_test_data()
+    loop = asyncio.get_running_loop()
+    pre = asyncio.all_tasks(loop)
+    yield
+    post = asyncio.all_tasks(loop)
+    leaked = [
+        t for t in post - pre
+        if not t.done()
+        and not t.get_name().startswith("world-server-")  # server pool
+        and not t.get_name().startswith("mcp.")         # MCP library internals
+        and _task_coroutine_name(t) not in _ALLOWED_FRAMEWORK_COROUTINES
+    ]
+    if leaked:
+        names = ", ".join(
+            f"{t.get_name()} ({_task_coroutine_name(t)})"
+            for t in leaked
+        )
+        pytest.fail(
+            f"Leaked {len(leaked)} user task(s) after "
+            f"{request.node.name}: {names}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# MCP client context manager (backward-compatible, per-test server)
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _suppress_anyio_cleanup() -> Any:
+    """Context manager that catches ``anyio`` cleanup errors on teardown.
+
+    ``stdio_client`` uses ``anyio.TaskGroup`` internally.  When a test
+    fails and the context manager unwinds, the task-group cleanup may
+    raise ``BaseExceptionGroup`` with "cancel scope entered in different
+    task" errors.  These are harmless — they happen because
+    ``pytest-asyncio`` may run the teardown in a different task than the
+    setup.  This helper suppresses them.
+    """
+    try:
+        yield
+    except BaseExceptionGroup as beg:
+        # Filter out anyio cancel-scope errors, re-raise everything else
+        others = [e for e in beg.exceptions
+                  if "Attempted to exit cancel scope" not in str(e)]
+        if others:
+            msg = f"{len(others)} non-cleanup exception(s)"
+            raise BaseExceptionGroup(msg, others)
+
+
+@asynccontextmanager
+async def mcp_client(
+    gitea_url: str,
+    server_args: list[str],
+    token: str,
+) -> AsyncIterator[ClientSession]:
+    """Async context manager: start an MCP server, yield a connected session.
+
+    For new tests, prefer the ``world`` fixture — pooled servers stay
+    alive for the entire session.
+    """
+    with _suppress_anyio_cleanup():
+        async with stdio_client(
+            StdioServerParameters(
+                command=server_args[0],
+                args=server_args[1:],
+                env={
+                    **os.environ,
+                    "GITEA_URL": gitea_url,
+                    "GITEA_TOKEN": token,
+                    "TRANSPORT_TYPE": "stdio",
+                },
+            )
+        ) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session

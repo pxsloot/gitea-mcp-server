@@ -101,26 +101,35 @@ class TestToolInfo:
             {"name": "gitea_tool_info",
              "arguments": {"name": "gitea_repo_get", "format": "json"}},
         )
-        assert not result.isError, f"tool_info failed: {result}"
+        data = assert_result_ok(result)
+        assert isinstance(data, dict), f"Expected dict, got {type(data)}"
+        assert_keys(data, "name", "description", "parameters",
+                    "output_example", "annotations", "tags")
+        assert_key_types(data, name=str)
 
     @pytest.mark.live
     async def test_tool_info_concise_vs_full(self, world: World) -> None:
-        """Both detail levels return valid results."""
+        """Both detail levels return valid results with consistent shape."""
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         # Concise
-        await mcp.call_tool(
+        concise = assert_result_ok(await mcp.call_tool(
             "gitea_call_tool",
             {"name": "gitea_tool_info",
              "arguments": {"name": "gitea_repo_get",
                            "format": "json", "detail": "concise"}},
-        )
+        ))
+        assert isinstance(concise, dict)
+        assert_keys(concise, "name", "annotations", "tags")
+
         # Full
-        await mcp.call_tool(
+        full = assert_result_ok(await mcp.call_tool(
             "gitea_call_tool",
             {"name": "gitea_tool_info",
              "arguments": {"name": "gitea_repo_get",
                            "format": "json", "detail": "full"}},
-        )
+        ))
+        assert isinstance(full, dict)
+        assert_keys(full, "name", "annotations", "tags")
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +224,10 @@ class TestResolveType:
             {"name": "gitea_resolve_type",
              "arguments": {"name": "User", "format": "json"}},
         )
-        assert not result.isError, f"resolve_type(User) failed: {result}"
+        data = assert_result_ok(result)
+        assert isinstance(data, dict), f"Expected dict, got {type(data)}"
+        assert_keys(data, "name", "schema")
+        assert_key_types(data, name=str)
 
     @pytest.mark.live
     async def test_resolve_type_unknown_errors(self, world: World) -> None:

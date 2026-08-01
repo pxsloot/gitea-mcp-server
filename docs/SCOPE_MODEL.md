@@ -113,37 +113,16 @@ Logic:
 resources (`resources/custom.py`) now use the ``ResourceMeta`` dataclass
 (``resources/meta.py``) for typed registration metadata.  ``ResourceMeta``
 wraps ``required_scope`` alongside ``size_hint``, ``default_detail``, and
-``optional_params``, serialised via ``.to_dict()``.  The legacy ``scope_meta()``
-helper is still available for cases that don't need the new discovery fields.
+``optional_params``, serialised via ``.to_dict()``.
 
 ---
 
-## `scope_meta()` helper (legacy)
-
-**Module**: `gitea_mcp_server/scope.py`
-
-```python
-def scope_meta(required_scope: str | None) -> dict[str, Any]:
-    return {"required_scope": required_scope}
-```
-
-A one-line factory that signals *intent* — "this dict is scope metadata" —
-rather than inlining `{"required_scope": x}` at every call site.
-
-Prefer ``ResourceMeta`` (``resources/meta.py``) for new resources — it wraps
-``required_scope`` with ``size_hint``, ``default_detail``, and
-``optional_params``, producing metadata visible to agents via
-``list_resources``.  ``scope_meta()`` remains for legacy static resources and
-cases that don't need the new discovery fields.
-
-Used in 14 places across `resources/auto.py` and `resources/custom.py`,
-typically merged into a larger metadata dict:
+Resources declare their required scope via ``ResourceMeta``
+(``resources/meta.py``).  ``ResourceMeta`` wraps ``required_scope`` alongside
+``size_hint``, ``default_detail``, and ``optional_params``, producing metadata
+visible to agents via ``list_resources``.
 
 ```python
-# Legacy pattern (scope_meta)
-_meta = {"cache_ttl": CACHE_TTL_REPOSITORY, **scope_meta("read:repository")}
-
-# Modern pattern (ResourceMeta)
 _meta = ResourceMeta(required_scope="read:repository", size_hint="medium").to_dict()
 ```
 
@@ -224,7 +203,7 @@ changes needed.
 
 | File | Responsibility |
 |------|---------------|
-| `scope.py` | `derive_required_scope()` + `scope_meta()` + `has_sufficient_scope()` — core utilities |
+| `scope.py` | `derive_required_scope()` + `has_sufficient_scope()` — core utilities |
 | `resources/scope.py` | Re-exports from `scope.py` for package-internal consumers |
 | `constants.py` | `TAG_TO_SCOPE` mapping table |
 | `server_setup/spec_loader.py` | `load_exclusion_config()` + `fetch_token_scopes()` + `_compute_excluded_routes()` |
@@ -258,7 +237,7 @@ set can never disagree.
 
 ## References
 
-- `gitea_mcp_server/scope.py` — derivation + scope_meta + sufficiency check
+- `gitea_mcp_server/scope.py` — scope derivation + sufficiency check
 - `gitea_mcp_server/server_setup/spec_loader.py` — fetch_token_scopes, excluded-routes computation
 - `gitea_mcp_server/tools/virtual_params.py` — apply_scope_filter
 - `gitea_mcp_server/constants.py` — TAG_TO_SCOPE

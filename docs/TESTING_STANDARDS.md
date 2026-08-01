@@ -144,7 +144,7 @@ are noted explicitly.
 | `openapi_types.py` | — | — | TypedDict types only (zero runtime code) |
 | `pagination.py` | `test_pagination.py` | Unit | Pagination metadata and runner |
 | `schema_utils.py` | `test_schema_utils.py` | Unit | Shared JSON Schema utilities |
-| `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py`; `scope_meta` is dead code (#620 follow-up) |
+| `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py` |
 | `search.py` | `test_search_bm25.py` | Unit | BM25 search engine tests. Named ``_bm25`` to disambiguate from ``tools/search.py`` → ``test_tool_search.py`` — see pragmatic deviations below |
 | `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 100% — ``TestWrappingPipelineEdgeCases``, ``Test204NoContentWrapping``, ``TestServerEdgeCases.test_main_async_crash_handler`` added in #619 |
 | `validation.py` | `test_validation.py` | Unit | 100% |

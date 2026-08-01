@@ -3,8 +3,6 @@
 Flat module to avoid cross-boundary imports between tools/ and resources/.
 """
 
-from typing import Any
-
 from gitea_mcp_server.constants import TAG_TO_SCOPE
 
 
@@ -28,10 +26,6 @@ def derive_required_scope(swagger_tags: set[str] | None, method: str | None) -> 
     if method and method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return f"read:{scope_name}"
     return f"write:{scope_name}"
-
-
-def scope_meta(required_scope: str | None) -> dict[str, Any]:
-    return {"required_scope": required_scope}  # pragma: no cover — dead code, not called anywhere; see issue #618 follow-up
 
 
 def has_sufficient_scope(required: str | None, available: set[str]) -> bool:
@@ -71,5 +65,4 @@ def has_sufficient_scope(required: str | None, available: set[str]) -> bool:
 __all__ = [
     "derive_required_scope",
     "has_sufficient_scope",
-    "scope_meta",
 ]

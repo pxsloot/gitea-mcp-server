@@ -2,11 +2,11 @@
 
 Minimal set — the ``World`` class and ``RepoState`` methods now handle
 most tool calls (create_repo, create_branch, create_file, etc.).
-Only three functions remain external:
+Only two functions remain external:
 
 - ``create_user_token()`` — the one httpx call (Basic Auth token creation)
 - ``purge_repo()`` — delete-before-create pre-cleanup
-- ``delete_repo()`` — cleanup at end of test file
+- Repository cleanup is owned by the session-scoped ``World``.
 
 Internal helpers (``_unwrap``, ``_error_text``, ``_assert_ok``,
 ``is_error``) are used only within this module.
@@ -107,19 +107,6 @@ async def create_user_token(
 # ---------------------------------------------------------------------------
 # Repository cleanup
 # ---------------------------------------------------------------------------
-
-
-async def delete_repo(
-    mcp: Any,
-    owner: str,
-    name: str,
-) -> None:
-    """Call ``gitea_repo_delete`` to clean up a test repo."""
-    result = await mcp.call_tool(
-        "gitea_repo_delete",
-        {"owner": owner, "repo": name, "format": "json"},
-    )
-    _assert_ok(result)
 
 
 async def purge_repo(

@@ -1,11 +1,11 @@
-"""Phase 3b — Discovery tools: search_tools, tool_info, search, read_doc, resolve_type.
+"""Discovery tools: search_tools, tool_info, search, read_doc, resolve_type.
 
 These are the synthetic tools that agents rely on for discovery and
 navigation.  Every agent session starts here — verifying these through
 the real transport is critical.
 
 Uses the ``world`` fixture — users are pre-bootstrapped, tokens cached.
-Tests call discovery tools through ``world.server_for()``.
+Tests obtain pooled clients through the shared ``Workflow`` facade.
 
 Design decisions
 ----------------
@@ -21,6 +21,7 @@ import pytest
 
 from tests.live.assertions import assert_key_types, assert_keys, assert_result_ok
 from tests.live.conftest import live_available
+from tests.live.workflows import Workflow
 from tests.live.world import DEV, SCOPE_WRITE, World
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ class TestSearchTools:
     @pytest.mark.live
     async def test_search_tools_finds_user_tools(self, world: World) -> None:
         """Searching for 'user' returns relevant user tools."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_search_tools",
             {"query": "user", "format": "json"},
@@ -55,7 +56,7 @@ class TestSearchTools:
     @pytest.mark.live
     async def test_search_tools_has_annotations(self, world: World) -> None:
         """Each result has complete annotations."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         data = assert_result_ok(await mcp.call_tool(
             "gitea_search_tools",
             {"query": "user", "format": "json"},
@@ -70,7 +71,7 @@ class TestSearchTools:
     @pytest.mark.live
     async def test_search_tools_with_category(self, world: World) -> None:
         """Filtering by category restricts results."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         data = assert_result_ok(await mcp.call_tool(
             "gitea_search_tools",
             {"query": "create", "category": "issue", "format": "json"},
@@ -94,7 +95,7 @@ class TestToolInfo:
     @pytest.mark.live
     async def test_tool_info_returns_parameters(self, world: World) -> None:
         """tool_info for a well-known tool returns parameters and annotations."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
             {"name": "gitea_tool_info",
@@ -105,7 +106,7 @@ class TestToolInfo:
     @pytest.mark.live
     async def test_tool_info_concise_vs_full(self, world: World) -> None:
         """Both detail levels return valid results."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         # Concise
         await mcp.call_tool(
             "gitea_call_tool",
@@ -134,7 +135,7 @@ class TestUnifiedSearch:
     @pytest.mark.live
     async def test_search_returns_tools_and_docs(self, world: World) -> None:
         """Unified search for 'issue' returns both tools and docs."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_search",
             {"query": "issue", "format": "json", "min_score": 0.1},
@@ -149,7 +150,7 @@ class TestUnifiedSearch:
     @pytest.mark.live
     async def test_search_results_have_access_uris(self, world: World) -> None:
         """Each search result has an Access Uri for routing."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         data = assert_result_ok(await mcp.call_tool(
             "gitea_search",
             {"query": "user", "format": "json", "min_score": 0.1},
@@ -172,7 +173,7 @@ class TestReadDoc:
     @pytest.mark.live
     async def test_read_doc_token_scopes(self, world: World) -> None:
         """read_doc('token-scopes') returns a guide with expected content."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_read_doc",
             {"topic": "token-scopes"},
@@ -188,7 +189,7 @@ class TestReadDoc:
     @pytest.mark.live
     async def test_read_doc_unknown_topic_errors(self, world: World) -> None:
         """read_doc with unknown topic returns error."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_read_doc",
             {"topic": "non-existent-topic-xyz"},
@@ -208,7 +209,7 @@ class TestResolveType:
     @pytest.mark.live
     async def test_resolve_type_user(self, world: World) -> None:
         """resolve_type('User') returns type schema with cross-references."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
             {"name": "gitea_resolve_type",
@@ -219,7 +220,7 @@ class TestResolveType:
     @pytest.mark.live
     async def test_resolve_type_unknown_errors(self, world: World) -> None:
         """resolve_type of unknown type returns error."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
             {"name": "gitea_resolve_type",

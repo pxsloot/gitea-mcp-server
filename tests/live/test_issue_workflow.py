@@ -1,13 +1,14 @@
-"""Phase 2b — Contributor workflow: labels, milestones, issues, comments, search.
+"""Contributor workflow: labels, milestones, issues, comments, search.
 
 A developer creates a repo with labels and a milestone, files issues with
 label references, adds comments, edits the issue, and searches for it.
 Every step is deeply asserted for shape, content, and (where appropriate)
 cross-format equivalence.
 
-Uses the ``world`` fixture — pooled servers + lazy ``RepoState``.
-``need_repo``, ``need_label``, ``need_milestone``, and ``need_issue``
-are idempotent: create + verify once, return cached state thereafter.
+Uses the ``world`` fixture — pooled servers plus the World-owned dependency
+graph.  ``Workflow.ensure_repo``, ``ensure_label``, ``ensure_milestone``, and
+``ensure_issue`` materialize and verify prerequisites once, then reuse their
+cached state.
 
 Design decisions
 ----------------
@@ -17,7 +18,7 @@ Design decisions
    to call ``gitea_admin_cron_run`` and rebuild the bleve index, then
    polls for results instead of a hard ``sleep(4)``.  No new server
    spawn needed — admin server is already pooled.
-- **Cleanup**: ``TestCleanup`` deletes the repo at end.
+- **Cleanup**: The session-scoped ``World`` deletes registered repositories.
 """
 
 from __future__ import annotations
@@ -30,13 +31,41 @@ import pytest
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.assertions import assert_content, assert_key_types, assert_keys, assert_result_ok
 from tests.live.conftest import live_available
-from tests.live.helpers import delete_repo
+from tests.live.workflows import Workflow
 from tests.live.world import DEV, SCOPE_WRITE, World
 
 _REPO = "live-issues-local"
 _LABEL_BUG = "bug"
 _LABEL_FEATURE = "feature"
 _MILESTONE = "v1.0"
+
+
+async def _ensure_closed_search_issue(world: World) -> None:
+    """Materialize the closed Safari issue independently of test order."""
+    workflow = Workflow(world)
+    repo = await workflow.ensure_repo(
+        DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
+    )
+    issue = await workflow.ensure_issue(
+        repo,
+        "Bug: login fails on Safari (all versions)",
+        body="Steps to reproduce: 1. Open Safari 2. Try login",
+    )
+    mcp = await workflow.client(DEV, SCOPE_WRITE)
+    current = assert_result_ok(await mcp.call_tool(
+        "gitea_issue_get_issue",
+        {"owner": DEV.username, "repo": _REPO,
+         "index": issue["number"], "format": "json"},
+    ))
+    if current.get("state") != "closed":
+        result = await mcp.call_tool(
+            "gitea_issue_edit_issue",
+            {"owner": DEV.username, "repo": _REPO,
+             "index": issue["number"],
+             "title": "Bug: login fails on Safari (all versions)",
+             "state": "closed", "format": "json"},
+        )
+        assert not result.isError, "Failed to establish closed issue search state"
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +80,8 @@ class TestSetup:
     @pytest.mark.live
     async def test_create_repo(self, world: World) -> None:
         """Create the issue-workflow test repo."""
-        repo = await world.need_repo(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(
             DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
             auto_init=True, description="Issue workflow test repo")
         assert_content(repo.data, name=_REPO)
@@ -59,29 +89,38 @@ class TestSetup:
     @pytest.mark.live
     async def test_create_labels(self, world: World) -> None:
         """Create labels for issue categorization."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        bug = await repo.need_label(_LABEL_BUG, "#ff0000", description="Bug report")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        bug = await workflow.ensure_label(
+            repo, _LABEL_BUG, "#ff0000", description="Bug report"
+        )
         assert_keys(bug, "id", "name", "color")
         assert_content(bug, name=_LABEL_BUG)
         assert_key_types(bug, id=int, name=str)
 
-        feat = await repo.need_label(_LABEL_FEATURE, "#00ff00", description="Feature request")
+        feat = await workflow.ensure_label(
+            repo, _LABEL_FEATURE, "#00ff00", description="Feature request"
+        )
         assert_content(feat, name=_LABEL_FEATURE)
 
     @pytest.mark.live
     async def test_create_milestone(self, world: World) -> None:
         """Create a milestone for issue tracking."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        ms = await repo.need_milestone(_MILESTONE, description="First milestone")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        ms = await workflow.ensure_milestone(
+            repo, _MILESTONE, description="First milestone"
+        )
         assert_keys(ms, "id", "title", "description")
         assert_content(ms, title=_MILESTONE)
 
     @pytest.mark.live
     async def test_list_labels_shape(self, world: World) -> None:
         """List labels — verify shape of returned items."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_label(_LABEL_BUG, "#ff0000")
-        await repo.need_label(_LABEL_FEATURE, "#00ff00")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_label(repo, _LABEL_BUG, "#ff0000")
+        await workflow.ensure_label(repo, _LABEL_FEATURE, "#00ff00")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_list_labels",
@@ -107,9 +146,11 @@ class TestIssues:
     @pytest.mark.live
     async def test_create_issue_with_labels(self, world: World) -> None:
         """Create an issue with labels by name — verify shape, content, labels attached."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_label(_LABEL_BUG, "#ff0000")
-        issue = await repo.need_issue(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_label(repo, _LABEL_BUG, "#ff0000")
+        issue = await workflow.ensure_issue(
+            repo,
             title="Bug: login fails on Safari",
             body="Steps to reproduce: 1. Open Safari 2. Try login",
             labels=[_LABEL_BUG],
@@ -125,9 +166,10 @@ class TestIssues:
     @pytest.mark.live
     async def test_get_issue_shape(self, world: World) -> None:
         """Get the created issue — verify full shape."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         # Retrieve the cached issue by title
-        issue = await repo.need_issue("Bug: login fails on Safari")
+        issue = await workflow.ensure_issue(repo, "Bug: login fails on Safari")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         data = assert_result_ok(await mcp.call_tool(
             "gitea_issue_get_issue",
@@ -142,8 +184,9 @@ class TestIssues:
     @pytest.mark.live
     async def test_add_comment(self, world: World) -> None:
         """Add a comment to the issue — verify shape and content."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        issue = await repo.need_issue("Bug: login fails on Safari")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        issue = await workflow.ensure_issue(repo, "Bug: login fails on Safari")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_create_comment",
@@ -159,8 +202,9 @@ class TestIssues:
     @pytest.mark.live
     async def test_edit_issue(self, world: World) -> None:
         """Edit the issue — change title and close it."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        issue = await repo.need_issue("Bug: login fails on Safari")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        issue = await workflow.ensure_issue(repo, "Bug: login fails on Safari")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_edit_issue",
@@ -184,6 +228,7 @@ class TestIssueSearch:
     @pytest.mark.live
     async def test_search_finds_closed_issue(self, world: World) -> None:
         """Search for 'Safari' — must find the closed issue (state=all)."""
+        await _ensure_closed_search_issue(world)
         # Rebuild search index via admin cron (pooled admin server)
         admin = await world.admin_server()
         r = await admin.call_tool(
@@ -218,6 +263,7 @@ class TestIssueSearch:
     @pytest.mark.live
     async def test_search_shape(self, world: World) -> None:
         """Verify search result items have correct shape."""
+        await _ensure_closed_search_issue(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_search_issues",
@@ -228,20 +274,3 @@ class TestIssueSearch:
         assert len(data) > 0
         assert_keys(data[0], "number", "title", "state",
                     "user", "created_at", "html_url")
-
-
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
-
-
-@live_available
-class TestCleanup:
-    """Delete the test repo."""
-
-    @pytest.mark.live
-    @pytest.mark.timeout(30)
-    async def test_delete_repo(self, world: World) -> None:
-        """Delete the issue workflow test repo."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await delete_repo(mcp, DEV.username, _REPO)

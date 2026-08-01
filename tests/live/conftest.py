@@ -8,14 +8,15 @@ Two server-access patterns are available:
 1. **``mcp_client`` context manager** (function-scoped, backward-compatible):
    Each test spawns its own MCP server process.
 
-2. **``world`` fixture** (session-scoped):  A ``World`` object with pooled
+2. **``world`` fixture** (session-scoped per worker):  A ``World`` object with pooled
    MCP servers and lazy state graph.  With ``asyncio_default_test_loop_scope
    = session``, all tests share one event loop, so server connections live
-   across all modules.  ``need_repo`` creates the repo once and returns
-   the cached ``RepoState`` instantly on subsequent calls.
+    within that worker.  ``Workflow.ensure_repo`` creates and verifies a repo
+    once, then returns the cached graph state on subsequent calls.
 
-Prefer the ``world`` fixture for new and rewritten tests.
-The suite runs sequentially (no xdist) — one World serves all modules.
+Prefer the ``world`` fixture for new and rewritten tests. One World is
+created per pytest worker; tests assigned to that worker share pooled servers
+and execute sequentially. Worker/run-specific entity names make xdist safe.
 
 Fixtures provided
 -----------------
@@ -33,9 +34,9 @@ import logging
 import os
 import shutil
 import sys
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
@@ -49,6 +50,14 @@ if TYPE_CHECKING:
     from tests.live.world import World
 
 logger = logging.getLogger(__name__)
+_ALLOWED_FRAMEWORK_COROUTINES = frozenset({"async_finalizer"})
+
+
+def _task_coroutine_name(task: asyncio.Task[Any]) -> str:
+    """Return a coroutine code name without assuming asyncio's union type."""
+    coroutine = task.get_coro()
+    code = getattr(coroutine, "cr_code", None)
+    return cast("str", getattr(code, "co_name", ""))
 
 # ---------------------------------------------------------------------------
 # Load credentials
@@ -116,12 +125,12 @@ def server_args() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# World fixture — session-scoped, pooled servers across all modules
+# World fixture — session-scoped per worker, pooled servers within that worker
 # ---------------------------------------------------------------------------
 # With ``asyncio_default_test_loop_scope = session``, all tests share
 # one event loop.  The World's server connections are created once and
-# survive across all modules.  State (users, orgs, repos, tokens) is
-# also cached across the entire session.
+# survive across the worker's tests. State (users, orgs, repos, tokens) is
+# also cached across that worker session.
 
 
 @pytest.fixture(scope="session")
@@ -130,9 +139,8 @@ async def world(
 ) -> AsyncIterator[World]:
     """Session-scoped World with pooled MCP servers and lazy state graph.
 
-    One World per test session.  Bootstraps canonical users, org, and
-    team on first use.  Pooled servers (one per token scope) stay alive
-    for all tests across all modules.
+    One World per pytest worker. Bootstraps canonical users, org, and team
+    once. Pooled servers (one per token scope) stay alive for that worker.
     """
     from tests.live.world import World
 
@@ -146,10 +154,24 @@ async def world(
     logger.info("World ready — %d users, %d orgs bootstrapped",
                  len(w._users), len(w._orgs))
 
-    yield w
-
-    logger.info("World — closing pooled servers")
-    await w.stop()
+    try:
+        yield w
+    finally:
+        # Cleanup happens before server shutdown so the pooled clients remain
+        # available.  If pytest is already unwinding a test failure, report a
+        # cleanup problem without replacing the original failure.
+        active_error = sys.exc_info()[1]
+        try:
+            logger.info("World — cleaning repositories")
+            await w.cleanup()
+        except Exception:
+            if active_error is None:
+                raise
+            logger.exception("World cleanup failed while preserving test failure")
+        finally:
+            logger.info("World — closing pooled servers")
+            with suppress(Exception):
+                await w.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -165,10 +187,10 @@ async def _detect_async_leaks(request: pytest.FixtureRequest) -> Any:
     tests share one event loop.  A leaked task from test A can cause
     mysterious failures in test B twenty tests later.
 
-    Framework-internal tasks (``Task-N`` default names, ``mcp.*``
-    library names) and World server pool tasks (``world-server-*``)
-    are skipped.  Only tasks with explicit user-set names trigger a
-    failure.
+    Framework-internal tasks with known ``mcp.*`` names and World server pool
+    tasks (``world-server-*``) are skipped.  Default-named tasks are not
+    automatically trusted: a test-created task normally also has a ``Task-N``
+    name and must be awaited or cancelled explicitly.
     """
     loop = asyncio.get_running_loop()
     pre = asyncio.all_tasks(loop)
@@ -177,12 +199,15 @@ async def _detect_async_leaks(request: pytest.FixtureRequest) -> Any:
     leaked = [
         t for t in post - pre
         if not t.done()
-        and not t.get_name().startswith("Task-")       # framework default
         and not t.get_name().startswith("world-server-")  # server pool
         and not t.get_name().startswith("mcp.")         # MCP library internals
+        and _task_coroutine_name(t) not in _ALLOWED_FRAMEWORK_COROUTINES
     ]
     if leaked:
-        names = ", ".join(t.get_name() for t in leaked)
+        names = ", ".join(
+            f"{t.get_name()} ({_task_coroutine_name(t)})"
+            for t in leaked
+        )
         pytest.fail(
             f"Leaked {len(leaked)} user task(s) after "
             f"{request.node.name}: {names}"

@@ -35,8 +35,9 @@ the World starts **one server per token scope** and pools them:
 +----------------+---------------------------+----------------------+
 
 This drops server process spawns from ~86 to ~4, saving ~2 minutes.
-The suite runs sequentially (no xdist) — one World, one session,
-one bootstrap, zero redundant work.
+One World is created per pytest worker. Tests assigned to that worker share
+its pooled servers and execute sequentially, while the namespace suffix keeps
+different workers and concurrent runs isolated.
 
 State graph
 -----------
@@ -49,7 +50,8 @@ The World tracks what exists::
     └── _repos  {"dev/workflow-repo": RepoState,
                   "dev/issues-repo":   RepoState, ...}
 
-Each ``RepoState`` tracks branches, labels, milestones, issues, and tags
+Each ``RepoState`` tracks branches, labels, milestones, issues, pull requests,
+and tags
 inside that repo.  ``need_*`` methods are idempotent — create+verify
 the first time, return cached state every subsequent call.
 
@@ -62,7 +64,8 @@ Design decisions
   (user, scopes) key.  One mint per combination per suite run.
 - **Canonical scope lists**: ``SCOPE_WRITE``, ``SCOPE_READ``,
   ``SCOPE_LIMITED`` — single source of truth.
-- **Only repos are cleaned up on re-create.**  Users, orgs, tokens,
+- **Repositories are cleaned up at World teardown.** ``purge_repo`` also
+  runs before creation so interrupted runs start cleanly. Users, orgs, tokens,
   and teams persist on the throwaway test instance.
 """
 
@@ -70,17 +73,29 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import uuid
 from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from tests.helpers.mcp_results import extract_text_content
+from tests.live.dependency_graph import DependencyGraph
 
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-_WORKER: str = "local"
-"""Fixed suffix for test entity names — sequential suite, no xdist."""
+_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
+"""The xdist worker id, or ``local`` outside xdist."""
+
+_RUN_ID: str = re.sub(
+    r"[^a-z0-9-]", "-",
+    os.getenv("GITEA_LIVE_RUN_ID", uuid.uuid4().hex[:8]).lower(),
+).strip("-")[:16] or uuid.uuid4().hex[:8]
+"""Run namespace; override with ``GITEA_LIVE_RUN_ID`` in CI."""
+
+_NAMESPACE: str = f"{_RUN_ID}-{_WORKER}"
+"""Unique suffix preventing concurrent live runs from sharing entities."""
 
 # =============================================================================
 # Canonical scope lists
@@ -106,7 +121,7 @@ class User:
     __slots__ = ("email", "password", "username")
 
     def __init__(self, base: str, password: str) -> None:
-        self.username = f"{base}-{_WORKER}"
+        self.username = f"{base}-{_NAMESPACE}"
         self.password = password
         self.email = f"{self.username}@live-test.local"
 
@@ -156,10 +171,10 @@ async def get_token(url: str, user: User, scopes: list[str]) -> str:
 # Org and team
 # =============================================================================
 
-ORG_NAME = f"live-org-{_WORKER}"
+ORG_NAME = f"live-org-{_NAMESPACE}"
 """Test organization name."""
 
-TEAM_NAME = f"live-team-{_WORKER}"
+TEAM_NAME = f"live-team-{_NAMESPACE}"
 """Test team within the organization."""
 
 
@@ -272,6 +287,7 @@ class RepoState:
     labels: dict[str, dict[str, Any]] = field(default_factory=dict)
     milestones: dict[str, dict[str, Any]] = field(default_factory=dict)
     issues: dict[int, dict[str, Any]] = field(default_factory=dict)
+    pull_requests: dict[int, dict[str, Any]] = field(default_factory=dict)
     tags: dict[str, dict[str, Any]] = field(default_factory=dict)
     _files: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
     """Files cached by ``{branch}:{path}`` key."""
@@ -323,6 +339,9 @@ class RepoState:
         file_key = f"{branch}:{path}"
         if file_key in self._files:
             return self._files[file_key]
+
+        if branch != "main" and branch not in self.branches:
+            await self.need_branch(branch)
 
         import base64
 
@@ -473,6 +492,60 @@ class RepoState:
         self.issues[data["number"]] = data
         return data
 
+    async def need_pull_request(
+        self,
+        title: str,
+        *,
+        head: str,
+        base: str = "main",
+        body: str | None = None,
+    ) -> dict[str, Any]:
+        """Ensure a pull request exists, matching cached or remote state."""
+        for cached in self.pull_requests.values():
+            if cached.get("title") == title:
+                return cached
+
+        mcp = await self._server()
+        listed = await mcp.call_tool(
+            "gitea_repo_list_pull_requests",
+            {
+                "owner": self.owner,
+                "repo": self.name,
+                "state": "all",
+                "format": "json",
+            },
+        )
+        if not _is_error(listed):
+            try:
+                data = json.loads(extract_text_content(listed.content))
+                if isinstance(data, list):
+                    for item in data:
+                        if item.get("title") == title:
+                            self.pull_requests[item["number"]] = item
+                            return cast("dict[str, Any]", item)
+            except (json.JSONDecodeError, AssertionError):
+                pass
+
+        kwargs: dict[str, Any] = {
+            "owner": self.owner,
+            "repo": self.name,
+            "head": head,
+            "base": base,
+            "title": title,
+            "format": "json",
+        }
+        if body:
+            kwargs["body"] = body
+        result = await mcp.call_tool("gitea_repo_create_pull_request", kwargs)
+        if _is_error(result):
+            msg = f"need_pull_request({title!r}) failed: {_error_text(result)[:300]}"
+            raise AssertionError(msg)
+        data = _unwrap(result)
+        _assert_keys(data, "number", "title", "state", "head", "base")
+        _assert_content(data, title=title, state="open")
+        self.pull_requests[data["number"]] = data
+        return data
+
     async def need_tag(
         self,
         name: str,
@@ -516,24 +589,26 @@ class RepoState:
 class World:
     """Test world: pooled MCP servers + lazy state graph.
 
-    Created once per session (session-scoped fixture).  With
-    ``asyncio_default_test_loop_scope = session``, all tests share one
-    event loop — server connections are created once and survive
-    across all modules.
+    Created once per pytest worker (session-scoped fixture).  With
+    ``asyncio_default_test_loop_scope = session``, tests assigned to that
+    worker share one event loop and pooled server connections.
 
-    The entire suite runs sequentially (no xdist) — one World serves
-    all test modules with zero redundant bootstraps.
+    Tests sharing one World execute sequentially. Under xdist, each worker
+    gets its own World and namespace, so independent live stories can run in
+    parallel without sharing Forgejo entities.
 
     Usage::
 
         async def test_X(world):
-            repo = await world.need_repo(...)  # creates repo (tests tool)
-            mcp = await world.server_for(DEV, SCOPE_WRITE)  # pooled
+            workflow = Workflow(world)
+            repo = await workflow.ensure_repo(...)  # creates + verifies
+            mcp = await workflow.client(DEV, SCOPE_WRITE)  # pooled
             ...
 
         async def test_Y(world):
-            repo = await world.need_repo(...)  # returns instantly
-            mcp = await world.server_for(DEV, SCOPE_WRITE)  # same server
+            workflow = Workflow(world)
+            repo = await workflow.ensure_repo(...)  # verified graph node
+            mcp = await workflow.client(DEV, SCOPE_WRITE)  # same server
             ...
     """
 
@@ -550,6 +625,8 @@ class World:
         self._orgs: dict[str, dict[str, Any]] = {}
         self._teams: dict[str, dict[str, Any]] = {}
         self._repos: dict[str, RepoState] = {}
+        self.dependency_graph = DependencyGraph()
+        """Authoritative verified dependency graph for this worker's World."""
         self._bootstrapped: bool = False
         self.bootstrap_count: int = 0
         """Number of times ``start()`` has been called (metatest: must be 1)."""
@@ -632,6 +709,27 @@ class World:
         """Close all pooled servers."""
         with suppress(Exception):
             await self._exit_stack.aclose()
+
+    async def cleanup(self) -> None:
+        """Delete repositories created by this World, best effort per repo.
+
+        Cleanup runs while pooled servers are still alive.  Every repository
+        is attempted even if an earlier deletion fails; the first failure is
+        re-raised after the remaining repositories have been attempted.
+        """
+        from tests.live.helpers import purge_repo
+
+        failures: list[tuple[str, BaseException]] = []
+        for key, repo in self._repos.items():
+            try:
+                mcp = await self.server_for(repo._user, repo._scopes)
+                await purge_repo(mcp, repo.owner, repo.name)
+            except BaseException as exc:
+                failures.append((key, exc))
+        if failures:
+            details = "; ".join(f"{key}: {exc}" for key, exc in failures)
+            message = f"Live repository cleanup failed: {details}"
+            raise RuntimeError(message)
 
     # ── Server pool ───────────────────────────────────────────────────
 
@@ -912,12 +1010,3 @@ class World:
                 await state.need_label(label_name, color)
 
         return state
-
-
-# =============================================================================
-# Concern registration (Phase 2+)
-# =============================================================================
-# Stub — will be populated when concern tests are rewritten.
-# Tests will call ``world.register("gitea_repo_get", owner=..., repo=...)
-# .cross_format().shape_keys(...)`` and concern tests will iterate over
-# the registry.

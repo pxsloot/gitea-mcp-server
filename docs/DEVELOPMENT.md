@@ -48,8 +48,11 @@ TRANSPORT_TYPE=http uv run python -m gitea_mcp_server
 # All tests (sequential by default)
 uv run pytest
 
-# Parallel execution (faster on multi-core)
+# Parallel execution; live tests are worker-isolated and sequential per worker
 uv run pytest -n auto
+
+# Optional explicit namespace for concurrent CI runs
+GITEA_LIVE_RUN_ID="ci-${CI_PIPELINE_ID:-local}" uv run pytest -n auto
 
 # Specific area
 uv run pytest tests/unit/openapi_converter/

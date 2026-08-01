@@ -1,4 +1,4 @@
-"""Phase 4a — Scope enforcement: tool visibility and write blocking.
+"""Scope enforcement: tool visibility and write blocking.
 
 Token scopes determine what tools an agent can see and call.  These
 tests verify that the scope gating pipeline works end-to-end through
@@ -37,8 +37,8 @@ class TestToolVisibility:
     async def test_admin_tools_not_visible(self, world: World) -> None:
         """``list_tools`` must not include admin tools for a dev (non-sudo) token."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        tools = await mcp.list_tools()
-        tool_names = [str(t[0]) for t in tools]
+        tool_result = await mcp.list_tools()
+        tool_names = [tool.name for tool in tool_result.tools]
         admin_tools = [n for n in tool_names if "admin" in n.lower()]
         assert len(admin_tools) == 0, (
             f"Admin tools visible to non-admin token: {admin_tools}"

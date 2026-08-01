@@ -1,25 +1,25 @@
-"""Phase 2a — Repo owner workflow: repos, branches, files, tags, commit status.
+"""Repository owner workflow: repos, branches, files, tags, commit status.
 
 A developer (``DEV`` from ``world.py``) creates a repository, branches,
 tags, files, commit statuses, and branch protection rules.  Every step
 is deeply asserted for shape, content, and cross-format equivalence.
 
 Uses the ``world`` fixture — one pooled server per token scope (zero
-per-test server spawns).  ``need_repo`` creates the repo once and
-returns a cached ``RepoState``; all subsequent tests reuse it.
+per-test server spawns).  ``Workflow.ensure_repo`` and the other dependency
+methods materialize verified repository state through the World-owned graph.
 
 Design decisions
 ----------------
 - **Pooled servers**: ``world.server_for(DEV, SCOPE_WRITE)`` returns the
   same server session for every test in this file.
-- **Lazy state**: ``world.need_repo()`` creates (testing the tool) on
-  first call; every subsequent call returns the cached ``RepoState``.
-- **``RepoState.need_*``**: ``need_branch``, ``need_file``, ``need_tag``
+- **Workflow dependencies**: ``Workflow.ensure_repo`` creates (testing the
+  tool) on first call; subsequent calls reuse the verified graph node.
+- **Repository state**: ``ensure_branch``, ``ensure_file``, and ``ensure_tag``
   are idempotent — create + verify once, return cached state thereafter.
 - **Cross-format**: Read operations also verify json↔markdown equivalence.
 - **Regression guards**: Commit status ``pending`` state (B1 fix),
   ``tag_name``→``name`` naming divergence, ``filepath`` parameter naming.
-- **Cleanup**: ``TestCleanup`` deletes the repo at the end.
+- **Cleanup**: The session-scoped ``World`` deletes registered repositories.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from tests.live.assertions import (
     assert_result_ok,
 )
 from tests.live.conftest import live_available
-from tests.live.helpers import delete_repo
+from tests.live.workflows import Workflow
 from tests.live.world import DEV, SCOPE_WRITE, World
 
 _REPO = "live-repo-local"
@@ -55,7 +55,8 @@ class TestRepoCreate:
     @pytest.mark.live
     async def test_create_repo(self, world: World) -> None:
         """Create a repo — verify shape, content."""
-        repo = await world.need_repo(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(
             DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
             auto_init=True, description="Workflow test playground")
         assert_content(repo.data, name=_REPO)
@@ -63,7 +64,8 @@ class TestRepoCreate:
     @pytest.mark.live
     async def test_repo_shape(self, world: World) -> None:
         """Get repo — verify full shape and key types."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         data = assert_result_ok(await mcp.call_tool(
             "gitea_repo_get",
@@ -78,7 +80,8 @@ class TestRepoCreate:
     @pytest.mark.live
     async def test_repo_cross_format(self, world: World) -> None:
         """``gitea_repo_get`` — json ↔ markdown equivalence."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
             mcp, "gitea_repo_get",
@@ -98,8 +101,9 @@ class TestBranchAndFiles:
     @pytest.mark.live
     async def test_create_branch(self, world: World) -> None:
         """Create a feature branch from main — verify shape."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        branch = await repo.need_branch(_BRANCH)
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        branch = await workflow.ensure_branch(repo, _BRANCH)
         assert_keys(branch, "name", "commit")
         assert_content(branch, name=_BRANCH)
         assert_key_types(branch, name=str)
@@ -107,13 +111,13 @@ class TestBranchAndFiles:
     @pytest.mark.live
     async def test_create_file_on_branch(self, world: World) -> None:
         """Create a file on the feature branch (regression: ``filepath`` param)."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_branch(_BRANCH)
-        result = await repo.need_file(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        result = await workflow.ensure_file(
+            repo,
             _FILE,
             content="# Generated Info\n\nWorkflow test file.\n",
             branch=_BRANCH,
-            message="Add workflow test file",
         )
         assert_keys(result, "commit")
         assert result["commit"]["sha"] is not None
@@ -121,8 +125,10 @@ class TestBranchAndFiles:
     @pytest.mark.live
     async def test_list_contents_shape(self, world: World) -> None:
         """List root directory — verify shape and cross-format."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_file(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_file(
+            repo,
             _FILE,
             content="# Generated Info\n\nWorkflow test file.\n",
             branch=_BRANCH,
@@ -148,8 +154,10 @@ class TestBranchAndFiles:
     @pytest.mark.live
     async def test_get_file_contents(self, world: World) -> None:
         """Read the file we created — verify content."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_file(
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_file(
+            repo,
             _FILE,
             content="# Generated Info\n\nWorkflow test file.\n",
             branch=_BRANCH,
@@ -177,8 +185,9 @@ class TestTags:
     @pytest.mark.live
     async def test_create_annotated_tag(self, world: World) -> None:
         """Create an annotated tag — verify shape (regression: ``tag_name``→``name``)."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        tag = await repo.need_tag(_TAG, message="First workflow tag")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        tag = await workflow.ensure_tag(repo, _TAG, message="First workflow tag")
         # Response uses 'name', not 'tag_name' (naming divergence)
         assert_keys(tag, "name", "message", "commit")
         assert_content(tag, name=_TAG)
@@ -186,8 +195,9 @@ class TestTags:
     @pytest.mark.live
     async def test_list_tags(self, world: World) -> None:
         """List tags — verify the tag appears and cross-format."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_tag(_TAG, message="First workflow tag")
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_tag(repo, _TAG, message="First workflow tag")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_list_tags",
@@ -218,8 +228,9 @@ class TestCommitStatus:
     @pytest.mark.live
     async def test_set_pending_status(self, world: World) -> None:
         """Set a pending CI status — regression: enum must accept 'pending'."""
-        repo = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        await repo.need_branch(_BRANCH)
+        workflow = Workflow(world)
+        repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        await workflow.ensure_branch(repo, _BRANCH)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
 
         # Get the latest commit SHA on the feature branch
@@ -255,7 +266,8 @@ class TestBranchProtection:
     @pytest.mark.live
     async def test_create_branch_protection(self, world: World) -> None:
         """Create a branch protection rule — verify it succeeds."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_create_branch_protection",
@@ -271,7 +283,8 @@ class TestBranchProtection:
     @pytest.mark.live
     async def test_list_branch_protection(self, world: World) -> None:
         """List branch protections — verify the rule appears."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_list_branch_protection",
@@ -280,23 +293,21 @@ class TestBranchProtection:
         data = assert_result_ok(result)
         assert isinstance(data, list)
         rule_names = [r.get("rule_name") for r in data]
+        if "main" not in rule_names:
+            create_result = await mcp.call_tool(
+                "gitea_repo_create_branch_protection",
+                {"owner": DEV.username, "repo": _REPO,
+                 "rule_name": "main", "required_approvals": 1,
+                 "enable_push": False, "enable_force_push": False,
+                 "format": "json"},
+            )
+            assert not create_result.isError, "Failed to establish main protection rule"
+            data = assert_result_ok(await mcp.call_tool(
+                "gitea_repo_list_branch_protection",
+                {"owner": DEV.username, "repo": _REPO, "format": "json"},
+            ))
+            assert isinstance(data, list)
+            rule_names = [r.get("rule_name") for r in data]
         assert "main" in rule_names, (
             f"Branch protection 'main' not found: {rule_names}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
-
-
-@live_available
-class TestCleanup:
-    """Delete the test repo."""
-
-    @pytest.mark.live
-    @pytest.mark.timeout(30)
-    async def test_delete_repo(self, world: World) -> None:
-        """Delete the workflow test repo."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await delete_repo(mcp, DEV.username, _REPO)

@@ -33,8 +33,8 @@ from __future__ import annotations
 
 import pytest
 
-from tests.helpers.mcp_results import extract_text_content
 from tests.live.conftest import live_available, mcp_client
+from tests.live.quality import ErrorContent
 
 _BOGUS_INDEX = 999999
 
@@ -62,11 +62,8 @@ class TestAPINotFound:
                 "gitea_issue_get_issue",
                 {"owner": "mcp-server", "repo": "gitea-mcp-server", "index": _BOGUS_INDEX},
             )
-            assert result.isError, "Expected error for non-existent issue index"
-            text = extract_text_content(result.content)
-            assert "not found" in text.lower() or "404" in text or "APINotFound" in text, (
-                f"APINotFound error should mention 'not found' or '404', "
-                f"got: {text[:200]!r}"
+            await ErrorContent(("not found",)).verify(
+                mcp, "gitea_issue_get_issue", {}, result,
             )
 
 
@@ -86,8 +83,7 @@ class TestAPIValidation:
         server_args: list[str],
         admin_token: str,
     ) -> None:
-        """Creating an issue with a non-existent label returns an error
-        that mentions the bad label name and lists available options."""
+        """A label-bearing issue request returns an API error through MCP."""
         async with mcp_client(gitea_url, server_args, admin_token) as mcp:
             result = await mcp.call_tool(
                 "gitea_issue_create_issue",
@@ -98,7 +94,9 @@ class TestAPIValidation:
                     "labels": ["NonExistentLabelXYZ"],
                 },
             )
-            assert result.isError, "Expected error for non-existent label name"
+            await ErrorContent(("api request failed",)).verify(
+                mcp, "gitea_issue_create_issue", {}, result,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -124,12 +122,6 @@ class TestUnknownTool:
                 "gitea_call_tool",
                 {"name": "gitea_this_tool_does_not_exist_at_all", "arguments": {}},
             )
-            assert result.isError, "Expected error for calling unknown tool"
-            text = extract_text_content(result.content)
-            assert any(
-                phrase in text.lower()
-                for phrase in ["not found", "unknown", "does not exist", "not available"]
-            ), (
-                f"Error for unknown tool should mention it's not found, "
-                f"got: {text[:300]!r}"
+            await ErrorContent(("not found",)).verify(
+                mcp, "gitea_call_tool", {}, result,
             )

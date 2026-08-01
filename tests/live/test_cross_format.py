@@ -1,11 +1,11 @@
-"""Phase 3a — Cross-format equivalence: systematic json↔markdown↔raw verification.
+"""Cross-format equivalence: systematic json↔markdown↔raw verification.
 
 Tests that the three format options produce equivalent information across
 the full transport stack.  Uses ``assert_formats_equivalent`` helper to
 test edge cases: empty results, nested objects, raw format, and detail
 levels.
 
-Uses the ``world`` fixture — setup is declarative via ``need_repo``.
+Uses the ``world`` fixture — setup is declarative via ``Workflow.ensure_repo``.
 Cross-format calls use ``world.server_for()`` for pooled server access.
 
 Design decisions
@@ -25,7 +25,7 @@ import pytest
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.assertions import assert_formats_equivalent, assert_keys, assert_result_ok
 from tests.live.conftest import live_available
-from tests.live.helpers import delete_repo
+from tests.live.workflows import Workflow
 from tests.live.world import DEV, SCOPE_WRITE, World
 
 _REPO = "live-fmt-local"
@@ -43,7 +43,7 @@ class TestSetup:
     @pytest.mark.live
     async def test_create_repo(self, world: World) -> None:
         """Create a minimal repo."""
-        repo = await world.need_repo(
+        repo = await Workflow(world).ensure_repo(
             DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE, auto_init=True)
         assert repo.data["name"] == _REPO
 
@@ -60,7 +60,8 @@ class TestJsonMarkdownEquivalence:
     @pytest.mark.live
     async def test_single_object_equivalence(self, world: World) -> None:
         """Single object (repo get): json and markdown carry same data."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
             mcp, "gitea_repo_get",
@@ -70,7 +71,8 @@ class TestJsonMarkdownEquivalence:
     @pytest.mark.live
     async def test_list_equivalence(self, world: World) -> None:
         """List result (list labels): json and markdown carry same data."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
             mcp, "gitea_issue_list_labels",
@@ -80,7 +82,8 @@ class TestJsonMarkdownEquivalence:
     @pytest.mark.live
     async def test_empty_list_equivalence(self, world: World) -> None:
         """Empty search result: json=[] → markdown shows clear empty state."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
             mcp, "gitea_issue_search_issues",
@@ -102,7 +105,8 @@ class TestRawFormat:
     @pytest.mark.live
     async def test_raw_format_returns_content(self, world: World) -> None:
         """Format=raw on a repo get returns content (possibly wrapped)."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get",
@@ -120,7 +124,8 @@ class TestRawFormat:
     @pytest.mark.live
     async def test_raw_list_returns_parseable(self, world: World) -> None:
         """Format=raw on list labels returns parseable content."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_list_labels",
@@ -148,7 +153,8 @@ class TestDetailLevels:
     @pytest.mark.live
     async def test_concise_collapses_refs(self, world: World) -> None:
         """Detail=concise collapses $ref:nested objects to type labels."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get",
@@ -168,7 +174,8 @@ class TestDetailLevels:
     @pytest.mark.live
     async def test_full_detail_expands_all(self, world: World) -> None:
         """Detail=full expands all nested objects."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get",
@@ -182,20 +189,3 @@ class TestDetailLevels:
             f"got {type(owner).__name__}: {owner!r}"
         )
         assert "login" in owner
-
-
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
-
-
-@live_available
-class TestCleanup:
-    """Delete the test repo."""
-
-    @pytest.mark.live
-    @pytest.mark.timeout(30)
-    async def test_delete_repo(self, world: World) -> None:
-        """Delete the format test repo."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await delete_repo(mcp, DEV.username, _REPO)

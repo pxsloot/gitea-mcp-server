@@ -1,12 +1,11 @@
 """Metatests — verify the test infrastructure itself works correctly.
 
-These tests run last in the session (pytest collects files
-alphabetically, so ``test_meta.py`` runs after ``test_world_setup.py``
-through ``test_scope.py``).  They assert invariants about the World
-fixture that prove session-scoped pooling is working:
+These tests are infrastructure diagnostics, not an ordered finalization
+phase.  They assert invariants about the World fixture that prove
+session-scoped pooling is working:
 
 1. ``World.start()`` was called exactly once (not once per module).
-2. The World's cleanup logic is verifiable.
+2. Pooled servers remain available until session teardown.
 """
 
 from __future__ import annotations

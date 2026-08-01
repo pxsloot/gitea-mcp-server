@@ -1,4 +1,4 @@
-"""Phase 2c — Pull request workflow: PR creation, diff download, review comment.
+"""Pull request workflow: PR creation, diff download, review comment.
 
 A developer creates a branch with a file change, opens a pull request,
 downloads the diff, and adds a review comment.  Every step is deeply
@@ -17,7 +17,7 @@ Design decisions
   in a future org/collaboration workflow.
 - **Raw diff output**: ``gitea_repo_download_pull_diff_or_patch`` returns
   non-JSON text — assertions check for ``diff --git`` markers.
-- **Cleanup**: ``TestCleanup`` deletes the repo at end.
+ - **Cleanup**: The session-scoped ``World`` deletes registered repositories.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ import pytest
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.assertions import assert_content, assert_key_types, assert_keys
 from tests.live.conftest import live_available
-from tests.live.helpers import delete_repo
 from tests.live.world import DEV, SCOPE_WRITE, World
 
 _REPO = "live-pr-local"
@@ -81,32 +80,33 @@ class TestPullRequest:
             DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
             branch=_BRANCH, files={_PR_FILE: _PR_BODY},
         )
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_repo_create_pull_request",
-            {"owner": DEV.username, "repo": _REPO,
-             "head": _BRANCH, "base": "main",
-             "title": "Feature: add hello script",
-             "body": "This PR adds a simple hello script for testing.",
-             "format": "json"},
+        pr = await repo.need_pull_request(
+            "Feature: add hello script",
+            head=_BRANCH,
+            body="This PR adds a simple hello script for testing.",
         )
-        from tests.live.assertions import assert_result_ok
-        pr = assert_result_ok(result)
         assert_keys(pr, "number", "title", "state", "head", "base",
                     "body", "user", "created_at", "html_url",
                     "mergeable", "merged")
         assert_key_types(pr, number=int, title=str, state=str)
         assert_content(pr, title="Feature: add hello script", state="open")
-        pytest.pr_index = pr["number"]  # type: ignore[attr-defined]
 
     @pytest.mark.live
     async def test_download_pull_diff(self, world: World) -> None:
         """Download the PR diff — verify raw diff markers."""
+        repo = await world.need_repo(
+            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
+            branch=_BRANCH, files={_PR_FILE: _PR_BODY},
+        )
+        pr = await repo.need_pull_request(
+            "Feature: add hello script", head=_BRANCH,
+            body="This PR adds a simple hello script for testing.",
+        )
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
             {"owner": DEV.username, "repo": _REPO,
-             "index": pytest.pr_index,  # type: ignore[attr-defined]
+             "index": pr["number"],
              "diffType": "diff"},
         )
         assert not result.isError, "Failed to download PR diff"
@@ -121,11 +121,19 @@ class TestPullRequest:
     @pytest.mark.live
     async def test_comment_on_pr(self, world: World) -> None:
         """Add a review comment to the PR — verify content."""
+        repo = await world.need_repo(
+            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
+            branch=_BRANCH, files={_PR_FILE: _PR_BODY},
+        )
+        pr = await repo.need_pull_request(
+            "Feature: add hello script", head=_BRANCH,
+            body="This PR adds a simple hello script for testing.",
+        )
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_create_comment",
             {"owner": DEV.username, "repo": _REPO,
-             "index": pytest.pr_index,  # type: ignore[attr-defined]
+             "index": pr["number"],
              "body": "Looks good to me! +1",
              "format": "json"},
         )
@@ -133,20 +141,3 @@ class TestPullRequest:
         comment = assert_result_ok(result)
         assert_keys(comment, "body", "user", "created_at")
         assert_content(comment, body="Looks good to me! +1")
-
-
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
-
-
-@live_available
-class TestCleanup:
-    """Delete the test repo."""
-
-    @pytest.mark.live
-    @pytest.mark.timeout(30)
-    async def test_delete_repo(self, world: World) -> None:
-        """Delete the PR workflow test repo."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await delete_repo(mcp, DEV.username, _REPO)

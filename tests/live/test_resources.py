@@ -1,4 +1,4 @@
-"""Phase 3c — Resources: list_resources and read_resource through real transport.
+"""Resources: list_resources and read_resource through real transport.
 
 Resources are the recommended read path for agents — they use caching,
 pre-formatted markdown, and scope filtering.  Tests use the ``world``
@@ -6,7 +6,7 @@ fixture for declarative setup.
 
 Design decisions
 ----------------
-- **Shared world**: Uses ``DEV`` from ``world.py`` for repo creation.
+- **Shared world**: Uses ``Workflow.ensure_repo`` for repo creation.
 - **list_resources first**: Verifies resource metadata (URI, mimeType,
   tags, scope, size_hint) before reading any resource content.
 - **read_resource shape**: Verifies that resource content carries
@@ -24,7 +24,7 @@ import pytest
 from tests.helpers.mcp_results import extract_text_content
 from tests.live.assertions import assert_keys
 from tests.live.conftest import live_available
-from tests.live.helpers import delete_repo
+from tests.live.workflows import Workflow
 from tests.live.world import DEV, LIMITED, SCOPE_LIMITED, SCOPE_WRITE, World
 
 _REPO = "live-res-local"
@@ -42,7 +42,7 @@ class TestSetup:
     @pytest.mark.live
     async def test_create_repo(self, world: World) -> None:
         """Create the resource test repo."""
-        repo = await world.need_repo(
+        repo = await Workflow(world).ensure_repo(
             DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
             auto_init=True, description="Resource test repo")
         assert repo.data["name"] == _REPO
@@ -118,7 +118,8 @@ class TestReadResource:
     @pytest.mark.live
     async def test_read_repo_resource(self, world: World) -> None:
         """Read ``gitea://repos/{owner}/{repo}`` — returns repo data."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_read_resource",
@@ -147,7 +148,8 @@ class TestReadResource:
     @pytest.mark.live
     async def test_read_resource_json_format(self, world: World) -> None:
         """Read a resource with ``format=json`` — returns parseable JSON."""
-        _ = await world.need_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_read_resource",
@@ -197,20 +199,3 @@ class TestResourceScope:
             f"Full token resources ({counts[0]}) should not be fewer than "
             f"limited token resources ({counts[1]})"
         )
-
-
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
-
-
-@live_available
-class TestCleanup:
-    """Delete the test repo."""
-
-    @pytest.mark.live
-    @pytest.mark.timeout(30)
-    async def test_delete_repo(self, world: World) -> None:
-        """Delete the resource test repo."""
-        mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await delete_repo(mcp, DEV.username, _REPO)

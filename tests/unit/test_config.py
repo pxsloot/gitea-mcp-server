@@ -10,6 +10,18 @@ from gitea_mcp_server.config import HTTP_PORT_MAX, Config
 from gitea_mcp_server.exceptions import ConfigError
 
 
+@pytest.fixture(autouse=True)
+def isolate_from_project_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ensure no test picks up the project's .env file.
+
+    The project has a .env for development convenience that must not
+    affect unit tests. monkeypatch.chdir isolates CWD to a unique
+    empty tmp_path per test, preventing accidental dotenv reads.
+    Restores CWD after each test.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
 class TestConfig:
     """Tests for the Config class."""
 
@@ -42,17 +54,12 @@ class TestConfig:
         )
 
         with patch.dict(os.environ, {}, clear=True):
-            # Set working directory to tmp_path so .env is found
-            os.chdir(tmp_path)
-            try:
-                # Clear singleton to force reload
-                Config._instance = None
-                config = Config.get()
-                assert config.url == "https://test.example.com"
-                assert config.token == "test_token_from_file"
-                assert config.log_level == "WARNING"
-            finally:
-                os.chdir("/")
+            # CWD is already tmp_path (set by isolate_from_project_dotenv fixture)
+            Config._instance = None
+            config = Config.get()
+            assert config.url == "https://test.example.com"
+            assert config.token == "test_token_from_file"
+            assert config.log_level == "WARNING"
 
     def test_missing_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test error when token is missing."""
@@ -374,6 +381,4 @@ class TestConfigEdgeCases:
         ):
             Config._instance = None
             config = Config.get()
-            # Pydantic will parse the JSON string as list via env parsing
-            # but http_cors validator also handles list type
-            assert config.http_cors is None or isinstance(config.http_cors, list)
+            assert config.http_cors == ["https://origin1.com", "https://origin2.com"]

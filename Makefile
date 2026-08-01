@@ -14,7 +14,7 @@ test:
 	ruff check tests/
 	mypy gitea_mcp_server
 	mypy tests/
-	pytest -rs -n4 --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
+	pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 
 # Fast feedback: type checks only (no tests).
 test-types:

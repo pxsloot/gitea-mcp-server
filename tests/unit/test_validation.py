@@ -872,7 +872,6 @@ class TestInjectEnumIntoDefs:
         _inject_enum_into_defs(existing_schema, resolved, defs)
         assert defs["Something"]["enum"] == ["a", "b"]
 
-
 class TestInferEnumFromDescription:
     """Tests for _infer_enum_from_description."""
 

@@ -55,8 +55,13 @@ _config_lock = threading.Lock()
 class Config(BaseSettings):
     """Configuration for Gitea MCP Server.
 
-    Loads settings from environment variables and .env file.
+    Loads settings from environment variables and a ``.env`` file.
     Supports both prefixed (GITEA_*) and standard environment variable names.
+
+    The ``.env`` path (``env_file=".env"``) is resolved **relative to CWD**.
+    Launch the server from the project root so the expected ``.env`` is found;
+    tests guard against accidental reads via the suite-level
+    ``isolate_from_project_dotenv`` fixture.
     """
 
     _instance: ClassVar["Config | None"] = None

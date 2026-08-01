@@ -10,18 +10,6 @@ from gitea_mcp_server.config import HTTP_PORT_MAX, Config
 from gitea_mcp_server.exceptions import ConfigError
 
 
-@pytest.fixture(autouse=True)
-def isolate_from_project_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Ensure no test picks up the project's .env file.
-
-    The project has a .env for development convenience that must not
-    affect unit tests. monkeypatch.chdir isolates CWD to a unique
-    empty tmp_path per test, preventing accidental dotenv reads.
-    Restores CWD after each test.
-    """
-    monkeypatch.chdir(tmp_path)
-
-
 class TestConfig:
     """Tests for the Config class."""
 

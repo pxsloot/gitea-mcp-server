@@ -139,6 +139,29 @@ def swagger_spec_fixture() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
+def isolate_from_project_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Prevent any test from picking up the project's .env file via CWD isolation.
+
+    The project root has a gitignored .env for development convenience.
+    ``Config`` is a Pydantic ``BaseSettings`` with ``env_file=".env"``,
+    resolved relative to CWD.  Without isolation, tests running at the
+    project root silently pick up dev settings (e.g. ``TRANSPORT_TYPE=http``)
+    and produce fragile test-order bugs under xdist.
+
+    This fixture runs before every test in the suite: it changes CWD to a
+    per-test tmp_path (empty, no .env) and resets the Config singleton so
+    no cached instance from a previous CWD survives.  Both are restored on
+    teardown.
+    """
+    monkeypatch.chdir(tmp_path)
+    from gitea_mcp_server.config import Config
+
+    Config._instance = None
+
+
+@pytest.fixture(autouse=True)
 def _reset_module_contexts() -> None:
     """Reset module-level ContextVars before each test.
 

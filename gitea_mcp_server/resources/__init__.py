@@ -18,7 +18,7 @@ from gitea_mcp_server.resources.auto import register_auto_generated_resources
 from gitea_mcp_server.resources.custom import register_custom_resources
 from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.meta import ResourceMeta
-from gitea_mcp_server.resources.scope import derive_required_scope, scope_meta
+from gitea_mcp_server.resources.scope import derive_required_scope
 
 __all__ = [
     "ResourceMeta",
@@ -26,5 +26,4 @@ __all__ = [
     "make_api_resource",
     "register_auto_generated_resources",
     "register_custom_resources",
-    "scope_meta",
 ]

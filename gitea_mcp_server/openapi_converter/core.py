@@ -178,9 +178,6 @@ class RequestBodyBuilder:
             if param.get("required", False):
                 required_fields.append(name)
 
-        if not schema_props:  # pragma: no cover — every loop iteration adds to schema_props, so this is a dead-code guard
-            return None
-
         form_schema = {"type": "object", "properties": schema_props}
         if required_fields:
             form_schema["required"] = required_fields
@@ -396,8 +393,6 @@ class PathsConverter:
         The first occurrence keeps its original ID.
         """
         op_id = operation.get("operationId", "")
-        if not op_id:  # pragma: no cover — operationId is always set by OperationTransformer.transform before this is called
-            return operation
 
         if op_id not in self._seen_operation_ids:
             self._seen_operation_ids.add(op_id)

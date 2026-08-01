@@ -125,12 +125,11 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
     if _token_prefix_match(q_tokens, n_tokens):
         return True
 
-    # Try swapping the first two tokens to handle verb-first queries.
-    if len(q_tokens) >= _NAME_MATCH_MIN_TOKENS:
-        swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
-        return _token_prefix_match(swapped, n_tokens)
-
-    return False  # pragma: no cover — the <2-token case is caught by the early _token_prefix_match return, the >=2-token case by the swapped-token branch; this is the fallthrough for edge cases that never occur with real queries
+    # All remaining queries have >= 2 tokens (shorter queries exit above
+    # via the early <_NAME_MATCH_MIN_TOKENS guard).  Try swapping the
+    # first two tokens to handle verb-first queries.
+    swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
+    return _token_prefix_match(swapped, n_tokens)
 
 
 def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes

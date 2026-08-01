@@ -147,7 +147,7 @@ Server startup
 Key invariants:
 - ``filtered_tools_info`` is the **single source of truth** for auto-generated
   resource visibility — the same data used for tool filtering and error messages.
-- Custom resources declare their scope via ``scope_meta()``; they are gated by
+- Custom resources declare their scope via ``ResourceMeta``; they are gated by
   ``available_scopes`` directly since they have no operationId to look up.
 - ``load_exclusion_config`` lives in ``spec_loader.py`` alongside its only
   consumer (``load_and_convert_spec``).  ``tools/exclusion.py`` retains only

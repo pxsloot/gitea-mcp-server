@@ -113,14 +113,7 @@ Logic:
 resources (`resources/custom.py`) now use the ``ResourceMeta`` dataclass
 (``resources/meta.py``) for typed registration metadata.  ``ResourceMeta``
 wraps ``required_scope`` alongside ``size_hint``, ``default_detail``, and
-``optional_params``, serialised via ``.to_dict()``.
-
----
-
-Resources declare their required scope via ``ResourceMeta``
-(``resources/meta.py``).  ``ResourceMeta`` wraps ``required_scope`` alongside
-``size_hint``, ``default_detail``, and ``optional_params``, producing metadata
-visible to agents via ``list_resources``.
+``optional_params``, serialised via ``.to_dict()``:
 
 ```python
 _meta = ResourceMeta(required_scope="read:repository", size_hint="medium").to_dict()

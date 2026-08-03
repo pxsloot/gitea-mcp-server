@@ -287,3 +287,33 @@ class TestContextMetaKeysPipeline:
 
         extra = _extract_extra_meta({})
         assert extra is None
+
+
+class TestFormatResourceContentEmptyFallback:
+    """Tests for _format_resource_content empty-content fallback paths."""
+
+    @pytest.mark.parametrize(
+        "content_value",
+        [
+            None,
+            [],
+            [MagicMock()],
+        ],
+        ids=[
+            "content=None",
+            "content=[]",
+            "content=no-TextContent",
+        ],
+    )
+    def test_empty_fallback_returns_empty_string(self, content_value: Any) -> None:
+        """When apply_format result.content is None, [], or non-TextContent, return ''."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        mock_result = MagicMock()
+        mock_result.content = content_value
+
+        with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
+            result = _format_resource_content("{}", "markdown")
+            assert result == ""

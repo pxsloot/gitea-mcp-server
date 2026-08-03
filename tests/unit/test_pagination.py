@@ -206,6 +206,24 @@ class TestPaginationRunner:
         fetch_fn.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_single_page_has_more_false_with_next_offset(self) -> None:
+        """When has_more=False but next_offset is set (defensive guard)."""
+        fetch_fn = AsyncMock()
+        runner = PaginationRunner(fetch_fn)
+        result = ToolResult(
+            structured_content={
+                "result": [{"id": 1}, {"id": 2}],
+                "has_more": False,
+                "next_offset": 3,
+                "total_count": 2,
+            },
+        )
+        output = await runner.run(result, {"page": 1, "limit": 10})
+        assert get_structured(output)["result"] == [{"id": 1}, {"id": 2}]
+        assert get_structured(output)["has_more"] is False
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_two_pages_merged(self) -> None:
         """Two pages merged when has_more is True initially."""
         page_calls = []

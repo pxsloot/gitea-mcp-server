@@ -268,9 +268,9 @@ async def load_and_convert_spec(
     # visible tool set and the error messages can never disagree.
     try:
         exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
-    except Exception:  # noqa: BLE001  # pragma: no cover — requires a config path that raises during load (integration-test territory)
-        logger.warning("Failed to load exclusion config, proceeding without it")  # pragma: no cover
-        exclusion_config = {"exclude": [], "include": []}  # pragma: no cover
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to load exclusion config, proceeding without it")
+        exclusion_config = {"exclude": [], "include": []}
 
     try:
         available_scopes = await fetch_token_scopes(gitea_client, config.token)
@@ -332,13 +332,13 @@ def _compute_excluded_routes(
 
     paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
     for path, path_item in paths.items():
-        if not isinstance(path_item, dict):  # pragma: no cover — guard against malformed spec
+        if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):  # pragma: no cover — guard against non-method keys or malformed spec
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
             op_id: str = operation.get("operationId", "")
-            if not op_id:  # pragma: no cover — all post-conversion operations have operationIds
+            if not op_id:
                 continue
             # Match both prefixed and bare operationId (filtered_tools_info
             # stores the bare operationId, but be tolerant of either).
@@ -347,7 +347,7 @@ def _compute_excluded_routes(
             )
             if reason is None:
                 continue
-            if not scope_filtering_enabled and reason.get("reason") == "scope":  # pragma: no cover — scope-filtering-disabled path
+            if not scope_filtering_enabled and reason.get("reason") == "scope":
                 continue
             excluded.add((path, method.upper()))
 

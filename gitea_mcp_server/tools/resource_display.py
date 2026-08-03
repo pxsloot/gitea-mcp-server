@@ -193,8 +193,8 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display 
         for c in result.content:
             if isinstance(c, TextContent):
                 return c.text
-        return ""  # pragma: no cover — result has content but no TextContent items (non-standard content types)
-    return ""  # pragma: no cover — result content is None/empty (fallback when tool returns no content)
+        return ""
+    return ""
 
 
 __all__ = [

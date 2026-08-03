@@ -1669,3 +1669,73 @@ class Test204NoContentWrapping:
         )
         assert result.structured_content is not None
         assert result.structured_content.get("result") is None
+
+
+class TestServerLifecycle:
+    """Tests for server lifecycle — lifespan, startup error paths."""
+
+    @pytest.mark.asyncio
+    async def test_app_lifespan_yields_and_closes_client(self) -> None:
+        """The app_lifespan closure in main_async yields the client and closes on exit.
+
+        Patches only Config.get and create_mcp_server — main_async creates
+        a real GiteaClient from SimpleConfig, making the test less fragile
+        to internal flow changes.  If main_async gains intermediate steps
+        that need mocking, those patches go here (and only here).
+        """
+        from unittest.mock import AsyncMock, patch
+
+        lifespan_captured: list[Any] = []
+        mock_mcp = AsyncMock()
+        mock_mcp.run_stdio_async = AsyncMock()
+
+        async def mock_create_mcp_server(gitea_client: Any, lifespan: Any = None, config: Any = None) -> Any:
+            lifespan_captured.append(lifespan)
+            return mock_mcp
+
+        config = SimpleConfig(log_level="INFO", log_format="text", transport_type="stdio")
+
+        with (
+            patch("gitea_mcp_server.server.Config.get", return_value=config),
+            patch("gitea_mcp_server.server.create_mcp_server", side_effect=mock_create_mcp_server),
+        ):
+            from gitea_mcp_server.server import main_async
+            await main_async()
+
+        # The lifespan closure was captured — exercise it directly
+        lifespan = lifespan_captured[0]
+        async with lifespan(None) as ctx:
+            assert "gitea_client" in ctx
+            gitea_client = ctx["gitea_client"]
+        # After lifespan exit, GiteaClient.close() → transport._client = None
+        assert gitea_client.transport._client is None
+
+    @pytest.mark.asyncio
+    async def test_exclusion_config_load_failure_falls_back(self) -> None:
+        """When load_exclusion_config raises, the server proceeds with empty config."""
+        from unittest.mock import patch
+
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                200,
+                json={
+                    "swagger": "2.0",
+                    "info": {"title": "Gitea API", "version": "1.0"},
+                    "paths": {},
+                    "definitions": {},
+                },
+            )
+
+            with patch(
+                "gitea_mcp_server.server_setup.spec_loader.load_exclusion_config",
+                side_effect=OSError("config not found"),
+            ):
+                server = await create_mcp_server(gitea_client, config)
+                assert server is not None

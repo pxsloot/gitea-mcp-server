@@ -793,10 +793,10 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     Remove this when FastMCP adds native non-object ``output_schema`` support.
     """
     content = response.get("content", {})
-    if not isinstance(content, dict):  # pragma: no cover — defensive guard; content from valid specs is always a dict
+    if not isinstance(content, dict):
         return
     json_content = content.get("application/json", {})
-    if not isinstance(json_content, dict):  # pragma: no cover — defensive guard; json_content from valid specs is always a dict
+    if not isinstance(json_content, dict):
         return
     schema = json_content.get("schema")
     if not isinstance(schema, dict):

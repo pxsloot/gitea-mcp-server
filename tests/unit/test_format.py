@@ -387,6 +387,19 @@ class TestCollapseData:
         # But nested items at depth>=1 ARE collapsed
         assert result[0] == "$ref:User"
 
+    def test_non_dict_prop_schema_guarded(self) -> None:
+        """When a property schema is not a dict, set to None instead of crashing."""
+        data = {"labels": [{"id": 1, "name": "bug"}]}
+        # Deliberately pass a non-dict value for a property schema
+        schema = {
+            "type": "object",
+            "properties": {"labels": "not_a_dict"},
+        }
+        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        # The non-dict prop_schema is treated as None — data passes through unchanged
+        assert isinstance(result, dict)
+        assert "labels" in result
+
 
 class TestResolveAnyOfSchema:
     def test_none_returns_none(self) -> None:

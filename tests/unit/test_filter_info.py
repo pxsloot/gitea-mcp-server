@@ -14,10 +14,11 @@ import pytest
 from fastmcp.exceptions import ToolError
 
 if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.openapi_types import OpenAPIPathItem, OpenAPISpec
 
 from gitea_mcp_server.tools.filter_info import (
     FilteredToolMiddleware,
+    _is_excluded,
     build_filtered_tools_message,
     compute_filtered_tools_info,
     get_filtered_tool_info,
@@ -247,6 +248,39 @@ class TestComputeFilteredToolsInfo:
         assert "write:issue" in result["available_scopes"]
         assert len(result["available_scopes"]) == 2
 
+    def test_non_dict_path_item_skipped(self) -> None:
+        """Non-dict path items in spec are skipped without error."""
+        from typing import cast
+
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {"/bad": cast("OpenAPIPathItem", "not_a_dict"), "/good": {"get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}}},
+        }
+        result = compute_filtered_tools_info(spec)
+        assert "test_get" not in result["filtered"]
+
+    def test_non_http_method_skipped(self) -> None:
+        """Keys that are not HTTP methods in path items are skipped."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {"/endpoint": {"parameters": [{"name": "id"}], "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}}},
+        }
+        result = compute_filtered_tools_info(spec)
+        # 'parameters' is not an HTTP method — should be skipped, get is fine
+        assert "test_get" not in result["filtered"]
+
+    def test_empty_operation_id_skipped(self) -> None:
+        """Operations with empty operationId are skipped."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {"/endpoint": {"get": {"operationId": "", "responses": {"200": {"description": "OK"}}}}},
+        }
+        result = compute_filtered_tools_info(spec)
+        assert result["filtered"] == {}
+
     def test_exclusion_config_in_result(self, spec_with_one_endpoint: OpenAPISpec) -> None:
         """The exclusion config patterns should be reflected in the result."""
         result = compute_filtered_tools_info(
@@ -329,6 +363,24 @@ class TestGetFilteredToolInfo:
         result = get_filtered_tool_info("repo_get", info, tool_prefix="gitea_")
         assert result is not None
         assert result["reason"] == "deprecated"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _is_excluded
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestIsExcluded:
+    """Tests for the _is_excluded helper — exclusion config pattern matching."""
+
+    def test_empty_exclusion_config_returns_false(self) -> None:
+        """Empty exclude/include lists return False (no filtering)."""
+        assert _is_excluded("any_tool", set(), {"exclude": [], "include": []}) is False
+        assert _is_excluded("any_tool", set(), {"exclude": [], "include": []}, tool_prefix="gitea_") is False
+
+    def test_config_without_exclude_include_returns_false(self) -> None:
+        """Config dict without exclude/include keys returns False."""
+        assert _is_excluded("any_tool", set(), {}) is False
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -202,6 +202,11 @@ Agent reads a resource:
     │                 returns raw data + metadata (schema, format_hint)
     │           ← (raw, schema, format_hint, extra)
     │
+    ├─▶ _maybe_decode_base64(raw)    — detect and decode base64
+    │     │                             ContentsResponse (except when
+    │     │                             format=raw)
+    │     └─▶ decode_base64_content()
+    │
     └─▶ _format_resource_content(raw, fmt, schema, format_hint, extra)
           ├─ if detail=concise: _collapse_data (schema-aware)
           ├─ if format_hint: call_formatter → registered formatter in tools/display.py

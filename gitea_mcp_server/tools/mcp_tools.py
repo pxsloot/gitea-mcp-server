@@ -481,7 +481,7 @@ async def _maybe_decode_base64(raw: str) -> str:
     """
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return raw
     if isinstance(data, dict) and data.get("encoding") == "base64":
         return await decode_base64_content(data)
@@ -512,9 +512,12 @@ async def _read_resource_tool(
 
     Output format:
     - ``markdown`` (default): schema-aware Markdown with tables and sections (for JSON resources).
-    - ``raw``: return the resource content exactly as stored.
+      Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
+    - ``raw``: return the resource content exactly as returned by the resource handler.
+      No transformation is applied — base64 content remains base64-encoded.
     - ``json``: pretty-printed JSON (for JSON resources). For non-JSON resources,
       wraps content in ``{"result": "..."}`` for consistent structured output.
+      Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
 
     ## Parameter: detail
 
@@ -589,7 +592,10 @@ async def _read_resource_tool(
     5. **Cache when appropriate**: Resources have built-in caching; avoid repeated calls in tight loops
     6. **Use format parameter**: ``format=json`` for structured data extraction, ``format=markdown`` for readability
     7. **Text vs JSON**: Markdown and plain-text resources are returned as raw text;
-       JSON resources are returned as ``{"result": ...}`` structured content
+       JSON resources are returned as ``{"result": ...}`` structured content.
+       Gitea ContentsResponse (base64-encoded file content) is auto-decoded to
+       plain text at the tool layer for ``markdown`` and ``json`` formats;
+       use ``format=raw`` to access the original base64-encoded JSON.
 
     Args:
         uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
@@ -606,7 +612,10 @@ async def _read_resource_tool(
     # Decode base64 ContentsResponse at the tool layer: resources are
     # pure data; the tool transforms for agent consumption — mirroring
     # how autogen tools decode in _pipeline_with_context.
-    raw = await _maybe_decode_base64(raw)
+    # Preserve raw for format=raw: agents requesting "raw" expect the
+    # exact API response, not a transformed version.
+    if format != "raw":
+        raw = await _maybe_decode_base64(raw)
     formatted = _format_resource_content(
         raw, format, detail=detail,
         schema=schema, format_hint=format_hint, extra=extra,

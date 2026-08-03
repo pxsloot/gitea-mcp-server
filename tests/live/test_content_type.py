@@ -31,6 +31,8 @@ _REPO_BASE = "live-content-type"
 _WORKER_ID = os.environ.get("PYTEST_XDIST_WORKER", str(os.getpid()))[-8:]
 _REPO = f"{_REPO_BASE}-{_WORKER_ID}"
 _FILE = "test-ct-output.txt"
+_FILE_DECODE = "test-ct-decode.txt"
+_FILE_DECODE_RAW = "test-ct-decode-raw.txt"
 _FILE_COMPAT = "backward-compat.txt"
 _CONTENT = "Hello from content_type=text param\nLine two.\n"
 
@@ -132,7 +134,7 @@ class TestBase64Decode:
         # Ensure the test file exists
         result = await mcp.call_tool("gitea_repo_create_file", {
             "owner": DEV.username, "repo": _REPO,
-            "filepath": _FILE, "content": _CONTENT,
+            "filepath": _FILE_DECODE, "content": _CONTENT,
             "content_type": "text",
             "message": "file for decode test",
             "format": "json",
@@ -142,7 +144,7 @@ class TestBase64Decode:
         result = await mcp.call_tool("gitea_repo_get_contents", {
             "owner": DEV.username,
             "repo": _REPO,
-            "filepath": _FILE,
+            "filepath": _FILE_DECODE,
             "format": "json",
         })
         assert not result.isError, (
@@ -173,7 +175,7 @@ class TestBase64Decode:
         # Ensure the test file exists
         result = await mcp.call_tool("gitea_repo_create_file", {
             "owner": DEV.username, "repo": _REPO,
-            "filepath": _FILE, "content": _CONTENT,
+            "filepath": _FILE_DECODE_RAW, "content": _CONTENT,
             "content_type": "text",
             "message": "file for raw test",
             "format": "json",
@@ -183,7 +185,7 @@ class TestBase64Decode:
         result = await mcp.call_tool("gitea_repo_get_contents", {
             "owner": DEV.username,
             "repo": _REPO,
-            "filepath": _FILE,
+            "filepath": _FILE_DECODE_RAW,
             "format": "raw",
         })
         # Raw format returns decoded text directly

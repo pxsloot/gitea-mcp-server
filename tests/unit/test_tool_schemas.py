@@ -1717,6 +1717,7 @@ class TestContentTypeVirtualParam:
                 "_customization": {
                     "has_labels": False,
                     "is_text_response": False,
+                    "has_content_param": True,
                     "route_path": "/test",
                     "route_method": "POST",
                 },
@@ -1747,6 +1748,7 @@ class TestContentTypeVirtualParam:
                 "_customization": {
                     "has_labels": False,
                     "is_text_response": False,
+                    "has_content_param": True,
                     "route_path": "/test",
                     "route_method": "PUT",
                 },
@@ -1821,6 +1823,7 @@ class TestContentTypeVirtualParam:
                     "is_empty_response": False,
                     "is_binary_response": False,
                     "response_transform": None,
+                    "has_content_param": True,
                     "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
                     "route_method": "POST",
                 },
@@ -1889,6 +1892,7 @@ class TestContentTypeVirtualParam:
                     "is_empty_response": False,
                     "is_binary_response": False,
                     "response_transform": None,
+                    "has_content_param": True,
                     "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
                     "route_method": "POST",
                 },

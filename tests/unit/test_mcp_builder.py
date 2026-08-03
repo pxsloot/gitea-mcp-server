@@ -1922,6 +1922,7 @@ class TestPipelineBase64Decode:
         """When response_transform is None, the branch is skipped."""
         transform = self.make_transform()
         tool = self.make_tool()
+        assert tool.meta is not None
         tool.meta["_customization"]["response_transform"] = None
 
         import base64
@@ -2020,6 +2021,7 @@ class TestPipelineBinaryResponse:
         """When is_binary_response is False, the branch is skipped."""
         transform = self.make_transform()
         tool = self.make_tool()
+        assert tool.meta is not None
         tool.meta["_customization"]["is_binary_response"] = False
 
         with (

@@ -304,7 +304,7 @@ def _response_is_contents_base64(operation: dict[str, Any]) -> bool:
     if not isinstance(schema, dict):
         return False
     ref = schema.get("$ref", "")
-    return ref.endswith("/ContentsResponse")
+    return isinstance(ref, str) and ref.endswith("/ContentsResponse")
 
 
 class OperationTransformer:

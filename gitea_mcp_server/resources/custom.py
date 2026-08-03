@@ -13,7 +13,6 @@ scope guarding -- the legacy ``@_register`` decorator has been removed.
 
 import json
 import logging
-from typing import Any, cast
 
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceContent, ResourceResult

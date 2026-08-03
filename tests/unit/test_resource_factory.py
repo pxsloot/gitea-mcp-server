@@ -10,8 +10,8 @@ from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceResult
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
-from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.format import _decode_base64_content
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,

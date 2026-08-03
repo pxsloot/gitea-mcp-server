@@ -1676,12 +1676,16 @@ class TestServerLifecycle:
 
     @pytest.mark.asyncio
     async def test_app_lifespan_yields_and_closes_client(self) -> None:
-        """The app_lifespan closure in main_async yields the client and closes on exit."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        """The app_lifespan closure in main_async yields the client and closes on exit.
+
+        Patches only Config.get and create_mcp_server — main_async creates
+        a real GiteaClient from SimpleConfig, making the test less fragile
+        to internal flow changes.  If main_async gains intermediate steps
+        that need mocking, those patches go here (and only here).
+        """
+        from unittest.mock import AsyncMock, patch
 
         lifespan_captured: list[Any] = []
-        mock_gitea_client = MagicMock()
-        mock_gitea_client.close = AsyncMock()
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock()
 
@@ -1689,22 +1693,22 @@ class TestServerLifecycle:
             lifespan_captured.append(lifespan)
             return mock_mcp
 
-        with patch("gitea_mcp_server.server.Config.get") as mock_config:
-            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
-            mock_config.return_value = cfg
-            with (
-                patch("gitea_mcp_server.server.create_mcp_server", side_effect=mock_create_mcp_server),
-                patch("gitea_mcp_server.server.GiteaClient", return_value=mock_gitea_client),
-            ):
-                from gitea_mcp_server.server import main_async
-                await main_async()
+        config = SimpleConfig(log_level="INFO", log_format="text", transport_type="stdio")
 
-        # The lifespan was captured — now exercise it directly
+        with (
+            patch("gitea_mcp_server.server.Config.get", return_value=config),
+            patch("gitea_mcp_server.server.create_mcp_server", side_effect=mock_create_mcp_server),
+        ):
+            from gitea_mcp_server.server import main_async
+            await main_async()
+
+        # The lifespan closure was captured — exercise it directly
         lifespan = lifespan_captured[0]
         async with lifespan(None) as ctx:
-            assert ctx == {"gitea_client": mock_gitea_client}
-
-        mock_gitea_client.close.assert_awaited_once()
+            assert "gitea_client" in ctx
+            gitea_client = ctx["gitea_client"]
+        # After lifespan exit, GiteaClient.close() → transport._client = None
+        assert gitea_client.transport._client is None
 
     @pytest.mark.asyncio
     async def test_exclusion_config_load_failure_falls_back(self) -> None:

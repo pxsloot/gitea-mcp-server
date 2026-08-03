@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.openapi_types import OpenAPIPathItem, OpenAPISpec
 from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.server_setup.mcp_builder import OpenAPIProvider, create_openapi_provider
 from gitea_mcp_server.server_setup.spec_loader import (
@@ -339,7 +339,7 @@ class TestComputeExcludedRoutes:
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
             "paths": {
-                "/bad": cast("object", "not_a_dict"),  # type: ignore[dict-item]
+                "/bad": cast("OpenAPIPathItem", "not_a_dict"),
                 "/good": {"get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}},
             },
         }

@@ -202,6 +202,11 @@ Agent reads a resource:
     │                 returns raw data + metadata (schema, format_hint)
     │           ← (raw, schema, format_hint, extra)
     │
+    ├─▶ _maybe_decode_base64(raw)    — detect and decode base64
+    │     │                             ContentsResponse (except when
+    │     │                             format=raw)
+    │     └─▶ decode_base64_content()
+    │
     └─▶ _format_resource_content(raw, fmt, schema, format_hint, extra)
           ├─ if detail=concise: _collapse_data (schema-aware)
           ├─ if format_hint: call_formatter → registered formatter in tools/display.py
@@ -273,8 +278,8 @@ The customization layers as applied during server startup:
 | Module | Role |
 |--------|------|
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time; reads `_registered_uris` from factory to skip auto-generation for factory-registered URIs. Delegates to `make_api_resource()` — no separate handler closure |
-| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Factory resources via `make_api_resource()`, static resources via direct `mcp.resource()` calls. Defines `_decode_base64_content` handler hook for text/plain resources |
-| `resources/factory.py` | ``make_api_resource()`` factory + ``ResourceParamConfig`` dataclass. Auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip. ``ResourceParamConfig`` groups: query params (sent to API), context params (validated but never sent), discovery metadata (`optional_params`), and formatter context forwarding (`context_meta_keys`). ``handler_hook`` for text/plain post-processing (e.g., base64 decoding). Uses ``ResourceMeta.for_schema()`` for typed registration metadata. ``_build_optional_param_signature()`` is a pure helper (takes/returns ``inspect.Signature``) that adds optional param names as ``KEYWORD_ONLY`` params matching ``{?param}`` template entries — used by ``make_api_resource()`` to satisfy FastMCP's signature validation at registration time. |
+| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Factory resources via `make_api_resource()`, static resources via direct `mcp.resource()` calls. Base64 decode is handled at the tool layer (``mcp_tools.py:_read_resource_tool``) using ``decode_base64_content`` from ``format.py`` |
+| `resources/factory.py` | ``make_api_resource()`` factory + ``ResourceParamConfig`` dataclass. Auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip. ``ResourceParamConfig`` groups: query params (sent to API), context params (validated but never sent), discovery metadata (`optional_params`), and formatter context forwarding (`context_meta_keys`). ``handler_hook`` for custom text/plain post-processing. Uses ``ResourceMeta.for_schema()`` for typed registration metadata. ``_build_optional_param_signature()`` is a pure helper (takes/returns ``inspect.Signature``) that adds optional param names as ``KEYWORD_ONLY`` params matching ``{?param}`` template entries — used by ``make_api_resource()`` to satisfy FastMCP's signature validation at registration time. |
 | `resources/meta.py` | ``ResourceMeta`` dataclass for typed resource registration metadata (``required_scope``, ``cache_ttl``, ``optional_params``, ``size_hint``, ``default_detail``). ``derive_size_hint_from_schema()`` auto-estimates token cost from response schema complexity, enabling agents to discover expensive resources before reading them. ``default_detail_for()`` provides the recommended detail policy (``large`` → ``concise``, else ``full``). Used by both registration paths (factory and static). |
 | `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) — moved from the removed `resources/format.py` |
 | `tools/resource_display.py` | Resource content display pipeline (JSON parse → collapse → formatter dispatch → ``apply_format`` with error recovery) — counterpart to ``tools/tool_display.py`` | ``_format_resource_content``, ``_clean_resource_uri`` |
@@ -597,8 +602,9 @@ The ``_pipeline_with_context`` method handles four response classes:
   ``is_text_response`` and ``response_transform`` directly.  At runtime,
   ``response.json()`` succeeds (it *is* JSON), so ``structured_content`` is
   not ``None``.  The pipeline detects ``response_transform == "base64-decode"``,
-  decodes the base64 ``content`` field via ``_decode_base64_content``, and
-  returns plain text — matching the resource output.
+   decodes the base64 ``content`` field via ``decode_base64_content`` (shared
+   in ``format.py``), and returns plain text — matching the ``read_resource``
+   tool output.
 
 - **Empty-body** (204/205): Returned with ``{"result": null}``.
 

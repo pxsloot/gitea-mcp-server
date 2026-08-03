@@ -3,15 +3,17 @@
 import json as json_module
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.mcp_tools import (
+    _maybe_decode_base64,
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
+    _read_resource_tool,
     register_mcp_resource_tools,
 )
 from gitea_mcp_server.tools.resource_display import (
@@ -1350,3 +1352,145 @@ class TestMcpListResourcesFetchAll:
         assert len(sc["result"]["resources"]) == 7
         assert sc["has_more"] is False
         assert sc["total_count"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Tests: _maybe_decode_base64
+# ---------------------------------------------------------------------------
+
+
+class TestMaybeDecodeBase64:
+    """Tests for ``_maybe_decode_base64`` in ``mcp_tools.py``.
+
+    Verifies runtime detection and decoding of Gitea ContentsResponse in
+    resource content before the display pipeline processes it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_decodes_base64_content(self) -> None:
+        """A valid base64-encoded ContentsResponse is decoded to plain text."""
+        import base64
+        plaintext = "file content here\nline two"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw = json_module.dumps({"content": encoded, "encoding": "base64"})
+        result = await _maybe_decode_base64(raw)
+        assert result == plaintext
+
+    @pytest.mark.asyncio
+    async def test_passes_through_plain_text(self) -> None:
+        """Non-JSON content passes through unchanged."""
+        raw = "plain text response"
+        result = await _maybe_decode_base64(raw)
+        assert result == "plain text response"
+
+    @pytest.mark.asyncio
+    async def test_passes_through_json_without_base64_encoding(self) -> None:
+        """JSON dict without encoding field passes through unchanged."""
+        raw = json_module.dumps({"name": "file.txt", "type": "file"})
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_decodes_with_other_fields(self) -> None:
+        """A ContentsResponse with extra metadata fields still decodes."""
+        import base64
+        plaintext = "content with metadata"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw = json_module.dumps(
+            {"content": encoded, "encoding": "base64", "name": "f.py", "size": 42}
+        )
+        result = await _maybe_decode_base64(raw)
+        assert result == plaintext
+
+    @pytest.mark.asyncio
+    async def test_passes_through_non_dict_json(self) -> None:
+        """JSON array content passes through unchanged."""
+        raw = json_module.dumps(["item1", "item2"])
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_passes_through_invalid_json(self) -> None:
+        """Invalid JSON passes through unchanged."""
+        raw = "not valid { json"
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_base64_content(self) -> None:
+        """Empty content field with base64 encoding returns empty string."""
+        raw = json_module.dumps({"content": "", "encoding": "base64"})
+        result = await _maybe_decode_base64(raw)
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Tests: _read_resource_tool — format=raw preserves base64 content
+# ---------------------------------------------------------------------------
+
+
+class TestReadResourceToolFormatRaw:
+    """Verify that ``format=raw`` preserves the exact resource content,
+    even when it contains base64-encoded Gitea ContentsResponse data."""
+
+    @pytest.mark.asyncio
+    async def test_format_raw_preserves_base64_content(self) -> None:
+        """``format=raw`` returns raw JSON — no base64 decode is applied."""
+        import base64
+
+        plaintext = "Hello World"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw_json = json_module.dumps({"content": encoded, "encoding": "base64"})
+
+        with (
+            patch(
+                "gitea_mcp_server.tools.mcp_tools._mcp_read_resource_impl",
+                new_callable=AsyncMock,
+                return_value=(raw_json, None, None, None),
+            ),
+            patch(
+                "gitea_mcp_server.tools.mcp_tools._maybe_decode_base64",
+                wraps=_maybe_decode_base64,
+            ) as mock_decode,
+        ):
+            result = await _read_resource_tool(
+                uri="gitea://repos/org/repo/contents/file.py",
+                format="raw",
+                detail="full",
+            )
+            # _maybe_decode_base64 must NOT be called for format=raw.
+            mock_decode.assert_not_called()
+            # Result should be the raw base64 JSON string.
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == raw_json
+
+    @pytest.mark.asyncio
+    async def test_format_markdown_decodes_base64_content(self) -> None:
+        """``format=markdown`` auto-decodes base64 ContentsResponse."""
+        import base64
+
+        plaintext = "Hello World"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw_json = json_module.dumps({"content": encoded, "encoding": "base64"})
+
+        with (
+            patch(
+                "gitea_mcp_server.tools.mcp_tools._mcp_read_resource_impl",
+                new_callable=AsyncMock,
+                return_value=(raw_json, None, None, None),
+            ),
+            patch(
+                "gitea_mcp_server.tools.mcp_tools._maybe_decode_base64",
+                wraps=_maybe_decode_base64,
+            ) as mock_decode,
+        ):
+            result = await _read_resource_tool(
+                uri="gitea://repos/org/repo/contents/file.py",
+                format="markdown",
+                detail="full",
+            )
+            # _maybe_decode_base64 MUST be called for format=markdown.
+            mock_decode.assert_called_once()
+            # Result should be decoded plain text.
+            assert result.structured_content is not None
+            assert plaintext in result.structured_content["result"]

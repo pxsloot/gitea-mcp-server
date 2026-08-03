@@ -23,7 +23,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
-from gitea_mcp_server.format import _decode_base64_content, apply_format
+from gitea_mcp_server.format import apply_format, decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -708,7 +708,7 @@ class _ToolWrappingTransform(Transform):
         data = result.structured_content.get("result", {})
         if not isinstance(data, dict) or data.get("encoding") != "base64":
             return None
-        text = await _decode_base64_content(data)
+        text = await decode_base64_content(data)
         return ToolResult(
             content=[TextContent(type="text", text=text)],
             structured_content={"result": text},
@@ -772,7 +772,7 @@ class _ToolWrappingTransform(Transform):
            ``{"result": text}``.
         3. **Base64-decode** (ContentsResponse) — detours JSON with
            base64-encoded content to plain text via
-           ``_decode_base64_content``.
+           ``decode_base64_content``.
         4. **Binary** (zip, octet-stream) — returns structured
            ``content_info`` metadata instead of raw bytes.
         5. **Empty-body** (204/205) — returns ``{"result": null}``.

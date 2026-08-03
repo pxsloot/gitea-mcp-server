@@ -184,11 +184,11 @@ class TestCustomResourceStringResponsePaths:
 
     @pytest.mark.asyncio
     async def test_get_readme_no_encoding(self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock) -> None:
-        """Dict without 'base64' encoding returns content field directly."""
+        """Dict response is returned as raw JSON (decode is in the read_resource tool layer)."""
         func = captured_resources["gitea://repos/{owner}/{repo}/readme"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "Hello World"})
         result = await func("owner", "repo")
-        assert result == "Hello World"
+        assert result == '{"content": "Hello World"}'
 
     @pytest.mark.asyncio
     async def test_list_repo_issues_invalid_state(self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock) -> None:
@@ -261,7 +261,7 @@ class TestCustomResourceStringResponsePaths:
 
     @pytest.mark.asyncio
     async def test_get_file_encoding_base64(self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock) -> None:
-        """File with base64 encoding decodes content."""
+        """File with base64 encoding returns raw JSON (decode is in the read_resource tool layer)."""
 
         encoded = base64.b64encode(b"file content").decode()
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
@@ -269,23 +269,26 @@ class TestCustomResourceStringResponsePaths:
             return_value={"content": encoded, "encoding": "base64"}
         )
         result = await func("owner", "repo", "f.py")
-        assert result == "file content"
+        # Resource handler returns raw JSON — tool layer decodes.
+        import json
+        assert json.loads(result)["encoding"] == "base64"
+        assert json.loads(result)["content"] == encoded
 
     @pytest.mark.asyncio
     async def test_get_file_no_encoding(self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock) -> None:
-        """File with no encoding returns content field directly."""
+        """File with no encoding returns raw JSON (decode is in the read_resource tool layer)."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "plain text"})
         result = await func("owner", "repo", "f.py")
-        assert result == "plain text"
+        assert result == '{"content": "plain text"}'
 
     @pytest.mark.asyncio
     async def test_get_file_with_ref_param(self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock) -> None:
-        """File with ref parameter passes ref to the API."""
+        """File with ref parameter passes ref to the API and returns raw JSON."""
         func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "ref content"})
         result = await func("owner", "repo", "f.py", ref="main")
-        assert result == "ref content"
+        assert result == '{"content": "ref content"}'
         mock_gitea_client_str.request.assert_called_once()
         _, kwargs = mock_gitea_client_str.request.call_args
         assert kwargs.get("params") == {"ref": "main"}

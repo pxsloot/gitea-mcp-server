@@ -411,8 +411,7 @@ The factory:
 - Returns ``None`` if scope-filtered, the handler otherwise
 
 **Text/plain resources via ``handler_hook``**: For resources that serve
-plain text derived from a JSON API response (e.g., base64-decoded file
-content from Gitea's ContentsResponse), pass a ``handler_hook`` callback.
+plain text derived from a JSON API response, pass a ``handler_hook`` callback.
 The hook receives the raw API response and returns a string; the factory
 skips schema derivation, registers with ``mime_type="text/plain"``, and
 wraps the hook's result directly:
@@ -422,8 +421,8 @@ wraps the hook's result directly:
     async def _my_hook(response: Any) -> str:
         if isinstance(response, str):
             return response
-        if isinstance(response, dict) and response.get("encoding") == "base64":
-            return base64.b64decode(response["content"]).decode("utf-8")
+        if isinstance(response, dict):
+            return response.get("summary", str(response))
         return str(response)
 
     make_api_resource(

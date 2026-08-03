@@ -14,6 +14,7 @@ from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
+    _detect_contents_response,
     _read_response_transform,
     _response_is_binary,
     _ToolWrappingTransform,
@@ -1728,6 +1729,128 @@ class TestResponseIsBinary:
 
 
 # ---------------------------------------------------------------------------
+# _detect_contents_response — schema-based ContentsResponse detection
+# ---------------------------------------------------------------------------
+
+
+class TestDetectContentsResponseEdgeCases:
+    """Cover defensive guard in ``_detect_contents_response``.
+
+    The inner isinstance guard is unreachable in normal operation
+    (``_unwrap_result_schema`` always returns a dict for non-None input),
+    but is kept as a safety check.  Exercised by passing a type-violating
+    non-dict schema directly.
+    """
+
+    def test_non_dict_schema_guarded(self) -> None:
+        """Non-dict output_schema skips detection and returns unchanged."""
+        # Passing a non-dict bypasses the None check and hits the guard.
+        bad_schema: Any = 42
+        is_text, transform = _detect_contents_response(
+            bad_schema, False, None,
+        )
+        assert is_text is False
+        assert transform is None
+
+
+class TestDetectContentsResponse:
+    """Tests for ``_detect_contents_response`` — schema-based fallback
+    detection of ContentsResponse (``encoding`` + ``content`` properties)."""
+
+    def _wrap(self, inner: dict[str, Any]) -> dict[str, Any]:
+        """Wrap an inner schema in the FastMCP result envelope."""
+        return {"type": "object", "properties": {"result": inner}}
+
+    def test_detects_encoding_and_content_properties(self) -> None:
+        """When the inner schema has both ``encoding`` and ``content``,
+        return ``(True, "base64-decode")``."""
+        inner: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "encoding": {"type": "string"},
+                "content": {"type": "string"},
+                "name": {"type": "string"},
+            },
+        }
+        output_schema = self._wrap(inner)
+        is_text, transform = _detect_contents_response(output_schema, False, None)
+        assert is_text is True
+        assert transform == "base64-decode"
+
+    def test_overrides_existing_response_transform(self) -> None:
+        """Schema-based detection overrides a non-None response_transform."""
+        inner: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "encoding": {"type": "string"},
+                "content": {"type": "string"},
+            },
+        }
+        output_schema = self._wrap(inner)
+        # Even if response_transform already had some other value,
+        # detection should override.
+        is_text, transform = _detect_contents_response(
+            output_schema, False, "other-transform",
+        )
+        assert is_text is True
+        assert transform == "base64-decode"
+
+    def test_skips_when_already_text_response(self) -> None:
+        """When is_text_response is already True, returns unchanged."""
+        inner: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "encoding": {"type": "string"},
+                "content": {"type": "string"},
+            },
+        }
+        output_schema = self._wrap(inner)
+        is_text, transform = _detect_contents_response(output_schema, True, None)
+        # Already True — no change needed.
+        assert is_text is True
+        assert transform is None
+
+    def test_no_match_without_encoding_property(self) -> None:
+        """Schema with ``content`` but no ``encoding`` is not detected."""
+        inner: dict[str, Any] = {
+            "type": "object",
+            "properties": {"content": {"type": "string"}},
+        }
+        output_schema = self._wrap(inner)
+        is_text, transform = _detect_contents_response(output_schema, False, None)
+        assert is_text is False
+        assert transform is None
+
+    def test_no_match_without_content_property(self) -> None:
+        """Schema with ``encoding`` but no ``content`` is not detected."""
+        inner: dict[str, Any] = {
+            "type": "object",
+            "properties": {"encoding": {"type": "string"}},
+        }
+        output_schema = self._wrap(inner)
+        is_text, transform = _detect_contents_response(output_schema, False, None)
+        assert is_text is False
+        assert transform is None
+
+    def test_no_match_with_none_schema(self) -> None:
+        """None schema returns unchanged flags."""
+        is_text, transform = _detect_contents_response(None, False, None)
+        assert is_text is False
+        assert transform is None
+
+    def test_no_match_with_non_dict_inner(self) -> None:
+        """Unwrapped schema that is not a dict returns unchanged (edge case)."""
+        # This exercises the isinstance(inner, dict) guard.
+        output_schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+        }
+        is_text, transform = _detect_contents_response(output_schema, False, None)
+        assert is_text is False
+        assert transform is None
+
+
+# ---------------------------------------------------------------------------
 # _customize_metadata: response_transform + is_binary_response storage
 # ---------------------------------------------------------------------------
 
@@ -2043,3 +2166,118 @@ class TestPipelineBinaryResponse:
             output = await wrapped.run(arguments={})
 
         assert output.structured_content == {"result": "text data"}
+
+
+# ---------------------------------------------------------------------------
+# Edge-case coverage for uncovered defensive paths
+# ---------------------------------------------------------------------------
+
+
+class TestResponseIsBinaryEdgeCases:
+    """Cover defensive guard paths in ``_response_is_binary``."""
+
+    def test_operation_not_a_dict(self) -> None:
+        """When the operation value is not a dict (e.g. malformed spec),
+        return ``False``."""
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/archive": {
+                "get": "not-a-dict",
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is False
+        # Uses "get" (lowercase) — FastMCP calls with lowercase methods
+
+
+class TestTryHandleBinaryResponseEdgeCases:
+    """Cover defensive guard paths in ``_try_handle_binary_response``."""
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_skips_when_structured_content_present(self) -> None:
+        """When the result already has structured_content, return ``None``
+        (handler does not apply — it's not a binary response)."""
+        transform = self.make_transform()
+        result = ToolResult(
+            content=[],
+            structured_content={"result": "already parsed"},
+        )
+        output = await transform._try_handle_binary_response(result)
+        assert output is None
+
+
+class TestPipelineUnicodeDecodeError:
+    """Cover UnicodeDecodeError handling in ``_pipeline_with_context``."""
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(),
+        )
+
+    def _make_tool(self, *, is_binary_response: bool) -> Tool:
+        return Tool(
+            name="repo_get_archive",
+            tags={"repository"},
+            description="Get archive",
+            parameters={"properties": {}, "required": []},
+            output_schema=None,
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "is_empty_response": False,
+                    "is_binary_response": is_binary_response,
+                    "response_transform": None,
+                    "route_path": "/repos/{owner}/{repo}/archive/{archive}",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="Get Archive"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_unicode_decode_error_binary_response(self) -> None:
+        """UnicodeDecodeError + is_binary_response → nil result + content_info."""
+        transform = self.make_transform()
+        tool = self._make_tool(is_binary_response=True)
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            mock_run.side_effect = UnicodeDecodeError(
+                "utf-8", b"\xff", 0, 1, "bad byte",
+            )
+            wrapped = (await transform.list_tools([tool]))[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content is not None
+        assert "content_info" in output.structured_content
+        assert output.structured_content["content_info"]["type"] == "binary"
+
+    @pytest.mark.asyncio
+    async def test_unicode_decode_error_non_binary_re_raises(self) -> None:
+        """UnicodeDecodeError without is_binary_response propagates."""
+        transform = self.make_transform()
+        tool = self._make_tool(is_binary_response=False)
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            mock_run.side_effect = UnicodeDecodeError(
+                "utf-8", b"\xff", 0, 1, "bad byte",
+            )
+            wrapped = (await transform.list_tools([tool]))[0]
+            with pytest.raises(UnicodeDecodeError):
+                await wrapped.run(arguments={})

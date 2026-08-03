@@ -69,10 +69,11 @@ class TestResourcesIntegration:
         mcp = MagicMock()
         mcp.resource = MagicMock()
 
-        # Create a mock client
-        mock_client = AsyncMock()
-        mock_config = MagicMock()
-        mock_client._config = mock_config
+        # Create a mock client carrying the canonical test config
+        # (both _config and the public config property — see
+        # "Mocking GiteaClient" in docs/TESTING_STANDARDS.md)
+        config = SimpleConfig()
+        mock_client = AsyncMock(_config=config, config=config)
 
         spec = make_openapi_spec(paths={
             "/repos/{owner}/{repo}": {

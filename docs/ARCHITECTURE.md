@@ -499,8 +499,26 @@ The customization layers as applied during server startup:
 ## Response Content-Type Handling
 
 Gitea's API mixes content types: most endpoints return JSON, but some return
-plain text (diffs, patches), HTML (signing keys), or binary blobs (file
-downloads).  Handling this correctly requires coordination across four stages.
+plain text (diffs, patches), base64-encoded JSON (file content), or binary
+blobs (zip archives).  Handling this correctly requires coordination across
+four stages.
+
+### Stage 0 -- Spec-Time Patching (`openapi_converter/core.py:OperationTransformer.transform()`)
+
+Before content types reach the converter's content-type logic, the
+`OperationTransformer` patches the Swagger 2.0 `produces` field for endpoints
+whose raw API response shape does not serve agents well:
+
+- **ContentsResponse endpoints** (``GET /.../contents/{path}``): Gitea returns
+  JSON with ``encoding: "base64"`` and base64-encoded ``content``.  The
+  converter patches ``produces`` to ``["text/plain"]`` and sets
+  ``x-response-transform: base64-decode``.  This makes tools and resources
+  auto-detect text/plain handling from the spec — the runtime pipeline decodes
+  the base64 content into plain text matching the resource output.
+
+Detection is via ``_response_is_contents_base64`` which checks the 200
+response schema for a ``$ref`` ending in ``/ContentsResponse`` — a schema-
+driven check, not a hardcoded list of operationIds.
 
 ### Stage 1 -- Spec Conversion (`openapi_converter/core.py`)
 
@@ -547,7 +565,9 @@ This gives agents a useful `output_example` while still matching the runtime
 ### Stage 4 -- Runtime Execution (`server_setup/mcp_builder.py:_ToolWrappingTransform`)
 
 At runtime, FastMCP's `OpenAPITool.run()` sends the HTTP request and receives
-the response:
+the response.
+
+The ``_pipeline_with_context`` method handles four response classes:
 
 - **JSON response**: `response.json()` succeeds → FastMCP creates
   `ToolResult(content=str(data), structured_content=data)` → MCP SDK validates
@@ -555,13 +575,32 @@ the response:
 
 - **Non-JSON response** (text/plain, binary): `response.json()` raises
   `JSONDecodeError` → FastMCP falls back to
-  `ToolResult(content=text, structured_content=None)` → if `output_schema` is
-  set, MCP SDK rejects with *"Output validation error: outputSchema defined but
-  no structured output returned"*.
+  `ToolResult(content=text, structured_content=None)`.
 
-  When `output_schema = None` (from Stage 3), validation is skipped. The
-  `_ToolWrappingTransform._wrap()` method wraps the text in
-  `{"result": raw_text}` for client consistency with JSON endpoints.
+  *Text/plain* (diffs, patches): The pipeline wraps the raw text in
+  `{"result": text}` for agent-friendly output.
+
+  *Binary* (application/zip, octet-stream): The pipeline returns structured
+  ``content_info`` metadata (type, size, guidance) instead of raw bytes —
+  agents cannot consume binary text content.  The raw bytes are still
+  reachable via ``format="raw"``.
+
+  Both branches are triggered by the spec: ``is_text_response`` (from
+  ``x-original-content-types``) and ``is_binary_response`` (from content-type
+  inspection via ``_response_is_binary``).
+
+- **Base64-encoded JSON** (ContentsResponse): Detection happens at two
+  levels.  The converter checks for a ``$ref: …/ContentsResponse`` pattern
+  (Stage 0); when that doesn't match (Forgejo's spec structure varies), the
+  authoritative fallback in ``_customize_metadata`` checks the resolved
+  OpenAPI 3.1 schema for ``encoding`` + ``content`` properties and overrides
+  ``is_text_response`` and ``response_transform`` directly.  At runtime,
+  ``response.json()`` succeeds (it *is* JSON), so ``structured_content`` is
+  not ``None``.  The pipeline detects ``response_transform == "base64-decode"``,
+  decodes the base64 ``content`` field via ``_decode_base64_content``, and
+  returns plain text — matching the resource output.
+
+- **Empty-body** (204/205): Returned with ``{"result": null}``.
 
 ### The `x-fastmcp-wrap-result` Extension
 

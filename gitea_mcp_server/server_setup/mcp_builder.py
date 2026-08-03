@@ -8,6 +8,7 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 :class:`Transform` (``provider.add_transform()``) - no private FastMCP APIs are used.
 """
 
+import base64
 import logging
 from collections.abc import Sequence
 from contextlib import suppress
@@ -22,7 +23,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
-from gitea_mcp_server.format import apply_format
+from gitea_mcp_server.format import _decode_base64_content, apply_format
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -97,6 +98,90 @@ _META_CUSTOMIZED = "_customization_applied"
 """Flag in component.meta to avoid double-wrapping by the transform."""
 
 
+def _read_response_transform(
+    openapi_spec: OpenAPISpec,
+    path: str,
+    method: str,
+) -> str | None:
+    """Read the ``x-response-transform`` annotation from a spec operation.
+
+    Returns the transform name (e.g. ``"base64-decode"``) or ``None``.
+    This is set by the OpenAPI converter for endpoints whose raw API
+    response needs post-processing before being surfaced to agents.
+    """
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return None
+    operation = path_item.get(method.lower())
+    if not isinstance(operation, dict):
+        return None
+    transform = operation.get("x-response-transform")
+    if isinstance(transform, str) and transform:
+        return transform
+    return None
+
+
+def _response_is_binary(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
+    """Check whether an endpoint returns binary (non-text/plain, non-JSON) content.
+
+    Returns ``True`` for ``application/zip``, ``application/octet-stream``, and
+    similar binary MIME types.  These are distinct from text/plain (diffs, patches)
+    — agents cannot usefully consume raw binary as text content.
+    """
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return False
+    operation = path_item.get(method.lower())
+    if not isinstance(operation, dict):
+        return False
+    content_types = operation.get("x-original-content-types")
+    if not isinstance(content_types, list):
+        return False
+    binary_types = {"application/zip", "application/octet-stream", "application/x-zip-compressed"}
+    return any(
+        ct.lower().strip() in binary_types
+        for ct in content_types
+    )
+
+
+def _detect_contents_response(
+    output_schema: dict[str, Any] | None,
+    is_text_response: bool,
+    response_transform: str | None,
+) -> tuple[bool, str | None]:
+    """Override text response flags when the resolved schema reveals a ContentsResponse.
+
+    Gitea's ``GET /repos/.../contents/{path}`` endpoint returns JSON with
+    ``encoding: "base64"`` and ``content`` (base64-encoded).  Forgejo's
+    Swagger spec may not use a predictable ``$ref`` structure that the
+    converter can detect, so this function checks the resolved OpenAPI 3.1
+    schema as an authoritative fallback: if the inner (unwrapped) schema
+    has both ``encoding`` and ``content`` properties, it overrides
+    ``is_text_response`` to ``True`` and ``response_transform`` to
+    ``"base64-decode"`` — the runtime pipeline then auto-decodes the
+    base64 content into plain text.
+
+    Args:
+        output_schema: The wrapped output schema (or ``None``).
+        is_text_response: Current text response flag from spec inspection.
+        response_transform: Current response transform annotation (or ``None``).
+
+    Returns:
+        ``(is_text_response, response_transform)`` — possibly overridden.
+    """
+    if output_schema is None or is_text_response:
+        return is_text_response, response_transform
+    inner = _unwrap_result_schema(output_schema)
+    if not isinstance(inner, dict):
+        return is_text_response, response_transform
+    props = inner.get("properties", {})
+    if isinstance(props, dict) and "encoding" in props and "content" in props:
+        return True, "base64-decode"
+    return is_text_response, response_transform
+
+
 # ---------------------------------------------------------------------------
 # Metadata customisation (in-place, called by mcp_component_fn)
 # ---------------------------------------------------------------------------
@@ -112,6 +197,18 @@ def _customize_metadata(
 
     Called during ``OpenAPIProvider.__init__`` via the public
     ``mcp_component_fn`` hook.  Only touches public attributes.
+
+    Performs:
+    - Title / annotation / hint generation
+    - Tag categorisation and scope derivation
+    - Description preparation (label guidance injection)
+    - Output schema derivation and augmentation
+    - ContentsResponse detection (``encoding`` + ``content`` properties)
+      → overrides ``is_text_response`` and sets ``response_transform``
+    - Binary response detection (application/zip etc.)
+      → sets ``is_binary_response``
+    - Cache invalidation pattern registration
+    - Virtual param injection (delegated to ``_wrap``)
     """
     if not isinstance(component, OpenAPITool):
         return
@@ -164,6 +261,15 @@ def _customize_metadata(
         getattr(route, "method", ""),
     )
 
+    # Detect ContentsResponse endpoints by resolved schema shape
+    # (authoritative fallback for Forgejo compat — see _detect_contents_response).
+    response_transform = _read_response_transform(
+        openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
+    )
+    is_text_response, response_transform = _detect_contents_response(
+        output_schema, is_text_response, response_transform,
+    )
+
     # Lightweight fallback schema for text/plain endpoints so agents
     # get schema guidance matching the {"result": text} runtime shape.
     if output_schema is None and is_text_response:
@@ -176,14 +282,16 @@ def _customize_metadata(
     # Detect endpoints whose success response has no body content (e.g. 204
     # No Content).  Set a minimal schema so the MCP transport layer has
     # proper guidance, and store the flag for runtime wrapping.
-    has_no_content = False
-    if output_schema is None and not is_text_response:
-        has_no_content = _response_has_no_content(
+    has_no_content = (
+        _response_has_no_content(
             openapi_spec,
             getattr(route, "path", ""),
             getattr(route, "method", ""),
         )
-        if has_no_content:
+        if output_schema is None and not is_text_response
+        else False
+    )
+    if has_no_content:
             output_schema = {
                 "type": "object",
                 "properties": {
@@ -219,12 +327,25 @@ def _customize_metadata(
     if raw_schema is not None:
         component_meta["output_schema_raw"] = _unwrap_result_schema(raw_schema)
 
+    # Detect tools that accept a ``content`` body parameter (file create/
+    # update).  These require base64-encoded content on the wire; the
+    # runtime injects a ``content_type`` virtual param so agents can pass
+    # plain text instead.  Detection is spec-driven — no hardcoded names.
+    # Inlined into the dict literal to stay under the statement budget.
     component_meta["_customization"] = {
         "has_labels": has_labels,
         "is_text_response": is_text_response,
         "is_empty_response": has_no_content,
+        "is_binary_response": _response_is_binary(
+            openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
+        ),
         "route_path": getattr(route, "path", ""),
         "route_method": getattr(route, "method", ""),
+        "response_transform": response_transform,
+        "has_content_param": (
+            isinstance(component.parameters.get("properties", {}), dict)
+            and "content" in component.parameters.get("properties", {})
+        ),
     }
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta
@@ -312,6 +433,27 @@ class _ToolWrappingTransform(Transform):
         if "detail" not in props:
             props["detail"] = dict(DETAIL_PARAM_SCHEMA)
 
+        # Inject ``content_type`` for tools that accept a ``content`` body
+        # parameter (file create/update).  Gitea requires base64-encoded
+        # content on the wire, which is cumbersome for agents.  When
+        # ``content_type="text"``, the server base64-encodes before the API
+        # call.  Default ``"base64"`` for backward compatibility.
+        # Detection is spec-driven via ``has_content_param`` in the
+        # customization dict — no hardcoded tool names.
+        if customization.get("has_content_param") and "content_type" not in props:
+            props["content_type"] = {
+                "type": "string",
+                "enum": ["base64", "text"],
+                "default": "base64",
+                "description": (
+                    "How the ``content`` parameter is interpreted.  "
+                    '"base64" (default) — content is already base64-encoded '
+                    "(Gitea API native).  "
+                    '"text" — content is plain text; the server encodes it '
+                    "to base64 before calling the Gitea API."
+                ),
+            }
+
         async def transform_fn(**kwargs: Any) -> ToolResult:
             # Pop virtual params before the HTTP execution path - they are
             # not real API parameters and must not reach the Gitea API.
@@ -327,6 +469,16 @@ class _ToolWrappingTransform(Transform):
             # that reach the output layer, not the HTTP execution path).
             fmt = kwargs.pop("format", fmt_default)
             detail = kwargs.pop("detail", "full")
+
+            # Handle ``content_type`` for file create/update tools.
+            # When set to "text", base64-encode the ``content`` argument
+            # before the API call so agents can pass plain text.
+            if "content_type" in kwargs:
+                ct = kwargs.pop("content_type", "base64")
+                if ct == "text" and "content" in kwargs:
+                    raw = kwargs.get("content")
+                    if isinstance(raw, str):
+                        kwargs["content"] = base64.b64encode(raw.encode()).decode()
 
             # Resolve the current MCP Context so progress reporting and
             # structured logging work inside the pipeline.  Outside an
@@ -509,6 +661,7 @@ class _ToolWrappingTransform(Transform):
         route_method: str = customization.get("route_method", "")
         is_text_response = customization.get("is_text_response", False)
         is_empty_response = customization.get("is_empty_response", False)
+        is_binary_response = customization.get("is_binary_response", False)
         output_schema = tool.output_schema
 
         return await self._pipeline_with_context(
@@ -519,8 +672,78 @@ class _ToolWrappingTransform(Transform):
             route_method,
             is_text_response,
             is_empty_response,
+            is_binary_response,
             output_schema,
             extracted=extracted,
+        )
+
+    async def _try_handle_text_response(
+        self,
+        result: ToolResult,
+        tool: Tool,
+    ) -> ToolResult | None:
+        """Handle text/plain and base64-decode text responses.
+
+        Two cases:
+        1. Simple text/plain (diffs, patches): ``structured_content`` is
+           ``None`` — wrap the raw text in ``{"result": text}``.
+        2. Base64-decode (ContentsResponse): ``structured_content`` is the
+           JSON body with ``encoding: "base64"`` — decode and return text.
+        """
+        if result.structured_content is None:
+            text = next(
+                (c.text for c in result.content if isinstance(c, TextContent)),
+                "",
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=text)],
+                structured_content={"result": text},
+            )
+        # structured_content is not None → check for base64-decode
+        response_transform = (
+            (tool.meta or {}).get("_customization", {}).get("response_transform")
+        )
+        if response_transform != "base64-decode":
+            return None
+        data = result.structured_content.get("result", {})
+        if not isinstance(data, dict) or data.get("encoding") != "base64":
+            return None
+        text = await _decode_base64_content(data)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": text},
+        )
+
+    async def _try_handle_binary_response(
+        self,
+        result: ToolResult,
+    ) -> ToolResult | None:
+        """Return structured ``content_info`` metadata for binary responses.
+
+        Returns a ``ToolResult`` with ``content_info`` (type, size, guidance)
+        or ``None`` when this handler does not apply.  Loop hooks are
+        intentionally absent — binary responses are never paginated.
+        """
+        if result.structured_content is not None:
+            return None
+        text = next(
+            (c.text for c in result.content if isinstance(c, TextContent)),
+            "",
+        )
+        size = len(text.encode("utf-8")) if text else 0
+        return ToolResult(
+            content=[TextContent(
+                type="text",
+                text=f"Binary content ({size} bytes). Use format='raw' to access directly.",
+            )],
+            structured_content={
+                "result": None,
+                "content_info": {
+                    "type": "binary",
+                    "size": size,
+                    "message": "Binary content returned. Use format='raw' to access the raw bytes.",
+                },
+            },
         )
 
     async def _pipeline_with_context(  # noqa: PLR0913
@@ -532,6 +755,7 @@ class _ToolWrappingTransform(Transform):
         route_method: str,
         is_text_response: bool,
         is_empty_response: bool,
+        is_binary_response: bool,
         output_schema: dict[str, Any] | None,
         extracted: dict[str, Any] | None = None,
     ) -> ToolResult:
@@ -541,6 +765,17 @@ class _ToolWrappingTransform(Transform):
         :meth:`_resolve_current_context`) and passed through.  ``ctx`` is
         ``None`` when no request context is active (e.g. in-memory
         ``mcp.call_tool()``).
+
+        Handles four response classes (in order):
+        1. **JSON** — standard, passed through to output formatting.
+        2. **Text/plain** (diffs, patches) — wraps raw text in
+           ``{"result": text}``.
+        3. **Base64-decode** (ContentsResponse) — detours JSON with
+           base64-encoded content to plain text via
+           ``_decode_base64_content``.
+        4. **Binary** (zip, octet-stream) — returns structured
+           ``content_info`` metadata instead of raw bytes.
+        5. **Empty-body** (204/205) — returns ``{"result": null}``.
 
         Args:
             extracted: Extracted virtual param values from
@@ -579,13 +814,25 @@ class _ToolWrappingTransform(Transform):
             span.set_attribute("tool.name", tool.name)
             span.set_attribute("http.route", route_path)
             span.set_attribute("http.method", route_method)
-            result = await _run_with_error_handling(
-                kwargs,
-                tool,
-                self._openapi_spec,
-                route_path,
-                route_method,
-            )
+            try:
+                result = await _run_with_error_handling(
+                    kwargs,
+                    tool,
+                    self._openapi_spec,
+                    route_path,
+                    route_method,
+                )
+            except UnicodeDecodeError:
+                # Binary response — FastMCP's OpenAPITool.run() tries
+                # response.text which crashes on binary data.  Return nil
+                # structured_content so the binary branch below handles it.
+                if is_binary_response:
+                    result = ToolResult(
+                        content=[TextContent(type="text", text="")],
+                        structured_content=None,
+                    )
+                else:
+                    raise
 
         await _safe_ctx_info(
             ctx,
@@ -593,22 +840,23 @@ class _ToolWrappingTransform(Transform):
             extra={"route": f"{route_method} {route_path}"},
         )
 
-        if (
-            is_text_response
-            and isinstance(result, ToolResult)
-            and result.structured_content is None
-        ):
-            text = next(
-                (c.text for c in result.content if isinstance(c, TextContent)),
-                "",
-            )
-            result = ToolResult(
-                content=[TextContent(type="text", text=text)],
-                structured_content={"result": text},
-            )
-            return await self._apply_loop_hooks(
-                result, kwargs, extracted, tool, route_path, route_method,
-            )
+        # Text/plain + base64-decode: both paths handled by one method.
+        # Simple text wrapping when structured_content is None (diffs,
+        # patches); base64 decode when response_transform is set
+        # (ContentsResponse).  Detected at spec time and schema time.
+        if is_text_response:
+            handled = await self._try_handle_text_response(result, tool)
+            if handled is not None:
+                return await self._apply_loop_hooks(
+                    handled, kwargs, extracted, tool, route_path, route_method,
+                )
+
+        # Binary response (application/zip, application/octet-stream):
+        # return structured content_info metadata instead of raw bytes.
+        if is_binary_response:
+            handled = await self._try_handle_binary_response(result)
+            if handled is not None:
+                return handled
 
         # Empty-body success responses (204 No Content, 205 Reset Content):
         # wrap in {"result": None} so it matches the explicit output_schema.
@@ -729,5 +977,7 @@ def create_openapi_provider(
 
 
 __all__ = [
+    "_read_response_transform",
+    "_response_is_binary",
     "create_openapi_provider",
 ]

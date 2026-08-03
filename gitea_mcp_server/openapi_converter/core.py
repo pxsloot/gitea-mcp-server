@@ -270,6 +270,43 @@ class SecuritySchemeConverter:
         return flows
 
 
+def _response_is_contents_base64(operation: dict[str, Any]) -> bool:
+    """Check whether an operation's success response is a base64 ContentsResponse.
+
+    Gitea's ``GET /repos/.../contents/{path}`` endpoint returns JSON with
+    ``encoding: "base64"`` and ``content`` (base64-encoded string).  For agents,
+    the meaningful output is decoded plain text — not raw JSON.
+
+    This helper detects the response shape so the operation transformer can
+    patch ``produces`` to ``text/plain`` and set the ``x-response-transform``
+    annotation.  Both tools and resources then pick up the text/plain handling
+    automatically from the converted spec.
+
+    .. note::
+
+        This checks the Swagger 2.0 ``$ref`` pattern (ending in
+        ``/ContentsResponse``).  Not all Gitea/Forgejo specs expose this
+        pattern reliably — the authoritative detection happens later in
+        ``_customize_metadata`` which checks the resolved OpenAPI 3.1
+        schema for ``encoding`` and ``content`` properties.
+
+    Args:
+        operation: A Swagger 2.0 operation dict (pre-conversion).
+
+    Returns:
+        ``True`` if the 200 response schema is ``#/definitions/ContentsResponse``.
+    """
+    responses = operation.get("responses", {})
+    resp_200 = responses.get("200", {})
+    if not isinstance(resp_200, dict):
+        return False
+    schema = resp_200.get("schema", {})
+    if not isinstance(schema, dict):
+        return False
+    ref = schema.get("$ref", "")
+    return isinstance(ref, str) and ref.endswith("/ContentsResponse")
+
+
 class OperationTransformer:
     """Transform an operation object to OpenAPI 3.x format."""
 
@@ -308,7 +345,17 @@ class OperationTransformer:
         # stripped by remove_swagger_fields below). Used downstream to
         # distinguish text/plain from application/json responses so we can
         # skip output_schema wrapping for non-JSON endpoints.
+        #
+        # For ContentsResponse endpoints, Gitea returns JSON with base64-
+        # encoded content.  Patch produces to text/plain so the converter
+        # treats it as a non-JSON text response — tools and resources
+        # auto-detect text/plain handling from the spec without any
+        # special-case code.  The x-response-transform annotation tells
+        # the runtime pipeline to base64-decode the JSON response body.
         produces = op_copy.get("produces", [])
+        if _response_is_contents_base64(op_copy):
+            produces = ["text/plain"]
+            op_copy["x-response-transform"] = "base64-decode"
         non_json = [ct for ct in produces if ct.lower().strip() != "application/json"]
         if non_json:
             op_copy["x-original-content-types"] = non_json
@@ -936,5 +983,6 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
 
 
 __all__ = [
+    "_response_is_contents_base64",
     "convert_swagger_to_openapi_v3",
 ]

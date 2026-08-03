@@ -14,6 +14,8 @@ from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
+    _read_response_transform,
+    _response_is_binary,
     _ToolWrappingTransform,
     create_openapi_provider,
 )
@@ -1569,3 +1571,475 @@ async def _mock_fetch_all_hook(result: ToolResult, value: Any, kwargs: dict[str,
     from gitea_mcp_server.tools.virtual_params import _fetch_all_loop
 
     return await _fetch_all_loop(result, value, kwargs, execute_fn)
+
+
+# ---------------------------------------------------------------------------
+# _read_response_transform
+# ---------------------------------------------------------------------------
+
+
+class TestReadResponseTransform:
+    """Tests for ``_read_response_transform``."""
+
+    def test_returns_transform_when_present(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/contents/{filepath}": {
+                "get": {
+                    "x-response-transform": "base64-decode",
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        result = _read_response_transform(
+            spec, "/repos/{owner}/{repo}/contents/{filepath}", "GET"
+        )
+        assert result == "base64-decode"
+
+    def test_returns_none_when_absent(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        result = _read_response_transform(spec, "/repos/{owner}/{repo}", "GET")
+        assert result is None
+
+    def test_returns_none_for_missing_path(self) -> None:
+        spec = make_openapi_spec()
+        result = _read_response_transform(spec, "/nonexistent", "GET")
+        assert result is None
+
+    def test_returns_none_for_non_dict_path_item(self) -> None:
+        spec = make_openapi_spec(paths={"/bad": "not a dict"})
+        result = _read_response_transform(spec, "/bad", "GET")
+        assert result is None
+
+    def test_returns_none_for_non_dict_operation(self) -> None:
+        spec = make_openapi_spec(paths={"/bad": {"get": "not a dict"}})
+        result = _read_response_transform(spec, "/bad", "GET")
+        assert result is None
+
+    def test_method_case_insensitive(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/test": {
+                "get": {
+                    "x-response-transform": "base64-decode",
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        result = _read_response_transform(spec, "/test", "GET")
+        assert result == "base64-decode"
+
+
+# ---------------------------------------------------------------------------
+# _response_is_binary
+# ---------------------------------------------------------------------------
+
+
+class TestResponseIsBinary:
+    """Tests for ``_response_is_binary``."""
+
+    def test_true_for_application_zip(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/archive/{archive}": {
+                "get": {
+                    "x-original-content-types": ["application/zip"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(
+            spec, "/repos/{owner}/{repo}/archive/{archive}", "GET"
+        ) is True
+
+    def test_true_for_application_octet_stream(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/raw": {
+                "get": {
+                    "x-original-content-types": ["application/octet-stream"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/raw", "GET") is True
+
+    def test_true_for_application_x_zip_compressed(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/archive": {
+                "get": {
+                    "x-original-content-types": ["application/x-zip-compressed"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is True
+
+    def test_false_for_text_plain(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/pulls/{index}.diff": {
+                "get": {
+                    "x-original-content-types": ["text/plain"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(
+            spec, "/repos/{owner}/{repo}/pulls/{index}.diff", "GET"
+        ) is False
+
+    def test_false_for_application_json(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}": {
+                "get": {
+                    "x-original-content-types": ["application/json"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}", "GET") is False
+
+    def test_false_for_missing_path(self) -> None:
+        spec = make_openapi_spec()
+        assert _response_is_binary(spec, "/nonexistent", "GET") is False
+
+    def test_false_for_no_x_original_content_types(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}", "GET") is False
+
+    def test_case_insensitive_matching(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/archive": {
+                "get": {
+                    "x-original-content-types": ["Application/Zip"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is True
+
+
+# ---------------------------------------------------------------------------
+# _customize_metadata: response_transform + is_binary_response storage
+# ---------------------------------------------------------------------------
+
+
+class TestCustomizeMetadataContentsResponse:
+    """Tests that _customize_metadata stores response_transform and
+    is_binary_response in the customization dict."""
+
+    def test_sets_response_transform_and_is_binary(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}/archive/{archive}": {
+                "get": {
+                    "x-response-transform": "base64-decode",
+                    "x-original-content-types": ["application/zip"],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/archive/{archive}",
+            summary="Get archive",
+            operation_id="repo_get_archive",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_get_archive"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec=spec)
+
+        meta = tool.meta["_customization"]
+        assert meta["response_transform"] == "base64-decode"
+        assert meta["is_binary_response"] is True
+
+    def test_defaults_when_no_annotations(self) -> None:
+        spec = make_openapi_spec(paths={
+            "/repos/{owner}/{repo}": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        })
+        route = MagicMock(
+            path="/repos/{owner}/{repo}",
+            summary="Get repo",
+            operation_id="repo_get",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_get"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = ""
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec=spec)
+
+        meta = tool.meta["_customization"]
+        assert meta["response_transform"] is None
+        assert meta["is_binary_response"] is False
+
+
+# ---------------------------------------------------------------------------
+# _ToolWrappingTransform: base64-decode pipeline branch
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineBase64Decode:
+    """Tests for the base64-decode branch in _pipeline_with_context."""
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(),
+        )
+
+    def make_tool(self) -> Tool:
+        return Tool(
+            name="repo_get_contents",
+            tags={"repository"},
+            description="Get file contents",
+            parameters={"properties": {}, "required": []},
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": True,
+                    "is_empty_response": False,
+                    "is_binary_response": False,
+                    "response_transform": "base64-decode",
+                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="Get Contents"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_base64_decode_branch_decodes_content(self) -> None:
+        import base64
+
+        transform = self.make_transform()
+        tool = self.make_tool()
+
+        encoded = base64.b64encode(b"hello world").decode()
+        data = {"content": encoded, "encoding": "base64"}
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text=str(data))],
+                structured_content={"result": data},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content == {"result": "hello world"}
+
+    @pytest.mark.asyncio
+    async def test_base64_decode_handles_non_base64_dict(self) -> None:
+        """When encoding is not 'base64', data passes through unchanged."""
+        transform = self.make_transform()
+        tool = self.make_tool()
+
+        data = {"content": "plain text", "encoding": "utf-8"}
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text=str(data))],
+                structured_content={"result": data},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        # Non-base64 data passes through unchanged
+        assert output.structured_content == {"result": data}
+
+    @pytest.mark.asyncio
+    async def test_base64_decode_skips_when_not_data_dict(self) -> None:
+        """When result is not a dict, the branch is skipped (falls through)."""
+        transform = self.make_transform()
+        tool = self.make_tool()
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text="not json")],
+                structured_content={"result": "not a dict"},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content == {"result": "not a dict"}
+
+    @pytest.mark.asyncio
+    async def test_base64_decode_skips_when_response_transform_not_set(self) -> None:
+        """When response_transform is None, the branch is skipped."""
+        transform = self.make_transform()
+        tool = self.make_tool()
+        assert tool.meta is not None
+        tool.meta["_customization"]["response_transform"] = None
+
+        import base64
+        encoded = base64.b64encode(b"should not decode").decode()
+        data = {"content": encoded, "encoding": "base64"}
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text=str(data))],
+                structured_content={"result": data},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content == {"result": data}
+
+
+# ---------------------------------------------------------------------------
+# _ToolWrappingTransform: binary response pipeline branch
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineBinaryResponse:
+    """Tests for the binary response branch in _pipeline_with_context."""
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(),
+        )
+
+    def make_tool(self) -> Tool:
+        return Tool(
+            name="repo_get_archive",
+            tags={"repository"},
+            description="Get archive",
+            parameters={"properties": {}, "required": []},
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "null"}},
+            },
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "is_empty_response": False,
+                    "is_binary_response": True,
+                    "response_transform": None,
+                    "route_path": "/repos/{owner}/{repo}/archive/{archive}",
+                    "route_method": "GET",
+                },
+            },
+            annotations=ToolAnnotations(title="Get Archive"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_binary_response_returns_content_info(self) -> None:
+        transform = self.make_transform()
+        tool = self.make_tool()
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text="binary\x00data")],
+                structured_content=None,
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content is not None
+        assert output.structured_content["result"] is None
+        assert output.structured_content["content_info"]["type"] == "binary"
+        assert "Use format='raw'" in output.structured_content["content_info"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_binary_response_skips_when_not_binary(self) -> None:
+        """When is_binary_response is False, the branch is skipped."""
+        transform = self.make_transform()
+        tool = self.make_tool()
+        assert tool.meta is not None
+        tool.meta["_customization"]["is_binary_response"] = False
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            from mcp.types import TextContent
+
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text="text data")],
+                structured_content={"result": "text data"},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert output.structured_content == {"result": "text data"}

@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.server.providers.openapi import OpenAPITool
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools.base import Tool, ToolResult
+from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -1689,3 +1690,241 @@ class TestUnwrapResultSchema:
         }
         result = _unwrap_result_schema(schema)
         assert result is schema
+
+
+# ===========================================================================
+# Tests: content_type virtual param for file create/update tools
+# ===========================================================================
+
+
+class TestContentTypeVirtualParam:
+    """Tests for the ``content_type`` virtual param injected into file tools."""
+
+    def _make_route(self, path: str, method: str = "POST") -> MagicMock:
+        return MagicMock(path=path, method=method, summary="Test", operation_id="test_op")
+
+    @pytest.mark.asyncio
+    async def test_content_type_injected_into_repo_create_file(self) -> None:
+        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        tool = Tool(
+            name="repo_create_file",
+            tags={"repository"},
+            description="Create a file",
+            parameters={"properties": {}},
+            output_schema=None,
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "has_content_param": True,
+                    "route_path": "/test",
+                    "route_method": "POST",
+                },
+            },
+            annotations=ToolAnnotations(title="Create File"),
+        )
+
+        [wrapped] = await transform.list_tools([tool])
+
+        props = wrapped.parameters["properties"]
+        assert "content_type" in props
+        assert props["content_type"]["type"] == "string"
+        assert "base64" in props["content_type"]["enum"]
+        assert "text" in props["content_type"]["enum"]
+        assert props["content_type"]["default"] == "base64"
+
+    @pytest.mark.asyncio
+    async def test_content_type_injected_into_repo_update_file(self) -> None:
+        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        tool = Tool(
+            name="repo_update_file",
+            tags={"repository"},
+            description="Update a file",
+            parameters={"properties": {}},
+            output_schema=None,
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "has_content_param": True,
+                    "route_path": "/test",
+                    "route_method": "PUT",
+                },
+            },
+            annotations=ToolAnnotations(title="Update File"),
+        )
+
+        [wrapped] = await transform.list_tools([tool])
+
+        assert "content_type" in wrapped.parameters["properties"]
+
+    def test_content_type_not_injected_into_other_tool(self) -> None:
+        route = self._make_route("/repos/{owner}/{repo}/issues", "POST")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_issue"
+        tool.annotations = None
+        tool.tags = {"issue"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Create an issue"
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
+
+        assert "content_type" not in tool.parameters["properties"]
+
+    def test_content_type_not_injected_into_get_contents(self) -> None:
+        """repo_get_contents_list is NOT a file create/update tool."""
+        route = self._make_route("/repos/{owner}/{repo}/contents/{filepath}", "GET")
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "repo_get_contents_list"
+        tool.annotations = None
+        tool.tags = {"repository"}
+        tool.parameters = {"properties": {}}
+        tool.output_schema = None
+        tool.description = "Get contents"
+        tool.meta = {}
+
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
+
+        assert "content_type" not in tool.parameters["properties"]
+
+    @pytest.mark.asyncio
+    async def test_content_type_text_encodes_to_base64(self) -> None:
+        """When content_type='text', the content kwarg is base64-encoded."""
+        import base64
+
+        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        tool = Tool(
+            name="repo_create_file",
+            tags={"repository"},
+            description="Create a file",
+            parameters={
+                "properties": {
+                    "content": {"type": "string"},
+                    "content_type": {
+                        "type": "string",
+                        "enum": ["base64", "text"],
+                        "default": "base64",
+                    },
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "object"}},
+            },
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "is_empty_response": False,
+                    "is_binary_response": False,
+                    "response_transform": None,
+                    "has_content_param": True,
+                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
+                    "route_method": "POST",
+                },
+            },
+            annotations=ToolAnnotations(title="Create File"),
+        )
+
+        raw_content = "print('hello world')"
+        expected_encoded = base64.b64encode(raw_content.encode()).decode()
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            mock_run.return_value = ToolResult(
+                content=[],
+                structured_content={"result": {"content": {}}},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(
+                arguments={
+                    "owner": "o",
+                    "repo": "r",
+                    "content": raw_content,
+                    "content_type": "text",
+                    "filepath": "test.py",
+                },
+            )
+
+        call_kwargs = mock_run.call_args[0][0]
+        assert call_kwargs["content"] == expected_encoded
+        assert "content_type" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_content_type_base64_passes_through(self) -> None:
+        """When content_type='base64' (default), content is passed as-is."""
+        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        tool = Tool(
+            name="repo_create_file",
+            tags={"repository"},
+            description="Create a file",
+            parameters={
+                "properties": {
+                    "content": {"type": "string"},
+                    "content_type": {
+                        "type": "string",
+                        "enum": ["base64", "text"],
+                        "default": "base64",
+                    },
+                },
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "object"}},
+            },
+            meta={
+                "_customization_applied": True,
+                "_customization": {
+                    "has_labels": False,
+                    "is_text_response": False,
+                    "is_empty_response": False,
+                    "is_binary_response": False,
+                    "response_transform": None,
+                    "has_content_param": True,
+                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
+                    "route_method": "POST",
+                },
+            },
+            annotations=ToolAnnotations(title="Create File"),
+        )
+
+        raw_content = "YWxyZWFkeSBlbmNvZGVk"
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            mock_run.return_value = ToolResult(
+                content=[],
+                structured_content={"result": {"content": {}}},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            await wrapped.run(
+                arguments={
+                    "owner": "o",
+                    "repo": "r",
+                    "content": raw_content,
+                    "content_type": "base64",
+                    "filepath": "test.py",
+                },
+            )
+
+        call_kwargs = mock_run.call_args[0][0]
+        assert call_kwargs["content"] == raw_content

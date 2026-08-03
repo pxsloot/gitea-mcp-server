@@ -310,8 +310,59 @@ From this doc's how-to angle: to add a new scope-gated param, set
     another param that affects output formatting only (not the API call),
     follow the same pattern: inject it in ``_ToolWrappingTransform``,
     pop it from kwargs alongside ``format`` and ``detail``, and pass it
-    to the formatting functions.  See ``constants.py`` and
+    to the formatting functions.      See ``constants.py`` and
     ``mcp_builder.py`` for the canonical implementation.
+
+### 6. Add a tool-specific parameter (not a virtual param)
+
+For parameters that apply only to specific tools (not every tool like
+``sudo`` or ``fetch_all``), inject directly in ``_ToolWrappingTransform._wrap()``
+alongside ``format``/``detail``.  Use a tool-name check to scope the injection:
+
+.. code-block:: python
+
+    _FILE_CONTENT_TOOLS = {"repo_create_file", "repo_update_file"}
+    if tool.name in _FILE_CONTENT_TOOLS:
+        props["content_type"] = {
+            "type": "string",
+            "enum": ["base64", "text"],
+            "default": "base64",
+            "description": "...",
+        }
+
+Handle the param in ``transform_fn`` — pop it from kwargs alongside
+``format``/``detail``, apply pre-processing (e.g. base64-encoding), and
+discard before the HTTP call.  See the ``content_type`` implementation in
+``mcp_builder.py`` for the canonical pattern.
+
+### 7. Add a response content transform
+
+For endpoints whose raw API response shape does not serve agents well
+(e.g. base64-encoded JSON that agents want as plain text), patch the
+OpenAPI spec during conversion rather than adding pipeline detection logic:
+
+1. In ``openapi_converter/core.py``, detect the endpoint (e.g. by response
+   schema ``$ref``) and patch ``produces`` to a content type that triggers
+   the correct handling path.
+
+2. Set ``x-response-transform`` on the operation to name the transform
+   (e.g. ``"base64-decode"``).
+
+3. In ``_customize_metadata``, read the annotation via
+   ``_read_response_transform`` and store it in ``_customization``.
+
+4. In ``_pipeline_with_context``, add a branch that checks
+   ``_customization.response_transform`` and applies the transform.
+
+This way both tools and resources (which are auto-generated from the same
+spec) pick up the behaviour automatically — no special-case code in
+resource registration.
+
+For binary content types (application/zip, application/octet-stream), the
+spec already carries ``x-original-content-types`` with the actual MIME type.
+Use ``_response_is_binary()`` to detect these and return structured
+``content_info`` metadata instead of raw bytes.  Agents get guidance to use
+``format="raw"`` for direct access.
 
 ---
 

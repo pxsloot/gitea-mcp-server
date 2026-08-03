@@ -153,7 +153,7 @@ class TestBranchAndFiles:
 
     @pytest.mark.live
     async def test_get_file_contents(self, world: World) -> None:
-        """Read the file we created — verify content."""
+        """Read file content — expect decoded text (base64 auto-decoded)."""
         workflow = Workflow(world)
         repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         await workflow.ensure_file(
@@ -168,9 +168,15 @@ class TestBranchAndFiles:
             {"owner": DEV.username, "repo": _REPO,
              "filepath": _FILE, "ref": _BRANCH, "format": "json"},
         )
-        data = assert_result_ok(result)
-        assert_keys(data, "name", "path", "content", "encoding")
-        assert_content(data, name=_FILE)
+        assert not result.isError, (
+            f"Tool call failed: {result.content}"
+        )
+        # After base64 decode: plain text in structuredContent.result
+        data = result.structuredContent.get("result") if result.structuredContent else None
+        assert isinstance(data, str), (
+            f"Expected decoded text, got {type(data).__name__}: {data!r}"
+        )
+        assert "# Generated Info" in data
 
 
 # ---------------------------------------------------------------------------

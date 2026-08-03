@@ -9,6 +9,8 @@ Public functions:
     _collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
         to labels (``$ref:TypeName``).  Used to shape data before formatting
         so any formatter (json or markdown) receives already-collapsed data.
+    _decode_base64_content - decode base64 file content from a Gitea
+        ContentsResponse (shared by tools and resources).
     apply_format - format data for output (raw/json/markdown), no pagination.
     _format_paginated_result - format paginated list results for display.
         Separates display from data creation: handles page slicing (or
@@ -22,13 +24,14 @@ Public functions:
 
 from __future__ import annotations
 
+import base64
 import json as json_module
 import logging
 from collections.abc import (  # noqa: TC003 - used at runtime, not just type checking
     Callable,
 )
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
@@ -40,6 +43,46 @@ if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
+
+# Length bounds for auto-detecting ISO datetime strings without schema hint
+
+# ---------------------------------------------------------------------------
+# Shared content transform: base64 decode
+# ---------------------------------------------------------------------------
+
+
+async def _decode_base64_content(response: Any) -> str:
+    """Decode base64 file content from a Gitea ContentsResponse.
+
+    Gitea's ``/repos/{owner}/{repo}/contents/{path}`` endpoint returns a JSON
+    object with ``content`` (base64-encoded) and ``encoding`` ("base64") fields.
+    This function extracts and decodes the content for text output.
+
+    Shared by tools/ (response post-processing) and resources/
+    (``handler_hook`` in ``make_api_resource``).  When the tool output layer
+    detects a base64-encoded ``ContentsResponse`` (via the OpenAPI spec's
+    ``x-response-transform`` annotation), it calls this to produce plain text.
+
+    Handles three response shapes:
+    - ``str``: returned as-is (e.g., error messages from the API)
+    - ``dict`` with ``encoding="base64"``: ``content`` is base64-decoded
+    - ``dict`` without base64 encoding: ``content`` field returned as-is
+    - Any other type: converted to ``str()``
+
+    Args:
+        response: Raw API response (str, dict, or other).
+
+    Returns:
+        Decoded text content.
+    """
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict) and response.get("encoding") == "base64":
+        return base64.b64decode(response.get("content") or "").decode("utf-8")
+    if isinstance(response, dict):
+        return cast("str", response.get("content", ""))
+    return str(response)
+
 
 # Length bounds for auto-detecting ISO datetime strings without schema hint
 _ISO_DT_MIN_LEN = 20
@@ -771,6 +814,7 @@ __all__ = [
     "_build_server_info_markdown",
     "_collapse_data",
     "_collapse_value",
+    "_decode_base64_content",
     "_extract_type_name",
     "_format_annotations_table",
     "_format_as_markdown",

@@ -11,7 +11,6 @@ token/scopes, server/info) use direct ``mcp.resource()`` calls with inline
 scope guarding -- the legacy ``@_register`` decorator has been removed.
 """
 
-import base64
 import json
 import logging
 from typing import Any, cast
@@ -26,40 +25,13 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
 )
+from gitea_mcp_server.format import _decode_base64_content
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.scope import has_sufficient_scope
 
 logger = logging.getLogger(__name__)
-
-
-async def _decode_base64_content(response: Any) -> str:
-    """Decode base64 file/readme content from a Gitea ContentsResponse.
-
-    Gitea's ``/repos/{owner}/{repo}/contents/{path}`` endpoint returns a JSON
-    object with ``content`` (base64-encoded) and ``encoding`` ("base64") fields.
-    This hook extracts and decodes the content for ``text/plain`` resources.
-
-    Handles three response shapes:
-    - ``str``: returned as-is (e.g., error messages from the API)
-    - ``dict`` with ``encoding="base64"``: ``content`` is base64-decoded
-    - ``dict`` without base64 encoding: ``content`` field returned as-is
-    - Any other type: converted to ``str()``
-
-    Args:
-        response: Raw API response (str, dict, or other).
-
-    Returns:
-        Decoded text content.
-    """
-    if isinstance(response, str):
-        return response
-    if isinstance(response, dict) and response.get("encoding") == "base64":
-        return base64.b64decode(response.get("content") or "").decode("utf-8")
-    if isinstance(response, dict):
-        return cast("str", response.get("content", ""))
-    return str(response)
 
 
 def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes + pre-computed static data are all independent registration axes

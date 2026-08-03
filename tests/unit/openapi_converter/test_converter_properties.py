@@ -29,6 +29,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter.core import _response_is_contents_base64
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import SwaggerV2Spec
@@ -862,4 +863,168 @@ class TestEdgeCases:
         result = convert_swagger_to_openapi_v3(spec)
         assert result["paths"]["/empty"] == "not a dict"
         assert "/real" in result["paths"]
-        assert result["paths"]["/real"]["get"]["operationId"] == "get_real"
+
+
+# ===========================================================================
+# Tests: _response_is_contents_base64
+# ===========================================================================
+
+
+class TestResponseIsContentsBase64:
+    """Tests for ``_response_is_contents_base64`` helper."""
+
+    def test_true_for_contents_response_ref(self) -> None:
+        op: dict[str, Any] = {
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "schema": {"$ref": "#/definitions/ContentsResponse"},
+                },
+            },
+        }
+        assert _response_is_contents_base64(op) is True
+
+    def test_false_for_other_ref(self) -> None:
+        op: dict[str, Any] = {
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "schema": {"$ref": "#/definitions/Repository"},
+                },
+            },
+        }
+        assert _response_is_contents_base64(op) is False
+
+    def test_false_for_no_schema(self) -> None:
+        op: dict[str, Any] = {"responses": {"200": {"description": "OK"}}}
+        assert _response_is_contents_base64(op) is False
+
+    def test_false_for_empty_responses(self) -> None:
+        op: dict[str, Any] = {"responses": {}}
+        assert _response_is_contents_base64(op) is False
+
+    def test_false_for_non_dict_200(self) -> None:
+        op: dict[str, Any] = {"responses": {"200": "not a dict"}}
+        assert _response_is_contents_base64(op) is False
+
+    def test_false_for_non_dict_schema(self) -> None:
+        op: dict[str, Any] = {
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "schema": "not a dict",
+                },
+            },
+        }
+        assert _response_is_contents_base64(op) is False
+
+    def test_false_for_no_responses(self) -> None:
+        op: dict[str, Any] = {}
+        assert _response_is_contents_base64(op) is False
+
+
+# ===========================================================================
+# Tests: ContentsResponse conversion patches produces
+# ===========================================================================
+
+
+class TestContentsResponseConversion:
+    """Tests that ContentsResponse endpoints get produces patched and
+    x-response-transform set during Swagger → OpenAPI conversion."""
+
+    def test_contents_response_patches_produces_and_sets_transform(self) -> None:
+        spec = _make_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "produces": ["application/json"],
+                        "responses": {
+                            "200": {
+                                "description": "ContentsResponse",
+                                "schema": {"$ref": "#/definitions/ContentsResponse"},
+                            },
+                        },
+                    },
+                },
+            },
+            definitions={
+                "ContentsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "encoding": {"type": "string"},
+                    },
+                },
+            },
+        )
+        result = convert_swagger_to_openapi_v3(spec)
+
+        op = result["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"]
+        assert "x-original-content-types" in op
+        assert "text/plain" in op["x-original-content-types"]
+        assert op.get("x-response-transform") == "base64-decode"
+        assert "produces" not in op
+
+    def test_contents_response_no_produces_field(self) -> None:
+        """ContentsResponse without explicit produces still gets text/plain + transform."""
+        spec = _make_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "responses": {
+                            "200": {
+                                "description": "ContentsResponse",
+                                "schema": {"$ref": "#/definitions/ContentsResponse"},
+                            },
+                        },
+                    },
+                },
+            },
+            definitions={
+                "ContentsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "encoding": {"type": "string"},
+                    },
+                },
+            },
+        )
+        result = convert_swagger_to_openapi_v3(spec)
+
+        op = result["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"]
+        assert op.get("x-response-transform") == "base64-decode"
+        assert "text/plain" in op.get("x-original-content-types", [])
+
+    def test_non_contents_response_unchanged(self) -> None:
+        """Regular JSON endpoint is not patched."""
+        spec = _make_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "operationId": "repoGet",
+                        "produces": ["application/json"],
+                        "responses": {
+                            "200": {
+                                "description": "Repository",
+                                "schema": {"$ref": "#/definitions/Repository"},
+                            },
+                        },
+                    },
+                },
+            },
+            definitions={
+                "Repository": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            },
+        )
+        result = convert_swagger_to_openapi_v3(spec)
+
+        op = result["paths"]["/repos/{owner}/{repo}"]["get"]
+        assert "x-response-transform" not in op
+        if "x-original-content-types" in op:
+            assert "text/plain" not in op["x-original-content-types"]

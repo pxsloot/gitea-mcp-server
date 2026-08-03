@@ -974,6 +974,25 @@ async def mcp_server():
 - Set explicit `return_value` or `side_effect` on every mock
 - Verify calls when interaction matters: `mock.assert_called_once_with(...)`
 
+### Server-level mocking policy
+
+For tests around `server.py` and `main_async()`, prefer the least invasive
+mocking tier that still isolates the behavior under test:
+
+1. **Real infrastructure first**: use `SimpleConfig` and a real
+   `GiteaClient`; use `respx` when HTTP needs to be controlled.
+2. **Patch specific behavior second**: patch only the operation being forced,
+   such as `create_mcp_server` or `run_stdio_async`.
+3. **Mock the complete dependency last**: mock classes such as
+   `GiteaClient` only when the first two tiers cannot isolate the behavior.
+
+Never use an unrestricted `MagicMock` for `Config`. Its chained attributes can
+make tests pass while hiding changes to the configuration contract. The
+`main_async` transport and shutdown tests in
+`tests/integration/test_server.py` are the reference pattern: they return an
+explicit `SimpleConfig`, construct the real client, and patch only server
+creation plus the transport behavior under test.
+
 ### Mocking GiteaClient
 
 When mocking `GiteaClient` in tests, always set both the `_config` attribute and

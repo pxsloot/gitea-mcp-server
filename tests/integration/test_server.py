@@ -1295,18 +1295,15 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_stdio_transport(self) -> None:
         """main_async with stdio transport calls run_stdio_async."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock()
+        config = SimpleConfig(transport_type="stdio")
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
-            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
-            mock_config.return_value = cfg
-            with (
-                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
-                patch("gitea_mcp_server.server.GiteaClient"),
-            ):
+            mock_config.return_value = config
+            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
                 await main_async()
                 mock_mcp.run_stdio_async.assert_called_once()
@@ -1314,36 +1311,30 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_keyboard_interrupt_handled(self) -> None:
         """main_async handles KeyboardInterrupt gracefully."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock(side_effect=KeyboardInterrupt)
+        config = SimpleConfig(transport_type="stdio")
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
-            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
-            mock_config.return_value = cfg
-            with (
-                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
-                patch("gitea_mcp_server.server.GiteaClient"),
-            ):
+            mock_config.return_value = config
+            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
                 await main_async()  # Should not raise
 
     @pytest.mark.asyncio
     async def test_main_async_crash_handler(self) -> None:
         """main_async handles Exception crash with sys.exit(1)."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock(side_effect=Exception("server crash"))
+        config = SimpleConfig(transport_type="stdio")
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
-            cfg = MagicMock(log_level="INFO", log_format="text", transport_type="stdio")
-            mock_config.return_value = cfg
-            with (
-                patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp),
-                patch("gitea_mcp_server.server.GiteaClient"),
-            ):
+            mock_config.return_value = config
+            with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
                 with pytest.raises(SystemExit) as exc:
                     await main_async()

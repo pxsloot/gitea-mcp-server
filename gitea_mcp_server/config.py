@@ -256,7 +256,7 @@ class Config(BaseSettings):
         # This is genuinely defensive: the @field_validator("token") already ensures
         # non-empty before super().__init__() returns, making this branch unreachable.
         # Kept as a belt-and-suspenders guard against Pydantic refactoring.
-        if not self.token:  # pragma: no cover — field_validator ensures non-empty
+        if not self.token:  # pragma: no cover — field_validator ensures non-empty (confirmed #622)
             msg = "GITEA_TOKEN is required - set in .env file or environment"
             raise ConfigError(msg)  # pragma: no cover
 

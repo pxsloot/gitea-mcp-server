@@ -268,9 +268,9 @@ async def load_and_convert_spec(
     # visible tool set and the error messages can never disagree.
     try:
         exclusion_config = load_exclusion_config(getattr(config, "exclude_config_path", None))
-    except Exception:  # noqa: BLE001  # pragma: no cover — requires a config path that raises during load (integration-test territory)
-        logger.warning("Failed to load exclusion config, proceeding without it")  # pragma: no cover
-        exclusion_config = {"exclude": [], "include": []}  # pragma: no cover
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to load exclusion config, proceeding without it")
+        exclusion_config = {"exclude": [], "include": []}
 
     try:
         available_scopes = await fetch_token_scopes(gitea_client, config.token)

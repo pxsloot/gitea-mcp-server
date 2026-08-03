@@ -332,13 +332,13 @@ def _compute_excluded_routes(
 
     paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
     for path, path_item in paths.items():
-        if not isinstance(path_item, dict):  # pragma: no cover — guard against malformed spec
+        if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):  # pragma: no cover — guard against non-method keys or malformed spec
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
             op_id: str = operation.get("operationId", "")
-            if not op_id:  # pragma: no cover — all post-conversion operations have operationIds
+            if not op_id:
                 continue
             # Match both prefixed and bare operationId (filtered_tools_info
             # stores the bare operationId, but be tolerant of either).
@@ -347,7 +347,7 @@ def _compute_excluded_routes(
             )
             if reason is None:
                 continue
-            if not scope_filtering_enabled and reason.get("reason") == "scope":  # pragma: no cover — scope-filtering-disabled path
+            if not scope_filtering_enabled and reason.get("reason") == "scope":
                 continue
             excluded.add((path, method.upper()))
 

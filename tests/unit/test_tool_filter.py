@@ -331,6 +331,97 @@ class TestComputeExcludedRoutes:
         excluded = _compute_excluded_routes(self._spec(), filtered, tool_prefix="gitea_")
         assert ("/repos/{owner}/{repo}", "GET") in excluded
 
+    def test_non_dict_path_item_skipped(self) -> None:
+        """Non-dict path items in spec are skipped without error."""
+        from typing import cast
+
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {
+                "/bad": cast("object", "not_a_dict"),  # type: ignore[dict-item]
+                "/good": {"get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}},
+            },
+        }
+        filtered = compute_filtered_tools_info(
+            spec,
+            available_scopes={"sudo"},
+            exclusion_config={"exclude": ["test_get"], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(spec, filtered)
+        assert ("/good", "GET") in excluded
+
+    def test_non_http_method_key_skipped(self) -> None:
+        """Non-HTTP-method keys in path items are skipped."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {
+                "/endpoint": {
+                    "parameters": [{"name": "id"}],
+                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}},
+                },
+            },
+        }
+        filtered = compute_filtered_tools_info(
+            spec,
+            available_scopes={"sudo"},
+            exclusion_config={"exclude": ["test_get"], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(spec, filtered)
+        assert ("/endpoint", "GET") in excluded
+
+    def test_empty_operation_id_skipped(self) -> None:
+        """Operations with empty operationId are skipped."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {
+                "/endpoint": {"get": {"operationId": "", "responses": {"200": {"description": "OK"}}}},
+            },
+        }
+        excluded = _compute_excluded_routes(spec, {"filtered": {"": {"reason": "deprecated"}}})
+        assert excluded == set()
+
+    def test_scope_filtering_disabled_skips_scope_routes(self) -> None:
+        """When scope_filtering_enabled=False, scope-based exclusions are skipped."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {
+                "/admin/users": {"get": {"operationId": "admin_list_users", "tags": ["admin"], "responses": {"200": {"description": "OK"}}}},
+            },
+        }
+        filtered = compute_filtered_tools_info(
+            spec,
+            available_scopes={"read:repository"},  # insufficient for admin
+            exclusion_config={"exclude": [], "include": []},
+            tool_prefix="",
+        )
+        # scope_filtering_enabled=False → scope-reason entries are skipped
+        excluded = _compute_excluded_routes(spec, filtered, scope_filtering_enabled=False)
+        assert excluded == set()
+
+    def test_scope_filtering_enabled_includes_scope_routes(self) -> None:
+        """When scope_filtering_enabled=True (default), scope-based exclusions apply."""
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {
+                "/admin/users": {"get": {"operationId": "admin_list_users", "tags": ["admin"], "responses": {"200": {"description": "OK"}}}},
+            },
+        }
+        filtered = compute_filtered_tools_info(
+            spec,
+            available_scopes={"read:repository"},  # insufficient for admin → requires sudo
+            exclusion_config={"exclude": [], "include": []},
+            tool_prefix="",
+        )
+        excluded = _compute_excluded_routes(spec, filtered, scope_filtering_enabled=True)
+        assert ("/admin/users", "GET") in excluded
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # create_openapi_provider — route_map_fn drops filtered operations

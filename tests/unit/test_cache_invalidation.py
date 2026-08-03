@@ -647,3 +647,20 @@ class TestClearLabelServiceCache:
             await middleware.on_call_tool(mock_context, mock_call_next)
 
         label_service.clear_cache_for.assert_not_called()
+
+    def test_clear_label_service_cache_with_none_label_service(self) -> None:
+        """Calling _clear_label_service_cache directly with label_service=None is a no-op."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        middleware = CacheInvalidationMiddleware(mock_caching, label_service=None)
+        # Direct call to the inner guard method — should not raise
+        middleware._clear_label_service_cache(
+            ["gitea://repos/org/repo/labels"], {"owner": "org", "repo": "repo"}
+        )

@@ -287,3 +287,46 @@ class TestContextMetaKeysPipeline:
 
         extra = _extract_extra_meta({})
         assert extra is None
+
+
+class TestFormatResourceContentEmptyFallback:
+    """Tests for _format_resource_content empty-content fallback paths."""
+
+    def test_result_content_none_returns_empty_string(self) -> None:
+        """When apply_format returns a result with content=None, return ''."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        mock_result = MagicMock()
+        mock_result.content = None
+
+        with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
+            result = _format_resource_content("{}", "markdown")
+            assert result == ""
+
+    def test_result_content_empty_list_returns_empty_string(self) -> None:
+        """When apply_format returns a result with content=[], return ''."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        mock_result = MagicMock()
+        mock_result.content = []
+
+        with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
+            result = _format_resource_content("{}", "markdown")
+            assert result == ""
+
+    def test_result_content_no_text_content_returns_empty_string(self) -> None:
+        """When apply_format returns a result with non-TextContent items, return ''."""
+        from unittest.mock import MagicMock, patch
+
+        from gitea_mcp_server.tools.resource_display import _format_resource_content
+
+        mock_result = MagicMock()
+        mock_result.content = [MagicMock()]  # Not TextContent
+
+        with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
+            result = _format_resource_content("{}", "markdown")
+            assert result == ""

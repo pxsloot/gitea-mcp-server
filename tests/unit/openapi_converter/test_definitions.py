@@ -811,3 +811,55 @@ class TestPatchMissingStateDescriptions:
         assert len(caplog.records) == 1
         # Falls back to the schema key name when title is absent
         assert "EditMilestoneOption.state" in caplog.records[0].message
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Non-dict defensive guard tests
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestNonDictDefensiveGuards:
+    """Tests for defensive guards that skip non-dict values in spec processing."""
+
+    def test_property_required_collector_non_dict_prop_schema(self) -> None:
+        """Non-dict property schema in collect_required is passed through."""
+        from gitea_mcp_server.openapi_converter.schema import PropertyRequiredCollector
+
+        collector = PropertyRequiredCollector()
+        props: dict[str, Any] = {"bad_prop": "not_a_dict", "good_prop": {"type": "string"}}
+        new_props, required = collector.collect_required(props)
+        assert "bad_prop" in new_props
+        assert new_props["bad_prop"] == "not_a_dict"
+        assert "good_prop" in new_props
+        assert required == []
+
+    def test_wrap_response_schema_non_dict_content(self) -> None:
+        """Non-dict content in response is skipped without error."""
+        from gitea_mcp_server.openapi_converter.core import _wrap_response_schema
+
+        response: dict[str, Any] = {"description": "OK", "content": "not_a_dict"}
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {},
+            "components": {"schemas": {}},
+        }
+        # Should not raise
+        _wrap_response_schema(response, spec)
+
+    def test_wrap_response_schema_non_dict_json_content(self) -> None:
+        """Non-dict json_content in response is skipped without error."""
+        from gitea_mcp_server.openapi_converter.core import _wrap_response_schema
+
+        response: dict[str, Any] = {
+            "description": "OK",
+            "content": {"application/json": "not_a_dict"},
+        }
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test", "version": "1"},
+            "paths": {},
+            "components": {"schemas": {}},
+        }
+        # Should not raise
+        _wrap_response_schema(response, spec)

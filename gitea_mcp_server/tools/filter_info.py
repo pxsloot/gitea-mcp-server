@@ -46,7 +46,7 @@ def _is_excluded(
     exclude = exclusion_config.get("exclude", [])
     include = exclusion_config.get("include", [])
     if not exclude and not include:
-        return False  # pragma: no cover — trivially testable with empty exclusion_config but always exercised through non-empty configs in integration tests
+        return False
     # Exclusion patterns are written against the *final* (prefixed) tool name
     # (e.g. ``gitea_admin_*``).  At spec-prep time the operationId is still bare
     # (``admin_get_users``), so match the prefixed form.  This mirrors the old
@@ -167,14 +167,14 @@ def compute_filtered_tools_info(
     }
 
     for path, path_item in paths.items():
-        if not isinstance(path_item, dict):  # pragma: no cover — guard against malformed spec
+        if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):  # pragma: no cover — guard against non-method keys or malformed spec
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
 
             op_id: str = operation.get("operationId", "")
-            if not op_id:  # pragma: no cover — all post-conversion operations have operationIds
+            if not op_id:
                 continue
 
             tags = set(operation.get("tags", []) or [])

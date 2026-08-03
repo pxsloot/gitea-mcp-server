@@ -9,8 +9,8 @@ Public functions:
     _collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
         to labels (``$ref:TypeName``).  Used to shape data before formatting
         so any formatter (json or markdown) receives already-collapsed data.
-    _decode_base64_content - decode base64 file content from a Gitea
-        ContentsResponse (shared by tools and resources).
+    decode_base64_content - decode base64 file content from a Gitea
+    ContentsResponse (shared by tools and resources).
     apply_format - format data for output (raw/json/markdown), no pagination.
     _format_paginated_result - format paginated list results for display.
         Separates display from data creation: handles page slicing (or
@@ -51,19 +51,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _decode_base64_content(response: Any) -> str:
+async def decode_base64_content(response: Any) -> str:
     """Decode base64 file content from a Gitea ContentsResponse.
 
     Gitea's ``/repos/{owner}/{repo}/contents/{path}`` endpoint returns a JSON
     object with ``content`` (base64-encoded) and ``encoding`` ("base64") fields.
     This function extracts and decodes the content for text output.
 
-    Shared by tools/ (response post-processing) and resources/
-    (``handler_hook`` in ``make_api_resource``).  When the tool output layer
-    detects a base64-encoded ``ContentsResponse`` (via the OpenAPI spec's
-    ``x-response-transform`` annotation), it calls this to produce plain text.
+    Shared by tools (response post-processing in ``_pipeline_with_context``)
+    and the ``read_resource`` tool (content detection in
+    ``_read_resource_tool``).  When the caller detects a base64-encoded
+    ``ContentsResponse`` (via the OpenAPI spec's ``x-response-transform``
+    annotation for tools, or runtime JSON parse for resources), it calls this
+    to produce plain text.
 
-    Handles three response shapes:
+    Handles four response shapes:
     - ``str``: returned as-is (e.g., error messages from the API)
     - ``dict`` with ``encoding="base64"``: ``content`` is base64-decoded
     - ``dict`` without base64 encoding: ``content`` field returned as-is
@@ -814,7 +816,6 @@ __all__ = [
     "_build_server_info_markdown",
     "_collapse_data",
     "_collapse_value",
-    "_decode_base64_content",
     "_extract_type_name",
     "_format_annotations_table",
     "_format_as_markdown",
@@ -828,4 +829,5 @@ __all__ = [
     "_format_type",
     "_resolve_anyof_schema",
     "apply_format",
+    "decode_base64_content",
 ]

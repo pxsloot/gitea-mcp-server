@@ -279,8 +279,9 @@ def _response_is_contents_base64(operation: dict[str, Any]) -> bool:
 
     This helper detects the response shape so the operation transformer can
     patch ``produces`` to ``text/plain`` and set the ``x-response-transform``
-    annotation.  Both tools and resources then pick up the text/plain handling
-    automatically from the converted spec.
+    annotation.  The autogen tool pipeline (``mcp_builder.py``) picks up
+    the annotation and auto-decodes via ``decode_base64_content``;
+    the ``read_resource`` tool (``mcp_tools.py``) detects at runtime.
 
     .. note::
 

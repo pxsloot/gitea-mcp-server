@@ -24,7 +24,6 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_REPOSITORY,
     CACHE_TTL_USERS,
 )
-from gitea_mcp_server.format import _decode_base64_content
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
 from gitea_mcp_server.resources.meta import ResourceMeta
@@ -209,9 +208,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     # ======================================================================
-    # FACTORY RESOURCES (text/plain via handler_hook)
-    # These use make_api_resource() with handler_hook for base64 decoding
-    # of Gitea ContentsResponse JSON into plain text.
+    # FACTORY RESOURCES
+    # Base64 decoding of ContentsResponse JSON is handled by the
+    # read_resource tool (mcp_tools.py:_read_resource_tool), not at
+    # resource level.  Resources return raw API data; the tool layer
+    # decodes, formats, and presents.
     # ======================================================================
 
     make_api_resource(
@@ -223,7 +224,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_README,
         tags={"wrapper", "readme"},
         error_message="README not found for repository '{owner}/{repo}'.",
-        handler_hook=_decode_base64_content,
         param_config=ResourceParamConfig(
             query_params=["ref"],
             optional_params=[{"name": "ref", "type": "string",
@@ -246,7 +246,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
                               "description": "The name of the commit/branch/tag"}],
         ),
         available_scopes=available_scopes,
-        handler_hook=_decode_base64_content,
     )
 
     # ======================================================================
@@ -308,6 +307,5 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
 
 __all__ = [
-    "_decode_base64_content",
     "register_custom_resources",
 ]

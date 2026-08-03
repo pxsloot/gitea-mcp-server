@@ -436,7 +436,12 @@ class TestCustomResources:
             )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://repos/owner/repo/readme")
-            assert "Hello" in result.contents[0].content
+            # Resource handler returns raw JSON — decode is in the
+            # read_resource tool layer (mcp_tools.py:_read_resource_tool).
+            raw = result.contents[0].content
+            raw_content = raw.decode() if isinstance(raw, bytes) else raw
+            assert raw_content.startswith("{"), f"Expected JSON, got: {raw_content}"
+            assert '"encoding": "base64"' in raw_content
 
     @pytest.mark.asyncio
     async def test_read_issues_default(self) -> None:

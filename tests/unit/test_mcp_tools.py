@@ -10,6 +10,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.mcp_tools import (
+    _maybe_decode_base64,
     _mcp_list_resources_impl,
     _mcp_read_resource_impl,
     register_mcp_resource_tools,
@@ -1350,3 +1351,73 @@ class TestMcpListResourcesFetchAll:
         assert len(sc["result"]["resources"]) == 7
         assert sc["has_more"] is False
         assert sc["total_count"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Tests: _maybe_decode_base64
+# ---------------------------------------------------------------------------
+
+
+class TestMaybeDecodeBase64:
+    """Tests for ``_maybe_decode_base64`` in ``mcp_tools.py``.
+
+    Verifies runtime detection and decoding of Gitea ContentsResponse in
+    resource content before the display pipeline processes it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_decodes_base64_content(self) -> None:
+        """A valid base64-encoded ContentsResponse is decoded to plain text."""
+        import base64
+        plaintext = "file content here\nline two"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw = json_module.dumps({"content": encoded, "encoding": "base64"})
+        result = await _maybe_decode_base64(raw)
+        assert result == plaintext
+
+    @pytest.mark.asyncio
+    async def test_passes_through_plain_text(self) -> None:
+        """Non-JSON content passes through unchanged."""
+        raw = "plain text response"
+        result = await _maybe_decode_base64(raw)
+        assert result == "plain text response"
+
+    @pytest.mark.asyncio
+    async def test_passes_through_json_without_base64_encoding(self) -> None:
+        """JSON dict without encoding field passes through unchanged."""
+        raw = json_module.dumps({"name": "file.txt", "type": "file"})
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_decodes_with_other_fields(self) -> None:
+        """A ContentsResponse with extra metadata fields still decodes."""
+        import base64
+        plaintext = "content with metadata"
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        raw = json_module.dumps(
+            {"content": encoded, "encoding": "base64", "name": "f.py", "size": 42}
+        )
+        result = await _maybe_decode_base64(raw)
+        assert result == plaintext
+
+    @pytest.mark.asyncio
+    async def test_passes_through_non_dict_json(self) -> None:
+        """JSON array content passes through unchanged."""
+        raw = json_module.dumps(["item1", "item2"])
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_passes_through_invalid_json(self) -> None:
+        """Invalid JSON passes through unchanged."""
+        raw = "not valid { json"
+        result = await _maybe_decode_base64(raw)
+        assert result == raw
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_base64_content(self) -> None:
+        """Empty content field with base64 encoding returns empty string."""
+        raw = json_module.dumps({"content": "", "encoding": "base64"})
+        result = await _maybe_decode_base64(raw)
+        assert result == ""

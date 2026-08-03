@@ -10,7 +10,7 @@ from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceResult
 
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
-from gitea_mcp_server.format import _decode_base64_content
+from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
@@ -1400,12 +1400,12 @@ class TestMakeApiResourceHandlerHook:
 
 
 # ---------------------------------------------------------------------------
-# Tests: _decode_base64_content (the real hook function)
+# Tests: decode_base64_content (the real hook function)
 # ---------------------------------------------------------------------------
 
 
 class TestDecodeBase64Content:
-    """Tests for ``_decode_base64_content`` in ``format.py``.
+    """Tests for ``decode_base64_content`` in ``format.py``.
 
     This is the real-world handler_hook used by readme and file resources
     to decode Gitea's base64-encoded ContentsResponse into plain text.
@@ -1414,13 +1414,13 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_string_passthrough(self) -> None:
         """String responses are returned as-is."""
-        result = await _decode_base64_content("plain text error")
+        result = await decode_base64_content("plain text error")
         assert result == "plain text error"
 
     @pytest.mark.asyncio
     async def test_base64_dict_decoding(self) -> None:
         """Dict with encoding='base64' decodes the content field."""
-        result = await _decode_base64_content(
+        result = await decode_base64_content(
             {"content": "SGVsbG8gV29ybGQ=", "encoding": "base64"}
         )
         assert result == "Hello World"
@@ -1428,7 +1428,7 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_non_base64_dict_returns_content_field(self) -> None:
         """Dict without base64 encoding returns the content field as-is."""
-        result = await _decode_base64_content(
+        result = await decode_base64_content(
             {"content": "raw text content"}
         )
         assert result == "raw text content"
@@ -1436,13 +1436,13 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_base64_dict_missing_content_returns_empty_string(self) -> None:
         """Dict with encoding='base64' but no content key returns ''."""
-        result = await _decode_base64_content({"encoding": "base64"})
+        result = await decode_base64_content({"encoding": "base64"})
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_base64_dict_none_content_returns_empty_string(self) -> None:
         """Dict with encoding='base64' and content=None returns ''."""
-        result = await _decode_base64_content(
+        result = await decode_base64_content(
             {"content": None, "encoding": "base64"}
         )
         assert result == ""
@@ -1450,13 +1450,13 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_non_dict_non_str_fallback(self) -> None:
         """Non-dict, non-str responses are stringified."""
-        result = await _decode_base64_content(42)
+        result = await decode_base64_content(42)
         assert result == "42"
 
-        result = await _decode_base64_content(None)
+        result = await decode_base64_content(None)
         assert result == "None"
 
-        result = await _decode_base64_content([1, 2, 3])
+        result = await decode_base64_content([1, 2, 3])
         assert result == "[1, 2, 3]"
 
 

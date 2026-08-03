@@ -27,7 +27,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import _format_as_markdown, apply_format, decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
@@ -460,6 +460,34 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     )
 
 
+async def _maybe_decode_base64(raw: str) -> str:
+    """Detect and decode base64-encoded Gitea ContentsResponse.
+
+    Gitea's ``/repos/{owner}/{repo}/contents/{path}`` endpoint returns JSON
+    with ``encoding: "base64"`` and ``content`` (base64-encoded string).
+    This function detects that pattern in resource content and decodes it
+    so the display pipeline receives plain text.
+
+    Detection is at runtime via JSON parse — no spec dependency needed.
+    Mirrors the spec-driven detection in autogen tools
+    (``_ToolWrappingTransform._try_handle_text_response``).
+
+    Args:
+        raw: Raw resource content string from the resource handler.
+
+    Returns:
+        Decoded plain text if the content was a base64 ContentsResponse,
+        otherwise the original ``raw`` string unchanged.
+    """
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return raw
+    if isinstance(data, dict) and data.get("encoding") == "base64":
+        return await decode_base64_content(data)
+    return raw
+
+
 async def _read_resource_tool(
     uri: str,
     format: str = "markdown",
@@ -575,6 +603,10 @@ async def _read_resource_tool(
         ValueError: If the resource is not found or cannot be read
     """
     raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, uri)
+    # Decode base64 ContentsResponse at the tool layer: resources are
+    # pure data; the tool transforms for agent consumption — mirroring
+    # how autogen tools decode in _pipeline_with_context.
+    raw = await _maybe_decode_base64(raw)
     formatted = _format_resource_content(
         raw, format, detail=detail,
         schema=schema, format_hint=format_hint, extra=extra,
@@ -693,6 +725,7 @@ def register_mcp_resource_tools(
 __all__ = [
     "_extract_extra_meta",
     "_make_tool_schema_resource_handler",
+    "_maybe_decode_base64",
     "_mcp_list_resources_impl",
     "_mcp_read_resource_impl",
     "register_mcp_resource_tools",

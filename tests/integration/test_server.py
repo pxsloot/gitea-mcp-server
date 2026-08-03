@@ -1277,20 +1277,21 @@ class TestServerEdgeCases:
     @pytest.mark.asyncio
     async def test_main_async_create_server_exception_exits(self) -> None:
         """main_async exits with code 1 when create_mcp_server fails."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
+
+        config = SimpleConfig()
 
         with patch("gitea_mcp_server.server.Config.get") as mock_config:
-            mock_config.return_value = MagicMock(log_level="INFO", log_format="text")
+            mock_config.return_value = config
             with (
                 patch("gitea_mcp_server.server.create_mcp_server", side_effect=Exception("boom")),
-                patch("gitea_mcp_server.server.GiteaClient") as mock_client,
+                patch.object(GiteaClient, "close", new=AsyncMock()) as mock_close,
             ):
-                    mock_client.return_value.close = AsyncMock()
                     from gitea_mcp_server.server import main_async
                     with pytest.raises(SystemExit) as exc:
                         await main_async()
                     assert exc.value.code == 1
-                    mock_client.return_value.close.assert_awaited_once()
+                    mock_close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_main_async_stdio_transport(self) -> None:

@@ -7,6 +7,9 @@ diagnostic rather than silently returning the first result.
 Classes:
     ConflictError: Raised when a repeated request conflicts with a
                    previously-materialised resource.
+    BootstrapVerificationError: Raised when a pre-existing bootstrap
+                   entity (user, org, team) does not match expected
+                   configuration.
     RepoRequest: Frozen contract encoding both the identity (owner, name)
                  and the immutable configuration of a test repository.
 """
@@ -29,6 +32,33 @@ class ConflictError(AssertionError):
         self.resource = resource
         self.detail = detail
         super().__init__(f"Conflict for {resource!r}:\n{detail}")
+
+
+class BootstrapVerificationError(AssertionError):
+    """A pre-existing bootstrap entity does not match expected configuration.
+
+    Raised when ``need_user``, ``need_org``, or ``need_team`` encounters
+    an entity that already exists on the Gitea instance but whose
+    configuration differs from what the live suite requires.
+
+    Attributes:
+        entity: Human-readable entity identifier (e.g. ``"user live-dev-abc"``).
+        field: The configuration field that mismatched.
+        expected: The value required by the test suite.
+        observed: The value found on the Gitea instance.
+    """
+
+    def __init__(
+        self, entity: str, field: str, expected: object, observed: object,
+    ) -> None:
+        self.entity = entity
+        self.field = field
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"Bootstrap entity mismatch for {entity!r}: "
+            f"{field} expected {expected!r}, got {observed!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from tests.live.conflict import ConflictError, RepoRequest, check_conflict
+from tests.live.conflict import (
+    BootstrapVerificationError,
+    ConflictError,
+    RepoRequest,
+    check_conflict,
+)
 
 # ---------------------------------------------------------------------------
 # RepoRequest — cache key
@@ -210,3 +215,50 @@ class TestConflictError:
         err = ConflictError("issue('Bug')", "  body: requested 'new'")
         assert "issue('Bug')" in str(err)
         assert "body" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# BootstrapVerificationError
+# ---------------------------------------------------------------------------
+
+
+class TestBootstrapVerificationError:
+    """BootstrapVerificationError carries entity, field, expected, observed."""
+
+    def test_all_fields_accessible(self) -> None:
+        err = BootstrapVerificationError(
+            "user dev-live", "email",
+            "dev@test.local", "wrong@test.local",
+        )
+        assert err.entity == "user dev-live"
+        assert err.field == "email"
+        assert err.expected == "dev@test.local"
+        assert err.observed == "wrong@test.local"
+        assert isinstance(err, AssertionError)
+
+    def test_str_includes_all_context(self) -> None:
+        err = BootstrapVerificationError(
+            "org live-org", "full_name",
+            "Expected", "Observed",
+        )
+        text = str(err)
+        assert "org live-org" in text
+        assert "full_name" in text
+        assert "'Expected'" in text
+        assert "'Observed'" in text
+
+    def test_bool_fields(self) -> None:
+        err = BootstrapVerificationError(
+            "user dev-live", "active",
+            True, False,
+        )
+        assert err.expected is True
+        assert err.observed is False
+
+    def test_none_values(self) -> None:
+        err = BootstrapVerificationError(
+            "team org/team", "units_map.repo.code",
+            "write", None,
+        )
+        assert err.expected == "write"
+        assert err.observed is None

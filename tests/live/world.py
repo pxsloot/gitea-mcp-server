@@ -80,7 +80,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from tests.helpers.mcp_results import extract_text_content
-from tests.live.conflict import RepoRequest, check_conflict
+from tests.live.conflict import BootstrapVerificationError, RepoRequest, check_conflict
 from tests.live.dependency_graph import DependencyGraph
 
 if TYPE_CHECKING:
@@ -923,7 +923,33 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower():
-                data = {"username": user.username, "email": user.email}
+                # Re-read and verify the pre-existing user
+                entity = f"user {user.username}"
+                verify = await admin.call_tool(
+                    "gitea_user_get",
+                    {"username": user.username, "format": "json"},
+                )
+                if _is_error(verify):
+                    raise BootstrapVerificationError(
+                        entity, "readable", True, False,
+                    ) from None
+                data = _unwrap(verify)
+                _assert_keys(data, "id", "login", "username", "email", "active")
+                _assert_content(
+                    data, login=user.username, username=user.username,
+                )
+                if data.get("email") != user.email:
+                    raise BootstrapVerificationError(
+                        entity, "email", user.email, data.get("email"),
+                    )
+                if not data.get("active", True):
+                    raise BootstrapVerificationError(
+                        entity, "active", True, False,
+                    )
+                if data.get("prohibit_login", False):
+                    raise BootstrapVerificationError(
+                        entity, "prohibit_login", False, True,
+                    )
                 self._users[user.username] = data
                 return data
             msg = f"Failed to create user '{user.username}': {text[:300]}"
@@ -954,7 +980,23 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower():
-                data = {"username": username}
+                # Re-read and verify the pre-existing org
+                entity = f"org {username}"
+                verify = await admin.call_tool(
+                    "gitea_org_get",
+                    {"org": username, "format": "json"},
+                )
+                if _is_error(verify):
+                    raise BootstrapVerificationError(
+                        entity, "readable", True, False,
+                    ) from None
+                data = _unwrap(verify)
+                _assert_keys(data, "id", "username", "visibility")
+                _assert_content(data, username=username)
+                if full_name is not None and data.get("full_name") != full_name:
+                    raise BootstrapVerificationError(
+                        entity, "full_name", full_name, data.get("full_name"),
+                    )
                 self._orgs[username] = data
                 return data
             msg = f"Failed to create org '{username}': {text[:300]}"
@@ -996,9 +1038,52 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower() or "conflict" in text.lower():
-                data = {"name": name}
-                self._teams[key] = data
-                return data
+                # List teams in the org and find the pre-existing one
+                entity = f"team {org}/{name}"
+                list_result = await admin.call_tool(
+                    "gitea_org_list_teams",
+                    {"org": org, "format": "json"},
+                )
+                if _is_error(list_result):
+                    raise BootstrapVerificationError(
+                        entity, "listable", True, False,
+                    ) from None
+                teams_data = json.loads(
+                    extract_text_content(list_result.content)
+                )
+                team_data: dict[str, Any] | None = None
+                if isinstance(teams_data, list):
+                    for item in teams_data:
+                        if item.get("name") == name:
+                            team_data = item
+                            break
+                if team_data is None:
+                    raise BootstrapVerificationError(
+                        entity, "found", True, False,
+                    ) from None
+                # Verify permission
+                if team_data.get("permission") != permission:
+                    raise BootstrapVerificationError(
+                        entity, "permission",
+                        permission, team_data.get("permission"),
+                    )
+                # Verify units_map entries
+                required_units = units_map or {
+                    "repo.code": "write",
+                    "repo.issues": "write",
+                    "repo.pulls": "write",
+                    "repo.releases": "write",
+                }
+                actual_units = team_data.get("units_map", {})
+                for unit_key, expected_level in required_units.items():
+                    actual_level = actual_units.get(unit_key)
+                    if actual_level != expected_level:
+                        raise BootstrapVerificationError(
+                            entity, f"units_map.{unit_key}",
+                            expected_level, actual_level,
+                        )
+                self._teams[key] = team_data
+                return team_data
             msg = f"Failed to create team '{name}' in '{org}': {text[:300]}"
             raise AssertionError(msg)
         data = _unwrap(result)

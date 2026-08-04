@@ -206,9 +206,9 @@ class RepoState:
         file_key = f"{branch}:{path}"
         if file_key in self._files:
             check_conflict(
-                "file", f"{file_key!r}",
-                self._file_options.get(file_key, {}),
-                {"content": content, "message": message},
+                        "file", f"{file_key!r}",
+                        self._file_options.get(file_key, {}),
+                        {"content": content},
             )
             return self._files[file_key]
 
@@ -234,7 +234,7 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self._files[file_key] = data
-        self._file_options[file_key] = {"content": content, "message": message}
+        self._file_options[file_key] = {"content": content}
         return data
 
     async def need_label(
@@ -253,9 +253,9 @@ class RepoState:
         """
         if name in self.labels:
             check_conflict(
-                "label", name,
-                self._label_options.get(name, {}),
-                {"color": color, "description": description, "exclusive": exclusive},
+                        "label", name,
+                        self._label_options.get(name, {}),
+                        {"color": color, "exclusive": exclusive},
             )
             return self.labels[name]
 
@@ -278,7 +278,7 @@ class RepoState:
         data = _unwrap(result)
         self.labels[name] = data
         self._label_options[name] = {
-            "color": color, "description": description, "exclusive": exclusive,
+            "color": color, "exclusive": exclusive,
         }
         return data
 
@@ -299,7 +299,7 @@ class RepoState:
             check_conflict(
                 "milestone", title,
                 self._milestone_options.get(title, {}),
-                {"description": description, "due_date": due_date},
+                {},
             )
             return self.milestones[title]
 
@@ -321,9 +321,7 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.milestones[title] = data
-        self._milestone_options[title] = {
-            "description": description, "due_date": due_date,
-        }
+        self._milestone_options[title] = {}
         return data
 
     async def need_issue(
@@ -503,7 +501,7 @@ class RepoState:
             check_conflict(
                 "tag", name,
                 self._tag_options.get(name, {}),
-                {"target": target, "message": message},
+                {"target": target},
             )
             return self.tags[name]
 
@@ -524,5 +522,5 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.tags[name] = data
-        self._tag_options[name] = {"target": target, "message": message}
+        self._tag_options[name] = {"target": target}
         return data

@@ -71,8 +71,11 @@ class RepoRequest:
     """Stable identity and immutable configuration for a test repository.
 
     The *cache key* is ``(owner, name)`` — same repo identity regardless
-    of options.  The *contract* includes every field: a later request for
-    the same identity must match or raise :class:`ConflictError`.
+    of options.  The *contract* covers structural fields that affect how
+    the repo is set up (*auto_init*, *private*, *branch*, *old_branch*,
+    *files*, *labels*).  Cosmetic fields (*description*) are ignored —
+    different tests can set different descriptions for the same repo
+    without conflict.
 
     ``user`` and ``scopes`` are deliberately excluded from the contract
     because they are access credentials, not repository configuration.
@@ -121,20 +124,9 @@ class RepoRequest:
                     f"  {field_name}: requested {b!r}, "
                     f"already created with {a!r}"
                 )
-        # description can be None or a string — treat None and "" as
-        # equivalent (the API treats missing description as empty).
-        if _normalize_str(self.description) != _normalize_str(other.description):
-            mismatches.append(
-                f"  description: requested {other.description!r}, "
-                f"already created with {self.description!r}"
-            )
+        # description is NOT checked — cosmetic metadata, not structural.
         if mismatches:
             raise ConflictError(self.cache_key, "\n".join(mismatches))
-
-
-def _normalize_str(value: str | None) -> str:
-    """Treat ``None`` and ``""`` as equivalent for optional text fields."""
-    return (value or "") if value is not None else ""
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +142,10 @@ def check_conflict(
 ) -> None:
     """Raise :class:`ConflictError` if *requested_options* differ from *stored_options*.
 
+    A requested value of ``None`` means "don't care" — the field is
+    skipped in the comparison.  This lets callers retrieve a cached
+    entity without repeating every creation parameter.
+
     Args:
         entity_type: Label for the resource (e.g. ``"issue"``, ``"label"``).
         identity: Human-readable identity (e.g. ``"Bug report"``).
@@ -159,6 +155,9 @@ def check_conflict(
     mismatches: list[str] = []
     for key, stored_val in stored_options.items():
         requested_val = requested_options.get(key)
+        # None means "don't care" — skip the comparison for this field
+        if requested_val is None:
+            continue
         if requested_val != stored_val:
             mismatches.append(
                 f"  {key}: requested {requested_val!r}, "
@@ -166,6 +165,8 @@ def check_conflict(
             )
     # Also catch keys present in the new request but absent from stored.
     for key, requested_val in requested_options.items():
+        if requested_val is None:
+            continue
         if key not in stored_options:
             mismatches.append(
                 f"  {key}: requested {requested_val!r}, "

@@ -62,10 +62,10 @@ class TestRepoRequestCompatible:
         r2 = RepoRequest(**kwargs)  # type: ignore[arg-type]
         r1.assert_compatible(r2)
 
-    def test_none_and_empty_description_equivalent(self) -> None:
-        """None and '' are treated as equivalent for description."""
+    def test_none_and_explicit_description_compatible(self) -> None:
+        """Description is cosmetic — None and an explicit string are compatible."""
         r1 = RepoRequest("dev", "repo", description=None)
-        r2 = RepoRequest("dev", "repo", description="")
+        r2 = RepoRequest("dev", "repo", description="Something")
         r1.assert_compatible(r2)
 
 
@@ -92,12 +92,11 @@ class TestRepoRequestConflicts:
             r1.assert_compatible(r2)
         assert "private" in exc.value.detail
 
-    def test_description_mismatch(self) -> None:
+    def test_different_descriptions_are_compatible(self) -> None:
+        """Description is cosmetic — different values do not conflict."""
         r1 = RepoRequest("dev", "repo", description="A test")
         r2 = RepoRequest("dev", "repo", description="Different")
-        with pytest.raises(ConflictError) as exc:
-            r1.assert_compatible(r2)
-        assert "description" in exc.value.detail
+        r1.assert_compatible(r2)  # should not raise
 
     def test_branch_mismatch(self) -> None:
         r1 = RepoRequest("dev", "repo", branch="feat")
@@ -177,14 +176,13 @@ class TestCheckConflict:
             {"description": None, "due_date": None},
         )
 
-    def test_empty_string_vs_none_are_different(self) -> None:
-        """Empty string and None differ — they're different default semantics."""
-        with pytest.raises(ConflictError):
-            check_conflict(
-                "milestone", "v1",
-                {"description": None},
-                {"description": ""},
-            )
+    def test_none_requested_means_skip(self) -> None:
+        """None in requested means 'don't care' — no conflict."""
+        check_conflict(
+            "milestone", "v1",
+            {"description": "Some text"},
+            {"description": None},
+        )
 
     def test_multiple_mismatches(self) -> None:
         with pytest.raises(ConflictError) as exc:

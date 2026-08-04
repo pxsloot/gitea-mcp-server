@@ -98,7 +98,10 @@ tests/
 │   ├── __init__.py
 │   ├── conftest.py              # Credentials, worker World, pooled MCP clients
 │   ├── helpers.py               # Token creation and repository pre-cleanup
-│   ├── world.py                 # Worker-local identities, graph, pool, lifecycle
+│   ├── identities.py            # User, DEV/PEER/RO/LIMITED, scope constants, org/team names
+│   ├── world.py                 # Worker-local World (server pool, bootstrap, graph, lifecycle)
+│   ├── state.py                 # RepoState tracker, internal helpers (_is_error, _unwrap, …)
+│   ├── conflict.py              # ConflictError, BootstrapVerificationError, RepoRequest
 │   ├── dependency_graph.py      # Verified dependency cache
 │   ├── workflows.py             # Composable workflow facade
 │   ├── quality.py               # Orthogonal result-quality contracts
@@ -434,9 +437,12 @@ tests/live/
    method and the module-level ``get_token()`` function share the same
    cache.
 
-4. **Repository cleanup is lifecycle-owned.**  ``World.cleanup()`` deletes
-   every repository registered by that World before pooled servers close.
-   Cleanup attempts every repository and preserves an existing test failure if
+4. **Repository, team, org, and user cleanup is lifecycle-owned.**  ``World.cleanup()``
+   deletes run-owned entities in reverse dependency order (repos, teams, orgs,
+   users) before pooled servers close.  An ``OwnershipLedger`` distinguishes
+   run-created entities from pre-existing ones — only recorded entities are
+   deleted.  Token cleanup is an accepted limitation (token IDs are not tracked).
+   Cleanup attempts every entity and preserves an existing test failure if
    teardown also encounters an error.  ``purge_repo()`` still runs before
    creation to recover from interrupted runs.
 
@@ -477,10 +483,12 @@ tests/live/
   and ``mcp_client(gitea_url, server_args, token)`` (per-test async context
   manager, backward-compatible).
 - ``world.py`` defines the ``World`` class (server pool, lazy state graph,
-  idempotent ``need_*`` methods), ``RepoState`` (per-repo state tracker),
-  the canonical test identities (``DEV``, ``PEER``, ``RO``, ``LIMITED``),
-  scope constants (``SCOPE_WRITE``, ``SCOPE_READ``, ``SCOPE_LIMITED``),
-  org/team names, and the backward-compatible ``get_token()`` function.
+  idempotent ``need_*`` methods), ``OwnershipLedger``, and the backward-
+  compatible ``get_token()`` function.
+- ``identities.py`` defines canonical test identities, scope constants,
+  org/team names, and namespace utilities — re-exported by ``world.py``.
+- ``state.py`` defines ``RepoState`` (per-repo state tracker) and the
+  internal assertion helpers — re-exported by ``world.py``.
 - ``assertions.py`` provides reusable shape/content/cross-format assertion
   helpers: ``assert_keys``, ``assert_key_types``, ``assert_content``,
   ``assert_result_ok``, ``assert_formats_equivalent``.
@@ -1338,6 +1346,9 @@ uv run pytest tests/integration/
 
 # Live tests (require Gitea instance)
 uv run pytest tests/live/
+
+# Live tests via Makefile (same as above plus 300s timeout)
+make test-live
 ```
 
 ### Parallel and sequential design
@@ -1379,6 +1390,36 @@ def test_slow_operation(self):
 @pytest.mark.timeout(None)
 def test_unbounded(self):
     ...
+```
+
+### CI Live Tests
+
+The Forgejo CI pipeline (``.gitea/workflows/ci.yml``) includes an
+optional ``live-test`` job that runs the live suite against a throwaway
+Forgejo service container:
+
+1. **Forgejo service**: Spawned as a Docker service container
+   (``codeberg.org/forgejo/forgejo:16``) with SQLite backend,
+   push-to-create enabled, and ``INSTALL_LOCK`` set.
+2. **Admin provisioning**: A one-shot admin user and access token are
+   created via ``gitea admin user create --access-token`` inside the
+   service container.
+3. **Test execution**: The CI image runs ``pytest tests/live/ -m live``
+   with ``--network host``, ``GITEA_LIVE_RUN_ID=ci-<run-number>`` for
+   namespace isolation, and a 300s timeout.
+4. **Cleanup**: The ``OwnershipLedger`` and ``World.cleanup()`` delete
+   run-owned repos, teams, orgs, and users in reverse dependency order
+   within the worker fixture teardown.
+5. **Artifacts**: Forgejo container logs are collected on both success
+   and failure (``if: always()``).
+
+The job uses ``continue-on-error: true`` — live test failures do not
+block merges.  External service startup is inherently flaky and the
+live suite primarily serves as a development-time regression catcher.
+
+```bash
+# CI target (same as what the live-test job runs):
+make test-live
 ```
 
 ### Test Markers

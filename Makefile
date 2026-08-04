@@ -1,7 +1,7 @@
 # Default to false for local dev with self-signed certs (can override via env)
 GITEA_VERIFY_SSL ?= false
 
-.PHONY: help docker-build docker-build-ci docker-push docker-run docker-run-http docker-test docker-shell clean
+.PHONY: help docker-build docker-build-ci docker-push docker-run docker-run-http docker-test docker-shell clean test-live
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -20,6 +20,12 @@ test:
 test-types:
 	mypy gitea_mcp_server
 	mypy tests/
+
+# Live integration tests — requires a running Gitea/Forgejo instance
+# and credentials in .env.dev.local (write by gitea_dev_start.sh).
+# Automatically skips when no instance is reachable.
+test-live:
+	pytest tests/live/ -m live -v --timeout=300
 
 docker-test:
 	docker run --rm localhost/gitea-mcp-server:ci sh -c "\

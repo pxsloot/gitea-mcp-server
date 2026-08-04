@@ -4,7 +4,7 @@ This module serves two roles:
 
 1. **Canonical identities** (backward-compatible) — ``User``, ``DEV``,
    ``PEER``, ``RO``, ``LIMITED``, scope constants, org/team names.
-   All existing test files import these unchanged.
+   Defined in ``identities.py`` and re-exported here for existing imports.
 
 2. **World** (new — session-scoped fixture) — a lazy state graph that
    replaces per-test server spawns with pooled servers and idempotent
@@ -47,8 +47,8 @@ The World tracks what exists::
     ├── _users  {"dev": {...}, "peer": {...}, ...}
     ├── _orgs   {"live-org": {...}}
     ├── _teams  {("live-org", "live-team"): {...}}
-    └── _repos  {"dev/workflow-repo": RepoState,
-                  "dev/issues-repo":   RepoState, ...}
+    └── _repos  {"dev/workflow-repo": (RepoRequest, RepoState),
+                  "dev/issues-repo":   (RepoRequest, RepoState), ...}
 
 Each ``RepoState`` tracks branches, labels, milestones, issues, pull requests,
 and tags
@@ -64,81 +64,62 @@ Design decisions
   (user, scopes) key.  One mint per combination per suite run.
 - **Canonical scope lists**: ``SCOPE_WRITE``, ``SCOPE_READ``,
   ``SCOPE_LIMITED`` — single source of truth.
-- **Repositories are cleaned up at World teardown.** ``purge_repo`` also
-  runs before creation so interrupted runs start cleanly. Users, orgs, tokens,
-  and teams persist on the throwaway test instance.
+- **Repositories, teams, orgs, and users are cleaned up at World teardown.**
+  ``purge_repo`` also runs before creation so interrupted runs start cleanly.
+  Only entities recorded in the ``OwnershipLedger`` as run-created are
+  deleted; pre-existing entities are preserved.  Token cleanup is an
+  accepted limitation (token IDs are not tracked).
+
+Module structure
+----------------
+Identities and repository state live in separate modules to keep this
+file focused on the ``World`` orchestration facade:
+
+- ``tests/live/identities.py`` — ``User``, ``DEV``, ``PEER``, …,
+  scope constants, org/team names
+- ``tests/live/state.py`` — ``RepoState``, internal helpers
+- ``tests/live/conflict.py`` — ``ConflictError``, ``RepoRequest``,
+  ``check_conflict``
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
-import uuid
 from contextlib import AsyncExitStack, suppress
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from tests.helpers.mcp_results import extract_text_content
+from tests.live.conflict import BootstrapVerificationError, RepoRequest
 from tests.live.dependency_graph import DependencyGraph
+from tests.live.identities import (  # noqa: F401 — re-exported
+    _NAMESPACE,
+    _RUN_ID,
+    _WORKER,
+    ALL_USERS,
+    DEV,
+    LIMITED,
+    ORG_NAME,
+    PEER,
+    RO,
+    SCOPE_LIMITED,
+    SCOPE_READ,
+    SCOPE_WRITE,
+    TEAM_NAME,
+    User,
+)
+from tests.live.state import (
+    RepoState,
+    _assert_content,
+    _assert_key_types,
+    _assert_keys,
+    _error_text,
+    _is_error,
+    _unwrap,
+)
 
 if TYPE_CHECKING:
     from mcp import ClientSession
-
-_WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
-"""The xdist worker id, or ``local`` outside xdist."""
-
-_RUN_ID: str = re.sub(
-    r"[^a-z0-9-]", "-",
-    os.getenv("GITEA_LIVE_RUN_ID", uuid.uuid4().hex[:8]).lower(),
-).strip("-")[:16] or uuid.uuid4().hex[:8]
-"""Run namespace; override with ``GITEA_LIVE_RUN_ID`` in CI."""
-
-_NAMESPACE: str = f"{_RUN_ID}-{_WORKER}"
-"""Unique suffix preventing concurrent live runs from sharing entities."""
-
-# =============================================================================
-# Canonical scope lists
-# =============================================================================
-
-SCOPE_WRITE = ["write:repository", "write:issue", "write:user"]
-"""Full write access — the primary actor scopes."""
-
-SCOPE_READ = ["read:repository", "read:user", "read:issue"]
-"""Read-only access — for scope gating tests."""
-
-SCOPE_LIMITED = ["write:repository", "read:issue"]
-"""Partial write — can create repos but not issues."""
-
-# =============================================================================
-# Test identities
-# =============================================================================
-
-
-class User:
-    """A test user identity — username, password, email."""
-
-    __slots__ = ("email", "password", "username")
-
-    def __init__(self, base: str, password: str) -> None:
-        self.username = f"{base}-{_NAMESPACE}"
-        self.password = password
-        self.email = f"{self.username}@live-test.local"
-
-
-DEV = User("live-dev", "dev-pass-007")
-"""Primary actor for workflow tests."""
-
-PEER = User("live-peer", "peer-pass-007")
-"""PR counterpart / second actor."""
-
-RO = User("live-ro", "ro-pass-007")
-"""Read-only victim for scope gating."""
-
-LIMITED = User("live-limited", "limited-pass-007")
-"""Partial-scope victim for scope gating."""
-
-ALL_USERS = (DEV, PEER, RO, LIMITED)
 
 # =============================================================================
 # Token cache — one token per (user, scopes) per suite run (backward-compat)
@@ -168,417 +149,45 @@ async def get_token(url: str, user: User, scopes: list[str]) -> str:
 
 
 # =============================================================================
-# Org and team
-# =============================================================================
-
-ORG_NAME = f"live-org-{_NAMESPACE}"
-"""Test organization name."""
-
-TEAM_NAME = f"live-team-{_NAMESPACE}"
-"""Test team within the organization."""
-
-
-# =============================================================================
-# Internal helpers (no circular imports)
+# Ownership ledger — tracks which entities this World run created
 # =============================================================================
 
 
-def _is_error(result: Any) -> bool:
-    """Check if an MCP tool call result indicates an error (has ``.isError``)."""
-    return bool(getattr(result, "isError", False))
+class OwnershipLedger:
+    """Tracks entities created by the current live-test run.
 
+    Only entities recorded via ``record()`` are eligible for teardown
+    cleanup.  Pre-existing entities discovered via "already exists" are
+    never deleted — only run-created ones.
 
-def _unwrap(result: Any) -> dict[str, Any]:
-    """Extract and parse JSON from a tool call result.
+    The ledger stores ``(identifier, delete_key)`` pairs keyed by entity
+    type, where *delete_key* is the value needed by the corresponding
+    delete tool (team ID, org name, username, etc.).
 
-    Raises ``TypeError`` if the parsed result is not a dict.
-    """
-    text = extract_text_content(result.content)
-    parsed = json.loads(text)
-    if not isinstance(parsed, dict):
-        msg = f"Expected dict result, got {type(parsed).__name__}"
-        raise TypeError(msg)
-    return cast("dict[str, Any]", parsed)
-
-
-def _error_text(result: Any) -> str:
-    """Extract error text from a tool call result."""
-    content = getattr(result, "content", None)
-    if not content:
-        return ""
-    from mcp.types import TextContent
-
-    texts: list[str] = []
-    for item in content:
-        if isinstance(item, TextContent):
-            texts.append(item.text)
-        else:
-            texts.append(str(item))
-    return "\n".join(texts)
-
-
-def _assert_keys(data: dict[str, Any], *keys: str) -> None:
-    """Assert all *keys* are present in *data*."""
-    missing = [k for k in keys if k not in data]
-    if missing:
-        msg = f"Missing required keys: {missing}. Available: {sorted(data.keys())}"
-        raise AssertionError(msg)
-
-
-def _assert_key_types(data: dict[str, Any], **typed: type) -> None:
-    """Assert specific keys have the expected types.
-
-    Raises ``TypeError`` if a key has the wrong type.
-    """
-    for key, expected_type in typed.items():
-        actual = data.get(key)
-        if not isinstance(actual, expected_type):
-            msg = (
-                f"Key {key!r}: expected {expected_type.__name__}, "
-                f"got {type(actual).__name__} ({actual!r})"
-            )
-            raise TypeError(msg)
-
-
-def _assert_content(data: dict[str, Any], **expected: Any) -> None:
-    """Assert specific key-value pairs match exactly."""
-    for key, expected_val in expected.items():
-        actual = data.get(key)
-        if actual != expected_val:
-            msg = f"Key {key!r}: expected {expected_val!r}, got {actual!r}"
-            raise AssertionError(msg)
-
-
-# =============================================================================
-# RepoState — tracks what's inside a known repo
-# =============================================================================
-
-
-@dataclass
-class RepoState:
-    """Lazy state tracker for a single test repository.
-
-    Created by ``World.need_repo()``.  ``need_*`` methods are
-    idempotent — they create+verify the first time and return cached
-    state every subsequent call.
-
-    Attrs:
-        owner: Repository owner (login name).
-        name: Repository name.
-        data: Raw API response dict from ``create_repo``.
-        branches: ``{branch_name: branch_data}`` — created lazily.
-        labels: ``{label_name: label_data}`` — created lazily.
-        milestones: ``{milestone_title: milestone_data}`` — created lazily.
-        issues: ``{issue_number: issue_data}`` — created lazily.
-        tags: ``{tag_name: tag_data}`` — created lazily.
+    Tokens are not tracked — Gitea requires the token ID (not the sha1
+    value stored in the cache), and matching by name is unreliable.
+    Token cleanup is an accepted limitation.
     """
 
-    owner: str
-    name: str
-    data: dict[str, Any]
+    def __init__(self) -> None:
+        self._owned: dict[str, list[tuple[str, str]]] = {}
 
-    # Back-reference to the World — needed to call tools through the
-    # pooled server for this repo's owner+scopes.
-    _world: World = field(repr=False)
-    _user: User = field(repr=False)
-    _scopes: list[str] = field(repr=False)
-
-    branches: dict[str, dict[str, Any]] = field(default_factory=dict)
-    labels: dict[str, dict[str, Any]] = field(default_factory=dict)
-    milestones: dict[str, dict[str, Any]] = field(default_factory=dict)
-    issues: dict[int, dict[str, Any]] = field(default_factory=dict)
-    pull_requests: dict[int, dict[str, Any]] = field(default_factory=dict)
-    tags: dict[str, dict[str, Any]] = field(default_factory=dict)
-    _files: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
-    """Files cached by ``{branch}:{path}`` key."""
-
-    async def _server(self) -> ClientSession:
-        """Get the pooled server for this repo's owner+scopes."""
-        return await self._world.server_for(self._user, self._scopes)
-
-    # ── need_* — idempotent create-or-return ──────────────────────────
-
-    async def need_branch(
-        self, name: str, *, old: str = "main"
-    ) -> dict[str, Any]:
-        """Ensure a branch exists.  Creates from *old* if not cached."""
-        if name in self.branches:
-            return self.branches[name]
-
-        mcp = await self._server()
-        result = await mcp.call_tool(
-            "gitea_repo_create_branch",
-            {
-                "owner": self.owner,
-                "repo": self.name,
-                "new_branch_name": name,
-                "old_branch_name": old,
-                "format": "json",
-            },
+    def record(
+        self, entity_type: str, identifier: str, delete_key: str,
+    ) -> None:
+        """Record that this run created an entity."""
+        self._owned.setdefault(entity_type, []).append(
+            (identifier, delete_key)
         )
-        if _is_error(result):
-            msg = f"need_branch({name!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self.branches[name] = data
-        return data
 
-    async def need_file(
-        self,
-        path: str,
-        content: str,
-        *,
-        branch: str = "main",
-        message: str | None = None,
-    ) -> dict[str, Any]:
-        """Ensure a file exists on *branch*.  Creates if not cached.
+    def owned(
+        self, entity_type: str,
+    ) -> list[tuple[str, str]]:
+        """Return ``[(identifier, delete_key), ...]`` for *entity_type*."""
+        return list(self._owned.get(entity_type, []))
 
-        Note the param name ``path`` (not ``filepath``) — the underlying
-        tool uses ``filepath`` (a known naming divergence).
-        """
-        file_key = f"{branch}:{path}"
-        if file_key in self._files:
-            return self._files[file_key]
-
-        if branch != "main" and branch not in self.branches:
-            await self.need_branch(branch)
-
-        import base64
-
-        mcp = await self._server()
-        encoded = base64.b64encode(content.encode()).decode()
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "filepath": path,
-            "content": encoded,
-            "branch": branch,
-            "format": "json",
-        }
-        if message:
-            kwargs["message"] = message
-
-        result = await mcp.call_tool("gitea_repo_create_file", kwargs)
-        if _is_error(result):
-            msg = f"need_file({path!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self._files[file_key] = data
-        return data
-
-    async def need_label(
-        self,
-        name: str,
-        color: str = "#000000",
-        *,
-        description: str | None = None,
-        exclusive: bool = False,
-    ) -> dict[str, Any]:
-        """Ensure a label exists.  Creates if not cached."""
-        if name in self.labels:
-            return self.labels[name]
-
-        mcp = await self._server()
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "name": name,
-            "color": color,
-            "exclusive": exclusive,
-            "format": "json",
-        }
-        if description:
-            kwargs["description"] = description
-
-        result = await mcp.call_tool("gitea_issue_create_label", kwargs)
-        if _is_error(result):
-            msg = f"need_label({name!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self.labels[name] = data
-        return data
-
-    async def need_milestone(
-        self,
-        title: str,
-        *,
-        description: str | None = None,
-        due_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Ensure a milestone exists.  Creates if not cached."""
-        if title in self.milestones:
-            return self.milestones[title]
-
-        mcp = await self._server()
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "title": title,
-            "format": "json",
-        }
-        if description:
-            kwargs["description"] = description
-        if due_date:
-            kwargs["due_date"] = due_date
-
-        result = await mcp.call_tool("gitea_issue_create_milestone", kwargs)
-        if _is_error(result):
-            msg = f"need_milestone({title!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self.milestones[title] = data
-        return data
-
-    async def need_issue(
-        self,
-        title: str,
-        *,
-        body: str | None = None,
-        labels: list[int | str] | None = None,
-        milestone: int | None = None,
-        assignees: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Create an issue and cache it by number.
-
-        Issues are matched by *title* — if an issue with this title
-        already exists in the cache, it is returned.  This avoids
-        re-creating issues when a test is re-run on a persistent
-        throwaway instance.
-        """
-        # Check by title in cached issues
-        for cached in self.issues.values():
-            if cached.get("title") == title:
-                return cached
-
-        # Check if it exists in Gitea (created by a previous run)
-        mcp = await self._server()
-        list_result = await mcp.call_tool(
-            "gitea_issue_list_issues",
-            {"owner": self.owner, "repo": self.name, "format": "json"},
-        )
-        if not _is_error(list_result):
-            try:
-                text = extract_text_content(list_result.content)
-                existing = json.loads(text)
-                if isinstance(existing, list):
-                    for item in existing:
-                        if item.get("title") == title:
-                            self.issues[item["number"]] = item
-                            return cast("dict[str, Any]", item)
-            except (json.JSONDecodeError, AssertionError):
-                pass  # Create fresh
-
-        # Create new issue
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "title": title,
-            "format": "json",
-        }
-        if body:
-            kwargs["body"] = body
-        if labels:
-            kwargs["labels"] = labels
-        if milestone is not None:
-            kwargs["milestone"] = milestone
-        if assignees:
-            kwargs["assignees"] = assignees
-
-        result = await mcp.call_tool("gitea_issue_create_issue", kwargs)
-        if _is_error(result):
-            msg = f"need_issue({title!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self.issues[data["number"]] = data
-        return data
-
-    async def need_pull_request(
-        self,
-        title: str,
-        *,
-        head: str,
-        base: str = "main",
-        body: str | None = None,
-    ) -> dict[str, Any]:
-        """Ensure a pull request exists, matching cached or remote state."""
-        for cached in self.pull_requests.values():
-            if cached.get("title") == title:
-                return cached
-
-        mcp = await self._server()
-        listed = await mcp.call_tool(
-            "gitea_repo_list_pull_requests",
-            {
-                "owner": self.owner,
-                "repo": self.name,
-                "state": "all",
-                "format": "json",
-            },
-        )
-        if not _is_error(listed):
-            try:
-                data = json.loads(extract_text_content(listed.content))
-                if isinstance(data, list):
-                    for item in data:
-                        if item.get("title") == title:
-                            self.pull_requests[item["number"]] = item
-                            return cast("dict[str, Any]", item)
-            except (json.JSONDecodeError, AssertionError):
-                pass
-
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "head": head,
-            "base": base,
-            "title": title,
-            "format": "json",
-        }
-        if body:
-            kwargs["body"] = body
-        result = await mcp.call_tool("gitea_repo_create_pull_request", kwargs)
-        if _is_error(result):
-            msg = f"need_pull_request({title!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        _assert_keys(data, "number", "title", "state", "head", "base")
-        _assert_content(data, title=title, state="open")
-        self.pull_requests[data["number"]] = data
-        return data
-
-    async def need_tag(
-        self,
-        name: str,
-        *,
-        target: str = "main",
-        message: str | None = None,
-    ) -> dict[str, Any]:
-        """Ensure a tag exists.  Creates if not cached.
-
-        Note: the tool parameter is ``tag_name`` but the API response
-        uses ``name`` — a known naming divergence.
-        """
-        if name in self.tags:
-            return self.tags[name]
-
-        mcp = await self._server()
-        kwargs: dict[str, Any] = {
-            "owner": self.owner,
-            "repo": self.name,
-            "tag_name": name,
-            "target": target,
-            "format": "json",
-        }
-        if message:
-            kwargs["message"] = message
-
-        result = await mcp.call_tool("gitea_repo_create_tag", kwargs)
-        if _is_error(result):
-            msg = f"need_tag({name!r}) failed: {_error_text(result)[:300]}"
-            raise AssertionError(msg)
-        data = _unwrap(result)
-        self.tags[name] = data
-        return data
+    def __bool__(self) -> bool:
+        return bool(self._owned)
 
 
 # =============================================================================
@@ -624,7 +233,9 @@ class World:
         self._users: dict[str, dict[str, Any]] = {}
         self._orgs: dict[str, dict[str, Any]] = {}
         self._teams: dict[str, dict[str, Any]] = {}
-        self._repos: dict[str, RepoState] = {}
+        self._repos: dict[str, tuple[RepoRequest, RepoState]] = {}
+        self.ledger = OwnershipLedger()
+        """Records entities created by this run for cleanup."""
         self.dependency_graph = DependencyGraph()
         """Authoritative verified dependency graph for this worker's World."""
         self._bootstrapped: bool = False
@@ -711,25 +322,101 @@ class World:
             await self._exit_stack.aclose()
 
     async def cleanup(self) -> None:
-        """Delete repositories created by this World, best effort per repo.
+        """Delete run-owned entities in reverse dependency order.
 
-        Cleanup runs while pooled servers are still alive.  Every repository
-        is attempted even if an earlier deletion fails; the first failure is
-        re-raised after the remaining repositories have been attempted.
+        Cleanup runs while pooled servers are still alive.  Each entity
+        type is attempted independently; the first failure from each
+        phase is preserved and re-raised after all phases complete.
+
+        Order: repos → teams → orgs → users.
+
+        Tokens are not cleaned up (we don't store token IDs), but they
+        are scoped and removed when their owner user is deleted.
         """
-        from tests.live.helpers import purge_repo
-
         failures: list[tuple[str, BaseException]] = []
-        for key, repo in self._repos.items():
-            try:
-                mcp = await self.server_for(repo._user, repo._scopes)
-                await purge_repo(mcp, repo.owner, repo.name)
-            except BaseException as exc:
-                failures.append((key, exc))
+
+        # ── Phase 1: Repositories ───────────────────────────────────
+        await self._delete_owned(
+            "repo", "gitea_repo_delete",
+            id_key="repo",  # repo identifier is "owner/name" → owner, repo
+            failures=failures,
+        )
+
+        # ── Phase 2: Teams ──────────────────────────────────────────
+        await self._delete_owned(
+            "team", "gitea_org_delete_team",
+            id_key="team_id",
+            failures=failures,
+        )
+
+        # ── Phase 3: Organizations ──────────────────────────────────
+        await self._delete_owned(
+            "org", "gitea_org_delete",
+            id_key="org",
+            failures=failures,
+        )
+
+        # ── Phase 4: Users ──────────────────────────────────────────
+        await self._delete_owned(
+            "user", "gitea_admin_delete_user",
+            id_key="username",
+            failures=failures,
+        )
+
         if failures:
             details = "; ".join(f"{key}: {exc}" for key, exc in failures)
-            message = f"Live repository cleanup failed: {details}"
+            message = f"Live cleanup failed: {details}"
             raise RuntimeError(message)
+
+    async def _delete_owned(
+        self,
+        entity_type: str,
+        tool_name: str,
+        id_key: str,
+        failures: list[tuple[str, BaseException]],
+    ) -> None:
+        """Delete all owned entities of *entity_type* via *tool_name*.
+
+        Each deletion is attempted independently.  Failures are
+        collected in *failures*; the method does not raise.
+        """
+        owned = self.ledger.owned(entity_type)
+        if not owned:
+            return
+
+        admin = await self.admin_server()
+        for identifier, delete_key in owned:
+            if not delete_key:
+                continue
+            try:
+                kwargs = self._delete_args(entity_type, identifier, delete_key)
+                result = await admin.call_tool(tool_name, kwargs)
+                if not _is_error(result):
+                    continue
+                # 404 / "not found" → already deleted, not a failure
+                text = _error_text(result)
+                if "not found" in text.lower() or "404" in text:
+                    continue
+                failures.append(
+                    (identifier, RuntimeError(text[:200]))
+                )
+            except BaseException as exc:
+                failures.append((identifier, exc))
+
+    def _delete_args(
+        self, entity_type: str, identifier: str, delete_key: str,
+    ) -> dict[str, Any]:
+        """Build tool arguments for deleting an owned entity."""
+        if entity_type == "repo":
+            owner, _, repo = identifier.partition("/")
+            return {"owner": owner, "repo": repo, "format": "json"}
+        if entity_type == "team":
+            return {"id": int(delete_key), "format": "json"}
+        if entity_type == "org":
+            return {"org": delete_key, "format": "json"}
+        if entity_type == "user":
+            return {"username": delete_key, "format": "json"}
+        return {"format": "json"}
 
     # ── Server pool ───────────────────────────────────────────────────
 
@@ -820,13 +507,40 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower():
-                data = {"username": user.username, "email": user.email}
+                # Re-read and verify the pre-existing user
+                entity = f"user {user.username}"
+                verify = await admin.call_tool(
+                    "gitea_user_get",
+                    {"username": user.username, "format": "json"},
+                )
+                if _is_error(verify):
+                    raise BootstrapVerificationError(
+                        entity, "readable", True, False,
+                    ) from None
+                data = _unwrap(verify)
+                _assert_keys(data, "id", "login", "username", "email", "active")
+                _assert_content(
+                    data, login=user.username, username=user.username,
+                )
+                if data.get("email") != user.email:
+                    raise BootstrapVerificationError(
+                        entity, "email", user.email, data.get("email"),
+                    )
+                if not data.get("active", True):
+                    raise BootstrapVerificationError(
+                        entity, "active", True, False,
+                    )
+                if data.get("prohibit_login", False):
+                    raise BootstrapVerificationError(
+                        entity, "prohibit_login", False, True,
+                    )
                 self._users[user.username] = data
                 return data
             msg = f"Failed to create user '{user.username}': {text[:300]}"
             raise AssertionError(msg)
         data = _unwrap(result)
         self._users[user.username] = data
+        self.ledger.record("user", user.username, user.username)
         return data
 
     async def need_org(
@@ -851,13 +565,30 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower():
-                data = {"username": username}
+                # Re-read and verify the pre-existing org
+                entity = f"org {username}"
+                verify = await admin.call_tool(
+                    "gitea_org_get",
+                    {"org": username, "format": "json"},
+                )
+                if _is_error(verify):
+                    raise BootstrapVerificationError(
+                        entity, "readable", True, False,
+                    ) from None
+                data = _unwrap(verify)
+                _assert_keys(data, "id", "username", "visibility")
+                _assert_content(data, username=username)
+                if full_name is not None and data.get("full_name") != full_name:
+                    raise BootstrapVerificationError(
+                        entity, "full_name", full_name, data.get("full_name"),
+                    )
                 self._orgs[username] = data
                 return data
             msg = f"Failed to create org '{username}': {text[:300]}"
             raise AssertionError(msg)
         data = _unwrap(result)
         self._orgs[username] = data
+        self.ledger.record("org", username, username)
         return data
 
     async def need_team(
@@ -893,13 +624,57 @@ class World:
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower() or "conflict" in text.lower():
-                data = {"name": name}
-                self._teams[key] = data
-                return data
+                # List teams in the org and find the pre-existing one
+                entity = f"team {org}/{name}"
+                list_result = await admin.call_tool(
+                    "gitea_org_list_teams",
+                    {"org": org, "format": "json"},
+                )
+                if _is_error(list_result):
+                    raise BootstrapVerificationError(
+                        entity, "listable", True, False,
+                    ) from None
+                teams_data = json.loads(
+                    extract_text_content(list_result.content)
+                )
+                team_data: dict[str, Any] | None = None
+                if isinstance(teams_data, list):
+                    for item in teams_data:
+                        if item.get("name") == name:
+                            team_data = item
+                            break
+                if team_data is None:
+                    raise BootstrapVerificationError(
+                        entity, "found", True, False,
+                    ) from None
+                # Verify permission
+                if team_data.get("permission") != permission:
+                    raise BootstrapVerificationError(
+                        entity, "permission",
+                        permission, team_data.get("permission"),
+                    )
+                # Verify units_map entries
+                required_units = units_map or {
+                    "repo.code": "write",
+                    "repo.issues": "write",
+                    "repo.pulls": "write",
+                    "repo.releases": "write",
+                }
+                actual_units = team_data.get("units_map", {})
+                for unit_key, expected_level in required_units.items():
+                    actual_level = actual_units.get(unit_key)
+                    if actual_level != expected_level:
+                        raise BootstrapVerificationError(
+                            entity, f"units_map.{unit_key}",
+                            expected_level, actual_level,
+                        )
+                self._teams[key] = team_data
+                return team_data
             msg = f"Failed to create team '{name}' in '{org}': {text[:300]}"
             raise AssertionError(msg)
         data = _unwrap(result)
         self._teams[key] = data
+        self.ledger.record("team", key, str(data.get("id", "")))
         return data
 
     async def need_repo(
@@ -924,6 +699,11 @@ class World:
         or *labels* are provided, those are ensured inside the repo
         (also idempotent).
 
+        On a cache hit, the stored ``RepoRequest`` contract is checked
+        against the new request.  A mismatch raises
+        :class:`ConflictError` — the same repository identity cannot
+        be materialised with different configuration within one World.
+
         Args:
             owner: Repository owner login.
             name: Repository name.
@@ -941,10 +721,32 @@ class World:
 
         Returns:
             ``RepoState`` — the (cached or newly created) repo state.
+
+        Raises:
+            ConflictError: If a previous request for this ``owner/name``
+                had different *auto_init*, *description*, *private*,
+                *branch*, *old_branch*, *files*, or *labels*.
         """
         key = f"{owner}/{name}"
+
+        # Build the request contract
+        request = RepoRequest(
+            owner=owner,
+            name=name,
+            auto_init=auto_init,
+            description=description,
+            private=private,
+            branch=branch,
+            old_branch=old_branch,
+            files=tuple(sorted((files or {}).items())),
+            labels=tuple(sorted((labels or {}).items())),
+        )
+
+        # Check cache — conflict on incompatible re-request
         if key in self._repos:
-            return self._repos[key]
+            stored_request, stored_state = self._repos[key]
+            stored_request.assert_compatible(request)
+            return stored_state
 
         # Resolve user and scopes
         _user: User | None = user
@@ -992,7 +794,8 @@ class World:
             owner=owner, name=name, data=repo_data,
             _world=self, _user=_user, _scopes=_scopes,
         )
-        self._repos[key] = state
+        self._repos[key] = (request, state)
+        self.ledger.record("repo", key, key)
 
         # Create branch + files + labels if requested
         if branch is not None:

@@ -75,3 +75,76 @@ jobs:
         run: |
           cd /app
           pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
+
+  # ── Live integration tests against a throwaway Forgejo instance ────
+  #
+  # Forgejo is started via docker run (the Forgejo runner does not
+  # support GitHub-style services: containers).  The MCP server binary
+  # runs inside the CI image over stdio via `--network host`, exercising
+  # the full production path: spec fetch, scope filtering, tool calls,
+  # resource reads — everything unit/integration tests cannot reach.
+  #
+  # Worker/run namespace and OwnershipLedger cleanup keep repeated CI
+  # runs isolated.  This job is allowed to fail — external service
+  # startup is inherently flaky and not a merge gate.
+  live-test:
+    needs: [build]
+    runs-on: self-hosted
+    continue-on-error: true
+    steps:
+      - name: Start Forgejo
+        run: |
+          docker run -d --name forgejo-ci \
+            -p 3000:3000 \
+            -e USER_UID=1000 \
+            -e USER_GID=1000 \
+            -e FORGEJO__security__INSTALL_LOCK=true \
+            -e FORGEJO__security__SECRET_KEY=ci-live-test-key-change-me \
+            -e FORGEJO__server__HTTP_PORT=3000 \
+            -e FORGEJO__server__ROOT_URL=http://localhost:3000 \
+            -e FORGEJO__database__DB_TYPE=sqlite3 \
+            -e FORGEJO__repository__ENABLE_PUSH_CREATE_USER=true \
+            codeberg.org/forgejo/forgejo:16
+      - name: Wait for Forgejo and provision admin token
+        run: |
+          set -eu
+          for i in $(seq 1 30); do
+            if curl -sLf http://localhost:3000 > /dev/null 2>&1; then
+              echo "Forgejo ready after $i attempts"
+              break
+            fi
+            echo "Waiting for Forgejo... ($i/30)"
+            sleep 3
+          done
+          # Admin CLI needs extra time after HTTP listener starts
+          sleep 5
+          RAW=$(docker exec -u 1000:1000 forgejo-ci gitea admin user create \
+            --username ci-admin --password ci-admin-pass \
+            --email admin@ci.local --admin --access-token 2>&1) || true
+          echo "$RAW"
+          TOKEN=$(echo "$RAW" | tail -1 | grep -oP '[a-f0-9]{40}$')
+          if [ -z "$TOKEN" ]; then
+            echo "ERROR: Failed to extract admin token from output above"
+            exit 1
+          fi
+          echo "ADMIN_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+      - name: Run live tests
+        env:
+          GITEA_URL: "http://localhost:3000"
+          GITEA_VERIFY_SSL: "false"
+          GITEA_LIVE_RUN_ID: "ci-${{ github.run_number }}"
+        run: |
+          docker run --rm --network host \
+            -e GITEA_URL="$GITEA_URL" \
+            -e GITEA_TOKEN="$ADMIN_TOKEN" \
+            -e GITEA_VERIFY_SSL="$GITEA_VERIFY_SSL" \
+            -e GITEA_LIVE_RUN_ID="$GITEA_LIVE_RUN_ID" \
+            gitea-mcp-server:ci \
+            sh -c "cd /app && pytest tests/live/ -m live -v --timeout=300"
+      - name: Collect Forgejo logs and stop
+        if: always()
+        run: |
+          docker logs forgejo-ci > forgejo-ci.log 2>&1 || true
+          echo "Forgejo logs saved to forgejo-ci.log ($(wc -l < forgejo-ci.log) lines)"
+          docker stop forgejo-ci || true
+          docker rm forgejo-ci || true

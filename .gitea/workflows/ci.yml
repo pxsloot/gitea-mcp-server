@@ -105,9 +105,12 @@ jobs:
       - name: Wait for Forgejo and provision admin token
         run: |
           set -eu
-          # Wait for Forgejo health check
+          FORGEJO_CID="${{ job.services.forgejo.id }}"
+          echo "Forgejo container: $FORGEJO_CID"
+          # Wait for Forgejo health check (via docker exec — host
+          # steps do not share the service container's network)
           for i in $(seq 1 30); do
-            if curl -sLf http://localhost:3000 > /dev/null 2>&1; then
+            if docker exec "$FORGEJO_CID" curl -sLf http://localhost:3000 > /dev/null 2>&1; then
               echo "Forgejo ready after $i attempts"
               break
             fi
@@ -115,8 +118,6 @@ jobs:
             sleep 3
           done
           # Create one-shot admin user with access token
-          FORGEJO_CID=$(docker ps -q --filter "name=forgejo" | head -1)
-          echo "Forgejo container: $FORGEJO_CID"
           RAW=$(docker exec "$FORGEJO_CID" gitea admin user create \
             --username ci-admin --password ci-admin-pass \
             --email admin@ci.local --admin --access-token 2>&1)
@@ -143,7 +144,7 @@ jobs:
       - name: Collect Forgejo logs
         if: always()
         run: |
-          FORGEJO_CID=$(docker ps -q --filter "name=forgejo" | head -1)
+          FORGEJO_CID="${{ job.services.forgejo.id }}"
           if [ -n "$FORGEJO_CID" ]; then
             docker logs "$FORGEJO_CID" > forgejo-ci.log 2>&1 || true
             echo "Forgejo logs saved to forgejo-ci.log ($(wc -l < forgejo-ci.log) lines)"

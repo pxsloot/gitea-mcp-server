@@ -162,7 +162,7 @@ async def world(
         # cleanup problem without replacing the original failure.
         active_error = sys.exc_info()[1]
         try:
-            logger.info("World — cleaning repositories")
+            logger.info("World — cleaning run-owned entities")
             await w.cleanup()
         except Exception:
             if active_error is None:

@@ -15,6 +15,7 @@ from tests.live.conflict import (
     RepoRequest,
     check_conflict,
 )
+from tests.live.world import OwnershipLedger
 
 # ---------------------------------------------------------------------------
 # RepoRequest — cache key
@@ -262,3 +263,55 @@ class TestBootstrapVerificationError:
         )
         assert err.expected == "write"
         assert err.observed is None
+
+
+# ---------------------------------------------------------------------------
+# OwnershipLedger
+# ---------------------------------------------------------------------------
+
+
+class TestOwnershipLedger:
+    """OwnershipLedger tracks entities created by the run."""
+
+    def test_empty_by_default(self) -> None:
+        ledger = OwnershipLedger()
+        assert not ledger
+        assert ledger.owned("user") == []
+
+    def test_record_and_retrieve(self) -> None:
+        ledger = OwnershipLedger()
+        ledger.record("user", "dev-live", "dev-live")
+        assert ledger
+        owned = ledger.owned("user")
+        assert owned == [("dev-live", "dev-live")]
+
+    def test_multiple_entities_same_type(self) -> None:
+        ledger = OwnershipLedger()
+        ledger.record("user", "user-a", "user-a")
+        ledger.record("user", "user-b", "user-b")
+        owned = ledger.owned("user")
+        assert len(owned) == 2
+        assert ("user-a", "user-a") in owned
+        assert ("user-b", "user-b") in owned
+
+    def test_multiple_entity_types(self) -> None:
+        ledger = OwnershipLedger()
+        ledger.record("user", "dev", "dev")
+        ledger.record("org", "live-org", "live-org")
+        ledger.record("team", "org/team", "42")
+        assert len(ledger.owned("user")) == 1
+        assert len(ledger.owned("org")) == 1
+        assert len(ledger.owned("team")) == 1
+
+    def test_unknown_type_returns_empty(self) -> None:
+        ledger = OwnershipLedger()
+        ledger.record("user", "dev", "dev")
+        assert ledger.owned("repo") == []
+
+    def test_identifier_and_delete_key_can_differ(self) -> None:
+        """Team stores org/name as identifier but team ID as delete_key."""
+        ledger = OwnershipLedger()
+        ledger.record("team", "live-org/live-team", "42")
+        identifier, delete_key = ledger.owned("team")[0]
+        assert identifier == "live-org/live-team"
+        assert delete_key == "42"

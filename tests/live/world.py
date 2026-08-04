@@ -64,9 +64,11 @@ Design decisions
   (user, scopes) key.  One mint per combination per suite run.
 - **Canonical scope lists**: ``SCOPE_WRITE``, ``SCOPE_READ``,
   ``SCOPE_LIMITED`` — single source of truth.
-- **Repositories are cleaned up at World teardown.** ``purge_repo`` also
-  runs before creation so interrupted runs start cleanly. Users, orgs, tokens,
-  and teams persist on the throwaway test instance.
+- **Repositories, teams, orgs, and users are cleaned up at World teardown.**
+  ``purge_repo`` also runs before creation so interrupted runs start cleanly.
+  Only entities recorded in the ``OwnershipLedger`` as run-created are
+  deleted; pre-existing entities are preserved.  Token cleanup is an
+  accepted limitation (token IDs are not tracked).
 """
 
 from __future__ import annotations
@@ -166,6 +168,48 @@ async def get_token(url: str, user: User, scopes: list[str]) -> str:
     token = await create_user_token(url, user.username, user.password, "cached-ci", scopes)
     _tokens[key] = token
     return token
+
+
+# =============================================================================
+# Ownership ledger — tracks which entities this World run created
+# =============================================================================
+
+
+class OwnershipLedger:
+    """Tracks entities created by the current live-test run.
+
+    Only entities recorded via ``record()`` are eligible for teardown
+    cleanup.  Pre-existing entities discovered via "already exists" are
+    never deleted — only run-created ones.
+
+    The ledger stores ``(identifier, delete_key)`` pairs keyed by entity
+    type, where *delete_key* is the value needed by the corresponding
+    delete tool (team ID, org name, username, etc.).
+
+    Tokens are not tracked — Gitea requires the token ID (not the sha1
+    value stored in the cache), and matching by name is unreliable.
+    Token cleanup is an accepted limitation.
+    """
+
+    def __init__(self) -> None:
+        self._owned: dict[str, list[tuple[str, str]]] = {}
+
+    def record(
+        self, entity_type: str, identifier: str, delete_key: str,
+    ) -> None:
+        """Record that this run created an entity."""
+        self._owned.setdefault(entity_type, []).append(
+            (identifier, delete_key)
+        )
+
+    def owned(
+        self, entity_type: str,
+    ) -> list[tuple[str, str]]:
+        """Return ``[(identifier, delete_key), ...]`` for *entity_type*."""
+        return list(self._owned.get(entity_type, []))
+
+    def __bool__(self) -> bool:
+        return bool(self._owned)
 
 
 # =============================================================================
@@ -728,6 +772,8 @@ class World:
         self._orgs: dict[str, dict[str, Any]] = {}
         self._teams: dict[str, dict[str, Any]] = {}
         self._repos: dict[str, tuple[RepoRequest, RepoState]] = {}
+        self.ledger = OwnershipLedger()
+        """Records entities created by this run for cleanup."""
         self.dependency_graph = DependencyGraph()
         """Authoritative verified dependency graph for this worker's World."""
         self._bootstrapped: bool = False
@@ -814,25 +860,101 @@ class World:
             await self._exit_stack.aclose()
 
     async def cleanup(self) -> None:
-        """Delete repositories created by this World, best effort per repo.
+        """Delete run-owned entities in reverse dependency order.
 
-        Cleanup runs while pooled servers are still alive.  Every repository
-        is attempted even if an earlier deletion fails; the first failure is
-        re-raised after the remaining repositories have been attempted.
+        Cleanup runs while pooled servers are still alive.  Each entity
+        type is attempted independently; the first failure from each
+        phase is preserved and re-raised after all phases complete.
+
+        Order: repos → teams → orgs → users.
+
+        Tokens are not cleaned up (we don't store token IDs), but they
+        are scoped and removed when their owner user is deleted.
         """
-        from tests.live.helpers import purge_repo
-
         failures: list[tuple[str, BaseException]] = []
-        for key, (_, repo) in self._repos.items():
-            try:
-                mcp = await self.server_for(repo._user, repo._scopes)
-                await purge_repo(mcp, repo.owner, repo.name)
-            except BaseException as exc:
-                failures.append((key, exc))
+
+        # ── Phase 1: Repositories ───────────────────────────────────
+        await self._delete_owned(
+            "repo", "gitea_repo_delete",
+            id_key="repo",  # repo identifier is "owner/name" → owner, repo
+            failures=failures,
+        )
+
+        # ── Phase 2: Teams ──────────────────────────────────────────
+        await self._delete_owned(
+            "team", "gitea_org_delete_team",
+            id_key="team_id",
+            failures=failures,
+        )
+
+        # ── Phase 3: Organizations ──────────────────────────────────
+        await self._delete_owned(
+            "org", "gitea_org_delete",
+            id_key="org",
+            failures=failures,
+        )
+
+        # ── Phase 4: Users ──────────────────────────────────────────
+        await self._delete_owned(
+            "user", "gitea_admin_delete_user",
+            id_key="username",
+            failures=failures,
+        )
+
         if failures:
             details = "; ".join(f"{key}: {exc}" for key, exc in failures)
-            message = f"Live repository cleanup failed: {details}"
+            message = f"Live cleanup failed: {details}"
             raise RuntimeError(message)
+
+    async def _delete_owned(
+        self,
+        entity_type: str,
+        tool_name: str,
+        id_key: str,
+        failures: list[tuple[str, BaseException]],
+    ) -> None:
+        """Delete all owned entities of *entity_type* via *tool_name*.
+
+        Each deletion is attempted independently.  Failures are
+        collected in *failures*; the method does not raise.
+        """
+        owned = self.ledger.owned(entity_type)
+        if not owned:
+            return
+
+        admin = await self.admin_server()
+        for identifier, delete_key in owned:
+            if not delete_key:
+                continue
+            try:
+                kwargs = self._delete_args(entity_type, identifier, delete_key)
+                result = await admin.call_tool(tool_name, kwargs)
+                if not _is_error(result):
+                    continue
+                # 404 / "not found" → already deleted, not a failure
+                text = _error_text(result)
+                if "not found" in text.lower() or "404" in text:
+                    continue
+                failures.append(
+                    (identifier, RuntimeError(text[:200]))
+                )
+            except BaseException as exc:
+                failures.append((identifier, exc))
+
+    def _delete_args(
+        self, entity_type: str, identifier: str, delete_key: str,
+    ) -> dict[str, Any]:
+        """Build tool arguments for deleting an owned entity."""
+        if entity_type == "repo":
+            owner, _, repo = identifier.partition("/")
+            return {"owner": owner, "repo": repo, "format": "json"}
+        if entity_type == "team":
+            return {"id": int(delete_key), "format": "json"}
+        if entity_type == "org":
+            return {"org": delete_key, "format": "json"}
+        if entity_type == "user":
+            return {"username": delete_key, "format": "json"}
+        return {"format": "json"}
 
     # ── Server pool ───────────────────────────────────────────────────
 
@@ -956,6 +1078,7 @@ class World:
             raise AssertionError(msg)
         data = _unwrap(result)
         self._users[user.username] = data
+        self.ledger.record("user", user.username, user.username)
         return data
 
     async def need_org(
@@ -1003,6 +1126,7 @@ class World:
             raise AssertionError(msg)
         data = _unwrap(result)
         self._orgs[username] = data
+        self.ledger.record("org", username, username)
         return data
 
     async def need_team(
@@ -1088,6 +1212,7 @@ class World:
             raise AssertionError(msg)
         data = _unwrap(result)
         self._teams[key] = data
+        self.ledger.record("team", key, str(data.get("id", "")))
         return data
 
     async def need_repo(
@@ -1208,6 +1333,7 @@ class World:
             _world=self, _user=_user, _scopes=_scopes,
         )
         self._repos[key] = (request, state)
+        self.ledger.record("repo", key, key)
 
         # Create branch + files + labels if requested
         if branch is not None:

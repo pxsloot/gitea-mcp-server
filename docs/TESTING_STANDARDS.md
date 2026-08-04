@@ -434,9 +434,12 @@ tests/live/
    method and the module-level ``get_token()`` function share the same
    cache.
 
-4. **Repository cleanup is lifecycle-owned.**  ``World.cleanup()`` deletes
-   every repository registered by that World before pooled servers close.
-   Cleanup attempts every repository and preserves an existing test failure if
+4. **Repository, team, org, and user cleanup is lifecycle-owned.**  ``World.cleanup()``
+   deletes run-owned entities in reverse dependency order (repos, teams, orgs,
+   users) before pooled servers close.  An ``OwnershipLedger`` distinguishes
+   run-created entities from pre-existing ones — only recorded entities are
+   deleted.  Token cleanup is an accepted limitation (token IDs are not tracked).
+   Cleanup attempts every entity and preserves an existing test failure if
    teardown also encounters an error.  ``purge_repo()`` still runs before
    creation to recover from interrupted runs.
 

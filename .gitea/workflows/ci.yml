@@ -96,6 +96,8 @@ jobs:
         run: |
           docker run -d --name forgejo-ci \
             -p 3000:3000 \
+            -e USER_UID=1000 \
+            -e USER_GID=1000 \
             -e FORGEJO__security__INSTALL_LOCK=true \
             -e FORGEJO__security__SECRET_KEY=ci-live-test-key-change-me \
             -e FORGEJO__server__HTTP_PORT=3000 \
@@ -116,7 +118,7 @@ jobs:
           done
           # Admin CLI needs extra time after HTTP listener starts
           sleep 5
-          RAW=$(docker exec forgejo-ci gitea admin user create \
+          RAW=$(docker exec -u 1000:1000 forgejo-ci gitea admin user create \
             --username ci-admin --password ci-admin-pass \
             --email admin@ci.local --admin --access-token 2>&1) || true
           echo "$RAW"

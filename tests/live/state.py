@@ -206,9 +206,9 @@ class RepoState:
         file_key = f"{branch}:{path}"
         if file_key in self._files:
             check_conflict(
-                        "file", f"{file_key!r}",
-                        self._file_options.get(file_key, {}),
-                        {"content": content},
+                "file", f"{file_key!r}",
+                self._file_options.get(file_key, {}),
+                {"content": content},
             )
             return self._files[file_key]
 
@@ -249,13 +249,13 @@ class RepoState:
 
         Raises:
             ConflictError: If a previous request for this label name
-                used different *color*, *description*, or *exclusive*.
+                used different *color* or *exclusive*.
         """
         if name in self.labels:
             check_conflict(
-                        "label", name,
-                        self._label_options.get(name, {}),
-                        {"color": color, "exclusive": exclusive},
+                "label", name,
+                self._label_options.get(name, {}),
+                {"color": color, "exclusive": exclusive},
             )
             return self.labels[name]
 
@@ -299,7 +299,7 @@ class RepoState:
             check_conflict(
                 "milestone", title,
                 self._milestone_options.get(title, {}),
-                {},
+                {"description": description, "due_date": due_date},
             )
             return self.milestones[title]
 
@@ -321,7 +321,9 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.milestones[title] = data
-        self._milestone_options[title] = {}
+        self._milestone_options[title] = {
+            "description": description, "due_date": due_date,
+        }
         return data
 
     async def need_issue(
@@ -495,7 +497,7 @@ class RepoState:
 
         Raises:
             ConflictError: If a previous request for this tag name
-                used different *target* or *message*.
+                used a different *target*.
         """
         if name in self.tags:
             check_conflict(

@@ -47,8 +47,8 @@ The World tracks what exists::
     ├── _users  {"dev": {...}, "peer": {...}, ...}
     ├── _orgs   {"live-org": {...}}
     ├── _teams  {("live-org", "live-team"): {...}}
-    └── _repos  {"dev/workflow-repo": RepoState,
-                  "dev/issues-repo":   RepoState, ...}
+    └── _repos  {"dev/workflow-repo": (RepoRequest, RepoState),
+                  "dev/issues-repo":   (RepoRequest, RepoState), ...}
 
 Each ``RepoState`` tracks branches, labels, milestones, issues, pull requests,
 and tags
@@ -80,6 +80,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from tests.helpers.mcp_results import extract_text_content
+from tests.live.conflict import RepoRequest, check_conflict
 from tests.live.dependency_graph import DependencyGraph
 
 if TYPE_CHECKING:
@@ -292,6 +293,15 @@ class RepoState:
     _files: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
     """Files cached by ``{branch}:{path}`` key."""
 
+    # ── Per-resource option guards (conflict detection) ─────────────────
+    _branch_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _label_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _milestone_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _issue_options: dict[int, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _tag_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _pr_options: dict[int, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _file_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+
     async def _server(self) -> ClientSession:
         """Get the pooled server for this repo's owner+scopes."""
         return await self._world.server_for(self._user, self._scopes)
@@ -301,8 +311,18 @@ class RepoState:
     async def need_branch(
         self, name: str, *, old: str = "main"
     ) -> dict[str, Any]:
-        """Ensure a branch exists.  Creates from *old* if not cached."""
+        """Ensure a branch exists.  Creates from *old* if not cached.
+
+        Raises:
+            ConflictError: If a previous request for this branch name
+                used a different *old* (source branch).
+        """
         if name in self.branches:
+            check_conflict(
+                "branch", name,
+                self._branch_options.get(name, {}),
+                {"old": old},
+            )
             return self.branches[name]
 
         mcp = await self._server()
@@ -321,6 +341,7 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.branches[name] = data
+        self._branch_options[name] = {"old": old}
         return data
 
     async def need_file(
@@ -338,6 +359,11 @@ class RepoState:
         """
         file_key = f"{branch}:{path}"
         if file_key in self._files:
+            check_conflict(
+                "file", f"{file_key!r}",
+                self._file_options.get(file_key, {}),
+                {"content": content, "message": message},
+            )
             return self._files[file_key]
 
         if branch != "main" and branch not in self.branches:
@@ -364,6 +390,7 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self._files[file_key] = data
+        self._file_options[file_key] = {"content": content, "message": message}
         return data
 
     async def need_label(
@@ -374,8 +401,18 @@ class RepoState:
         description: str | None = None,
         exclusive: bool = False,
     ) -> dict[str, Any]:
-        """Ensure a label exists.  Creates if not cached."""
+        """Ensure a label exists.  Creates if not cached.
+
+        Raises:
+            ConflictError: If a previous request for this label name
+                used different *color*, *description*, or *exclusive*.
+        """
         if name in self.labels:
+            check_conflict(
+                "label", name,
+                self._label_options.get(name, {}),
+                {"color": color, "description": description, "exclusive": exclusive},
+            )
             return self.labels[name]
 
         mcp = await self._server()
@@ -396,6 +433,9 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.labels[name] = data
+        self._label_options[name] = {
+            "color": color, "description": description, "exclusive": exclusive,
+        }
         return data
 
     async def need_milestone(
@@ -405,8 +445,18 @@ class RepoState:
         description: str | None = None,
         due_date: str | None = None,
     ) -> dict[str, Any]:
-        """Ensure a milestone exists.  Creates if not cached."""
+        """Ensure a milestone exists.  Creates if not cached.
+
+        Raises:
+            ConflictError: If a previous request for this milestone
+                title used different *description* or *due_date*.
+        """
         if title in self.milestones:
+            check_conflict(
+                "milestone", title,
+                self._milestone_options.get(title, {}),
+                {"description": description, "due_date": due_date},
+            )
             return self.milestones[title]
 
         mcp = await self._server()
@@ -427,6 +477,9 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.milestones[title] = data
+        self._milestone_options[title] = {
+            "description": description, "due_date": due_date,
+        }
         return data
 
     async def need_issue(
@@ -441,13 +494,27 @@ class RepoState:
         """Create an issue and cache it by number.
 
         Issues are matched by *title* — if an issue with this title
-        already exists in the cache, it is returned.  This avoids
-        re-creating issues when a test is re-run on a persistent
-        throwaway instance.
+        already exists in the cache, the request options (*body*,
+        *labels*, *milestone*, *assignees*) must match.  If an
+        issue exists on the Gitea instance (from a previous run),
+        it is adopted into the cache.
+
+        Raises:
+            ConflictError: If a cached issue with the same title was
+                created with different *body*, *labels*, *milestone*,
+                or *assignees*.
         """
         # Check by title in cached issues
-        for cached in self.issues.values():
+        for number, cached in self.issues.items():
             if cached.get("title") == title:
+                check_conflict(
+                    "issue", f"#{number} ({title!r})",
+                    self._issue_options.get(number, {}),
+                    {
+                        "body": body, "labels": labels,
+                        "milestone": milestone, "assignees": assignees,
+                    },
+                )
                 return cached
 
         # Check if it exists in Gitea (created by a previous run)
@@ -463,7 +530,12 @@ class RepoState:
                 if isinstance(existing, list):
                     for item in existing:
                         if item.get("title") == title:
-                            self.issues[item["number"]] = item
+                            number = item["number"]
+                            self.issues[number] = item
+                            self._issue_options[number] = {
+                                "body": body, "labels": labels,
+                                "milestone": milestone, "assignees": assignees,
+                            }
                             return cast("dict[str, Any]", item)
             except (json.JSONDecodeError, AssertionError):
                 pass  # Create fresh
@@ -490,6 +562,10 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.issues[data["number"]] = data
+        self._issue_options[data["number"]] = {
+            "body": body, "labels": labels,
+            "milestone": milestone, "assignees": assignees,
+        }
         return data
 
     async def need_pull_request(
@@ -500,9 +576,19 @@ class RepoState:
         base: str = "main",
         body: str | None = None,
     ) -> dict[str, Any]:
-        """Ensure a pull request exists, matching cached or remote state."""
-        for cached in self.pull_requests.values():
+        """Ensure a pull request exists, matching cached or remote state.
+
+        Raises:
+            ConflictError: If a cached PR with the same title was
+                created with different *head*, *base*, or *body*.
+        """
+        for number, cached in self.pull_requests.items():
             if cached.get("title") == title:
+                check_conflict(
+                    "pull_request", f"#{number} ({title!r})",
+                    self._pr_options.get(number, {}),
+                    {"head": head, "base": base, "body": body},
+                )
                 return cached
 
         mcp = await self._server()
@@ -521,7 +607,11 @@ class RepoState:
                 if isinstance(data, list):
                     for item in data:
                         if item.get("title") == title:
-                            self.pull_requests[item["number"]] = item
+                            number = item["number"]
+                            self.pull_requests[number] = item
+                            self._pr_options[number] = {
+                                "head": head, "base": base, "body": body,
+                            }
                             return cast("dict[str, Any]", item)
             except (json.JSONDecodeError, AssertionError):
                 pass
@@ -544,6 +634,9 @@ class RepoState:
         _assert_keys(data, "number", "title", "state", "head", "base")
         _assert_content(data, title=title, state="open")
         self.pull_requests[data["number"]] = data
+        self._pr_options[data["number"]] = {
+            "head": head, "base": base, "body": body,
+        }
         return data
 
     async def need_tag(
@@ -557,8 +650,17 @@ class RepoState:
 
         Note: the tool parameter is ``tag_name`` but the API response
         uses ``name`` — a known naming divergence.
+
+        Raises:
+            ConflictError: If a previous request for this tag name
+                used different *target* or *message*.
         """
         if name in self.tags:
+            check_conflict(
+                "tag", name,
+                self._tag_options.get(name, {}),
+                {"target": target, "message": message},
+            )
             return self.tags[name]
 
         mcp = await self._server()
@@ -578,6 +680,7 @@ class RepoState:
             raise AssertionError(msg)
         data = _unwrap(result)
         self.tags[name] = data
+        self._tag_options[name] = {"target": target, "message": message}
         return data
 
 
@@ -624,7 +727,7 @@ class World:
         self._users: dict[str, dict[str, Any]] = {}
         self._orgs: dict[str, dict[str, Any]] = {}
         self._teams: dict[str, dict[str, Any]] = {}
-        self._repos: dict[str, RepoState] = {}
+        self._repos: dict[str, tuple[RepoRequest, RepoState]] = {}
         self.dependency_graph = DependencyGraph()
         """Authoritative verified dependency graph for this worker's World."""
         self._bootstrapped: bool = False
@@ -720,7 +823,7 @@ class World:
         from tests.live.helpers import purge_repo
 
         failures: list[tuple[str, BaseException]] = []
-        for key, repo in self._repos.items():
+        for key, (_, repo) in self._repos.items():
             try:
                 mcp = await self.server_for(repo._user, repo._scopes)
                 await purge_repo(mcp, repo.owner, repo.name)
@@ -924,6 +1027,11 @@ class World:
         or *labels* are provided, those are ensured inside the repo
         (also idempotent).
 
+        On a cache hit, the stored ``RepoRequest`` contract is checked
+        against the new request.  A mismatch raises
+        :class:`ConflictError` — the same repository identity cannot
+        be materialised with different configuration within one World.
+
         Args:
             owner: Repository owner login.
             name: Repository name.
@@ -941,10 +1049,32 @@ class World:
 
         Returns:
             ``RepoState`` — the (cached or newly created) repo state.
+
+        Raises:
+            ConflictError: If a previous request for this ``owner/name``
+                had different *auto_init*, *description*, *private*,
+                *branch*, *old_branch*, *files*, or *labels*.
         """
         key = f"{owner}/{name}"
+
+        # Build the request contract
+        request = RepoRequest(
+            owner=owner,
+            name=name,
+            auto_init=auto_init,
+            description=description,
+            private=private,
+            branch=branch,
+            old_branch=old_branch,
+            files=tuple(sorted((files or {}).items())),
+            labels=tuple(sorted((labels or {}).items())),
+        )
+
+        # Check cache — conflict on incompatible re-request
         if key in self._repos:
-            return self._repos[key]
+            stored_request, stored_state = self._repos[key]
+            stored_request.assert_compatible(request)
+            return stored_state
 
         # Resolve user and scopes
         _user: User | None = user
@@ -992,7 +1122,7 @@ class World:
             owner=owner, name=name, data=repo_data,
             _world=self, _user=_user, _scopes=_scopes,
         )
-        self._repos[key] = state
+        self._repos[key] = (request, state)
 
         # Create branch + files + labels if requested
         if branch is not None:

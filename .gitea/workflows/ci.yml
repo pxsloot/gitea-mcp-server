@@ -114,13 +114,15 @@ jobs:
             echo "Waiting for Forgejo... ($i/30)"
             sleep 3
           done
+          # Admin CLI needs extra time after HTTP listener starts
+          sleep 5
           RAW=$(docker exec forgejo-ci gitea admin user create \
             --username ci-admin --password ci-admin-pass \
-            --email admin@ci.local --admin --access-token 2>&1)
+            --email admin@ci.local --admin --access-token 2>&1) || true
           echo "$RAW"
           TOKEN=$(echo "$RAW" | tail -1 | sed 's/.*Access token was successfully created: *//')
           if [ -z "$TOKEN" ]; then
-            echo "ERROR: Failed to extract admin token"
+            echo "ERROR: Failed to extract admin token from output above"
             exit 1
           fi
           echo "ADMIN_TOKEN=$TOKEN" >> "$GITHUB_ENV"

@@ -122,7 +122,7 @@ jobs:
             --username ci-admin --password ci-admin-pass \
             --email admin@ci.local --admin --access-token 2>&1) || true
           echo "$RAW"
-          TOKEN=$(echo "$RAW" | tail -1 | sed 's/.*Access token was successfully created: *//')
+          TOKEN=$(echo "$RAW" | tail -1 | grep -oP '[a-f0-9]{40}$')
           if [ -z "$TOKEN" ]; then
             echo "ERROR: Failed to extract admin token from output above"
             exit 1

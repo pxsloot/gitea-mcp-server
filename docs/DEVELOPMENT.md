@@ -304,10 +304,10 @@ HTTP call → ``apply_to`` (post-hooks: formatting, sudo cleanup).
 .. note::
 
     ``format``'s default is the server-wide ``response_format`` config.
-    After ``inject_into`` injects the VirtualParam's static default
-    (``"markdown"``), ``_inject_params`` patches ``props["format"]["default"]``
-    to the live value from config.  This is a 3-line override, not a
-    separate lifecycle.
+    The VirtualParam registry carries a static default (``"markdown"``);
+    callers pass the live config value via ``default_overrides`` on
+    :func:`inject_into`.  This keeps the registry static and the override
+    explicit — a named parameter, not a hidden post-patch.
 
 ### 6. Add a tool-specific parameter
 
@@ -361,15 +361,16 @@ other virtual params (e.g. ``format`` reads ``detail``):
     )
 
 **Step 3 — If a default is dynamic** (e.g. coming from server config),
-override it in ``_inject_params`` after ``inject_into`` runs:
+pass it via :func:`inject_into`'s ``default_overrides`` parameter:
 
 .. code-block:: python
 
     # In _ToolWrappingTransform._inject_params()
-    inject_into(tool.parameters, tool=tool)
-    props = tool.parameters.get("properties", {})
-    if "format" in props:
-        props["format"]["default"] = self._response_format  # server-wide config
+    inject_into(
+        tool.parameters,
+        tool=tool,
+        default_overrides={"format": self._response_format},
+    )
 
 **tool_predicate** inspects any :class:`~fastmcp.tools.base.Tool` attribute —
 ``parameters``, ``tags``, ``name``, ``meta``.  Common patterns:

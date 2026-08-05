@@ -284,19 +284,16 @@ def _format_post_hook(
 ) -> ToolResult:
     """Apply response formatting (json/markdown/raw) with optional detail.
 
-    ``value`` is the ``format`` value.  ``detail`` is read from
-    ``all_extracted``, not from the registry — it is a separate
-    VirtualParam registered alongside ``format``.
-
-    ``_raw_schema`` is stashed in ``result.meta`` by the transform_fn
-    before ``apply_to`` runs.  The hook pops it — it never reaches
-    the agent.
+    ``value`` is the ``format`` value.  ``detail`` and ``_raw_schema``
+    are read from ``all_extracted`` — ``detail`` is a companion
+    VirtualParam, ``_raw_schema`` is pipeline metadata attached by
+    the transform_fn before ``apply_to`` runs.
     """
     if value == "raw":
         return result
 
     detail: str = all_extracted.get("detail", "full")
-    raw_schema = (result.meta or {}).pop("_raw_schema", None)
+    raw_schema = all_extracted.get("_raw_schema")
     data = result.structured_content.get("result") if result.structured_content else None
     if data is None:
         return result
@@ -378,7 +375,11 @@ def apply_scope_filter(available_scopes: set[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def inject_into(parameters: dict[str, Any], tool: Any | None = None) -> None:
+def inject_into(
+    parameters: dict[str, Any],
+    tool: Any | None = None,
+    default_overrides: dict[str, Any] | None = None,
+) -> None:
     """Add every virtual parameter to *parameters* (a tool's parameter schema).
 
     Idempotent - skips any parameter name that already exists, which also
@@ -391,6 +392,14 @@ def inject_into(parameters: dict[str, Any], tool: Any | None = None) -> None:
     Per-tool gating via ``tool_predicate``: when set, the param is only
     injected into tools where the predicate returns ``True``.  Pass the
     :class:`~fastmcp.tools.base.Tool` object as *tool* to enable this.
+
+    Args:
+        parameters: Tool parameter schema dict (mutated in place).
+        tool: The Tool being wrapped, for ``tool_predicate`` gating.
+        default_overrides: Optional ``{param_name: value}`` dict of
+            defaults to overwrite after injection.  Use for params whose
+            default is dynamic (e.g. ``format``'s default comes from
+            server config, not the registry).
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
@@ -406,6 +415,13 @@ def inject_into(parameters: dict[str, Any], tool: Any | None = None) -> None:
                 "default": vp.default,
                 "description": vp.description,
             }
+
+    # Apply caller-specified default overrides (e.g. format's default
+    # comes from server config, not the static registry default).
+    if default_overrides:
+        for name, value in default_overrides.items():
+            if name in props:
+                props[name]["default"] = value
 
 
 def extract_from(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -448,12 +464,15 @@ def apply_to(
     """Run registered post-hooks for every extracted virtual parameter.
 
     Hooks are called in registration order (the same order as
-    ``_VIRTUAL_PARAMS``).  Each receives the result from the previous hook.
+    ``_VIRTUAL_PARAMS``).  Each receives ``(result, value, all_extracted)``
+    — the full extracted dict, which may contain non-VirtualParam pipeline
+    metadata (e.g. ``_raw_schema``) for hooks to read.
     """
     for name, value in extracted.items():
-        hook = _VIRTUAL_PARAMS[name].post_hook
-        if hook is not None:
-            result = hook(result, value, extracted)
+        vp = _VIRTUAL_PARAMS.get(name)
+        if vp is None or vp.post_hook is None:
+            continue
+        result = vp.post_hook(result, value, extracted)
     return result
 
 
@@ -484,9 +503,7 @@ def get_loop_hooks(
 
 __all__ = [
     "VirtualParam",
-    "_content_type_pre_hook",
     "_fetch_all_loop",
-    "_format_post_hook",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",

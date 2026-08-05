@@ -325,11 +325,11 @@ def _customize_metadata(
     if raw_schema is not None:
         component_meta["output_schema_raw"] = _unwrap_result_schema(raw_schema)
 
-    # Detect tools that accept a ``content`` body parameter (file create/
-    # update).  These require base64-encoded content on the wire; the
-    # runtime injects a ``content_type`` virtual param so agents can pass
-    # plain text instead.  Detection is spec-driven — no hardcoded names.
-    # Inlined into the dict literal to stay under the statement budget.
+    # Per-tool metadata consumed by the transform pipeline at runtime:
+    # label validation, error context, response transforms, binary detection,
+    # and route identity.  Virtual param gating (e.g. ``content_type`` via
+    # ``tool_predicate``) lives in the VirtualParam registry — see
+    # virtual_params.py.
     component_meta["_customization"] = {
         "has_labels": has_labels,
         "is_text_response": is_text_response,
@@ -340,10 +340,6 @@ def _customize_metadata(
         "route_path": getattr(route, "path", ""),
         "route_method": getattr(route, "method", ""),
         "response_transform": response_transform,
-        "has_content_param": (
-            isinstance(component.parameters.get("properties", {}), dict)
-            and "content" in component.parameters.get("properties", {})
-        ),
     }
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta
@@ -395,16 +391,15 @@ class _ToolWrappingTransform(Transform):
         Called once per tool at startup (via :meth:`_wrap`).  Mutates
         ``tool.parameters`` in place.
 
-        ``format`` default is overridden with the server-wide
-        ``response_format`` config after injection — the VirtualParam
-        carries a static default; this patches in the live value.
+        ``format``'s default is dynamic — it comes from server config,
+        not the registry.  Passed via ``default_overrides`` so the
+        VirtualParam's ``.default`` stays accurate for the injection site.
         """
-        inject_into(tool.parameters, tool=tool)
-
-        # Override format default with server-wide config.
-        props = tool.parameters.get("properties", {})
-        if "format" in props:
-            props["format"]["default"] = self._response_format
+        inject_into(
+            tool.parameters,
+            tool=tool,
+            default_overrides={"format": self._response_format},
+        )
 
     def _make_transform_fn(self, tool: Tool) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
@@ -438,13 +433,13 @@ class _ToolWrappingTransform(Transform):
                 ctx=ctx,
             )
 
-            # Stash raw_schema in result.meta so _format_post_hook can
-            # access it for schema-aware rendering.  The hook pops the key
-            # — it never reaches the agent.
-            result.meta = {
-                **(result.meta or {}),
-                "_raw_schema": (tool.meta or {}).get("output_schema_raw"),
-            }
+            # Attach raw_schema to the extracted dict so format's post-hook
+            # can access it for schema-aware rendering.  Not a VirtualParam —
+            # pipeline metadata carried through the same channel as detail,
+            # format, etc.  The hook reads it from ``all_extracted``.
+            virtual_values["_raw_schema"] = (
+                (tool.meta or {}).get("output_schema_raw")
+            )
 
             # Run post-hooks: sudo clears context, format renders output.
             return apply_to(result, virtual_values)

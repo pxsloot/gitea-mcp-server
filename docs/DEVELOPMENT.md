@@ -344,7 +344,7 @@ other virtual params (e.g. ``format`` reads ``detail``):
         if value == "raw":
             return result
         detail = all_extracted.get("detail", "full")
-        raw_schema = (result.meta or {}).pop("_raw_schema", None)
+        raw_schema = all_extracted.get("_raw_schema")
         data = result.structured_content.get("result") if result.structured_content else None
         if data is None:
             return result

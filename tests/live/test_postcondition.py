@@ -446,8 +446,10 @@ class TestImmutableConflictPreserved:
             )
         assert "head" in exc.value.detail
 
-    def test_conflict_still_takes_precedence_over_postcondition(self) -> None:
-        """Immutable ConflictError fires even when state is also specified."""
+    def test_conflict_still_fires_regardless_of_state(self) -> None:
+        """``check_conflict`` raises ``ConflictError`` on immutable mismatch even
+        when ``state`` would also differ — the mutable postcondition path is
+        never reached because the immutable check fires first."""
         from tests.live.conflict import check_conflict
 
         with pytest.raises(ConflictError) as exc:

@@ -340,7 +340,53 @@ class RepoState:
         }
         return data
 
-    async def need_issue(  # noqa: PLR0912
+    async def _adopt_issue_from_gitea(
+        self,
+        title: str,
+        *,
+        body: str | None = None,
+        labels: list[int | str] | None = None,
+        milestone: int | None = None,
+        assignees: list[str] | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Try to find and adopt an issue pre-created on the Gitea instance.
+
+        Called by ``need_issue`` after the cache-check yields no match.
+        Lists all repo issues and matches by *title*.  On adoption
+        the issue is cached in ``self.issues`` and the creation options
+        (including *state* as a postcondition declaration) are stored.
+
+        Returns:
+            The adopted issue dict, or ``None`` if no matching issue
+            exists on the instance.
+        """
+        mcp = await self._server()
+        list_result = await mcp.call_tool(
+            "gitea_issue_list_issues",
+            {"owner": self.owner, "repo": self.name, "format": "json"},
+        )
+        if _is_error(list_result):
+            return None
+        try:
+            text = extract_text_content(list_result.content)
+            existing = json.loads(text)
+            if isinstance(existing, list):
+                for item in existing:
+                    if item.get("title") == title:
+                        number = item["number"]
+                        self.issues[number] = item
+                        self._issue_options[number] = {
+                            "body": body, "labels": labels,
+                            "milestone": milestone, "assignees": assignees,
+                            "state": state,
+                        }
+                        return cast("dict[str, Any]", item)
+        except (json.JSONDecodeError, AssertionError):
+            pass
+        return None
+
+    async def need_issue(
         self,
         title: str,
         *,
@@ -400,30 +446,15 @@ class RepoState:
                 return cached
 
         # Check if it exists in Gitea (created by a previous run)
-        mcp = await self._server()
-        list_result = await mcp.call_tool(
-            "gitea_issue_list_issues",
-            {"owner": self.owner, "repo": self.name, "format": "json"},
+        adopted = await self._adopt_issue_from_gitea(
+            title, body=body, labels=labels,
+            milestone=milestone, assignees=assignees, state=state,
         )
-        if not _is_error(list_result):
-            try:
-                text = extract_text_content(list_result.content)
-                existing = json.loads(text)
-                if isinstance(existing, list):
-                    for item in existing:
-                        if item.get("title") == title:
-                            number = item["number"]
-                            self.issues[number] = item
-                            self._issue_options[number] = {
-                                "body": body, "labels": labels,
-                                "milestone": milestone, "assignees": assignees,
-                                "state": state,
-                            }
-                            return cast("dict[str, Any]", item)
-            except (json.JSONDecodeError, AssertionError):
-                pass  # Create fresh
+        if adopted is not None:
+            return adopted
 
         # Create new issue
+        mcp = await self._server()
         kwargs: dict[str, Any] = {
             "owner": self.owner,
             "repo": self.name,
@@ -477,7 +508,12 @@ class RepoState:
             raise PostconditionError(
                 entity_label, "readable", True, False,
             ) from None
-        data = _unwrap(result)
+        try:
+            data = _unwrap(result)
+        except (json.JSONDecodeError, TypeError):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
         actual_state = data.get("state")
         if actual_state != expected_state:
             raise PostconditionError(
@@ -617,7 +653,12 @@ class RepoState:
             raise PostconditionError(
                 entity_label, "readable", True, False,
             ) from None
-        data = _unwrap(result)
+        try:
+            data = _unwrap(result)
+        except (json.JSONDecodeError, TypeError):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
 
         # Irreversible: merged PR cannot go back to "open"
         if expected_state == "open" and data.get("merged", False):

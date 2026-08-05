@@ -487,7 +487,18 @@ tests/live/
     :class:`PostconditionError` is raised if the actual state still does not
     match.  For pull requests, an :class:`IrreversibleTransitionError` guards
     against tests that expect ``state="open"`` on a merged PR (merging is
-    permanent).  Pure unit tests in ``test_postcondition.py`` exercise every
+    permanent).
+
+    Postcondition checks fire on **cache hits only**.  On the first
+    encounter — whether the entity is freshly created or adopted from a
+    previous run via Gitea listing — the *state* is stored as a
+    declaration of intent.  Only a subsequent ``need_*`` call that finds
+    a cached entity with a mismatched ``state`` triggers the re-read and
+    verification.  This means the postcondition model correctly supports
+    the most common workflow pattern (test A mutates, test B verifies)
+    while keeping the first-encounter path simple.
+
+    Pure unit tests in ``test_postcondition.py`` exercise every
     path with mocked ``ClientSession.call_tool`` responses — no live instance
     needed.
 

@@ -82,7 +82,9 @@ class PostconditionError(AssertionError):
 
     Attributes:
         entity: Human-readable entity identifier (e.g. ``"issue #1 (Bug)"``).
-        field: The state field that mismatched (``"state"`` or ``"merged"``).
+        field: The state field that mismatched
+               (``"state"``, ``"merged"``, or ``"readable"`` for
+               entities that cannot be re-read).
         expected: The postcondition value required by the current test.
         observed: The current value on the Gitea instance.
     """
@@ -111,7 +113,8 @@ class IrreversibleTransitionError(AssertionError):
     Attributes:
         entity: Human-readable entity identifier.
         field: The field that underwent an irreversible change
-               (e.g. ``"merged"``).
+               (``"merged"`` — always ``"merged"``, referencing the
+               ``merged`` flag on a pull request).
         expected: The unreachable state the test expected.
         observed: The permanent state reached.
     """

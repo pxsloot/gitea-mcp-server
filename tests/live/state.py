@@ -364,6 +364,11 @@ class RepoState:
         assert that a previous test has left the issue in the expected
         state (e.g. ``state="closed"`` after a close workflow).
 
+        Postcondition checks fire on **cache hits only** — not on the
+        first call that creates or adopts the entity.  On the first
+        encounter (create or adopt-from-Gitea), the *state* is stored
+        as a declaration of intent and verified on the next cache hit.
+
         Raises:
             ConflictError: If a cached issue with the same title was
                 created with different *body*, *labels*, *milestone*,
@@ -502,6 +507,11 @@ class RepoState:
         from Gitea and verified.  An :class:`IrreversibleTransitionError`
         is raised when a test requests ``state="open"`` on a merged PR
         — merging is permanent and cannot be undone.
+
+        Postcondition checks fire on **cache hits only** — not on the
+        first call that creates or adopts the entity.  On the first
+        encounter (create or adopt-from-Gitea), the *state* is stored
+        as a declaration of intent and verified on the next cache hit.
 
         Raises:
             ConflictError: If a cached PR with the same title was

@@ -67,14 +67,24 @@ def common_patches(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, Non
     )
 
     respx.start()
+    r_user = respx.get("https://git.example.com/api/v1/user").respond(
+        200, json={"login": "dev2"},
+    )
+    r_version = respx.get("https://git.example.com/api/v1/version").respond(
+        200, json={"version": "1.0.0"},
+    )
     try:
-        respx.get("https://git.example.com/api/v1/user").respond(
-            200, json={"login": "dev2"},
-        )
-        respx.get("https://git.example.com/api/v1/version").respond(
-            200, json={"version": "1.0.0"},
-        )
         yield
+        assert r_user.called, (
+            "GET /api/v1/user was not called — respx route did not intercept. "
+            "create_mcp_server would use 'unknown' fallback and the test "
+            "would pass silently."
+        )
+        assert r_version.called, (
+            "GET /api/v1/version was not called — respx route did not intercept. "
+            "create_mcp_server would use 'Unknown' fallback and the test "
+            "would pass silently."
+        )
     finally:
         respx.stop(clear=True, reset=True)
 

@@ -755,6 +755,42 @@ async def test_fetch_user(self, config):
         assert route.called
 ```
 
+#### Verifying fail-open stubs in fixture teardown
+
+When a fixture stubs API calls that are **fail-open** in the SUT (calls
+where the SUT silently falls back to defaults on a non-intercepted request),
+capture the route objects and verify ``.called`` in the fixture teardown:
+
+```python
+@pytest.fixture(autouse=True)
+def stub_startup_calls(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    monkeypatch.setattr(...)
+    respx.start()
+    r_user = respx.get("https://git.example.com/api/v1/user").respond(
+        200, json={"login": "test"},
+    )
+    r_version = respx.get("https://git.example.com/api/v1/version").respond(
+        200, json={"version": "1.0.0"},
+    )
+    try:
+        yield
+        assert r_user.called, (
+            "GET /api/v1/user was not called — respx route did not intercept. "
+            "The SUT would silently use fallback values and the test would pass."
+        )
+        assert r_version.called, (
+            "GET /api/v1/version was not called — respx route did not intercept. "
+            "The SUT would silently use fallback values and the test would pass."
+        )
+    finally:
+        respx.stop(clear=True, reset=True)
+```
+
+This catches URL mismatches, environment changes, or respx start/stop
+refactors that break interception without failing the test.  Verify
+**only** fail-open stubs — stubs whose data is asserted in test bodies
+are already self-verifying.
+
 ### Testing with Server In-Memory
 
 Use `server.call_tool()` and `server.list_tools()` directly for full round-trips without stdio.

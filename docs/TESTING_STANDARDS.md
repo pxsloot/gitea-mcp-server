@@ -375,6 +375,9 @@ tests/live/
 ├── test_meta.py             # Metatests: bootstrap and pool diagnostics
 ├── test_admin_workflows.py  # Identity, organization, team administration
 ├── test_world_setup.py      # Phase 1: Error-path tests for bootstrap
+├── test_conflict.py         # Unit tests for conflict detection types
+├── test_postcondition.py    # Unit tests for mutable postconditions (issue/PR state)
+├── test_bootstrap_verify.py # Unit tests for bootstrap verification logic (mocked API)
 ├── test_repo_workflow.py    # Migrated: repos, branches, files, tags, statuses
 ├── test_issue_workflow.py   # Migrated: labels, milestones, issues, comments, search
 ├── test_pr_workflow.py      # Migrated: PRs, diff download, review comments
@@ -470,10 +473,34 @@ tests/live/
    through the real transport — principle 5 of the live test design.
 
 8. **Shape/content assertions.**  Every tool call in a world-setup or
-   workflow test asserts not just "no error" but structural correctness:
-   required keys are present (``assert_keys``), key types are correct
-   (``assert_key_types``), and specific values match (``assert_content``).
-   See ``tests/live/assertions.py``.
+    workflow test asserts not just "no error" but structural correctness:
+    required keys are present (``assert_keys``), key types are correct
+    (``assert_key_types``), and specific values match (``assert_content``).
+    See ``tests/live/assertions.py``.
+
+9. **Mutable postcondition modeling.**  ``RepoState.need_issue`` and
+    ``need_pull_request`` accept an optional ``state`` parameter that declares
+    the entity's expected runtime state (``"open"``, ``"closed"``).  When a
+    cached entity's observed state differs from the expected postcondition,
+    the entity is re-read from the Gitea instance via ``gitea_issue_get_issue``
+    / ``gitea_repo_get_pull_request`` and verified.  A
+    :class:`PostconditionError` is raised if the actual state still does not
+    match.  For pull requests, an :class:`IrreversibleTransitionError` guards
+    against tests that expect ``state="open"`` on a merged PR (merging is
+    permanent).  Pure unit tests in ``test_postcondition.py`` exercise every
+    path with mocked ``ClientSession.call_tool`` responses — no live instance
+    needed.
+
+10. **Bootstrap verification unit tests.**  ``World.need_user``,
+    ``need_org``, and ``need_team`` contain verification logic that only
+    fires when a pre-existing entity happens to have mismatched config on
+    the live instance — rare in CI.  ``test_bootstrap_verify.py`` uses
+    mocked admin ``ClientSession.call_tool`` responses to exercise every
+    path: login/email/active/prohibit_login mismatches for users,
+    username/full_name mismatches for orgs, permission/units_map mismatches
+    for teams, plus the error-to-success (already-exists-adopted) path for
+    each entity type.  All 20 paths are pure unit tests with no live
+    dependency.
 
 **Infrastructure**:
 
@@ -488,7 +515,17 @@ tests/live/
 - ``identities.py`` defines canonical test identities, scope constants,
   org/team names, and namespace utilities — re-exported by ``world.py``.
 - ``state.py`` defines ``RepoState`` (per-repo state tracker) and the
-  internal assertion helpers — re-exported by ``world.py``.
+    internal assertion helpers — re-exported by ``world.py``.
+- ``conflict.py`` defines ``ConflictError``, ``BootstrapVerificationError``,
+    ``PostconditionError``, ``IrreversibleTransitionError``, ``RepoRequest``,
+    and ``check_conflict``.
+- ``test_conflict.py`` unit-tests ``RepoRequest`` contracts,
+    ``check_conflict`` helper, and error object properties.
+- ``test_postcondition.py`` unit-tests mutable postcondition verification
+    for ``need_issue`` and ``need_pull_request`` with mocked API responses.
+- ``test_bootstrap_verify.py`` unit-tests bootstrap verification logic in
+    ``need_user``, ``need_org``, and ``need_team`` with mocked admin
+    ``call_tool`` responses.
 - ``assertions.py`` provides reusable shape/content/cross-format assertion
   helpers: ``assert_keys``, ``assert_key_types``, ``assert_content``,
   ``assert_result_ok``, ``assert_formats_equivalent``.

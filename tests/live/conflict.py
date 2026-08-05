@@ -1,15 +1,25 @@
-"""Conflict detection for repeated dependency requests.
+"""Conflict detection, postcondition verification, and request contracts.
 
 When two tests request the same resource identity with different
 configuration options, this module surfaces the conflict as a clear
-diagnostic rather than silently returning the first result.
+diagnostic rather than silently returning the first result.  For
+mutable entity state (issue state, PR state/merged), postcondition
+verification re-reads the entity from Gitea and asserts it is in the
+state the current test expects.
 
 Classes:
     ConflictError: Raised when a repeated request conflicts with a
-                   previously-materialised resource.
+                   previously-materialised resource (immutable fields).
     BootstrapVerificationError: Raised when a pre-existing bootstrap
                    entity (user, org, team) does not match expected
                    configuration.
+    PostconditionError: Raised when an entity's runtime state (e.g.
+                   ``issue.state``, ``PR.state``) has been changed by
+                   a previous test and no longer matches the expected
+                   postcondition.
+    IrreversibleTransitionError: Raised when a postcondition check
+                   detects an irreversible state transition (e.g.
+                   requesting ``open`` on a merged PR).
     RepoRequest: Frozen contract encoding both the identity (owner, name)
                  and the immutable configuration of a test repository.
 """
@@ -58,6 +68,64 @@ class BootstrapVerificationError(AssertionError):
         super().__init__(
             f"Bootstrap entity mismatch for {entity!r}: "
             f"{field} expected {expected!r}, got {observed!r}"
+        )
+
+
+class PostconditionError(AssertionError):
+    """An entity's runtime state does not match the expected postcondition.
+
+    Raised when ``RepoState.need_issue`` or ``need_pull_request`` finds
+    a cached entity whose observed state (e.g. ``"closed"``) differs
+    from the state the current test expects (e.g. ``"open"``).  Unlike
+    :class:`ConflictError` (immutable creation parameters), state is
+    mutable across tests.
+
+    Attributes:
+        entity: Human-readable entity identifier (e.g. ``"issue #1 (Bug)"``).
+        field: The state field that mismatched (``"state"`` or ``"merged"``).
+        expected: The postcondition value required by the current test.
+        observed: The current value on the Gitea instance.
+    """
+
+    def __init__(
+        self, entity: str, field: str, expected: object, observed: object,
+    ) -> None:
+        self.entity = entity
+        self.field = field
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"Postcondition failed for {entity!r}: "
+            f"{field} expected {expected!r}, observed {observed!r}"
+        )
+
+
+class IrreversibleTransitionError(AssertionError):
+    """A postcondition check detected an irreversible state transition.
+
+    Raised when a test expects an entity in state that can never be
+    reached again — e.g. requesting ``state="open"`` on a merged PR.
+    The underlying entity must be deleted and recreated to satisfy
+    the postcondition.
+
+    Attributes:
+        entity: Human-readable entity identifier.
+        field: The field that underwent an irreversible change
+               (e.g. ``"merged"``).
+        expected: The unreachable state the test expected.
+        observed: The permanent state reached.
+    """
+
+    def __init__(
+        self, entity: str, field: str, expected: object, observed: object,
+    ) -> None:
+        self.entity = entity
+        self.field = field
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"Irreversible transition for {entity!r}: "
+            f"{field} is {observed!r} (cannot return to {expected!r})"
         )
 
 

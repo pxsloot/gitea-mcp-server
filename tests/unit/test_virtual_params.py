@@ -107,7 +107,7 @@ class TestApplyPreHooks:
             },
         ):
             apply_pre_hooks(extracted)
-        mock_hook.assert_called_once_with("hello")
+        mock_hook.assert_called_once_with("hello", {})
 
     def test_no_op_when_no_extracted_params(self) -> None:
         """Does nothing when extracted is empty."""
@@ -141,10 +141,10 @@ class TestApplyPreHooks:
         """Calls multiple pre_hooks in registration order."""
         calls: list[str] = []
 
-        def hook_a(_v: object) -> None:
+        def hook_a(_v: object, _kw: dict[str, Any] | None = None) -> None:
             calls.append("a")
 
-        def hook_b(_v: object) -> None:
+        def hook_b(_v: object, _kw: dict[str, Any] | None = None) -> None:
             calls.append("b")
 
         extracted = {"a": 1, "b": 2}
@@ -179,7 +179,7 @@ class TestSudoHooks:
         )
 
         assert sudo_context.get() is None
-        _sudo_pre_hook("alice")
+        _sudo_pre_hook("alice", {})
         assert sudo_context.get() == "alice"
 
     def test_sudo_pre_hook_skips_none(self) -> None:
@@ -190,7 +190,7 @@ class TestSudoHooks:
         )
 
         sudo_context.set("previous")
-        _sudo_pre_hook(None)
+        _sudo_pre_hook(None, {})
         assert sudo_context.get() == "previous"
 
     def test_sudo_post_hook_clears_context(self) -> None:
@@ -327,7 +327,7 @@ class TestSudoErrorPaths:
         assert extracted == {"sudo": "alice"}
 
         # 2. pre-hook - sets context var
-        apply_pre_hooks(extracted)
+        apply_pre_hooks(extracted, kwargs)
         assert sudo_context.get() == "alice"
 
         # 3. post-hook - clears context var

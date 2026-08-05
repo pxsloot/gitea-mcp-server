@@ -8,7 +8,6 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 :class:`Transform` (``provider.add_transform()``) - no private FastMCP APIs are used.
 """
 
-import base64
 import logging
 from collections.abc import Sequence
 from contextlib import suppress
@@ -391,14 +390,15 @@ class _ToolWrappingTransform(Transform):
             return None
         return await self._wrap(tool)
 
-    def _inject_params(self, tool: Tool, customization: dict[str, Any]) -> None:
-        """Inject format, detail, content_type, and virtual params into the tool schema.
+    def _inject_params(self, tool: Tool) -> None:
+        """Inject format, detail, and virtual params into the tool schema.
 
         Called once per tool at startup (via :meth:`_wrap`).  Mutates
         ``tool.parameters`` in place.
         """
-        # Virtual params (sudo, fetch_all, page, limit, etc.).
-        inject_into(tool.parameters)
+        # Virtual params (sudo, fetch_all, page, limit, content_type, etc.).
+        # The ``tool`` argument enables per-tool gating via VirtualParam.tool_predicate.
+        inject_into(tool.parameters, tool=tool)
 
         fmt_default = self._response_format
         props = tool.parameters.setdefault("properties", {})
@@ -418,20 +418,6 @@ class _ToolWrappingTransform(Transform):
         if "detail" not in props:
             props["detail"] = dict(DETAIL_PARAM_SCHEMA)
 
-        if customization.get("has_content_param") and "content_type" not in props:
-            props["content_type"] = {
-                "type": "string",
-                "enum": ["base64", "text"],
-                "default": "base64",
-                "description": (
-                    "How the ``content`` parameter is interpreted.  "
-                    '"base64" (default) — content is already base64-encoded '
-                    "(Gitea API native).  "
-                    '"text" — content is plain text; the server encodes it '
-                    "to base64 before calling the Gitea API."
-                ),
-            }
-
     def _make_transform_fn(self, tool: Tool, fmt_default: str) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
 
@@ -449,26 +435,14 @@ class _ToolWrappingTransform(Transform):
             # not real API parameters and must not reach the Gitea API.
             virtual_values = extract_from(kwargs)
 
-            # Run pre-hooks for extracted virtual params.  The ``sudo``
-            # pre-hook stores the target username in an async context var
-            # so the HTTP request hook (in client.py) can inject the
-            # ``?sudo=<username>`` query parameter.
-            apply_pre_hooks(virtual_values)
+            # Run pre-hooks for extracted virtual params.  Hooks may mutate
+            # kwargs (e.g. ``content_type`` base64-encodes ``content``).
+            apply_pre_hooks(virtual_values, kwargs)
 
             # Pop ``format`` and ``detail`` explicitly (promoted params
             # that reach the output layer, not the HTTP execution path).
             fmt = kwargs.pop("format", fmt_default)
             detail = kwargs.pop("detail", "full")
-
-            # Handle ``content_type`` for file create/update tools.
-            # When set to "text", base64-encode the ``content`` argument
-            # before the API call so agents can pass plain text.
-            if "content_type" in kwargs:
-                ct = kwargs.pop("content_type", "base64")
-                if ct == "text" and "content" in kwargs:
-                    raw = kwargs.get("content")
-                    if isinstance(raw, str):
-                        kwargs["content"] = base64.b64encode(raw.encode()).decode()
 
             # Resolve the current MCP Context so progress reporting and
             # structured logging work inside the pipeline.  Outside an
@@ -529,7 +503,7 @@ class _ToolWrappingTransform(Transform):
             )
 
         # Phase 1: Schema augmentation (one-time, per-startup).
-        self._inject_params(tool, customization)
+        self._inject_params(tool)
 
         # Phase 2: Build runtime behaviour (per-call).
         transform_fn = self._make_transform_fn(tool, self._response_format)

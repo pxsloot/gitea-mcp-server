@@ -1710,7 +1710,7 @@ class TestContentTypeVirtualParam:
             name="repo_create_file",
             tags={"repository"},
             description="Create a file",
-            parameters={"properties": {}},
+            parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
             meta={
                 "_customization_applied": True,
@@ -1741,7 +1741,7 @@ class TestContentTypeVirtualParam:
             name="repo_update_file",
             tags={"repository"},
             description="Update a file",
-            parameters={"properties": {}},
+            parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
             meta={
                 "_customization_applied": True,

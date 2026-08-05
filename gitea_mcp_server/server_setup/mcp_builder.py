@@ -391,26 +391,15 @@ class _ToolWrappingTransform(Transform):
             return None
         return await self._wrap(tool)
 
-    async def _wrap(self, tool: Tool) -> Tool:
-        meta = tool.meta or {}
-        if not meta.get(_META_CUSTOMIZED):
-            return tool
+    def _inject_params(self, tool: Tool, customization: dict[str, Any]) -> None:
+        """Inject format, detail, content_type, and virtual params into the tool schema.
 
-        customization = meta.get("_customization", {})
-        if not customization:
-            logger.warning(  # pragma: no cover — only reachable with a hand-crafted tool meta that sets _customized flag but omits _customization
-                "Tool %r has %r flag but empty customization metadata. "
-                "Error messages may lack route context.",
-                tool.name,
-                _META_CUSTOMIZED,
-            )
-
-        # Inject any future virtual params into the tool schema.  The
-        # ``format`` parameter is handled explicitly below, not here.
+        Called once per tool at startup (via :meth:`_wrap`).  Mutates
+        ``tool.parameters`` in place.
+        """
+        # Virtual params (sudo, fetch_all, page, limit, etc.).
         inject_into(tool.parameters)
 
-        # Inject ``format`` as a first-class parameter (promoted - not a
-        # generic virtual param).  The default is server-wide configuration.
         fmt_default = self._response_format
         props = tool.parameters.setdefault("properties", {})
         if "format" not in props:
@@ -426,20 +415,9 @@ class _ToolWrappingTransform(Transform):
                 ),
             }
 
-        # Inject ``detail`` (promoted, alongside ``format``).  Controls
-        # markdown rendering depth — ``"concise"`` collapses nested
-        # objects to ``$ref:TypeName`` labels, ``"full"`` renders
-        # everything recursively.
         if "detail" not in props:
             props["detail"] = dict(DETAIL_PARAM_SCHEMA)
 
-        # Inject ``content_type`` for tools that accept a ``content`` body
-        # parameter (file create/update).  Gitea requires base64-encoded
-        # content on the wire, which is cumbersome for agents.  When
-        # ``content_type="text"``, the server base64-encodes before the API
-        # call.  Default ``"base64"`` for backward compatibility.
-        # Detection is spec-driven via ``has_content_param`` in the
-        # customization dict — no hardcoded tool names.
         if customization.get("has_content_param") and "content_type" not in props:
             props["content_type"] = {
                 "type": "string",
@@ -454,6 +432,18 @@ class _ToolWrappingTransform(Transform):
                 ),
             }
 
+    def _make_transform_fn(self, tool: Tool, fmt_default: str) -> Any:
+        """Build the per-call :func:`transform_fn` closure for a tool.
+
+        The returned callable receives ``**kwargs`` (the agent's arguments)
+        and performs the full runtime pipeline: extract virtual params,
+        pop format/detail/content_type, resolve the MCP context, validate,
+        execute via the HTTP layer, apply post-hooks, and format the output.
+
+        ``tool`` and ``fmt_default`` are passed explicitly rather than
+        captured from an enclosing scope — this keeps the closure's
+        dependencies visible at the method signature.
+        """
         async def transform_fn(**kwargs: Any) -> ToolResult:
             # Pop virtual params before the HTTP execution path - they are
             # not real API parameters and must not reach the Gitea API.
@@ -505,9 +495,6 @@ class _ToolWrappingTransform(Transform):
             if data is None:
                 return result
 
-            # output_schema_raw stores the inner (unwrapped) schema
-            # (see _customize_metadata where _unwrap_result_schema is applied)
-            # so it matches the shape of ``data`` — no unwrapping needed.
             formatted = apply_format(data, fmt, detail=detail, schema=raw_schema)
             # Preserve original structured_content (carries pagination
             # metadata and uncollapsed data for programmatic access).
@@ -515,6 +502,39 @@ class _ToolWrappingTransform(Transform):
             formatted.meta = result.meta
             return formatted
 
+        return transform_fn
+
+    async def _wrap(self, tool: Tool) -> Tool:
+        """Wrap a customized Tool with injected params and a runtime transform.
+
+        Three phases:
+        1. **Guard** — skip uncustomized tools (no metadata).
+        2. **Inject** — add format, detail, virtual params, and content_type
+           to the tool schema.  Runs once at startup via
+           :meth:`list_tools` / :meth:`get_tool`.
+        3. **Wrap** — attach the runtime :func:`transform_fn` via
+           :meth:`Tool.from_tool`.  The transform_fn runs on every tool call.
+        """
+        meta = tool.meta or {}
+        if not meta.get(_META_CUSTOMIZED):
+            return tool
+
+        customization = meta.get("_customization", {})
+        if not customization:
+            logger.warning(  # pragma: no cover — only reachable with a hand-crafted tool meta that sets _customized flag but omits _customization
+                "Tool %r has %r flag but empty customization metadata. "
+                "Error messages may lack route context.",
+                tool.name,
+                _META_CUSTOMIZED,
+            )
+
+        # Phase 1: Schema augmentation (one-time, per-startup).
+        self._inject_params(tool, customization)
+
+        # Phase 2: Build runtime behaviour (per-call).
+        transform_fn = self._make_transform_fn(tool, self._response_format)
+
+        # Phase 3: Attach via Tool.from_tool (FastMCP Transform contract).
         return Tool.from_tool(
             tool,
             title=getattr(tool.annotations, "title", None) if tool.annotations else None,

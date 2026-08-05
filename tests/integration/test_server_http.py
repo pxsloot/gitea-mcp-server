@@ -9,11 +9,13 @@ static GET). MCP route presence is verified by inspecting the route
 table.
 """
 
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+import respx
 from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
@@ -29,22 +31,23 @@ def _http_config(**overrides: Any) -> SimpleConfig:
 
 
 @pytest.fixture(autouse=True)
-def common_patches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Patch Config.get, GiteaClient, and spec loading for all tests."""
+def common_patches(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Patch Config.get and spec loading; stub startup API calls with respx.
+
+    Uses tier 1 per TESTING_STANDARDS.md: real GiteaClient constructed
+    from _http_config SimpleConfig, with respx intercepting the two
+    fail-open startup calls that create_mcp_server makes:
+
+    - GET /api/v1/user    → instructions placeholder {USER_LOGIN}
+    - GET /api/v1/version → static resource pre-fetch
+
+    load_and_convert_spec remains patched — these tests exercise HTTP
+    routing (health, MCP path, CORS), not tool creation.
+    """
 
     monkeypatch.setattr(
         "gitea_mcp_server.server.Config.get",
         _http_config,
-    )
-
-    monkeypatch.setattr(
-        "gitea_mcp_server.server.GiteaClient",
-        lambda config: AsyncMock(
-            config=config,
-            client=AsyncMock(),
-            request=AsyncMock(return_value={}),
-            close=AsyncMock(),
-        ),
     )
 
     monkeypatch.setattr(
@@ -62,6 +65,18 @@ def common_patches(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         ),
     )
+
+    respx.start()
+    try:
+        respx.get("https://git.example.com/api/v1/user").respond(
+            200, json={"login": "dev2"},
+        )
+        respx.get("https://git.example.com/api/v1/version").respond(
+            200, json={"version": "1.0.0"},
+        )
+        yield
+    finally:
+        respx.stop(clear=True, reset=True)
 
 
 @pytest.fixture

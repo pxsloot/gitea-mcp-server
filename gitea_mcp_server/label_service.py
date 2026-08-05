@@ -10,8 +10,11 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
+from fastmcp.dependencies import CurrentContext
+
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import LABEL_CACHE_TTL
+from gitea_mcp_server.context_utils import safe_ctx_info
 from gitea_mcp_server.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -248,15 +251,8 @@ class LabelService:
         """Log a message via MCP context if available, otherwise via stdlib."""
         logger.debug("%s | extra=%s", msg, extra)
         try:
-            # Deferred import: CurrentContext only works inside an MCP
-            # request scope. Importing at the top level would fail when
-            # LabelService is used outside a request (e.g., unit tests).
-            # PLC0415 suppressed intentionally.
-            from fastmcp.dependencies import CurrentContext  # noqa: PLC0415
-
             async with CurrentContext() as ctx:
-                if ctx is not None:
-                    await ctx.info(msg, extra=extra)
+                await safe_ctx_info(ctx, msg, extra=extra)
         except RuntimeError:
             pass
 

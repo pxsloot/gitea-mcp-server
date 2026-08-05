@@ -10,7 +10,6 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.dependencies import CurrentContext
@@ -21,6 +20,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -59,38 +59,6 @@ if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
 
 logger = logging.getLogger(__name__)
-
-
-async def _safe_ctx_info(ctx: Any | None, message: str, **kwargs: Any) -> None:
-    """Call ``ctx.info()`` if the MCP context and session are available.
-
-    When called inside an in-memory ``mcp.call_tool()``, FastMCP provides
-    a Context object whose ``session`` property raises ``RuntimeError``.
-    This helper silently degrades so observability is best-effort.
-    """
-    if ctx is None:
-        return
-    with suppress(RuntimeError):
-        await ctx.info(message, **kwargs)
-
-
-async def _safe_ctx_report_progress(
-    ctx: Any | None,
-    progress: float,
-    total: float | None = None,
-) -> None:
-    """Call ``ctx.report_progress()`` if the MCP context and session are available.
-
-    Same degradation pattern as :func:`_safe_ctx_info` — progress reporting
-    is best-effort, not guaranteed.
-    """
-    if ctx is None:
-        return
-    with suppress(RuntimeError):
-        if total is not None:
-            await ctx.report_progress(progress=progress, total=total)
-        else:
-            await ctx.report_progress(progress=progress)
 
 _META_CUSTOMIZED = "_customization_applied"
 """Flag in component.meta to avoid double-wrapping by the transform."""
@@ -756,20 +724,20 @@ class _ToolWrappingTransform(Transform):
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 
-            await _safe_ctx_info(
+            await safe_ctx_info(
                 ctx,
                 f"Validated {tool.name}",
                 extra={"arg_keys": list(kwargs.keys()), "valid": True},
             )
         except ValidationError as e:
-            await _safe_ctx_info(
+            await safe_ctx_info(
                 ctx,
                 f"Validation failed for {tool.name}: {e}",
                 extra={"error": str(e)},
             )
             raise ValueError(str(e)) from e
 
-        await _safe_ctx_report_progress(ctx, progress=0.5)
+        await safe_ctx_report_progress(ctx, progress=0.5)
 
         with tracer.start_as_current_span(f"{tool.name}.execute") as span:
             span.set_attribute("tool.name", tool.name)
@@ -795,7 +763,7 @@ class _ToolWrappingTransform(Transform):
                 else:
                     raise
 
-        await _safe_ctx_info(
+        await safe_ctx_info(
             ctx,
             f"Executed {tool.name}: {route_method} {route_path}",
             extra={"route": f"{route_method} {route_path}"},
@@ -852,7 +820,7 @@ class _ToolWrappingTransform(Transform):
                 )
 
                 if len(result_data) > 0:
-                    await _safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
+                    await safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
 
                 result = ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
@@ -862,7 +830,7 @@ class _ToolWrappingTransform(Transform):
                     result, kwargs, extracted, tool, route_path, route_method,
                 )
 
-        await _safe_ctx_report_progress(ctx, progress=1.0)
+        await safe_ctx_report_progress(ctx, progress=1.0)
 
         return await self._apply_loop_hooks(
             result, kwargs, extracted, tool, route_path, route_method,

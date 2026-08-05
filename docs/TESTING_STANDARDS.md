@@ -205,7 +205,7 @@ are noted explicitly.
 | `tools/tool_display.py` | `test_tool_display.py` | Unit | Tool result formatting entry point; circular reference inner fallback added in #619 |
 | `tools/type_info.py` | `test_type_info.py` | Unit | Type resolution and cross-reference tracking |
 | `tools/unified_search.py` | `test_unified_search.py` | Unit | 100% — merged search across tools/docs/resources; page-out-of-range edge case added in #619 |
-| `tools/virtual_params.py` | `test_virtual_params.py` | Unit | Virtual parameter lifecycle (sudo, fetch_all) |
+| `tools/virtual_params.py` | `test_virtual_params.py` | Unit | Virtual parameter lifecycle (sudo, fetch_all, content_type, detail, format) |
 
 ### Naming Conventions
 

@@ -118,7 +118,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref:Type`` name resolution and cross-references |
-| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo`` (user impersonation, scope-gated by token permissions). The ``format`` param is promoted to a first-class concept handled directly in ``_ToolWrappingTransform._wrap()``. |
+| `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo``, ``fetch_all``, ``content_type``, ``detail``, ``format``. See the `virtual params how-to`_ below for adding new entries. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
 
 Scope derivation — see `docs/SCOPE_MODEL.md` for the full scope model
@@ -229,10 +229,12 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
     default=False,
     description="Enable verbose output.",
     # Optional: pre-hook runs after extraction, before the HTTP call.
-    # Use for side effects like setting a context variable.
+    # Receives (value, kwargs) — may mutate kwargs for the API call.
     pre_hook=_prepare_verbose,
     # Optional: post-hook transforms the result after the API call.
-    post_hook=_apply_verbose,  # (result, value) -> result
+    # Receives (result, value, all_extracted) — all_extracted lets the
+    # hook read other virtual params (e.g. format reads detail).
+    post_hook=_apply_verbose,
     # Optional: loop-hook runs inside the execution pipeline, after the
     # HTTP call and pagination metadata but before post_hook.  Receives
     # an ``execute_fn`` callable to re-invoke the HTTP path with updated
@@ -243,18 +245,20 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
 )
 ```
 
-The lifecycle functions are called automatically in ``_wrap()``:
+The lifecycle functions are called automatically in the transform pipeline:
 
-1. ``inject_into(tool.parameters)`` — adds the param to every tool's schema
+1. ``inject_into(tool.parameters, tool=tool)`` — adds the param to every tool's
+   schema.  The ``tool`` argument enables ``tool_predicate`` gating.
 2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
-3. ``apply_pre_hooks(extracted)`` — runs pre-hooks (e.g. set ContextVar via
-   ``_sudo_pre_hook``)
+3. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
+   ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
 4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values, ctx=ctx)`` —
    executes the HTTP call and pagination metadata (with ``ctx`` for progress
    reporting and logging), then invokes every registered ``loop_hook`` with an
    ``execute_fn`` that re-invokes ``_run_with_error_handling`` for subsequent
    pages
-5. ``apply_to(result, extracted)`` — runs post-hooks after the API call
+5. ``apply_to(result, extracted)`` — runs post-hooks; hooks receive
+   ``(result, value, all_extracted)`` for output formatting and cleanup
 
 A ``loop_hook`` is how you implement params that need to **re-execute** the
 HTTP call — for example auto-pagination (``fetch_all``).  Unlike pre/post hooks
@@ -291,49 +295,100 @@ canonical reference in `docs/SCOPE_MODEL.md` → "Virtual Parameter Scope Gating
 From this doc's how-to angle: to add a new scope-gated param, set
 `required_scope=` on the `VirtualParam` and nothing else changes.
 
+All parameters — including ``format``, ``detail``, and ``content_type`` — follow
+the standard :ref:`virtual params lifecycle <virtual-params-lifecycle>`:
+``inject_into`` (schema) → ``extract_from`` (pop from kwargs) →
+``apply_pre_hooks`` (mutate kwargs, e.g. content encoding) →
+HTTP call → ``apply_to`` (post-hooks: formatting, sudo cleanup).
+
 .. note::
 
-    The ``format`` and ``detail`` parameters are **not** implemented as
-    virtual params.  They are promoted, first-class concepts handled
-    directly in ``mcp_builder._ToolWrappingTransform._wrap()``.
+    ``format``'s default is the server-wide ``response_format`` config.
+    The VirtualParam registry carries a static default (``"markdown"``);
+    callers pass the live config value via ``default_overrides`` on
+    :func:`inject_into`.  This keeps the registry static and the override
+    explicit — a named parameter, not a hidden post-patch.
 
-    ``format``'s default is injected at construction time via
-    ``response_format``, so the transform never calls ``Config.get()``
-    at wrap time.  ``detail`` is injected per-tool from the shared
-    ``DETAIL_PARAM_SCHEMA`` constant.      Both are popped from ``kwargs``
-    before the HTTP call and forwarded to ``apply_format`` in the output
-    formatting layer.
+### 6. Add a tool-specific parameter
 
-    Because ``format`` and ``detail`` are not virtual params, they don't
-    appear in ``virtual_params.py`` and don't go through the
-    ``extract_from`` / ``apply_to`` lifecycle.  If you need to add
-    another param that affects output formatting only (not the API call),
-    follow the same pattern: inject it in ``_ToolWrappingTransform``,
-    pop it from kwargs alongside ``format`` and ``detail``, and pass it
-    to the formatting functions.      See ``constants.py`` and
-    ``mcp_builder.py`` for the canonical implementation.
+Use :class:`VirtualParam` with a ``tool_predicate`` to gate injection
+to specific tools.  Everything lives in the registry — no special-casing
+in ``_inject_params`` or ``_make_transform_fn``.
 
-### 6. Add a tool-specific parameter (not a virtual param)
-
-For parameters that apply only to specific tools (not every tool like
-``sudo`` or ``fetch_all``), inject directly in ``_ToolWrappingTransform._wrap()``
-alongside ``format``/``detail``.  Use a tool-name check to scope the injection:
+**Step 1 — Define the hook and register the param** in ``virtual_params.py``:
 
 .. code-block:: python
 
-    _FILE_CONTENT_TOOLS = {"repo_create_file", "repo_update_file"}
-    if tool.name in _FILE_CONTENT_TOOLS:
-        props["content_type"] = {
-            "type": "string",
-            "enum": ["base64", "text"],
-            "default": "base64",
-            "description": "...",
-        }
+    def _content_type_pre_hook(value: Any, kwargs: dict[str, Any]) -> None:
+        """Base64-encode ``content`` when content_type='text'."""
+        if value == "text" and "content" in kwargs:
+            raw = kwargs.get("content")
+            if isinstance(raw, str):
+                kwargs["content"] = base64.b64encode(raw.encode()).decode()
 
-Handle the param in ``transform_fn`` — pop it from kwargs alongside
-``format``/``detail``, apply pre-processing (e.g. base64-encoding), and
-discard before the HTTP call.  See the ``content_type`` implementation in
-``mcp_builder.py`` for the canonical pattern.
+    _VIRTUAL_PARAMS["content_type"] = VirtualParam(
+        schema={"type": "string", "enum": ["base64", "text"]},
+        default="base64",
+        description="How the ``content`` parameter is interpreted…",
+        tool_predicate=lambda t: "content" in (t.parameters.get("properties", {})),
+        pre_hook=_content_type_pre_hook,
+    )
+
+**Step 2 — For output-layer params**, use a ``post_hook`` instead.  The hook
+receives ``(result, value, all_extracted)`` — the third arg lets it read
+other virtual params (e.g. ``format`` reads ``detail``):
+
+.. code-block:: python
+
+    def _format_post_hook(result, value, all_extracted):
+        if value == "raw":
+            return result
+        detail = all_extracted.get("detail", "full")
+        raw_schema = all_extracted.get("_raw_schema")
+        data = result.structured_content.get("result") if result.structured_content else None
+        if data is None:
+            return result
+        formatted = apply_format(data, value, detail=detail, schema=raw_schema)
+        formatted.structured_content = result.structured_content
+        formatted.meta = result.meta
+        return formatted
+
+    _VIRTUAL_PARAMS["format"] = VirtualParam(
+        schema={"type": "string", "enum": ["json", "markdown", "raw"]},
+        default="markdown",
+        description="Response format control…",
+        post_hook=_format_post_hook,
+    )
+
+**Step 3 — If a default is dynamic** (e.g. coming from server config),
+pass it via :func:`inject_into`'s ``default_overrides`` parameter:
+
+.. code-block:: python
+
+    # In _ToolWrappingTransform._inject_params()
+    inject_into(
+        tool.parameters,
+        tool=tool,
+        default_overrides={"format": self._response_format},
+    )
+
+**tool_predicate** inspects any :class:`~fastmcp.tools.base.Tool` attribute —
+``parameters``, ``tags``, ``name``, ``meta``.  Common patterns:
+
+.. code-block:: python
+
+    # By parameter presence
+    tool_predicate=lambda t: "content" in (t.parameters.get("properties", {}))
+
+    # By tag
+    tool_predicate=lambda t: "issue" in t.tags
+
+    # By name prefix
+    tool_predicate=lambda t: t.name.startswith("repo_")
+
+No hook signature needed?  ``pre_hook=None``, ``post_hook=None`` — the param
+is still injected, extracted, and available in ``all_extracted`` for other
+hooks to read.
 
 ### 7. Add a response content transform
 

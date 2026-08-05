@@ -7,6 +7,7 @@ previous ``LabelManager`` (caching only) and fragmented helpers in
 """
 
 import logging
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
@@ -250,11 +251,9 @@ class LabelService:
     async def _log_ctx_info(self, msg: str, **extra: Any) -> None:
         """Log a message via MCP context if available, otherwise via stdlib."""
         logger.debug("%s | extra=%s", msg, extra)
-        try:
+        with suppress(RuntimeError):
             async with CurrentContext() as ctx:
                 await safe_ctx_info(ctx, msg, extra=extra)
-        except RuntimeError:
-            pass
 
     async def _get_or_fetch(
         self, owner: str, repo: str, client: GiteaClient

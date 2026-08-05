@@ -9,20 +9,12 @@ or in-memory ``FastMCP`` usage).
 These helpers are the single source of truth for safe context operations —
 no module should implement its own ``RuntimeError`` guard around
 ``ctx.info()`` or ``ctx.report_progress()``.
-
-Consumers:
-    - ``server_setup/mcp_builder.py`` — ``_ToolWrappingTransform``
-    - ``label_service.py`` — ``LabelService._log_ctx_info``
-    - ``tools/type_info.py`` — ``resolve_type`` tool + resource
 """
 
 from __future__ import annotations
 
-import logging
 from contextlib import suppress
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 
 async def safe_ctx_info(ctx: Any | None, message: str, **extra: Any) -> None:
@@ -65,3 +57,9 @@ async def safe_ctx_report_progress(
             await ctx.report_progress(progress=progress, total=total)
         else:
             await ctx.report_progress(progress=progress)
+
+
+__all__ = [
+    "safe_ctx_info",
+    "safe_ctx_report_progress",
+]

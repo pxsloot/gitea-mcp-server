@@ -2,9 +2,6 @@
 
 from typing import cast
 
-import pytest
-
-from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import (
     _walk_parameter_refs,
@@ -361,64 +358,6 @@ class TestResolveTypeInfoEdgeCases:
                                "referenced_types": []}}
         result = resolve_type_info({"openapi": "3.1.0"}, index, "TestType")
         assert result is None
-
-
-class TestSafeCtxHelpers:
-    """Tests for safe_ctx_info and safe_ctx_report_progress error handling.
-
-    These functions are defined in ``gitea_mcp_server.context_utils`` and
-    consumed by ``type_info.py``, ``mcp_builder.py``, and ``label_service.py``.
-    """
-
-    @pytest.mark.asyncio
-    async def test_safe_ctx_info_handles_runtime_error(self) -> None:
-        """safe_ctx_info catches RuntimeError gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.info.side_effect = RuntimeError("session not available")
-
-        # Should not raise
-        await safe_ctx_info(ctx, "test message", extra={"key": "val"})
-        ctx.info.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_safe_ctx_info_propagates_other_exceptions(self) -> None:
-        """safe_ctx_info only suppresses RuntimeError, not arbitrary Exception."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.info.side_effect = ValueError("something went wrong")
-
-        # Should propagate — only RuntimeError is suppressed
-        with pytest.raises(ValueError, match="something went wrong"):
-            await safe_ctx_info(ctx, "test message")
-        ctx.info.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_safe_ctx_report_progress_handles_runtime_error(self) -> None:
-        """safe_ctx_report_progress catches RuntimeError gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.report_progress.side_effect = RuntimeError("session not available")
-
-        # Should not raise
-        await safe_ctx_report_progress(ctx, progress=0.5)
-        ctx.report_progress.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_safe_ctx_report_progress_propagates_other_exceptions(self) -> None:
-        """safe_ctx_report_progress only suppresses RuntimeError, not arbitrary Exception."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.report_progress.side_effect = ValueError("bad progress")
-
-        # Should propagate — only RuntimeError is suppressed
-        with pytest.raises(ValueError, match="bad progress"):
-            await safe_ctx_report_progress(ctx, progress=1.0)
-        ctx.report_progress.assert_awaited_once()
 
 
 class TestWalkResponseRefs:

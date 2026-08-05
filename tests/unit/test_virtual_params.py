@@ -202,7 +202,7 @@ class TestSudoHooks:
 
         sudo_context.set("bob")
         result = ToolResult(content=[TextContent(type="text", text="ok")])
-        returned = _sudo_post_hook(result, "bob")
+        returned = _sudo_post_hook(result, "bob", {})
         assert sudo_context.get() is None
         assert returned is result  # Passthrough
 
@@ -359,7 +359,7 @@ class TestSudoErrorPaths:
 
         sudo_context.set(None)
         result = ToolResult(content=[TextContent(type="text", text="ok")])
-        returned = _sudo_post_hook(result, "alice")
+        returned = _sudo_post_hook(result, "alice", {})
         assert sudo_context.get() is None
         assert returned is result  # passthrough
 
@@ -419,7 +419,7 @@ class TestApplyTo:
     """Tests for apply_to - post-call result transformation."""
 
     def test_runs_post_hook_with_value(self) -> None:
-        """Calls the post_hook with (result, value)."""
+        """Calls the post_hook with (result, value, all_extracted)."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
         transformed = ToolResult(
             content=[TextContent(type="text", text="transformed")]
@@ -437,7 +437,7 @@ class TestApplyTo:
         ):
             output = apply_to(result, extracted)
 
-        hook.assert_called_once_with(result, "markdown")
+        hook.assert_called_once_with(result, "markdown", extracted)
         assert output is transformed
 
     def test_returns_result_when_no_extracted_params(self) -> None:
@@ -484,7 +484,7 @@ class TestGetLoopHooks:
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
                 "sudo": VirtualParam(
-                    schema={}, default=None, description="", post_hook=lambda r, v: r
+                    schema={}, default=None, description="", post_hook=lambda r, v, a: r
                 ),
             },
         ):
@@ -580,7 +580,7 @@ class TestVirtualParamLoopHookField:
 
 
 class TestWrapIntegration:
-    """Tests that _ToolWrappingTransform._wrap() injects/extracts format."""
+    """Tests that _ToolWrappingTransform._wrap() integrates with the VirtualParam lifecycle."""
 
     def _make_tool(self) -> Tool:
         """Minimal Tool with _customization_applied flag."""
@@ -601,7 +601,7 @@ class TestWrapIntegration:
 
     @pytest.mark.asyncio
     async def test_injects_format_into_parameters(self) -> None:
-        """_wrap() adds the format parameter to tool schema (promoted)."""
+        """_wrap() adds the format parameter via the VirtualParam registry (delegates to inject_into)."""
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(

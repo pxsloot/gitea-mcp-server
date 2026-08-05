@@ -71,8 +71,11 @@ class VirtualParam:
             the mutable kwargs dict — hooks may modify kwargs to transform
             arguments before they reach the API.  Useful for storing context
             vars (``sudo``) or encoding arguments (``content_type``).
-        post_hook: Optional ``(ToolResult, value) → ToolResult`` callback
-            invoked after the API call with the extracted value.
+        post_hook: Optional ``(result, value, all_extracted) → ToolResult``
+            callback invoked after the API call.  Receives (1) the current
+            ``ToolResult``, (2) the extracted value, and (3) the full
+            extracted dict — hooks can read other virtual params (e.g.
+            ``format`` reads ``detail`` from the dict).
         loop_hook: Optional ``(result, value, kwargs, execute_fn) → ToolResult``
             callback invoked inside the execution pipeline **after** the
             HTTP call and pagination metadata have been produced, but
@@ -110,7 +113,12 @@ class VirtualParam:
     ``None`` (default) means the param is injected into every tool.
     """
     pre_hook: Callable[[Any, dict[str, Any]], None] | None = None
-    post_hook: Callable[[ToolResult, Any], ToolResult] | None = None
+    post_hook: Callable[[ToolResult, Any, dict[str, Any]], ToolResult] | None = None
+    """Optional ``(result, value, all_extracted) → ToolResult`` callback
+        invoked after the API call with (1) the current ``ToolResult``,
+        (2) the extracted value, and (3) the full extracted dict so hooks
+        can read other virtual params (e.g. ``format`` reads ``detail``).
+    """
     loop_hook: (
         Callable[[ToolResult, Any, dict[str, Any], _ExecuteFn], Awaitable[ToolResult]]
         | None
@@ -142,7 +150,7 @@ def _sudo_pre_hook(value: Any, _kwargs: dict[str, Any]) -> None:
         sudo_context.set(str(value))
 
 
-def _sudo_post_hook(result: ToolResult, _value: Any) -> ToolResult:
+def _sudo_post_hook(result: ToolResult, _value: Any, _all_extracted: dict[str, Any]) -> ToolResult:
     """Clear sudo target from context after the request completes."""
     sudo_context.set(None)
     return result
@@ -265,6 +273,70 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 
 
 # ---------------------------------------------------------------------------
+# format / detail — output rendering control
+# ---------------------------------------------------------------------------
+
+
+def _format_post_hook(
+    result: ToolResult,
+    value: str,
+    all_extracted: dict[str, Any],
+) -> ToolResult:
+    """Apply response formatting (json/markdown/raw) with optional detail.
+
+    ``value`` is the ``format`` value.  ``detail`` is read from
+    ``all_extracted``, not from the registry — it is a separate
+    VirtualParam registered alongside ``format``.
+
+    ``_raw_schema`` is stashed in ``result.meta`` by the transform_fn
+    before ``apply_to`` runs.  The hook pops it — it never reaches
+    the agent.
+    """
+    if value == "raw":
+        return result
+
+    detail: str = all_extracted.get("detail", "full")
+    raw_schema = (result.meta or {}).pop("_raw_schema", None)
+    data = result.structured_content.get("result") if result.structured_content else None
+    if data is None:
+        return result
+
+    from gitea_mcp_server.format import apply_format  # noqa: PLC0415
+
+    formatted = apply_format(data, value, detail=detail, schema=raw_schema)
+    # Preserve original structured_content (carries pagination metadata
+    # and uncollapsed data for programmatic access).
+    formatted.structured_content = result.structured_content
+    formatted.meta = result.meta
+    return formatted
+
+
+# ``detail`` registered first so it's in the extracted dict before
+# ``format``'s post_hook runs.  No hooks — it just needs to be present
+# in ``all_extracted`` for ``_format_post_hook`` to read.
+_VIRTUAL_PARAMS["detail"] = VirtualParam(
+    schema={"type": "string", "enum": ["full", "concise"]},
+    default="full",
+    description=(
+        'Output detail level.  "full" (default) — complete information. '
+        '"concise" — nested objects collapsed to ``$ref:TypeName`` labels.'
+    ),
+)
+
+_VIRTUAL_PARAMS["format"] = VirtualParam(
+    schema={"type": "string", "enum": ["json", "markdown", "raw"]},
+    default="markdown",
+    description=(
+        "Response format control.  "
+        '"json" — raw JSON.  '
+        '"markdown" — formatted tables for human/agent reading.  '
+        '"raw" — unprocessed API response.'
+    ),
+    post_hook=_format_post_hook,
+)
+
+
+# ---------------------------------------------------------------------------
 # Scope-based visibility control
 # ---------------------------------------------------------------------------
 
@@ -381,7 +453,7 @@ def apply_to(
     for name, value in extracted.items():
         hook = _VIRTUAL_PARAMS[name].post_hook
         if hook is not None:
-            result = hook(result, value)
+            result = hook(result, value, extracted)
     return result
 
 
@@ -414,6 +486,7 @@ __all__ = [
     "VirtualParam",
     "_content_type_pre_hook",
     "_fetch_all_loop",
+    "_format_post_hook",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",

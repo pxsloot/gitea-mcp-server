@@ -21,8 +21,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
-from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
-from gitea_mcp_server.format import apply_format, decode_base64_content
+from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
@@ -391,64 +390,46 @@ class _ToolWrappingTransform(Transform):
         return await self._wrap(tool)
 
     def _inject_params(self, tool: Tool) -> None:
-        """Inject format, detail, and virtual params into the tool schema.
+        """Inject virtual params into the tool schema.
 
         Called once per tool at startup (via :meth:`_wrap`).  Mutates
         ``tool.parameters`` in place.
+
+        ``format`` default is overridden with the server-wide
+        ``response_format`` config after injection — the VirtualParam
+        carries a static default; this patches in the live value.
         """
-        # Virtual params (sudo, fetch_all, page, limit, content_type, etc.).
-        # The ``tool`` argument enables per-tool gating via VirtualParam.tool_predicate.
         inject_into(tool.parameters, tool=tool)
 
-        fmt_default = self._response_format
-        props = tool.parameters.setdefault("properties", {})
-        if "format" not in props:
-            props["format"] = {
-                "type": "string",
-                "enum": ["json", "markdown", "raw"],
-                "default": fmt_default,
-                "description": (
-                    "Response format control.  "
-                    f'"json" - raw JSON (default: {fmt_default}).  '
-                    '"markdown" - formatted tables for human/agent reading.  '
-                    '"raw" - unprocessed API response.'
-                ),
-            }
+        # Override format default with server-wide config.
+        props = tool.parameters.get("properties", {})
+        if "format" in props:
+            props["format"]["default"] = self._response_format
 
-        if "detail" not in props:
-            props["detail"] = dict(DETAIL_PARAM_SCHEMA)
-
-    def _make_transform_fn(self, tool: Tool, fmt_default: str) -> Any:
+    def _make_transform_fn(self, tool: Tool) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
 
         The returned callable receives ``**kwargs`` (the agent's arguments)
         and performs the full runtime pipeline: extract virtual params,
-        pop format/detail/content_type, resolve the MCP context, validate,
-        execute via the HTTP layer, apply post-hooks, and format the output.
+        run pre-hooks, resolve context, validate, execute via the HTTP
+        layer, then hand off to :func:`apply_to` for post-hooks (formatting,
+        sudo cleanup).
 
-        ``tool`` and ``fmt_default`` are passed explicitly rather than
-        captured from an enclosing scope — this keeps the closure's
-        dependencies visible at the method signature.
+        All parameter handling — injection, extraction, pre-hook mutation,
+        and post-hook formatting — is driven by the :mod:`virtual_params`
+        registry.  The transform_fn is pure orchestration.
         """
         async def transform_fn(**kwargs: Any) -> ToolResult:
-            # Pop virtual params before the HTTP execution path - they are
-            # not real API parameters and must not reach the Gitea API.
+            # Pop all virtual params (format, detail, sudo, fetch_all,
+            # content_type, etc.) — unified extraction, no special cases.
             virtual_values = extract_from(kwargs)
 
-            # Run pre-hooks for extracted virtual params.  Hooks may mutate
-            # kwargs (e.g. ``content_type`` base64-encodes ``content``).
+            # Run pre-hooks.  Hooks may mutate kwargs (e.g. content_type
+            # base64-encodes ``content``).
             apply_pre_hooks(virtual_values, kwargs)
 
-            # Pop ``format`` and ``detail`` explicitly (promoted params
-            # that reach the output layer, not the HTTP execution path).
-            fmt = kwargs.pop("format", fmt_default)
-            detail = kwargs.pop("detail", "full")
-
             # Resolve the current MCP Context so progress reporting and
-            # structured logging work inside the pipeline.  Outside an
-            # active session (e.g. in-memory ``mcp.call_tool()``), the
-            # context resolves to ``None`` and the pipeline degrades
-            # gracefully — progress is best-effort.
+            # structured logging work inside the pipeline.
             ctx = await self._resolve_current_context()
             result = await self._run_transform_pipeline(
                 kwargs,
@@ -456,25 +437,17 @@ class _ToolWrappingTransform(Transform):
                 extracted=virtual_values,
                 ctx=ctx,
             )
-            result = apply_to(result, virtual_values)
 
-            # For raw format, return the API response as-is.
-            if fmt == "raw":
-                return result
+            # Stash raw_schema in result.meta so _format_post_hook can
+            # access it for schema-aware rendering.  The hook pops the key
+            # — it never reaches the agent.
+            result.meta = {
+                **(result.meta or {}),
+                "_raw_schema": (tool.meta or {}).get("output_schema_raw"),
+            }
 
-            # Format: detail shrinks the data, format renders it.
-            # Pagination metadata is orthogonal — attached after rendering.
-            raw_schema = (tool.meta or {}).get("output_schema_raw")
-            data = result.structured_content.get("result") if result.structured_content else None
-            if data is None:
-                return result
-
-            formatted = apply_format(data, fmt, detail=detail, schema=raw_schema)
-            # Preserve original structured_content (carries pagination
-            # metadata and uncollapsed data for programmatic access).
-            formatted.structured_content = result.structured_content
-            formatted.meta = result.meta
-            return formatted
+            # Run post-hooks: sudo clears context, format renders output.
+            return apply_to(result, virtual_values)
 
         return transform_fn
 
@@ -483,9 +456,8 @@ class _ToolWrappingTransform(Transform):
 
         Three phases:
         1. **Guard** — skip uncustomized tools (no metadata).
-        2. **Inject** — add format, detail, virtual params, and content_type
-           to the tool schema.  Runs once at startup via
-           :meth:`list_tools` / :meth:`get_tool`.
+        2. **Inject** — add virtual params to the tool schema.
+           Runs once at startup via :meth:`list_tools` / :meth:`get_tool`.
         3. **Wrap** — attach the runtime :func:`transform_fn` via
            :meth:`Tool.from_tool`.  The transform_fn runs on every tool call.
         """
@@ -506,7 +478,7 @@ class _ToolWrappingTransform(Transform):
         self._inject_params(tool)
 
         # Phase 2: Build runtime behaviour (per-call).
-        transform_fn = self._make_transform_fn(tool, self._response_format)
+        transform_fn = self._make_transform_fn(tool)
 
         # Phase 3: Attach via Tool.from_tool (FastMCP Transform contract).
         return Tool.from_tool(

@@ -23,6 +23,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA_CONCISE
+from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.schemas import (
@@ -32,27 +33,6 @@ from gitea_mcp_server.tools.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-async def _try_ctx_info(ctx: Context, message: str, **kwargs: Any) -> None:
-    """Call ``ctx.info()`` if the MCP session is available.
-
-    When called outside an active MCP request context (e.g. in unit tests
-    via ``mcp.call_tool()``), ``ctx.session`` raises ``RuntimeError``.
-    This helper silently degrades so observability is best-effort.
-    """
-    try:
-        await ctx.info(message, **kwargs)
-    except (RuntimeError, Exception):  # noqa: BLE001
-        logger.debug("ctx.info() skipped (session not available)")
-
-
-async def _try_ctx_report_progress(ctx: Context, progress: float) -> None:
-    """Call ``ctx.report_progress()`` if the MCP session is available."""
-    try:
-        await ctx.report_progress(progress=progress)
-    except (RuntimeError, Exception):  # noqa: BLE001
-        logger.debug("ctx.report_progress() skipped (session not available)")
 
 
 # ============================================================================
@@ -334,10 +314,10 @@ def register_type_tools(
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
-            await _try_ctx_info(ctx, "Type index empty — spec not available at registration")
+            await safe_ctx_info(ctx, "Type index empty — spec not available at registration")
             _raise_value_error(msg)
 
-        await _try_ctx_info(
+        await safe_ctx_info(
             ctx,
             f"Resolving type '{name}' (detail={detail})",
             extra={"type_name": name, "detail": detail},
@@ -357,14 +337,14 @@ def register_type_tools(
                 "Use search_resources('type') or "
                 "call resolve_type with one of the tool's $ref:TypeName markers."
             )
-            await _try_ctx_info(
+            await safe_ctx_info(
                 ctx,
                 f"Type '{name}' not found",
                 extra={"type_name": name, "found": False},
             )
             _raise_value_error(msg)
 
-        await _try_ctx_report_progress(ctx, progress=1.0)
+        await safe_ctx_report_progress(ctx, progress=1.0)
         logger.debug(
             "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
         )
@@ -464,7 +444,7 @@ def register_type_tools(
         Returns:
             JSON string with type info (schema, cross-references).
         """
-        await _try_ctx_info(
+        await safe_ctx_info(
             ctx,
             f"Reading type resource '{typeName}'",
             extra={"type_name": typeName},

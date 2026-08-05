@@ -301,6 +301,7 @@ The customization layers as applied during server startup:
 
 | Module | Role |
 |--------|------|
+| `context_utils.py` | Safe MCP context helpers (`safe_ctx_info`, `safe_ctx_report_progress`) — wraps ``ctx.info()`` and ``ctx.report_progress()`` with ``RuntimeError`` suppression for when no active MCP session is available. Consumed by ``server_setup/mcp_builder.py``, ``label_service.py``, and ``tools/type_info.py`` |
 | `models.py` | TypedDict models for structured output types (`ToolSearchEntry`, `ResourceEntry`, `ResourceListing`, `DocEntry`, `UnifiedSearchItem`, `ToolSchemaResult`, `SimpleStringResult`) — zero runtime overhead, pure annotation types |
 | `schema_utils.py` | Shared JSON Schema type utilities (`schema_type_matches`, `get_schema_type`); flat module breaks circular import between `openapi_converter/` and `tools/` by providing type-matching that both layers can import without cycles — same pattern as `scope.py` |
 | `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/`; see `docs/SCOPE_MODEL.md` |
@@ -469,10 +470,11 @@ The customization layers as applied during server startup:
       ``_run_transform_pipeline(kwargs, tool, extracted=..., ctx=ctx)`` and
       threaded through to ``_pipeline_with_context()``.  Context operations
       (``ctx.info()``, ``ctx.report_progress()``) are wrapped in
-      ``_safe_ctx_info()`` and ``_safe_ctx_report_progress()`` helpers that
-      silently degrade when ``ctx.session`` is unavailable (e.g. in-memory
-      ``mcp.call_tool()`` tests).  This lets tests inject a mock context to
-      verify progress reporting without a real MCP session.
+      ``safe_ctx_info()`` and ``safe_ctx_report_progress()`` helpers from
+      ``context_utils.py`` that silently degrade when ``ctx.session`` is
+      unavailable (e.g. in-memory ``mcp.call_tool()`` tests).  This lets
+      tests inject a mock context to verify progress reporting without a
+      real MCP session.
 
     - **Agent observability**: ``ctx.info()`` calls log validation results, label
       processing, and execution completion with structured ``extra`` dicts.

@@ -2,12 +2,8 @@
 
 from typing import cast
 
-import pytest
-
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import (
-    _try_ctx_info,
-    _try_ctx_report_progress,
     _walk_parameter_refs,
     _walk_request_body_refs,
     _walk_response_refs,
@@ -362,58 +358,6 @@ class TestResolveTypeInfoEdgeCases:
                                "referenced_types": []}}
         result = resolve_type_info({"openapi": "3.1.0"}, index, "TestType")
         assert result is None
-
-
-class TestTryCtxHelpers:
-    """Tests for _try_ctx_info and _try_ctx_report_progress error handling."""
-
-    @pytest.mark.asyncio
-    async def test_try_ctx_info_handles_runtime_error(self) -> None:
-        """_try_ctx_info catches RuntimeError gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.info.side_effect = RuntimeError("session not available")
-
-        # Should not raise
-        await _try_ctx_info(ctx, "test message", extra={"key": "val"})
-        ctx.info.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_try_ctx_info_handles_generic_exception(self) -> None:
-        """_try_ctx_info catches any Exception gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.info.side_effect = ValueError("something went wrong")
-
-        # Should not raise
-        await _try_ctx_info(ctx, "test message")
-        ctx.info.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_try_ctx_report_progress_handles_runtime_error(self) -> None:
-        """_try_ctx_report_progress catches RuntimeError gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.report_progress.side_effect = RuntimeError("session not available")
-
-        # Should not raise
-        await _try_ctx_report_progress(ctx, progress=0.5)
-        ctx.report_progress.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_try_ctx_report_progress_handles_generic_exception(self) -> None:
-        """_try_ctx_report_progress catches any Exception gracefully."""
-        from unittest.mock import AsyncMock
-
-        ctx = AsyncMock()
-        ctx.report_progress.side_effect = ValueError("bad progress")
-
-        # Should not raise
-        await _try_ctx_report_progress(ctx, progress=1.0)
-        ctx.report_progress.assert_awaited_once()
 
 
 class TestWalkResponseRefs:

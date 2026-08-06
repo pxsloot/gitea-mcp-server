@@ -14,6 +14,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
 )
 from gitea_mcp_server.tools.customize import (
+    _detect_has_labels,
     _is_array_response,
     _snake_to_title,
 )
@@ -411,6 +412,74 @@ class TestIsArrayResponse:
     def test_properties_not_a_dict(self) -> None:
         schema = {"type": "object", "properties": "not_a_dict"}
         assert _is_array_response(schema) is False
+
+
+class TestDetectHasLabels:
+    """Tests for _detect_has_labels function."""
+
+    @staticmethod
+    def _make_component(
+        labels_schema: dict | None = None,
+        *,
+        has_parameters: bool = True,
+        params_are_none: bool = False,
+    ) -> MagicMock:
+        """Build a mock component with optional labels parameter."""
+        component = MagicMock()
+        if not has_parameters:
+            # Removing the attribute entirely (getattr falls back)
+            del component.parameters
+        elif params_are_none:
+            component.parameters = None
+        else:
+            props = {}
+            if labels_schema is not None:
+                props["labels"] = labels_schema
+            component.parameters = {"properties": props}
+        return component
+
+    def test_detects_array_labels(self) -> None:
+        """Returns True when labels parameter is array-typed."""
+        component = self._make_component(
+            labels_schema={"type": "array", "items": {"type": "integer"}},
+        )
+        assert _detect_has_labels(component) is True
+
+    def test_detects_nullable_array_labels(self) -> None:
+        """Returns True when labels parameter has nullable array type."""
+        component = self._make_component(
+            labels_schema={"type": ["array", "null"], "items": {"type": "integer"}},
+        )
+        assert _detect_has_labels(component) is True
+
+    def test_rejects_string_labels(self) -> None:
+        """Returns False when labels parameter is not array-typed."""
+        component = self._make_component(
+            labels_schema={"type": "string"},
+        )
+        assert _detect_has_labels(component) is False
+
+    def test_returns_false_when_no_labels_parameter(self) -> None:
+        """Returns False when component has no labels parameter."""
+        component = self._make_component()
+        assert _detect_has_labels(component) is False
+
+    def test_returns_false_when_no_parameters_attribute(self) -> None:
+        """Returns False when component has no parameters attribute at all."""
+        component = self._make_component(has_parameters=False)
+        assert _detect_has_labels(component) is False
+
+    def test_returns_false_when_parameters_is_none(self) -> None:
+        """Returns False when component.parameters is None."""
+        component = self._make_component(params_are_none=True)
+        assert _detect_has_labels(component) is False
+
+    def test_labels_in_other_props_not_an_array(self) -> None:
+        """Returns False when labels key exists but is not an array."""
+        component = self._make_component(
+            labels_schema={"type": "object", "properties": {}},
+        )
+        assert _detect_has_labels(component) is False
 
 
 class TestPaginationMetadata:

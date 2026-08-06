@@ -400,7 +400,7 @@ class RepoState:
         mcp = await self._server()
         list_result = await mcp.call_tool(
             "gitea_issue_list_issues",
-            {"owner": self.owner, "repo": self.name, "format": "json"},
+            {"owner": self.owner, "repo": self.name, "state": "all", "format": "json"},
         )
         if _is_error(list_result):
             return None

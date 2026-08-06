@@ -134,10 +134,17 @@ The customization pipeline has two phases:
      scope, cache invalidation
    - ``_prepare_description()`` (in `tools/customize.py`) — label guidance
      injection
-   - ``_compute_tool_schema()`` + ``_apply_schema_postprocessing()`` —
-     schema derivation, response classification (text/binary/ContentsResponse),
-     fallback schemas, validation augmentation, label schema updates,
-     ``x-fastmcp-wrap-result``, and pagination metadata injection
+   - ``_compute_tool_schema()`` — pure: bundles six spec queries
+     (schema derivation, text/binary/ContentsResponse classification,
+     route identity) into a single ``_ComputedSchema`` NamedTuple.
+     Followed by three focused mutation phases:
+     * ``_apply_schema_postprocessing()`` — schema assignment,
+       validation augmentation, label schema updates; orchestrates
+       the two helpers below.
+     * ``_apply_fallback_schemas()`` — text/plain and no-content
+       conditional schemas when ``output_schema`` is ``None``.
+     * ``_inject_response_metadata()`` — ``x-fastmcp-wrap-result``
+       and pagination metadata injection.
    - ``_build_customization_meta()`` — the ``component.meta`` contract
      (``required_scope``, ``output_schema_raw``, ``ToolCustomization``) consumed
      by runtime transforms

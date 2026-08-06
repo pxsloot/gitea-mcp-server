@@ -6,10 +6,14 @@ including OpenAPI provider creation with customized component handling.
 Startup-time customization is orchestrated by :func:`_customize_metadata`
 (via FastMCP's public ``mcp_component_fn`` hook) and delegated to four focused
 phases:
-- :func:`_apply_tool_identity` — title, annotations, category, scope, invalidation
+- :func:`_apply_tool_identity` — title, annotations, hints, category,
+  scope, cache invalidation
 - :func:`_prepare_description` — label guidance injection
-- :func:`_compute_tool_schema` / :func:`_apply_schema_postprocessing` —
-  schema derivation, response classification, mutations
+- :func:`_compute_tool_schema` (pure) — schema derivation, response
+  classification, route identity; followed by
+  :func:`_apply_schema_postprocessing`,
+  :func:`_apply_fallback_schemas`, and
+  :func:`_inject_response_metadata` — schema mutations
 - :func:`_build_customization_meta` — the ``component.meta`` contract
 
 Runtime wrapping (validation, labels, error handling, text/binary response
@@ -164,16 +168,21 @@ def _detect_contents_response(
 
 
 class _ComputedSchema(NamedTuple):
-    """Schema and response classification computed from the OpenAPI spec.
+    """Schema, response classification, and route identity from the spec.
 
-    Pure computation — no side effects.  Bundles all spec queries that
-    share the same route path/method into a single call.
+    Pure computation — no side effects.  Bundles all spec queries and
+    route identity that share the same path/method into a single call.
+    Consumers use typed attribute access instead of reaching into
+    ``tool.meta`` or re-extracting from ``route``.
     """
 
     output_schema: dict[str, Any] | None
     raw_schema: dict[str, Any] | None
     is_text_response: bool
+    is_binary_response: bool
     response_transform: str | None
+    route_path: str
+    route_method: str
 
 
 def _compute_tool_schema(
@@ -182,10 +191,14 @@ def _compute_tool_schema(
 ) -> _ComputedSchema:
     """Compute output schema, raw schema, and response classification.
 
-    Five spec queries that share the same route path/method are bundled
+    Six spec queries that share the same route path/method are bundled
     into a single pure function.  ContentsResponse detection (the
     authoritative ``encoding`` + ``content`` fallback for Forgejo compat)
     is applied here because it depends on the derived ``output_schema``.
+
+    Also extracts ``route_path`` and ``route_method`` so downstream
+    consumers (``_build_customization_meta``, ``_apply_schema_postprocessing``)
+    do not need to reach into ``route`` directly.
     """
     path = getattr(route, "path", "")
     method = getattr(route, "method", "")
@@ -205,56 +218,52 @@ def _compute_tool_schema(
         output_schema, is_text_response, response_transform,
     )
 
+    is_binary_response = _response_is_binary(openapi_spec, path, method)
+
     return _ComputedSchema(
-        output_schema, raw_schema, is_text_response, response_transform,
+        output_schema, raw_schema, is_text_response, is_binary_response,
+        response_transform, path, method,
     )
 
 
-def _apply_schema_postprocessing(
+def _apply_fallback_schemas(
     component: OpenAPITool,
     schema: _ComputedSchema,
     *,
-    has_labels: bool,
-    route: Any,
     openapi_spec: OpenAPISpec,
 ) -> bool:
-    """Apply schema mutations to the component and return has_no_content.
+    """Apply fallback schemas for text/plain and no-content endpoints.
 
-    Handles: initial assignment, validation augmentation, label schema
-    updates, text/plain fallback, no-content null schema,
-    x-fastmcp-wrap-result, and pagination metadata injection.
+    Two conditional cases, both triggered when ``output_schema`` is ``None``:
+
+    1. **Text/plain** — sets a lightweight ``{"result": string}`` schema
+       so agents get schema guidance matching the runtime shape.
+    2. **No-content** (204/205) — sets a ``{"result": null}`` schema so
+       the MCP transport layer has proper guidance.
+
+    Returns:
+        ``has_no_content`` — ``True`` if a no-content fallback was applied.
     """
     output_schema = schema.output_schema
-    component.output_schema = output_schema
+    if output_schema is not None:
+        return False
 
-    augment_schema_with_validation(component)
-    if has_labels:
-        update_labels_schema(component)
-        component.tags = set(component.tags) | {"labels"}
-
-    # Lightweight fallback schema for text/plain endpoints so agents
-    # get schema guidance matching the {"result": text} runtime shape.
-    if output_schema is None and schema.is_text_response:
-        output_schema = {
+    if schema.is_text_response:
+        component.output_schema = {
             "type": "object",
             "properties": {"result": {"type": "string"}},
         }
-        component.output_schema = output_schema
+        return False
 
-    # Detect endpoints whose success response has no body content
-    # (e.g. 204 No Content).  Set a minimal schema so the MCP transport
-    # layer has proper guidance, and store the flag for runtime wrapping.
     has_no_content = (
         _response_has_no_content(
-            openapi_spec,
-            getattr(route, "path", ""),
-            getattr(route, "method", ""),
+            openapi_spec, schema.route_path, schema.route_method,
         )
-        if output_schema is None and not schema.is_text_response
+        if not schema.is_text_response
         else False
     )
     if has_no_content:
-        output_schema = {
+        component.output_schema = {
             "type": "object",
             "properties": {
                 "result": {
@@ -263,8 +272,24 @@ def _apply_schema_postprocessing(
                 },
             },
         }
-        component.output_schema = output_schema
 
+    return has_no_content
+
+
+def _inject_response_metadata(
+    component: OpenAPITool,
+    output_schema: dict[str, Any] | None,
+) -> None:
+    """Inject response-level metadata into the output schema.
+
+    Two independent injections:
+
+    1. ``x-fastmcp-wrap-result`` — set on every non-``None`` schema so
+       FastMCP wraps the response in ``{"result": ...}``.
+    2. **Pagination metadata** (``has_more``, ``next_offset``,
+       ``total_count``) — injected into array-response schemas so
+       agents can discover pagination fields from the schema.
+    """
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
 
@@ -282,6 +307,38 @@ def _apply_schema_postprocessing(
             "type": "integer",
             "description": "Total item count from server, if available",
         }
+
+
+def _apply_schema_postprocessing(
+    component: OpenAPITool,
+    schema: _ComputedSchema,
+    *,
+    has_labels: bool,
+    openapi_spec: OpenAPISpec,
+) -> bool:
+    """Orchestrate schema mutations on the component.
+
+    Three phases:
+    1. **Always** — schema assignment, validation augmentation, label
+       schema updates (if applicable).
+    2. **Fallbacks** — text/plain and no-content conditional schemas
+       via :func:`_apply_fallback_schemas`.
+    3. **Metadata** — ``x-fastmcp-wrap-result`` and pagination
+       metadata via :func:`_inject_response_metadata`.
+
+    Returns:
+        ``has_no_content`` — forwarded from :func:`_apply_fallback_schemas`.
+    """
+    output_schema = schema.output_schema
+    component.output_schema = output_schema
+
+    augment_schema_with_validation(component)
+    if has_labels:
+        update_labels_schema(component)
+        component.tags = set(component.tags) | {"labels"}
+
+    has_no_content = _apply_fallback_schemas(component, schema, openapi_spec=openapi_spec)
+    _inject_response_metadata(component, output_schema)
 
     return has_no_content
 
@@ -318,20 +375,21 @@ def _apply_tool_identity(
     )
 
 
-def _build_customization_meta(  # noqa: PLR0913
+def _build_customization_meta(
     component: OpenAPITool,
     required_scope: str | None,
     schema: _ComputedSchema,
     *,
     has_labels: bool,
     has_no_content: bool,
-    route: Any,
-    openapi_spec: OpenAPISpec,
 ) -> None:
     """Build and attach the ``component.meta`` dict consumed by runtime transforms.
 
     Mutates ``component.meta`` in-place.  Sets ``required_scope``,
     ``output_schema_raw``, ``_customization``, and ``_META_CUSTOMIZED``.
+
+    All per-tool metadata comes from ``schema`` (:class:`_ComputedSchema`)
+    — no direct ``route`` or ``openapi_spec`` access needed.
     """
     component_meta = dict(component.meta) if component.meta else {}
     component_meta["required_scope"] = required_scope
@@ -343,11 +401,9 @@ def _build_customization_meta(  # noqa: PLR0913
         has_labels=has_labels,
         is_text_response=schema.is_text_response,
         is_empty_response=has_no_content,
-        is_binary_response=_response_is_binary(
-            openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
-        ),
-        route_path=getattr(route, "path", ""),
-        route_method=getattr(route, "method", ""),
+        is_binary_response=schema.is_binary_response,
+        route_path=schema.route_path,
+        route_method=schema.route_method,
         response_transform=schema.response_transform,
     )
     component_meta[_META_CUSTOMIZED] = True
@@ -383,7 +439,6 @@ def _customize_metadata(
     has_no_content = _apply_schema_postprocessing(
         component, schema,
         has_labels=has_labels,
-        route=route,
         openapi_spec=openapi_spec,
     )
 
@@ -391,8 +446,6 @@ def _customize_metadata(
         component, required_scope, schema,
         has_labels=has_labels,
         has_no_content=has_no_content,
-        route=route,
-        openapi_spec=openapi_spec,
     )
 
 

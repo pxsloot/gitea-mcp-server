@@ -9,6 +9,18 @@ covers: Test layout, zones, fixtures, mocking rules, coverage targets
 This document defines the testing standards and best practices for the Gitea MCP Server project.
 It is a living document — update it when patterns or conventions change.
 
+## What this doc is NOT
+
+This doc covers testing patterns and standards. If you need:
+
+| Topic | See |
+|-------|-----|
+| Developer checklists, project conventions, how-to workflows | `docs/SKILL.md` |
+| Design decisions, the pipeline, the module map | `docs/ARCHITECTURE.md` |
+| Environment setup, adding customizations, adding resources | `docs/DEVELOPMENT.md` |
+| How token scopes gate tool visibility (and testing scope behavior) | `docs/SCOPE_MODEL.md` |
+| Documentation set structural rules (de-duplication, audience split, Diátaxis) | `docs/DOCUMENTATION_STANDARDS.md` |
+
 ## Test Structure and Organization
 
 ### Directory Layout

@@ -6,6 +6,18 @@ covers: Env setup, running, adding customizations/resources, MCP extensions, exc
 
 # Development Guide
 
+## What this doc is NOT
+
+This doc covers development tasks: env setup, adding features, customization.
+If you need:
+
+| Topic | See |
+|-------|-----|
+| Design rationale, the pipeline diagram, data flow, key design decisions | `docs/ARCHITECTURE.md` |
+| Testing patterns, fixture conventions, mocking rules, coverage policy | `docs/TESTING_STANDARDS.md` |
+| How token scopes gate tool visibility and how `sudo` appears | `docs/SCOPE_MODEL.md` |
+| Project conventions, developer checklists, common tasks | `docs/SKILL.md` |
+
 ## Environment Setup
 
 ```bash

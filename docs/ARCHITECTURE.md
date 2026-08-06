@@ -23,6 +23,18 @@ removed when FastMCP catches up.
 > investigation (test failures, runtime behavior), not static code structure
 > discovery.
 
+## What this doc is NOT
+
+This doc explains the server's architecture and design decisions. If you need:
+
+| Topic | See |
+|-------|-----|
+| Environment setup, adding features, MCP extensions, exclusion config | `docs/DEVELOPMENT.md` |
+| Testing conventions, zones, fixtures, mocking patterns | `docs/TESTING_STANDARDS.md` |
+| How token scopes gate tool/resource visibility and the scope derivation mechanism | `docs/SCOPE_MODEL.md` |
+| Full semantics of annotation fields (title, tags, hints) | `docs/TOOL_ANNOTATIONS.md` |
+| Documentation set structural rules | `docs/DOCUMENTATION_STANDARDS.md` |
+
 ---
 
 ## Pipeline: Swagger 2.0 → FastMCP Server

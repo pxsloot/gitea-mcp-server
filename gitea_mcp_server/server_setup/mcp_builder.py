@@ -274,11 +274,17 @@ def _apply_fallback_schemas(
 
 def _inject_response_metadata(
     component: OpenAPITool,
-    output_schema: dict[str, Any] | None,
 ) -> None:
-    """Inject response-level metadata into the output schema.
+    """Inject response-level metadata into ``component.output_schema``.
 
-    Two independent injections:
+    Args:
+        component: The ``OpenAPITool`` whose ``output_schema`` receives
+            both injections.  Reading from a single source ensures the
+            two injections cannot diverge after :func:`_apply_fallback_schemas`
+            mutates ``component.output_schema``.
+
+    Two independent injections, both derived from
+    ``component.output_schema``:
 
     1. ``x-fastmcp-wrap-result`` — set on every non-``None`` schema so
        FastMCP wraps the response in ``{"result": ...}``.
@@ -289,8 +295,8 @@ def _inject_response_metadata(
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
 
-    if output_schema is not None and _is_array_response(output_schema):
-        props = output_schema.setdefault("properties", {})
+    if component.output_schema is not None and _is_array_response(component.output_schema):
+        props = component.output_schema.setdefault("properties", {})
         props["has_more"] = {
             "type": "boolean",
             "description": "Whether more pages exist",
@@ -325,8 +331,7 @@ def _apply_schema_postprocessing(
     Returns:
         ``has_no_content`` — forwarded from :func:`_apply_fallback_schemas`.
     """
-    output_schema = schema.output_schema
-    component.output_schema = output_schema
+    component.output_schema = schema.output_schema
 
     augment_schema_with_validation(component)
     if has_labels:
@@ -334,7 +339,7 @@ def _apply_schema_postprocessing(
         component.tags = set(component.tags) | {"labels"}
 
     has_no_content = _apply_fallback_schemas(component, schema, openapi_spec=openapi_spec)
-    _inject_response_metadata(component, output_schema)
+    _inject_response_metadata(component)
 
     return has_no_content
 

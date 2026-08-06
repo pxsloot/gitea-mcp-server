@@ -1,4 +1,10 @@
-"""Tool output schema derivation and $ref resolution."""
+"""Tool output schema derivation, ``$ref`` resolution, and response classification.
+
+Provides ``derive_output_schema()`` to resolve the response schema for each
+tool from the OpenAPI spec, ``_is_text_response()`` / ``_is_binary_response()``
+for content-type classification, and shared helpers for ``$ref`` collection,
+empty-body detection, and result unwrapping used across the pipeline.
+"""
 
 from typing import Any, cast
 

@@ -1,4 +1,10 @@
-"""Gitea MCP Server implementation."""
+"""Gitea MCP Server — assembly and entry point.
+
+Assembles the FastMCP server from config, OpenAPI spec, and tool/resource
+registrations.  Provides the ``main()`` entry point (stdio or HTTP) and
+``create_mcp_server()`` factory used by tests.  Lifespan management,
+middleware wiring, and signal handling live here.
+"""
 
 from __future__ import annotations
 

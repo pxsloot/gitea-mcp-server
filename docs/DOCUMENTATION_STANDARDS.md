@@ -134,6 +134,22 @@ concerns, not all docs.
 When to add: every doc over ~200 lines.  When to skip: small focused references
 (<200 lines) that are self-evident from their title and frontmatter.
 
+### Module docstrings as canonical source
+
+Every production module carries a module-level docstring that is the canonical
+source for:
+- **Role**: what the module does in one paragraph
+- **Public API**: classes and functions a consumer should import
+- **Design invariants**: key structural constraints (e.g. circular-import
+  breaker pattern, spec-level filtering guarantees)
+
+ARCHITECTURE.md carries the pipeline diagram, design decisions, and
+cross-cutting topics.  Its module map is a compact orientation table — one
+line per module; for details, read the module docstring.  This means the
+docstring and the ARCHITECTURE module map must not drift: if a module's role
+changes, update the docstring first (it is the canonical source), then check
+the ARCHITECTURE one-liner still matches.
+
 ## Relationship to other docs
 
 - `docs/SKILL.md` -- the philosophical foundation: why documentation is

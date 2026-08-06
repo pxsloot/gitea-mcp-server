@@ -1,4 +1,10 @@
-"""Custom exceptions for Gitea MCP Server."""
+"""Exception hierarchy for Gitea MCP Server.
+
+All exceptions inherit from ``GiteaMCPError``.  Five subclasses cover:
+configuration errors (``ConfigError``), Gitea API errors
+(``GiteaAPIError``), validation errors (``ValidationError``), resource
+errors (``ResourceError``), and spec errors (``SpecError``).
+"""
 
 
 class GiteaMCPError(Exception):

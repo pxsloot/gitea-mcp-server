@@ -236,43 +236,47 @@ Agent reads a resource:
 
 ## Module Map
 
+> Each module's docstring is the canonical source for its role, public API,
+> and design invariants.  The tables below give a one-line orientation;
+> for details, read the module docstring.
+
 ### Core Pipeline
 
-| Module | Role | Public API |
-|--------|------|------------|
-| `config.py` | Pydantic settings from env vars (GITEA_URL, GITEA_TOKEN, etc.) + ConfigProtocol for structural typing | `Config`, `ConfigProtocol` |
-| `client.py` | httpx client with retry, rate-limit handling, SSL | `GiteaClient` |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 (split into `core.py` for conversion pipeline, `schema.py` for schema walker/transformers) | `convert_swagger_to_openapi_v3` |
-| `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine (`OpenAPISpec`, `SwaggerV2Spec`, `OpenAPIOperation`, etc.) | 7 TypedDict types |
-| `spec_loader.py` | Fetch spec, convert, apply parameter extensions; load YAML overrides for transform | `load_and_convert_spec` |
-| `mcp_builder.py` | Create `OpenAPIProvider` from spec + client; apply route filtering (deprecated + scope + config-excluded) via `route_map_fn`; customize per-tool metadata via `mcp_component_fn` | `create_openapi_provider` |
-| `server.py` | Assemble everything, serve via stdio or HTTP | `main()`, `create_mcp_server()` |
-| `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes | (constants) |
-| `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup | `setup_logging` |
-| `exceptions.py` | Exception hierarchy (`GiteaMCPError` → 5 subclasses) | `GiteaAPIError`, `ValidationError`, etc. |
-| `format.py` | General-purpose schema-aware formatting, data shaping, and display utilities (shared by tools & resources); home for shared utilities like `_build_server_info_markdown` that don't belong to either domain | `apply_format`, `_build_server_info_markdown`, `_collapse_data`, `_format_as_markdown`, `_format_paginated_result` |
-| `tools/unified_search.py` | Unified search across tools, workflow docs, and MCP resources (merged name-match + BM25 + `type` discriminator) | `register_unified_search` |
+| Module | One-line role |
+|--------|---------------|
+| `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
+| `client.py` | httpx client with retry, rate-limit handling, SSL |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion |
+| `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
+| `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
+| `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
+| `server.py` | Assembly, main(), create_mcp_server(), lifespan, middleware wiring |
+| `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes |
+| `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
+| `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
+| `format.py` | Schema-aware formatting shared by tools & resources |
+| `tools/unified_search.py` | Unified search across tools, docs, and resources |
 
 ### Tool Customization Stack (applied in order)
 
 All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 
-| Module | What it contains |
-|--------|------------------|
-| `tools/customize.py` | title/category generation, hint inference, annotation prep, invalidation helpers |
-| `tools/schemas.py` | `derive_output_schema`, `$ref` resolution, text/JSON response detection |
-| `tools/errors.py` | error translation, runtime validation runner, `_run_with_error_handling` |
-| `tools/labels.py` | string→ID label conversion, label schema updates (schema-time only) |
-| `tools/label_transform.py` | FastMCP `Transform` — runtime label validation and conversion, runs as innermost provider-level transform | `LabelTransform`, `_convert_labels_inline` |
+| Module | One-line role |
+|--------|---------------|
+| `tools/customize.py` | title/category, hint inference, annotation prep |
+| `tools/schemas.py` | ``derive_output_schema``, ``$ref`` resolution, response classification |
+| `tools/errors.py` | runtime validation runner, HTTP error translation |
+| `tools/labels.py` | label string→ID conversion, label schema updates (schema-time) |
+| `tools/label_transform.py` | FastMCP ``Transform`` — runtime label validation (innermost) |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
-| `tools/extensions_metadata.py` | `ExtensionMetadataTransform` — applies YAML metadata overrides (title, description, tags, annotation hints) to all tools at query time |
-| `tools/exclusion.py` | `matches_any`/`matches_pattern` — exclusion pattern matching helpers, consumed by spec-level `route_map_fn` filtering (config loading moved to `spec_loader.py`) |
-| `tools/filter_info.py` | Filter prediction data (`compute_filtered_tools_info`), `FilteredToolMiddleware` for direct-call interception, `get_filtered_tool_info`/`build_filtered_tools_message` used by `_call_tool_impl` and `_tool_info_impl` |
-| `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic `search_tools`/`call_tool`/`tool_info` tools |
-| `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — resolve ``$ref:Type`` names to schema and cross-references |
-| `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + ``gitea://docs/guide/{topic}`` resource — workflow guide discovery and retrieval via ``DocManager`` | ``DocManager`` |
-| `tools/virtual_params.py` | Virtual parameter registry + lifecycle (``inject_into``, ``extract_from``, ``apply_pre_hooks``, ``apply_to``) — generic mechanism for agent-facing params that are stripped before the HTTP call. Registered entries: ``sudo``, ``fetch_all``, ``content_type``, ``detail``, ``format``. Per-tool gating via ``tool_predicate``. Dynamic defaults via ``default_overrides`` on ``inject_into`` (e.g. ``format``'s default comes from server config). Output formatting via ``post_hook`` (``format`` applies ``apply_format`` using ``detail`` and ``_raw_schema`` from the extracted dict). |
-| `tools/namespace.py` | `GiteaNamespace` transform (prefixes tools, passes resources through) |
+| `tools/extensions_metadata.py` | ``ExtensionMetadataTransform`` — YAML metadata overrides at query time |
+| `tools/exclusion.py` | pattern matching helpers for config-based exclusion |
+| `tools/filter_info.py` | filter prediction data + ``FilteredToolMiddleware`` |
+| `tools/search.py` | BM25 search + ``TolerantSearchTransform``, synthetic discovery tools |
+| `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource |
+| `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + guide resources |
+| `tools/virtual_params.py` | virtual parameter registry + lifecycle (inject/extract/apply) |
+| `tools/namespace.py` | ``GiteaNamespace`` transform (prefixes tools, passes resources through) |
 
 The customization layers as applied during server startup:
 
@@ -293,38 +297,37 @@ The customization layers as applied during server startup:
 
 ### Resource System
 
-| Module | Role |
-|--------|------|
-| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints (raw JSON); scope-filtered via `filtered_tools_info` at registration time; reads `_registered_uris` from factory to skip auto-generation for factory-registered URIs. Delegates to `make_api_resource()` — no separate handler closure |
-| `resources/custom.py` | Hand-written resource implementations returning raw data + metadata (schema, format hints); scope-filtered via `available_scopes` at registration time; formatting delegated to display layer. Factory resources via `make_api_resource()`, static resources via direct `mcp.resource()` calls. Base64 decode is handled at the tool layer (``mcp_tools.py:_read_resource_tool``) using ``decode_base64_content`` from ``format.py`` |
-| `resources/factory.py` | ``make_api_resource()`` factory + ``ResourceParamConfig`` dataclass. Auto-derives response schema from `api_path + method`, generates handler closures, handles `str`/JSON branching, and registers via `mcp.resource()`. Provides `_registered_uris` set for auto-generation skip. ``ResourceParamConfig`` groups: query params (sent to API), context params (validated but never sent), discovery metadata (`optional_params`), and formatter context forwarding (`context_meta_keys`). ``handler_hook`` for custom text/plain post-processing. Uses ``ResourceMeta.for_schema()`` for typed registration metadata. ``_build_optional_param_signature()`` is a pure helper (takes/returns ``inspect.Signature``) that adds optional param names as ``KEYWORD_ONLY`` params matching ``{?param}`` template entries — used by ``make_api_resource()`` to satisfy FastMCP's signature validation at registration time. |
-| `resources/meta.py` | ``ResourceMeta`` dataclass for typed resource registration metadata (``required_scope``, ``cache_ttl``, ``optional_params``, ``size_hint``, ``default_detail``). ``derive_size_hint_from_schema()`` auto-estimates token cost from response schema complexity, enabling agents to discover expensive resources before reading them. ``default_detail_for()`` provides the recommended detail policy (``large`` → ``concise``, else ``full``). Used by both registration paths (factory and static). |
-| `tools/display.py` | Domain-specific display formatters with registry (`register_formatter`/`call_formatter`) — moved from the removed `resources/format.py` |
-| `tools/resource_display.py` | Resource content display pipeline (JSON parse → collapse → formatter dispatch → ``apply_format`` with error recovery) — counterpart to ``tools/tool_display.py`` | ``_format_resource_content``, ``_clean_resource_uri`` |
-| `tools/tool_display.py` | Tool result formatting entry point with error recovery — mirrors ``tools/resource_display.py`` | ``format_tool_result`` |
-| `resources/scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; see `docs/SCOPE_MODEL.md` |
-| `tools/mcp_tools.py` | `mcp_list_resources`, `mcp_read_resource`, tool schema resource; ``_mcp_list_resources_impl`` used by ``unified_search.py`` and ``tools/search.py`` |
+| Module | One-line role |
+|--------|---------------|
+| `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints |
+| `resources/custom.py` | Hand-written resource implementations (factory + static) |
+| `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation |
+| `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
+| `tools/display.py` | Domain-specific display formatters with registry |
+| `tools/resource_display.py` | Resource content display pipeline (parse → collapse → format) |
+| `tools/tool_display.py` | Tool result formatting entry point with error recovery |
+| `resources/scope.py` | Scope derivation for tools and resources |
+| `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
 
 ### Server Setup Orchestration (startup-only)
 
-| Module | Role |
-|--------|------|
-| `server_setup/__init__.py` | Package marker |
-| `server_setup/spec_loader.py` | Fetch, convert, extend; compute excluded routes (deprecated + scope + config-excluded) |
-| `server_setup/mcp_builder.py` | Create provider + wire tools; apply excluded routes via `route_map_fn` |
-| `server_setup/resource_setup.py` | Orchestrate resource registration |
-| `server_setup/mcp_extensions.py` | YAML-based parameter extensions (applied to spec before tool generation) |
+| Module | One-line role |
+|--------|---------------|
+| `server_setup/spec_loader.py` | Fetch, convert, extend; compute excluded routes |
+| `server_setup/mcp_builder.py` | Create provider + wire tools |
+| `server_setup/resource_setup.py` | Orchestrate resource registration (custom → auto) |
+| `server_setup/mcp_extensions.py` | YAML-based parameter extensions |
 
 ### Flat Infrastructure Modules (shared, not domain-specific)
 
-| Module | Role |
-|--------|------|
-| `context_utils.py` | Safe MCP context helpers (`safe_ctx_info`, `safe_ctx_report_progress`) — wraps ``ctx.info()`` and ``ctx.report_progress()`` with ``RuntimeError`` suppression for when no active MCP session is available. Consumed by ``server_setup/mcp_builder.py``, ``label_service.py``, and ``tools/type_info.py`` |
-| `models.py` | TypedDict models for structured output types (`ToolSearchEntry`, `ResourceEntry`, `ResourceListing`, `DocEntry`, `UnifiedSearchItem`, `ToolSchemaResult`, `SimpleStringResult`) — zero runtime overhead, pure annotation types |
-| `schema_utils.py` | Shared JSON Schema type utilities (`schema_type_matches`, `get_schema_type`); flat module breaks circular import between `openapi_converter/` and `tools/` by providing type-matching that both layers can import without cycles — same pattern as `scope.py` |
-| `scope.py` | Scope derivation (`derive_required_scope`) for tools and resources; flat module breaks circular import between `tools/` and `resources/`; see `docs/SCOPE_MODEL.md` |
-| `search.py` | BM25 search engine infrastructure (`BM25SearchEngine`) — generic text indexing and ranking, used by `tools/search.py` |
-| `pagination.py` | Pagination metadata injection + loop-based auto-pagination: `capture_pagination_headers()` httpx event hook, `add_pagination_metadata()` shared helper, `apply_pagination()` for metadata on a ``ToolResult``; `PaginationRunner` class (extracted from ``_fetch_all_loop``) for multi-page HTTP fetch loops. Used by both API tools (`_ToolWrappingTransform`) and synthetic tools (search, list, docs) |
+| Module | One-line role |
+|--------|---------------|
+| `context_utils.py` | Safe MCP context helpers (``safe_ctx_info``, ``safe_ctx_report_progress``) |
+| `models.py` | TypedDict models for structured output types (zero runtime overhead) |
+| `schema_utils.py` | Shared JSON Schema type utilities (circular-import breaker) |
+| `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
+| `search.py` | Generic BM25 search engine (infra layer) |
+| `pagination.py` | Pagination metadata, headers, ``PaginationRunner`` |
 
 ---
 

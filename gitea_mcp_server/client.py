@@ -1,4 +1,9 @@
-"""HTTP client wrapper for Gitea API with retry and error handling."""
+"""HTTP client wrapper for Gitea API with retry, rate-limit handling, and SSL.
+
+Provides ``GiteaClient`` — a typed httpx-based client with tenacity retry
+logic (exponential backoff on 429/5xx), SSL configuration, and structured
+error handling.  All Gitea API calls flow through this module.
+"""
 
 import logging
 import ssl

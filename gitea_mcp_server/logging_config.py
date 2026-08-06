@@ -1,4 +1,10 @@
-"""Logging configuration for Gitea MCP Server."""
+"""Logging configuration for Gitea MCP Server.
+
+Provides JSON and text log formatters, sensitive-key redaction
+(authorization, token, api_key, password, secret, cookie), and
+``setup_logging()`` for application startup.  The formatters
+strip known sensitive headers from logged request data.
+"""
 
 import json
 import logging

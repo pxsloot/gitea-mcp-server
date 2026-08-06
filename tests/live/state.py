@@ -5,6 +5,24 @@ orchestration facade.  ``RepoState`` manages the lazy state inside a single
 test repository — branches, labels, milestones, issues, pull requests,
 tags, and files — with idempotent ``need_*`` methods.
 
+Design: lazy-materialize pattern
+--------------------------------
+All ``need_*`` methods are command-query hybrids by design: they ensure a
+resource exists (command) and return it (query) in a single call.  This is
+intentional — splitting into separate ``ensure_X()`` + ``get_X()`` would
+double every call site in workflow tests for no functional gain.  The
+``_adopt_and_cache_*`` helpers and ``_verify_*_postcondition`` methods
+follow the same hybrid shape: mutate the cache and return fresh data.
+
+Immutable creation parameters (body, labels, head, base, etc.) are stored
+in ``_*_options`` dicts and checked by ``check_conflict()``.  Mutable
+state (issue/PR state) is stored separately in ``_issue_postcondition``
+and ``_pr_postcondition`` so that conflict detection never needs to know
+about state transitions.
+
+The full design rationale is documented in ``docs/TESTING_STANDARDS.md``
+under "RepoState ``need_*`` Design."
+
 Mutable postconditions
 ----------------------
 ``need_issue`` and ``need_pull_request`` accept an optional ``state``
@@ -132,6 +150,13 @@ class RepoState:
         milestones: ``{milestone_title: milestone_data}`` — created lazily.
         issues: ``{issue_number: issue_data}`` — created lazily.
         tags: ``{tag_name: tag_data}`` — created lazily.
+        pull_requests: ``{pr_number: pr_data}`` — created lazily.
+
+    Internal fields (all ``repr=False``):
+        _files: Files cached by ``{branch}:{path}`` key.
+        _*_options: Immutable creation parameters for conflict detection.
+        _issue_postcondition: ``{number: state}`` — mutable postcondition state.
+        _pr_postcondition: ``{number: state}`` — mutable postcondition state.
     """
 
     owner: str
@@ -161,6 +186,14 @@ class RepoState:
     _tag_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
     _pr_options: dict[int, dict[str, Any]] = field(default_factory=dict, repr=False)
     _file_options: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+
+    # ── Mutable postcondition state ─────────────────────────────────
+    # Separated from _issue_options / _pr_options (immutable config)
+    # so that conflict detection never needs to know about state.
+    # See docs/TESTING_STANDARDS.md "RepoState need_* Design" for
+    # the full lazy-materialize pattern rationale.
+    _issue_postcondition: dict[int, str | None] = field(default_factory=dict, repr=False)
+    _pr_postcondition: dict[int, str | None] = field(default_factory=dict, repr=False)
 
     async def _server(self) -> ClientSession:
         """Get the pooled server for this repo's owner+scopes."""
@@ -340,7 +373,7 @@ class RepoState:
         }
         return data
 
-    async def _adopt_issue_from_gitea(
+    async def _adopt_and_cache_issue(
         self,
         title: str,
         *,
@@ -353,9 +386,12 @@ class RepoState:
         """Try to find and adopt an issue pre-created on the Gitea instance.
 
         Called by ``need_issue`` after the cache-check yields no match.
-        Lists all repo issues and matches by *title*.  On adoption
-        the issue is cached in ``self.issues`` and the creation options
-        (including *state* as a postcondition declaration) are stored.
+        Lists all repo issues and matches by *title*.
+
+        **Mutates** ``self.issues`` and ``self._issue_options`` (immutable
+        config) plus ``self._issue_postcondition`` (mutable state) on
+        adoption — this is an intentional command-query hybrid consistent
+        with all ``need_*`` methods.
 
         Returns:
             The adopted issue dict, or ``None`` if no matching issue
@@ -379,8 +415,8 @@ class RepoState:
                         self._issue_options[number] = {
                             "body": body, "labels": labels,
                             "milestone": milestone, "assignees": assignees,
-                            "state": state,
                         }
+                        self._issue_postcondition[number] = state
                         return cast("dict[str, Any]", item)
         except (json.JSONDecodeError, AssertionError):
             pass
@@ -440,13 +476,11 @@ class RepoState:
                     )
                 # Update the stored postcondition state for next cache hit
                 if state is not None:
-                    opts = self._issue_options.get(number, {})
-                    opts["state"] = state
-                    self._issue_options[number] = opts
+                    self._issue_postcondition[number] = state
                 return cached
 
         # Check if it exists in Gitea (created by a previous run)
-        adopted = await self._adopt_issue_from_gitea(
+        adopted = await self._adopt_and_cache_issue(
             title, body=body, labels=labels,
             milestone=milestone, assignees=assignees, state=state,
         )
@@ -479,8 +513,8 @@ class RepoState:
         self._issue_options[data["number"]] = {
             "body": body, "labels": labels,
             "milestone": milestone, "assignees": assignees,
-            "state": state,
         }
+        self._issue_postcondition[data["number"]] = state
         return data
 
     async def _verify_issue_postcondition(
@@ -521,11 +555,58 @@ class RepoState:
             )
         # Update cache with fresh data
         self.issues[number] = data
-        # Update the stored postcondition for the next cache hit
-        opts = self._issue_options.get(number, {})
-        opts["state"] = expected_state
-        self._issue_options[number] = opts
+        self._issue_postcondition[number] = expected_state
         return data
+
+    async def _adopt_and_cache_pr(
+        self,
+        title: str,
+        *,
+        head: str,
+        base: str = "main",
+        body: str | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Try to find and adopt a PR pre-created on the Gitea instance.
+
+        Called by ``need_pull_request`` after the cache-check yields no
+        match.  Lists all repo PRs and matches by *title*.
+
+        **Mutates** ``self.pull_requests`` and ``self._pr_options``
+        (immutable config) plus ``self._pr_postcondition`` (mutable state)
+        on adoption — symmetric with ``_adopt_and_cache_issue``.
+
+        Returns:
+            The adopted PR dict, or ``None`` if no matching PR exists on
+            the instance.
+        """
+        mcp = await self._server()
+        listed = await mcp.call_tool(
+            "gitea_repo_list_pull_requests",
+            {
+                "owner": self.owner,
+                "repo": self.name,
+                "state": "all",
+                "format": "json",
+            },
+        )
+        if _is_error(listed):
+            return None
+        try:
+            existing = json.loads(extract_text_content(listed.content))
+            if isinstance(existing, list):
+                for item in existing:
+                    if item.get("title") == title:
+                        number = item["number"]
+                        self.pull_requests[number] = item
+                        self._pr_options[number] = {
+                            "head": head, "base": base, "body": body,
+                        }
+                        self._pr_postcondition[number] = state
+                        return cast("dict[str, Any]", item)
+        except (json.JSONDecodeError, AssertionError):
+            pass
+        return None
 
     async def need_pull_request(
         self,
@@ -571,37 +652,18 @@ class RepoState:
                     )
                 # Update stored postcondition state
                 if state is not None:
-                    opts = self._pr_options.get(number, {})
-                    opts["state"] = state
-                    self._pr_options[number] = opts
+                    self._pr_postcondition[number] = state
                 return cached
 
-        mcp = await self._server()
-        listed = await mcp.call_tool(
-            "gitea_repo_list_pull_requests",
-            {
-                "owner": self.owner,
-                "repo": self.name,
-                "state": "all",
-                "format": "json",
-            },
+        # Check if it exists in Gitea (created by a previous run)
+        adopted = await self._adopt_and_cache_pr(
+            title, head=head, base=base, body=body, state=state,
         )
-        if not _is_error(listed):
-            try:
-                data = json.loads(extract_text_content(listed.content))
-                if isinstance(data, list):
-                    for item in data:
-                        if item.get("title") == title:
-                            number = item["number"]
-                            self.pull_requests[number] = item
-                            self._pr_options[number] = {
-                                "head": head, "base": base, "body": body,
-                                "state": state,
-                            }
-                            return cast("dict[str, Any]", item)
-            except (json.JSONDecodeError, AssertionError):
-                pass
+        if adopted is not None:
+            return adopted
 
+        # Create new PR
+        mcp = await self._server()
         kwargs: dict[str, Any] = {
             "owner": self.owner,
             "repo": self.name,
@@ -622,8 +684,8 @@ class RepoState:
         self.pull_requests[data["number"]] = data
         self._pr_options[data["number"]] = {
             "head": head, "base": base, "body": body,
-            "state": state,
         }
+        self._pr_postcondition[data["number"]] = state
         return data
 
     async def _verify_pr_postcondition(
@@ -673,10 +735,7 @@ class RepoState:
             )
         # Update cache with fresh data
         self.pull_requests[number] = data
-        # Update stored postcondition for the next cache hit
-        opts = self._pr_options.get(number, {})
-        opts["state"] = expected_state
-        self._pr_options[number] = opts
+        self._pr_postcondition[number] = expected_state
         return data
 
     async def need_tag(

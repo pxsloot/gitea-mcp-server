@@ -1,9 +1,19 @@
-"""Repository state tracker and internal assertion helpers.
+"""Repository state tracker, postcondition verification, and assertion helpers.
 
 Extracted from ``world.py`` to keep that module focused on the ``World``
 orchestration facade.  ``RepoState`` manages the lazy state inside a single
 test repository — branches, labels, milestones, issues, pull requests,
 tags, and files — with idempotent ``need_*`` methods.
+
+Mutable postconditions
+----------------------
+``need_issue`` and ``need_pull_request`` accept an optional ``state``
+parameter.  When a cached entity's observed ``state`` differs from the
+expected postcondition, the entity is re-read from the Gitea instance.
+An :class:`PostconditionError` is raised if the actual state still does
+not match.  For pull requests, a :class:`IrreversibleTransitionError`
+is raised when the test expects ``open`` on a merged PR — a permanent
+state that cannot be reversed without deleting the entity.
 
 All names are re-exported by ``world.py`` for backward compatibility.
 """
@@ -16,7 +26,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from tests.helpers.mcp_results import extract_text_content
-from tests.live.conflict import check_conflict
+from tests.live.conflict import (
+    IrreversibleTransitionError,
+    PostconditionError,
+    check_conflict,
+)
 
 if TYPE_CHECKING:
     from mcp import ClientSession
@@ -326,6 +340,52 @@ class RepoState:
         }
         return data
 
+    async def _adopt_issue_from_gitea(
+        self,
+        title: str,
+        *,
+        body: str | None = None,
+        labels: list[int | str] | None = None,
+        milestone: int | None = None,
+        assignees: list[str] | None = None,
+        state: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Try to find and adopt an issue pre-created on the Gitea instance.
+
+        Called by ``need_issue`` after the cache-check yields no match.
+        Lists all repo issues and matches by *title*.  On adoption
+        the issue is cached in ``self.issues`` and the creation options
+        (including *state* as a postcondition declaration) are stored.
+
+        Returns:
+            The adopted issue dict, or ``None`` if no matching issue
+            exists on the instance.
+        """
+        mcp = await self._server()
+        list_result = await mcp.call_tool(
+            "gitea_issue_list_issues",
+            {"owner": self.owner, "repo": self.name, "format": "json"},
+        )
+        if _is_error(list_result):
+            return None
+        try:
+            text = extract_text_content(list_result.content)
+            existing = json.loads(text)
+            if isinstance(existing, list):
+                for item in existing:
+                    if item.get("title") == title:
+                        number = item["number"]
+                        self.issues[number] = item
+                        self._issue_options[number] = {
+                            "body": body, "labels": labels,
+                            "milestone": milestone, "assignees": assignees,
+                            "state": state,
+                        }
+                        return cast("dict[str, Any]", item)
+        except (json.JSONDecodeError, AssertionError):
+            pass
+        return None
+
     async def need_issue(
         self,
         title: str,
@@ -334,6 +394,7 @@ class RepoState:
         labels: list[int | str] | None = None,
         milestone: int | None = None,
         assignees: list[str] | None = None,
+        state: str | None = None,
     ) -> dict[str, Any]:
         """Create an issue and cache it by number.
 
@@ -343,10 +404,23 @@ class RepoState:
         issue exists on the Gitea instance (from a previous run),
         it is adopted into the cache.
 
+        **Mutable postcondition**: If *state* is provided and differs
+        from the cached issue's current ``state`` field, the issue is
+        re-read from Gitea and verified.  This allows later tests to
+        assert that a previous test has left the issue in the expected
+        state (e.g. ``state="closed"`` after a close workflow).
+
+        Postcondition checks fire on **cache hits only** — not on the
+        first call that creates or adopts the entity.  On the first
+        encounter (create or adopt-from-Gitea), the *state* is stored
+        as a declaration of intent and verified on the next cache hit.
+
         Raises:
             ConflictError: If a cached issue with the same title was
                 created with different *body*, *labels*, *milestone*,
                 or *assignees*.
+            PostconditionError: If the cached issue's re-read state
+                does not match the expected *state*.
         """
         # Check by title in cached issues
         for number, cached in self.issues.items():
@@ -359,32 +433,28 @@ class RepoState:
                         "milestone": milestone, "assignees": assignees,
                     },
                 )
+                # Postcondition: if caller expects a specific state, verify
+                if state is not None and cached.get("state") != state:
+                    return await self._verify_issue_postcondition(
+                        number, title, state,
+                    )
+                # Update the stored postcondition state for next cache hit
+                if state is not None:
+                    opts = self._issue_options.get(number, {})
+                    opts["state"] = state
+                    self._issue_options[number] = opts
                 return cached
 
         # Check if it exists in Gitea (created by a previous run)
-        mcp = await self._server()
-        list_result = await mcp.call_tool(
-            "gitea_issue_list_issues",
-            {"owner": self.owner, "repo": self.name, "format": "json"},
+        adopted = await self._adopt_issue_from_gitea(
+            title, body=body, labels=labels,
+            milestone=milestone, assignees=assignees, state=state,
         )
-        if not _is_error(list_result):
-            try:
-                text = extract_text_content(list_result.content)
-                existing = json.loads(text)
-                if isinstance(existing, list):
-                    for item in existing:
-                        if item.get("title") == title:
-                            number = item["number"]
-                            self.issues[number] = item
-                            self._issue_options[number] = {
-                                "body": body, "labels": labels,
-                                "milestone": milestone, "assignees": assignees,
-                            }
-                            return cast("dict[str, Any]", item)
-            except (json.JSONDecodeError, AssertionError):
-                pass  # Create fresh
+        if adopted is not None:
+            return adopted
 
         # Create new issue
+        mcp = await self._server()
         kwargs: dict[str, Any] = {
             "owner": self.owner,
             "repo": self.name,
@@ -409,7 +479,52 @@ class RepoState:
         self._issue_options[data["number"]] = {
             "body": body, "labels": labels,
             "milestone": milestone, "assignees": assignees,
+            "state": state,
         }
+        return data
+
+    async def _verify_issue_postcondition(
+        self, number: int, title: str, expected_state: str,
+    ) -> dict[str, Any]:
+        """Re-read an issue from Gitea and assert its state matches *expected_state*.
+
+        Called when a cached issue's ``state`` field differs from the
+        postcondition requested by the current test.  On success the
+        cache is updated with fresh data.  On failure a
+        :class:`PostconditionError` is raised.
+        """
+        entity_label = f"issue #{number} ({title!r})"
+        mcp = await self._server()
+        result = await mcp.call_tool(
+            "gitea_issue_get_issue",
+            {
+                "owner": self.owner,
+                "repo": self.name,
+                "index": number,
+                "format": "json",
+            },
+        )
+        if _is_error(result):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
+        try:
+            data = _unwrap(result)
+        except (json.JSONDecodeError, TypeError):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
+        actual_state = data.get("state")
+        if actual_state != expected_state:
+            raise PostconditionError(
+                entity_label, "state", expected_state, actual_state,
+            )
+        # Update cache with fresh data
+        self.issues[number] = data
+        # Update the stored postcondition for the next cache hit
+        opts = self._issue_options.get(number, {})
+        opts["state"] = expected_state
+        self._issue_options[number] = opts
         return data
 
     async def need_pull_request(
@@ -419,12 +534,28 @@ class RepoState:
         head: str,
         base: str = "main",
         body: str | None = None,
+        state: str | None = None,
     ) -> dict[str, Any]:
         """Ensure a pull request exists, matching cached or remote state.
+
+        **Mutable postcondition**: If *state* is provided and differs
+        from the cached PR's current ``state`` field, the PR is re-read
+        from Gitea and verified.  An :class:`IrreversibleTransitionError`
+        is raised when a test requests ``state="open"`` on a merged PR
+        — merging is permanent and cannot be undone.
+
+        Postcondition checks fire on **cache hits only** — not on the
+        first call that creates or adopts the entity.  On the first
+        encounter (create or adopt-from-Gitea), the *state* is stored
+        as a declaration of intent and verified on the next cache hit.
 
         Raises:
             ConflictError: If a cached PR with the same title was
                 created with different *head*, *base*, or *body*.
+            PostconditionError: If the cached PR's re-read state does
+                not match the expected *state*.
+            IrreversibleTransitionError: If the test expects
+                ``state="open"`` on a PR that has been merged.
         """
         for number, cached in self.pull_requests.items():
             if cached.get("title") == title:
@@ -433,6 +564,16 @@ class RepoState:
                     self._pr_options.get(number, {}),
                     {"head": head, "base": base, "body": body},
                 )
+                # Postcondition: if caller expects a specific state, verify
+                if state is not None and cached.get("state") != state:
+                    return await self._verify_pr_postcondition(
+                        number, title, state,
+                    )
+                # Update stored postcondition state
+                if state is not None:
+                    opts = self._pr_options.get(number, {})
+                    opts["state"] = state
+                    self._pr_options[number] = opts
                 return cached
 
         mcp = await self._server()
@@ -455,6 +596,7 @@ class RepoState:
                             self.pull_requests[number] = item
                             self._pr_options[number] = {
                                 "head": head, "base": base, "body": body,
+                                "state": state,
                             }
                             return cast("dict[str, Any]", item)
             except (json.JSONDecodeError, AssertionError):
@@ -480,7 +622,61 @@ class RepoState:
         self.pull_requests[data["number"]] = data
         self._pr_options[data["number"]] = {
             "head": head, "base": base, "body": body,
+            "state": state,
         }
+        return data
+
+    async def _verify_pr_postcondition(
+        self, number: int, title: str, expected_state: str,
+    ) -> dict[str, Any]:
+        """Re-read a PR from Gitea and assert its state matches *expected_state*.
+
+        Detects irreversible transitions: a PR that has been merged
+        (``merged=True``) cannot return to ``"open"``.  In that case
+        an :class:`IrreversibleTransitionError` is raised.  Otherwise
+        a state mismatch raises :class:`PostconditionError`.
+
+        On success the cache is updated with fresh data.
+        """
+        entity_label = f"PR #{number} ({title!r})"
+        mcp = await self._server()
+        result = await mcp.call_tool(
+            "gitea_repo_get_pull_request",
+            {
+                "owner": self.owner,
+                "repo": self.name,
+                "index": number,
+                "format": "json",
+            },
+        )
+        if _is_error(result):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
+        try:
+            data = _unwrap(result)
+        except (json.JSONDecodeError, TypeError):
+            raise PostconditionError(
+                entity_label, "readable", True, False,
+            ) from None
+
+        # Irreversible: merged PR cannot go back to "open"
+        if expected_state == "open" and data.get("merged", False):
+            raise IrreversibleTransitionError(
+                entity_label, "merged", False, True,
+            )
+
+        actual_state = data.get("state")
+        if actual_state != expected_state:
+            raise PostconditionError(
+                entity_label, "state", expected_state, actual_state,
+            )
+        # Update cache with fresh data
+        self.pull_requests[number] = data
+        # Update stored postcondition for the next cache hit
+        opts = self._pr_options.get(number, {})
+        opts["state"] = expected_state
+        self._pr_options[number] = opts
         return data
 
     async def need_tag(

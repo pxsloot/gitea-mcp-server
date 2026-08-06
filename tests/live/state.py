@@ -593,9 +593,9 @@ class RepoState:
         if _is_error(listed):
             return None
         try:
-            data = json.loads(extract_text_content(listed.content))
-            if isinstance(data, list):
-                for item in data:
+            existing = json.loads(extract_text_content(listed.content))
+            if isinstance(existing, list):
+                for item in existing:
                     if item.get("title") == title:
                         number = item["number"]
                         self.pull_requests[number] = item

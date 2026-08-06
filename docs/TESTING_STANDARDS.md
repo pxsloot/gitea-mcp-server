@@ -502,8 +502,7 @@ tests/live/
     path with mocked ``ClientSession.call_tool`` responses — no live instance
     needed.
 
-RepoState ``need_*`` Design
----------------------------
+#### RepoState ``need_*`` Design
 
 The ``need_*`` methods on ``RepoState`` (``need_branch``, ``need_file``,
 ``need_label``, ``need_milestone``, ``need_issue``, ``need_tag``,

@@ -245,6 +245,31 @@ class TestIssuePostcondition:
         assert state._issue_postcondition[2] == "closed"
         assert "closed" not in result.values()  # state in postcondition, not in creation response
 
+    @pytest.mark.asyncio
+    async def test_adoption_finds_closed_issue_with_state_all(self) -> None:
+        """Adoption helper lists issues with ``state=all``, finding closed issues."""
+        state = _new_state()
+        mock_s = await _mock_session(
+            # list_issues with state=all returns a closed issue
+            _mock_result(data=cast("list[dict[str, object]]", [
+                {"number": 1, "title": "Old Bug", "state": "closed"},
+            ])),
+            # create_issue — must NOT be called (adoption path wins)
+            _mock_result(
+                data={"number": 2, "title": "Old Bug", "state": "open"},
+            ),
+        )
+        state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
+
+        result = await state.need_issue("Old Bug", state="closed")
+        # Adopted, not created
+        assert result["number"] == 1
+        assert result["state"] == "closed"
+        assert state.issues[1]["title"] == "Old Bug"
+        assert state._issue_postcondition[1] == "closed"
+        # Only the list call was made — create never fired
+        mock_s.call_tool.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # PR postcondition — need_pull_request with state parameter

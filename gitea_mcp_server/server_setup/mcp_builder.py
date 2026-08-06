@@ -10,7 +10,7 @@ Runtime wrapping (validation, labels, error handling) is done via a provider-lev
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
@@ -154,6 +154,129 @@ def _detect_contents_response(
 # ---------------------------------------------------------------------------
 
 
+class _ComputedSchema(NamedTuple):
+    """Schema and response classification computed from the OpenAPI spec.
+
+    Pure computation — no side effects.  Bundles all spec queries that
+    share the same route path/method into a single call.
+    """
+
+    output_schema: dict[str, Any] | None
+    raw_schema: dict[str, Any] | None
+    is_text_response: bool
+    response_transform: str | None
+
+
+def _compute_tool_schema(
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> _ComputedSchema:
+    """Compute output schema, raw schema, and response classification.
+
+    Five spec queries that share the same route path/method are bundled
+    into a single pure function.  ContentsResponse detection (the
+    authoritative ``encoding`` + ``content`` fallback for Forgejo compat)
+    is applied here because it depends on the derived ``output_schema``.
+    """
+    path = getattr(route, "path", "")
+    method = getattr(route, "method", "")
+
+    output_schema = derive_output_schema(route, openapi_spec)
+    raw_schema: dict[str, Any] | None = None
+    if output_schema is not None:
+        raw_schema = _get_success_schema(
+            openapi_spec, path, method.lower(), resolve=False,
+        )
+
+    is_text_response = _is_text_response(openapi_spec, path, method)
+    response_transform = _read_response_transform(
+        openapi_spec, path, method,
+    )
+    is_text_response, response_transform = _detect_contents_response(
+        output_schema, is_text_response, response_transform,
+    )
+
+    return _ComputedSchema(
+        output_schema, raw_schema, is_text_response, response_transform,
+    )
+
+
+def _apply_schema_postprocessing(
+    component: OpenAPITool,
+    schema: _ComputedSchema,
+    *,
+    has_labels: bool,
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> bool:
+    """Apply schema mutations to the component and return has_no_content.
+
+    Handles: initial assignment, validation augmentation, label schema
+    updates, text/plain fallback, no-content null schema,
+    x-fastmcp-wrap-result, and pagination metadata injection.
+    """
+    output_schema = schema.output_schema
+    component.output_schema = output_schema
+
+    augment_schema_with_validation(component)
+    if has_labels:
+        update_labels_schema(component)
+        component.tags = set(component.tags) | {"labels"}
+
+    # Lightweight fallback schema for text/plain endpoints so agents
+    # get schema guidance matching the {"result": text} runtime shape.
+    if output_schema is None and schema.is_text_response:
+        output_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+        }
+        component.output_schema = output_schema
+
+    # Detect endpoints whose success response has no body content
+    # (e.g. 204 No Content).  Set a minimal schema so the MCP transport
+    # layer has proper guidance, and store the flag for runtime wrapping.
+    has_no_content = (
+        _response_has_no_content(
+            openapi_spec,
+            getattr(route, "path", ""),
+            getattr(route, "method", ""),
+        )
+        if output_schema is None and not schema.is_text_response
+        else False
+    )
+    if has_no_content:
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "null",
+                    "description": "No content returned. The operation completed successfully.",
+                },
+            },
+        }
+        component.output_schema = output_schema
+
+    if component.output_schema is not None:
+        component.output_schema["x-fastmcp-wrap-result"] = True
+
+    if output_schema is not None and _is_array_response(output_schema):
+        props = output_schema.setdefault("properties", {})
+        props["has_more"] = {
+            "type": "boolean",
+            "description": "Whether more pages exist",
+        }
+        props["next_offset"] = {
+            "type": "integer",
+            "description": "Page number for next page, if any",
+        }
+        props["total_count"] = {
+            "type": "integer",
+            "description": "Total item count from server, if available",
+        }
+
+    return has_no_content
+
+
 def _customize_metadata(
     route: Any,
     component: OpenAPITool | Any,
@@ -180,6 +303,7 @@ def _customize_metadata(
     if not isinstance(component, OpenAPITool):
         return
 
+    # ---- Identity: title, annotations, category, scope, invalidation --------
     title = generate_tool_title(route)
     annotations = _prepare_annotations(component, title)
     add_inferred_hints(route, annotations)
@@ -199,116 +323,36 @@ def _customize_metadata(
         method,
     )
 
+    # ---- Description: label guidance injection ------------------------------
     description, has_labels = _prepare_description(component)
     component.description = description
 
-    output_schema = derive_output_schema(route, openapi_spec)
-    component.output_schema = output_schema
-
-    # Store unresolved schema for compact example generation.
-    # Nested $ref pointers stay intact, so the example generator can
-    # emit type names instead of inlining entire referenced schemas.
-    raw_schema: dict[str, Any] | None = None
-    if output_schema is not None:
-        raw_schema = _get_success_schema(
-            openapi_spec,
-            getattr(route, "path", ""),
-            getattr(route, "method", "").lower(),
-            resolve=False,
-        )
-
-    augment_schema_with_validation(component)
-    if has_labels:
-        update_labels_schema(component)
-        component.tags = set(component.tags) | {"labels"}
-
-    is_text_response = _is_text_response(
-        openapi_spec,
-        getattr(route, "path", ""),
-        getattr(route, "method", ""),
+    # ---- Schema: derivation, classification, post-processing ----------------
+    schema = _compute_tool_schema(route, openapi_spec)
+    has_no_content = _apply_schema_postprocessing(
+        component, schema,
+        has_labels=has_labels,
+        route=route,
+        openapi_spec=openapi_spec,
     )
 
-    # Detect ContentsResponse endpoints by resolved schema shape
-    # (authoritative fallback for Forgejo compat — see _detect_contents_response).
-    response_transform = _read_response_transform(
-        openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
-    )
-    is_text_response, response_transform = _detect_contents_response(
-        output_schema, is_text_response, response_transform,
-    )
-
-    # Lightweight fallback schema for text/plain endpoints so agents
-    # get schema guidance matching the {"result": text} runtime shape.
-    if output_schema is None and is_text_response:
-        output_schema = {
-            "type": "object",
-            "properties": {"result": {"type": "string"}},
-        }
-        component.output_schema = output_schema
-
-    # Detect endpoints whose success response has no body content (e.g. 204
-    # No Content).  Set a minimal schema so the MCP transport layer has
-    # proper guidance, and store the flag for runtime wrapping.
-    has_no_content = (
-        _response_has_no_content(
-            openapi_spec,
-            getattr(route, "path", ""),
-            getattr(route, "method", ""),
-        )
-        if output_schema is None and not is_text_response
-        else False
-    )
-    if has_no_content:
-            output_schema = {
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "type": "null",
-                        "description": "No content returned. The operation completed successfully.",
-                    },
-                },
-            }
-            component.output_schema = output_schema
-
-    if component.output_schema is not None:
-        component.output_schema["x-fastmcp-wrap-result"] = True
-
-    if output_schema is not None and _is_array_response(output_schema):
-        props = output_schema.setdefault("properties", {})
-        props["has_more"] = {
-            "type": "boolean",
-            "description": "Whether more pages exist",
-        }
-        props["next_offset"] = {
-            "type": "integer",
-            "description": "Page number for next page, if any",
-        }
-        props["total_count"] = {
-            "type": "integer",
-            "description": "Total item count from server, if available",
-        }
-
+    # ---- Metadata: build the contract for runtime transforms ----------------
     component_meta = dict(component.meta) if component.meta else {}
     component_meta["required_scope"] = required_scope
 
-    if raw_schema is not None:
-        component_meta["output_schema_raw"] = _unwrap_result_schema(raw_schema)
+    if schema.raw_schema is not None:
+        component_meta["output_schema_raw"] = _unwrap_result_schema(schema.raw_schema)
 
-    # Per-tool metadata consumed by the transform pipeline at runtime:
-    # label validation, error context, response transforms, binary detection,
-    # and route identity.  Virtual param gating (e.g. ``content_type`` via
-    # ``tool_predicate``) lives in the VirtualParam registry — see
-    # virtual_params.py.
     component_meta["_customization"] = ToolCustomization(
         has_labels=has_labels,
-        is_text_response=is_text_response,
+        is_text_response=schema.is_text_response,
         is_empty_response=has_no_content,
         is_binary_response=_response_is_binary(
             openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
         ),
         route_path=getattr(route, "path", ""),
         route_method=getattr(route, "method", ""),
-        response_transform=response_transform,
+        response_transform=schema.response_transform,
     )
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta

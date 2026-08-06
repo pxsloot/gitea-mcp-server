@@ -277,33 +277,18 @@ def _apply_schema_postprocessing(
     return has_no_content
 
 
-def _customize_metadata(
+def _apply_tool_identity(
     route: Any,
-    component: OpenAPITool | Any,
-    *,
-    openapi_spec: OpenAPISpec,
-) -> None:
-    """In-place metadata customisation for every OpenAPI component.
+    component: OpenAPITool,
+) -> str | None:
+    """Apply title, annotations, category, hints, scope, and invalidation.
 
-    Called during ``OpenAPIProvider.__init__`` via the public
-    ``mcp_component_fn`` hook.  Only touches public attributes.
+    Mutates ``component`` in-place: sets ``annotations`` and ``tags``.
+    Registers cache invalidation patterns for write methods.
 
-    Performs:
-    - Title / annotation / hint generation
-    - Tag categorisation and scope derivation
-    - Description preparation (label guidance injection)
-    - Output schema derivation and augmentation
-    - ContentsResponse detection (``encoding`` + ``content`` properties)
-      → overrides ``is_text_response`` and sets ``response_transform``
-    - Binary response detection (application/zip etc.)
-      → sets ``is_binary_response``
-    - Cache invalidation pattern registration
-    - Virtual param injection (delegated to ``_wrap``)
+    Returns:
+        The derived ``required_scope`` (``str | None``).
     """
-    if not isinstance(component, OpenAPITool):
-        return
-
-    # ---- Identity: title, annotations, category, scope, invalidation --------
     title = generate_tool_title(route)
     annotations = _prepare_annotations(component, title)
     add_inferred_hints(route, annotations)
@@ -318,25 +303,27 @@ def _customize_metadata(
         if patterns:
             register_tool_invalidation(component.name, patterns)
 
-    required_scope = derive_required_scope(
+    return derive_required_scope(
         set(component.tags) if component.tags else None,
         method,
     )
 
-    # ---- Description: label guidance injection ------------------------------
-    description, has_labels = _prepare_description(component)
-    component.description = description
 
-    # ---- Schema: derivation, classification, post-processing ----------------
-    schema = _compute_tool_schema(route, openapi_spec)
-    has_no_content = _apply_schema_postprocessing(
-        component, schema,
-        has_labels=has_labels,
-        route=route,
-        openapi_spec=openapi_spec,
-    )
+def _build_customization_meta(  # noqa: PLR0913
+    component: OpenAPITool,
+    required_scope: str | None,
+    schema: _ComputedSchema,
+    *,
+    has_labels: bool,
+    has_no_content: bool,
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> None:
+    """Build and attach the ``component.meta`` dict consumed by runtime transforms.
 
-    # ---- Metadata: build the contract for runtime transforms ----------------
+    Mutates ``component.meta`` in-place.  Sets ``required_scope``,
+    ``output_schema_raw``, ``_customization``, and ``_META_CUSTOMIZED``.
+    """
     component_meta = dict(component.meta) if component.meta else {}
     component_meta["required_scope"] = required_scope
 
@@ -356,6 +343,47 @@ def _customize_metadata(
     )
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta
+
+
+def _customize_metadata(
+    route: Any,
+    component: OpenAPITool | Any,
+    *,
+    openapi_spec: OpenAPISpec,
+) -> None:
+    """In-place per-tool customization via FastMCP's ``mcp_component_fn`` hook.
+
+    Delegates to four focused phases:
+    1. ``_apply_tool_identity`` — title, annotations, category, scope
+    2. ``_prepare_description`` — label guidance injection
+    3. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
+       schema derivation, classification, and mutations
+    4. ``_build_customization_meta`` — the ``component.meta`` contract
+       consumed by runtime transforms.
+    """
+    if not isinstance(component, OpenAPITool):
+        return
+
+    required_scope = _apply_tool_identity(route, component)
+
+    description, has_labels = _prepare_description(component)
+    component.description = description
+
+    schema = _compute_tool_schema(route, openapi_spec)
+    has_no_content = _apply_schema_postprocessing(
+        component, schema,
+        has_labels=has_labels,
+        route=route,
+        openapi_spec=openapi_spec,
+    )
+
+    _build_customization_meta(
+        component, required_scope, schema,
+        has_labels=has_labels,
+        has_no_content=has_no_content,
+        route=route,
+        openapi_spec=openapi_spec,
+    )
 
 
 # ---------------------------------------------------------------------------

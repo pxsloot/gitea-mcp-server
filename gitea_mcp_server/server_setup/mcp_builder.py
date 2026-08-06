@@ -3,14 +3,23 @@
 This module provides functions to assemble the FastMCP server from OpenAPI spec,
 including OpenAPI provider creation with customized component handling.
 
-Metadata customization is done via OpenAPIProvider's public ``mcp_component_fn``.
-Runtime wrapping (validation, labels, error handling) is done via a provider-level
-:class:`Transform` (``provider.add_transform()``) - no private FastMCP APIs are used.
+Startup-time customization is orchestrated by :func:`_customize_metadata`
+(via FastMCP's public ``mcp_component_fn`` hook) and delegated to four focused
+phases:
+- :func:`_apply_tool_identity` — title, annotations, category, scope, invalidation
+- :func:`_prepare_description` — label guidance injection
+- :func:`_compute_tool_schema` / :func:`_apply_schema_postprocessing` —
+  schema derivation, response classification, mutations
+- :func:`_build_customization_meta` — the ``component.meta`` contract
+
+Runtime wrapping (validation, labels, error handling, text/binary response
+wrapping, pagination) is handled by :class:`_ToolWrappingTransform` via
+``provider.add_transform()`` — no private FastMCP APIs are used.
 """
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
@@ -23,6 +32,7 @@ from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
@@ -153,121 +163,107 @@ def _detect_contents_response(
 # ---------------------------------------------------------------------------
 
 
-def _customize_metadata(
-    route: Any,
-    component: OpenAPITool | Any,
-    *,
-    openapi_spec: OpenAPISpec,
-) -> None:
-    """In-place metadata customisation for every OpenAPI component.
+class _ComputedSchema(NamedTuple):
+    """Schema and response classification computed from the OpenAPI spec.
 
-    Called during ``OpenAPIProvider.__init__`` via the public
-    ``mcp_component_fn`` hook.  Only touches public attributes.
-
-    Performs:
-    - Title / annotation / hint generation
-    - Tag categorisation and scope derivation
-    - Description preparation (label guidance injection)
-    - Output schema derivation and augmentation
-    - ContentsResponse detection (``encoding`` + ``content`` properties)
-      → overrides ``is_text_response`` and sets ``response_transform``
-    - Binary response detection (application/zip etc.)
-      → sets ``is_binary_response``
-    - Cache invalidation pattern registration
-    - Virtual param injection (delegated to ``_wrap``)
+    Pure computation — no side effects.  Bundles all spec queries that
+    share the same route path/method into a single call.
     """
-    if not isinstance(component, OpenAPITool):
-        return
 
-    title = generate_tool_title(route)
-    annotations = _prepare_annotations(component, title)
-    add_inferred_hints(route, annotations)
-    component.annotations = annotations
+    output_schema: dict[str, Any] | None
+    raw_schema: dict[str, Any] | None
+    is_text_response: bool
+    response_transform: str | None
 
-    category = categorize_tool(route.path)
-    component.tags = (set(component.tags) if component.tags else set()) | {category}
 
-    method = getattr(route, "method", None)
-    if method:
-        patterns = compute_invalidation_patterns(route.path, method)
-        if patterns:
-            register_tool_invalidation(component.name, patterns)
+def _compute_tool_schema(
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> _ComputedSchema:
+    """Compute output schema, raw schema, and response classification.
 
-    required_scope = derive_required_scope(
-        set(component.tags) if component.tags else None,
-        method,
-    )
-
-    description, has_labels = _prepare_description(component)
-    component.description = description
+    Five spec queries that share the same route path/method are bundled
+    into a single pure function.  ContentsResponse detection (the
+    authoritative ``encoding`` + ``content`` fallback for Forgejo compat)
+    is applied here because it depends on the derived ``output_schema``.
+    """
+    path = getattr(route, "path", "")
+    method = getattr(route, "method", "")
 
     output_schema = derive_output_schema(route, openapi_spec)
-    component.output_schema = output_schema
-
-    # Store unresolved schema for compact example generation.
-    # Nested $ref pointers stay intact, so the example generator can
-    # emit type names instead of inlining entire referenced schemas.
     raw_schema: dict[str, Any] | None = None
     if output_schema is not None:
         raw_schema = _get_success_schema(
-            openapi_spec,
-            getattr(route, "path", ""),
-            getattr(route, "method", "").lower(),
-            resolve=False,
+            openapi_spec, path, method.lower(), resolve=False,
         )
+
+    is_text_response = _is_text_response(openapi_spec, path, method)
+    response_transform = _read_response_transform(
+        openapi_spec, path, method,
+    )
+    is_text_response, response_transform = _detect_contents_response(
+        output_schema, is_text_response, response_transform,
+    )
+
+    return _ComputedSchema(
+        output_schema, raw_schema, is_text_response, response_transform,
+    )
+
+
+def _apply_schema_postprocessing(
+    component: OpenAPITool,
+    schema: _ComputedSchema,
+    *,
+    has_labels: bool,
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> bool:
+    """Apply schema mutations to the component and return has_no_content.
+
+    Handles: initial assignment, validation augmentation, label schema
+    updates, text/plain fallback, no-content null schema,
+    x-fastmcp-wrap-result, and pagination metadata injection.
+    """
+    output_schema = schema.output_schema
+    component.output_schema = output_schema
 
     augment_schema_with_validation(component)
     if has_labels:
         update_labels_schema(component)
         component.tags = set(component.tags) | {"labels"}
 
-    is_text_response = _is_text_response(
-        openapi_spec,
-        getattr(route, "path", ""),
-        getattr(route, "method", ""),
-    )
-
-    # Detect ContentsResponse endpoints by resolved schema shape
-    # (authoritative fallback for Forgejo compat — see _detect_contents_response).
-    response_transform = _read_response_transform(
-        openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
-    )
-    is_text_response, response_transform = _detect_contents_response(
-        output_schema, is_text_response, response_transform,
-    )
-
     # Lightweight fallback schema for text/plain endpoints so agents
     # get schema guidance matching the {"result": text} runtime shape.
-    if output_schema is None and is_text_response:
+    if output_schema is None and schema.is_text_response:
         output_schema = {
             "type": "object",
             "properties": {"result": {"type": "string"}},
         }
         component.output_schema = output_schema
 
-    # Detect endpoints whose success response has no body content (e.g. 204
-    # No Content).  Set a minimal schema so the MCP transport layer has
-    # proper guidance, and store the flag for runtime wrapping.
+    # Detect endpoints whose success response has no body content
+    # (e.g. 204 No Content).  Set a minimal schema so the MCP transport
+    # layer has proper guidance, and store the flag for runtime wrapping.
     has_no_content = (
         _response_has_no_content(
             openapi_spec,
             getattr(route, "path", ""),
             getattr(route, "method", ""),
         )
-        if output_schema is None and not is_text_response
+        if output_schema is None and not schema.is_text_response
         else False
     )
     if has_no_content:
-            output_schema = {
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "type": "null",
-                        "description": "No content returned. The operation completed successfully.",
-                    },
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "null",
+                    "description": "No content returned. The operation completed successfully.",
                 },
-            }
-            component.output_schema = output_schema
+            },
+        }
+        component.output_schema = output_schema
 
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
@@ -287,30 +283,117 @@ def _customize_metadata(
             "description": "Total item count from server, if available",
         }
 
+    return has_no_content
+
+
+def _apply_tool_identity(
+    route: Any,
+    component: OpenAPITool,
+) -> str | None:
+    """Apply title, annotations, category, hints, scope, and invalidation.
+
+    Mutates ``component`` in-place: sets ``annotations`` and ``tags``.
+    Registers cache invalidation patterns for write methods.
+
+    Returns:
+        The derived ``required_scope`` (``str | None``).
+    """
+    title = generate_tool_title(route)
+    annotations = _prepare_annotations(component, title)
+    add_inferred_hints(route, annotations)
+    component.annotations = annotations
+
+    category = categorize_tool(route.path)
+    component.tags = (set(component.tags) if component.tags else set()) | {category}
+
+    method = getattr(route, "method", None)
+    if method:
+        patterns = compute_invalidation_patterns(route.path, method)
+        if patterns:
+            register_tool_invalidation(component.name, patterns)
+
+    return derive_required_scope(
+        set(component.tags) if component.tags else None,
+        method,
+    )
+
+
+def _build_customization_meta(  # noqa: PLR0913
+    component: OpenAPITool,
+    required_scope: str | None,
+    schema: _ComputedSchema,
+    *,
+    has_labels: bool,
+    has_no_content: bool,
+    route: Any,
+    openapi_spec: OpenAPISpec,
+) -> None:
+    """Build and attach the ``component.meta`` dict consumed by runtime transforms.
+
+    Mutates ``component.meta`` in-place.  Sets ``required_scope``,
+    ``output_schema_raw``, ``_customization``, and ``_META_CUSTOMIZED``.
+    """
     component_meta = dict(component.meta) if component.meta else {}
     component_meta["required_scope"] = required_scope
 
-    if raw_schema is not None:
-        component_meta["output_schema_raw"] = _unwrap_result_schema(raw_schema)
+    if schema.raw_schema is not None:
+        component_meta["output_schema_raw"] = _unwrap_result_schema(schema.raw_schema)
 
-    # Per-tool metadata consumed by the transform pipeline at runtime:
-    # label validation, error context, response transforms, binary detection,
-    # and route identity.  Virtual param gating (e.g. ``content_type`` via
-    # ``tool_predicate``) lives in the VirtualParam registry — see
-    # virtual_params.py.
-    component_meta["_customization"] = {
-        "has_labels": has_labels,
-        "is_text_response": is_text_response,
-        "is_empty_response": has_no_content,
-        "is_binary_response": _response_is_binary(
+    component_meta["_customization"] = ToolCustomization(
+        has_labels=has_labels,
+        is_text_response=schema.is_text_response,
+        is_empty_response=has_no_content,
+        is_binary_response=_response_is_binary(
             openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
         ),
-        "route_path": getattr(route, "path", ""),
-        "route_method": getattr(route, "method", ""),
-        "response_transform": response_transform,
-    }
+        route_path=getattr(route, "path", ""),
+        route_method=getattr(route, "method", ""),
+        response_transform=schema.response_transform,
+    )
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta
+
+
+def _customize_metadata(
+    route: Any,
+    component: OpenAPITool | Any,
+    *,
+    openapi_spec: OpenAPISpec,
+) -> None:
+    """In-place per-tool customization via FastMCP's ``mcp_component_fn`` hook.
+
+    Delegates to four focused phases:
+    1. ``_apply_tool_identity`` — title, annotations, hints, category,
+       scope, cache invalidation
+    2. ``_prepare_description`` — label guidance injection
+    3. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
+       schema derivation, classification, and mutations
+    4. ``_build_customization_meta`` — the ``component.meta`` contract
+       consumed by runtime transforms.
+    """
+    if not isinstance(component, OpenAPITool):
+        return
+
+    required_scope = _apply_tool_identity(route, component)
+
+    description, has_labels = _prepare_description(component)
+    component.description = description
+
+    schema = _compute_tool_schema(route, openapi_spec)
+    has_no_content = _apply_schema_postprocessing(
+        component, schema,
+        has_labels=has_labels,
+        route=route,
+        openapi_spec=openapi_spec,
+    )
+
+    _build_customization_meta(
+        component, required_scope, schema,
+        has_labels=has_labels,
+        has_no_content=has_no_content,
+        route=route,
+        openapi_spec=openapi_spec,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +452,11 @@ class _ToolWrappingTransform(Transform):
             default_overrides={"format": self._response_format},
         )
 
-    def _make_transform_fn(self, tool: Tool) -> Any:
+    def _make_transform_fn(
+        self,
+        tool: Tool,
+        customization: ToolCustomization | None,
+    ) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
 
         The returned callable receives ``**kwargs`` (the agent's arguments)
@@ -377,6 +464,12 @@ class _ToolWrappingTransform(Transform):
         run pre-hooks, resolve context, validate, execute via the HTTP
         layer, then hand off to :func:`apply_to` for post-hooks (formatting,
         sudo cleanup).
+
+        Args:
+            tool: The ``Tool`` being wrapped.
+            customization: The ``ToolCustomization`` extracted once in
+                :meth:`_wrap` and threaded explicitly — avoids repeated
+                ``tool.meta`` lookups.
 
         All parameter handling — injection, extraction, pre-hook mutation,
         and post-hook formatting — is driven by the :mod:`virtual_params`
@@ -397,6 +490,7 @@ class _ToolWrappingTransform(Transform):
             result = await self._run_transform_pipeline(
                 kwargs,
                 tool,
+                customization,
                 extracted=virtual_values,
                 ctx=ctx,
             )
@@ -417,19 +511,22 @@ class _ToolWrappingTransform(Transform):
     async def _wrap(self, tool: Tool) -> Tool:
         """Wrap a customized Tool with injected params and a runtime transform.
 
-        Three phases:
+        Four phases:
         1. **Guard** — skip uncustomized tools (no metadata).
-        2. **Inject** — add virtual params to the tool schema.
+        2. **Extract** — pull ``ToolCustomization`` from ``tool.meta``
+           so it is threaded explicitly through the runtime pipeline
+           rather than each consumer reaching into ``tool.meta``.
+        3. **Inject** — add virtual params to the tool schema.
            Runs once at startup via :meth:`list_tools` / :meth:`get_tool`.
-        3. **Wrap** — attach the runtime :func:`transform_fn` via
+        4. **Wrap** — attach the runtime :func:`transform_fn` via
            :meth:`Tool.from_tool`.  The transform_fn runs on every tool call.
         """
         meta = tool.meta or {}
         if not meta.get(_META_CUSTOMIZED):
             return tool
 
-        customization = meta.get("_customization", {})
-        if not customization:
+        customization: ToolCustomization | None = meta.get("_customization")
+        if customization is None:
             logger.warning(  # pragma: no cover — only reachable with a hand-crafted tool meta that sets _customized flag but omits _customization
                 "Tool %r has %r flag but empty customization metadata. "
                 "Error messages may lack route context.",
@@ -441,7 +538,7 @@ class _ToolWrappingTransform(Transform):
         self._inject_params(tool)
 
         # Phase 2: Build runtime behaviour (per-call).
-        transform_fn = self._make_transform_fn(tool)
+        transform_fn = self._make_transform_fn(tool, customization)
 
         # Phase 3: Attach via Tool.from_tool (FastMCP Transform contract).
         return Tool.from_tool(
@@ -561,6 +658,7 @@ class _ToolWrappingTransform(Transform):
         self,
         kwargs: dict[str, Any],
         tool: Tool,
+        customization: ToolCustomization | None,
         extracted: dict[str, Any] | None = None,
         ctx: Any | None = None,
     ) -> ToolResult:
@@ -577,6 +675,9 @@ class _ToolWrappingTransform(Transform):
         Args:
             kwargs: The tool arguments from the agent.
             tool: The Tool being wrapped (provides parameter schema and meta).
+            customization: The ``ToolCustomization`` extracted once in
+                :meth:`_wrap` and threaded explicitly — avoids repeated
+                ``tool.meta`` lookups throughout the pipeline.
             extracted: Extracted virtual parameter values (from
                 :func:`~tools.virtual_params.extract_from`), passed through
                 so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
@@ -584,13 +685,15 @@ class _ToolWrappingTransform(Transform):
             ctx: The MCP ``Context`` object, or ``None`` if no session is
                 active.  Resolved by the caller via :meth:`_resolve_current_context`.
         """
-        meta = tool.meta or {}
-        customization = meta.get("_customization", {})
-        route_path: str = customization.get("route_path", "")
-        route_method: str = customization.get("route_method", "")
-        is_text_response = customization.get("is_text_response", False)
-        is_empty_response = customization.get("is_empty_response", False)
-        is_binary_response = customization.get("is_binary_response", False)
+        if customization is None:
+            route_path, route_method = "", ""
+            is_text_response = is_empty_response = is_binary_response = False
+        else:
+            route_path = customization.route_path
+            route_method = customization.route_method
+            is_text_response = customization.is_text_response
+            is_empty_response = customization.is_empty_response
+            is_binary_response = customization.is_binary_response
         output_schema = tool.output_schema
 
         return await self._pipeline_with_context(
@@ -629,9 +732,8 @@ class _ToolWrappingTransform(Transform):
                 structured_content={"result": text},
             )
         # structured_content is not None → check for base64-decode
-        response_transform = (
-            (tool.meta or {}).get("_customization", {}).get("response_transform")
-        )
+        c: ToolCustomization | None = (tool.meta or {}).get("_customization")
+        response_transform = c.response_transform if c is not None else None
         if response_transform != "base64-decode":
             return None
         data = result.structured_content.get("result", {})

@@ -277,6 +277,12 @@ def _inject_response_metadata(
 ) -> None:
     """Inject response-level metadata into ``component.output_schema``.
 
+    Args:
+        component: The ``OpenAPITool`` whose ``output_schema`` receives
+            both injections.  Reading from a single source ensures the
+            two injections cannot diverge after :func:`_apply_fallback_schemas`
+            mutates ``component.output_schema``.
+
     Two independent injections, both derived from
     ``component.output_schema``:
 

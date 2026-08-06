@@ -143,8 +143,8 @@ The customization pipeline has two phases:
        the two helpers below.
      * ``_apply_fallback_schemas()`` — text/plain and no-content
        conditional schemas when ``output_schema`` is ``None``.
-     * ``_inject_response_metadata()`` — ``x-fastmcp-wrap-result``
-       and pagination metadata injection.
+     * ``_inject_response_metadata()`` — single-source metadata injection
+       (see function docstring for contract).
    - ``_build_customization_meta()`` — the ``component.meta`` contract
      (``required_scope``, ``output_schema_raw``, ``ToolCustomization``) consumed
      by runtime transforms

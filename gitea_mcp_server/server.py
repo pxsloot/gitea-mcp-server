@@ -15,7 +15,6 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-import fastmcp.server.server as _fastmcp_server_mod
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
@@ -56,47 +55,6 @@ from gitea_mcp_server.tools.unified_search import register_unified_search
 from gitea_mcp_server.tools.virtual_params import apply_scope_filter
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# FastMCP compat: fix _run_middleware 'ctx' → 'context' param name regression
-#
-# fastmcp 3.4.0+ renamed the parameter in _run_middleware's `wrapped` closure
-# from `context` to `ctx`, but their own ResponseCachingMiddleware still calls
-# `call_next(context=context)` with a keyword argument. This causes:
-#   TypeError: wrapped() got an unexpected keyword argument 'context'
-#
-# Patch _run_middleware to use the original parameter name `context` so that
-# keyword calls from fastmcp's built-in middleware work correctly.
-# Remove this block when fastmcp fixes the regression upstream.
-# Tracked in https://git.home.lan/mcp-server/gitea-mcp-server/issues/374
-# ---------------------------------------------------------------------------
-_fastmcp_run_mw = _fastmcp_server_mod.FastMCP._run_middleware
-
-
-async def _compat_run_middleware(
-    self: FastMCP,
-    context: Any,
-    call_next: Any,
-) -> Any:
-    """Patched _run_middleware using 'context' not 'ctx' (fastmcp regression fix)."""
-    chain = call_next
-    for mw in reversed(self.middleware):
-        next_chain: Any = chain
-
-        async def wrapped(
-            context: Any = None,
-            mw: Any = mw,
-            call_next: Any = next_chain,
-        ) -> Any:
-            return await mw(context, call_next)
-
-        chain = wrapped
-    return await chain(context)
-
-
-_fastmcp_server_mod.FastMCP._run_middleware = _compat_run_middleware  # type: ignore[method-assign]
-# ---------------------------------------------------------------------------
-
 
 def load_instructions() -> str:
     """Load agent instructions from package resource or fallback."""

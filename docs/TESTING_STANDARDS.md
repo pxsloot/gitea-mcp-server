@@ -133,8 +133,8 @@ tests/
 ### Source-to-Test Mapping
 
 Every production module in `gitea_mcp_server/` maps to one or more test files.
-This table is the canonical reference.  Modules with no dedicated test file
-are noted explicitly.
+The **naming convention** is the source of truth — no hand-maintained table
+is needed:
 
 > **Naming convention**: Unit test files follow `test_<module_name>.py` for
 > flat modules and `test_<abbrev>_<module>.py` for subpackage modules
@@ -142,82 +142,11 @@ are noted explicitly.
 > `test_<feature>.py`.  Cross-cutting or behavioral tests use
 > `test_<behavior>.py`.
 
-#### Flat modules (`gitea_mcp_server/`)
-
-| Source module | Test file(s) | Zone | Notes |
-|---|---|---|---|
-| `__init__.py` | — | — | Package marker (version string only) |
-| `cache_invalidation.py` | `test_cache_invalidation.py` | Unit + Integration | Both unit and integration test files; label cache URI parsing edge cases added in #552 |
-| `client.py` | `test_client.py`, `test_client_gitea_api.py`, `test_client_http_transport.py` | Unit | Three files cover the main class, `GiteaAPI`, and `HTTPTransport` |
-| `config.py` | `test_config.py` | Unit | 100% |
-| `constants.py` | `test_constants.py` | Unit | 100% |
-| `exceptions.py` | `test_exceptions.py` | Unit | 100% |
-| `format.py` | `test_format.py` | Unit | 100% — ``TestFormatListAsMarkdownRef``, ``TestFormatDictAsMarkdownEmptyFieldFilter``, ``TestFormatToolInfoMarkdown`` added in #619 |
-| `label_service.py` | `test_label_service.py`, `test_label_validation.py`, `test_label_transform.py` | Unit | Shared across label-related tests |
-| `logging_config.py` | `test_logging_config.py` | Unit | 100% |
-| `models.py` | — | — | TypedDict types only (zero runtime code) |
-| `openapi_types.py` | — | — | TypedDict types only (zero runtime code) |
-| `pagination.py` | `test_pagination.py` | Unit | Pagination metadata and runner |
-| `schema_utils.py` | `test_schema_utils.py` | Unit | Shared JSON Schema utilities |
-| `scope.py` | `test_scope.py` | Unit | Re-exported by `resources/scope.py` |
-| `search.py` | `test_search_bm25.py` | Unit | BM25 search engine tests. Named ``_bm25`` to disambiguate from ``tools/search.py`` → ``test_tool_search.py`` — see pragmatic deviations below |
-| `server.py` | `test_server.py`, `test_server_http.py` | Integration only | No unit test; 100% — ``TestWrappingPipelineEdgeCases``, ``Test204NoContentWrapping``, ``TestServerEdgeCases.test_main_async_crash_handler`` added in #619 |
-| `validation.py` | `test_validation.py` | Unit | 100% |
-
-#### `openapi_converter/` subpackage
-
-| Source module | Test file(s) | Zone | Notes |
-|---|---|---|---|
-| `openapi_converter/__init__.py` | — | — | Re-exports from `core.py` and `schema.py` |
-| `openapi_converter/core.py` | `openapi_converter/test_*.py` (9 files) + `test_paths.py` | Unit | 100% — ``TestRequestBodyBuilder`` added in #619; spread across all 10 `openapi_converter/` test files; `test_converter_properties.py` uses hypothesis for property-based invariants (``$ref`` resolution, vendor-extension stripping, response wrapping); pragmatic deviation: `test_paths.py` contains both converter core and schema tests following the existing file pattern |
-| `openapi_converter/schema.py` | `openapi_converter/test_definitions.py`, `test_paths.py` | Unit | 100% — `ResourcePropertyCollector` guard and path-level parameter edge cases added in #619 |
-
-#### `resources/` subpackage
-
-| Source module | Test file(s) | Zone | Notes |
-|---|---|---|---|
-| `resources/__init__.py` | — | — | Package marker |
-| `resources/auto.py` | `test_resource_auto.py` | Unit | Split from `test_resources.py` (#567) |
-| `resources/custom.py` | `test_resource_custom.py` | Unit | Split from `test_resources.py` (#567) |
-| `resources/factory.py` | `test_resource_factory.py` | Unit | Handler hook non-str/list edge cases, context_params not in URI, unregistered format_hint fallback added in #552; ``TestBuildOptionalParamSignature``, ``TestMakeApiResourceConcreteUriContextMeta``, ``TestMakeApiResourceErrorMessageFormat`` added in #619 |
-| `resources/meta.py` | `test_resource_meta.py` | Unit | 100% — ``TestCountSchemaProperties``, ``TestEstimateNestingDepth`` added in #619 |
-| `resources/scope.py` | `test_scope.py` | Unit | 13-line re-export of flat `scope.py` |
-
-#### `server_setup/` subpackage
-
-| Source module | Test file(s) | Zone | Notes |
-|---|---|---|---|
-| `server_setup/__init__.py` | — | — | Package marker (empty) |
-| `server_setup/http_server.py` | `test_server_http.py`, `test_http_transport_server.py` | Integration | 100% — exercised via `main_async()` with HTTP transport and real uvicorn stack |
-| `server_setup/mcp_builder.py` | `test_mcp_builder.py`, `test_tool_customize.py`, `test_tool_errors.py`, `test_tool_schemas.py`, `test_tool_filter.py`, `test_server.py` | Unit + Integration | 100% — wrapping pipeline edge cases (raw format early return, 204 No Content wrapping) added in #619 via integration `TestWrappingPipelineEdgeCases` + `Test204NoContentWrapping` |
-| `server_setup/mcp_extensions.py` | `test_mcp_extensions.py` | Unit | Extensions loading |
-| `server_setup/resource_setup.py` | `test_resources_integration.py` | Integration only | No unit test (patched in integration) |
-| `server_setup/spec_loader.py` | `test_spec_loader.py`, `test_tool_exclusion.py`, `test_tool_filter.py` | Unit | Spec loading, conversion orchestration |
-
-#### `tools/` subpackage
-
-| Source module | Test file(s) | Zone | Notes |
-|---|---|---|---|
-| `tools/__init__.py` | — | — | Package init |
-| `tools/customize.py` | `test_tool_customize.py` | Unit | Title, category, hint generation |
-| `tools/display.py` | `test_display.py` | Unit | Domain-specific formatter registry; formatter edge cases and tool/resource consistency tests (split from `test_resources.py` #567) |
-| `tools/docs_tools.py` | `test_docs_tools.py` | Unit | DocManager, workflow guides; page-out-of-range edge case added in #619 |
-| `tools/errors.py` | `test_tool_errors.py` | Unit | Error translation, runtime validation runner |
-| `tools/examples.py` | `test_tool_examples.py` | Unit | Schema-to-example generation |
-| `tools/exclusion.py` | `test_tool_exclusion.py` | Unit | Pattern matching helpers |
-| `tools/extensions_metadata.py` | `test_extensions_metadata.py`, `test_mcp_extensions_integration.py` | Unit + Integration | YAML metadata override transform |
-| `tools/filter_info.py` | `test_filter_info.py` | Unit | Filter prediction, middleware |
-| `tools/labels.py` | `test_tool_labels.py`, `test_label_validation.py` | Unit | Schema-time label conversion |
-| `tools/label_transform.py` | `test_label_transform.py` | Unit | Runtime label transform (innermost transform) |
-| `tools/mcp_tools.py` | `test_mcp_tools.py`, `test_mcp_tools_wrapping.py` | Unit | Resource access tools, wrapping; tag-filter-no-match edge case added in #619 |
-| `tools/namespace.py` | `test_tool_namespace.py` | Unit | Prefix/suffix namespace transform |
-| `tools/resource_display.py` | `test_resource_display.py`, `test_mcp_tools.py` | Unit | Now has dedicated test file (split from `test_resources.py` #567) |
-| `tools/schemas.py` | `test_tool_schemas.py` | Unit | Output schema derivation, `$ref` resolution; non-dict operation and unresolved `$ref` edge cases added in #619 |
-| `tools/search.py` | `test_tool_search.py` | Unit | Synthetic tools, lazy loading, BM25 search integration |
-| `tools/tool_display.py` | `test_tool_display.py` | Unit | Tool result formatting entry point; circular reference inner fallback added in #619 |
-| `tools/type_info.py` | `test_type_info.py` | Unit | Type resolution and cross-reference tracking |
-| `tools/unified_search.py` | `test_unified_search.py` | Unit | 100% — merged search across tools/docs/resources; page-out-of-range edge case added in #619 |
-| `tools/virtual_params.py` | `test_virtual_params.py` | Unit | Virtual parameter lifecycle (sudo, fetch_all, content_type, detail, format) |
+**CI enforcement**: Run `make check-test-coverage` to verify every production
+module has a matching test file.  The check walks all source modules, applies
+the naming convention, and reports any gap.  Builds fail if coverage is
+incomplete.  Intentional deviations (e.g. ``search.py`` →
+``test_search_bm25.py``) are documented in ``scripts/check_test_coverage.py``.
 
 ### Naming Conventions
 

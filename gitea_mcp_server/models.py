@@ -8,7 +8,31 @@ These types provide static type annotations with zero runtime overhead -
 TypedDict is a dict at runtime, so no serialization round-trip is needed.
 """
 
+from dataclasses import dataclass
 from typing import Any, TypedDict
+
+
+@dataclass
+class ToolCustomization:
+    """Startup-time metadata carried from customize phase to runtime transforms.
+
+    Replaces the ad-hoc ``dict`` previously stored at
+    ``component.meta["_customization"]``.  Every field that the runtime
+    wrapping pipeline, label transform, or text-response handler reads
+    is declared here as an explicit typed attribute.
+
+    All fields have defaults so tests can construct partial instances
+    and mutate fields after construction.  Production code in
+    ``_customize_metadata`` always sets every field explicitly.
+    """
+
+    has_labels: bool = False
+    is_text_response: bool = False
+    is_empty_response: bool = False
+    is_binary_response: bool = False
+    route_path: str = ""
+    route_method: str = ""
+    response_transform: str | None = None
 
 
 class ToolSearchEntry(TypedDict, total=False):
@@ -106,6 +130,7 @@ __all__ = [
     "ResourceEntry",
     "ResourceListing",
     "SimpleStringResult",
+    "ToolCustomization",
     "ToolSchemaResult",
     "ToolSearchEntry",
     "UnifiedSearchItem",

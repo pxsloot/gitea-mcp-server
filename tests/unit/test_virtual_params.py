@@ -14,6 +14,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.tools.virtual_params import (
     VirtualParam,
     _fetch_all_loop,
@@ -590,12 +591,12 @@ class TestWrapIntegration:
             parameters={"properties": {"owner": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/repos/{owner}/{repo}/issues",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/repos/{owner}/{repo}/issues",
+                    route_method="GET",
+                ),
             },
         )
 

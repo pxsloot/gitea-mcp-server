@@ -9,6 +9,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -403,7 +404,7 @@ class TestDeriveOutputSchema:
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["properties"]["result"]["type"] == "null"
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
-        assert tool.meta["_customization"]["is_empty_response"] is True
+        assert tool.meta["_customization"].is_empty_response is True
 
     @pytest.mark.asyncio
     async def test_transform_pipeline_passes_results_through(self) -> None:
@@ -1714,12 +1715,12 @@ class TestContentTypeVirtualParam:
             output_schema=None,
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/test",
-                    "route_method": "POST",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/test",
+                    route_method="POST",
+                ),
             },
             annotations=ToolAnnotations(title="Create File"),
         )
@@ -1744,12 +1745,12 @@ class TestContentTypeVirtualParam:
             output_schema=None,
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/test",
-                    "route_method": "PUT",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/test",
+                    route_method="PUT",
+                ),
             },
             annotations=ToolAnnotations(title="Update File"),
         )
@@ -1815,15 +1816,15 @@ class TestContentTypeVirtualParam:
             },
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "is_empty_response": False,
-                    "is_binary_response": False,
-                    "response_transform": None,
-                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
-                    "route_method": "POST",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    is_binary_response=False,
+                    response_transform=None,
+                    route_path="/repos/{owner}/{repo}/contents/{filepath}",
+                    route_method="POST",
+                ),
             },
             annotations=ToolAnnotations(title="Create File"),
         )
@@ -1883,15 +1884,15 @@ class TestContentTypeVirtualParam:
             },
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "is_empty_response": False,
-                    "is_binary_response": False,
-                    "response_transform": None,
-                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
-                    "route_method": "POST",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    is_binary_response=False,
+                    response_transform=None,
+                    route_path="/repos/{owner}/{repo}/contents/{filepath}",
+                    route_method="POST",
+                ),
             },
             annotations=ToolAnnotations(title="Create File"),
         )

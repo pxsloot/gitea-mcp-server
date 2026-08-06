@@ -8,8 +8,9 @@ The transform is registered on the OpenAPI provider via
 *before* the HTTP call to Gitea.
 """
 
+from __future__ import annotations
+
 import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.transforms import GetToolNext, Transform
@@ -17,10 +18,13 @@ from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.exceptions import ValidationError
-from gitea_mcp_server.label_service import LabelService
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from gitea_mcp_server.client import GiteaClient
+    from gitea_mcp_server.label_service import LabelService
+    from gitea_mcp_server.models import ToolCustomization
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ class LabelTransform(Transform):
     def __init__(
         self,
         label_service: LabelService,
-        gitea_client: "GiteaClient | None" = None,
+        gitea_client: GiteaClient | None = None,
     ) -> None:
         """Initialize LabelTransform.
 
@@ -96,9 +100,8 @@ class LabelTransform(Transform):
         Returns:
             ``True`` if the tool's ``_customization.has_labels`` is set.
         """
-        meta = tool.meta or {}
-        customization = meta.get("_customization", {})
-        return bool(customization.get("has_labels", False))
+        c: ToolCustomization | None = (tool.meta or {}).get("_customization")
+        return c.has_labels if c is not None else False
 
     async def _wrap_tool(self, tool: Tool) -> Tool:
         """Wrap a tool's ``run()`` with label conversion logic.
@@ -158,7 +161,7 @@ class LabelTransform(Transform):
 async def _convert_labels_inline(
     kwargs: dict[str, Any],
     label_service: LabelService,
-    gitea_client: "GiteaClient | None" = None,
+    gitea_client: GiteaClient | None = None,
 ) -> None:
     """Convert label strings/ints to validated integer IDs in-place.
 

@@ -11,6 +11,7 @@ from mcp.types import ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -343,10 +344,12 @@ class TestCustomizeMetadata:
 
         assert tool.meta.get("_customization_applied") is True
         assert "_customization" in tool.meta
-        assert tool.meta["_customization"]["route_path"] == "/repos/{owner}/{repo}"
-        assert tool.meta["_customization"]["route_method"] == "GET"
-        assert tool.meta["_customization"]["has_labels"] is False
-        assert tool.meta["_customization"]["is_text_response"] is False
+        c = tool.meta["_customization"]
+        assert isinstance(c, ToolCustomization)
+        assert c.route_path == "/repos/{owner}/{repo}"
+        assert c.route_method == "GET"
+        assert c.has_labels is False
+        assert c.is_text_response is False
 
     def test_registers_invalidation_patterns_for_write(self) -> None:
         """Write methods register cache invalidation patterns."""
@@ -729,12 +732,12 @@ class TestToolWrappingTransformTelemetry:
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/test",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/test",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="Test"),
         )
@@ -941,12 +944,12 @@ class TestToolWrappingTransform:
         if customized:
             meta = {
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/test",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/test",
+                    route_method="GET",
+                ),
             }
         return Tool(
             name="test_tool",
@@ -1086,7 +1089,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
         assert tool.meta is not None, "Expected tool.meta to be set"
-        tool.meta["_customization"]["is_text_response"] = True
+        tool.meta["_customization"].is_text_response = True
 
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
@@ -1430,13 +1433,13 @@ class TestFetchAllIntegration:
             },
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "is_empty_response": False,
-                    "route_path": "/repos/{owner}/{repo}/items",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    route_path="/repos/{owner}/{repo}/items",
+                    route_method="GET",
+                ),
             },
         )
         return transform, tool
@@ -1887,8 +1890,8 @@ class TestCustomizeMetadataContentsResponse:
         _customize_metadata(route, tool, openapi_spec=spec)
 
         meta = tool.meta["_customization"]
-        assert meta["response_transform"] == "base64-decode"
-        assert meta["is_binary_response"] is True
+        assert meta.response_transform == "base64-decode"
+        assert meta.is_binary_response is True
 
     def test_defaults_when_no_annotations(self) -> None:
         spec = make_openapi_spec(paths={
@@ -1916,8 +1919,8 @@ class TestCustomizeMetadataContentsResponse:
         _customize_metadata(route, tool, openapi_spec=spec)
 
         meta = tool.meta["_customization"]
-        assert meta["response_transform"] is None
-        assert meta["is_binary_response"] is False
+        assert meta.response_transform is None
+        assert meta.is_binary_response is False
 
 
 # ---------------------------------------------------------------------------
@@ -1942,15 +1945,15 @@ class TestPipelineBase64Decode:
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": True,
-                    "is_empty_response": False,
-                    "is_binary_response": False,
-                    "response_transform": "base64-decode",
-                    "route_path": "/repos/{owner}/{repo}/contents/{filepath}",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=True,
+                    is_empty_response=False,
+                    is_binary_response=False,
+                    response_transform="base64-decode",
+                    route_path="/repos/{owner}/{repo}/contents/{filepath}",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="Get Contents"),
         )
@@ -2046,7 +2049,7 @@ class TestPipelineBase64Decode:
         transform = self.make_transform()
         tool = self.make_tool()
         assert tool.meta is not None
-        tool.meta["_customization"]["response_transform"] = None
+        tool.meta["_customization"].response_transform = None
 
         import base64
         encoded = base64.b64encode(b"should not decode").decode()
@@ -2098,15 +2101,15 @@ class TestPipelineBinaryResponse:
             },
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "is_empty_response": False,
-                    "is_binary_response": True,
-                    "response_transform": None,
-                    "route_path": "/repos/{owner}/{repo}/archive/{archive}",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    is_binary_response=True,
+                    response_transform=None,
+                    route_path="/repos/{owner}/{repo}/archive/{archive}",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="Get Archive"),
         )
@@ -2145,7 +2148,7 @@ class TestPipelineBinaryResponse:
         transform = self.make_transform()
         tool = self.make_tool()
         assert tool.meta is not None
-        tool.meta["_customization"]["is_binary_response"] = False
+        tool.meta["_customization"].is_binary_response = False
 
         with (
             patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
@@ -2226,15 +2229,15 @@ class TestPipelineUnicodeDecodeError:
             output_schema=None,
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "is_empty_response": False,
-                    "is_binary_response": is_binary_response,
-                    "response_transform": None,
-                    "route_path": "/repos/{owner}/{repo}/archive/{archive}",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    is_binary_response=is_binary_response,
+                    response_transform=None,
+                    route_path="/repos/{owner}/{repo}/archive/{archive}",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="Get Archive"),
         )

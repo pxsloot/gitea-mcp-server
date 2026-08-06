@@ -7,6 +7,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import ToolAnnotations
 
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
@@ -464,12 +465,12 @@ class TestPaginationMetadata:
             output_schema=output_schema or self.ARRAY_OUTPUT_SCHEMA,
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": False,
-                    "route_path": "/repos/{owner}/{repo}/issues",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/repos/{owner}/{repo}/issues",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="List issues"),
         )
@@ -690,12 +691,12 @@ class TestCustomizeComponentTextResponse:
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": False,
-                    "is_text_response": True,
-                    "route_path": "/repos/{owner}/{repo}/issues",
-                    "route_method": "GET",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=True,
+                    route_path="/repos/{owner}/{repo}/issues",
+                    route_method="GET",
+                ),
             },
             annotations=ToolAnnotations(title="List issues"),
         )

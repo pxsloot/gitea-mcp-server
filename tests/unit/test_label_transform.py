@@ -12,6 +12,7 @@ from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.label_service import LabelService
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.tools.label_transform import (
     LabelTransform,
     _convert_labels_inline,
@@ -77,11 +78,11 @@ class TestLabelTransform:
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": has_labels,
-                    "route_path": "/test",
-                    "route_method": "POST",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=has_labels,
+                    route_path="/test",
+                    route_method="POST",
+                ),
             },
             annotations=ToolAnnotations(title=name),
         )
@@ -320,11 +321,11 @@ class TestLabelTransformTelemetry:
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
                 "_customization_applied": True,
-                "_customization": {
-                    "has_labels": has_labels,
-                    "route_path": "/test",
-                    "route_method": "POST",
-                },
+                "_customization": ToolCustomization(
+                    has_labels=has_labels,
+                    route_path="/test",
+                    route_method="POST",
+                ),
             },
             annotations=ToolAnnotations(title=name),
         )

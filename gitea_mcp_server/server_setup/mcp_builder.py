@@ -23,6 +23,7 @@ from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
+from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
@@ -298,17 +299,17 @@ def _customize_metadata(
     # and route identity.  Virtual param gating (e.g. ``content_type`` via
     # ``tool_predicate``) lives in the VirtualParam registry — see
     # virtual_params.py.
-    component_meta["_customization"] = {
-        "has_labels": has_labels,
-        "is_text_response": is_text_response,
-        "is_empty_response": has_no_content,
-        "is_binary_response": _response_is_binary(
+    component_meta["_customization"] = ToolCustomization(
+        has_labels=has_labels,
+        is_text_response=is_text_response,
+        is_empty_response=has_no_content,
+        is_binary_response=_response_is_binary(
             openapi_spec, getattr(route, "path", ""), getattr(route, "method", ""),
         ),
-        "route_path": getattr(route, "path", ""),
-        "route_method": getattr(route, "method", ""),
-        "response_transform": response_transform,
-    }
+        route_path=getattr(route, "path", ""),
+        route_method=getattr(route, "method", ""),
+        response_transform=response_transform,
+    )
     component_meta[_META_CUSTOMIZED] = True
     component.meta = component_meta
 
@@ -428,8 +429,8 @@ class _ToolWrappingTransform(Transform):
         if not meta.get(_META_CUSTOMIZED):
             return tool
 
-        customization = meta.get("_customization", {})
-        if not customization:
+        customization: ToolCustomization | None = meta.get("_customization")
+        if customization is None:
             logger.warning(  # pragma: no cover — only reachable with a hand-crafted tool meta that sets _customized flag but omits _customization
                 "Tool %r has %r flag but empty customization metadata. "
                 "Error messages may lack route context.",
@@ -585,12 +586,16 @@ class _ToolWrappingTransform(Transform):
                 active.  Resolved by the caller via :meth:`_resolve_current_context`.
         """
         meta = tool.meta or {}
-        customization = meta.get("_customization", {})
-        route_path: str = customization.get("route_path", "")
-        route_method: str = customization.get("route_method", "")
-        is_text_response = customization.get("is_text_response", False)
-        is_empty_response = customization.get("is_empty_response", False)
-        is_binary_response = customization.get("is_binary_response", False)
+        c: ToolCustomization | None = meta.get("_customization")
+        if c is None:
+            route_path, route_method = "", ""
+            is_text_response = is_empty_response = is_binary_response = False
+        else:
+            route_path = c.route_path
+            route_method = c.route_method
+            is_text_response = c.is_text_response
+            is_empty_response = c.is_empty_response
+            is_binary_response = c.is_binary_response
         output_schema = tool.output_schema
 
         return await self._pipeline_with_context(
@@ -629,9 +634,8 @@ class _ToolWrappingTransform(Transform):
                 structured_content={"result": text},
             )
         # structured_content is not None → check for base64-decode
-        response_transform = (
-            (tool.meta or {}).get("_customization", {}).get("response_transform")
-        )
+        c: ToolCustomization | None = (tool.meta or {}).get("_customization")
+        response_transform = c.response_transform if c is not None else None
         if response_transform != "base64-decode":
             return None
         data = result.structured_content.get("result", {})

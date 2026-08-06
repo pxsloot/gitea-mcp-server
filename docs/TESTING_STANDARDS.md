@@ -502,6 +502,68 @@ tests/live/
     path with mocked ``ClientSession.call_tool`` responses — no live instance
     needed.
 
+RepoState ``need_*`` Design
+---------------------------
+
+The ``need_*`` methods on ``RepoState`` (``need_branch``, ``need_file``,
+``need_label``, ``need_milestone``, ``need_issue``, ``need_tag``,
+``need_pull_request``) follow an intentional **lazy-materialize** pattern
+that is a command-query hybrid by design.
+
+**Why command-query separation is not applied.**  The contract is
+"ensure this resource exists and give me the data", not "check if it
+exists, then fetch it separately."  Splitting into ``ensure_X()`` (void
+command) and ``get_X()`` (query) would double every call site in ~15
+workflow test files for zero functional gain.  The cache is a
+performance optimisation, not a semantic boundary.
+
+**Three-phase flow.**  Every ``need_*`` method follows the same shape:
+
+1. **Cache hit** — conflict detection on immutable fields
+   (``check_conflict``), postcondition verification on mutable state
+   (``_verify_*_postcondition``), return cached data.
+
+2. **Adopt from Gitea** — for ``need_issue`` and ``need_pull_request``
+   only: scan existing Gitea entities for a title match.  The
+   ``_adopt_and_cache_issue`` / ``_adopt_and_cache_pr`` helpers mutate
+   the cache AND return the adopted dict — symmetric with step 3.
+
+3. **Create new** — call the Gitea API, cache the result
+   (``self.<collection>`` + ``self._*_options``), return fresh data.
+
+**Immutable config vs mutable state.**  Each ``need_*`` method stores
+immutable creation parameters in a ``_*_options`` dict
+(e.g. ``_issue_options``: body, labels, milestone, assignees) and
+mutable postcondition state in a separate ``_*_postcondition`` dict
+(e.g. ``_issue_postcondition``: ``"open"`` / ``"closed"`` / ``None``).
+This separation means ``check_conflict`` never needs to know about
+state — it only compares immutable fields, and a mismatch raises
+``ConflictError``.
+
+**Postcondition storage.**  The ``_issue_postcondition`` and
+``_pr_postcondition`` dicts record the last caller's expected state.
+On first creation (or adoption), the state is always stored.  On
+subsequent cache hits, state is only updated when explicitly provided
+(``state is not None``) — a ``None`` preserves the prior postcondition.
+The stored value is never consulted for the comparison itself (the
+comparison always uses ``cached.get("state")`` from the actual entity
+data); it serves as documentation of intent and structural separation
+from immutable config.
+
+**When to extract a new ``_adopt_and_cache_*`` helper.**  ``need_issue``
+and ``need_pull_request`` scan Gitea for pre-existing entities.  This
+scan-and-adopt logic is extracted into a private helper when it involves
+more than a trivial API call + loop match.  The helper follows the same
+hybrid shape: mutate the cache and return the data.  See
+``_adopt_and_cache_issue`` and ``_adopt_and_cache_pr`` in
+``tests/live/state.py``.
+
+**Adding a new ``need_*`` method.**  Copy the pattern: cache check with
+``check_conflict`` → (optional) adopt-from-Gitea helper → create new.
+Store immutable config in ``_*_options``, mutable state in
+``_*_postcondition``.  Document the new dict fields in the
+``RepoState`` docstring.
+
 10. **Bootstrap verification unit tests.**  ``World.need_user``,
     ``need_org``, and ``need_team`` contain verification logic that only
     fires when a pre-existing entity happens to have mismatched config on

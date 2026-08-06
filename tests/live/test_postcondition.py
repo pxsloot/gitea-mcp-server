@@ -133,7 +133,8 @@ class TestIssuePostcondition:
         """Cache has ``open``; caller expects ``closed``; re-read confirms ``closed``."""
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "open"}
-        state._issue_options[1] = {"body": "desc", "state": "open"}
+        state._issue_options[1] = {"body": "desc"}
+        state._issue_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(data={"number": 1, "title": "Bug", "state": "closed"}),
@@ -149,7 +150,8 @@ class TestIssuePostcondition:
         """Cache has ``open``; caller expects ``closed``; re-read still ``open``."""
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "open"}
-        state._issue_options[1] = {"body": "desc", "state": "open"}
+        state._issue_options[1] = {"body": "desc"}
+        state._issue_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(data={"number": 1, "title": "Bug", "state": "open"}),
@@ -166,7 +168,8 @@ class TestIssuePostcondition:
         """Re-read call returns an error — treated as unreadable entity."""
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "open"}
-        state._issue_options[1] = {"body": "desc", "state": "open"}
+        state._issue_options[1] = {"body": "desc"}
+        state._issue_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(is_error=True, error_text="not found"),
@@ -196,7 +199,8 @@ class TestIssuePostcondition:
         """Cache already has ``closed`` and caller expects ``closed`` — skip re-read."""
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "closed"}
-        state._issue_options[1] = {"body": "desc", "state": "closed"}
+        state._issue_options[1] = {"body": "desc"}
+        state._issue_postcondition[1] = "closed"
 
         state._server = AsyncMock()  # type: ignore[method-assign]
 
@@ -208,10 +212,11 @@ class TestIssuePostcondition:
     async def test_update_stored_postcondition_on_successful_re_read(
         self,
     ) -> None:
-        """After re-read, _issue_options reflects the new postcondition."""
+        """After re-read, _issue_postcondition reflects the new postcondition."""
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "open"}
-        state._issue_options[1] = {"body": "desc", "state": "open"}
+        state._issue_options[1] = {"body": "desc"}
+        state._issue_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(data={"number": 1, "title": "Bug", "state": "closed"}),
@@ -219,11 +224,11 @@ class TestIssuePostcondition:
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         await state.need_issue("Bug", state="closed")
-        assert state._issue_options[1]["state"] == "closed"
+        assert state._issue_postcondition[1] == "closed"
 
     @pytest.mark.asyncio
     async def test_create_new_issue_stores_state_in_options(self) -> None:
-        """First creation of an issue stores state in _issue_options."""
+        """First creation of an issue stores state in _issue_postcondition."""
         state = _new_state()
         mock_s = await _mock_session(
             # list_issues returns empty
@@ -237,8 +242,8 @@ class TestIssuePostcondition:
 
         result = await state.need_issue("New Bug", state="closed")
         assert result["state"] == "open"  # created issue is always open
-        assert state._issue_options[2]["state"] == "closed"
-        assert "closed" not in result.values()  # state in options, not in creation response
+        assert state._issue_postcondition[2] == "closed"
+        assert "closed" not in result.values()  # state in postcondition, not in creation response
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +264,9 @@ class TestPRPostcondition:
             "number": 1, "title": "PR", "state": "open", "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc", "state": "open",
+            "head": "feat", "base": "main", "body": "desc",
         }
+        state._pr_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(data={
@@ -282,8 +288,9 @@ class TestPRPostcondition:
             "number": 1, "title": "PR", "state": "open", "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc", "state": "open",
+            "head": "feat", "base": "main", "body": "desc",
         }
+        state._pr_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(data={
@@ -307,8 +314,9 @@ class TestPRPostcondition:
             "number": 1, "title": "PR", "state": "closed", "merged": True,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc", "state": "closed",
+            "head": "feat", "base": "main", "body": "desc",
         }
+        state._pr_postcondition[1] = "closed"
 
         mock_s = await _mock_session(
             _mock_result(data={
@@ -332,8 +340,9 @@ class TestPRPostcondition:
             "number": 1, "title": "PR", "state": "closed", "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc", "state": "closed",
+            "head": "feat", "base": "main", "body": "desc",
         }
+        state._pr_postcondition[1] = "closed"
 
         mock_s = await _mock_session(
             _mock_result(data={
@@ -355,8 +364,9 @@ class TestPRPostcondition:
             "number": 1, "title": "PR", "state": "open", "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc", "state": "open",
+            "head": "feat", "base": "main", "body": "desc",
         }
+        state._pr_postcondition[1] = "open"
 
         mock_s = await _mock_session(
             _mock_result(is_error=True, error_text="not found"),
@@ -389,7 +399,7 @@ class TestPRPostcondition:
 
     @pytest.mark.asyncio
     async def test_create_new_pr_stores_state_in_options(self) -> None:
-        """First creation of a PR stores state in _pr_options."""
+        """First creation of a PR stores state in _pr_postcondition."""
         state = _new_state()
         mock_s = await _mock_session(
             # list_pull_requests returns empty
@@ -405,7 +415,7 @@ class TestPRPostcondition:
         result = await state.need_pull_request(
             "New PR", head="feat", base="main", state="closed",
         )
-        assert state._pr_options[2]["state"] == "closed"
+        assert state._pr_postcondition[2] == "closed"
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +432,8 @@ class TestImmutableConflictPreserved:
 
         state = _new_state()
         state.issues[1] = {"number": 1, "title": "Bug", "state": "open"}
-        state._issue_options[1] = {"body": "original", "state": "open"}
+        state._issue_options[1] = {"body": "original"}
+        state._issue_postcondition[1] = "open"
         state._server = AsyncMock()  # type: ignore[method-assign]
 
         # check_conflict raises synchronously for immutable fields

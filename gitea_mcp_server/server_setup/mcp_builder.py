@@ -442,7 +442,11 @@ class _ToolWrappingTransform(Transform):
             default_overrides={"format": self._response_format},
         )
 
-    def _make_transform_fn(self, tool: Tool) -> Any:
+    def _make_transform_fn(
+        self,
+        tool: Tool,
+        customization: ToolCustomization | None,
+    ) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
 
         The returned callable receives ``**kwargs`` (the agent's arguments)
@@ -470,6 +474,7 @@ class _ToolWrappingTransform(Transform):
             result = await self._run_transform_pipeline(
                 kwargs,
                 tool,
+                customization,
                 extracted=virtual_values,
                 ctx=ctx,
             )
@@ -514,7 +519,7 @@ class _ToolWrappingTransform(Transform):
         self._inject_params(tool)
 
         # Phase 2: Build runtime behaviour (per-call).
-        transform_fn = self._make_transform_fn(tool)
+        transform_fn = self._make_transform_fn(tool, customization)
 
         # Phase 3: Attach via Tool.from_tool (FastMCP Transform contract).
         return Tool.from_tool(
@@ -634,6 +639,7 @@ class _ToolWrappingTransform(Transform):
         self,
         kwargs: dict[str, Any],
         tool: Tool,
+        customization: ToolCustomization | None,
         extracted: dict[str, Any] | None = None,
         ctx: Any | None = None,
     ) -> ToolResult:
@@ -650,6 +656,9 @@ class _ToolWrappingTransform(Transform):
         Args:
             kwargs: The tool arguments from the agent.
             tool: The Tool being wrapped (provides parameter schema and meta).
+            customization: The ``ToolCustomization`` extracted once in
+                :meth:`_wrap` and threaded explicitly — avoids repeated
+                ``tool.meta`` lookups throughout the pipeline.
             extracted: Extracted virtual parameter values (from
                 :func:`~tools.virtual_params.extract_from`), passed through
                 so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
@@ -657,17 +666,15 @@ class _ToolWrappingTransform(Transform):
             ctx: The MCP ``Context`` object, or ``None`` if no session is
                 active.  Resolved by the caller via :meth:`_resolve_current_context`.
         """
-        meta = tool.meta or {}
-        c: ToolCustomization | None = meta.get("_customization")
-        if c is None:
+        if customization is None:
             route_path, route_method = "", ""
             is_text_response = is_empty_response = is_binary_response = False
         else:
-            route_path = c.route_path
-            route_method = c.route_method
-            is_text_response = c.is_text_response
-            is_empty_response = c.is_empty_response
-            is_binary_response = c.is_binary_response
+            route_path = customization.route_path
+            route_method = customization.route_method
+            is_text_response = customization.is_text_response
+            is_empty_response = customization.is_empty_response
+            is_binary_response = customization.is_binary_response
         output_schema = tool.output_schema
 
         return await self._pipeline_with_context(

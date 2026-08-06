@@ -1389,6 +1389,7 @@ class TestToolWrappingTransform:
                 result = await transform._run_transform_pipeline(
                     {"page": 1, "limit": 10},
                     tool,
+                    tool.meta.get("_customization") if tool.meta else None,
                     extracted=extracted,
                 )
         finally:
@@ -1504,6 +1505,7 @@ class TestFetchAllIntegration:
                 result = await transform._run_transform_pipeline(
                     {"page": 1, "limit": 10, "owner": "test"},
                     tool,
+                    tool.meta.get("_customization") if tool.meta else None,
                     extracted=extracted,
                 )
         finally:
@@ -1559,6 +1561,7 @@ class TestFetchAllIntegration:
                 result = await transform._run_transform_pipeline(
                     {"page": 1, "limit": 10, "owner": "test"},
                     tool,
+                    tool.meta.get("_customization") if tool.meta else None,
                     extracted=extracted,
                 )
         finally:

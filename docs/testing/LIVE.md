@@ -6,6 +6,18 @@ covers: Live test architecture — Zone 5: World, dependency graph, Workflow fac
 
 # Live Test Architecture (Zone 5)
 
+## What this doc is NOT
+
+This doc covers the live test architecture (Zone 5): World, dependency graph,
+Workflow facade, RepoState, quality contracts.  If you need:
+
+| Topic | See |
+|-------|-----|
+| Definitions of the five test zones and coverage targets | `testing/ZONES.md` |
+| Detailed test patterns and code examples for unit/integration tests | `testing/PATTERNS.md` |
+| CI live test setup (Forgejo service container, admin provisioning) | `testing/CI.md` |
+| Integration testing patterns and running tests | `testing/INTEGRATION.md` |
+
 **What it tests**: The full production path — real Forgejo instance, real MCP
 server binary over stdio, raw MCP SDK transport. Exercises transport-level
 output validation that in-memory ``server.call_tool()`` bypasses.

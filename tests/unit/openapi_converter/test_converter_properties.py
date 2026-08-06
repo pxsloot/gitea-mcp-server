@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # (100 examples per @given, no deadline) are fine for the current size.  As
 # the property-test suite grows, add ``@settings(max_examples=..., deadline=...)``
 # to individual test classes to tune profile vs. CI time — see the
-# ``@pytest.mark.slow`` guideline in TESTING_STANDARDS.md for the threshold.
+# ``@pytest.mark.slow`` guideline in docs/testing/PATTERNS.md for the threshold.
 
 # ===========================================================================
 # Reactive helpers — walk converted specs for assertions

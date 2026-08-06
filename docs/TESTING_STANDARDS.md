@@ -28,7 +28,8 @@ This doc covers testing principles and quality standards. If you need:
 | Doc | Type | Covers |
 |-----|------|--------|
 | `testing/LAYOUT.md` | reference | Directory layout, naming conventions, source-to-test mapping, cross-cutting test files |
-| `testing/ZONES.md` | reference | Five test zones with patterns, examples, coverage targets — plus testing frameworks, what to test, and how-to patterns |
+| `testing/ZONES.md` | reference | Five test zones: their patterns, examples, and coverage targets — plus the testing frameworks |
+| `testing/PATTERNS.md` | reference | How-to test patterns with code examples — what to test per layer, transformation chains, respx, MCP call results, hypothesis |
 | `testing/FIXTURES.md` | reference | Shared fixtures, typed OpenAPI spec fixtures, SimpleConfig, module-level, inline, async |
 | `testing/MOCKING.md` | reference | Mocking rules (good/bad), server-level policy, GiteaClient, mock helpers, result narrowing |
 | `testing/CONTEXTVAR.md` | reference | ContextVar lifecycle in tests — safety net, local cleanup, why it matters |

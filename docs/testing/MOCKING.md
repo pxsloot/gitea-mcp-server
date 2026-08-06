@@ -115,5 +115,5 @@ When testing MCP tool calls, the return types are unions (``TextContent |
 ImageContent | ...``, ``dict[str, Any] | None``).  Use the helpers in
 ``tests/helpers/mcp_results.py`` to narrow these unions and avoid mypy
 ``union-attr`` errors.  See the "Testing MCP Tool Call Results" section
-in `testing/ZONES.md` for usage and ``tests/unit/test_mcp_results_helpers.py``
+in `testing/PATTERNS.md` for usage and ``tests/unit/test_mcp_results_helpers.py``
 for tests.

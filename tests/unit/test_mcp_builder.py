@@ -2471,7 +2471,7 @@ class TestApplyToolIdentity:
 
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
-        assert scope is not None  # scope derived from tags  # scope derived from tags
+        assert scope is not None  # scope derived from tags
 
     def test_returns_required_scope(self) -> None:
         """Return value is the derived required_scope string."""
@@ -2560,6 +2560,52 @@ class TestApplyFallbackSchemas:
         assert component.output_schema == {
             "type": "object",
             "properties": {"result": {"type": "string"}},
+        }
+
+    def test_no_content_fallback(self) -> None:
+        """Sets null-result schema when output_schema is None and not text."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = None
+        schema = _ComputedSchema(
+            output_schema=None,
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}/pulls/{index}/merge",
+            route_method="POST",
+        )
+
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}/merge": {
+                    "post": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/APIEmpty"},
+                        },
+                    },
+                },
+            },
+            components={
+                "responses": {
+                    "APIEmpty": {
+                        "description": "APIEmpty is an empty response",
+                    },
+                },
+            },
+        )
+
+        result = _apply_fallback_schemas(component, schema, openapi_spec=spec)
+
+        assert result is True
+        assert component.output_schema == {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "null",
+                    "description": "No content returned. The operation completed successfully.",
+                },
+            },
         }
 
 

@@ -255,12 +255,8 @@ def _apply_fallback_schemas(
         }
         return False
 
-    has_no_content = (
-        _response_has_no_content(
-            openapi_spec, schema.route_path, schema.route_method,
-        )
-        if not schema.is_text_response
-        else False
+    has_no_content = _response_has_no_content(
+        openapi_spec, schema.route_path, schema.route_method,
     )
     if has_no_content:
         component.output_schema = {

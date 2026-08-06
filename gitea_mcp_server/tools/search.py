@@ -137,14 +137,13 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
     # Within each window, two query-token orderings are tried:
     #   - original: "create pull request" → ["create", "pull", "request"]
     #   - swapped:  verb-first → "create issue" ↔ ["issue", "create"]
+    swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
     for start in range(len(n_tokens) - len(q_tokens) + 1):
         window = n_tokens[start : start + len(q_tokens)]
         if _token_prefix_match(q_tokens, window):
             return True
-        if len(q_tokens) >= _NAME_MATCH_MIN_TOKENS:
-            swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
-            if _token_prefix_match(swapped, window):
-                return True
+        if _token_prefix_match(swapped, window):
+            return True
 
     return False
 

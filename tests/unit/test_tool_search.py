@@ -1561,6 +1561,25 @@ class TestSearchAndSliceNameMatch:
         assert page_items[0]["name"] == "gitea_user_get_current"
         assert page_items[0]["score"] == 1.0
 
+    def test_domain_prefix_ranks_correct_tool_first(self) -> None:
+        """Query matching via sliding window ranks the correct tool #1.
+
+        Regression guard for #518: ``\"create pull request\"`` must rank
+        ``gitea_repo_create_pull_request`` above similarly-named tools
+        that share the same prefix window (e.g. ``_pull_review``).
+        """
+        items = self._make_items([
+            "gitea_repo_create_pull_review",
+            "gitea_repo_create_pull_request",
+        ])
+        texts = self._make_texts(items)
+        page_items, _ = _search_and_slice(
+            items, texts, "create pull request", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        assert page_items[0]["name"] == "gitea_repo_create_pull_request"
+        assert page_items[0]["score"] == 1.0
+
     def test_no_prefix_configured(self) -> None:
         """Without prefix, unprefixed names match."""
         items = self._make_items([

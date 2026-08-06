@@ -132,8 +132,8 @@ The customization pipeline has two phases:
 
    - ``_apply_tool_identity()`` — title, annotations, hints, category,
      scope, cache invalidation
-   - ``_prepare_description()`` (in `tools/customize.py`) — label guidance
-     injection
+   - ``_detect_has_labels()`` (in `tools/customize.py`) — detect
+     array-typed labels parameter (drives schema augmentation)
    - ``_compute_tool_schema()`` — pure: bundles six spec queries
      (schema derivation, text/binary/ContentsResponse classification,
      route identity) into a single ``_ComputedSchema`` NamedTuple.

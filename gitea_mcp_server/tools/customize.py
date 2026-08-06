@@ -14,7 +14,6 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,
     HTTP_METHODS_IDEMPOTENT,
     HTTP_METHODS_SAFE,
-    LABEL_GUIDANCE,
     TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.tools.schemas import _schema_type_is_array
@@ -297,15 +296,11 @@ def _is_array_response(output_schema: dict[str, Any] | None) -> bool:
     return _schema_type_is_array(result_schema)
 
 
-def _prepare_description(component: Any) -> tuple[str, bool]:
-    description = getattr(component, "description", "") or ""
-
+def _detect_has_labels(component: Any) -> bool:
+    """Check whether the component's schema has an array-typed ``labels`` parameter."""
     params = getattr(component, "parameters", None) or {}
     props = params.get("properties", {})
-    has_labels = "labels" in props and _schema_type_is_array(props["labels"])
-    if has_labels and LABEL_GUIDANCE.strip() not in description:
-        description += LABEL_GUIDANCE
-    return description, has_labels
+    return "labels" in props and _schema_type_is_array(props["labels"])
 
 
 __all__ = [

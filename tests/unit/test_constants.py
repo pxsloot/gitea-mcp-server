@@ -21,7 +21,6 @@ from gitea_mcp_server.constants import (
     HTTP_TIMEOUT_READ,
     HTTP_TIMEOUT_WRITE,
     LABEL_CACHE_TTL,
-    LABEL_GUIDANCE,
     PATTERN_FILES,
     PATTERN_ISSUES_LIST,
     PATTERN_PULLS_LIST,
@@ -101,10 +100,6 @@ class TestSearchConfig:
         assert "pull_request" in SEARCH_CATEGORY_ALIASES
         assert "issue" in SEARCH_CATEGORY_ALIASES
         assert "repository" in SEARCH_CATEGORY_ALIASES
-
-    def test_label_guidance_is_non_empty(self) -> None:
-        assert len(LABEL_GUIDANCE) > 0
-        assert "Labels" in LABEL_GUIDANCE
 
 
 class TestHTTPStatusCodes:

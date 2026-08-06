@@ -542,27 +542,6 @@ class TestSearchableTextExtended:
         assert "The repository owner" in result
         assert "The repository name" in result
 
-    def test_label_guidance_stripped_from_search_text(self) -> None:
-        """LABEL_GUIDANCE is stripped from BM25 corpus but kept in tool description."""
-        from gitea_mcp_server.constants import LABEL_GUIDANCE
-        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
-
-        desc = f"Create a new issue in a repository.{LABEL_GUIDANCE}"
-        tool = Tool(
-            name="gitea_issue_create_issue",
-            description=desc,
-            parameters={"properties": {"owner": {}, "repo": {}}},
-            tags={"issue", "labels"},
-        )
-        result = _extract_searchable_text_enhanced(tool)
-        # The label guidance text should NOT appear in the BM25 corpus
-        assert "validated against" not in result
-        assert "list_labels" not in result
-        # The core description should still be present
-        assert "Create a new issue" in result
-        # The tool name (boosted x SEARCH_NAME_BOOST) should be present
-        assert "gitea_issue_create_issue" in result
-
 
 class TestCallToolRuntimeBehaviorExtended:
     """Extended tests for call_tool runtime behavior."""

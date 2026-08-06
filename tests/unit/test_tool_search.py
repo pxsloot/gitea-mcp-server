@@ -542,6 +542,27 @@ class TestSearchableTextExtended:
         assert "The repository owner" in result
         assert "The repository name" in result
 
+    def test_label_guidance_stripped_from_search_text(self) -> None:
+        """LABEL_GUIDANCE is stripped from BM25 corpus but kept in tool description."""
+        from gitea_mcp_server.constants import LABEL_GUIDANCE
+        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+
+        desc = f"Create a new issue in a repository.{LABEL_GUIDANCE}"
+        tool = Tool(
+            name="gitea_issue_create_issue",
+            description=desc,
+            parameters={"properties": {"owner": {}, "repo": {}}},
+            tags={"issue", "labels"},
+        )
+        result = _extract_searchable_text_enhanced(tool)
+        # The label guidance text should NOT appear in the BM25 corpus
+        assert "validated against" not in result
+        assert "list_labels" not in result
+        # The core description should still be present
+        assert "Create a new issue" in result
+        # The tool name (boosted x SEARCH_NAME_BOOST) should be present
+        assert "gitea_issue_create_issue" in result
+
 
 class TestCallToolRuntimeBehaviorExtended:
     """Extended tests for call_tool runtime behavior."""
@@ -1457,6 +1478,29 @@ class TestNameMatches:
         """Query with more tokens than name returns False."""
         assert not _name_matches("user get current extra", "gitea_user_get_current", "gitea_")
 
+    def test_sliding_window_with_extra_domain_prefix(self) -> None:
+        """Query matches when domain prefix sits before query-aligned tokens."""
+        assert _name_matches("create pull request", "gitea_repo_create_pull_request", "gitea_")
+
+    def test_sliding_window_domain_prefix_no_spurious_match(self) -> None:
+        """Sliding window does not spuriously match unrelated tokens."""
+        assert not _name_matches(
+            "create pull request", "gitea_repo_create_pull_review", "gitea_"
+        )
+
+    def test_sliding_window_domain_prefix_verb_first(self) -> None:
+        """Sliding window with swapped ordering handles verb-first queries."""
+        assert _name_matches("pull create request", "gitea_repo_create_pull_request", "gitea_")
+
+    def test_sliding_window_mid_name(self) -> None:
+        """Sliding window matches query that aligns in the middle of the name."""
+        # "list repo" should match "issue_list_repos" (window at pos 1)
+        assert _name_matches("list repo", "gitea_issue_list_repos", "gitea_")
+
+    def test_sliding_window_single_token_falls_through(self) -> None:
+        """Single-token queries still fall through to BM25 regardless of window."""
+        assert not _name_matches("repo", "gitea_repo_create_pull_request", "gitea_")
+
 
 class TestSearchAndSliceNameMatch:
     """Tests for name-match boost in _search_and_slice."""
@@ -1515,6 +1559,25 @@ class TestSearchAndSliceNameMatch:
             tool_prefix="gitea_",
         )
         assert page_items[0]["name"] == "gitea_user_get_current"
+        assert page_items[0]["score"] == 1.0
+
+    def test_domain_prefix_ranks_correct_tool_first(self) -> None:
+        """Query matching via sliding window ranks the correct tool #1.
+
+        Regression guard for #518: ``\"create pull request\"`` must rank
+        ``gitea_repo_create_pull_request`` above similarly-named tools
+        that share the same prefix window (e.g. ``_pull_review``).
+        """
+        items = self._make_items([
+            "gitea_repo_create_pull_review",
+            "gitea_repo_create_pull_request",
+        ])
+        texts = self._make_texts(items)
+        page_items, _ = _search_and_slice(
+            items, texts, "create pull request", page=1, limit=10,
+            tool_prefix="gitea_",
+        )
+        assert page_items[0]["name"] == "gitea_repo_create_pull_request"
         assert page_items[0]["score"] == 1.0
 
     def test_no_prefix_configured(self) -> None:

@@ -19,6 +19,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     DETAIL_PARAM_SCHEMA_CONCISE,
+    LABEL_GUIDANCE,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
@@ -94,10 +95,18 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
     of the name tokens — each query token must be a prefix of the
     corresponding name token (not crossing token boundaries).
 
-    To handle verb-first queries (e.g. ``"create issue"`` vs domain-first
-    ``"issue_create_issue"``), two orderings of the query tokens are
-    tried: original order and first-two-swapped.  This covers the most
-    common agent pattern without requiring domain/verb lists.
+    Uses a **sliding window** over the name tokens: every contiguous
+    window of ``len(q_tokens)`` is tried.  This handles domain-prefixed
+    tool names like ``"repo_create_pull_request"`` matching
+    ``"create pull request"`` where the domain token sits before the
+    query-aligned tokens — a fixed position-0 alignment would fail.
+
+    Within each window, two query-token orderings are tried to handle
+    verb-first queries (e.g. ``"create issue"`` vs domain-first
+    ``"issue_create_issue"``):
+
+    - original order: e.g. ``["create", "pull", "request"]``
+    - first-two-swapped: e.g. ``["issue", "create"]``
 
     Single-token queries are **not** boosted — they return ``False`` so
     BM25 handles them, avoiding a flood of 30+ results all at score 1.0.
@@ -119,17 +128,25 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
     if q == n:
         return True
 
-    # Token-boundary prefix match: each query token must be a prefix of
-    # the corresponding name token, in order.  Try two orderings to
-    # handle verb-first queries ("create issue" ↔ "issue create").
-    if _token_prefix_match(q_tokens, n_tokens):
-        return True
+    # Sliding window: try every contiguous window of len(q_tokens) in
+    # the name tokens.  This handles domain-prefixed tool names like
+    # "repo_create_pull_request" matching the query "create pull request"
+    # where the domain token sits before the query-aligned tokens ("repo"
+    # is not in the query, so a fixed position-0 alignment fails).
+    #
+    # Within each window, two query-token orderings are tried:
+    #   - original: "create pull request" → ["create", "pull", "request"]
+    #   - swapped:  verb-first → "create issue" ↔ ["issue", "create"]
+    for start in range(len(n_tokens) - len(q_tokens) + 1):
+        window = n_tokens[start : start + len(q_tokens)]
+        if _token_prefix_match(q_tokens, window):
+            return True
+        if len(q_tokens) >= _NAME_MATCH_MIN_TOKENS:
+            swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
+            if _token_prefix_match(swapped, window):
+                return True
 
-    # All remaining queries have >= 2 tokens (shorter queries exit above
-    # via the early <_NAME_MATCH_MIN_TOKENS guard).  Try swapping the
-    # first two tokens to handle verb-first queries.
-    swapped = [q_tokens[1], q_tokens[0], *q_tokens[2:]]
-    return _token_prefix_match(swapped, n_tokens)
+    return False
 
 
 def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes
@@ -216,14 +233,30 @@ def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent confi
 
 
 def _extract_searchable_text_enhanced(tool: Tool) -> str:
-    """Enhanced searchable text extraction for better tool discoverability."""
+    """Build BM25 search text from a tool, optimised for discoverability.
+
+    Combines name (repeated ``SEARCH_NAME_BOOST`` times), title,
+    description, parameter names/descriptions, tags, and category
+    aliases into a single searchable string.
+
+    Operational guidance text (``LABEL_GUIDANCE``) is stripped from
+    the description before indexing — it has zero semantic search value
+    and inflates document length, which penalises label-parameter tools
+    in BM25 ranking when they miss the name-match boost.
+    """
     parts = [tool.name] * SEARCH_NAME_BOOST
 
     if tool.annotations and tool.annotations.title:
         parts.append(tool.annotations.title)
 
     if tool.description:
-        parts.append(tool.description)
+        # Strip operational label guidance from the BM25 corpus.
+        # The guidance has zero semantic search value but inflates
+        # document length, penalising label-parameter tools in BM25
+        # ranking when they fall through name matching.
+        clean_desc = tool.description.replace(LABEL_GUIDANCE, "").strip()
+        if clean_desc:
+            parts.append(clean_desc)
 
     schema = tool.parameters
     if schema:

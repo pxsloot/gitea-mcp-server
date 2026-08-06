@@ -59,16 +59,16 @@ removed when FastMCP catches up.
 │  (deprecated + scope +    │  │    → raw JSON resource   │
 │  config-excluded)         │  │                          │
 │                           │  │  • custom wrappers:      │
-│  _customize_metadata     │  │    Markdown formatters   │
-│  (per tool — 4 phases):  │  │    for common URIs       │
-│  • identity (title,      │  │    (override auto)       │
-│    annotations, hints,   │  │                          │
-│    category, scope)      │  │                          │
-│  • description           │  │                          │
-│  • schema (derivation,   │  │                          │
-│    classification,       │  │                          │
-│    post-processing)      │  │                          │
-│  • metadata contract     │  │                          │
+│  _customize_metadata      │  │    Markdown formatters   │
+│  (per tool — 4 phases):   │  │    for common URIs       │
+│  • identity (title,       │  │    (override auto)       │
+│    annotations, hints,    │  │                          │
+│    category, scope)       │  │                          │
+│  • description            │  │                          │
+│  • schema (derivation,    │  │                          │
+│    classification,        │  │                          │
+│    post-processing)       │  │                          │
+│  • metadata contract      │  │                          │
 │                           │  │                          │
 │  LabelTransform           │  │                          │
 │  (innermost):             │  │                          │
@@ -101,7 +101,7 @@ removed when FastMCP catches up.
 │       unprefixed names                                  │
 │                                                         │
 │  Spec-prep filtering (before FastMCP sees the spec):    │
-│    • route_map_fn — drops tool operations that are       │
+│    • route_map_fn — drops tool operations that are      │
 │      deprecated, scope-filtered, or config-excluded     │
 │      (see Spec-Level Filtering)                         │
 │    • register_all_resources — skips resources whose     │

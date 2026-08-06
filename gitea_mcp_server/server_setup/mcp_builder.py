@@ -363,7 +363,8 @@ def _customize_metadata(
     """In-place per-tool customization via FastMCP's ``mcp_component_fn`` hook.
 
     Delegates to four focused phases:
-    1. ``_apply_tool_identity`` — title, annotations, category, scope
+    1. ``_apply_tool_identity`` — title, annotations, hints, category,
+       scope, cache invalidation
     2. ``_prepare_description`` — label guidance injection
     3. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
        schema derivation, classification, and mutations
@@ -464,6 +465,12 @@ class _ToolWrappingTransform(Transform):
         layer, then hand off to :func:`apply_to` for post-hooks (formatting,
         sudo cleanup).
 
+        Args:
+            tool: The ``Tool`` being wrapped.
+            customization: The ``ToolCustomization`` extracted once in
+                :meth:`_wrap` and threaded explicitly — avoids repeated
+                ``tool.meta`` lookups.
+
         All parameter handling — injection, extraction, pre-hook mutation,
         and post-hook formatting — is driven by the :mod:`virtual_params`
         registry.  The transform_fn is pure orchestration.
@@ -504,11 +511,14 @@ class _ToolWrappingTransform(Transform):
     async def _wrap(self, tool: Tool) -> Tool:
         """Wrap a customized Tool with injected params and a runtime transform.
 
-        Three phases:
+        Four phases:
         1. **Guard** — skip uncustomized tools (no metadata).
-        2. **Inject** — add virtual params to the tool schema.
+        2. **Extract** — pull ``ToolCustomization`` from ``tool.meta``
+           so it is threaded explicitly through the runtime pipeline
+           rather than each consumer reaching into ``tool.meta``.
+        3. **Inject** — add virtual params to the tool schema.
            Runs once at startup via :meth:`list_tools` / :meth:`get_tool`.
-        3. **Wrap** — attach the runtime :func:`transform_fn` via
+        4. **Wrap** — attach the runtime :func:`transform_fn` via
            :meth:`Tool.from_tool`.  The transform_fn runs on every tool call.
         """
         meta = tool.meta or {}

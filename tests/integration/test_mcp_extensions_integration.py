@@ -120,31 +120,3 @@ tool_names:
     # Load extensions from that file
     extensions = load_mcp_extensions(config_path=ext_file)
     assert extensions == {"tool_names": {"issue_create_issue": {"description": "Loaded from YAML"}}}
-
-
-@pytest.mark.asyncio
-async def test_label_guidance_appendage_when_labels_present(minimal_spec: OpenAPISpec) -> None:
-    """Test that LABEL_GUIDANCE is auto-appended to tools with labels parameter."""
-    # No explicit description extension, rely on auto-guidance
-    mock_gitea_client = MagicMock()
-    mock_gitea_client.client = MagicMock()
-    provider = create_openapi_provider(
-        openapi_spec=minimal_spec,
-        gitea_client=mock_gitea_client,
-        label_service=MagicMock(),
-    )
-    tools = await provider.list_tools()
-    tool_names = _tool_dict(tools)
-
-    # issue_create_issue should have label guidance appended
-    create_issue_tool = tool_names.get("issue_create_issue")
-    assert create_issue_tool is not None
-    assert (
-        "You may provide existing label names (strings) or IDs (integers)"
-        in create_issue_tool.description
-    )
-
-    # issue_create_comment should NOT have label guidance (no labels param)
-    comment_tool = tool_names.get("issue_create_comment")
-    assert comment_tool is not None
-    assert "label names (strings)" not in comment_tool.description.lower()

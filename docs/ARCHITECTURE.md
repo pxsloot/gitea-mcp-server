@@ -424,8 +424,9 @@ The customization layers as applied during server startup:
     - **Supplemental**: rich server instructions (`agent_instructions.md` +
       workflow guide manifest) give agents higher-level context about how to
       discover and compose tools, reducing reliance on per-tool descriptions.
-    - **Inline guidance**: tools with a `labels` parameter get a description
-      appendix explaining how to discover valid label values.
+    - **Runtime feedback**: validation errors, the `labels` tag on tools,
+      and the labels workflow guide (`read_doc("labels")`) together provide
+      label discovery without injecting guidance into tool descriptions.
 
     In practice, agents discover and use tools correctly through the search
     mechanisms (`search_tools` / `search` / `tool_info`) without needing

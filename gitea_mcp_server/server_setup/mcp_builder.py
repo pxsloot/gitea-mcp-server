@@ -8,7 +8,7 @@ Startup-time customization is orchestrated by :func:`_customize_metadata`
 phases:
 - :func:`_apply_tool_identity` — title, annotations, hints, category,
   scope, cache invalidation
-- :func:`_prepare_description` — label guidance injection
+- :func:`_detect_has_labels` — detect array-typed labels parameter
 - :func:`_compute_tool_schema` (pure) — schema derivation, response
   classification, route identity; followed by
   :func:`_apply_schema_postprocessing`,
@@ -41,9 +41,9 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
 from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
+    _detect_has_labels,
     _is_array_response,
     _prepare_annotations,
-    _prepare_description,
     add_inferred_hints,
     categorize_tool,
     compute_invalidation_patterns,
@@ -422,7 +422,8 @@ def _customize_metadata(
     Delegates to four focused phases:
     1. ``_apply_tool_identity`` — title, annotations, hints, category,
        scope, cache invalidation
-    2. ``_prepare_description`` — label guidance injection
+    2. ``_detect_has_labels`` — detect array-typed labels parameter
+       (drives schema augmentation and metadata)
     3. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
        schema derivation, classification, and mutations
     4. ``_build_customization_meta`` — the ``component.meta`` contract
@@ -433,7 +434,8 @@ def _customize_metadata(
 
     required_scope = _apply_tool_identity(route, component)
 
-    description, has_labels = _prepare_description(component)
+    has_labels = _detect_has_labels(component)
+    description = getattr(component, "description", "") or ""
     component.description = description
 
     schema = _compute_tool_schema(route, openapi_spec)

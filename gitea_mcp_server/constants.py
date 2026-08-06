@@ -209,20 +209,6 @@ HTTP_METHODS_ALL = frozenset({
 
 
 # ============================================================================
-# Documentation Strings (reused)
-# ============================================================================
-
-LABEL_GUIDANCE = (
-    "\n\n**Labels**: You may provide existing label names (strings) or IDs (integers). "
-    "Both are validated against the repository's existing labels. "
-    "Call `list_labels(owner, repo)` or read `gitea://repos/{owner}/{repo}/labels` "
-    "to see available labels. Unknown names or IDs will produce an error "
-    "listing available labels."
-)
-"""Guidance text added to tools that accept label parameters."""
-
-
-# ============================================================================
 # BM25 Search Configuration
 # ============================================================================
 

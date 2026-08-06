@@ -19,7 +19,6 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     DETAIL_PARAM_SCHEMA_CONCISE,
-    LABEL_GUIDANCE,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
@@ -237,25 +236,14 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     Combines name (repeated ``SEARCH_NAME_BOOST`` times), title,
     description, parameter names/descriptions, tags, and category
     aliases into a single searchable string.
-
-    Operational guidance text (``LABEL_GUIDANCE``) is stripped from
-    the description before indexing — it has zero semantic search value
-    and inflates document length, which penalises label-parameter tools
-    in BM25 ranking when they miss the name-match boost.
     """
     parts = [tool.name] * SEARCH_NAME_BOOST
 
     if tool.annotations and tool.annotations.title:
         parts.append(tool.annotations.title)
 
-    if tool.description:
-        # Strip operational label guidance from the BM25 corpus.
-        # The guidance has zero semantic search value but inflates
-        # document length, penalising label-parameter tools in BM25
-        # ranking when they fall through name matching.
-        clean_desc = tool.description.replace(LABEL_GUIDANCE, "").strip()
-        if clean_desc:
-            parts.append(clean_desc)
+    if tool.description and tool.description.strip():
+        parts.append(tool.description.strip())
 
     schema = tool.parameters
     if schema:

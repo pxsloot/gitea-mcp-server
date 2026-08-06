@@ -777,7 +777,7 @@ For each transform in the pipeline:
 - **customize.py**: Title inference, categorization, description hints
 - **errors.py**: HTTP status → user-friendly error message mapping
 - **exclusion.py**: Pattern matching (exact name, glob, tag: prefix), include overrides exclude, prefix-aware matching for prefixed/unprefixed names, filtering for tools/resources/templates, config file loading (missing, empty, malformed YAML)
-- **labels.py**: String "bug" → integer 1 conversion, guidance text injection
+- **labels.py**: String "bug" → integer 1 conversion, schema augmentation
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
 - **cache_invalidation.py**: URI pattern computation for each tool type
 - **spec_loader.py**: Spec-level filtering — excluded-routes computation (deprecated + scope + config-excluded) from the spec

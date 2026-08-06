@@ -10,7 +10,6 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
@@ -220,73 +219,6 @@ class TestCustomizeMetadata:
 
         assert "Description from attribute" in tool.description
         assert "Docstring should be ignored" not in tool.description
-
-    def test_applies_label_guidance(self) -> None:
-        """Verify LABEL_GUIDANCE is appended for tools with labels parameter."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues",
-            summary="Create issue",
-            operation_id="create_issue",
-            method="POST",
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_create_issue"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {
-            "properties": {"labels": {"type": "array", "items": {"type": "integer"}}}
-        }
-        tool.output_schema = None
-        tool.description = "Create an issue"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
-
-        assert LABEL_GUIDANCE.strip() in tool.description
-
-    def test_applies_label_guidance_nullable(self) -> None:
-        """Verify label guidance works with nullable array type ['array', 'null']."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues",
-            summary="Create issue",
-            operation_id="create_issue",
-            method="POST",
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_create_issue"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {
-            "properties": {"labels": {"type": ["array", "null"], "items": {"type": "integer"}}}
-        }
-        tool.output_schema = None
-        tool.description = "Create an issue"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
-
-        assert LABEL_GUIDANCE.strip() in tool.description
-
-    def test_does_not_apply_label_guidance(self) -> None:
-        """Verify LABEL_GUIDANCE is not added if tool has no labels parameter."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues",
-            summary="List issues",
-            operation_id="list_issues",
-            method="GET",
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_list_issues"
-        tool.annotations = None
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-        tool.output_schema = None
-        tool.description = "List issues"
-        tool.meta = {}
-
-        _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
-
-        assert LABEL_GUIDANCE.strip() not in tool.description
 
     def test_adds_labels_tag_for_label_tools(self) -> None:
         """Verify 'labels' tag is added to tools with labels parameter."""

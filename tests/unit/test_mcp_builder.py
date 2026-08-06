@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.constants import LABEL_GUIDANCE
@@ -1016,6 +1016,46 @@ class TestToolWrappingTransform:
         assert len(result) == 1
         assert result[0] is not tool
         assert isinstance(result[0], Tool)
+
+    @pytest.mark.asyncio
+    async def test_run_transform_pipeline_no_customization(self) -> None:
+        """_run_transform_pipeline handles customization=None gracefully.
+
+        When a tool has _customization_applied but no _customization
+        dict, the pipeline falls back to empty route/metadata defaults
+        instead of crashing.
+        """
+        transform = self.make_transform()
+        meta = {
+            "_customization_applied": True,
+            # _customization is intentionally missing
+        }
+        tool = Tool(
+            name="test_tool",
+            tags={"test"},
+            description="Test tool",
+            parameters={"properties": {}, "required": []},
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta=meta,
+            annotations=ToolAnnotations(title="Test"),
+        )
+
+        with (
+            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch(
+                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text="ok")],
+                structured_content={"result": "ok"},
+            )
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+        assert get_structured(output)["result"] == "ok"
 
     @pytest.mark.asyncio
     async def test_get_tool_passthrough_uncustomized(self) -> None:
@@ -2616,9 +2656,8 @@ class TestInjectResponseMetadata:
         """x-fastmcp-wrap-result is set when output_schema exists."""
         component = MagicMock(spec=OpenAPITool)
         component.output_schema = {"type": "object", "properties": {}}
-        output_schema = {"type": "object", "properties": {}}
 
-        _inject_response_metadata(component, output_schema)
+        _inject_response_metadata(component)
 
         assert component.output_schema["x-fastmcp-wrap-result"] is True
 
@@ -2626,9 +2665,8 @@ class TestInjectResponseMetadata:
         """No mutation when component.output_schema is None."""
         component = MagicMock(spec=OpenAPITool)
         component.output_schema = None
-        output_schema = None
 
-        _inject_response_metadata(component, output_schema)
+        _inject_response_metadata(component)
 
         # output_schema is still None — no KeyError
         assert component.output_schema is None
@@ -2642,11 +2680,10 @@ class TestInjectResponseMetadata:
                 "result": {"type": "array", "items": {"type": "string"}},
             },
         }
-        output_schema = component.output_schema
 
-        _inject_response_metadata(component, output_schema)
+        _inject_response_metadata(component)
 
-        props = output_schema["properties"]
+        props = component.output_schema["properties"]
         assert "has_more" in props
         assert "next_offset" in props
         assert "total_count" in props

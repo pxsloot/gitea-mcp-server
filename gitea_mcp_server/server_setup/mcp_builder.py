@@ -3,9 +3,18 @@
 This module provides functions to assemble the FastMCP server from OpenAPI spec,
 including OpenAPI provider creation with customized component handling.
 
-Metadata customization is done via OpenAPIProvider's public ``mcp_component_fn``.
-Runtime wrapping (validation, labels, error handling) is done via a provider-level
-:class:`Transform` (``provider.add_transform()``) - no private FastMCP APIs are used.
+Startup-time customization is orchestrated by :func:`_customize_metadata`
+(via FastMCP's public ``mcp_component_fn`` hook) and delegated to four focused
+phases:
+- :func:`_apply_tool_identity` — title, annotations, category, scope, invalidation
+- :func:`_prepare_description` — label guidance injection
+- :func:`_compute_tool_schema` / :func:`_apply_schema_postprocessing` —
+  schema derivation, response classification, mutations
+- :func:`_build_customization_meta` — the ``component.meta`` contract
+
+Runtime wrapping (validation, labels, error handling, text/binary response
+wrapping, pagination) is handled by :class:`_ToolWrappingTransform` via
+``provider.add_transform()`` — no private FastMCP APIs are used.
 """
 
 import logging

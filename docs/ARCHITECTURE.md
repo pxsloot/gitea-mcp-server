@@ -59,12 +59,16 @@ removed when FastMCP catches up.
 │  (deprecated + scope +    │  │    → raw JSON resource   │
 │  config-excluded)         │  │                          │
 │                           │  │  • custom wrappers:      │
-│  _customize               │  │    Markdown formatters   │
-│  _metadata (per tool):    │  │    for common URIs       │
-│  • title, category        │  │    (override auto)       │
-│  • annotations, hints     │  │                          │
-│  • output/label schemas   │  │                          │
-│  • invalidation patterns  │  │                          │
+│  _customize_metadata     │  │    Markdown formatters   │
+│  (per tool — 4 phases):  │  │    for common URIs       │
+│  • identity (title,      │  │    (override auto)       │
+│    annotations, hints,   │  │                          │
+│    category, scope)      │  │                          │
+│  • description           │  │                          │
+│  • schema (derivation,   │  │                          │
+│    classification,       │  │                          │
+│    post-processing)      │  │                          │
+│  • metadata contract     │  │                          │
 │                           │  │                          │
 │  LabelTransform           │  │                          │
 │  (innermost):             │  │                          │
@@ -599,7 +603,7 @@ The ``_pipeline_with_context`` method handles four response classes:
 - **Base64-encoded JSON** (ContentsResponse): Detection happens at two
   levels.  The converter checks for a ``$ref: …/ContentsResponse`` pattern
   (Stage 0); when that doesn't match (Forgejo's spec structure varies), the
-  authoritative fallback in ``_customize_metadata`` checks the resolved
+  authoritative fallback in ``_compute_tool_schema`` checks the resolved
   OpenAPI 3.1 schema for ``encoding`` + ``content`` properties and overrides
   ``is_text_response`` and ``response_transform`` directly.  At runtime,
   ``response.json()`` succeeds (it *is* JSON), so ``structured_content`` is
@@ -634,8 +638,8 @@ success response at all.
 
 The fix follows the same two-phase pattern as the text/plain handling:
 
-**Schema time** (`server_setup/mcp_builder.py:_customize_metadata`):
-`_response_has_no_content()` in `tools/schemas.py` checks the spec for a
+**Schema time** (``server_setup/mcp_builder.py:_apply_schema_postprocessing``):
+``_response_has_no_content()`` in ``tools/schemas.py`` checks the spec for a
 2xx response without a `content` key.  202/204/205 are always checked;
 200/201 are checked only when the response uses ``$ref`` — Gitea's idiom
 for shared empty response definitions (inline 200/201 without ``content``

@@ -126,19 +126,33 @@ Scope derivation — see `docs/SCOPE_MODEL.md` for the full scope model
 
 The customization pipeline has two phases:
 
-1. **`_customize_metadata()`** in `server_setup/mcp_builder.py` — in-place
-   metadata (title, annotations, hints, labels, invalidation) applied per-tool
-   at startup via OpenAPIProvider's ``mcp_component_fn`` hook.
-2. **`_ToolWrappingTransform._wrap()`** in
+1. **``_customize_metadata()``** in `server_setup/mcp_builder.py` — a thin
+   orchestrator (25 lines) that delegates to four focused helpers, applied
+   per-tool at startup via OpenAPIProvider's ``mcp_component_fn`` hook:
+
+   - ``_apply_tool_identity()`` — title, annotations, hints, category,
+     scope, cache invalidation
+   - ``_prepare_description()`` (in `tools/customize.py`) — label guidance
+     injection
+   - ``_compute_tool_schema()`` + ``_apply_schema_postprocessing()`` —
+     schema derivation, response classification (text/binary/ContentsResponse),
+     fallback schemas, validation augmentation, label schema updates,
+     ``x-fastmcp-wrap-result``, and pagination metadata injection
+   - ``_build_customization_meta()`` — the ``component.meta`` contract
+     (``required_scope``, ``output_schema_raw``, ``ToolCustomization``) consumed
+     by runtime transforms
+
+2. **``_ToolWrappingTransform._wrap()``** in
    `server_setup/mcp_builder.py` — the ``transform_fn`` closure resolves the
    MCP ``Context`` via ``_resolve_current_context()`` (which catches
    ``RuntimeError`` from ``CurrentContext()`` outside an active session),
-   then threads it explicitly to ``_run_transform_pipeline(kwargs, tool,
-   extracted=..., ctx=ctx)`` and ultimately ``_pipeline_with_context()``.
-   Runtime wrapping (validation, label conversion, error handling, text
-   wrapping, pagination) all receive ``ctx`` for ``ctx.info()`` logging and
-   ``ctx.report_progress()`` calls at key stages, gracefully degraded to
-   no-ops when ``ctx`` is ``None``.
+   then threads the ``ToolCustomization`` explicitly through
+   ``_make_transform_fn`` and ``_run_transform_pipeline(kwargs, tool,
+   customization, extracted=..., ctx=ctx)``, ultimately reaching
+   ``_pipeline_with_context()``.  Runtime wrapping (validation, label
+   conversion, error handling, text wrapping, pagination) all receive
+   ``ctx`` for ``ctx.info()`` logging and ``ctx.report_progress()`` calls
+   at key stages, gracefully degraded to no-ops when ``ctx`` is ``None``.
 
 Common customizations:
 
@@ -403,8 +417,9 @@ OpenAPI spec during conversion rather than adding pipeline detection logic:
 2. Set ``x-response-transform`` on the operation to name the transform
    (e.g. ``"base64-decode"``).
 
-3. In ``_customize_metadata``, read the annotation via
-   ``_read_response_transform`` and store it in ``_customization``.
+3. In ``_compute_tool_schema``, read the annotation via
+   ``_read_response_transform`` and it is stored in the ``_customization``
+   contract by ``_build_customization_meta``.
 
 4. In ``_pipeline_with_context``, add a branch that checks
    ``_customization.response_transform`` and applies the transform.

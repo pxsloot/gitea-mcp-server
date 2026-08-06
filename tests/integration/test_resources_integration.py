@@ -71,7 +71,7 @@ class TestResourcesIntegration:
 
         # Create a mock client carrying the canonical test config
         # (both _config and the public config property — see
-        # "Mocking GiteaClient" in docs/TESTING_STANDARDS.md)
+        # "Mocking GiteaClient" in docs/testing/MOCKING.md)
         config = SimpleConfig()
         mock_client = AsyncMock(_config=config, config=config)
 

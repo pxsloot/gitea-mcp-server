@@ -20,7 +20,7 @@ state (issue/PR state) is stored separately in ``_issue_postcondition``
 and ``_pr_postcondition`` so that conflict detection never needs to know
 about state transitions.
 
-The full design rationale is documented in ``docs/TESTING_STANDARDS.md``
+The full design rationale is documented in ``docs/testing/LIVE.md``
 under "RepoState ``need_*`` Design."
 
 Mutable postconditions
@@ -190,7 +190,7 @@ class RepoState:
     # ── Mutable postcondition state ─────────────────────────────────
     # Separated from _issue_options / _pr_options (immutable config)
     # so that conflict detection never needs to know about state.
-    # See docs/TESTING_STANDARDS.md "RepoState need_* Design" for
+    # See docs/testing/LIVE.md "RepoState need_* Design" for
     # the full lazy-materialize pattern rationale.
     _issue_postcondition: dict[int, str | None] = field(default_factory=dict, repr=False)
     _pr_postcondition: dict[int, str | None] = field(default_factory=dict, repr=False)

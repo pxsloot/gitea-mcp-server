@@ -1,4 +1,11 @@
-"""Configuration management for Gitea MCP Server."""
+"""Configuration management for Gitea MCP Server.
+
+Provides the ``Config`` class (Pydantic ``BaseSettings``) that reads
+environment variables (``GITEA_URL``, ``GITEA_TOKEN``, etc.) and the
+``ConfigProtocol`` structural protocol that test-only ``SimpleConfig``
+satisfies.  Functions should accept ``ConfigProtocol`` instead of
+``Config`` to accept both real and test configurations.
+"""
 
 import logging
 import threading

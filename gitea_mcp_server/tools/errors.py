@@ -1,4 +1,10 @@
-"""Error handling utilities for tool execution."""
+"""Error translation and runtime validation for tool execution.
+
+Provides ``_run_with_error_handling()`` — the runtime validation runner
+that translates HTTP errors to agent-friendly messages — plus validation
+error message formatting.  Called by the tool wrapping pipeline before
+the HTTP request.
+"""
 
 import logging
 from typing import Any, NoReturn, cast

@@ -9,6 +9,16 @@ covers: Token scope -> tool/resource visibility, virtual param gating, scope der
 > How Gitea token scopes control tool/resource visibility and virtual parameter
 > availability in the MCP server.
 
+## What this doc is NOT
+
+This doc covers the scope/permission model. If you need:
+
+| Topic | See |
+|-------|-----|
+| Pipeline overview and spec-level filtering in the server's data flow | `docs/ARCHITECTURE.md` |
+| How to add a virtual parameter (e.g. `sudo`) and wire scope gating | `docs/DEVELOPMENT.md` |
+| Full semantics of annotation fields (title, tags, hints) and how they are inferred | `docs/TOOL_ANNOTATIONS.md` |
+
 ## Overview
 
 Gitea's API uses [OAuth2-style token scopes](https://docs.gitea.com/development/api-usage#scopes)

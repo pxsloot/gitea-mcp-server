@@ -108,6 +108,48 @@ When docs grow, the first win is **structure**, not rewriting prose:
 Agents must have the same confidence in the docs as in the tools. A doc that
 says where to look is more valuable than one that tries to say everything.
 
+### "What this doc is NOT" — negative routing
+
+Large docs (>200 lines) carry a **bail-out section** near the top, right after
+the introductory paragraph.  It lists the 3–5 adjacent topics most likely to
+be confused with the current doc, and points to the correct canonical home:
+
+```markdown
+## What this doc is NOT
+
+This doc covers X.  If you need:
+
+| Topic | See |
+|-------|-----|
+| Y    | `docs/OTHER.md` |
+| Z    | `docs/ANOTHER.md` |
+```
+
+This is **not** a copy of INDEX.md.  INDEX.md answers "where should I go?"
+before you open a doc.  The bail-out section answers "am I in the wrong
+place?" after you have already arrived — from a search hit, a cross-reference,
+or a wrong guess.  It uses a compact one-liner format and lists only adjacent
+concerns, not all docs.
+
+When to add: every doc over ~200 lines.  When to skip: small focused references
+(<200 lines) that are self-evident from their title and frontmatter.
+
+### Module docstrings as canonical source
+
+Every production module carries a module-level docstring that is the canonical
+source for:
+- **Role**: what the module does in one paragraph
+- **Public API**: classes and functions a consumer should import
+- **Design invariants**: key structural constraints (e.g. circular-import
+  breaker pattern, spec-level filtering guarantees)
+
+ARCHITECTURE.md carries the pipeline diagram, design decisions, and
+cross-cutting topics.  Its module map is a compact orientation table — one
+line per module; for details, read the module docstring.  This means the
+docstring and the ARCHITECTURE module map must not drift: if a module's role
+changes, update the docstring first (it is the canonical source), then check
+the ARCHITECTURE one-liner still matches.
+
 ## Relationship to other docs
 
 - `docs/SKILL.md` -- the philosophical foundation: why documentation is

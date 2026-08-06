@@ -1,4 +1,12 @@
-"""Resource registration utilities."""
+"""Resource registration orchestration.
+
+Provides ``register_all_resources()`` — the single entry point that
+orchestrates resource setup in registration order: MCP access tools
+(list_resources, read_resource), custom wrappers (registered first so
+auto-generation skips them), then auto-generated resources from every
+GET endpoint.  Scope and config filtering are applied at registration
+time.
+"""
 
 from typing import Any
 

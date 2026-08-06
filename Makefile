@@ -14,12 +14,17 @@ test:
 	ruff check tests/
 	mypy gitea_mcp_server
 	mypy tests/
+	python3 scripts/check_test_coverage.py
 	pytest -rs --cov=gitea_mcp_server --cov-report=xml --cov-report=term-missing
 
 # Fast feedback: type checks only (no tests).
 test-types:
 	mypy gitea_mcp_server
 	mypy tests/
+
+# Verify every production module has a matching test file per the naming convention.
+check-test-coverage:
+	python3 scripts/check_test_coverage.py
 
 # Live integration tests — requires a running Gitea/Forgejo instance
 # and credentials in .env.dev.local (write by gitea_dev_start.sh).

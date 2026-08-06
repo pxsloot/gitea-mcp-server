@@ -34,7 +34,7 @@ def _http_config(**overrides: Any) -> SimpleConfig:
 def common_patches(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Patch Config.get and spec loading; stub startup API calls with respx.
 
-    Uses tier 1 per TESTING_STANDARDS.md: real GiteaClient constructed
+    Uses tier 1 per docs/testing/MOCKING.md: real GiteaClient constructed
     from _http_config SimpleConfig, with respx intercepting the two
     fail-open startup calls that create_mcp_server makes:
 

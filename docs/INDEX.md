@@ -20,7 +20,8 @@ connection time. It is kept short on purpose: it teaches the naming grammar and
 a few workflow skeletons, then points to discovery tools for the rest. The
 developer docs explain the codebase itself. `SCOPE_MODEL` and `TOOL_ANNOTATIONS`
 are reference material; `ARCHITECTURE` is explanation; `DEVELOPMENT` is how-to;
-`TESTING_STANDARDS` is reference for the test suite.
+`TESTING_STANDARDS` is the hub for the testing doc set — see its sub-doc index
+for layout, zones, fixtures, mocking, and other testing topics.
 
 Each topic has exactly one canonical home. Where another doc mentions it, that
 mention is a one-line pointer, not a copy.
@@ -34,7 +35,7 @@ mention is a one-line pointer, not a copy.
 | `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content-type handling, runtime flows | You need to understand how the server is built |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
-| `docs/TESTING_STANDARDS.md` | developer | reference | Test layout, zones, fixtures, mocking rules, coverage targets | You are writing or reviewing tests |
+| `docs/TESTING_STANDARDS.md` | developer | reference | Testing principles, quality gates, coverage policy; see its sub-doc index for specific topics | You are writing or reviewing tests |
 | `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
 | `docs/SKILL.md` | developer | reference | Project conventions, workflows, checklists, FAQ, and documentation philosophy | You need the developer handbook — red flags, common tasks, checklists |
 | `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |

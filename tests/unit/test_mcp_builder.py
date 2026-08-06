@@ -14,8 +14,15 @@ from gitea_mcp_server.constants import LABEL_GUIDANCE
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
+    _apply_fallback_schemas,
+    _apply_schema_postprocessing,
+    _apply_tool_identity,
+    _build_customization_meta,
+    _compute_tool_schema,
+    _ComputedSchema,
     _customize_metadata,
     _detect_contents_response,
+    _inject_response_metadata,
     _read_response_transform,
     _response_is_binary,
     _ToolWrappingTransform,
@@ -543,7 +550,12 @@ class TestCustomizeMetadata:
 class TestRouteMapFiltering:
     """Tests that create_openapi_provider drops filtered operations via route_map_fn."""
 
-    def _provider(self, spec: OpenAPISpec, excluded_routes: set[tuple[str, str]], response_format: str = "markdown") -> OpenAPIProvider:
+    def _provider(
+        self,
+        spec: OpenAPISpec,
+        excluded_routes: set[tuple[str, str]],
+        response_format: str = "markdown",
+    ) -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
         # Ensure a valid minimal info block so FastMCP's schema validation passes.
@@ -562,7 +574,11 @@ class TestRouteMapFiltering:
 
     def test_empty_paths(self) -> None:
         """Empty paths dict returns empty set."""
-        spec: OpenAPISpec = {"openapi": "3.1.1", "paths": {}, "info": {"title": "T", "version": "1"}}
+        spec: OpenAPISpec = {
+            "openapi": "3.1.1",
+            "paths": {},
+            "info": {"title": "T", "version": "1"},
+        }
         provider = self._provider(spec, set())
         assert provider is not None
 
@@ -694,16 +710,31 @@ class TestRouteMapFiltering:
     def test_http_methods_comprehensive(self) -> None:
         """All HTTP methods are properly excluded via route_map_fn."""
         # cast needed: dict comprehension type-inference makes mypy too conservative
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.1",
-            "paths": {
-                "/resource": {
-                    method: {"operationId": f"{method}Resource", "deprecated": True}
-                    for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.1",
+                "paths": {
+                    "/resource": {
+                        method: {"operationId": f"{method}Resource", "deprecated": True}
+                        for method in (
+                            "get",
+                            "post",
+                            "put",
+                            "delete",
+                            "patch",
+                            "options",
+                            "head",
+                            "trace",
+                        )
+                    },
                 },
             },
-        })
-        expected = {("/resource", method.upper()) for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")}
+        )
+        expected = {
+            ("/resource", method.upper())
+            for method in ("get", "post", "put", "delete", "patch", "options", "head", "trace")
+        }
         provider = self._provider(spec, expected)
         assert provider is not None
 
@@ -778,7 +809,9 @@ class TestToolWrappingTransformTelemetry:
         )
 
     @pytest.mark.asyncio
-    async def test_spans_carry_tool_name_attribute(self, trace_exporter: InMemorySpanExporter) -> None:
+    async def test_spans_carry_tool_name_attribute(
+        self, trace_exporter: InMemorySpanExporter
+    ) -> None:
         """Validate and execute spans carry ``tool.name`` attribute."""
         transform = self.make_transform()
         tool = self.make_tool("attr_tool")
@@ -811,7 +844,9 @@ class TestToolWrappingTransformTelemetry:
                 assert (span.attributes or {}).get("http.method") == "GET"
 
     @pytest.mark.asyncio
-    async def test_validation_error_stops_pipeline(self, trace_exporter: InMemorySpanExporter) -> None:
+    async def test_validation_error_stops_pipeline(
+        self, trace_exporter: InMemorySpanExporter
+    ) -> None:
         """When validation fails, only the ``validate`` span is emitted."""
         from gitea_mcp_server.exceptions import ValidationError
 
@@ -933,7 +968,9 @@ class TestCreateOpenapiProvider:
 class TestToolWrappingTransform:
     """Tests for _ToolWrappingTransform."""
 
-    def make_transform(self, openapi_spec: OpenAPISpec | None = None, response_format: str = "markdown") -> _ToolWrappingTransform:
+    def make_transform(
+        self, openapi_spec: OpenAPISpec | None = None, response_format: str = "markdown"
+    ) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec if openapi_spec is not None else make_openapi_spec(),
             response_format=response_format,
@@ -1165,7 +1202,12 @@ class TestToolWrappingTransform:
         )
 
         output = await transform._apply_loop_hooks(
-            result, {"page": 1}, None, tool, "/test", "GET",
+            result,
+            {"page": 1},
+            None,
+            tool,
+            "/test",
+            "GET",
         )
         assert output is result
 
@@ -1182,7 +1224,12 @@ class TestToolWrappingTransform:
         )
 
         output = await transform._apply_loop_hooks(
-            result, {"page": 1}, {}, tool, "/test", "GET",
+            result,
+            {"page": 1},
+            {},
+            tool,
+            "/test",
+            "GET",
         )
         assert output is result
 
@@ -1219,7 +1266,12 @@ class TestToolWrappingTransform:
             },
         ):
             output = await transform._apply_loop_hooks(
-                result, {"page": 1, "limit": 10}, extracted, tool, "/test", "GET",
+                result,
+                {"page": 1, "limit": 10},
+                extracted,
+                tool,
+                "/test",
+                "GET",
             )
 
         hook.assert_called_once()
@@ -1245,7 +1297,9 @@ class TestToolWrappingTransform:
         tool = self.make_tool(customized=True)
         tool.name = "test_tool"
 
-        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
+        async def my_loop_hook(
+            result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable
+        ) -> ToolResult:
             """Simple loop hook that fetches one more page and merges."""
             kwargs["page"] = 2
             next_result = await execute_fn(kwargs)
@@ -1283,7 +1337,12 @@ class TestToolWrappingTransform:
             )
 
             output = await transform._apply_loop_hooks(
-                result, {"page": 1, "limit": 10}, extracted, tool, "/test", "GET",
+                result,
+                {"page": 1, "limit": 10},
+                extracted,
+                tool,
+                "/test",
+                "GET",
             )
 
         # Executed once with page=2
@@ -1305,7 +1364,9 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        async def bad_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
+        async def bad_loop_hook(
+            result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable
+        ) -> ToolResult:
             await execute_fn({"page": 0})  # page < 1 is invalid
             return result
 
@@ -1327,7 +1388,12 @@ class TestToolWrappingTransform:
             )
             with pytest.raises(ValueError, match="page must be >= 1"):
                 await transform._apply_loop_hooks(
-                    result, {"page": 1}, extracted, tool, "/test", "GET",
+                    result,
+                    {"page": 1},
+                    extracted,
+                    tool,
+                    "/test",
+                    "GET",
                 )
 
     @pytest.mark.asyncio
@@ -1348,7 +1414,9 @@ class TestToolWrappingTransform:
 
         loop_hook_called = False
 
-        async def my_loop_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
+        async def my_loop_hook(
+            result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable
+        ) -> ToolResult:
             nonlocal loop_hook_called
             loop_hook_called = True
             return result
@@ -1461,7 +1529,9 @@ class TestFetchAllIntegration:
         # _pipeline_with_context (initial page) or _execute_fn (subsequent).
         page_calls: list[int] = []
 
-        async def _mock_pages(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
+        async def _mock_pages(
+            kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any
+        ) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             start = (page - 1) * 10 + 1
@@ -1530,7 +1600,9 @@ class TestFetchAllIntegration:
 
         page_calls: list[int] = []
 
-        async def _mock_single(kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any) -> ToolResult:
+        async def _mock_single(
+            kwargs: dict[str, Any], _tool: Any, _spec: Any, _path: Any, _method: Any
+        ) -> ToolResult:
             page = kwargs.get("page", 1)
             page_calls.append(page)
             return ToolResult(
@@ -1573,7 +1645,9 @@ class TestFetchAllIntegration:
         assert get_structured(result)["has_more"] is True  # still has more
 
 
-async def _mock_fetch_all_hook(result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable) -> ToolResult:
+async def _mock_fetch_all_hook(
+    result: ToolResult, value: Any, kwargs: dict[str, Any], execute_fn: Callable
+) -> ToolResult:
     """Simple loop hook that fetches pages via execute_fn and merges."""
     from gitea_mcp_server.tools.virtual_params import _fetch_all_loop
 
@@ -1589,27 +1663,29 @@ class TestReadResponseTransform:
     """Tests for ``_read_response_transform``."""
 
     def test_returns_transform_when_present(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/contents/{filepath}": {
-                "get": {
-                    "x-response-transform": "base64-decode",
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "x-response-transform": "base64-decode",
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
-        result = _read_response_transform(
-            spec, "/repos/{owner}/{repo}/contents/{filepath}", "GET"
+            }
         )
+        result = _read_response_transform(spec, "/repos/{owner}/{repo}/contents/{filepath}", "GET")
         assert result == "base64-decode"
 
     def test_returns_none_when_absent(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = _read_response_transform(spec, "/repos/{owner}/{repo}", "GET")
         assert result is None
 
@@ -1629,14 +1705,16 @@ class TestReadResponseTransform:
         assert result is None
 
     def test_method_case_insensitive(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/test": {
-                "get": {
-                    "x-response-transform": "base64-decode",
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/test": {
+                    "get": {
+                        "x-response-transform": "base64-decode",
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = _read_response_transform(spec, "/test", "GET")
         assert result == "base64-decode"
 
@@ -1650,62 +1728,68 @@ class TestResponseIsBinary:
     """Tests for ``_response_is_binary``."""
 
     def test_true_for_application_zip(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/archive/{archive}": {
-                "get": {
-                    "x-original-content-types": ["application/zip"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/archive/{archive}": {
+                    "get": {
+                        "x-original-content-types": ["application/zip"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
-        assert _response_is_binary(
-            spec, "/repos/{owner}/{repo}/archive/{archive}", "GET"
-        ) is True
+            }
+        )
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive/{archive}", "GET") is True
 
     def test_true_for_application_octet_stream(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/raw": {
-                "get": {
-                    "x-original-content-types": ["application/octet-stream"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/raw": {
+                    "get": {
+                        "x-original-content-types": ["application/octet-stream"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}/raw", "GET") is True
 
     def test_true_for_application_x_zip_compressed(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/archive": {
-                "get": {
-                    "x-original-content-types": ["application/x-zip-compressed"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/archive": {
+                    "get": {
+                        "x-original-content-types": ["application/x-zip-compressed"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is True
 
     def test_false_for_text_plain(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/pulls/{index}.diff": {
-                "get": {
-                    "x-original-content-types": ["text/plain"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}.diff": {
+                    "get": {
+                        "x-original-content-types": ["text/plain"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
-        assert _response_is_binary(
-            spec, "/repos/{owner}/{repo}/pulls/{index}.diff", "GET"
-        ) is False
+            }
+        )
+        assert _response_is_binary(spec, "/repos/{owner}/{repo}/pulls/{index}.diff", "GET") is False
 
     def test_false_for_application_json(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "x-original-content-types": ["application/json"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "x-original-content-types": ["application/json"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}", "GET") is False
 
     def test_false_for_missing_path(self) -> None:
@@ -1713,24 +1797,28 @@ class TestResponseIsBinary:
         assert _response_is_binary(spec, "/nonexistent", "GET") is False
 
     def test_false_for_no_x_original_content_types(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}", "GET") is False
 
     def test_case_insensitive_matching(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/archive": {
-                "get": {
-                    "x-original-content-types": ["Application/Zip"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/archive": {
+                    "get": {
+                        "x-original-content-types": ["Application/Zip"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is True
 
 
@@ -1753,7 +1841,9 @@ class TestDetectContentsResponseEdgeCases:
         # Passing a non-dict bypasses the None check and hits the guard.
         bad_schema: Any = 42
         is_text, transform = _detect_contents_response(
-            bad_schema, False, None,
+            bad_schema,
+            False,
+            None,
         )
         assert is_text is False
         assert transform is None
@@ -1796,7 +1886,9 @@ class TestDetectContentsResponse:
         # Even if response_transform already had some other value,
         # detection should override.
         is_text, transform = _detect_contents_response(
-            output_schema, False, "other-transform",
+            output_schema,
+            False,
+            "other-transform",
         )
         assert is_text is True
         assert transform == "base64-decode"
@@ -1866,15 +1958,17 @@ class TestCustomizeMetadataContentsResponse:
     is_binary_response in the customization dict."""
 
     def test_sets_response_transform_and_is_binary(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/archive/{archive}": {
-                "get": {
-                    "x-response-transform": "base64-decode",
-                    "x-original-content-types": ["application/zip"],
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/archive/{archive}": {
+                    "get": {
+                        "x-response-transform": "base64-decode",
+                        "x-original-content-types": ["application/zip"],
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         route = MagicMock(
             path="/repos/{owner}/{repo}/archive/{archive}",
             summary="Get archive",
@@ -1897,13 +1991,15 @@ class TestCustomizeMetadataContentsResponse:
         assert meta.is_binary_response is True
 
     def test_defaults_when_no_annotations(self) -> None:
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "responses": {"200": {"description": "OK"}},
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {"200": {"description": "OK"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         route = MagicMock(
             path="/repos/{owner}/{repo}",
             summary="Get repo",
@@ -2055,6 +2151,7 @@ class TestPipelineBase64Decode:
         tool.meta["_customization"].response_transform = None
 
         import base64
+
         encoded = base64.b64encode(b"should not decode").decode()
         data = {"content": encoded, "encoding": "base64"}
 
@@ -2185,11 +2282,13 @@ class TestResponseIsBinaryEdgeCases:
     def test_operation_not_a_dict(self) -> None:
         """When the operation value is not a dict (e.g. malformed spec),
         return ``False``."""
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}/archive": {
-                "get": "not-a-dict",
-            },
-        })
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/archive": {
+                    "get": "not-a-dict",
+                },
+            }
+        )
         assert _response_is_binary(spec, "/repos/{owner}/{repo}/archive", "GET") is False
         # Uses "get" (lowercase) — FastMCP calls with lowercase methods
 
@@ -2259,7 +2358,11 @@ class TestPipelineUnicodeDecodeError:
             ) as mock_run,
         ):
             mock_run.side_effect = UnicodeDecodeError(
-                "utf-8", b"\xff", 0, 1, "bad byte",
+                "utf-8",
+                b"\xff",
+                0,
+                1,
+                "bad byte",
             )
             wrapped = (await transform.list_tools([tool]))[0]
             output = await wrapped.run(arguments={})
@@ -2282,8 +2385,364 @@ class TestPipelineUnicodeDecodeError:
             ) as mock_run,
         ):
             mock_run.side_effect = UnicodeDecodeError(
-                "utf-8", b"\xff", 0, 1, "bad byte",
+                "utf-8",
+                b"\xff",
+                0,
+                1,
+                "bad byte",
             )
             wrapped = (await transform.list_tools([tool]))[0]
             with pytest.raises(UnicodeDecodeError):
                 await wrapped.run(arguments={})
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests for customization helper functions (ref: #660)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeToolSchema:
+    """Direct tests for _compute_tool_schema — pure, no side effects."""
+
+    def test_returns_computed_schema_for_get_endpoint(self) -> None:
+        """All _ComputedSchema fields are populated for a simple GET."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            method="GET",
+        )
+        spec = make_openapi_spec()
+
+        result = _compute_tool_schema(route, spec)
+
+        assert isinstance(result, _ComputedSchema)
+        assert result.route_path == "/repos/{owner}/{repo}/issues"
+        assert result.route_method == "GET"
+        assert result.is_text_response is False
+        assert result.is_binary_response is False
+        assert result.response_transform is None
+
+    def test_route_path_and_method_from_route(self) -> None:
+        """route_path and route_method reflect the route object."""
+        route = MagicMock(path="/api/v1/repos", method="POST")
+        spec = make_openapi_spec()
+
+        result = _compute_tool_schema(route, spec)
+
+        assert result.route_path == "/api/v1/repos"
+        assert result.route_method == "POST"
+
+    def test_text_response_detection(self) -> None:
+        """is_text_response is False for a minimal spec (no text/plain)."""
+        route = MagicMock(path="/repos/{owner}/{repo}/issues", method="GET")
+        spec = make_openapi_spec()
+
+        result = _compute_tool_schema(route, spec)
+
+        assert result.is_text_response is False
+
+    def test_output_schema_is_none_for_no_content(self) -> None:
+        """output_schema is None when the spec has no response schema."""
+        route = MagicMock(path="/empty", method="DELETE")
+        spec = make_openapi_spec()
+
+        result = _compute_tool_schema(route, spec)
+
+        assert result.output_schema is None
+        assert result.raw_schema is None
+
+
+class TestApplyToolIdentity:
+    """Direct tests for _apply_tool_identity — mutations on OpenAPITool."""
+
+    def test_sets_title_and_annotations(self) -> None:
+        """Title and ToolAnnotations are set from route operationId."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            method="GET",
+            operation_id="issue_list_issues",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = None
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+
+        scope = _apply_tool_identity(route, tool)
+
+        assert tool.annotations is not None
+        assert tool.annotations.readOnlyHint is True
+        assert scope is not None  # scope derived from tags
+
+    def test_returns_required_scope(self) -> None:
+        """Return value is the derived required_scope string."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            operation_id="issue_create_issue",
+            method="POST",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_create_issue"
+        tool.annotations = {}
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+
+        scope = _apply_tool_identity(route, tool)
+
+        assert isinstance(scope, str)
+        assert "write" in scope
+
+    def test_adds_category_tag(self) -> None:
+        """Category tag is added to tool.tags."""
+        route = MagicMock(
+            path="/repos/{owner}/{repo}/issues",
+            operation_id="issue_list_issues",
+            method="GET",
+        )
+        tool = MagicMock(spec=OpenAPITool)
+        tool.name = "issue_list_issues"
+        tool.annotations = {}
+        tool.tags = set()
+        tool.parameters = {"properties": {}}
+
+        _apply_tool_identity(route, tool)
+
+        assert len(tool.tags) > 0
+
+
+class TestApplyFallbackSchemas:
+    """Direct tests for _apply_fallback_schemas."""
+
+    def test_early_return_when_output_schema_exists(self) -> None:
+        """Returns False without mutation when output_schema is set."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = {"type": "object"}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/test",
+            route_method="GET",
+        )
+
+        result = _apply_fallback_schemas(
+            component,
+            schema,
+            openapi_spec=make_openapi_spec(),
+        )
+
+        assert result is False
+        # output_schema was not overwritten
+        assert component.output_schema == {"type": "object"}
+
+    def test_text_plain_fallback(self) -> None:
+        """Sets text/plain fallback schema when output_schema is None."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = None
+        schema = _ComputedSchema(
+            output_schema=None,
+            raw_schema=None,
+            is_text_response=True,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/raw",
+            route_method="GET",
+        )
+
+        result = _apply_fallback_schemas(
+            component,
+            schema,
+            openapi_spec=make_openapi_spec(),
+        )
+
+        assert result is False
+        assert component.output_schema == {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+        }
+
+    def test_no_content_fallback(self) -> None:
+        """Sets null-result schema when output_schema is None and not text."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = None
+        schema = _ComputedSchema(
+            output_schema=None,
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}/pulls/{index}/merge",
+            route_method="POST",
+        )
+
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}/merge": {
+                    "post": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/APIEmpty"},
+                        },
+                    },
+                },
+            },
+            components={
+                "responses": {
+                    "APIEmpty": {
+                        "description": "APIEmpty is an empty response",
+                    },
+                },
+            },
+        )
+
+        result = _apply_fallback_schemas(component, schema, openapi_spec=spec)
+
+        assert result is True
+        assert component.output_schema == {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "null",
+                    "description": "No content returned. The operation completed successfully.",
+                },
+            },
+        }
+
+
+class TestInjectResponseMetadata:
+    """Direct tests for _inject_response_metadata."""
+
+    def test_adds_wrap_result_flag(self) -> None:
+        """x-fastmcp-wrap-result is set when output_schema exists."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = {"type": "object", "properties": {}}
+        output_schema = {"type": "object", "properties": {}}
+
+        _inject_response_metadata(component, output_schema)
+
+        assert component.output_schema["x-fastmcp-wrap-result"] is True
+
+    def test_no_wrap_result_when_none(self) -> None:
+        """No mutation when component.output_schema is None."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = None
+        output_schema = None
+
+        _inject_response_metadata(component, output_schema)
+
+        # output_schema is still None — no KeyError
+        assert component.output_schema is None
+
+    def test_pagination_metadata_for_array_response(self) -> None:
+        """Pagination fields injected for array response schemas."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {"type": "array", "items": {"type": "string"}},
+            },
+        }
+        output_schema = component.output_schema
+
+        _inject_response_metadata(component, output_schema)
+
+        props = output_schema["properties"]
+        assert "has_more" in props
+        assert "next_offset" in props
+        assert "total_count" in props
+
+
+class TestApplySchemaPostprocessingDirect:
+    """Direct tests for _apply_schema_postprocessing orchestrator."""
+
+    def test_calls_validation_augmentation(self) -> None:
+        """augment_schema_with_validation is called on the component."""
+        component = MagicMock(spec=OpenAPITool)
+        component.output_schema = None
+        component.tags = set()
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/test",
+            route_method="GET",
+        )
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.augment_schema_with_validation",
+        ) as mock_augment:
+            _apply_schema_postprocessing(
+                component,
+                schema,
+                has_labels=False,
+                openapi_spec=make_openapi_spec(),
+            )
+
+        mock_augment.assert_called_once_with(component)
+
+
+class TestBuildCustomizationMeta:
+    """Direct tests for _build_customization_meta."""
+
+    def test_sets_component_meta_fields(self) -> None:
+        """component.meta is populated with all expected keys."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = None
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}",
+            route_method="GET",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope="read:repository",
+            schema=schema,
+            has_labels=False,
+            has_no_content=False,
+        )
+
+        meta = component.meta
+        assert meta["required_scope"] == "read:repository"
+        assert "_customization" in meta
+        assert meta["_customization_applied"] is True
+        assert meta["_customization"].route_path == "/repos/{owner}/{repo}"
+        assert meta["_customization"].route_method == "GET"
+
+    def test_tool_customization_fields_match_schema(self) -> None:
+        """ToolCustomization fields are wired from _ComputedSchema."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = {}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=True,
+            is_binary_response=True,
+            response_transform="base64-decode",
+            route_path="/contents/{filepath}",
+            route_method="GET",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope="read:repository",
+            schema=schema,
+            has_labels=True,
+            has_no_content=True,
+        )
+
+        c = component.meta["_customization"]
+        assert isinstance(c, ToolCustomization)
+        assert c.is_text_response is True
+        assert c.is_binary_response is True
+        assert c.response_transform == "base64-decode"
+        assert c.route_path == "/contents/{filepath}"
+        assert c.route_method == "GET"
+        assert c.has_labels is True
+        assert c.is_empty_response is True

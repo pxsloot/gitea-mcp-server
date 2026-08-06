@@ -65,9 +65,11 @@ removed when FastMCP catches up.
 │    annotations, hints,    │  │                          │
 │    category, scope)       │  │                          │
 │  • description            │  │                          │
-│  • schema (derivation,    │  │                          │
-│    classification,        │  │                          │
-│    post-processing)       │  │                          │
+│  • schema (computation    │  │                          │
+│    via _compute_tool_     │  │                          │
+│    schema; fallback       │  │                          │
+│    schemas; response      │  │                          │
+│    metadata injection)    │  │                          │
 │  • metadata contract      │  │                          │
 │                           │  │                          │
 │  LabelTransform           │  │                          │
@@ -638,7 +640,7 @@ success response at all.
 
 The fix follows the same two-phase pattern as the text/plain handling:
 
-**Schema time** (``server_setup/mcp_builder.py:_apply_schema_postprocessing``):
+**Schema time** (``server_setup/mcp_builder.py:_apply_fallback_schemas``):
 ``_response_has_no_content()`` in ``tools/schemas.py`` checks the spec for a
 2xx response without a `content` key.  202/204/205 are always checked;
 200/201 are checked only when the response uses ``$ref`` — Gitea's idiom

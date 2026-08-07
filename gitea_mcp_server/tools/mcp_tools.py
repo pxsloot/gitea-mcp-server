@@ -27,10 +27,12 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import _format_as_markdown, apply_format, decode_base64_content
+from gitea_mcp_server.format import (
+    _format_paginated_result,
+    decode_base64_content,
+)
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import PAGINATION_KEYS, add_pagination_metadata, apply_pagination
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import _serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
@@ -204,81 +206,72 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "result": {
-            "type": "object",
-            "properties": {
-                "resources": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "uri": {"type": "string", "description": "Resource URI (may be a template)"},
-                            "name": {"type": "string", "description": "Human-readable name"},
-                            "description": {"type": "string", "description": "Description of the resource"},
-                            "mimeType": {"type": "string", "description": "MIME type (e.g. text/markdown)"},
-                            "type": {"type": "string", "description": "resource or template"},
-                            "tags": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "uri": {"type": "string", "description": "Resource URI (may be a template)"},
+                    "name": {"type": "string", "description": "Human-readable name"},
+                    "description": {"type": "string", "description": "Description of the resource"},
+                    "mimeType": {"type": "string", "description": "MIME type (e.g. text/markdown)"},
+                    "type": {"type": "string", "description": "resource or template"},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Categorization tags",
+                    },
+                    "required_scope": {
+                        "oneOf": [{"type": "string"}, {"type": "null"}],
+                        "description": "Required token scope or null",
+                    },
+                    "optional_params": {
+                        "oneOf": [
+                            {
                                 "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Categorization tags",
-                            },
-                            "required_scope": {
-                                "oneOf": [{"type": "string"}, {"type": "null"}],
-                                "description": "Required token scope or null",
-                            },
-                            "optional_params": {
-                                "oneOf": [
-                                    {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "name": {"type": "string"},
-                                                "type": {"type": "string"},
-                                                "values": {
-                                                    "type": "array",
-                                                    "items": {"type": "string"},
-                                                },
-                                            },
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "type": {"type": "string"},
+                                        "values": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
                                         },
                                     },
-                                    {"type": "null"},
-                                ],
-                                "description": "Optional query parameters the resource accepts",
+                                },
                             },
-                            "size_hint": {
-                                "oneOf": [
-                                    {"type": "string", "enum": ["tiny", "small", "medium", "large"]},
-                                    {"type": "null"},
-                                ],
-                                "description": "Estimated token cost (tiny/small/medium/large)",
-                            },
-                            "default_detail": {
-                                "oneOf": [
-                                    {"type": "string", "enum": ["full", "concise"]},
-                                    {"type": "null"},
-                                ],
-                                "description": "Recommended detail level (full/concise)",
-                            },
-                        },
+                            {"type": "null"},
+                        ],
+                        "description": "Optional query parameters the resource accepts",
                     },
-                    "description": "List of resource metadata entries",
+                    "size_hint": {
+                        "oneOf": [
+                            {"type": "string", "enum": ["tiny", "small", "medium", "large"]},
+                            {"type": "null"},
+                        ],
+                        "description": "Estimated token cost (tiny/small/medium/large)",
+                    },
+                    "default_detail": {
+                        "oneOf": [
+                            {"type": "string", "enum": ["full", "concise"]},
+                            {"type": "null"},
+                        ],
+                        "description": "Recommended detail level (full/concise)",
+                    },
                 },
-                "count": {"type": "integer", "description": "Number of items on this page"},
             },
-            "example": {
-                "resources": [
-                    {
-                        "uri": "gitea://repos/{owner}/{repo}",
-                        "name": "Repository",
-                        "description": "Get full repository metadata",
-                        "mimeType": "application/json",
-                        "type": "template",
-                        "tags": ["wrapper", "repository"],
-                        "required_scope": "read:repository",
-                    },
-                ],
-                "count": 1,
-            },
+            "description": "List of resource metadata entries",
+            "example": [
+                {
+                    "uri": "gitea://repos/{owner}/{repo}",
+                    "name": "Repository",
+                    "description": "Get full repository metadata",
+                    "mimeType": "application/json",
+                    "type": "template",
+                    "tags": ["wrapper", "repository"],
+                    "required_scope": "read:repository",
+                },
+            ],
         },
     },
 }
@@ -337,9 +330,10 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     ## Return Structure
 
-    Returns a dictionary with two keys:
-    - `resources`: List of resource metadata dictionaries
-    - `count`: Total number of resources and templates
+    Returns a flat list of resource metadata dictionaries, with pagination
+    metadata (``total_count``, ``has_more``, ``next_offset``) in
+    ``structured_content`` — the same contract as ``search_tools``,
+    ``search_resources``, ``search_docs``, and ``search``.
 
     Each resource dictionary contains:
     - `uri`: The resource URI (may be a template with `{param}` placeholders)
@@ -362,10 +356,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     ```python
     # Agent pattern: discover then read
-    result = await list_resources()
-    print(f"Found {result['count']} resources")
+    result = await list_resources(fetch_all=True)
 
-    for resource in result['resources']:
+    for resource in result['result']:
         print(f"- {resource['uri']} ({resource['mimeType']})")
 
         # Example: read a repository resource
@@ -398,7 +391,9 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
       ``format=json``, or ``format=raw``.
 
     Returns:
-        Dictionary with 'resources' key containing a list of resource info:
+        A flat list of resource info dicts with pagination metadata
+        (``total_count``, ``has_more``, ``next_offset``) in
+        ``structured_content``:
         [
             {
                 "uri": "gitea://repos/{owner}/{repo}",
@@ -428,35 +423,12 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     if total_count == 0:
         return ToolResult(
             content=[TextContent(type="text", text="No resources found.")],
-            structured_content={"result": {"resources": [], "count": 0}},
+            structured_content={"result": [], "total_count": 0},
         )
 
-    # Slice (or skip when fetch_all=True).
-    if fetch_all:
-        # Normalize page/limit so add_pagination_metadata doesn't compute
-        # an incorrect has_more (the full result is already in hand).
-        page, limit = 1, total_count or len(all_resources)
-        page_items = all_resources
-    else:
-        start = (page - 1) * limit
-        page_items = all_resources[start:start + limit]
-
-    raw_page = {"resources": page_items, "count": len(page_items)}
-
-    extras: list[str] = []
-    if format == "markdown":
-        pagination_table = _format_as_markdown(
-            {k: v for k, v in add_pagination_metadata(
-                {"result": raw_page}, page, limit, total_count
-            ).items() if k in PAGINATION_KEYS},
-            None,
-            detail=detail,
-        )
-        extras.append(pagination_table)
-
-    return apply_pagination(
-        apply_format(raw_page, format, markdown_extras=extras or None, detail=detail),
-        page, limit, total_count,
+    return _format_paginated_result(
+        all_resources, total_count, format, page, limit, fetch_all,
+        detail=detail,
     )
 
 

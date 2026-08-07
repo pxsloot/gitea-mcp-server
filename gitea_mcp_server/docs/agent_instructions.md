@@ -214,6 +214,8 @@ shape, then trust the compact example day to day.
 
 `read_doc(topic)` also supports `page` and `limit` for line-based pagination
 through long guides. Each page is `limit` lines (default 50, max 200).
+For ``json`` and ``raw`` formats, pagination metadata (``has_more``,
+``next_offset``, ``total_count``) accompanies the guide content.
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These

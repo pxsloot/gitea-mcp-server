@@ -360,8 +360,14 @@ def register_doc_tools(
             "type": "object",
             "properties": {
                 "result": {
-                    "type": "string",
-                    "description": "The full guide content in Markdown",
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The full guide content",
+                        },
+                    },
+                    "description": "Guide content with pagination metadata in structured_content",
                 },
             },
         },

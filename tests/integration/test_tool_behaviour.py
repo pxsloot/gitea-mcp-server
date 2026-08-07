@@ -362,7 +362,7 @@ class TestEmptyBodyWrites:
     def base_spec(self) -> dict[str, Any]:
         return _make_delete_spec()
 
-    @pytest.mark.parametrize("fmt,expected", [
+    @pytest.mark.parametrize(("fmt", "expected"), [
         ("markdown", "Operation completed successfully."),
         ("json", "Operation completed successfully."),
         ("raw", "Operation completed successfully."),

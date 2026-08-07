@@ -630,7 +630,10 @@ The ``_pipeline_with_context`` method handles four response classes:
    in ``format.py``), and returns plain text — matching the ``read_resource``
    tool output.
 
-- **Empty-body** (204/205): Returned with ``{"result": null}``.
+- **Empty-body** (204/205): Returned with ``{"result": None}`` in
+  ``structured_content`` and the visible confirmation
+  ``"Operation completed successfully."`` as text content so agents
+  receive an explicit success signal.
 
 ### The `x-fastmcp-wrap-result` Extension
 
@@ -671,7 +674,9 @@ structured output.
 
 **Runtime** (`_pipeline_with_context`): when `is_empty_response` is true and
 `structured_content` is still `None` (FastMCP had no JSON to unwrap), the
-wrapping handler returns `ToolResult(content=[""], structured_content={"result": None})`.
+wrapping handler returns `ToolResult(content=["Operation completed successfully."], structured_content={"result": None})`.
+This gives agents a visible confirmation instead of an empty string that
+would appear as a silent success.
 
 The `_serialize_tool_schema` function guards against the `type: null` schema
 producing a `None` output_example — that field is simply omitted when the

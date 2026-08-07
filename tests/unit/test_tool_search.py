@@ -767,6 +767,48 @@ class TestToolInfo:
         assert result_schema.get("description") == "The guide content in Markdown"
 
     @pytest.mark.asyncio
+    async def test_tool_info_detail_full_array_of_primitives(self) -> None:
+        """tool_info detail=full with array of primitive items preserves the array.
+
+        Covers the branch where array items are primitives or ``$ref``
+        pointers (no ``.properties`` to paginate) — the full items schema
+        is returned unpaginated.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_array_of_strings",
+            description="A tool returning an array of strings",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of tag names",
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_array_of_strings", "json", mock_ctx, transform,
+            detail="full",
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        output_schema = schema["output_schema"]
+        result_schema = output_schema["properties"]["result"]
+        assert result_schema["type"] == "array"
+        # Items must be a primitive type, not collapsed to object
+        assert result_schema["items"]["type"] == "string"
+
+    @pytest.mark.asyncio
     async def test_tool_info_not_found(self) -> None:
         """tool_info should raise ValueError for unknown tool."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl

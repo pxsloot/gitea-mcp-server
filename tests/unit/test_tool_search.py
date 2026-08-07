@@ -657,6 +657,116 @@ class TestToolInfo:
         assert "output_schema" not in schema
 
     @pytest.mark.asyncio
+    async def test_tool_info_detail_full_preserves_array_result_type(self) -> None:
+        """tool_info detail=full must preserve array result type, not collapse to object.
+
+        Regression test: the pagination logic in _tool_info_impl assumed every
+        unwrapped result schema was ``type: "object"`` with properties.
+        Tools returning arrays (API list endpoints, ``search_tools``,
+        ``search``, ``search_resources``, ``search_docs``) got a schema
+        advertising ``{"result": {"type": "object", "properties": {}}}``
+        instead of the actual ``{"result": {"type": "array", "items": {...}}}``.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_with_array_result",
+            description="A tool that returns an array",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "integer"},
+                                "name": {"type": "string"},
+                                "email": {"type": "string"},
+                            },
+                        },
+                        "description": "A list of items",
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_with_array_result", "json", mock_ctx, transform,
+            detail="full",
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        assert schema["name"] == "gitea_tool_with_array_result"
+        assert "output_schema" in schema
+        output_schema = schema["output_schema"]
+        # Must preserve the array type, not collapse to empty object
+        assert output_schema["type"] == "object"
+        result_schema = output_schema["properties"]["result"]
+        assert result_schema["type"] == "array", (
+            f"Expected array type, got: {result_schema.get('type')}"
+        )
+        # Must have items schema for the array
+        assert "items" in result_schema, (
+            f"Expected 'items' key in array result, got keys: {list(result_schema.keys())}"
+        )
+        # Item properties must be preserved (paginated subset is fine)
+        assert "properties" in result_schema["items"]
+        assert isinstance(result_schema["items"]["properties"], dict)
+
+    @pytest.mark.asyncio
+    async def test_tool_info_detail_full_preserves_string_result_type(self) -> None:
+        """tool_info detail=full must preserve string result type, not collapse to object.
+
+        Regression test: for tools like ``read_doc`` whose result is a string,
+        the pagination logic incorrectly advertised ``{"result": {"type": "object",
+        "properties": {}}}`` instead of ``{"result": {"type": "string"}}``.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_with_string_result",
+            description="A tool that returns a string",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string",
+                        "description": "The guide content in Markdown",
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_with_string_result", "json", mock_ctx, transform,
+            detail="full",
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        assert schema["name"] == "gitea_tool_with_string_result"
+        assert "output_schema" in schema
+        output_schema = schema["output_schema"]
+        # Must preserve the string type, not collapse to empty object
+        assert output_schema["type"] == "object"
+        result_schema = output_schema["properties"]["result"]
+        assert result_schema["type"] == "string", (
+            f"Expected string type, got: {result_schema.get('type')}"
+        )
+        # Must preserve description
+        assert result_schema.get("description") == "The guide content in Markdown"
+
+    @pytest.mark.asyncio
     async def test_tool_info_not_found(self) -> None:
         """tool_info should raise ValueError for unknown tool."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl

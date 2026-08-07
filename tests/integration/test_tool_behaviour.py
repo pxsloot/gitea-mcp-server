@@ -101,6 +101,37 @@ def _make_empty_spec() -> dict[str, Any]:
     }
 
 
+def _make_delete_spec() -> dict[str, Any]:
+    """Return a minimal Swagger spec with a 204-delete endpoint.
+
+    Models ``DELETE /repos/{owner}/{repo}`` — Gitea returns 204 No Content
+    with no response body.  This exercises the empty-body wrapping path
+    in ``_pipeline_with_context``.
+    """
+    return {
+        "swagger": "2.0",
+        "info": {"title": "Gitea API", "version": "1.0"},
+        "basePath": "/api/v1",
+        "paths": {
+            "/repos/{owner}/{repo}": {
+                "delete": {
+                    "operationId": "repoDelete",
+                    "summary": "Delete a repository",
+                    "parameters": [
+                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                    ],
+                    "responses": {
+                        "204": {"description": "Repository deleted successfully."},
+                        "404": {"description": "Not found."},
+                    },
+                }
+            },
+        },
+        "definitions": {},
+    }
+
+
 def _make_diff_spec() -> dict[str, Any]:
     """Return a Swagger spec with the real text/plain diff/patch download endpoint.
 
@@ -312,6 +343,53 @@ class TestResultWrapping:
         # The test below is optional - it asserts current behaviour.
         if "has_more" in result.structured_content:
             assert isinstance(result.structured_content["has_more"], bool)
+
+
+# ---------------------------------------------------------------------------
+# Scenario 4b - Empty-body (204/205) writes
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyBodyWrites:
+    """Scenario 4b: Empty-body success responses produce visible confirmation.
+
+    Gitea endpoints like DELETE /repos/{owner}/{repo} return 204 No Content.
+    The wrapping transform should produce visible text content so agents
+    can confirm the operation succeeded, not an empty string.
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        return _make_delete_spec()
+
+    @pytest.mark.parametrize(("fmt", "expected"), [
+        ("markdown", "Operation completed successfully."),
+        ("json", "Operation completed successfully."),
+        ("raw", "Operation completed successfully."),
+    ])
+    async def test_empty_body_produces_visible_text(
+        self, mcp_server: FastMCP, fmt: str, expected: str,
+    ) -> None:
+        """All formats produce visible confirmation for 204 responses."""
+        respx.delete(f"{BASE_TEST_URL}/api/v1/repos/test/repo").respond(204)
+        result = await mcp_server.call_tool(
+            "gitea_repo_delete", {"owner": "test", "repo": "repo", "format": fmt},
+        )
+        assert result.structured_content == {"result": None}
+        text = extract_text_content(result.content)
+        assert text == expected
+
+    async def test_empty_body_default_format_produces_visible_text(
+        self, mcp_server: FastMCP,
+    ) -> None:
+        """Default (markdown) format produces visible confirmation for 204."""
+        respx.delete(f"{BASE_TEST_URL}/api/v1/repos/test/repo").respond(204)
+        result = await mcp_server.call_tool(
+            "gitea_repo_delete", {"owner": "test", "repo": "repo"},
+        )
+        assert result.structured_content == {"result": None}
+        text = extract_text_content(result.content)
+        assert text == "Operation completed successfully."
 
 
 # ---------------------------------------------------------------------------

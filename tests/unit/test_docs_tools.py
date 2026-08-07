@@ -356,13 +356,13 @@ class TestRegisterDocTools:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test")
         assert isinstance(result, ToolResult)
-        assert "# Test" in get_structured(result)["result"]
+        assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
     async def test_read_doc_case_insensitive(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="TEST")
-        assert "# Test" in get_structured(result)["result"]
+        assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
     async def test_read_doc_not_found_raises(self) -> None:
@@ -384,8 +384,8 @@ class TestRegisterDocTools:
     async def test_read_doc_raw_format(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="raw")
-        assert "# Test" in get_structured(result)["result"]
-        assert "Content" in get_structured(result)["result"]
+        assert "# Test" in get_structured(result)["result"]["content"]
+        assert "Content" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
     async def test_read_doc_raw_and_markdown_match(self) -> None:
@@ -399,7 +399,7 @@ class TestRegisterDocTools:
     async def test_read_doc_markdown_includes_frontmatter(self) -> None:
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="markdown")
-        assert "# Test" in get_structured(result)["result"]
+        assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
     async def test_search_docs_invalid_format_raises(self) -> None:
@@ -412,6 +412,39 @@ class TestRegisterDocTools:
         fn = self._capture_tool("read_doc")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
             await fn(topic="test", format="xml")
+
+    @pytest.mark.asyncio
+    async def test_read_doc_json_format_returns_structured_dict_in_text(self) -> None:
+        """JSON format text content must be a structured dict, not a raw JSON string."""
+        fn = self._capture_tool("read_doc")
+        result = await fn(topic="test", format="json", page=1, limit=50)
+        text = extract_text_from_content_items(result.content)
+        parsed = json_module.loads(text)
+        assert isinstance(parsed, dict), "JSON content should be a dict, not a string literal"
+        # structured_content.result is the data dict, text is its JSON dump
+        assert parsed == result.structured_content["result"]
+
+    @pytest.mark.asyncio
+    async def test_read_doc_json_format_pagination_in_structured_content(self) -> None:
+        """Structured content must carry pagination metadata."""
+        fn = self._capture_tool("read_doc")
+        result = await fn(topic="test", format="json", page=1, limit=50)
+        sc = result.structured_content
+        assert sc is not None
+        assert "has_more" in sc
+        assert "next_offset" in sc
+        assert "total_count" in sc
+
+    @pytest.mark.asyncio
+    async def test_read_doc_json_format_second_page_has_more(self) -> None:
+        """When page 1 doesn't contain all lines, pagination signals more pages."""
+        fn = self._capture_tool("read_doc")
+        # Use a guide short enough to need pagination at limit=2
+        result = await fn(topic="test", format="json", page=1, limit=1)
+        sc = result.structured_content
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 2
+        assert sc["total_count"] == 3  # 3 lines in the test guide
 
     @pytest.mark.asyncio
     async def test_search_docs_markdown_includes_cross_link_footer(self) -> None:

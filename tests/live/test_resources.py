@@ -59,17 +59,14 @@ class TestListResources:
 
     @pytest.mark.live
     async def test_list_resources_returns_data(self, world: World) -> None:
-        """list_resources returns a dict with resources and count."""
+        """list_resources returns a flat list of resource dicts."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_list_resources", {"format": "json"})
         assert not result.isError
         data = json.loads(extract_text_content(result.content))
-        assert isinstance(data, dict)
-        assert "resources" in data
-        assert "count" in data
-        assert isinstance(data["resources"], list)
-        assert len(data["resources"]) > 0
+        assert isinstance(data, list)
+        assert len(data) > 0
 
     @pytest.mark.live
     async def test_resource_items_have_metadata(self, world: World) -> None:
@@ -78,7 +75,7 @@ class TestListResources:
         result = await mcp.call_tool(
             "gitea_list_resources", {"format": "json"})
         data = json.loads(extract_text_content(result.content))
-        for res in data["resources"][:5]:
+        for res in data[:5]:
             assert_keys(res, "uri", "name", "description",
                         "mimeType", "type", "tags",
                         msg=f"Resource {res.get('uri', '?')}: ")
@@ -90,7 +87,7 @@ class TestListResources:
         result = await mcp.call_tool(
             "gitea_list_resources", {"format": "json", "tag": "wrapper"})
         data = json.loads(extract_text_content(result.content))
-        for res in data["resources"]:
+        for res in data:
             assert "wrapper" in res.get("tags", []), (
                 f"Tag filter returned non-wrapper: {res['uri']}"
             )
@@ -193,7 +190,7 @@ class TestResourceScope:
             result = await mcp.call_tool(
                 "gitea_list_resources", {"format": "json"})
             data = json.loads(extract_text_content(result.content))
-            counts.append(data.get("count", 0))
+            counts.append(len(data))
 
         assert counts[0] >= counts[1], (
             f"Full token resources ({counts[0]}) should not be fewer than "

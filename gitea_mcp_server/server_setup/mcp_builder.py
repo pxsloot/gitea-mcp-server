@@ -862,7 +862,9 @@ class _ToolWrappingTransform(Transform):
            ``decode_base64_content``.
         4. **Binary** (zip, octet-stream) — returns structured
            ``content_info`` metadata instead of raw bytes.
-        5. **Empty-body** (204/205) — returns ``{"result": null}``.
+        5. **Empty-body** (204/205) — returns ``{"result": None}`` with
+           the visible confirmation text ``Operation completed successfully.``
+           so agents receive an explicit success signal.
 
         Args:
             extracted: Extracted virtual param values from
@@ -946,14 +948,16 @@ class _ToolWrappingTransform(Transform):
                 return handled
 
         # Empty-body success responses (204 No Content, 205 Reset Content):
-        # wrap in {"result": None} so it matches the explicit output_schema.
+        # wrap in {"result": None} so it matches the explicit output_schema,
+        # and set a visible text confirmation so agents see a success signal
+        # instead of empty content.
         if (
             is_empty_response
             and isinstance(result, ToolResult)
             and result.structured_content is None
         ):
             result = ToolResult(
-                content=[TextContent(type="text", text="")],
+                content=[TextContent(type="text", text="Operation completed successfully.")],
                 structured_content={"result": None},
             )
             return await self._apply_loop_hooks(

@@ -360,8 +360,14 @@ def register_doc_tools(
             "type": "object",
             "properties": {
                 "result": {
-                    "type": "string",
-                    "description": "The full guide content in Markdown",
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The full guide content",
+                        },
+                    },
+                    "description": "Guide content with pagination metadata in structured_content",
                 },
             },
         },
@@ -385,9 +391,9 @@ def register_doc_tools(
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
         - ``format``: Output format -- ``markdown`` (default, full content with
-          YAML frontmatter), ``json`` (structured JSON with content in
-          ``{"result": "..."}``), or ``raw`` (same as markdown - full content
-          included).
+          YAML frontmatter), ``json`` (structured JSON with guide content in a
+          ``"content"`` key), or ``raw`` (structured JSON dict; same content
+          as markdown).
         - ``page``: Page number (1-based, default 1). Each page is ``limit`` lines.
         - ``limit``: Lines per page (default 50, max 200). Use a larger limit
           to read more of the guide at once.
@@ -395,8 +401,9 @@ def register_doc_tools(
         ## Return Value
 
         The guide content (sliced by page/limit) in the requested format.
-        Pagination metadata (``has_more``, ``next_offset``, ``total_count``)
-        is available in the structured content.
+        For ``json`` and ``raw`` formats, the response includes pagination
+        metadata (``has_more``, ``next_offset``, ``total_count``) alongside
+        the guide content.
 
         ## Error Handling
 
@@ -432,10 +439,11 @@ def register_doc_tools(
         page_lines = all_lines[start:end]
         page_content = "".join(page_lines)
 
+        data = {"content": page_content}
         result = apply_format(
-            page_content,
+            data,
             format,
-            markdown_formatter=lambda d: d,
+            markdown_formatter=lambda d: d["content"],
         )
         return apply_pagination(result, page, limit, total_lines)
 

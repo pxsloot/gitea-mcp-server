@@ -42,7 +42,11 @@ from gitea_mcp_server.tools.filter_info import (
     build_filtered_tools_message,
     get_filtered_tool_info,
 )
-from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+from gitea_mcp_server.tools.schemas import (
+    _is_object_type,
+    _schema_type_is_array,
+    _unwrap_result_schema,
+)
 
 # ============================================================================
 # Shared BM25 + format pipeline (used by search_tools and search_resources)
@@ -607,9 +611,14 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     tool names.  Tries bare name first, then prepends ``tool_prefix``.
 
     When ``detail="full"``, the result includes the fully-resolved
-    ``output_schema`` alongside the compact ``output_example``.  The
-    ``output_schema`` is paginated by its top-level properties when it
-    exceeds ``limit`` properties per page.
+    ``output_schema`` alongside the compact ``output_example``.
+    Pagination selects the right sub-schema to slice by result type:
+
+    * **Object** results: paginate top-level properties.
+    * **Array** results: paginate ``items.properties`` when items are
+      objects; preserves the full array structure.
+    * **String / other** results: return the full schema unpaginated
+      (no meaningful property-level slicing for primitives).
 
     Args:
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
@@ -627,26 +636,54 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
             if detail == "full" and tool.output_schema is not None:
                 # FastMCP wraps API tool output_schemas in {"result": {...}}
                 # (x-fastmcp-wrap-result). Unwrap to access the actual
-                # properties for pagination.
+                # schema for pagination.
                 result_obj = _unwrap_result_schema(tool.output_schema) or {}
-                result_props = result_obj.get("properties", {})
-                total_props = len(result_props)
-                # Slice result properties by page/limit so agents can page
-                # through large schemas instead of receiving the full schema.
-                start = (page - 1) * limit
-                end = start + limit
-                prop_keys = list(result_props.keys())
-                sliced_keys = prop_keys[start:end]
-                sliced_schema = dict(tool.output_schema)
-                sliced_schema["properties"] = {
-                    "result": {
+                # Build the result envelope.  For objects we paginate
+                # top-level properties; for arrays we paginate the item
+                # properties; for strings/other we return the full schema
+                # unchanged (no meaningful pagination).
+                if _is_object_type(result_obj):
+                    result_props = result_obj.get("properties", {})
+                    prop_keys = list(result_props.keys())
+                    total_props = len(result_props)
+                    start = (page - 1) * limit
+                    end = start + limit
+                    sliced_keys = prop_keys[start:end]
+                    result_schema: dict[str, Any] = {
                         "description": result_obj.get("description", ""),
                         "type": "object",
                         "properties": {
                             k: result_props[k] for k in sliced_keys
                         },
                     }
-                }
+                elif _schema_type_is_array(result_obj):
+                    items_schema = result_obj.get("items", {})
+                    if _is_object_type(items_schema):
+                        items_props = items_schema.get("properties", {})
+                        prop_keys = list(items_props.keys())
+                        total_props = len(items_props)
+                        start = (page - 1) * limit
+                        end = start + limit
+                        sliced_keys = prop_keys[start:end]
+                        sliced_items = dict(items_schema)
+                        sliced_items["properties"] = {
+                            k: items_props[k] for k in sliced_keys
+                        }
+                    else:
+                        # Array of primitives or refs — no pagination.
+                        sliced_items = items_schema
+                        total_props = 1
+                    result_schema = {
+                        "description": result_obj.get("description", ""),
+                        "type": "array",
+                        "items": sliced_items,
+                    }
+                else:
+                    # String or other primitive — no meaningful pagination.
+                    result_schema = result_obj
+                    total_props = 1
+                sliced_schema = dict(tool.output_schema)
+                sliced_schema["properties"] = {"result": result_schema}
                 schema["output_schema"] = sliced_schema
 
                 result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)

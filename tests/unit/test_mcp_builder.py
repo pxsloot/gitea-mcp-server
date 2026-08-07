@@ -1093,6 +1093,55 @@ class TestToolWrappingTransform:
                 await wrapped.run(arguments={"name": ""})
 
     @pytest.mark.asyncio
+    async def test_unknown_args_rejected_in_full_pipeline(self) -> None:
+        """Unknown arguments should be rejected by the full tool pipeline.
+
+        Regression: _run_validation validated known params but never checked
+        that every kwarg was declared in the parameter schema.  Unknown args
+        (agent typos) passed through silently.  This test exercises the full
+        transform_fn → _run_transform_pipeline → _pipeline_with_context
+        → _run_validation chain without mocking _run_validation.
+        """
+        transform = self.make_transform()
+
+        # Tool with real parameter properties — not the usual empty dict.
+        tool = Tool(
+            name="test_tool",
+            tags={"test"},
+            description="Test tool",
+            parameters={
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["owner", "repo"],
+            },
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            meta={
+                "_customization_applied": True,
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/repos/{owner}/{repo}",
+                    route_method="GET",
+                ),
+            },
+            annotations=ToolAnnotations(title="Test"),
+        )
+
+        result = await transform.list_tools([tool])
+        wrapped = result[0]
+
+        # Should reject the unknown key 'typo_parm'.
+
+        with pytest.raises(ValueError, match="Unknown parameter"):
+            await wrapped.run(arguments={
+                "owner": "valid-owner",
+                "repo": "valid-repo",
+                "typo_parm": 42,
+            })
+
+    @pytest.mark.asyncio
     async def test_text_response_wrapping(self) -> None:
         """is_text_response wraps unstructured content in result dict."""
         transform = self.make_transform()

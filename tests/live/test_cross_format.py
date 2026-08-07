@@ -87,8 +87,7 @@ class TestJsonMarkdownEquivalence:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
             mcp, "gitea_issue_search_issues",
-            {"q": "zzzzthisdoesnotexist9999", "owner": DEV.username,
-             "repo": _REPO},
+            {"q": "zzzzthisdoesnotexist9999", "owner": DEV.username},
             skip_values=True,  # empty is just []
         )
 

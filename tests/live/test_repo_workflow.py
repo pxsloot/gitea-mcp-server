@@ -279,7 +279,7 @@ class TestBranchProtection:
             "gitea_repo_create_branch_protection",
             {"owner": DEV.username, "repo": _REPO,
              "rule_name": "main", "required_approvals": 1,
-             "enable_push": False, "enable_force_push": False,
+             "enable_push": False,
              "format": "json"},
         )
         assert not result.isError, (
@@ -304,7 +304,7 @@ class TestBranchProtection:
                 "gitea_repo_create_branch_protection",
                 {"owner": DEV.username, "repo": _REPO,
                  "rule_name": "main", "required_approvals": 1,
-                 "enable_push": False, "enable_force_push": False,
+                 "enable_push": False,
                  "format": "json"},
             )
             assert not create_result.isError, "Failed to establish main protection rule"

@@ -524,7 +524,7 @@ async def _read_resource_tool(
     ```python
     # Discover available templates first
     resources = await list_resources()
-    repo_template = next(r for r in resources['resources'] if r['uri'].endswith('repos/{owner}/{repo}'))
+    repo_template = next(r for r in resources['result'] if r['uri'].endswith('repos/{owner}/{repo}'))
 
     # Substitute parameters
     uri = repo_template['uri'].format(owner='mcp-server', repo='gitea-mcp-server')

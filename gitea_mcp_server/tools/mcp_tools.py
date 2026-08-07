@@ -523,7 +523,7 @@ async def _read_resource_tool(
     ### Reading a parameterized template
     ```python
     # Discover available templates first
-    resources = await list_resources()
+    resources = await list_resources(fetch_all=True)
     repo_template = next(r for r in resources['result'] if r['uri'].endswith('repos/{owner}/{repo}'))
 
     # Substitute parameters

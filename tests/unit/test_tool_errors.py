@@ -455,6 +455,54 @@ class TestRunValidation:
         with pytest.raises(ValidationError):
             _run_validation({"owner": ""})
 
+    def test_rejects_unknown_parameters_when_schema_present(self) -> None:
+        """Unknown kwargs not in param_properties should raise ValidationError.
+
+        Regression: _run_validation iterated kwargs and validated each against
+        known validators and schema enums, but never checked that a key
+        was declared in param_properties at all.  Unknown args (typos by
+        the agent) passed through silently and were either dropped by FastMCP
+        or forwarded to Gitea as unknown query params.
+        """
+        with pytest.raises(ValidationError, match="Unknown parameter"):
+            _run_validation(
+                {"owner": "valid", "typo_parm": 42},
+                param_properties={"owner": {"type": "string"}},
+            )
+
+    def test_unknown_params_message_names_offenders(self) -> None:
+        """Error message should name the unknown parameter(s) for fast debugging."""
+        with pytest.raises(ValidationError, match="typo_parm"):
+            _run_validation(
+                {"owner": "valid", "typo_parm": 42, "another_typo": "x"},
+                param_properties={
+                    "owner": {"type": "string"},
+                },
+            )
+
+    def test_allows_unknown_args_when_schema_absent(self) -> None:
+        """When param_properties is None, unknown args MUST NOT be rejected.
+
+        Without a schema we cannot distinguish between a legitimate argument
+        and an agent typo.  The existing behaviour (pass through) is correct
+        here — the guard only applies when param_properties is non-empty.
+        """
+        # Should not raise — no schema to check against.
+        _run_validation({"owner": "valid", "extra": "value"})
+
+    def test_allows_unknown_args_when_schema_empty(self) -> None:
+        """When param_properties is empty dict, unknown args MUST NOT be rejected.
+
+        An empty dict means the tool has no declared parameters — rejecting
+        unknown args in that case would break the established contract that
+        ``param_properties={}`` allows validators to run without an
+        unknown-arg check.
+        """
+        # Should not raise from unknown-arg check.  The label validator
+        # raises separately, but that is a different code path.
+        with pytest.raises(ValidationError, match="must be a list"):
+            _run_validation({"labels": True}, param_properties={})
+
 
 class TestParamIsBoolean:
     """Tests for _param_is_boolean helper."""

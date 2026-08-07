@@ -142,31 +142,50 @@ def _run_validation(
 ) -> None:
     """Validate tool arguments against registered validators and schema enums.
 
-    Validation dispatch order for each argument:
+    Validation is performed in three ordered stages:
 
-    1. If the parameter's own JSON Schema defines an ``enum`` (either
-       directly or inside an ``anyOf``/``oneOf`` branch), validate against
-       that enum — no hardcoded validator needed.
-    2. If the parameter has a registered validator in
-       :data:`~gitea_mcp_server.validation.SINGLE_VALIDATORS`, call it.
-    3. If the parameter is a boolean type, skip validation (FastMCP handles
-       type coercion).
+    1. **Missing required** — every param in *required_params* must be
+       present in *kwargs*.
+    2. **Unknown parameters** — when *param_properties* is non-empty,
+       every key in *kwargs* must be declared in *param_properties*.
+       Virtual params (format, detail, etc.) have already been extracted
+       by the caller, so any remaining key not in the schema is an agent
+       typo and is rejected.  When *param_properties* is ``None`` or
+       ``{}`` the check is skipped (insufficient schema information).
+    3. **Per-argument dispatch** — for each argument:
+       1. Schema-driven enum validation (``enum`` / ``anyOf`` / ``oneOf``).
+       2. Registered validator in
+          :data:`~gitea_mcp_server.validation.SINGLE_VALIDATORS`.
+       3. Boolean type skip (FastMCP handles type coercion).
 
-    Step 1 enables tools like ``gitea_repo_create_status`` whose ``state``
-    parameter's valid values are resolved from the spec (or inferred from
-    its description) rather than hardcoded to issue-state values.
+    Step 3.1 enables tools like ``gitea_repo_create_status`` whose
+    ``state`` parameter's valid values are resolved from the spec
+    rather than hardcoded to issue-state values.
 
     Args:
         kwargs: The tool arguments from the agent.
         required_params: List of required parameter names, or ``None``.
         param_properties: The tool's ``parameters.properties`` dict, or
-            ``None``.  Used to access per-param schema for enum checks.
+            ``None``.  Used for enum checks and unknown-arg rejection.
     """
     missing = [p for p in (required_params or []) if p not in kwargs]
     if missing:
         parts = _format_missing_params(missing, param_properties)
         msg = f"Missing required parameter(s): {parts}"
         _raise_validation_error(msg, missing[0], ValueError(msg))
+    # Reject unknown parameters when the parameter schema is available.
+    # Virtual params (format, detail, sudo, etc.) have already been
+    # extracted by _ToolWrappingTransform.transform_fn via extract_from()
+    # before _run_validation is called, so any remaining key not in the
+    # schema is an agent typo that must be rejected rather than silently
+    # ignored (which would succeed on the wire: Gitea drops unknown query
+    # params and FastMCP drops unknown kwargs).
+    if param_properties:
+        unknown = [k for k in kwargs if k not in param_properties]
+        if unknown:
+            quoted = ", ".join(repr(k) for k in unknown)
+            msg = f"Unknown parameter(s): {quoted}"
+            _raise_validation_error(msg, unknown[0], ValueError(msg))
     for name, value in kwargs.items():
         # Schema-driven enum validation: if the param's own schema defines
         # an enum (resolved from the spec or inferred from description),

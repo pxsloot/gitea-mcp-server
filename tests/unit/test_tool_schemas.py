@@ -414,7 +414,13 @@ class TestDeriveOutputSchema:
         tool.name = "issue_get_issue"
         tool.annotations = None
         tool.tags = {"issue"}
-        tool.parameters = {"properties": {}}
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "index": {"type": "integer"},
+            },
+        }
         tool.output_schema = None
         tool.description = ""
         tool.meta = {}
@@ -448,7 +454,13 @@ class TestDeriveOutputSchema:
         tool.name = "issue_get_issue"
         tool.annotations = None
         tool.tags = {"issue"}
-        tool.parameters = {"properties": {}}
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "index": {"type": "integer"},
+            },
+        }
         tool.output_schema = None
         tool.description = ""
         tool.meta = {}

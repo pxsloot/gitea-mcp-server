@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from gitea_mcp_server.tools.schemas import _schema_type_is_array
+from gitea_mcp_server.tools.schemas import schema_type_is_array
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +220,7 @@ def derive_size_hint_from_schema(schema: dict[str, Any] | None) -> str:
         return SIZE_TINY
 
     props_count = _count_schema_properties(schema)
-    is_array = _schema_type_is_array(schema) if isinstance(schema, dict) else False
+    is_array = schema_type_is_array(schema) if isinstance(schema, dict) else False
     depth = _estimate_nesting_depth(schema)
 
     # Deep nesting or array → large: both signal potentially expensive output.

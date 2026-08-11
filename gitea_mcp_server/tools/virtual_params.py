@@ -503,7 +503,7 @@ def get_loop_hooks(
 
 __all__ = [
     "VirtualParam",
-    "_fetch_all_loop",
+
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",

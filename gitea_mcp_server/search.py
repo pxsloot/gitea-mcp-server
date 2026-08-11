@@ -224,8 +224,4 @@ class BM25SearchEngine:
 
 __all__ = [
     "BM25SearchEngine",
-    "_BM25Index",
-    "_expand_word_aliases",
-    "_texts_hash",
-    "_tokenize_len2",
 ]

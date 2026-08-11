@@ -4,19 +4,19 @@ Shared formatting utilities used across tools/ and resources/.
 Kept at the flat level so neither domain depends on the other.
 
 Public functions:
-    _build_server_info_markdown - build server info markdown from
+    build_server_info_markdown - build server info markdown from
         the OpenAPI spec info block (not a registered domain formatter).
-    _collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
+    collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
         to labels (``$ref:TypeName``).  Used to shape data before formatting
         so any formatter (json or markdown) receives already-collapsed data.
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
     apply_format - format data for output (raw/json/markdown), no pagination.
-    _format_paginated_result - format paginated list results for display.
+    format_paginated_result - format paginated list results for display.
         Separates display from data creation: handles page slicing (or
         ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
         over manual ``apply_format()`` + ``apply_pagination()`` composition.
-    _format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
+    format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
@@ -175,7 +175,7 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, no schema), 2 collapse outcomes (dict $ref, list $ref), 2 recursive walks (dict recurse, list recurse), 1 scalar passthrough
+def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, no schema), 2 collapse outcomes (dict $ref, list $ref), 2 recursive walks (dict recurse, list recurse), 1 scalar passthrough
     data: Any,
     schema: dict[str, Any] | None = None,
     _depth: int = 0,
@@ -229,7 +229,7 @@ def _collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, 
             if prop_schema is not None and not isinstance(prop_schema, dict):
                 prop_schema = None
             effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
-            result[k] = _collapse_data(v, effective or prop_schema, _depth + 1, detail)
+            result[k] = collapse_data(v, effective or prop_schema, _depth + 1, detail)
         return result
 
     if isinstance(data, list):
@@ -241,7 +241,7 @@ def _collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, 
             # No $ref — recurse
 
         items_schema = schema.get("items", {}) if isinstance(schema, dict) else {}
-        return [_collapse_data(item, items_schema, _depth + 1, detail) for item in data]
+        return [collapse_data(item, items_schema, _depth + 1, detail) for item in data]
 
     return data
 
@@ -301,7 +301,7 @@ def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schem
                     title = str(val)
             if title is None:
                 title = f"Item {i + 1}"
-            sub = _format_as_markdown(
+            sub = format_as_markdown(
                 item,
                 item_schema,
                 title=title,
@@ -460,7 +460,7 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar
                 else:
                     # Don't propagate field_filter into nested sub-objects -
                     # the parent's field names don't apply to child objects.
-                    sub = _format_as_markdown(
+                    sub = format_as_markdown(
                         raw_val,
                         effective or prop_schema,
                         _depth=_depth + 1,
@@ -482,7 +482,7 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar
     return "\n".join(lines)
 
 
-def _format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, title, _depth, field_filter, item_title_key, detail
+def format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, title, _depth, field_filter, item_title_key, detail
     data: Any,
     schema: dict[str, Any] | None = None,
     title: str | None = None,
@@ -602,7 +602,7 @@ def _format_json_section(title: str, data: Any) -> str:
     return f"## {title}\n\n```json\n{json_module.dumps(data, indent=2)}\n```\n"
 
 
-def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
+def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
 
     Produces a predictable structure with a parameter table that agents can
@@ -670,7 +670,7 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
     - ``raw``: structured_content only, no text content.
     - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
     - ``markdown``: text = ``markdown_formatter(data)`` or the generic
-      ``_format_as_markdown``.  ``markdown_extras`` are appended
+      ``format_as_markdown``.  ``markdown_extras`` are appended
       as additional sections after the main content.
 
     When ``detail="concise"`` and ``schema`` is provided, data is collapsed
@@ -681,7 +681,7 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
         data: The data to format (typically a dict or list).
         fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
         markdown_formatter: Optional custom markdown renderer.  When omitted,
-            the generic ``_format_as_markdown`` is used.
+            the generic ``format_as_markdown`` is used.
         markdown_extras: Optional list of additional markdown sections to
             append after the main content (only in markdown mode).
         detail: Output detail level — ``"full"`` (default, complete) or
@@ -702,13 +702,13 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
 
     if fmt == "json":
         if detail == "concise" and schema is not None:
-            data = _collapse_data(data, schema, _depth=0, detail="concise")
+            data = collapse_data(data, schema, _depth=0, detail="concise")
         text = json_module.dumps(data, indent=2)
     else:
         text = (
             markdown_formatter(data)
             if markdown_formatter
-            else _format_as_markdown(data, schema, detail=detail)
+            else format_as_markdown(data, schema, detail=detail)
         )
         if markdown_extras:
             text += "\n\n---\n\n" + "\n\n---\n\n".join(markdown_extras)
@@ -720,7 +720,7 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
 
 
 
-def _format_paginated_result(  # noqa: PLR0913 - all 9 params are independent display axes (items + pagination state + output config)
+def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent display axes (items + pagination state + output config)
     items: list,
     total_count: int,
     fmt: str,
@@ -784,7 +784,7 @@ def _format_paginated_result(  # noqa: PLR0913 - all 9 params are independent di
     )
 
 
-def _build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
+def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
     Unlike registered domain formatters (which follow the
@@ -813,21 +813,10 @@ def _build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
 
 
 __all__ = [
-    "_build_server_info_markdown",
-    "_collapse_data",
-    "_collapse_value",
-    "_extract_type_name",
-    "_format_annotations_table",
-    "_format_as_markdown",
-    "_format_datetime",
-    "_format_json_section",
-    "_format_paginated_result",
-    "_format_parameter_table",
-    "_format_scalar",
-    "_format_simple_value",
-    "_format_tool_info_markdown",
-    "_format_type",
-    "_resolve_anyof_schema",
     "apply_format",
+    "build_server_info_markdown",
+    "collapse_data",
     "decode_base64_content",
+    "format_as_markdown",
+    "format_paginated_result",
 ]

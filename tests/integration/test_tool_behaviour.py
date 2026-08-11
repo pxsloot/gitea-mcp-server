@@ -452,7 +452,7 @@ class TestNonJsonEndpoint:
     Uses the real Gitea operation ``repoDownloadPullDiffOrPatch`` at
     ``/repos/{owner}/{repo}/pulls/{index}.{diffType}`` (see ``_make_diff_spec``).
     The ``produces: ["text/plain"]`` field triggers the converter to set
-    ``x-original-content-types``, which makes ``_is_text_response()`` return
+    ``x-original-content-types``, which makes ``is_text_response()`` return
     ``True``. The tool then gets a lightweight ``{"result": {"type": "string"}}``
     fallback ``output_schema`` (introduced in #352), and the
     ``_ToolWrappingTransform`` wraps the raw text in ``{"result": text}``.

@@ -11,7 +11,7 @@ from fastmcp.server.providers.openapi import OpenAPITool
 
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.schema_utils import schema_type_matches
-from gitea_mcp_server.tools.schemas import _schema_type_is_array
+from gitea_mcp_server.tools.schemas import schema_type_is_array
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
@@ -79,7 +79,7 @@ def update_labels_schema(component: OpenAPITool) -> None:
         return
 
     labels_schema = props["labels"]
-    if not _schema_type_is_array(labels_schema):
+    if not schema_type_is_array(labels_schema):
         return
 
     items_schema = labels_schema.get("items", {})

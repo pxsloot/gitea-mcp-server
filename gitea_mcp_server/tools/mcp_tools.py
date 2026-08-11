@@ -28,17 +28,17 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import (
-    _format_paginated_result,
     decode_base64_content,
+    format_paginated_result,
 )
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.examples import _serialize_tool_schema
+from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
-    _clean_resource_uri,
-    _extract_resource_content,
-    _format_resource_content,
+    clean_resource_uri,
+    extract_resource_content,
+    format_resource_content,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
+async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
     """Implementation of list_resources.
 
     Uses FastMCP Context to list registered resources and templates.
@@ -99,7 +99,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for resource in resources:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=_clean_resource_uri(str(resource.uri)),
+                    uri=clean_resource_uri(str(resource.uri)),
                     name=resource.name,
                     description=resource.description or "",
                     mimeType=resource.mime_type or "text/plain",
@@ -116,7 +116,7 @@ async def _mcp_list_resources_impl(ctx: Context) -> ResourceListing:
         for template in templates:
             entry = _build_resource_entry(
                 ResourceEntry(
-                    uri=_clean_resource_uri(str(template.uri_template)),
+                    uri=clean_resource_uri(str(template.uri_template)),
                     name=template.name,
                     description=template.description or "",
                     mimeType=template.mime_type or "text/plain",
@@ -178,7 +178,7 @@ async def _mcp_read_resource_impl(
         # ctx.read_resource returns a ResourceResult (FastMCP 3.x)
         result = await ctx.read_resource(uri)
         contents = result.contents
-        raw = _extract_resource_content(contents, uri)
+        raw = extract_resource_content(contents, uri)
 
         # Extract display metadata from the first content's meta.
         schema: dict[str, Any] | None = None
@@ -409,7 +409,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
             ...
         ]
     """
-    raw = await _mcp_list_resources_impl(ctx)
+    raw = await mcp_list_resources_impl(ctx)
 
     # Apply filters
     if tag:
@@ -426,7 +426,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
             structured_content={"result": [], "total_count": 0},
         )
 
-    return _format_paginated_result(
+    return format_paginated_result(
         all_resources, total_count, format, page, limit, fetch_all,
         detail=detail,
     )
@@ -588,7 +588,7 @@ async def _read_resource_tool(
     # exact API response, not a transformed version.
     if format != "raw":
         raw = await _maybe_decode_base64(raw)
-    formatted = _format_resource_content(
+    formatted = format_resource_content(
         raw, format, detail=detail,
         schema=schema, format_hint=format_hint, extra=extra,
     )
@@ -647,7 +647,7 @@ def _make_tool_schema_resource_handler(
 
         # Compact example (type names for $ref, no inlined nesting).
         # Bare $ref resolved one level via openapi_spec captured in the closure.
-        data = dict(_serialize_tool_schema(tool, openapi_spec=openapi_spec))
+        data = dict(serialize_tool_schema(tool, openapi_spec=openapi_spec))
 
         # Resource always includes the fully-resolved output_schema.
         if tool.output_schema is not None:
@@ -704,10 +704,6 @@ def register_mcp_resource_tools(
 
 
 __all__ = [
-    "_extract_extra_meta",
-    "_make_tool_schema_resource_handler",
-    "_maybe_decode_base64",
-    "_mcp_list_resources_impl",
-    "_mcp_read_resource_impl",
+    "mcp_list_resources_impl",
     "register_mcp_resource_tools",
 ]

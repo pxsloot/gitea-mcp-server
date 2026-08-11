@@ -1,6 +1,6 @@
 """Error translation and runtime validation for tool execution.
 
-Provides ``_run_with_error_handling()`` — the runtime validation runner
+Provides ``run_with_error_handling()`` — the runtime validation runner
 that translates HTTP errors to agent-friendly messages — plus validation
 error message formatting.  Called by the tool wrapping pipeline before
 the HTTP request.
@@ -13,7 +13,7 @@ import httpx
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.tools.schemas import _resolve_ref
+from gitea_mcp_server.tools.schemas import resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
     ValidationError,
@@ -25,12 +25,12 @@ from gitea_mcp_server.validation import (
 logger = logging.getLogger(__name__)
 
 
-def _raise_value_error(message: str) -> NoReturn:
+def raise_value_error(message: str) -> NoReturn:
     """Raise a ValueError with a user-friendly message."""
     raise ValueError(message) from None
 
 
-def _raise_value_error_from(message: str, cause: Exception) -> NoReturn:
+def raise_value_error_from(message: str, cause: Exception) -> NoReturn:
     """Raise a ValueError with a user-friendly message, chaining the original cause."""
     raise ValueError(message) from cause
 
@@ -77,7 +77,7 @@ def _lookup_response_description(
                 elif "description" in response_def:
                     result = str(response_def["description"])
                 elif "$ref" in response_def:
-                    resolved = _resolve_ref(openapi_spec, response_def["$ref"])
+                    resolved = resolve_ref(openapi_spec, response_def["$ref"])
                     if isinstance(resolved, dict):
                         desc = resolved.get("description")
                         result = str(desc) if desc else fallback
@@ -135,7 +135,7 @@ def _format_missing_params(
     return ", ".join(parts)
 
 
-def _run_validation(
+def run_validation(
     kwargs: dict[str, Any],
     required_params: list[str] | None = None,
     param_properties: dict[str, Any] | None = None,
@@ -176,7 +176,7 @@ def _run_validation(
     # Reject unknown parameters when the parameter schema is available.
     # Virtual params (format, detail, sudo, etc.) have already been
     # extracted by _ToolWrappingTransform.transform_fn via extract_from()
-    # before _run_validation is called, so any remaining key not in the
+    # before run_validation is called, so any remaining key not in the
     # schema is an agent typo that must be rejected rather than silently
     # ignored (which would succeed on the wire: Gitea drops unknown query
     # params and FastMCP drops unknown kwargs).
@@ -211,7 +211,7 @@ def _run_validation(
         validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
 
 
-async def _run_with_error_handling(
+async def run_with_error_handling(
     kwargs: dict[str, Any],
     component: Any,
     openapi_spec: OpenAPISpec | None,
@@ -255,7 +255,7 @@ async def _run_with_error_handling(
         raise
     except httpx.HTTPError as e:
         formatted = f"Network error: Could not reach the Gitea server.\n\nDetails: {e!s}"
-        _raise_value_error_from(formatted, e)
+        raise_value_error_from(formatted, e)
     except (KeyError, TypeError, AttributeError, RuntimeError):
         tool_name = getattr(component, "name", "unknown")
         logger.exception(
@@ -265,16 +265,14 @@ async def _run_with_error_handling(
             route_path,
             sorted(kwargs.keys()),
         )
-        _raise_value_error(
+        raise_value_error(
             "An unexpected error occurred. Please check the server logs for details."
         )
 
 
 __all__ = [
-    "_lookup_response_description",
-    "_raise_validation_error",
-    "_raise_value_error",
-    "_raise_value_error_from",
-    "_run_validation",
-    "_run_with_error_handling",
+    "raise_value_error",
+    "raise_value_error_from",
+    "run_validation",
+    "run_with_error_handling",
 ]

@@ -1,8 +1,8 @@
-"""Tests for tools/resource_display.py (_format_resource_content).
+"""Tests for tools/resource_display.py (format_resource_content).
 
 Covers:
     - context_meta_keys display context forwarding
-    - _format_resource_content extra parameter passthrough
+    - format_resource_content extra parameter passthrough
     - Format hint handling (issues, pulls, generic)
     - Resource handler meta extraction
     - Labels handler meta forwarding
@@ -24,7 +24,7 @@ class TestContextMetaKeysPipeline:
     1. make_api_resource with context_meta_keys=["type"] registers a handler
        that forwards matching query params into ResourceContent.meta
     2. _mcp_read_resource_impl extra extraction from ResourceContent.meta
-    3. _format_resource_content passes extra to domain formatters
+    3. format_resource_content passes extra to domain formatters
     """
 
     @pytest.fixture
@@ -150,10 +150,10 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_with_extra_pulls(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Pull Requests' title."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = _format_resource_content(
+        result = format_resource_content(
             data, "markdown",
             format_hint="issues",
             extra={"type": "pulls"},
@@ -162,10 +162,10 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_with_extra_issues(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Issues' title."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = _format_resource_content(
+        result = format_resource_content(
             data, "markdown",
             format_hint="issues",
             extra={"type": "issues"},
@@ -174,11 +174,11 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_without_extra_fallback(self) -> None:
         """Display pipeline falls back to scanning when extra is absent."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         # Data has no pull_request field -> title is "Issues"
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = _format_resource_content(
+        result = format_resource_content(
             data, "markdown",
             format_hint="issues",
         )
@@ -186,10 +186,10 @@ class TestContextMetaKeysPipeline:
 
     def test_format_resource_content_without_format_hint(self) -> None:
         """Display pipeline ignores extra when no format_hint is provided."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         data = json.dumps({"key": "value"})
-        result = _format_resource_content(
+        result = format_resource_content(
             data, "markdown",
             extra={"type": "pulls"},
         )
@@ -290,7 +290,7 @@ class TestContextMetaKeysPipeline:
 
 
 class TestFormatResourceContentEmptyFallback:
-    """Tests for _format_resource_content empty-content fallback paths."""
+    """Tests for format_resource_content empty-content fallback paths."""
 
     @pytest.mark.parametrize(
         "content_value",
@@ -309,11 +309,11 @@ class TestFormatResourceContentEmptyFallback:
         """When apply_format result.content is None, [], or non-TextContent, return ''."""
         from unittest.mock import MagicMock, patch
 
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         mock_result = MagicMock()
         mock_result.content = content_value
 
         with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
-            result = _format_resource_content("{}", "markdown")
+            result = format_resource_content("{}", "markdown")
             assert result == ""

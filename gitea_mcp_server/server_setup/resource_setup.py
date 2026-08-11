@@ -15,7 +15,7 @@ from fastmcp import FastMCP
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
-from gitea_mcp_server.resources.factory import _registered_uris as _factory_registered_uris
+from gitea_mcp_server.resources.factory import _registered_uris
 from gitea_mcp_server.tools.mcp_tools import register_mcp_resource_tools
 
 
@@ -30,7 +30,7 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
 ) -> None:
     """Register all MCP resources (auto-generated and custom) and resource tools.
 
-    Custom resources are registered first so that ``_factory_registered_uris``
+    Custom resources are registered first so that ``_registered_uris``
     is populated by ``make_api_resource()``.  Auto-generated resources are
     then registered with the factory's ``_registered_uris`` as ``skip_uris`` --
     avoiding duplicate resource registrations.
@@ -56,9 +56,9 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
     """
     # Start fresh: clear accumulated URIs from previous server instances
     # (important for test isolation within the same process).
-    _factory_registered_uris.clear()
+    _registered_uris.clear()
 
-    # Custom first: populates _factory_registered_uris at registration time.
+    # Custom first: populates _registered_uris at registration time.
     register_custom_resources(
         mcp,
         gitea_client,
@@ -69,7 +69,7 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
     )
 
     # Auto second: skip URIs already claimed by factory resources.
-    skip_uris = _factory_registered_uris
+    skip_uris = _registered_uris
     register_auto_generated_resources(
         mcp,
         gitea_client,

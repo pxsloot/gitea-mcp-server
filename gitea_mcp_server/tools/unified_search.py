@@ -21,16 +21,16 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_paginated_result
+from gitea_mcp_server.format import format_paginated_result
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl
+from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
-    _compact_search_serializer,
-    _extract_resource_text,
-    _extract_searchable_text_enhanced,
-    _search_and_slice,
+    compact_search_serializer,
+    extract_resource_text,
+    extract_searchable_text_enhanced,
+    search_and_slice,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,9 +97,9 @@ def register_unified_search(
 
         # Gather results from all three subsystems
         raw_tools: Sequence[Tool] = await search_transform.get_tool_catalog(ctx)
-        tool_entries = _compact_search_serializer(raw_tools)
+        tool_entries = compact_search_serializer(raw_tools)
 
-        raw_resources = await _mcp_list_resources_impl(ctx)
+        raw_resources = await mcp_list_resources_impl(ctx)
         resource_entries = raw_resources.get("resources", [])
 
         doc_entries = doc_manager.search(
@@ -110,10 +110,10 @@ def register_unified_search(
         all_items: list[UnifiedSearchItem] = []
         all_texts: list[str] = []
 
-        # Use _extract_searchable_text_enhanced on raw Tool objects for richer signal
+        # Use extract_searchable_text_enhanced on raw Tool objects for richer signal
         # (parameter names, descriptions, SEARCH_CATEGORY_ALIASES expansion) but keep
-        # _compact_search_serializer dicts for lighter result items.
-        tool_search_texts = [_extract_searchable_text_enhanced(t) for t in raw_tools]
+        # compact_search_serializer dicts for lighter result items.
+        tool_search_texts = [extract_searchable_text_enhanced(t) for t in raw_tools]
 
         for i, t in enumerate(tool_entries):
             all_items.append(
@@ -138,7 +138,7 @@ def register_unified_search(
                     access_uri=r.get("uri", ""),
                 )
             )
-            all_texts.append(_extract_resource_text(r))
+            all_texts.append(extract_resource_text(r))
 
         for d in doc_entries:
             topic = d["name"]
@@ -155,7 +155,7 @@ def register_unified_search(
             all_texts.append(_extract_doc_search_text(d))
 
         # Get all ranked results (no pre-slicing).
-        all_ranked, total_count = _search_and_slice(
+        all_ranked, total_count = search_and_slice(
             all_items, all_texts, query, 1, len(all_items) or 1,
             min_score=min_score, tool_prefix=tool_prefix,
         )
@@ -192,7 +192,7 @@ def register_unified_search(
                 "- For data resources: `search_resources(query)`"
             )
 
-        return _format_paginated_result(
+        return format_paginated_result(
             all_ranked, total_count, format, page, limit, fetch_all,
             markdown_extras=extras or None,
             detail=detail,

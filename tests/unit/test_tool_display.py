@@ -97,7 +97,7 @@ class TestFormatToolResult:
 class TestFormatToolResultErrorRecovery:
     """Error recovery: format_tool_result catches formatting exceptions.
 
-    Mirrors the resource-side pattern in ``_format_resource_content``:
+    Mirrors the resource-side pattern in ``format_resource_content``:
     wraps ``apply_format`` in try/except for (TypeError, AttributeError,
     ValueError).  Uses both mocked exception injection and real error-
     triggering data for realistic coverage.

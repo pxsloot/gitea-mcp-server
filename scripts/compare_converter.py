@@ -22,10 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from gitea_mcp_server.openapi_converter import (
-    _add_nullable_for_optional_refs,
-    _wrap_success_response_schemas,
     convert_swagger_to_openapi_v3,
 )
+from gitea_mcp_server.openapi_converter.core import _add_nullable_for_optional_refs, _wrap_success_response_schemas
 from gitea_mcp_server.server_setup.spec_loader import load_openapi_spec
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

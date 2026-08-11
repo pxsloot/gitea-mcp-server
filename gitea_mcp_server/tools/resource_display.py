@@ -8,9 +8,9 @@ both delegate to ``format.py`` for shared formatting primitives and to
 ``tools/display.py`` for domain-specific formatters.
 
 Public functions:
-    _clean_resource_uri - strip ``{?query}`` params from URI templates for display
-    _format_resource_content - unified display pipeline (JSON parse → collapse → format)
-    _extract_resource_content - extract text content from ResourceResult
+    clean_resource_uri - strip ``{?query}`` params from URI templates for display
+    format_resource_content - unified display pipeline (JSON parse → collapse → format)
+    extract_resource_content - extract text content from ResourceResult
     _make_resource_formatter - resolve a format_hint to a callable formatter
 """
 
@@ -22,13 +22,13 @@ from typing import Any
 
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import _collapse_data, apply_format
+from gitea_mcp_server.format import apply_format, collapse_data
 from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
 
 logger = logging.getLogger(__name__)
 
 
-def _clean_resource_uri(uri: str) -> str:
+def clean_resource_uri(uri: str) -> str:
     """Strip RFC 6570 form-style query parameters from a resource URI for display.
 
     Resource templates use ``{?param}`` syntax internally so FastMCP routes
@@ -56,7 +56,7 @@ def _clean_resource_uri(uri: str) -> str:
     return re.sub(r"\{\?[^}]+\}$", "", uri)
 
 
-def _extract_resource_content(contents: list[Any] | None, uri: str) -> str:
+def extract_resource_content(contents: list[Any] | None, uri: str) -> str:
     """Extract and convert content from resource result."""
     if not contents:
         msg = f"Resource '{uri}' returned no content"
@@ -99,7 +99,7 @@ def _make_resource_formatter(
     return lambda data: fn(data, detail=detail)
 
 
-def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display axes, 7 return paths handle fmt fallback
+def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display axes, 7 return paths handle fmt fallback
     raw: str,
     fmt: str,
     detail: str = "full",
@@ -159,11 +159,11 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display 
         return raw
 
     # Pre-collapse data for concise so the formatter sees flat strings.
-    # This matches the original _format_resource_content contract where
+    # This matches the original format_resource_content contract where
     # child objects at depth >= 1 are collapsed to $ref labels.  The
     # formatter (domain or generic) receives already-shaped data.
     if detail == "concise" and schema is not None and isinstance(data, (dict, list)):
-        data = _collapse_data(data, schema, _depth=0, detail="concise")
+        data = collapse_data(data, schema, _depth=0, detail="concise")
 
     markdown_formatter = _make_resource_formatter(format_hint, detail, extra)
     # When data has been pre-collapsed, pass detail="full" to avoid
@@ -198,8 +198,7 @@ def _format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display 
 
 
 __all__ = [
-    "_clean_resource_uri",
-    "_extract_resource_content",
-    "_format_resource_content",
-    "_make_resource_formatter",
+    "clean_resource_uri",
+    "extract_resource_content",
+    "format_resource_content",
 ]

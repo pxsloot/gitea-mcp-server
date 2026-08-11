@@ -7,7 +7,7 @@ JSON parsing or formatter dispatch is needed — only delegation to
 
 **Error recovery**: Wraps ``apply_format`` in ``try/except (TypeError,
 AttributeError, ValueError)``, mirroring the resource-side pattern in
-``_format_resource_content``.  When a formatting error occurs, the error is
+``format_resource_content``.  When a formatting error occurs, the error is
 logged at WARNING and a readable fallback is returned — raw data wrapped in a
 JSON code fence for markdown, or ``{"result": <safe_data>}`` for JSON output.
 

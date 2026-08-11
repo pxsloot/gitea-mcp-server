@@ -225,10 +225,10 @@ Agent reads a resource:
     │     │                             format=raw)
     │     └─▶ decode_base64_content()
     │
-    └─▶ _format_resource_content(raw, fmt, schema, format_hint, extra)
-          ├─ if detail=concise: _collapse_data (schema-aware)
+    └─▶ format_resource_content(raw, fmt, schema, format_hint, extra)
+          ├─ if detail=concise: collapse_data (schema-aware)
           ├─ if format_hint: call_formatter → registered formatter in tools/display.py
-          └─ else: _format_as_markdown (generic, in format.py)
+          └─ else: format_as_markdown (generic, in format.py)
           → formatted content
 ```
 
@@ -351,7 +351,7 @@ The customization layers as applied during server startup:
 4. **Custom resources override auto-generated** -- Resources are registered in
    two phases: custom (Markdown wrappers for common URIs) then auto-generated
    (raw JSON from every GET endpoint).  Custom registration runs first,
-   populating the ``_registered_uris`` set in ``factory.py``.  The orchestrator
+    populating the ``_registered_uris`` set in ``factory.py``.  The orchestrator
    (``resource_setup.py``) passes the combined custom URI set as ``skip_uris``
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
    already handled by custom resources.  This avoids the need for a separate
@@ -365,7 +365,7 @@ The customization layers as applied during server startup:
 
    Consumers that need a schema matching the *actual API response shape*
    (data collapse, example generation) must use the inner schema.  The
-   helper ``_unwrap_result_schema`` (in ``tools/schemas.py``) strips the
+   helper ``unwrap_result_schema`` (in ``tools/schemas.py``) strips the
    wrapper and is applied when storing schemas for downstream consumers
    (data collapse, example generation): ``output_schema_raw`` (tool path)
    and ``meta["response_schema"]`` (resource path) both store the inner
@@ -381,8 +381,8 @@ The customization layers as applied during server startup:
    | Shape | Example | Where it lives | Consumers |
    |-------|---------|----------------|-----------|
    | **Original** | ``{"type": "array", "items": {"$ref": "#/..."}}`` | Spec in memory during conversion, *before* ``_wrap_success_response_schemas`` runs | — |
-   | **Wrapped** | ``{"type": "object", "properties": {"result": {"type": "array", …}}}`` | ``tool.output_schema`` | FastMCP output validation, ``_is_array_response()`` (looks inside ``result``), ``_unwrap_result_schema()`` input |
-   | **Inner (unwrapped)** | ``{"type": "array", "items": {"$ref": "#/..."}}`` | ``tool.meta["output_schema_raw"]``, ``meta["response_schema"]`` | ``_schema_to_compact_example()``, ``_collapse_data()``, ``detail=concise`` rendering |
+   | **Wrapped** | ``{"type": "object", "properties": {"result": {"type": "array", …}}}`` | ``tool.output_schema`` | FastMCP output validation, ``_is_array_response()`` (looks inside ``result``), ``unwrap_result_schema()`` input |
+   | **Inner (unwrapped)** | ``{"type": "array", "items": {"$ref": "#/..."}}`` | ``tool.meta["output_schema_raw"]``, ``meta["response_schema"]`` | ``schema_to_compact_example()``, ``collapse_data()``, ``detail=concise`` rendering |
 
    Wrapping happens once during spec conversion (``_wrap_success_response_schemas``)
    and is never undone on ``tool.output_schema`` — that wrapped form is the
@@ -517,7 +517,7 @@ The customization layers as applied during server startup:
      Operation-level ``x-*`` fields are intentionally preserved because they
      carry semantic meaning used elsewhere in the pipeline:
      ``x-original-content-types`` (set by ``OperationTransformer`` and read by
-     ``tools/schemas.py:_is_text_response`` to distinguish non-JSON endpoints)
+     ``tools/schemas.py:is_text_response`` to distinguish non-JSON endpoints)
      and ``x-mcp`` (consumed by ``server_setup/mcp_extensions.py``).  The
      post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
      schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
@@ -626,7 +626,7 @@ without wrapping.  No special check is needed.
 each tool.  For JSON endpoints, it returns the wrapped schema from Stage 2.
 
 For non-JSON endpoints, the spec has no `application/json` content entry, so
-`_get_success_schema` finds nothing and returns `None`.  The tool ends up with
+`get_success_schema` finds nothing and returns `None`.  The tool ends up with
 `output_schema = None`, which tells the MCP SDK to skip output validation.
 
 Optionally, a lightweight schema can be set here manually:
@@ -698,14 +698,14 @@ Some Gitea endpoints return success with no response body (204 No Content,
 205 Reset Content, or 202 Accepted without a body).  Additionally, some
 endpoints (e.g. ``POST /repos/{owner}/{repo}/pulls/{index}/merge``) return
 200/201 with an explicitly empty body via ``$ref: #/responses/empty``.
-Like non-JSON endpoints, `_get_success_schema` finds nothing and returns
+Like non-JSON endpoints, `get_success_schema` finds nothing and returns
 `None` — but for a different reason: no `content` entry exists on the
 success response at all.
 
 The fix follows the same two-phase pattern as the text/plain handling:
 
 **Schema time** (``server_setup/mcp_builder.py:_apply_fallback_schemas``):
-``_response_has_no_content()`` in ``tools/schemas.py`` checks the spec for a
+``response_has_no_content()`` in ``tools/schemas.py`` checks the spec for a
 2xx response without a `content` key.  202/204/205 are always checked;
 200/201 are checked only when the response uses ``$ref`` — Gitea's idiom
 for shared empty response definitions (inline 200/201 without ``content``
@@ -723,7 +723,7 @@ wrapping handler returns `ToolResult(content=["Operation completed successfully.
 This gives agents a visible confirmation instead of an empty string that
 would appear as a silent success.
 
-The `_serialize_tool_schema` function guards against the `type: null` schema
+The `serialize_tool_schema` function guards against the `type: null` schema
 producing a `None` output_example — that field is simply omitted when the
 example would be null, since agents can infer the shape from `output_schema`.
 
@@ -736,7 +736,7 @@ Agent: search("create issue")
   │
   └─▶ Unified search tool (closure in server.py)
         ├─▶ fetch tools: TolerantSearchTransform.get_tool_catalog(ctx)
-        ├─▶ fetch resources: _mcp_list_resources_impl(ctx)
+        ├─▶ fetch resources: mcp_list_resources_impl(ctx)
         ├─▶ fetch docs: doc_manager.search(query)
         ├─▶ merge → name-match + BM25 rank across all three corpora
         └─▶ return results with type discriminator

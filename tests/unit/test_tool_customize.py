@@ -551,7 +551,7 @@ class TestPaginationMetadata:
         tool = self._make_tool()
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -574,7 +574,7 @@ class TestPaginationMetadata:
         tool = self._make_tool()
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -596,7 +596,7 @@ class TestPaginationMetadata:
         tool = self._make_tool()
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             # Return exactly 100 items, which equals the default `limit`
@@ -618,7 +618,7 @@ class TestPaginationMetadata:
         tool = self._make_tool(limit_param=True)
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -642,7 +642,7 @@ class TestPaginationMetadata:
         )
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -663,7 +663,7 @@ class TestPaginationMetadata:
         tool = self._make_tool()
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -685,7 +685,7 @@ class TestPaginationMetadata:
             tool = self._make_tool()
 
             with patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run:
                 mock_run.return_value = ToolResult(
@@ -711,7 +711,7 @@ class TestPaginationMetadata:
         original_data = [{"id": 1, "title": "First"}, {"id": 2, "title": "Second"}]
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -771,7 +771,7 @@ class TestCustomizeComponentTextResponse:
         )
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(

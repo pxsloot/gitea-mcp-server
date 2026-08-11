@@ -16,10 +16,10 @@ from gitea_mcp_server.openapi_converter import (
     RequestBodyBuilder,
     SchemaNormalizer,
     SchemaWalker,
-    _add_nullable_for_optional_refs,
     convert_definitions,
     fix_references,
 )
+from gitea_mcp_server.openapi_converter.core import _add_nullable_for_optional_refs
 
 
 class TestFixReferences:

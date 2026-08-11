@@ -13,21 +13,21 @@ from gitea_mcp_server.constants import SEARCH_NAME_BOOST
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _call_tool_impl,
-    _compact_search_serializer,
-    _extract_searchable_text_enhanced,
     _format_filtered_tools_note,
     _name_matches,
-    _search_and_slice,
     _search_resources_impl,
     _search_tools_impl,
     _tool_info_impl,
+    compact_search_serializer,
+    extract_searchable_text_enhanced,
     register_synthetic_tools,
+    search_and_slice,
 )
 from tests.helpers.mcp_results import extract_text_content, get_structured
 
 
 class TestSearchableText:
-    """Tests for _extract_searchable_text_enhanced."""
+    """Tests for extract_searchable_text_enhanced."""
 
     def test_name_is_boosted(self) -> None:
         """Tool name should appear SEARCH_NAME_BOOST times in the extracted text."""
@@ -36,7 +36,7 @@ class TestSearchableText:
             description="Get the authenticated user",
             parameters={"properties": {}},
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         assert result.count("gitea_user_get_current") == SEARCH_NAME_BOOST
 
     def test_no_side_effects_on_empty_fields(self) -> None:
@@ -45,7 +45,7 @@ class TestSearchableText:
             name="minimal_tool",
             parameters={"properties": {}},
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         assert "minimal_tool" in result
         assert isinstance(result, str)
         assert len(result) > 0
@@ -344,11 +344,11 @@ class TestCallToolRuntimeBehavior:
 
 
 class TestCompactSearchSerializer:
-    """Tests for _compact_search_serializer function."""
+    """Tests for compact_search_serializer function."""
 
     def test_returns_name_and_description_only(self) -> None:
         """Search results should only include name and description."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="test_tool",
@@ -359,7 +359,7 @@ class TestCompactSearchSerializer:
                 "properties": {"result": {"type": "string"}},
             },
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert len(result) == 1
         assert result[0]["name"] == "test_tool"
         assert result[0]["description"] == "A test tool"
@@ -369,7 +369,7 @@ class TestCompactSearchSerializer:
 
     def test_handles_empty_fields(self) -> None:
         """Should handle tools with minimal fields."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="minimal_tool",
@@ -377,38 +377,38 @@ class TestCompactSearchSerializer:
             parameters={"properties": {}},
             output_schema=None,
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert result[0]["name"] == "minimal_tool"
         assert result[0]["description"] == ""
 
     def test_handles_multiple_tools(self) -> None:
         """Should serialize multiple tools correctly."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tools = [
             Tool(name="tool_a", description="First tool", parameters={"properties": {}}),
             Tool(name="tool_b", description="Second tool", parameters={"properties": {}}),
         ]
-        result = _compact_search_serializer(tools)
+        result = compact_search_serializer(tools)
         assert len(result) == 2
         assert result[0]["name"] == "tool_a"
         assert result[1]["name"] == "tool_b"
 
     def test_omits_annotations_when_null(self) -> None:
         """Should omit annotations key when tool has no annotations."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="no_annotations",
             description="A tool without annotations",
             parameters={"properties": {}},
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert "annotations" not in result[0]
 
     def test_includes_annotations_when_present(self) -> None:
         """Should include annotations key when tool has annotations."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="with_annotations",
@@ -421,13 +421,13 @@ class TestCompactSearchSerializer:
                 idempotentHint=False,
             ),
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert "annotations" in result[0]
         assert result[0]["annotations"]["title"] == "Test Tool"
 
     def test_omits_annotations_when_all_fields_null(self) -> None:
         """Should omit annotations key when all annotation fields are None."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="empty_annotations",
@@ -440,7 +440,7 @@ class TestCompactSearchSerializer:
                 idempotentHint=None,
             ),
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         # Annotations are always included now (all 5 fields explicit)
         ann = result[0].get("annotations", {})
         assert ann.get("title") is None
@@ -448,7 +448,7 @@ class TestCompactSearchSerializer:
 
     def test_includes_tags_when_present(self) -> None:
         """Should include tags key when tool has tags."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="tagged_tool",
@@ -456,12 +456,12 @@ class TestCompactSearchSerializer:
             parameters={"properties": {}},
             tags={"issue", "repository"},
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert set(result[0]["tags"]) == {"issue", "repository"}
 
     def test_includes_hints_when_true(self) -> None:
         """Should include hint annotations when they are True."""
-        from gitea_mcp_server.tools.search import _compact_search_serializer
+        from gitea_mcp_server.tools.search import compact_search_serializer
 
         tool = Tool(
             name="hint_tool",
@@ -473,18 +473,18 @@ class TestCompactSearchSerializer:
                 idempotentHint=True,
             ),
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         assert result[0]["annotations"]["readOnlyHint"] is True
         assert result[0]["annotations"]["destructiveHint"] is True
         assert result[0]["annotations"]["idempotentHint"] is True
 
 
 class TestSearchableTextExtended:
-    """Extended tests for _extract_searchable_text_enhanced."""
+    """Extended tests for extract_searchable_text_enhanced."""
 
     def test_includes_tags(self) -> None:
         """Tool tags should appear in the extracted text."""
-        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+        from gitea_mcp_server.tools.search import extract_searchable_text_enhanced
 
         tool = Tool(
             name="test_tool",
@@ -492,14 +492,14 @@ class TestSearchableTextExtended:
             parameters={"properties": {}},
             tags={"issue", "repository"},
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         assert "issue" in result
         assert "repository" in result
 
     def test_includes_category_aliases(self) -> None:
         """Tags that match SEARCH_CATEGORY_ALIASES should include expanded aliases."""
         from gitea_mcp_server.constants import SEARCH_CATEGORY_ALIASES
-        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+        from gitea_mcp_server.tools.search import extract_searchable_text_enhanced
 
         tool = Tool(
             name="test_tool",
@@ -507,13 +507,13 @@ class TestSearchableTextExtended:
             parameters={"properties": {}},
             tags={"issue"},
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         for alias in SEARCH_CATEGORY_ALIASES["issue"].split():
             assert alias in result
 
     def test_includes_annotation_title(self) -> None:
         """Tool annotations.title should appear in the extracted text."""
-        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+        from gitea_mcp_server.tools.search import extract_searchable_text_enhanced
 
         tool = Tool(
             name="test_tool",
@@ -521,12 +521,12 @@ class TestSearchableTextExtended:
             parameters={"properties": {}},
             annotations=ToolAnnotations(title="My Custom Title"),
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         assert "My Custom Title" in result
 
     def test_includes_parameter_descriptions(self) -> None:
         """Parameter descriptions should appear in the extracted text."""
-        from gitea_mcp_server.tools.search import _extract_searchable_text_enhanced
+        from gitea_mcp_server.tools.search import extract_searchable_text_enhanced
 
         tool = Tool(
             name="test_tool",
@@ -538,7 +538,7 @@ class TestSearchableTextExtended:
                 }
             },
         )
-        result = _extract_searchable_text_enhanced(tool)
+        result = extract_searchable_text_enhanced(tool)
         assert "The repository owner" in result
         assert "The repository name" in result
 
@@ -1227,7 +1227,7 @@ class TestSyntheticToolAnnotations:
     # ── serializer tests ──────────────────────────────────────────────────
 
     def test_compact_serializer_all_fields_explicit(self) -> None:
-        """_compact_search_serializer includes all 5 annotation fields (no None filtering)."""
+        """compact_search_serializer includes all 5 annotation fields (no None filtering)."""
         tool = Tool(
             name="gitea_foo",
             description="Some tool",
@@ -1240,7 +1240,7 @@ class TestSyntheticToolAnnotations:
                 title="Foo Tool",
             ),
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         item = result[0]
         ann = item.get("annotations", {})
         assert ann["readOnlyHint"] is True
@@ -1252,26 +1252,26 @@ class TestSyntheticToolAnnotations:
         assert set(ann) == {"title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
 
     def test_compact_serializer_no_annotations(self) -> None:
-        """_compact_search_serializer handles tools with annotations=None gracefully."""
+        """compact_search_serializer handles tools with annotations=None gracefully."""
         tool = Tool(
             name="gitea_bar",
             description="No annotations",
             parameters={"properties": {}},
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         item = result[0]
         assert item["name"] == "gitea_bar"
         assert "annotations" not in item
 
     def test_compact_serializer_partial_title(self) -> None:
-        """_compact_search_serializer includes title even when other fields are None."""
+        """compact_search_serializer includes title even when other fields are None."""
         tool = Tool(
             name="gitea_baz",
             description="Partial",
             parameters={"properties": {}},
             annotations=ToolAnnotations(title="Just a Title"),
         )
-        result = _compact_search_serializer([tool])
+        result = compact_search_serializer([tool])
         item = result[0]
         ann = item.get("annotations", {})
         # None fields are still serialized explicitly (openWorldHint=None, etc.)
@@ -1446,7 +1446,7 @@ class TestSearchResourcesSyntheticTool:
 
 
 class TestSearchAndSlice:
-    """Tests for _search_and_slice pagination helper."""
+    """Tests for search_and_slice pagination helper."""
 
     def _make_items(self, count: int) -> list[dict]:
         return [{"id": i, "name": f"item_{i}"} for i in range(count)]
@@ -1456,7 +1456,7 @@ class TestSearchAndSlice:
 
     def test_first_page(self) -> None:
         """First page should return the first `limit` items."""
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             self._make_items(50), self._make_texts(50), "description", page=1, limit=10
         )
         assert total == 50
@@ -1465,7 +1465,7 @@ class TestSearchAndSlice:
 
     def test_second_page(self) -> None:
         """Second page should return items 10-19."""
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             self._make_items(50), self._make_texts(50), "description", page=2, limit=10
         )
         assert total == 50
@@ -1474,7 +1474,7 @@ class TestSearchAndSlice:
 
     def test_last_partial_page(self) -> None:
         """Last page with fewer than limit items should still work."""
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             self._make_items(25), self._make_texts(25), "description", page=3, limit=10
         )
         assert total == 25
@@ -1482,7 +1482,7 @@ class TestSearchAndSlice:
 
     def test_page_out_of_range(self) -> None:
         """Page beyond available results returns empty list with correct total."""
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             self._make_items(5), self._make_texts(5), "description", page=10, limit=10
         )
         assert total == 5
@@ -1490,7 +1490,7 @@ class TestSearchAndSlice:
 
     def test_empty_items(self) -> None:
         """Empty items list returns ([], 0)."""
-        page_items, total = _search_and_slice([], [], "query", page=1, limit=10)
+        page_items, total = search_and_slice([], [], "query", page=1, limit=10)
         assert total == 0
         assert page_items == []
 
@@ -1503,7 +1503,7 @@ class TestSearchAndSlice:
         ]
         texts = ["alpha word", "beta word", "gamma word"]
         # Search for "alpha" - only item 0 should rank high
-        page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
+        page_items, total = search_and_slice(items, texts, "alpha", page=1, limit=10)
         assert total >= 1
         assert page_items[0]["name"] == "alpha"
 
@@ -1511,7 +1511,7 @@ class TestSearchAndSlice:
         """limit=1 should return exactly one item per page."""
         items = self._make_items(5)
         texts = self._make_texts(5)
-        page_items, total = _search_and_slice(items, texts, "description", page=1, limit=1)
+        page_items, total = search_and_slice(items, texts, "description", page=1, limit=1)
         assert total == 5
         assert len(page_items) == 1
         assert page_items[0]["name"] == "item_0"
@@ -1521,7 +1521,7 @@ class TestSearchAndSlice:
         items = self._make_items(3)
         texts = [*self._make_texts(3), "extra"]  # more texts than items
         # Should not raise
-        page_items, total = _search_and_slice(items, texts, "description", page=1, limit=10)
+        page_items, total = search_and_slice(items, texts, "description", page=1, limit=10)
         assert total == 3
         assert len(page_items) == 3
 
@@ -1533,7 +1533,7 @@ class TestSearchAndSlice:
             {"id": 3, "name": "gamma"},
         ]
         texts = ["alpha alpha word", "beta word", "gamma word"]
-        page_items, total = _search_and_slice(items, texts, "alpha", page=1, limit=10)
+        page_items, total = search_and_slice(items, texts, "alpha", page=1, limit=10)
         assert total >= 1
         # Top match gets score 1.0
         assert page_items[0]["score"] == 1.0
@@ -1634,7 +1634,7 @@ class TestNameMatches:
 
 
 class TestSearchAndSliceNameMatch:
-    """Tests for name-match boost in _search_and_slice."""
+    """Tests for name-match boost in search_and_slice."""
 
     def _make_items(self, names: list[str]) -> list[dict]:
         return [{"name": n, "description": f"desc for {n}"} for n in names]
@@ -1651,7 +1651,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_user_current_list_followers",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1667,7 +1667,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_issue_create_issue_blocking",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "create issue", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1685,7 +1685,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "user get", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1704,7 +1704,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_repo_create_pull_request",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "create pull request", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1718,7 +1718,7 @@ class TestSearchAndSliceNameMatch:
             "user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="",
         )
@@ -1731,7 +1731,7 @@ class TestSearchAndSliceNameMatch:
             "forgejo_user_get_current",
         ])
         texts = self._make_texts(items)
-        page_items, _ = _search_and_slice(
+        page_items, _ = search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="forgejo_",
         )
@@ -1746,7 +1746,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_issue_create",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             items, texts, "user", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1766,7 +1766,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_pull_create",
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             items, texts, "create", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1786,7 +1786,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_user_current_list_following",  # BM25 match
         ])
         texts = self._make_texts(items)
-        page_items, total = _search_and_slice(
+        page_items, total = search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="gitea_",
         )
@@ -1805,7 +1805,7 @@ class TestSearchAndSliceNameMatch:
             "gitea_admin_delete",         # no match
         ])
         texts = self._make_texts(items)
-        _, total = _search_and_slice(
+        _, total = search_and_slice(
             items, texts, "user get current", page=1, limit=10,
             tool_prefix="gitea_",
         )

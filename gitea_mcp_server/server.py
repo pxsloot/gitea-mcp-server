@@ -35,7 +35,7 @@ from gitea_mcp_server.constants import (
     SEARCH_MAX_RESULTS,
 )
 from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
-from gitea_mcp_server.format import _build_server_info_markdown
+from gitea_mcp_server.format import build_server_info_markdown
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.server_setup.http_server import run_http_server
@@ -380,7 +380,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # no API call needed.
     server_info_md: str | None = None
     if openapi_spec:
-        server_info_md = _build_server_info_markdown(openapi_spec)
+        server_info_md = build_server_info_markdown(openapi_spec)
 
     instructions = _build_server_instructions(placeholder_values)
 

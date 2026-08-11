@@ -27,9 +27,9 @@ from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progre
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.schemas import (
-    _collect_refs,
-    _deep_resolve_schema,
-    _resolve_ref,
+    collect_refs,
+    deep_resolve_schema,
+    resolve_ref,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _walk_response_refs(
         if not isinstance(response, dict):
             continue
         if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = resolve_ref(openapi_spec, response["$ref"])
             if isinstance(resolved, dict):
                 response = resolved
         content = response.get("content", {})
@@ -65,7 +65,7 @@ def _walk_response_refs(
             continue
         schema = json_content.get("schema")
         if isinstance(schema, dict):
-            for ref in _collect_refs(schema):
+            for ref in collect_refs(schema):
                 if ref in type_index:
                     type_index[ref].setdefault("returned_by", []).append(operation_id)
 
@@ -83,7 +83,7 @@ def _walk_parameter_refs(
             continue
         param_schema = param.get("schema")
         if isinstance(param_schema, dict):
-            for ref in _collect_refs(param_schema):
+            for ref in collect_refs(param_schema):
                 if ref in type_index:
                     type_index[ref].setdefault("accepted_by", []).append(operation_id)
 
@@ -104,7 +104,7 @@ def _walk_request_body_refs(
             continue
         body_schema = media_item.get("schema")
         if isinstance(body_schema, dict):
-            for ref in _collect_refs(body_schema):
+            for ref in collect_refs(body_schema):
                 if ref in type_index:
                     type_index[ref].setdefault("accepted_by", []).append(operation_id)
 
@@ -164,7 +164,7 @@ def build_type_index(openapi_spec: OpenAPISpec) -> dict[str, dict[str, Any]]:
     for type_name, schema in schemas.items():
         if not isinstance(schema, dict):
             continue
-        schema_refs = _collect_refs(schema)
+        schema_refs = collect_refs(schema)
         type_index[type_name] = {
             "schema": schema,
             "referenced_types": sorted(schema_refs),
@@ -236,9 +236,9 @@ def resolve_type_info(
 
     # Build compact example with $ref placeholders.
     # Deferred import to avoid circular: examples → schemas → this module
-    from gitea_mcp_server.tools.examples import _schema_to_compact_example  # noqa: PLC0415
+    from gitea_mcp_server.tools.examples import schema_to_compact_example  # noqa: PLC0415
 
-    compact = _schema_to_compact_example(schema, openapi_spec=openapi_spec)
+    compact = schema_to_compact_example(schema, openapi_spec=openapi_spec)
 
     result: dict[str, Any] = {
         "name": type_name,
@@ -252,7 +252,7 @@ def resolve_type_info(
     }
 
     if detail == "full":
-        result["resolved_schema"] = _deep_resolve_schema(schema, openapi_spec)
+        result["resolved_schema"] = deep_resolve_schema(schema, openapi_spec)
 
     return result
 
@@ -281,7 +281,7 @@ def register_type_tools(
     """
     from gitea_mcp_server.format import apply_format  # noqa: PLC0415
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
-    from gitea_mcp_server.tools.errors import _raise_value_error  # noqa: PLC0415
+    from gitea_mcp_server.tools.errors import raise_value_error  # noqa: PLC0415
 
     _MAX_TYPES_IN_RESOURCE_DESC = 10
 
@@ -315,7 +315,7 @@ def register_type_tools(
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
             await safe_ctx_info(ctx, "Type index empty — spec not available at registration")
-            _raise_value_error(msg)
+            raise_value_error(msg)
 
         await safe_ctx_info(
             ctx,
@@ -342,7 +342,7 @@ def register_type_tools(
                 f"Type '{name}' not found",
                 extra={"type_name": name, "found": False},
             )
-            _raise_value_error(msg)
+            raise_value_error(msg)
 
         await safe_ctx_report_progress(ctx, progress=1.0)
         logger.debug(
@@ -502,10 +502,6 @@ def register_type_tools(
 
 
 __all__ = [
-    "_walk_operation_refs",
-    "_walk_parameter_refs",
-    "_walk_request_body_refs",
-    "_walk_response_refs",
     "build_type_index",
     "register_type_tools",
     "resolve_type_info",

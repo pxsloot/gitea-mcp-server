@@ -37,39 +37,12 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
+from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
-    """Resolve a ``$ref`` pointer in a spec.
-
-    Walks the spec tree using string path segments. Returns ``None`` if
-    any segment is missing (handles malformed refs gracefully).
-
-    Args:
-        spec: Post-conversion OpenAPI 3.1 spec.
-        ref: The ``$ref`` string to resolve (e.g. ``#/components/schemas/IssueMeta``).
-
-    Returns:
-        The resolved schema dict, or ``None`` if resolution fails.
-    """
-    # Strip leading "#/" prefix precisely (not via lstrip which strips
-    # all leading "#" and "/" characters indiscriminately).
-    prefix = "#/"
-    if ref.startswith(prefix):
-        ref = ref[len(prefix):]
-    parts = ref.split("/")
-    current: Any = spec
-    try:
-        for part in parts:
-            current = current[part]
-    except (KeyError, TypeError):
-        return None
-    return current if isinstance(current, dict) else None
 
 
 def _collect_path_param_names(operation: dict[str, Any]) -> set[str]:
@@ -129,7 +102,7 @@ def _get_body_schema(
     # Resolve $ref to shared component (e.g. IssueMeta)
     ref = body_schema.get("$ref")
     if ref is not None:
-        resolved = _resolve_spec_ref(spec, ref)
+        resolved = resolve_spec_ref(spec, ref)
         if resolved is not None:
             body_schema = deepcopy(resolved)
             # Replace the $ref with the inlined schema

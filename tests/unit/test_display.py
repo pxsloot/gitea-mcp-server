@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gitea_mcp_server.format import _build_server_info_markdown
+from gitea_mcp_server.format import build_server_info_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -422,7 +422,7 @@ class TestFormatterGaps:
                 "description": "Gitea API description.",
             }
         }
-        result = _build_server_info_markdown(spec)
+        result = build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result
         assert "**API Version**: 1.21.0" in result
@@ -431,28 +431,28 @@ class TestFormatterGaps:
 
     def test_build_server_info_markdown_no_description(self) -> None:
         spec: OpenAPISpec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
-        result = _build_server_info_markdown(spec)
+        result = build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result
         assert "## Description" not in result
 
     def test_build_server_info_markdown_missing_info(self) -> None:
-        result = _build_server_info_markdown({})
+        result = build_server_info_markdown({})
 
         assert "**Server Type**: Unknown" in result
         assert "**API Version**: Unknown" in result
 
 
 class TestToolResourceConsistency:
-    """Verify that resource formatters and _format_as_markdown produce the same structure.
+    """Verify that resource formatters and format_as_markdown produce the same structure.
 
     This is the core fix for issue #347: tool output and resource output
     should use the same nested sub-table format for the same data.
     """
 
     def test_issue_format_consistent_with_shared_formatter(self) -> None:
-        """_format_issues_markdown delegates to _format_as_markdown with field_filter."""
-        from gitea_mcp_server.format import _format_as_markdown
+        """_format_issues_markdown delegates to format_as_markdown with field_filter."""
+        from gitea_mcp_server.format import format_as_markdown
 
         issues = [
             {
@@ -467,7 +467,7 @@ class TestToolResourceConsistency:
             }
         ]
         resource_result = _format_issues_markdown(issues)
-        direct_result = _format_as_markdown(
+        direct_result = format_as_markdown(
             issues,
             title="Issues - 1 items",
             field_filter=_ISSUE_FIELDS,
@@ -517,7 +517,7 @@ class TestToolResourceConsistency:
         assert "| Pull Request | Yes |" in result
 
     def test_pull_format_consistent_with_shared_formatter(self) -> None:
-        """_format_pulls_markdown delegates to _format_as_markdown with field_filter."""
+        """_format_pulls_markdown delegates to format_as_markdown with field_filter."""
 
         pulls = [
             {
@@ -542,7 +542,7 @@ class TestToolResourceConsistency:
         assert "## Base" not in resource_result
 
     def test_repo_format_consistent_with_shared_formatter(self) -> None:
-        """_format_repo_markdown delegates to _format_as_markdown with field_filter."""
+        """_format_repo_markdown delegates to format_as_markdown with field_filter."""
 
         repo = {
             "full_name": "owner/repo",
@@ -560,7 +560,7 @@ class TestToolResourceConsistency:
         assert "## Owner" not in resource_result
 
     def test_user_format_consistent_with_shared_formatter(self) -> None:
-        """_format_user_markdown delegates to _format_as_markdown with field_filter."""
+        """_format_user_markdown delegates to format_as_markdown with field_filter."""
 
         user = {
             "login": "johndoe",
@@ -574,7 +574,7 @@ class TestToolResourceConsistency:
         assert "| Full Name | John Doe |" in resource_result
 
     def test_release_format_consistent_with_shared_formatter(self) -> None:
-        """_format_release_markdown delegates to _format_as_markdown with field_filter."""
+        """_format_release_markdown delegates to format_as_markdown with field_filter."""
 
         releases = [{
             "tag_name": "v1.0.0",

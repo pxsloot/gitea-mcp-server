@@ -1160,59 +1160,59 @@ class TestAugmentSchemaWithValidation:
 
 
 class TestRunValidation:
-    """Tests for _run_validation function."""
+    """Tests for run_validation function."""
 
     def test_missing_required_raises_validation_error(self) -> None:
         """Missing required params should raise a clear validation error."""
         from gitea_mcp_server.tools.errors import (
-            _run_validation,
+            run_validation,
         )
 
         with pytest.raises(ValidationError) as exc:
-            _run_validation({"page": 1}, required_params=["owner", "repo"])
+            run_validation({"page": 1}, required_params=["owner", "repo"])
         assert "owner" in str(exc.value)
         assert "repo" in str(exc.value)
 
     def test_all_required_params_present_passes(self) -> None:
         """No error when all required params are provided."""
-        from gitea_mcp_server.tools.errors import _run_validation
+        from gitea_mcp_server.tools.errors import run_validation
 
-        _run_validation(
+        run_validation(
             {"owner": "test", "repo": "test", "page": 1},
             required_params=["owner", "repo"],
         )
 
     def test_no_required_params_list_passes(self) -> None:
         """No error when required_params is None."""
-        from gitea_mcp_server.tools.errors import _run_validation
+        from gitea_mcp_server.tools.errors import run_validation
 
-        _run_validation({"owner": "test"})
+        run_validation({"owner": "test"})
 
     def test_empty_required_params_list_passes(self) -> None:
         """No error when required_params is empty."""
-        from gitea_mcp_server.tools.errors import _run_validation
+        from gitea_mcp_server.tools.errors import run_validation
 
-        _run_validation({"owner": "test"}, required_params=[])
+        run_validation({"owner": "test"}, required_params=[])
 
     def test_single_missing_required_param(self) -> None:
         """A single missing required param should name it."""
         from gitea_mcp_server.tools.errors import (
-            _run_validation,
+            run_validation,
         )
 
         with pytest.raises(ValidationError) as exc:
-            _run_validation({"repo": "test"}, required_params=["owner"])
+            run_validation({"repo": "test"}, required_params=["owner"])
         assert "owner" in str(exc.value)
         assert "Missing required parameter(s): owner" in str(exc.value)
 
     def test_missing_required_enum_param_includes_enum_values(self) -> None:
         """Missing required enum param should include valid values in the error."""
         from gitea_mcp_server.tools.errors import (
-            _run_validation,
+            run_validation,
         )
 
         with pytest.raises(ValidationError) as exc:
-            _run_validation(
+            run_validation(
                 {"owner": "test", "repo": "test", "index": 1},
                 required_params=["diffType"],
                 param_properties={
@@ -1231,11 +1231,11 @@ class TestRunValidation:
     def test_missing_required_param_without_enum_unchanged(self) -> None:
         """Missing required param without enum should not add enum hint."""
         from gitea_mcp_server.tools.errors import (
-            _run_validation,
+            run_validation,
         )
 
         with pytest.raises(ValidationError) as exc:
-            _run_validation(
+            run_validation(
                 {"repo": "test"},
                 required_params=["owner"],
                 param_properties={
@@ -1249,11 +1249,11 @@ class TestRunValidation:
     def test_validation_still_runs_on_present_params(self) -> None:
         """Existing validation for present params should still run alongside missing check."""
         from gitea_mcp_server.tools.errors import (
-            _run_validation,
+            run_validation,
         )
 
         with pytest.raises(ValidationError) as exc:
-            _run_validation(
+            run_validation(
                 {"owner": "!!invalid!!", "page": 1},
                 required_params=["owner"],
             )

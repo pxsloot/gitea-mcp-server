@@ -1,19 +1,19 @@
 """Tool output schema derivation, ``$ref`` resolution, and response classification.
 
 Provides ``derive_output_schema()`` to resolve the response schema for each
-tool from the OpenAPI spec, ``_is_text_response()`` / ``_is_binary_response()``
+tool from the OpenAPI spec, ``is_text_response()`` /
 for content-type classification, and shared helpers for ``$ref`` collection,
 empty-body detection, and result unwrapping used across the pipeline.
 """
 
 from typing import Any, cast
 
-from gitea_mcp_server.openapi_converter import _resolve_spec_ref as _resolve_ref
+from gitea_mcp_server.openapi_converter import resolve_spec_ref as resolve_ref
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.schema_utils import schema_type_matches
 
 
-def _collect_refs(schema: Any) -> set[str]:
+def collect_refs(schema: Any) -> set[str]:
     """Recursively collect all ``$ref`` type names referenced in a schema.
 
     Walks ``properties``, ``items``, ``additionalProperties``,
@@ -46,14 +46,14 @@ def _collect_refs(schema: Any) -> set[str]:
     if isinstance(props, dict):
         for prop_schema in props.values():
             if isinstance(prop_schema, dict):
-                refs |= _collect_refs(prop_schema)
+                refs |= collect_refs(prop_schema)
 
     # items/additionalProperties + JSON Schema applicator keywords:
     # not, if, then, else all take a single schema object (which may contain $ref).
     for key in ("items", "additionalProperties", "not", "if", "then", "else"):
         val = schema.get(key)
         if isinstance(val, dict):
-            refs |= _collect_refs(val)
+            refs |= collect_refs(val)
 
     arr_keys: tuple[str, ...] = ("allOf", "oneOf", "anyOf")
     for key in arr_keys:
@@ -61,12 +61,12 @@ def _collect_refs(schema: Any) -> set[str]:
         if isinstance(items, list):
             for item in items:
                 if isinstance(item, dict):
-                    refs |= _collect_refs(item)
+                    refs |= collect_refs(item)
 
     return refs
 
 
-def _deep_resolve_schema(
+def deep_resolve_schema(
     schema: Any,
     openapi_spec: OpenAPISpec,
     _seen: set[str] | None = None,
@@ -94,37 +94,37 @@ def _deep_resolve_schema(
                 result[key] = value
                 continue
             _seen.add(value)
-            resolved = _resolve_ref(openapi_spec, value)
+            resolved = resolve_ref(openapi_spec, value)
             if isinstance(resolved, dict):
-                deep = _deep_resolve_schema(resolved, openapi_spec, _seen)
+                deep = deep_resolve_schema(resolved, openapi_spec, _seen)
                 result.update(deep)
             else:
                 result[key] = value
         elif key in ("properties",):
             result[key] = {
-                k: _deep_resolve_schema(v, openapi_spec, _seen) if isinstance(v, dict) else v
+                k: deep_resolve_schema(v, openapi_spec, _seen) if isinstance(v, dict) else v
                 for k, v in value.items()
             }
         elif key in ("items", "additionalProperties"):
             result[key] = (
-                _deep_resolve_schema(value, openapi_spec, _seen)
+                deep_resolve_schema(value, openapi_spec, _seen)
                 if isinstance(value, dict)
                 else value
             )
         elif key in ("allOf", "oneOf", "anyOf"):
             result[key] = [
-                _deep_resolve_schema(item, openapi_spec, _seen) if isinstance(item, dict) else item
+                deep_resolve_schema(item, openapi_spec, _seen) if isinstance(item, dict) else item
                 for item in value
             ]
         elif isinstance(value, dict):
-            result[key] = _deep_resolve_schema(value, openapi_spec, _seen)
+            result[key] = deep_resolve_schema(value, openapi_spec, _seen)
         else:
             result[key] = value
 
     return result
 
 
-def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
+def is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
     """Check if the response for a given path/method is non-JSON (text/plain, etc.).
 
     The ``method`` parameter is normalised to lowercase internally.
@@ -150,7 +150,7 @@ def _is_text_response(openapi_spec: OpenAPISpec, path: str, method: str) -> bool
     return any(ct.lower().strip() != "application/json" for ct in content_types)
 
 
-def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
+def response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) -> bool:
     """Check if the endpoint's success response has no body content.
 
     Returns ``True`` when a 2xx success response has no ``content``
@@ -200,7 +200,7 @@ def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) 
             continue
         has_ref = "$ref" in response
         if has_ref:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = resolve_ref(openapi_spec, response["$ref"])
             if not isinstance(resolved, dict):
                 continue
             response = resolved
@@ -216,7 +216,7 @@ def _response_has_no_content(openapi_spec: OpenAPISpec, path: str, method: str) 
     return False
 
 
-def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
+def get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
     openapi_spec: OpenAPISpec,
     path: str,
     method: str,
@@ -225,11 +225,11 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
     """Extract the 200/201 response schema for a path and method.
 
     The ``method`` parameter is normalised to lowercase internally,
-    consistent with :func:`_is_text_response` and
-    :func:`_response_has_no_content`.
+    consistent with :func:`is_text_response` and
+    :func:`response_has_no_content`.
 
     When ``resolve=True`` (default), all nested ``$ref`` pointers are
-    expanded via ``_deep_resolve_schema``.  When ``resolve=False``, the
+    expanded via ``deep_resolve_schema``.  When ``resolve=False``, the
     schema is returned with ``$ref`` intact - used by the compact example
     generator to emit type names instead of inlining referenced schemas.
 
@@ -245,7 +245,7 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
         response is found.
     """
     method = method.lower()
-    if _is_text_response(openapi_spec, path, method):
+    if is_text_response(openapi_spec, path, method):
         return None
 
     paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
@@ -265,7 +265,7 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
             continue
 
         if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = resolve_ref(openapi_spec, response["$ref"])
             if not isinstance(resolved, dict):
                 continue
             response = resolved
@@ -281,7 +281,7 @@ def _get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
             continue
 
         if resolve:
-            return _deep_resolve_schema(schema, openapi_spec)
+            return deep_resolve_schema(schema, openapi_spec)
         return schema
 
     return None
@@ -306,10 +306,10 @@ def derive_output_schema(
         return None
 
     method = getattr(route, "method", "").lower()
-    return _get_success_schema(openapi_spec, route.path, method)
+    return get_success_schema(openapi_spec, route.path, method)
 
 
-def _schema_type_is_array(schema: dict[str, Any]) -> bool:
+def schema_type_is_array(schema: dict[str, Any]) -> bool:
     """Check whether a schema dict has type 'array' (string or list form).
 
     Delegates to :func:`schema_type_matches` which handles both
@@ -318,7 +318,7 @@ def _schema_type_is_array(schema: dict[str, Any]) -> bool:
     return schema_type_matches(schema, "array")
 
 
-def _is_object_type(schema: dict[str, Any]) -> bool:
+def is_object_type(schema: dict[str, Any]) -> bool:
     """Check whether a schema dict has type 'object', handling both string and list forms.
 
     Delegates to :func:`schema_type_matches` which handles both
@@ -333,7 +333,7 @@ def _is_object_type(schema: dict[str, Any]) -> bool:
     return schema_type_matches(schema, "object")
 
 
-def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
+def unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
     """Extract the inner schema from a ``{"result": ...}`` wrapped response schema.
 
     The OpenAPI converter wraps all response schemas in a ``{"result": ...}``
@@ -355,7 +355,7 @@ def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
         The inner schema (``properties.result``), or ``schema`` unchanged
         if there is no ``result`` property or if ``schema`` is ``None``.
     """
-    if schema and isinstance(schema, dict) and _is_object_type(schema):
+    if schema and isinstance(schema, dict) and is_object_type(schema):
         inner = schema.get("properties", {}).get("result")
         if isinstance(inner, dict):
             return inner
@@ -363,14 +363,14 @@ def _unwrap_result_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
 
 
 __all__ = [
-    "_collect_refs",
-    "_deep_resolve_schema",
-    "_get_success_schema",
-    "_is_object_type",
-    "_is_text_response",
-    "_resolve_ref",
-    "_response_has_no_content",
-    "_schema_type_is_array",
-    "_unwrap_result_schema",
+    "collect_refs",
+    "deep_resolve_schema",
     "derive_output_schema",
+    "get_success_schema",
+    "is_object_type",
+    "is_text_response",
+    "resolve_ref",
+    "response_has_no_content",
+    "schema_type_is_array",
+    "unwrap_result_schema",
 ]

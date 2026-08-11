@@ -15,7 +15,7 @@ from gitea_mcp_server.tools.examples import (
     _example_object,
     _example_string,
     _schema_to_example,
-    _serialize_tool_schema,
+    serialize_tool_schema,
 )
 
 
@@ -165,7 +165,7 @@ class TestSchemaToExample:
         assert _schema_to_example({"type": "object", "properties": {}}) == {}
 
     def test_serialize_tool_schema_uses_output_example(self) -> None:
-        """_serialize_tool_schema should produce output_example instead of output_schema."""
+        """serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
 
@@ -186,14 +186,14 @@ class TestSchemaToExample:
                 },
             },
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert "output_example" in result
         assert "output_schema" not in result
         assert result["output_example"]["id"] == 0
         assert result["output_example"]["name"] == "example-name"
 
     def test_serialize_tool_schema_no_output_schema(self) -> None:
-        """_serialize_tool_schema should not include output_example when output_schema is None."""
+        """serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
 
 
@@ -203,7 +203,7 @@ class TestSchemaToExample:
             parameters={"properties": {}},
             output_schema=None,
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert "output_example" not in result
         assert "output_schema" not in result
 
@@ -261,7 +261,7 @@ class TestSchemaToExample:
         assert _example_object({}, 0, 3, 15) == {}
 
     def test_serialize_tool_schema_with_tags(self) -> None:
-        """_serialize_tool_schema should include tags when present."""
+        """serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
 
 
@@ -271,12 +271,12 @@ class TestSchemaToExample:
             parameters={"properties": {}},
             tags={"issue", "repository"},
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert "tags" in result
         assert set(result["tags"]) == {"issue", "repository"}
 
     def test_serialize_tool_schema_with_version(self) -> None:
-        """_serialize_tool_schema should include version when present."""
+        """serialize_tool_schema should include version when present."""
         from fastmcp.tools.base import Tool
 
 
@@ -286,11 +286,11 @@ class TestSchemaToExample:
             parameters={"properties": {}},
             version="2.0",
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert result["version"] == "2.0"
 
     def test_serialize_tool_schema_with_open_world_hint(self) -> None:
-        """_serialize_tool_schema should include openWorldHint when True."""
+        """serialize_tool_schema should include openWorldHint when True."""
         from fastmcp.tools.base import Tool
         from mcp.types import ToolAnnotations
 
@@ -301,32 +301,32 @@ class TestSchemaToExample:
             parameters={"properties": {}},
             annotations=ToolAnnotations(openWorldHint=True),
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert result["annotations"]["openWorldHint"] is True
 
 
 class TestSchemaToCompactExample:
-    """Tests for _schema_to_compact_example."""
+    """Tests for schema_to_compact_example."""
 
     def test_ref_emits_dict_with_type_name(self) -> None:
         """$ref should emit {"$ref": "TypeName"} instead of inlining."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"$ref": "#/components/schemas/User"}
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert result == {"$ref": "User"}
 
     def test_ref_uses_last_path_segment(self) -> None:
         """$ref should extract the tail of the path as the type name."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"$ref": "#/definitions/api/SomeDeeplyNestedType"}
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert result == {"$ref": "SomeDeeplyNestedType"}
 
     def test_max_depth_returns_placeholder(self) -> None:
         """At max_depth, should return '{...}'."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "type": "object",
@@ -344,13 +344,13 @@ class TestSchemaToCompactExample:
                 },
             },
         }
-        result = _schema_to_compact_example(schema, max_depth=2)
+        result = schema_to_compact_example(schema, max_depth=2)
         # a -> depth 1, b -> depth 2 (hits max_depth), returns {...}
         assert result["a"]["b"] == "{...}"
 
     def test_anyof_skips_null_first_option(self) -> None:
         """anyOf should pick the first non-null option."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "anyOf": [
@@ -358,11 +358,11 @@ class TestSchemaToCompactExample:
                 {"type": "string"},
             ],
         }
-        assert _schema_to_compact_example(schema) == "example"
+        assert schema_to_compact_example(schema) == "example"
 
     def test_oneof_skips_null(self) -> None:
         """oneOf should work like anyOf, skipping null types."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "oneOf": [
@@ -370,95 +370,95 @@ class TestSchemaToCompactExample:
                 {"type": "integer"},
             ],
         }
-        assert _schema_to_compact_example(schema) == 0
+        assert schema_to_compact_example(schema) == 0
 
     def test_type_list_skips_null(self) -> None:
         """type as a list should skip 'null' entries."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"type": ["null", "string"]}
-        assert _schema_to_compact_example(schema) == "example"
+        assert schema_to_compact_example(schema) == "example"
 
     def test_type_list_all_null(self) -> None:
         """When type list is all null, should return None."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        assert _schema_to_compact_example({"type": ["null", "null"]}) is None
+        assert schema_to_compact_example({"type": ["null", "null"]}) is None
 
     def test_uses_schema_example(self) -> None:
         """schema 'example' field should be used."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"type": "string", "example": "custom-value"}
-        assert _schema_to_compact_example(schema) == "custom-value"
+        assert schema_to_compact_example(schema) == "custom-value"
 
     def test_object_with_no_properties(self) -> None:
         """Empty object should return '{...}'."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        assert _schema_to_compact_example({"type": "object", "properties": {}}) == "{...}"
+        assert schema_to_compact_example({"type": "object", "properties": {}}) == "{...}"
 
     def test_array_with_ref_items(self) -> None:
         """Array of $ref items should return [{"$ref": "Type"}]."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/Branch"},
         }
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert result == [{"$ref": "Branch"}]
 
     def test_array_with_literal_items(self) -> None:
         """Array of literal items should return example values."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "type": "array",
             "items": {"type": "string"},
         }
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert result == ["example"]
 
     def test_string_with_enum(self) -> None:
         """Enum strings should use the first enum value."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"type": "string", "enum": ["open", "closed"]}
-        assert _schema_to_compact_example(schema) == "open"
+        assert schema_to_compact_example(schema) == "open"
 
     def test_string_with_format_date_time(self) -> None:
         """date-time format should generate a timestamp."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"type": "string", "format": "date-time"}
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert "2024-01-01" in result
         assert "T" in result
 
     def test_leaf_types(self) -> None:
         """Leaf types should return example values."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        assert _schema_to_compact_example({"type": "integer"}) == 0
-        assert _schema_to_compact_example({"type": "number"}) == 0.0
-        assert _schema_to_compact_example({"type": "boolean"}) is True
-        assert _schema_to_compact_example({"type": "null"}) is None
+        assert schema_to_compact_example({"type": "integer"}) == 0
+        assert schema_to_compact_example({"type": "number"}) == 0.0
+        assert schema_to_compact_example({"type": "boolean"}) is True
+        assert schema_to_compact_example({"type": "null"}) is None
 
     def test_unrecognized_type_returns_none(self) -> None:
         """Unknown type should return None."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        assert _schema_to_compact_example({"type": "file"}) is None
+        assert schema_to_compact_example({"type": "file"}) is None
 
     def test_empty_array_items(self) -> None:
         """Array with empty items should return empty list."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        assert _schema_to_compact_example({"type": "array", "items": {}}) == []
+        assert schema_to_compact_example({"type": "array", "items": {}}) == []
 
     def test_serialize_tool_schema_with_raw_meta(self) -> None:
-        """_serialize_tool_schema should use raw meta schema for compact example."""
+        """serialize_tool_schema should use raw meta schema for compact example."""
 
         tool = Tool(
             name="test_tool",
@@ -494,14 +494,14 @@ class TestSchemaToCompactExample:
                 },
             }},
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert "output_example" in result
         # With raw meta, user should be {"$ref": "User"}
         assert result["output_example"]["user"] == {"$ref": "User"}
         assert result["output_example"]["id"] == 0
 
     def test_serialize_tool_schema_no_raw_meta_fallback(self) -> None:
-        """Without raw meta, _serialize_tool_schema falls back to old behavior."""
+        """Without raw meta, serialize_tool_schema falls back to old behavior."""
 
         tool = Tool(
             name="test_tool",
@@ -520,7 +520,7 @@ class TestSchemaToCompactExample:
             },
             meta={},
         )
-        result = _serialize_tool_schema(tool)
+        result = serialize_tool_schema(tool)
         assert "output_example" in result
         assert result["output_example"]["name"] == "example-name"
 
@@ -529,7 +529,7 @@ class TestSchemaToCompactExample:
 
     def test_bare_ref_resolved_at_depth_zero(self) -> None:
         """Bare $ref at depth=0 with openapi_spec should resolve one level."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         spec: OpenAPISpec = {
             "components": {
@@ -552,7 +552,7 @@ class TestSchemaToCompactExample:
             },
         }
         schema = {"$ref": "#/components/schemas/NotificationThread"}
-        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        result = schema_to_compact_example(schema, openapi_spec=spec)
         # Should show actual fields, with nested $ref rendered as placeholder
         assert result["id"] == 0
         assert result["unread"] is True
@@ -561,15 +561,15 @@ class TestSchemaToCompactExample:
 
     def test_bare_ref_not_resolved_without_spec(self) -> None:
         """Bare $ref without openapi_spec should still emit placeholder."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {"$ref": "#/components/schemas/NotificationThread"}
-        result = _schema_to_compact_example(schema)
+        result = schema_to_compact_example(schema)
         assert result == {"$ref": "NotificationThread"}
 
     def test_ref_not_resolved_at_depth_one(self) -> None:
         """$ref at depth > 0 should still emit placeholder even with spec."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         spec: OpenAPISpec = {
             "components": {
@@ -589,13 +589,13 @@ class TestSchemaToCompactExample:
                 "author": {"$ref": "#/components/schemas/User"},
             },
         }
-        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        result = schema_to_compact_example(schema, openapi_spec=spec)
         # author is at depth 1, should stay as placeholder
         assert result["author"] == {"$ref": "User"}
 
     def test_array_of_ref_resolved_at_depth_zero(self) -> None:
         """Array with $ref items at depth=0 should resolve items with spec."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         spec: OpenAPISpec = {
             "components": {
@@ -614,7 +614,7 @@ class TestSchemaToCompactExample:
             "type": "array",
             "items": {"$ref": "#/components/schemas/NotificationThread"},
         }
-        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        result = schema_to_compact_example(schema, openapi_spec=spec)
         # Array of resolved items
         assert isinstance(result, list)
         assert len(result) == 1
@@ -622,7 +622,7 @@ class TestSchemaToCompactExample:
         assert result[0]["unread"] is True
 
     def test_serialize_bare_ref_with_openapi_spec(self) -> None:
-        """_serialize_tool_schema with bare $ref output resolves with spec."""
+        """serialize_tool_schema with bare $ref output resolves with spec."""
 
         spec: OpenAPISpec = {
             "components": {
@@ -659,7 +659,7 @@ class TestSchemaToCompactExample:
                 },
             },
         )
-        result = _serialize_tool_schema(tool, openapi_spec=spec)
+        result = serialize_tool_schema(tool, openapi_spec=spec)
         assert "output_example" in result
         assert isinstance(result["output_example"], list)
         assert result["output_example"][0]["id"] == 0
@@ -667,12 +667,12 @@ class TestSchemaToCompactExample:
 
     def test_bare_ref_falls_back_on_resolution_failure(self) -> None:
         """Bare $ref that cannot be resolved should fall through to placeholder."""
-        from gitea_mcp_server.tools.examples import _schema_to_compact_example
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         # Spec without the referenced schema
         spec: OpenAPISpec = {"components": {"schemas": {}}}
         schema = {"$ref": "#/components/schemas/MissingType"}
-        result = _schema_to_compact_example(schema, openapi_spec=spec)
+        result = schema_to_compact_example(schema, openapi_spec=spec)
         assert result == {"$ref": "MissingType"}
 
 

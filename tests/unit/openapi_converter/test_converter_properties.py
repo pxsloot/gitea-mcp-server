@@ -70,17 +70,17 @@ def _walk(obj: Any, found: list[dict[str, Any]]) -> None:
             _walk(item, found)
 
 
-def _collect_refs(obj: Any) -> list[str]:
+def collect_refs(obj: Any) -> list[str]:
     """Collect all ``$ref`` string values in a spec tree."""
     refs: list[str] = []
     if isinstance(obj, dict):
         if "$ref" in obj and isinstance(obj["$ref"], str):
             refs.append(obj["$ref"])
         for v in obj.values():
-            refs.extend(_collect_refs(v))
+            refs.extend(collect_refs(v))
     elif isinstance(obj, list):
         for item in obj:
-            refs.extend(_collect_refs(item))
+            refs.extend(collect_refs(item))
     return refs
 
 
@@ -288,7 +288,7 @@ class TestNoUnresolvedRefs:
 
         spec = _make_spec(paths=paths, definitions=definitions)
         result = convert_swagger_to_openapi_v3(spec)
-        refs = _collect_refs(result)
+        refs = collect_refs(result)
 
         # Every $ref must point to a target that exists
         for ref in refs:
@@ -329,7 +329,7 @@ class TestNoUnresolvedRefs:
             }},
         }, definitions=definitions)
         result = convert_swagger_to_openapi_v3(spec)
-        refs = _collect_refs(result)
+        refs = collect_refs(result)
 
         for ref in refs:
             parts = ref.lstrip("#/").split("/")

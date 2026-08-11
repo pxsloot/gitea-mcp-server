@@ -632,7 +632,7 @@ class TestWrapIntegration:
 
         # Mock the underlying execution
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -643,7 +643,7 @@ class TestWrapIntegration:
             # Call with format=markdown
             await wrapped.run({"owner": "test", "format": "markdown"})
 
-            # Verify format was stripped before reaching _run_with_error_handling
+            # Verify format was stripped before reaching run_with_error_handling
             call_kwargs = mock_run.call_args[0][0]
             assert "format" not in call_kwargs
             assert call_kwargs == {"owner": "test"}
@@ -661,7 +661,7 @@ class TestWrapIntegration:
         [wrapped] = await transform.list_tools([tool])
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             expected_result = ToolResult(

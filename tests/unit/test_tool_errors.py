@@ -21,7 +21,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 from gitea_mcp_server.tools.errors import (
     _lookup_response_description,
     _param_is_boolean,
-    _run_validation,
+    run_validation,
 )
 from gitea_mcp_server.validation import ValidationError
 
@@ -339,7 +339,7 @@ class TestLookupResponseDescription:
         assert result == "Resource not found"
 
     def test_ref_resolution_resolved_not_dict(self) -> None:
-        """When _resolve_ref returns non-dict, should fallback."""
+        """When resolve_ref returns non-dict, should fallback."""
         openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {
@@ -415,29 +415,29 @@ class TestLookupResponseDescription:
 
 
 class TestRunValidation:
-    """Tests for _run_validation function."""
+    """Tests for run_validation function."""
 
     def test_no_required_params(self) -> None:
         """When required_params is None/empty, should not raise."""
-        _run_validation({"x": 1})  # should not raise
+        run_validation({"x": 1})  # should not raise
 
     def test_missing_required_params(self) -> None:
         """When a required param is missing, should raise ValidationError."""
         with pytest.raises(ValidationError, match="Missing required parameter"):
-            _run_validation({"x": 1}, required_params=["x", "y"])
+            run_validation({"x": 1}, required_params=["x", "y"])
 
     def test_validation_passes(self) -> None:
         """When all validators pass, should not raise."""
-        _run_validation({"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"])
+        run_validation({"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"])
 
     def test_pagination_validation_passes(self) -> None:
         """When page/per_page are present with valid values, should not raise."""
-        _run_validation({"page": 1, "per_page": 50})
+        run_validation({"page": 1, "per_page": 50})
 
     def test_pagination_validation_rejects_invalid(self) -> None:
         """When per_page is too high, should raise ValidationError."""
         with pytest.raises(ValidationError, match="page|per_page"):
-            _run_validation({"page": 1, "per_page": 99999})
+            run_validation({"page": 1, "per_page": 99999})
 
     def test_validator_raises_type_error_wraps_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When a SINGLE_VALIDATOR raises TypeError, it should be wrapped as ValidationError."""
@@ -448,24 +448,24 @@ class TestRunValidation:
 
         monkeypatch.setitem(SINGLE_VALIDATORS, "owner", bad_validator)
         with pytest.raises(ValidationError, match="Validation error"):
-            _run_validation({"owner": "anything"})
+            run_validation({"owner": "anything"})
 
     def test_validator_raises_validation_error_re_raises(self) -> None:
         """When a SINGLE_VALIDATOR raises ValidationError, it should re-raise unchanged."""
         with pytest.raises(ValidationError):
-            _run_validation({"owner": ""})
+            run_validation({"owner": ""})
 
     def test_rejects_unknown_parameters_when_schema_present(self) -> None:
         """Unknown kwargs not in param_properties should raise ValidationError.
 
-        Regression: _run_validation iterated kwargs and validated each against
+        Regression: run_validation iterated kwargs and validated each against
         known validators and schema enums, but never checked that a key
         was declared in param_properties at all.  Unknown args (typos by
         the agent) passed through silently and were either dropped by FastMCP
         or forwarded to Gitea as unknown query params.
         """
         with pytest.raises(ValidationError, match="Unknown parameter"):
-            _run_validation(
+            run_validation(
                 {"owner": "valid", "typo_parm": 42},
                 param_properties={"owner": {"type": "string"}},
             )
@@ -473,7 +473,7 @@ class TestRunValidation:
     def test_unknown_params_message_names_offenders(self) -> None:
         """Error message should name the unknown parameter(s) for fast debugging."""
         with pytest.raises(ValidationError, match="typo_parm"):
-            _run_validation(
+            run_validation(
                 {"owner": "valid", "typo_parm": 42, "another_typo": "x"},
                 param_properties={
                     "owner": {"type": "string"},
@@ -488,7 +488,7 @@ class TestRunValidation:
         here — the guard only applies when param_properties is non-empty.
         """
         # Should not raise — no schema to check against.
-        _run_validation({"owner": "valid", "extra": "value"})
+        run_validation({"owner": "valid", "extra": "value"})
 
     def test_allows_unknown_args_when_schema_empty(self) -> None:
         """When param_properties is empty dict, unknown args MUST NOT be rejected.
@@ -501,7 +501,7 @@ class TestRunValidation:
         # Should not raise from unknown-arg check.  The label validator
         # raises separately, but that is a different code path.
         with pytest.raises(ValidationError, match="must be a list"):
-            _run_validation({"labels": True}, param_properties={})
+            run_validation({"labels": True}, param_properties={})
 
 
 class TestParamIsBoolean:
@@ -530,19 +530,19 @@ class TestParamIsBoolean:
 
 
 class TestRunValidationParamProperties:
-    """Regression tests: _run_validation with param_projects should skip validators
+    """Regression tests: run_validation with param_projects should skip validators
     when the parameter schema declares a boolean type."""
 
     def test_labels_boolean_skips_validate_labels(self) -> None:
         """labels param with boolean schema should NOT trigger validate_labels."""
-        _run_validation(
+        run_validation(
             {"labels": True},
             param_properties={"labels": {"type": "boolean"}},
         )
 
     def test_labels_boolean_nullable_skips_validate_labels(self) -> None:
         """labels param with ['boolean', 'null'] schema should NOT trigger validate_labels."""
-        _run_validation(
+        run_validation(
             {"labels": True},
             param_properties={"labels": {"type": ["boolean", "null"]}},
         )
@@ -550,7 +550,7 @@ class TestRunValidationParamProperties:
     def test_labels_array_still_validates(self) -> None:
         """labels param with array schema should still trigger validate_labels."""
         with pytest.raises(ValidationError, match="must be a list"):
-            _run_validation(
+            run_validation(
                 {"labels": True},
                 param_properties={"labels": {"type": "array", "items": {"type": "string"}}},
             )
@@ -558,7 +558,7 @@ class TestRunValidationParamProperties:
     def test_boolean_skip_does_not_affect_other_validators(self) -> None:
         """Other validators should still run even when labels is boolean."""
         with pytest.raises(ValidationError, match="contains invalid characters"):
-            _run_validation(
+            run_validation(
                 {"labels": True, "owner": "!!invalid!!"},
                 param_properties={
                     "labels": {"type": "boolean"},
@@ -569,25 +569,25 @@ class TestRunValidationParamProperties:
     def test_no_param_properties_still_validates(self) -> None:
         """When param_properties is None, all validators should run."""
         with pytest.raises(ValidationError, match="must be a list"):
-            _run_validation({"labels": True})
+            run_validation({"labels": True})
 
     def test_empty_param_properties_skips_boolean_check(self) -> None:
         """When param_properties is empty dict, validators should run."""
         with pytest.raises(ValidationError, match="must be a list"):
-            _run_validation({"labels": True}, param_properties={})
+            run_validation({"labels": True}, param_properties={})
 
 
 class TestSchemaDrivenEnumValidation:
-    """Tests for schema-driven enum validation in _run_validation.
+    """Tests for schema-driven enum validation in run_validation.
 
     When a parameter's schema defines an ``enum`` (either directly or via an
-    ``anyOf``/``oneOf`` branch), ``_run_validation`` should validate against
+    ``anyOf``/``oneOf`` branch), ``run_validation`` should validate against
     that enum and skip the hardcoded ``SINGLE_VALIDATORS`` entry.
     """
 
     def test_param_with_top_level_enum_accepts_valid(self) -> None:
         """state with a top-level enum should accept valid values."""
-        _run_validation(
+        run_validation(
             {"state": "pending"},
             param_properties={
                 "state": {"type": "string", "enum": ["pending", "success", "error"]},
@@ -597,7 +597,7 @@ class TestSchemaDrivenEnumValidation:
     def test_param_with_top_level_enum_rejects_invalid(self) -> None:
         """state with a top-level enum should reject invalid values."""
         with pytest.raises(ValidationError, match="must be one of"):
-            _run_validation(
+            run_validation(
                 {"state": "bogus"},
                 param_properties={
                     "state": {"type": "string", "enum": ["pending", "success", "error"]},
@@ -606,7 +606,7 @@ class TestSchemaDrivenEnumValidation:
 
     def test_param_with_enum_in_anyof_accepts_valid(self) -> None:
         """state with enum in an anyOf branch should validate against it."""
-        _run_validation(
+        run_validation(
             {"state": "success"},
             param_properties={
                 "state": {
@@ -624,7 +624,7 @@ class TestSchemaDrivenEnumValidation:
     def test_param_with_enum_in_anyof_rejects_invalid(self) -> None:
         """state with enum in an anyOf branch should reject invalid values."""
         with pytest.raises(ValidationError, match="must be one of"):
-            _run_validation(
+            run_validation(
                 {"state": "closed"},  # Valid for issues, NOT for commit status
                 param_properties={
                     "state": {
@@ -642,7 +642,7 @@ class TestSchemaDrivenEnumValidation:
     def test_param_without_enum_uses_single_validator(self) -> None:
         """When no enum is in the schema, the SINGLE_VALIDATORS entry should run."""
         with pytest.raises(ValidationError, match="contains invalid characters"):
-            _run_validation(
+            run_validation(
                 {"owner": "!!invalid!!"},
                 param_properties={"owner": {"type": "string"}},
             )
@@ -650,7 +650,7 @@ class TestSchemaDrivenEnumValidation:
     def test_owner_validation_still_works_with_enum_present(self) -> None:
         """When enum is present but param also has a SINGLE_VALIDATORS entry,
         the enum takes priority — but the param should still be checked."""
-        _run_validation(
+        run_validation(
             {"owner": "valid-owner"},
             param_properties={
                 "owner": {"type": "string", "enum": ["valid-owner", "other"]},
@@ -659,7 +659,7 @@ class TestSchemaDrivenEnumValidation:
 
     def test_issue_state_enum_from_spec(self) -> None:
         """Tools with spec-defined enum (like issueListIssues) work correctly."""
-        _run_validation(
+        run_validation(
             {"state": "open"},
             param_properties={
                 "state": {"type": "string", "enum": ["closed", "open", "all"]},
@@ -669,7 +669,7 @@ class TestSchemaDrivenEnumValidation:
     def test_issue_state_invalid_from_spec(self) -> None:
         """Tools with spec-defined enum reject invalid values."""
         with pytest.raises(ValidationError, match="must be one of"):
-            _run_validation(
+            run_validation(
                 {"state": "bogus"},
                 param_properties={
                     "state": {"type": "string", "enum": ["closed", "open", "all"]},
@@ -679,7 +679,7 @@ class TestSchemaDrivenEnumValidation:
     def test_missing_required_with_enum_shows_enum_in_error(self) -> None:
         """When a required param with enum is missing, error shows the enum."""
         with pytest.raises(ValidationError, match="expected one of"):
-            _run_validation(
+            run_validation(
                 {"owner": "test"},
                 required_params=["state"],
                 param_properties={
@@ -705,7 +705,7 @@ class TestCatchAllErrorHandler:
         """All four exception types produce a user-friendly ValueError."""
         caplog.set_level(logging.ERROR)
 
-        from gitea_mcp_server.tools.errors import _run_with_error_handling
+        from gitea_mcp_server.tools.errors import run_with_error_handling
 
         tool = MagicMock()
         tool.name = "my_tool"
@@ -716,7 +716,7 @@ class TestCatchAllErrorHandler:
         tool.run = failing_run
 
         with pytest.raises(ValueError, match="unexpected") as exc_info:
-            await _run_with_error_handling(
+            await run_with_error_handling(
                 kwargs={"owner": "me"},
                 component=tool,
                 openapi_spec=None,
@@ -733,7 +733,7 @@ class TestCatchAllErrorHandler:
         """Log message includes tool name, HTTP method, route, and arg keys."""
         caplog.set_level(logging.ERROR)
 
-        from gitea_mcp_server.tools.errors import _run_with_error_handling
+        from gitea_mcp_server.tools.errors import run_with_error_handling
 
         tool = MagicMock()
         tool.name = "context_tool"
@@ -744,7 +744,7 @@ class TestCatchAllErrorHandler:
         tool.run = failing_run
 
         with pytest.raises(ValueError, match="unexpected"):
-            await _run_with_error_handling(
+            await run_with_error_handling(
                 kwargs={"owner": "me", "repo": "my-repo"},
                 component=tool,
                 openapi_spec=None,
@@ -761,7 +761,7 @@ class TestCatchAllErrorHandler:
         """When component has no ``name`` attribute, logs 'unknown'."""
         caplog.set_level(logging.ERROR)
 
-        from gitea_mcp_server.tools.errors import _run_with_error_handling
+        from gitea_mcp_server.tools.errors import run_with_error_handling
 
         # MagicMock auto-creates any accessed attribute, so we must
         # set then delete ``.name`` to simulate a component without one
@@ -776,7 +776,7 @@ class TestCatchAllErrorHandler:
         tool.run = failing_run
 
         with pytest.raises(ValueError, match="unexpected"):
-            await _run_with_error_handling(
+            await run_with_error_handling(
                 kwargs={},
                 component=tool,
                 openapi_spec=None,

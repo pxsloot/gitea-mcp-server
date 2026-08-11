@@ -146,6 +146,5 @@ def register_auto_generated_resources(
 
 
 __all__ = [
-    "_derive_resource_name",
     "register_auto_generated_resources",
 ]

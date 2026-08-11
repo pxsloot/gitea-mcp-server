@@ -246,7 +246,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -519,10 +519,45 @@ The customization layers as applied during server startup:
      ``x-original-content-types`` (set by ``OperationTransformer`` and read by
      ``tools/schemas.py:_is_text_response`` to distinguish non-JSON endpoints)
      and ``x-mcp`` (consumed by ``server_setup/mcp_extensions.py``).  The
-     post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
-     schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
-     the strip to the whole spec -- that would silently break text/plain
-     response detection and MCP extension overrides.
+      post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
+      schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
+      the strip to the whole spec -- that would silently break text/plain
+      response detection and MCP extension overrides.
+
+ 15. **Parameter collision resolution (``body_`` prefix)** -- FastMCP's
+     ``_combine_schemas_and_map_params`` detects name collisions between path
+     parameters and body property names, then renames the *non-body* parameter
+     with a ``__{location}`` suffix (e.g., ``owner__path``).  This leaks
+     FastMCP internals into the agent-facing API surface and creates confusing
+     UX where agents cannot tell which ``owner``/``repo``/``index`` pair
+     identifies the target resource vs. the body resource.
+
+     The fix works in two phases:
+
+     **Phase 1 — Spec-level renaming** (``openapi_converter/param_collision.py``):
+     After spec conversion, ``resolve_param_collisions()`` scans every operation
+     for collisions between path parameter names and body property names.  When
+     a collision is detected, the body property is renamed with a ``body_``
+     prefix (e.g., ``owner`` → ``body_owner``), and the mapping is stored in
+     an ``x-param-rename`` extension on the operation.  Shared component
+     schemas (referenced via ``$ref``) are inlined (deep-copied) so the
+     original component definition is not mutated.
+
+     **Phase 2 — Runtime shim** (``server_setup/mcp_builder.py``):
+     In ``_apply_param_rename()``, the ``parameter_map`` on the ``HTTPRoute``
+     is corrected so renamed body params map to the correct ``openapi_name``.
+     For example, if ``x-param-rename`` is ``{"body_owner": "owner"}`` and
+     FastMCP's ``parameter_map`` has ``{"body_owner": {"location": "body",
+     "openapi_name": "body_owner"}}``, the shim changes ``openapi_name`` to
+     ``"owner"``.  The ``RequestDirector`` then emits ``{"owner": ...}`` in
+     the HTTP request body — the Gitea API receives the correct field names.
+
+     The ``body_`` prefix is chosen because it is clear (``body_owner`` means
+     "the owner field in the request body"), consistent (same prefix for all
+     collisions), and does not leak FastMCP internals (unlike ``__path``).
+
+     Affected endpoints (3 total): ``issue_create_issue_blocking``,
+     ``issue_create_issue_dependencies``, ``admin_create_org``.
 
 ---
 ## Response Content-Type Handling

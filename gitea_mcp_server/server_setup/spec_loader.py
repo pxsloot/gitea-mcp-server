@@ -29,6 +29,7 @@ import yaml
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
 
@@ -243,6 +244,18 @@ async def load_and_convert_spec(
     except Exception as e:
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
+
+    # Resolve parameter name collisions between path params and body properties.
+    # Renames colliding body properties with a ``body_`` prefix so FastMCP
+    # never generates confusing ``__path`` suffixes.  The mapping is stored
+    # in ``x-param-rename`` on each affected operation.
+    try:
+        resolve_param_collisions(openapi_spec)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "Failed to resolve param collisions, proceeding without: %s",
+            e,
+        )
 
     extensions: dict[str, Any] = {}
     try:

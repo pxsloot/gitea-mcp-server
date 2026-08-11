@@ -495,10 +495,11 @@ The factory:
 - Generates a handler closure that calls ``gitea_client.request``
 - Handles ``isinstance(data, str)`` branching (text/plain vs application/json)
 - Attaches the schema and ``format_hint`` in ``ResourceContent.meta``
-- Registers via ``mcp.resource()`` and adds the URI to ``_registered_uris``
-  (module-level set in ``factory.py``).  ``register_custom_resources()``
-  returns a snapshot of this set so the orchestrator can pass it as
-  ``skip_uris`` to ``register_auto_generated_resources()``.
+- Registers via ``mcp.resource()`` and adds the URI to a caller-owned
+  ``tracking_set`` when provided.  ``register_custom_resources()`` creates
+  a local set, passes it to every factory call, and returns it so the
+  orchestrator can pass it as ``skip_uris`` to
+  ``register_auto_generated_resources()``.
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
@@ -702,8 +703,8 @@ non-GET methods) that don't fit the factory pattern, register directly with
 2. **Write the resource function** in ``resources/custom.py``.
 3. **Register** with a direct ``mcp.resource()`` call — no decorator needed.
    Add a scope guard inline when the resource requires a token scope.
-4. **No skip-URI update needed** — factory resources are auto-tracked in
-   ``_registered_uris`` and skipped by the auto-generation loop.
+4. **No skip-URI update needed** — factory resources are auto-tracked via
+   the ``tracking_set`` parameter and skipped by the auto-generation loop.
 
 ### Pre-computed static resources
 
@@ -949,7 +950,8 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
    functions may be renamed/refactored without notice.
 3. **Resource URIs conflict** — When adding a custom resource that shadows
    a GET endpoint, use ``make_api_resource()`` (factory auto-tracks URIs
-   in ``_registered_uris`` and ``register_custom_resources()`` returns them).
+   via the ``tracking_set`` parameter and ``register_custom_resources()``
+   returns them).
    For static resources registered via direct ``mcp.resource()`` calls,
    add the URI to the ``skip_uris`` set that the orchestrator passes to
    ``register_auto_generated_resources()``.

@@ -27,7 +27,6 @@ from gitea_mcp_server.constants import (
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
-    _registered_uris,
     make_api_resource,
 )
 from gitea_mcp_server.resources.meta import ResourceMeta
@@ -71,15 +70,14 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         server_info_md: Pre-built server info markdown, or None.
 
     Returns:
-        Snapshot of all URIs registered via ``make_api_resource()``.
+        The set of URIs registered via ``make_api_resource()``.
         The caller passes this as ``skip_uris`` to
         ``register_auto_generated_resources()`` so it skips URIs already
         handled by custom resources.
     """
 
-    # Start fresh: clear URIs accumulated from previous server instances
-    # (important for test isolation within the same process).
-    _registered_uris.clear()
+    # Track factory-registered URIs for auto-generation skip.
+    registered_uris: set[str] = set()
 
     # ======================================================================
     # FACTORY RESOURCES
@@ -97,6 +95,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_REPOSITORY,
         tags={"wrapper", "repository"},
         error_message="Repository '{owner}/{repo}' not found.",
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -110,6 +109,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "user"},
         error_message="User '{username}' not found.",
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -123,6 +123,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "user"},
         error_message="Current user not found or not authenticated.",
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -136,6 +137,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "organization"},
         error_message="Organization '{orgname}' not found.",
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -158,6 +160,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
                  "description": "Search string"},
             ],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -173,6 +176,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         param_config=ResourceParamConfig(
             context_meta_keys=["owner", "repo"],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -200,6 +204,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             ],
             context_meta_keys=["type"],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -218,6 +223,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             query_param_validators={"state": ["open", "closed"]},
             optional_params=[{"name": "state", "type": "string", "values": ["open", "closed"]}],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -243,6 +249,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             optional_params=[{"name": "ref", "type": "string",
                               "description": "The name of the commit/branch/tag"}],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -259,6 +266,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             optional_params=[{"name": "ref", "type": "string",
                               "description": "The name of the commit/branch/tag"}],
         ),
+        tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
@@ -319,9 +327,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
         )(get_server_info)
 
-    # Return a snapshot of all URIs registered via make_api_resource()
+    # Return the URIs registered via make_api_resource()
     # so the orchestrator can skip them during auto-generation.
-    return set(_registered_uris)
+    return registered_uris
 
 
 __all__ = [

@@ -53,9 +53,9 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
         version_str: Pre-fetched server version string.
         server_info_md: Pre-built server info markdown, or ``None``.
     """
-    # Custom first: populates _registered_uris at registration time
-    # via make_api_resource().  Returns the set of registered URIs
-    # so auto-generation can skip them.
+    # Custom first: populates URIs at registration time via
+    # make_api_resource(tracking_set=...).  Returns the set of
+    # registered URIs so auto-generation can skip them.
     skip_uris = register_custom_resources(
         mcp,
         gitea_client,
@@ -66,12 +66,12 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
     )
 
     # Auto second: skip URIs already claimed by factory resources.
-    # Pass a copy — the caller must not mutate the returned set.
+    # skip_uris is a fresh set owned by the caller — no defensive copy needed.
     register_auto_generated_resources(
         mcp,
         gitea_client,
         openapi_spec,
-        skip_uris=set(skip_uris),
+        skip_uris=skip_uris,
         filtered_tools_info=filtered_tools_info,
     )
     register_mcp_resource_tools(mcp, openapi_spec=openapi_spec)

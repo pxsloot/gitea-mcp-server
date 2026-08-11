@@ -6,10 +6,11 @@ response construction, and registration to the shared pipeline.  These
 can be overridden by custom resources with the same URI.
 
 The ``skip_uris`` for auto-generation is provided by the orchestrator
-(``resource_setup.py``), which passes the factory's ``_registered_uris``
-set (from ``make_api_resource()``).  All custom resources that have API
-equivalents in the spec are now registered via the factory, so no
-additional skip set is needed.
+(``resource_setup.py``), which passes the return value of
+``register_custom_resources()`` — a snapshot of URIs registered via
+``make_api_resource()``.  All custom resources that have API equivalents
+in the spec are now registered via the factory, so no additional skip
+set is needed.
 """
 
 import logging
@@ -68,9 +69,9 @@ def register_auto_generated_resources(
         gitea_client: GiteaClient for API calls.
         openapi_spec: The OpenAPI specification dictionary.
         skip_uris: Set of URI templates to skip (custom resource overrides).
-            The orchestrator (``resource_setup.py``) passes the factory's
-            ``_registered_uris`` set.  When ``None``, defaults to an empty
-            set (no URIs skipped).
+            The orchestrator (``resource_setup.py``) passes the snapshot
+            returned by ``register_custom_resources()``.  When ``None``,
+            defaults to an empty set (no URIs skipped).
         filtered_tools_info: Filter-prediction data from spec-level filtering.
             When provided, resources whose operationId appears in the ``filtered``
             dict are skipped -- they are scope-filtered, deprecated, or excluded by

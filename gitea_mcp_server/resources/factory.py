@@ -1,7 +1,7 @@
 """Factory for creating custom resource handlers with auto schema derivation.
 
 Provides ``make_api_resource()`` which generates and registers a resource
-handler from a declarative description
+handler from a declarative description.
 
 The factory auto-derives the response schema from the OpenAPI spec via
 the endpoint's ``api_path + method``. Handlers handle ``str`` vs JSON branching
@@ -9,11 +9,12 @@ automatically.
 
 URI tracking
 ------------
-The module-level ``_registered_uris`` set is populated dynamically at
-registration time by ``make_api_resource()``.  ``register_custom_resources()``
-returns a snapshot of this set, and the orchestrator (``resource_setup.py``)
-passes it as ``skip_uris`` to ``register_auto_generated_resources()`` --
-avoiding duplicate registrations.
+``make_api_resource()`` accepts an optional ``tracking_set`` parameter.
+When provided, the registered URI is added to the caller-owned set --
+no module-level mutable state.  ``register_custom_resources()`` creates
+a local set, passes it to every factory call, and returns it so the
+orchestrator can pass it as ``skip_uris`` to
+``register_auto_generated_resources()``.
 
 Parameter reference
 -------------------
@@ -101,12 +102,6 @@ class ResourceParamConfig:
     context_param_validators: dict[str, list[str]] | None = None
     context_meta_keys: list[str] | None = None
     optional_params: list[dict[str, Any]] | None = None
-
-
-# Populated at registration time by ``make_api_resource()``.
-# Starts empty; grows as ``register_custom_resources()`` calls
-# ``make_api_resource`` for each factory resource.
-_registered_uris: set[str] = set()
 
 
 def _auto_derive_schema(
@@ -404,13 +399,15 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     param_config: ResourceParamConfig | None = None,
     size_hint: str | None = None,
     default_detail: str | None = None,
+    tracking_set: set[str] | None = None,
 ) -> Callable[..., Any] | None:
     """Create and register a custom resource from an API endpoint.
 
     Derives the response schema from ``openapi_spec[api_path][method]``
     (unresolved, then unwrapped from the result envelope).  Generates the
-    handler closure, handles ``str`` vs JSON branching, registers the URI
-    in ``_registered_uris``, and calls ``mcp.resource()``.
+    handler closure, handles ``str`` vs JSON branching, and calls
+    ``mcp.resource()``.  When ``tracking_set`` is provided, the registered
+    URI is added to it.
 
     When ``handler_hook`` is provided, schema derivation and JSON wrapping
     are skipped.  The API response is passed through the hook for post-
@@ -473,6 +470,10 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             When not set, auto-derived from ``size_hint`` (``large``
             resources default to ``concise``; everything else to
             ``full``).
+        tracking_set: Optional caller-owned set to which the registered
+            URI is added.  When ``None`` (default), no tracking occurs.
+            ``register_custom_resources()`` passes a local set, collects
+            all factory URIs, and returns them as ``skip_uris``.
 
     Returns:
         The registered handler callable, or ``None`` if scope-filtered.
@@ -705,8 +706,10 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         meta=meta if meta else None,
     )(handler)
 
-    # Track URI for auto-generation skip.
-    _registered_uris.add(uri)
+    # Track URI when the caller provides a tracking set
+    # (e.g., register_custom_resources collects factory URIs for skip_uris).
+    if tracking_set is not None:
+        tracking_set.add(uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

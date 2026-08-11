@@ -7,8 +7,10 @@ can be overridden by custom resources with the same URI.
 
 The ``skip_uris`` for auto-generation is provided by the orchestrator
 (``resource_setup.py``), which passes the return value of
-``register_custom_resources()`` — a snapshot of URIs registered via
-``make_api_resource()``.  All custom resources that have API equivalents
+``register_custom_resources()`` — the caller-owned set of URIs registered
+via ``make_api_resource()`` with ``tracking_set``.  Auto resources are
+*consumers* of this set, not producers — they call ``make_api_resource()``
+without ``tracking_set``.  All custom resources that have API equivalents
 in the spec are now registered via the factory, so no additional skip
 set is needed.
 """
@@ -123,6 +125,9 @@ def register_auto_generated_resources(
                 swagger_tags = set(operation.get("tags", [])) or None
                 required_scope = derive_required_scope(swagger_tags, "GET")
 
+                # No tracking_set: auto resources are consumers of
+                # skip_uris (set by the orchestrator above), not
+                # producers.  Only custom resources track their URIs.
                 try:
                     make_api_resource(
                         mcp, gitea_client, openapi_spec,

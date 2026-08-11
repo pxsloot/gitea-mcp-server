@@ -352,7 +352,8 @@ The customization layers as applied during server startup:
    two phases: custom (Markdown wrappers for common URIs) then auto-generated
    (raw JSON from every GET endpoint).  ``register_custom_resources()`` returns
    the set of URIs registered via ``make_api_resource()``.  The orchestrator
-   (``resource_setup.py``) passes a defensive copy of this set as ``skip_uris``
+   (``resource_setup.py``) passes this set directly as ``skip_uris``
+   -- a fresh set owned by the caller, no defensive copy needed.
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
    already handled by custom resources.
 

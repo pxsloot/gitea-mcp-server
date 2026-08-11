@@ -472,8 +472,18 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             ``full``).
         tracking_set: Optional caller-owned set to which the registered
             URI is added.  When ``None`` (default), no tracking occurs.
-            ``register_custom_resources()`` passes a local set, collects
-            all factory URIs, and returns them as ``skip_uris``.
+
+            **When to pass a tracking set**: callers whose resources must
+            be skipped by ``register_auto_generated_resources()`` (e.g.,
+            ``register_custom_resources()``).  Pass a local ``set()``,
+            collect URIs across all factory calls, and return it so the
+            orchestrator can hand it to ``auto.py`` as ``skip_uris``.
+
+            **When to omit**: callers that are *consumers* of skip_uris
+            (e.g., ``auto.py`` itself) or don't participate in the custom-
+            vs-auto override pattern.  Omitting is the right default —
+            it keeps the two-sentence call site clean and the intent
+            explicit at the point where tracking *does* matter.
 
     Returns:
         The registered handler callable, or ``None`` if scope-filtered.

@@ -684,8 +684,9 @@ working together::
 
 No manual skip-URI maintenance is needed — ``register_custom_resources()``
 returns the set of URIs registered via ``make_api_resource()`` and
-``resource_setup.py`` passes a defensive copy as ``skip_uris`` to
-``register_auto_generated_resources()``.
+``resource_setup.py`` passes it directly as ``skip_uris`` to
+``register_auto_generated_resources()`` — a fresh caller-owned set,
+no defensive copy needed.
 
 **Note**: If future patterns repeat (many list resources sharing the same
 structure), consider extracting higher-level wrappers like

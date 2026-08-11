@@ -212,7 +212,7 @@ class TestMakeApiResourceRegistration:
             for c in mcp.resource.call_args_list
         )
 
-    def test_tracks_uri_in_registered_uris(self) -> None:
+    def test_tracks_uri_in_tracking_set(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()

@@ -12,9 +12,10 @@ handle ``str`` vs JSON branching automatically.
 URI tracking
 ------------
 The module-level ``_registered_uris`` set is populated dynamically at
-registration time (not at import time).  ``register_custom_resources()``
-runs *before* ``register_auto_generated_resources()``, and the resulting
-set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
+registration time (not at import time) by ``make_api_resource()``.
+``register_custom_resources()`` returns a snapshot of this set, and the
+orchestrator (``resource_setup.py``) passes it as ``skip_uris`` to
+``register_auto_generated_resources()`` -- avoiding duplicate registrations.
 
 Parameter reference
 -------------------

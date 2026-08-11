@@ -496,6 +496,9 @@ The factory:
 - Handles ``isinstance(data, str)`` branching (text/plain vs application/json)
 - Attaches the schema and ``format_hint`` in ``ResourceContent.meta``
 - Registers via ``mcp.resource()`` and adds the URI to ``_registered_uris``
+  (module-level set in ``factory.py``).  ``register_custom_resources()``
+  returns a snapshot of this set so the orchestrator can pass it as
+  ``skip_uris`` to ``register_auto_generated_resources()``.
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
@@ -678,9 +681,10 @@ working together::
         available_scopes=available_scopes,
     )
 
-No manual skip-URI maintenance is needed — the factory's ``_registered_uris``
-set is populated at registration time and passed as ``skip_uris`` to
-``register_auto_generated_resources()`` by ``resource_setup.py``.
+No manual skip-URI maintenance is needed — ``register_custom_resources()``
+returns the set of URIs registered via ``make_api_resource()`` and
+``resource_setup.py`` passes a defensive copy as ``skip_uris`` to
+``register_auto_generated_resources()``.
 
 **Note**: If future patterns repeat (many list resources sharing the same
 structure), consider extracting higher-level wrappers like
@@ -943,11 +947,12 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
 1. **Don't edit on `main`** -- Always create a feature branch first.
 2. **Don't import from outside `__all__`** in production code.  Internal
    functions may be renamed/refactored without notice.
-3. **Resource URIs conflict** -- When adding a custom resource that shadows
+3. **Resource URIs conflict** — When adding a custom resource that shadows
    a GET endpoint, use ``make_api_resource()`` (factory auto-tracks URIs
-   in ``_registered_uris``).  For static resources registered via direct
-   ``mcp.resource()`` calls, add the URI to the ``skip_uris`` set that
-   ``resource_setup.py`` passes to ``register_auto_generated_resources``.
+   in ``_registered_uris`` and ``register_custom_resources()`` returns them).
+   For static resources registered via direct ``mcp.resource()`` calls,
+   add the URI to the ``skip_uris`` set that the orchestrator passes to
+   ``register_auto_generated_resources()``.
 4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't

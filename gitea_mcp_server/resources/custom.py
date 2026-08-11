@@ -25,7 +25,11 @@ from gitea_mcp_server.constants import (
     CACHE_TTL_USERS,
 )
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import ResourceParamConfig, make_api_resource
+from gitea_mcp_server.resources.factory import (
+    ResourceParamConfig,
+    _registered_uris,
+    make_api_resource,
+)
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.scope import has_sufficient_scope
 
@@ -39,7 +43,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     available_scopes: set[str] | None = None,
     version_str: str = "Unknown",
     server_info_md: str | None = None,
-) -> None:
+) -> set[str]:
     """Register custom-formatted and custom resources.
 
     Each resource function is defined as a closure that naturally
@@ -65,7 +69,17 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             Also used to serve ``gitea://token/scopes`` content.
         version_str: Pre-fetched server version string.
         server_info_md: Pre-built server info markdown, or None.
+
+    Returns:
+        Snapshot of all URIs registered via ``make_api_resource()``.
+        The caller passes this as ``skip_uris`` to
+        ``register_auto_generated_resources()`` so it skips URIs already
+        handled by custom resources.
     """
+
+    # Start fresh: clear URIs accumulated from previous server instances
+    # (important for test isolation within the same process).
+    _registered_uris.clear()
 
     # ======================================================================
     # FACTORY RESOURCES
@@ -304,6 +318,10 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             tags={"wrapper", "server"},
             meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
         )(get_server_info)
+
+    # Return a snapshot of all URIs registered via make_api_resource()
+    # so the orchestrator can skip them during auto-generation.
+    return set(_registered_uris)
 
 
 __all__ = [

@@ -350,13 +350,11 @@ The customization layers as applied during server startup:
 
 4. **Custom resources override auto-generated** -- Resources are registered in
    two phases: custom (Markdown wrappers for common URIs) then auto-generated
-   (raw JSON from every GET endpoint).  Custom registration runs first,
-    populating the ``_registered_uris`` set in ``factory.py``.  The orchestrator
-   (``resource_setup.py``) passes the combined custom URI set as ``skip_uris``
+   (raw JSON from every GET endpoint).  ``register_custom_resources()`` returns
+   the set of URIs registered via ``make_api_resource()``.  The orchestrator
+   (``resource_setup.py``) passes a defensive copy of this set as ``skip_uris``
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
-   already handled by custom resources.  This avoids the need for a separate
-   ``AUTO_GENERATED_RESOURCE_SKIP_URIS`` constant or import-time set in the
-   factory.
+   already handled by custom resources.
 
 5. **Response schema wrapping** -- FastMCP requires `output_schema` to be
    `type: object`.  All response schemas are wrapped in `{"result": ...}` to

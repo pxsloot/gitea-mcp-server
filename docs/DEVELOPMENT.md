@@ -204,7 +204,7 @@ The validation system has two layers. Most cases are handled automatically:
 
 **Schema-driven enum validation** (automatic): If a parameter's resolved
 JSON Schema defines an ``enum`` (either directly or inside an
-``anyOf``/``oneOf`` branch), ``_run_validation`` validates against that
+``anyOf``/``oneOf`` branch), ``run_validation`` validates against that
 enum — no code needed.  This is the primary path: the spec defines the
 valid values, and validation follows.
 
@@ -288,7 +288,7 @@ The lifecycle functions are called automatically in the transform pipeline:
 4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values, ctx=ctx)`` —
    executes the HTTP call and pagination metadata (with ``ctx`` for progress
    reporting and logging), then invokes every registered ``loop_hook`` with an
-   ``execute_fn`` that re-invokes ``_run_with_error_handling`` for subsequent
+   ``execute_fn`` that re-invokes ``run_with_error_handling`` for subsequent
    pages
 5. ``apply_to(result, extracted)`` — runs post-hooks; hooks receive
    ``(result, value, all_extracted)`` for output formatting and cleanup
@@ -318,7 +318,7 @@ and merge results.  The hook should update the ``ToolResult``'s
     signature.  Since all data is already in memory (tool catalog, doc index,
     resource list), ``fetch_all`` simply skips the page/limit slice and
     returns all results through the shared
-    :func:`~gitea_mcp_server.format._format_paginated_result` utility — no
+    :func:`~gitea_mcp_server.format.format_paginated_result` utility — no
     loop needed.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
@@ -622,7 +622,7 @@ And the labels resource (path-param forwarding)::
 
     The ``{?state,type}`` suffix in the URI template is required so FastMCP
     routes ``?state=...`` and ``?type=...`` query strings to the handler.
-    The display layer (``_clean_resource_uri``) strips the ``{?...}`` suffix
+    The display layer (``clean_resource_uri``) strips the ``{?...}`` suffix
     from ``list_resources`` output, so agents see a clean
     ``gitea://repos/{owner}/{repo}/issues`` URI and discover available params
     via ``optional_params`` metadata.
@@ -634,7 +634,7 @@ complete parameter reference table.
 
 The ``{?param}`` suffix in the URI template serves double duty:
 
-1. **Agent discovery** — FastMCP exposes ``{?param}`` as optional URI parameters.  The display layer (``_clean_resource_uri``) strips them from ``list_resources`` output so agents see clean URIs and discover available params via ``optional_params`` metadata.
+1. **Agent discovery** — FastMCP exposes ``{?param}`` as optional URI parameters.  The display layer (``clean_resource_uri``) strips them from ``list_resources`` output so agents see clean URIs and discover available params via ``optional_params`` metadata.
 
 2. **Signature validation** — FastMCP validates that every ``{?param}`` in the URI template has a matching optional function parameter.  The factory adds param names from ``param_config`` (both ``query_params`` and ``context_params``) to the handler's ``__signature__`` as ``KEYWORD_ONLY`` params with ``default=None``, satisfying this constraint.
 
@@ -775,7 +775,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
        ) -> ToolResult:
            """Description for agents."""
            if not my_data:
-               _raise_value_error("Not available")
+               raise_value_error("Not available")
            await ctx.info(f"Processing '{param}'", ...)
            result = do_the_work(my_data, param)
            await ctx.report_progress(progress=1.0)
@@ -823,14 +823,14 @@ OpenAPI spec). They live in the same codebase and register themselves via
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
-| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``_format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
+| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
-| URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``_clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``param_config``, the factory auto-adds param names to the handler's ``__signature__``. |
+| URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``param_config``, the factory auto-adds param names to the handler's ``__signature__``. |
 | Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |
-| Error handling | ``_raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
+| Error handling | ``raise_value_error(msg)`` raises ``ValueError``; FastMCP catches it and re-raises as ``ToolError`` (tool calls) or ``ResourceError`` (resource reads). Unit test the ``ValueError``; integration test the ``ToolError`` / ``ResourceError`` |
 | Test pattern | Unit test the core logic; integration test the registration wiring. ``mcp.call_tool()`` returns ``ToolResult`` — access data via ``get_structured(result)["result"]``. ``mcp.read_resource()`` returns ``ReadResourceResult`` — access text via ``extract_resource_text(result)``. Catch ``ToolError`` / ``ResourceError`` from FastMCP, not raw ``ValueError`` |
 
 ### When to choose a synthetic tool vs. customizing an auto-generated one

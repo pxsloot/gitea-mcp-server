@@ -16,7 +16,6 @@ from gitea_mcp_server.openapi_converter.core import (
     RequestBodyBuilder,
     SecuritySchemeConverter,
     SpecVersionUpdater,
-    _resolve_spec_ref,
     camel_to_snake,
     convert_definitions,
     convert_parameters,
@@ -26,6 +25,7 @@ from gitea_mcp_server.openapi_converter.core import (
     convert_swagger_to_openapi_v3,
     fix_references,
     remove_swagger_fields,
+    resolve_spec_ref,
 )
 from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.openapi_converter.schema import (
@@ -51,7 +51,6 @@ __all__ = [
     "SchemaWalker",
     "SecuritySchemeConverter",
     "SpecVersionUpdater",
-    "_resolve_spec_ref",
     "camel_to_snake",
     "convert_definitions",
     "convert_parameters",
@@ -62,4 +61,5 @@ __all__ = [
     "fix_references",
     "remove_swagger_fields",
     "resolve_param_collisions",
+    "resolve_spec_ref",
 ]

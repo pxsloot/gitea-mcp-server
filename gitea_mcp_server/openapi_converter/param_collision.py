@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
+def resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     """Resolve a ``$ref`` pointer in a spec.
 
     Walks the spec tree using string path segments. Returns ``None`` if
@@ -129,7 +129,7 @@ def _get_body_schema(
     # Resolve $ref to shared component (e.g. IssueMeta)
     ref = body_schema.get("$ref")
     if ref is not None:
-        resolved = _resolve_spec_ref(spec, ref)
+        resolved = resolve_spec_ref(spec, ref)
         if resolved is not None:
             body_schema = deepcopy(resolved)
             # Replace the $ref with the inlined schema

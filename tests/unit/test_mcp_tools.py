@@ -11,52 +11,52 @@ from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.mcp_tools import (
     _maybe_decode_base64,
-    _mcp_list_resources_impl,
     _mcp_read_resource_impl,
     _read_resource_tool,
+    mcp_list_resources_impl,
     register_mcp_resource_tools,
 )
 from gitea_mcp_server.tools.resource_display import (
-    _clean_resource_uri,
-    _format_resource_content,
+    clean_resource_uri,
+    format_resource_content,
 )
 from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
 
 
 class TestCleanResourceUri:
-    """Tests for _clean_resource_uri."""
+    """Tests for clean_resource_uri."""
 
     def test_strips_query_param_suffix(self) -> None:
         """Should strip {?param} suffix from URI."""
-        assert _clean_resource_uri(
+        assert clean_resource_uri(
             "gitea://repos/{owner}/{repo}/issues{?state}"
         ) == "gitea://repos/{owner}/{repo}/issues"
 
     def test_preserves_uri_without_query_params(self) -> None:
         """Should return URI unchanged if no query params suffix."""
         uri = "gitea://repos/{owner}/{repo}"
-        assert _clean_resource_uri(uri) == uri
+        assert clean_resource_uri(uri) == uri
 
     def test_preserves_concrete_uri(self) -> None:
         """Should return concrete URIs unchanged."""
         uri = "gitea://version"
-        assert _clean_resource_uri(uri) == uri
+        assert clean_resource_uri(uri) == uri
 
     def test_strips_multiple_query_params(self) -> None:
         """Should strip multi-param {?a,b} suffix."""
-        assert _clean_resource_uri(
+        assert clean_resource_uri(
             "search://{query}{?page,limit}"
         ) == "search://{query}"
 
     def test_preserves_wildcard_path_params(self) -> None:
         """Should preserve {path*} and other non-query params."""
-        assert _clean_resource_uri(
+        assert clean_resource_uri(
             "gitea://repos/{owner}/{repo}/files/{path*}"
         ) == "gitea://repos/{owner}/{repo}/files/{path*}"
 
 
 class TestMcpListResourcesImpl:
-    """Tests for _mcp_list_resources_impl function."""
+    """Tests for mcp_list_resources_impl function."""
 
     @pytest.mark.asyncio
     async def test_returns_resources_and_count(self) -> None:
@@ -75,7 +75,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         assert "resources" in result
         assert "count" in result
@@ -96,7 +96,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["uri"] == "gitea://repo"
@@ -120,7 +120,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[template_mock])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         assert result["count"] == 1
         resource = result["resources"][0]
@@ -150,7 +150,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[template_mock])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         assert result["count"] == 2
         uris = [r["uri"] for r in result["resources"]]
@@ -169,7 +169,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         assert result["resources"] == []
         assert result["count"] == 0
@@ -189,7 +189,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["description"] == ""
@@ -210,7 +210,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[template_mock])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["required_scope"] == "read:repository"
@@ -231,7 +231,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["required_scope"] is None
@@ -252,7 +252,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["required_scope"] is None
@@ -272,7 +272,7 @@ class TestMcpListResourcesImpl:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
         assert resource["name"] == "my_resource_func"
@@ -626,7 +626,7 @@ class TestMcpReadResourceTool:
 
 
 class TestFormatResourceContent:
-    """Tests for _format_resource_content helper.
+    """Tests for format_resource_content helper.
 
     This is used by read_resource to reformat resource content
     (JSON strings) into markdown, json, or raw output.
@@ -634,56 +634,56 @@ class TestFormatResourceContent:
 
     def test_raw_passthrough(self) -> None:
         """format=raw should return the string unchanged."""
-        assert _format_resource_content("hello world", "raw") == "hello world"
+        assert format_resource_content("hello world", "raw") == "hello world"
 
     def test_raw_with_json_input(self) -> None:
         """format=raw with JSON input should return the JSON string unchanged."""
         raw = '{"key": "val"}'
-        assert _format_resource_content(raw, "raw") is raw
+        assert format_resource_content(raw, "raw") is raw
 
     def test_json_reformats_json_dict(self) -> None:
         """format=json with JSON dict input should pretty-print."""
-        result = _format_resource_content('{"key": "val", "num": 42}', "json")
+        result = format_resource_content('{"key": "val", "num": 42}', "json")
         parsed = json_module.loads(result)
         assert parsed == {"key": "val", "num": 42}
         assert '"key": "val"' in result
 
     def test_json_reformats_json_array(self) -> None:
         """format=json with JSON array input should pretty-print."""
-        result = _format_resource_content('[{"id": 1}, {"id": 2}]', "json")
+        result = format_resource_content('[{"id": 1}, {"id": 2}]', "json")
         parsed = json_module.loads(result)
         assert parsed == [{"id": 1}, {"id": 2}]
 
     def test_markdown_reformats_json_dict(self) -> None:
         """format=markdown with JSON dict input should produce markdown."""
-        result = _format_resource_content('{"name": "test", "count": 3}', "markdown")
+        result = format_resource_content('{"name": "test", "count": 3}', "markdown")
         assert "|" in result
         assert "Name" in result or "name" in result
 
     def test_markdown_reformats_json_array(self) -> None:
         """format=markdown with JSON array input should produce markdown table."""
-        result = _format_resource_content('[{"id": 1, "label": "a"}]', "markdown")
+        result = format_resource_content('[{"id": 1, "label": "a"}]', "markdown")
         assert "| Property | Value |" in result
         assert "| Id | 1 |" in result
         assert "| Label | a |" in result
 
     def test_non_json_wrapped_in_result_for_json_format(self) -> None:
         """format=json with non-JSON content should wrap in {\"result\": ...}."""
-        result = _format_resource_content("plain text", "json")
+        result = format_resource_content("plain text", "json")
         parsed = json_module.loads(result)
         assert parsed == {"result": "plain text"}
 
     def test_non_json_passthrough_for_markdown_format(self) -> None:
         """format=markdown with non-JSON content should return unchanged."""
-        assert _format_resource_content("plain text", "markdown") == "plain text"
+        assert format_resource_content("plain text", "markdown") == "plain text"
 
     def test_non_json_passthrough_for_raw_format(self) -> None:
         """format=raw with non-JSON content should return unchanged."""
-        assert _format_resource_content("plain text", "raw") == "plain text"
+        assert format_resource_content("plain text", "raw") == "plain text"
 
     def test_unknown_format_with_json_returns_raw(self) -> None:
         """Unknown format with valid JSON returns raw string unchanged."""
-        assert _format_resource_content('{"key": "val"}', "xml") == '{"key": "val"}'
+        assert format_resource_content('{"key": "val"}', "xml") == '{"key": "val"}'
 
     # ── detail=concise with schema tests ────────────────────────────────────
 
@@ -697,7 +697,7 @@ class TestFormatResourceContent:
                 "owner": {"$ref": "#/components/schemas/User"},
             },
         }
-        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
         assert parsed["name"] == "test"
         assert parsed["owner"] == "$ref:User"
@@ -715,7 +715,7 @@ class TestFormatResourceContent:
                 },
             },
         }
-        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
         assert parsed["name"] == "test"
         assert parsed["items"] == "$ref:Label[2]"
@@ -723,7 +723,7 @@ class TestFormatResourceContent:
     def test_concise_full_detail_without_schema(self) -> None:
         """Without schema, concise should return data unchanged (no collapse)."""
         raw = '{"name": "test", "nested": {"a": 1}}'
-        result = _format_resource_content(raw, "json", detail="concise", schema=None)
+        result = format_resource_content(raw, "json", detail="concise", schema=None)
         parsed = json_module.loads(result)
         assert parsed == {"name": "test", "nested": {"a": 1}}
 
@@ -737,7 +737,7 @@ class TestFormatResourceContent:
                 "owner": {"$ref": "#/components/schemas/User"},
             },
         }
-        result = _format_resource_content(raw, "markdown", detail="concise", schema=schema)
+        result = format_resource_content(raw, "markdown", detail="concise", schema=schema)
         # The collapsed $ref:User should appear in the markdown
         assert "$ref:User" in result
 
@@ -746,7 +746,7 @@ class TestFormatResourceContentWrappedSchema:
     """Regression tests for issue #510: detail=concise on resource data.
 
     Resources now store the inner (unwrapped) schema in meta["response_schema"]
-    so _format_resource_content receives a schema that matches the data shape.
+    so format_resource_content receives a schema that matches the data shape.
     These tests verify that the pipeline works end-to-end with the kind of
     schemas that resources actually provide.
     """
@@ -763,7 +763,7 @@ class TestFormatResourceContentWrappedSchema:
                 "permissions": {"$ref": "#/components/schemas/Permission"},
             },
         }
-        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
         assert parsed["name"] == "test-repo"
         assert parsed["owner"] == "$ref:User"
@@ -783,7 +783,7 @@ class TestFormatResourceContentWrappedSchema:
                 },
             },
         }
-        result = _format_resource_content(raw, "json", detail="concise", schema=schema)
+        result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
         assert len(parsed) == 2
         assert parsed[0]["title"] == "Fix bug"
@@ -830,14 +830,14 @@ class TestMakeResourceFormatter:
 
 
 class TestFormatResourceContentEdgeCases:
-    """Edge cases for _format_resource_content."""
+    """Edge cases for format_resource_content."""
 
     def test_concise_non_dict_data_skips_collapse(self) -> None:
         """When data is not dict/list, concise with schema skips collapse."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
         # Non-JSON input -> not parsed as dict/list -> passes through
-        result = _format_resource_content(
+        result = format_resource_content(
             "plain text", "markdown", detail="concise",
             schema={"type": "object"},
         )
@@ -845,9 +845,9 @@ class TestFormatResourceContentEdgeCases:
 
     def test_concise_with_non_dict_json_data(self) -> None:
         """JSON primitive (number) with concise+skips collapse."""
-        from gitea_mcp_server.tools.resource_display import _format_resource_content
+        from gitea_mcp_server.tools.resource_display import format_resource_content
 
-        result = _format_resource_content(
+        result = format_resource_content(
             "42", "json", detail="concise",
             schema={"type": "integer"},
         )
@@ -1089,60 +1089,60 @@ class TestMcpListResourcesTagTypeFilter:
 
 
 class TestExtractResourceContent:
-    """Tests for _extract_resource_content helper."""
+    """Tests for extract_resource_content helper."""
 
     def test_none_contents_raises(self) -> None:
         """None contents list raises LookupError."""
-        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import extract_resource_content
 
         with pytest.raises(LookupError, match="returned no content"):
-            _extract_resource_content(None, "gitea://test")
+            extract_resource_content(None, "gitea://test")
 
     def test_empty_contents_raises(self) -> None:
         """Empty contents list raises LookupError."""
-        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import extract_resource_content
 
         with pytest.raises(LookupError, match="returned no content"):
-            _extract_resource_content([], "gitea://test/resource")
+            extract_resource_content([], "gitea://test/resource")
 
     def test_bytes_content_decoded(self) -> None:
         """Bytes content is decoded from utf-8."""
-        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import extract_resource_content
 
         content_obj = type("Obj", (), {"content": b"hello bytes"})()
-        result = _extract_resource_content([content_obj], "gitea://test")
+        result = extract_resource_content([content_obj], "gitea://test")
         assert result == "hello bytes"
 
     def test_str_content_returned_as_is(self) -> None:
         """String content is returned unchanged."""
-        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import extract_resource_content
 
         content_obj = type("Obj", (), {"content": "hello string"})()
-        result = _extract_resource_content([content_obj], "gitea://test")
+        result = extract_resource_content([content_obj], "gitea://test")
         assert result == "hello string"
 
     def test_non_bytes_non_str_content(self) -> None:
         """Non-bytes, non-string content is converted via str()."""
-        from gitea_mcp_server.tools.resource_display import _extract_resource_content
+        from gitea_mcp_server.tools.resource_display import extract_resource_content
 
         class CustomContent:
             def __str__(self) -> str:
                 return "custom content"
 
-        result = _extract_resource_content([type("Obj", (), {"content": CustomContent()})()], "gitea://test")
+        result = extract_resource_content([type("Obj", (), {"content": CustomContent()})()], "gitea://test")
         assert result == "custom content"
 
     @pytest.mark.asyncio
     async def test_list_resources_impl_exception_handled(self) -> None:
-        """Exception in _mcp_list_resources_impl returns empty result."""
-        from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl
+        """Exception in mcp_list_resources_impl returns empty result."""
+        from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
 
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(side_effect=AttributeError("no attribute"))
         ctx.fastmcp.list_resource_templates = AsyncMock(side_effect=AttributeError("no attribute"))
 
-        result = await _mcp_list_resources_impl(ctx)
+        result = await mcp_list_resources_impl(ctx)
         assert result == {"resources": [], "count": 0}
 
 

@@ -5,8 +5,8 @@ tool arguments meet Gitea API requirements before execution.
 
 Architecture — two layers of enum validation:
 
-1. **Schema-driven validation** (runtime in ``_run_validation``):
-   Before calling a hardcoded ``SINGLE_VALIDATORS`` entry, ``_run_validation``
+1. **Schema-driven validation** (runtime in ``run_validation``):
+   Before calling a hardcoded ``SINGLE_VALIDATORS`` entry, ``run_validation``
    checks whether the parameter's own JSON Schema defines an ``enum``. If it
    does, validation uses that enum — no hardcoded values needed.
 
@@ -582,7 +582,7 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
 
        If inference adds an enum to the resolved schema, it is injected
        back into both the ``$defs`` definition and the original parameter
-       schema's ``$ref`` branch, so downstream consumers (``_run_validation``,
+       schema's ``$ref`` branch, so downstream consumers (``run_validation``,
        ``tool_info``) see the enum regardless of ``$ref`` resolution.
 
     Args:

@@ -8,7 +8,7 @@ empty-body detection, and result unwrapping used across the pipeline.
 
 from typing import Any, cast
 
-from gitea_mcp_server.openapi_converter import _resolve_spec_ref as _resolve_ref
+from gitea_mcp_server.openapi_converter import resolve_spec_ref as _resolve_ref
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.schema_utils import schema_type_matches
 

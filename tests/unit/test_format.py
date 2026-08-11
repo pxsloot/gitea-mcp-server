@@ -2,7 +2,7 @@
 
 Covers all functions in __all__:
 - _snake_to_title, _format_datetime, _format_scalar, _format_simple_value
-- _resolve_anyof_schema, _format_as_markdown, _format_parameter_table, _format_type
+- _resolve_anyof_schema, format_as_markdown, _format_parameter_table, _format_type
 """
 
 import json
@@ -11,12 +11,9 @@ from typing import Any
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (
-    _collapse_data,
     _collapse_value,
     _extract_type_name,
-    _format_as_markdown,
     _format_datetime,
-    _format_paginated_result,
     _format_parameter_table,
     _format_scalar,
     _format_simple_value,
@@ -24,6 +21,9 @@ from gitea_mcp_server.format import (
     _resolve_anyof_schema,
     _snake_to_title,
     apply_format,
+    collapse_data,
+    format_as_markdown,
+    format_paginated_result,
 )
 from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
@@ -263,7 +263,7 @@ class TestCollapseValue:
 
 
 class TestCollapseData:
-    """Tests for _collapse_data — walk data+schema, collapse $ref objects at depth>=1.
+    """Tests for collapse_data — walk data+schema, collapse $ref objects at depth>=1.
 
     This function shapes data for any formatter (json or markdown).
     """
@@ -272,7 +272,7 @@ class TestCollapseData:
         """detail='full' returns data unchanged regardless of schema."""
         data = {"owner": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"owner": {"$ref": "#/components/schemas/User"}}}
-        result = _collapse_data(data, schema, _depth=0, detail="full")
+        result = collapse_data(data, schema, _depth=0, detail="full")
         assert result is data
 
     def test_depth_0_no_collapse(self) -> None:
@@ -280,7 +280,7 @@ class TestCollapseData:
         $ref-backed properties at depth>=1 ARE collapsed."""
         data = {"owner": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"owner": {"$ref": "#/components/schemas/User"}}}
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         # Top-level dict stays as dict (not collapsed to $ref:TypeName)
         assert isinstance(result, dict)
         assert "owner" in result
@@ -291,7 +291,7 @@ class TestCollapseData:
         """At depth>=1, a dict with $ref schema collapses to $ref:TypeName."""
         data = {"user": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"user": {"$ref": "#/components/schemas/User"}}}
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         assert result["user"] == "$ref:User"
 
     def test_depth_1_list_with_ref_collapses(self) -> None:
@@ -303,7 +303,7 @@ class TestCollapseData:
                 "labels": {"type": "array", "items": {"$ref": "#/components/schemas/Label"}},
             },
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         assert result["labels"] == "$ref:Label[2]"
 
     def test_inline_schema_not_collapsed(self) -> None:
@@ -318,7 +318,7 @@ class TestCollapseData:
                 },
             },
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         assert isinstance(result["config"], dict)
         assert result["config"]["host"] == "localhost"
 
@@ -329,7 +329,7 @@ class TestCollapseData:
             "type": "object",
             "properties": {"owner": {"allOf": [{"$ref": "#/components/schemas/User"}]}},
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         assert result["owner"] == "$ref:User"
 
     def test_anyof_ref_collapses(self) -> None:
@@ -341,13 +341,13 @@ class TestCollapseData:
                 "owner": {"anyOf": [{"$ref": "#/components/schemas/User"}, {"type": "null"}]},
             },
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         assert result["owner"] == "$ref:User"
 
     def test_none_no_collapse(self) -> None:
         """schema=None means no collapse occurs (data passed through)."""
         data = {"owner": {"id": 1, "login": "user1"}}
-        result = _collapse_data(data, None, _depth=0, detail="concise")
+        result = collapse_data(data, None, _depth=0, detail="concise")
         assert result is data
 
     def test_nested_mixed(self) -> None:
@@ -370,7 +370,7 @@ class TestCollapseData:
                 },
             },
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         meta = result["meta"]
         assert meta["owner"] == "$ref:User"
         assert meta["description"] == "a repo"
@@ -380,7 +380,7 @@ class TestCollapseData:
         items inside it at depth>=1 ARE collapsed."""
         data = [{"id": 1, "login": "user1"}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/User"}}
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         # List stays as list (not collapsed to label)
         assert isinstance(result, list)
         assert len(result) == 1
@@ -395,7 +395,7 @@ class TestCollapseData:
             "type": "object",
             "properties": {"labels": "not_a_dict"},
         }
-        result = _collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, _depth=0, detail="concise")
         # The non-dict prop_schema is treated as None — data passes through unchanged
         assert isinstance(result, dict)
         assert "labels" in result
@@ -487,39 +487,39 @@ class TestResolveAnyOfSchema:
 
 class TestFormatAsMarkdown:
     def test_none_input(self) -> None:
-        result = _format_as_markdown(None)
+        result = format_as_markdown(None)
         assert result == "N/A"
 
     def test_none_input_with_title(self) -> None:
-        result = _format_as_markdown(None, title="Test")
+        result = format_as_markdown(None, title="Test")
         assert "Test" in result
         assert "N/A" in result
 
     def test_scalar_value(self) -> None:
-        result = _format_as_markdown("hello")
+        result = format_as_markdown("hello")
         assert result == "hello"
 
     def test_integer_scalar(self) -> None:
-        result = _format_as_markdown(42)
+        result = format_as_markdown(42)
         assert result == "42"
 
     def test_empty_list(self) -> None:
-        result = _format_as_markdown([])
+        result = format_as_markdown([])
         assert "_(empty)_" in result
 
     def test_list_of_scalars_with_schema(self) -> None:
         schema = {"type": "array", "items": {"type": "string"}}
-        result = _format_as_markdown(["a", "b", "c"], schema)
+        result = format_as_markdown(["a", "b", "c"], schema)
         assert "a, b, c" in result
 
     def test_list_of_scalars_no_schema(self) -> None:
-        result = _format_as_markdown(["a", "b"])
+        result = format_as_markdown(["a", "b"])
         assert "- a" in result
         assert "- b" in result
 
     def test_list_of_dicts(self) -> None:
         data = [{"name": "Alice"}, {"name": "Bob"}]
-        result = _format_as_markdown(data)
+        result = format_as_markdown(data)
         assert "Alice" in result
         assert "Bob" in result
         assert "| Name |" in result
@@ -536,12 +536,12 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "Foo" in result
         assert "1" in result or "1" in result
 
     def test_empty_dict(self) -> None:
-        result = _format_as_markdown({})
+        result = format_as_markdown({})
         assert "*Empty*" in result
 
     def test_dict_with_properties_renders_table(self) -> None:
@@ -553,7 +553,7 @@ class TestFormatAsMarkdown:
                 "count": {"type": "integer"},
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "| Property | Value |" in result
         assert "Name" in result or "name" in result
         assert "test" in result
@@ -571,7 +571,7 @@ class TestFormatAsMarkdown:
                 }
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "**Profile:**" in result or "Profile" in result
 
     def test_dict_with_nested_list(self) -> None:
@@ -585,27 +585,27 @@ class TestFormatAsMarkdown:
                 }
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "Items" in result or "items" in result
 
     def test_title_at_top_level(self) -> None:
-        result = _format_as_markdown("hello", title="MyTitle")
+        result = format_as_markdown("hello", title="MyTitle")
         assert "MyTitle" in result
         assert "hello" in result
 
     def test_title_at_top_level_for_scalar(self) -> None:
-        result = _format_as_markdown(42, title="The Answer")
+        result = format_as_markdown(42, title="The Answer")
         assert "The Answer" in result
         assert "42" in result
 
     def test_title_with_dict(self) -> None:
-        result = _format_as_markdown({"key": "val"}, title="MyTitle")
+        result = format_as_markdown({"key": "val"}, title="MyTitle")
         assert "# MyTitle" in result
         assert "| Key | val |" in result
         assert "val" in result
 
     def test_title_with_list(self) -> None:
-        result = _format_as_markdown(["a", "b"], title="MyTitle")
+        result = format_as_markdown(["a", "b"], title="MyTitle")
         assert "# MyTitle" in result
         assert "a" in result
         assert "b" in result
@@ -619,19 +619,19 @@ class TestFormatAsMarkdown:
                 {"properties": {"body": {"type": "string"}}},
             ],
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "Title" in result
         assert "Body" in result
 
     def test_allof_without_properties(self) -> None:
         data = {"a": 1}
         schema = {"type": "object", "allOf": [{"type": "object"}]}
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "a" in result or "A" in result
 
     def test_properties_without_schema_flat(self) -> None:
         data = {"key": "val"}
-        result = _format_as_markdown(data)
+        result = format_as_markdown(data)
         assert "|" in result
 
     def test_datetime_property_formatted(self) -> None:
@@ -642,7 +642,7 @@ class TestFormatAsMarkdown:
                 "created_at": {"type": "string", "format": "date-time"}
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "2024-01-01" in result
         assert "12:00:00" in result
 
@@ -659,7 +659,7 @@ class TestFormatAsMarkdown:
                 }
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "user" in result
 
     def test_nested_section_with_depth(self) -> None:
@@ -689,7 +689,7 @@ class TestFormatAsMarkdown:
                 }
             },
         }
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         # Should contain the bold label format at depth > 0
         assert "Host" in result or "Port" in result or "database" in result
 
@@ -726,7 +726,7 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = _format_as_markdown(data, schema, detail="concise")
+        result = format_as_markdown(data, schema, detail="concise")
         # The nested values at depth>=1 should be collapsed to $ref labels
         assert "$ref:User" in result
         assert "$ref:Repository" in result
@@ -755,7 +755,7 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = _format_as_markdown(data, schema, detail="concise")
+        result = format_as_markdown(data, schema, detail="concise")
         assert "$ref:Label[2]" in result
         assert "bug" not in result
         assert "feature" not in result
@@ -774,7 +774,7 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = _format_as_markdown(data, schema, detail="concise")
+        result = format_as_markdown(data, schema, detail="concise")
         # At depth=0, nested objects are sections, not collapsed
         assert "testuser" in result
 
@@ -792,18 +792,18 @@ class TestFormatAsMarkdown:
             },
         }
         # If ref prop schema is not a dict (it's a string), it should be skipped
-        result = _format_as_markdown(data, schema)
+        result = format_as_markdown(data, schema)
         assert "Name" in result
 
     def test_non_dict_non_list_input(self) -> None:
-        assert _format_as_markdown(True) == "True"
+        assert format_as_markdown(True) == "True"
 
     # ── field_filter and item_title_key hooks ──────────────────────────────────────
 
     def test_field_filter_on_dict_selects_subset(self) -> None:
         """field_filter shows only the specified properties."""
         data = {"id": 1, "name": "Alice", "email": "alice@test.com", "role": "admin"}
-        result = _format_as_markdown(data, field_filter={"id": {}, "name": {}})
+        result = format_as_markdown(data, field_filter={"id": {}, "name": {}})
         assert "| Id | 1 |" in result
         assert "| Name | Alice |" in result
         assert "Email" not in result
@@ -815,7 +815,7 @@ class TestFormatAsMarkdown:
             {"id": 1, "name": "Foo", "extra": "x"},
             {"id": 2, "name": "Bar", "extra": "y"},
         ]
-        result = _format_as_markdown(data, field_filter={"id": {}, "name": {}})
+        result = format_as_markdown(data, field_filter={"id": {}, "name": {}})
         for row in ("Foo", "Bar", "1", "2"):
             assert row in result
         assert "extra" not in result.lower()
@@ -824,14 +824,14 @@ class TestFormatAsMarkdown:
     def test_field_filter_skips_missing_keys_gracefully(self) -> None:
         """field_filter entries not in data are silently skipped."""
         data = {"name": "Alice"}
-        result = _format_as_markdown(data, field_filter={"name": {}, "nonexistent": {}})
+        result = format_as_markdown(data, field_filter={"name": {}, "nonexistent": {}})
         assert "| Name | Alice |" in result
         assert "nonexistent" not in result.lower()
 
     def test_item_title_key_customizes_list_headings(self) -> None:
         """item_title_key uses the specified field value as the item heading."""
         data = [{"number": 42, "title": "Bug fix"}, {"number": 43, "title": "Feature"}]
-        result = _format_as_markdown(data, item_title_key="title")
+        result = format_as_markdown(data, item_title_key="title")
         assert "# Bug fix" in result
         assert "# Feature" in result
         assert "| Number | 42 |" in result
@@ -840,14 +840,14 @@ class TestFormatAsMarkdown:
     def test_item_title_key_falls_back_to_item_n_when_missing(self) -> None:
         """When item_title_key field is missing, falls back to 'Item N'."""
         data = [{"id": 1, "name": "Alice"}]
-        result = _format_as_markdown(data, item_title_key="nonexistent")
+        result = format_as_markdown(data, item_title_key="nonexistent")
         assert "# Item 1" in result
         assert "| Id | 1 |" in result
 
     def test_field_filter_and_item_title_key_together(self) -> None:
         """Both hooks can be used together."""
         data = [{"number": 1, "title": "Bug", "body": "Details"}]
-        result = _format_as_markdown(
+        result = format_as_markdown(
             data,
             field_filter={"number": {}, "title": {}},
             item_title_key="title",
@@ -863,7 +863,7 @@ class TestFormatAsMarkdown:
     def test_format_produces_nested_sub_tables_for_nested_objects(self) -> None:
         """Nested dicts render as bold sub-sections with sub-tables (not dot-path)."""
         data = {"user": {"id": 12, "login": "dev2"}, "labels": [{"name": "Cleanup"}]}
-        result = _format_as_markdown(data)
+        result = format_as_markdown(data)
         # User appears as a nested sub-section, not as dot-path keys
         assert "**User:**" in result or "## User" in result
         # Labels appears as a nested section
@@ -880,7 +880,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "base": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         # base appears as a flat table row, not a nested sub-section
         assert "| Base | org/myrepo:main |" in result
         assert "## Base" not in result
@@ -895,7 +895,7 @@ class TestFormatAsMarkdown:
             "name": {},
             "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter, detail="full")
+        result = format_as_markdown(data, field_filter=field_filter, detail="full")
         assert "| Head | fork/fork-repo:feature-x |" in result
         assert "## Head" not in result
 
@@ -909,7 +909,7 @@ class TestFormatAsMarkdown:
             "name": {},
             "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter, detail="concise")
+        result = format_as_markdown(data, field_filter=field_filter, detail="concise")
         assert "| Head | fork/fork-repo:feature-x |" in result
 
     def test_compact_ref_fallback_on_missing_template_key(self) -> None:
@@ -918,7 +918,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "base": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         # Should not crash; falls back to str representation
         assert "| Base | {'label': 'main'}" in result or "| Base |" in result
         assert "## Base" not in result
@@ -927,14 +927,14 @@ class TestFormatAsMarkdown:
         """badge renders truthy values as 'Yes'."""
         data = {"active": True, "name": "test"}
         field_filter = {"active": {"render": "badge"}, "name": {}}
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Active | Yes |" in result
 
     def test_badge_no_for_falsy(self) -> None:
         """badge renders falsy values as 'No'."""
         data = {"active": False, "pull_request": None}
         field_filter = {"active": {"render": "badge"}, "pull_request": {"render": "badge"}}
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Active | No |" in result
         assert "| Pull Request | No |" in result
 
@@ -942,7 +942,7 @@ class TestFormatAsMarkdown:
         """badge with a dict (present) renders as 'Yes'."""
         data = {"pull_request": {"url": "https://example.com/pr/1"}}
         field_filter = {"pull_request": {"render": "badge"}}
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Pull Request | Yes |" in result
         # Should NOT expand the nested dict
         assert "url" not in result.lower()
@@ -952,7 +952,7 @@ class TestFormatAsMarkdown:
         """Default render='expand' preserves existing nested-section behavior."""
         data: dict[str, Any] = {"user": {"id": 1, "login": "dev"}}
         field_filter: dict[str, Any] = {"user": {}}
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "## User" in result or "**User:**" in result
         assert "dev" in result
 
@@ -964,7 +964,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "labels": {"render": "compact_ref", "template": "{name}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Labels | bug, enhancement |" in result
         assert "## Labels" not in result
 
@@ -974,7 +974,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "labels": {"render": "compact_ref", "template": "{name}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Labels | bug |" in result
 
     def test_compact_ref_on_list_empty(self) -> None:
@@ -983,7 +983,7 @@ class TestFormatAsMarkdown:
         field_filter: dict[str, Any] = {
             "labels": {"render": "compact_ref", "template": "{name}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Labels |  |" in result
 
     def test_compact_ref_on_list_fallback_on_missing_key(self) -> None:
@@ -992,7 +992,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "items": {"render": "compact_ref", "template": "{name}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         # Should not crash; falls back to str representation
         assert "| Items |" in result
 
@@ -1002,7 +1002,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "tags": {"render": "compact_ref", "template": "{name}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Tags | alpha, beta |" in result
 
     def test_dollar_ref_flattened_only_on_expand_path(self) -> None:
@@ -1016,7 +1016,7 @@ class TestFormatAsMarkdown:
         field_filter = {
             "base": {"render": "compact_ref", "template": "{ref}"},
         }
-        result = _format_as_markdown(data, field_filter=field_filter)
+        result = format_as_markdown(data, field_filter=field_filter)
         # Should render as the str fallback (dict doesn't have 'ref' key)
         assert "| Base | {'$ref': 'FakeRef'}" in result or "| Base |" in result
         # Should NOT show the $ref flattened syntax
@@ -1027,7 +1027,7 @@ class TestFormatAsMarkdown:
         data = {
             "user": {"$ref": "User"},
         }
-        result = _format_as_markdown(data)
+        result = format_as_markdown(data)
         # Without explicit render hints, the $ref dict is flattened
         assert "$ref:User" in result
 
@@ -1197,16 +1197,16 @@ class TestFormatParameterTable:
 
 
 # ============================================================================
-# _format_paginated_result tests
+# format_paginated_result tests
 # ============================================================================
 
 
 class TestFormatPaginatedResult:
-    """Tests for _format_paginated_result shared display utility."""
+    """Tests for format_paginated_result shared display utility."""
 
     def test_returns_paginated_toolresult(self) -> None:
         """Returns a ToolResult with structured_content containing result."""
-        result = _format_paginated_result(
+        result = format_paginated_result(
             [{"id": 1}, {"id": 2}], 2, "raw", page=1, limit=10,
         )
         assert isinstance(result, ToolResult)
@@ -1216,7 +1216,7 @@ class TestFormatPaginatedResult:
     def test_respects_page_and_limit(self) -> None:
         """When fetch_all=False, only returns the requested page."""
         items = [{"id": i} for i in range(25)]
-        result = _format_paginated_result(items, 25, "raw", page=2, limit=10)
+        result = format_paginated_result(items, 25, "raw", page=2, limit=10)
         sc = get_structured(result)
         assert len(sc["result"]) == 10
         assert sc["result"][0]["id"] == 10
@@ -1228,7 +1228,7 @@ class TestFormatPaginatedResult:
     def test_last_page(self) -> None:
         """Last page returns fewer items and has_more=False."""
         items = [{"id": i} for i in range(25)]
-        result = _format_paginated_result(items, 25, "raw", page=3, limit=10)
+        result = format_paginated_result(items, 25, "raw", page=3, limit=10)
         sc = get_structured(result)
         assert len(sc["result"]) == 5
         assert sc["has_more"] is False
@@ -1238,7 +1238,7 @@ class TestFormatPaginatedResult:
     def test_fetch_all_returns_all_items(self) -> None:
         """When fetch_all=True, all items are returned without slicing."""
         items = [{"id": i} for i in range(50)]
-        result = _format_paginated_result(
+        result = format_paginated_result(
             items, 50, "raw", page=1, limit=10, fetch_all=True,
         )
         sc = get_structured(result)
@@ -1249,7 +1249,7 @@ class TestFormatPaginatedResult:
 
     def test_fetch_all_empty_list(self) -> None:
         """When fetch_all=True and items is empty, returns empty."""
-        result = _format_paginated_result(
+        result = format_paginated_result(
             [], 0, "raw", page=1, limit=10, fetch_all=True,
         )
         sc = get_structured(result)
@@ -1260,7 +1260,7 @@ class TestFormatPaginatedResult:
     def test_markdown_format(self) -> None:
         """Markdown format produces text content."""
         items = [{"id": 1, "name": "test"}]
-        result = _format_paginated_result(
+        result = format_paginated_result(
             items, 1, "markdown", page=1, limit=10,
         )
         assert result.content is not None
@@ -1274,7 +1274,7 @@ class TestFormatPaginatedResult:
     def test_json_format(self) -> None:
         """JSON format produces JSON text content."""
         items = [{"id": 1, "name": "test"}]
-        result = _format_paginated_result(
+        result = format_paginated_result(
             items, 1, "json", page=1, limit=10,
         )
         assert result.content is not None
@@ -1287,14 +1287,14 @@ class TestFormatPaginatedResult:
     def test_pagination_keys_in_structured_content(self) -> None:
         """PAGINATION_KEYS keys appear in structured_content."""
         items = [{"id": i} for i in range(25)]
-        result = _format_paginated_result(items, 25, "raw", page=1, limit=10)
+        result = format_paginated_result(items, 25, "raw", page=1, limit=10)
         for key in PAGINATION_KEYS:
             assert result.structured_content is not None
             assert key in result.structured_content
 
     def test_empty_items_list(self) -> None:
         """Empty items list returns empty result."""
-        result = _format_paginated_result(
+        result = format_paginated_result(
             [], 0, "raw", page=1, limit=10,
         )
         sc = get_structured(result)
@@ -1304,7 +1304,7 @@ class TestFormatPaginatedResult:
     def test_markdown_extras_appended(self) -> None:
         """markdown_extras appear as additional sections in markdown output."""
         items = [{"id": 1}]
-        result = _format_paginated_result(
+        result = format_paginated_result(
             items, 1, "markdown", page=1, limit=10,
             markdown_extras=["**Extra section:** content"],
         )

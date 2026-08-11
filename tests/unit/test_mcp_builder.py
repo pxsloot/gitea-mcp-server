@@ -712,9 +712,9 @@ class TestToolWrappingTransformTelemetry:
         tool = self.make_tool("test_tool")
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
             patch(
@@ -749,9 +749,9 @@ class TestToolWrappingTransformTelemetry:
         tool = self.make_tool("attr_tool")
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
             patch(
@@ -787,11 +787,11 @@ class TestToolWrappingTransformTelemetry:
 
         with (
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                "gitea_mcp_server.server_setup.mcp_builder.run_validation",
                 side_effect=ValidationError("missing required: owner"),
             ),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ),
         ):
@@ -973,9 +973,9 @@ class TestToolWrappingTransform:
         )
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -1051,9 +1051,9 @@ class TestToolWrappingTransform:
         tool = self.make_tool(customized=True)
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation") as mock_validate,
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation") as mock_validate,
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
             patch(
@@ -1081,7 +1081,7 @@ class TestToolWrappingTransform:
         transform = self.make_transform()
         tool = self.make_tool(customized=True)
 
-        with patch("gitea_mcp_server.server_setup.mcp_builder._run_validation") as mock_validate:
+        with patch("gitea_mcp_server.server_setup.mcp_builder.run_validation") as mock_validate:
             from gitea_mcp_server.validation import ValidationError
 
             mock_validate.side_effect = ValidationError("Bad input", field="name")
@@ -1096,11 +1096,11 @@ class TestToolWrappingTransform:
     async def test_unknown_args_rejected_in_full_pipeline(self) -> None:
         """Unknown arguments should be rejected by the full tool pipeline.
 
-        Regression: _run_validation validated known params but never checked
+        Regression: run_validation validated known params but never checked
         that every kwarg was declared in the parameter schema.  Unknown args
         (agent typos) passed through silently.  This test exercises the full
         transform_fn → _run_transform_pipeline → _pipeline_with_context
-        → _run_validation chain without mocking _run_validation.
+        → run_validation chain without mocking run_validation.
         """
         transform = self.make_transform()
 
@@ -1150,9 +1150,9 @@ class TestToolWrappingTransform:
         tool.meta["_customization"].is_text_response = True
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -1187,9 +1187,9 @@ class TestToolWrappingTransform:
         pagination_ctx.set({"total_count": 1})
         try:
             with (
-                patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+                patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                     new_callable=AsyncMock,
                 ) as mock_run,
             ):
@@ -1309,7 +1309,7 @@ class TestToolWrappingTransform:
 
     @pytest.mark.asyncio
     async def test_apply_loop_hooks_execute_fn_reinvokes_http(self) -> None:
-        """The execute_fn passed to loop_hook calls _run_with_error_handling."""
+        """The execute_fn passed to loop_hook calls run_with_error_handling."""
         from fastmcp.tools.base import ToolResult
 
         from gitea_mcp_server.tools.virtual_params import VirtualParam
@@ -1349,7 +1349,7 @@ class TestToolWrappingTransform:
                 },
             ),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_execute,
         ):
@@ -1459,10 +1459,10 @@ class TestToolWrappingTransform:
                     },
                 ),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_validation",
                 ),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                     new_callable=AsyncMock,
                 ) as mock_run,
                 patch(
@@ -1580,10 +1580,10 @@ class TestFetchAllIntegration:
                     },
                 ),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_validation",
                 ),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                     new_callable=AsyncMock,
                 ) as mock_run,
                 patch(
@@ -1638,10 +1638,10 @@ class TestFetchAllIntegration:
         try:
             with (
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_validation",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_validation",
                 ),
                 patch(
-                    "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                    "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                     new_callable=AsyncMock,
                 ) as mock_run,
                 patch(
@@ -2089,9 +2089,9 @@ class TestPipelineBase64Decode:
         data = {"content": encoded, "encoding": "base64"}
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2117,9 +2117,9 @@ class TestPipelineBase64Decode:
         data = {"content": "plain text", "encoding": "utf-8"}
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2144,9 +2144,9 @@ class TestPipelineBase64Decode:
         tool = self.make_tool()
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2177,9 +2177,9 @@ class TestPipelineBase64Decode:
         data = {"content": encoded, "encoding": "base64"}
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2241,9 +2241,9 @@ class TestPipelineBinaryResponse:
         tool = self.make_tool()
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2272,9 +2272,9 @@ class TestPipelineBinaryResponse:
         tool.meta["_customization"].is_binary_response = False
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2372,9 +2372,9 @@ class TestPipelineUnicodeDecodeError:
         tool = self._make_tool(is_binary_response=True)
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -2399,9 +2399,9 @@ class TestPipelineUnicodeDecodeError:
         tool = self._make_tool(is_binary_response=False)
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):

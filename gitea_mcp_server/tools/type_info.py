@@ -236,9 +236,9 @@ def resolve_type_info(
 
     # Build compact example with $ref placeholders.
     # Deferred import to avoid circular: examples → schemas → this module
-    from gitea_mcp_server.tools.examples import _schema_to_compact_example  # noqa: PLC0415
+    from gitea_mcp_server.tools.examples import schema_to_compact_example  # noqa: PLC0415
 
-    compact = _schema_to_compact_example(schema, openapi_spec=openapi_spec)
+    compact = schema_to_compact_example(schema, openapi_spec=openapi_spec)
 
     result: dict[str, Any] = {
         "name": type_name,
@@ -281,7 +281,7 @@ def register_type_tools(
     """
     from gitea_mcp_server.format import apply_format  # noqa: PLC0415
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
-    from gitea_mcp_server.tools.errors import _raise_value_error  # noqa: PLC0415
+    from gitea_mcp_server.tools.errors import raise_value_error  # noqa: PLC0415
 
     _MAX_TYPES_IN_RESOURCE_DESC = 10
 
@@ -315,7 +315,7 @@ def register_type_tools(
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
             await safe_ctx_info(ctx, "Type index empty — spec not available at registration")
-            _raise_value_error(msg)
+            raise_value_error(msg)
 
         await safe_ctx_info(
             ctx,
@@ -342,7 +342,7 @@ def register_type_tools(
                 f"Type '{name}' not found",
                 extra={"type_name": name, "found": False},
             )
-            _raise_value_error(msg)
+            raise_value_error(msg)
 
         await safe_ctx_report_progress(ctx, progress=1.0)
         logger.debug(

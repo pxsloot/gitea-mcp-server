@@ -16,7 +16,7 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import _format_paginated_result, apply_format
+from gitea_mcp_server.format import apply_format, format_paginated_result
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
@@ -347,7 +347,7 @@ def register_doc_tools(
                 "- For data resources: `search_resources(query)`"
             )
 
-        return _format_paginated_result(
+        return format_paginated_result(
             all_results, total_count, format, page, limit, fetch_all,
             markdown_extras=extras or None,
             detail=detail,

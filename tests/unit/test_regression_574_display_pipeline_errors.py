@@ -1,6 +1,6 @@
 """Regression tests for issue #574: display pipeline mid-failure error recovery.
 
-Tests that ``_format_resource_content`` and domain formatters handle
+Tests that ``format_resource_content`` and domain formatters handle
 unexpected data shapes gracefully instead of crashing.
 
 Scenarios covered:
@@ -22,13 +22,13 @@ from unittest.mock import patch
 
 import pytest
 
-from gitea_mcp_server.format import _format_as_markdown, apply_format
+from gitea_mcp_server.format import apply_format, format_as_markdown
 from gitea_mcp_server.tools.display import (
     _format_issues_markdown,
     _format_labels_markdown,
     _format_user_markdown,
 )
-from gitea_mcp_server.tools.resource_display import _format_resource_content
+from gitea_mcp_server.tools.resource_display import format_resource_content
 
 
 class TestFormatIssuesMarkdownGuard:
@@ -91,7 +91,7 @@ class TestFormatUserMarkdownGuard:
 
 
 class TestFormatResourceContentPipelineFallback:
-    """Pipeline-level try/except in _format_resource_content.
+    """Pipeline-level try/except in format_resource_content.
 
     The pipeline wraps the post-parse formatting in try/except; when a
     formatter receives unexpected data, the error is logged and a
@@ -105,7 +105,7 @@ class TestFormatResourceContentPipelineFallback:
             "gitea_mcp_server.tools.resource_display.apply_format",
             side_effect=TypeError("bad type"),
         ):
-            result = _format_resource_content(raw, "markdown")
+            result = format_resource_content(raw, "markdown")
             assert "key" in result or "value" in result or "fallback" in result.lower()
 
     def test_pipeline_recovers_from_attribute_error(self) -> None:
@@ -115,7 +115,7 @@ class TestFormatResourceContentPipelineFallback:
             "gitea_mcp_server.tools.resource_display.apply_format",
             side_effect=AttributeError("no attr"),
         ):
-            result = _format_resource_content(raw, "markdown")
+            result = format_resource_content(raw, "markdown")
             assert result.strip() != ""
 
     def test_pipeline_recovers_from_value_error(self) -> None:
@@ -125,7 +125,7 @@ class TestFormatResourceContentPipelineFallback:
             "gitea_mcp_server.tools.resource_display.apply_format",
             side_effect=ValueError("bad value"),
         ):
-            result = _format_resource_content(raw, "markdown")
+            result = format_resource_content(raw, "markdown")
             assert result.strip() != ""
 
     def test_pipeline_recovers_json_format(self) -> None:
@@ -135,7 +135,7 @@ class TestFormatResourceContentPipelineFallback:
             "gitea_mcp_server.tools.resource_display.apply_format",
             side_effect=TypeError("bad type"),
         ):
-            result = _format_resource_content(raw, "json")
+            result = format_resource_content(raw, "json")
             parsed = json.loads(result)
             assert parsed == {"result": raw}
 
@@ -147,7 +147,7 @@ class TestFormatResourceContentPipelineFallback:
             "type": "object",
             "properties": {"name": {"type": "string"}},
         }
-        result = _format_resource_content(raw, "markdown", detail="concise", schema=schema)
+        result = format_resource_content(raw, "markdown", detail="concise", schema=schema)
         assert result.strip() != ""
         # Should produce some readable output
         assert "_(empty)_" in result or "Empty" in result or "N/A" in result
@@ -157,7 +157,7 @@ class TestApplyFormatRaiseOnNonSerializable:
     """``apply_format`` raises TypeError for non-JSON-serializable data.
 
     This documents the raw behavior before the pipeline catches it.
-    The pipeline-level catch in ``_format_resource_content`` converts
+    The pipeline-level catch in ``format_resource_content`` converts
     this into a readable fallback; this test verifies the underlying
     exception is raised when ``apply_format`` is called directly.
     """
@@ -173,22 +173,22 @@ class TestApplyFormatRaiseOnNonSerializable:
 
 
 class TestFormatResourceContentJsonParseEdgeCases:
-    """Non-JSON content edge cases in _format_resource_content."""
+    """Non-JSON content edge cases in format_resource_content."""
 
     def test_plain_text_markdown_passthrough(self) -> None:
         """Plain text with format=markdown returns unchanged."""
-        result = _format_resource_content("hello world", "markdown")
+        result = format_resource_content("hello world", "markdown")
         assert result == "hello world"
 
     def test_plain_text_json_wrapped(self) -> None:
         """Plain text with format=json wraps in result dict."""
-        result = _format_resource_content("hello world", "json")
+        result = format_resource_content("hello world", "json")
         parsed = json.loads(result)
         assert parsed == {"result": "hello world"}
 
     def test_empty_string(self) -> None:
         """Empty string returns empty string for markdown."""
-        result = _format_resource_content("", "markdown")
+        result = format_resource_content("", "markdown")
         assert result == ""
 
 
@@ -225,26 +225,26 @@ class TestFormatReleaseMarkdownGuard:
 
 
 class TestFormatAsMarkdownEdgeCases:
-    """Edge cases for _format_as_markdown with unexpected data shapes."""
+    """Edge cases for format_as_markdown with unexpected data shapes."""
 
     def test_none_data(self) -> None:
         """None data produces 'N/A'."""
-        result = _format_as_markdown(None)
+        result = format_as_markdown(None)
         assert result == "N/A"
 
     def test_none_data_with_title(self) -> None:
         """None data with title still shows title and N/A."""
-        result = _format_as_markdown(None, title="Test Title")
+        result = format_as_markdown(None, title="Test Title")
         assert "# Test Title" in result
         assert "N/A" in result
 
     def test_bool_input(self) -> None:
         """Boolean input produces string representation."""
-        result = _format_as_markdown(True)
+        result = format_as_markdown(True)
         assert result == "True"
 
     def test_list_with_mixed_types(self) -> None:
         """Mixed-type list items render without crash."""
-        result = _format_as_markdown([1, "two", None, {"key": "val"}])
+        result = format_as_markdown([1, "two", None, {"key": "val"}])
         # None falls back to "N/A" in _format_simple_value
         assert "N/A" in result or "two" in result

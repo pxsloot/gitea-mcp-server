@@ -430,7 +430,7 @@ class TestDeriveOutputSchema:
 
         _customize_metadata(route, tool, openapi_spec=self.MINIMAL_SPEC)
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -474,7 +474,7 @@ class TestDeriveOutputSchema:
         assert "id" in tool.output_schema["properties"]
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -517,7 +517,7 @@ class TestDeriveOutputSchema:
         assert "result" in tool.output_schema["properties"]
 
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = ToolResult(
@@ -1845,9 +1845,9 @@ class TestContentTypeVirtualParam:
         expected_encoded = base64.b64encode(raw_content.encode()).decode()
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -1912,9 +1912,9 @@ class TestContentTypeVirtualParam:
         raw_content = "YWxyZWFkeSBlbmNvZGVk"
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder._run_validation"),
+            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._run_with_error_handling",
+                "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):

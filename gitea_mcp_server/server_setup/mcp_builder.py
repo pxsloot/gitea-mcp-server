@@ -49,7 +49,7 @@ from gitea_mcp_server.tools.customize import (
     compute_invalidation_patterns,
     generate_tool_title,
 )
-from gitea_mcp_server.tools.errors import _run_validation, _run_with_error_handling
+from gitea_mcp_server.tools.errors import run_validation, run_with_error_handling
 from gitea_mcp_server.tools.label_transform import LabelTransform
 from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.schemas import (
@@ -751,7 +751,7 @@ class _ToolWrappingTransform(Transform):
             # pipeline validates them (idempotent, catches errors
             # early instead of relying on the Gitea API to reject them).
             try:
-                _run_validation(
+                run_validation(
                     inner_kwargs,
                     tool.parameters.get("required"),
                     tool.parameters.get("properties"),
@@ -759,7 +759,7 @@ class _ToolWrappingTransform(Transform):
             except ValidationError as e:
                 raise ValueError(str(e)) from e
 
-            result = await _run_with_error_handling(
+            result = await run_with_error_handling(
                 inner_kwargs,
                 tool,
                 self._openapi_spec,
@@ -966,7 +966,7 @@ class _ToolWrappingTransform(Transform):
 
         try:
             with tracer.start_as_current_span(f"{tool.name}.validate") as span:
-                _run_validation(
+                run_validation(
                     kwargs,
                     tool.parameters.get("required"),
                     tool.parameters.get("properties"),
@@ -994,7 +994,7 @@ class _ToolWrappingTransform(Transform):
             span.set_attribute("http.route", route_path)
             span.set_attribute("http.method", route_method)
             try:
-                result = await _run_with_error_handling(
+                result = await run_with_error_handling(
                     kwargs,
                     tool,
                     self._openapi_spec,

@@ -24,9 +24,9 @@ from gitea_mcp_server.constants import (
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import (
-    _format_paginated_result,
     _format_tool_info_markdown,
     apply_format,
+    format_paginated_result,
 )
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -34,10 +34,10 @@ from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
-    _raise_value_error,
-    _raise_value_error_from,
+    raise_value_error,
+    raise_value_error_from,
 )
-from gitea_mcp_server.tools.examples import _serialize_tool_schema
+from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.filter_info import (
     build_filtered_tools_message,
     get_filtered_tool_info,
@@ -151,7 +151,7 @@ def _name_matches(query: str, name: str, tool_prefix: str) -> bool:
     return False
 
 
-def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes
+def search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config axes
     items: list[Any],
     texts: list[str],
     query: str,
@@ -234,7 +234,7 @@ def _search_and_slice(  # noqa: PLR0913 - 7 params but all are independent confi
 # ============================================================================
 
 
-def _extract_searchable_text_enhanced(tool: Tool) -> str:
+def extract_searchable_text_enhanced(tool: Tool) -> str:
     """Build BM25 search text from a tool, optimised for discoverability.
 
     Combines name (repeated ``SEARCH_NAME_BOOST`` times), title,
@@ -268,7 +268,7 @@ def _extract_searchable_text_enhanced(tool: Tool) -> str:
     return " ".join(parts)
 
 
-def _extract_resource_text(entry: Mapping[str, Any]) -> str:
+def extract_resource_text(entry: Mapping[str, Any]) -> str:
     """Build searchable text from a resource entry dict."""
     parts = [entry.get("name", "")]
     uri = entry.get("uri", "")
@@ -294,7 +294,7 @@ class TolerantBM25Search:
 
     def search(self, tools: Sequence[Tool], query: str, max_results: int = 10) -> Sequence[Tool]:
         """Search tools by BM25 relevance ranking."""
-        texts = [_extract_searchable_text_enhanced(t) for t in tools]
+        texts = [extract_searchable_text_enhanced(t) for t in tools]
         self._indexed_tools = tools
         indices = self._engine.search(texts, query, max_results)
         return [self._indexed_tools[i] for i in indices]
@@ -305,7 +305,7 @@ class TolerantBM25Search:
 # ============================================================================
 
 
-def _compact_search_serializer(tools: Sequence[Tool]) -> list[ToolSearchEntry]:
+def compact_search_serializer(tools: Sequence[Tool]) -> list[ToolSearchEntry]:
     """Serialize tools to compact dicts (name, description, tags, annotations) for search display."""
     result = []
     for tool in tools:
@@ -346,7 +346,7 @@ class TolerantSearchTransform(BM25SearchTransform):
 
     def __init__(self, **kwargs: Any) -> None:
         if "search_result_serializer" not in kwargs:
-            kwargs["search_result_serializer"] = _compact_search_serializer
+            kwargs["search_result_serializer"] = compact_search_serializer
         super().__init__(**kwargs)
         self._searcher = TolerantBM25Search()
 
@@ -418,16 +418,16 @@ async def _call_tool_impl(
     """
     if name == "call_tool" or (tool_prefix and name == f"{tool_prefix}call_tool"):
         msg = "'call_tool' cannot call itself - call it directly instead"
-        _raise_value_error(msg)
+        raise_value_error(msg)
     if isinstance(arguments, str):
         try:
             arguments = json.loads(arguments)
         except json.JSONDecodeError as e:
             msg = f"Invalid JSON in arguments: {e}"
-            _raise_value_error_from(msg, e)
+            raise_value_error_from(msg, e)
     if arguments is not None and not isinstance(arguments, dict):
         msg = f"Arguments must be a dict or JSON string, got {type(arguments).__name__}"
-        _raise_value_error(msg)
+        raise_value_error(msg)
 
     tool = await _find_tool_by_name(name, ctx, tool_prefix)
 
@@ -448,7 +448,7 @@ async def _call_tool_impl(
                 f"Tool '{name}' not found. "
                 "Use `search_tools()` to discover available tools."
             )
-        _raise_value_error(msg)
+        raise_value_error(msg)
 
     return await ctx.fastmcp.call_tool(tool.name, arguments)
 
@@ -538,15 +538,15 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         category_lower = category.lower()
         if category_lower not in _VALID_CATEGORIES:
             msg = f"Invalid category '{category}'. Valid categories: {', '.join(_VALID_CATEGORIES)}"
-            _raise_value_error(msg)
+            raise_value_error(msg)
         tools = [t for t in tools if t.tags and category_lower in t.tags]
 
-    texts = [_extract_searchable_text_enhanced(t) for t in tools]
-    serialized = _compact_search_serializer(tools)
+    texts = [extract_searchable_text_enhanced(t) for t in tools]
+    serialized = compact_search_serializer(tools)
 
-    # Get all ranked results (no pre-slicing — _format_paginated_result
+    # Get all ranked results (no pre-slicing — format_paginated_result
     # handles that conditionally based on fetch_all).
-    all_items, total_count = _search_and_slice(
+    all_items, total_count = search_and_slice(
         serialized, texts, query, 1, len(serialized) or 1,
         min_score=min_score, tool_prefix=tool_prefix,
     )
@@ -585,7 +585,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         if note:
             extras.append(note)
 
-    return _format_paginated_result(
+    return format_paginated_result(
         all_items, total_count, format, page, limit, fetch_all,
         markdown_extras=extras or None,
         detail=detail,
@@ -632,7 +632,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
         candidates.add(f"{tool_prefix}{name}")
     for tool in tools:
         if tool.name in candidates:
-            schema: ToolSchemaResult = _serialize_tool_schema(tool, openapi_spec=openapi_spec)
+            schema: ToolSchemaResult = serialize_tool_schema(tool, openapi_spec=openapi_spec)
             if detail == "full" and tool.output_schema is not None:
                 # FastMCP wraps API tool output_schemas in {"result": {...}}
                 # (x-fastmcp-wrap-result). Unwrap to access the actual
@@ -758,7 +758,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
 ) -> ToolResult:
     """Core search_resources implementation.
 
-    Fetches all registered MCP resources via ``_mcp_list_resources_impl``,
+    Fetches all registered MCP resources via ``mcp_list_resources_impl``,
     runs name match + BM25 ranking, and returns a paginated, formatted result.
 
     When ``fetch_all=True``, returns all matching results without page
@@ -779,14 +779,14 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
-    from gitea_mcp_server.tools.mcp_tools import _mcp_list_resources_impl  # noqa: PLC0415, I001 - deferred to break circular import
+    from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl  # noqa: PLC0415, I001 - deferred to break circular import
 
-    raw = await _mcp_list_resources_impl(ctx)
+    raw = await mcp_list_resources_impl(ctx)
     resources = raw.get("resources", [])
-    texts = [_extract_resource_text(r) for r in resources]
+    texts = [extract_resource_text(r) for r in resources]
 
     # Get all ranked results (no pre-slicing).
-    all_items, total_count = _search_and_slice(
+    all_items, total_count = search_and_slice(
         resources, texts, query, 1, len(resources) or 1,
         min_score=min_score, tool_prefix=tool_prefix,
     )
@@ -820,7 +820,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
             hints += f"- For {label}: `{tool}(query)`\n"
         extras.append(hints)
 
-    return _format_paginated_result(
+    return format_paginated_result(
         all_items, total_count, format, page, limit, fetch_all,
         markdown_extras=extras or None,
         detail=detail,
@@ -1137,9 +1137,9 @@ def register_synthetic_tools(
 __all__ = [
     "TolerantBM25Search",
     "TolerantSearchTransform",
-    "_compact_search_serializer",
-    "_extract_resource_text",
-    "_extract_searchable_text_enhanced",
-    "_search_and_slice",
+    "compact_search_serializer",
+    "extract_resource_text",
+    "extract_searchable_text_enhanced",
     "register_synthetic_tools",
+    "search_and_slice",
 ]

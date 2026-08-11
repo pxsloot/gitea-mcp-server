@@ -800,7 +800,7 @@ def _convert_components(spec: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
-def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
+def resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec.
 
     Walks the spec tree using string path segments.  Returns ``None`` if
@@ -860,7 +860,7 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
 
     # Resolve $ref schemas to get the actual schema before wrapping.
     if "$ref" in schema:
-        resolved = _resolve_spec_ref(spec, schema["$ref"])
+        resolved = resolve_spec_ref(spec, schema["$ref"])
         if not isinstance(resolved, dict):
             return
         schema = deepcopy(resolved)

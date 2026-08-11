@@ -169,7 +169,7 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
     return None
 
 
-def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
+def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     schema: dict[str, Any],
     depth: int = 0,
     max_depth: int = 2,
@@ -217,7 +217,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
                 # Recurse at same depth — the ref's resolved properties will
                 # be processed normally; nested $refs inside will hit depth >= 1
                 # and emit placeholders as usual.
-                return _schema_to_compact_example(
+                return schema_to_compact_example(
                     resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                 )
             # Fall through to placeholder if resolution fails
@@ -232,7 +232,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         if isinstance(options, list):
             for opt in options:
                 if isinstance(opt, dict) and get_schema_type(opt) != "null":
-                    return _schema_to_compact_example(
+                    return schema_to_compact_example(
                         opt, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                     )
 
@@ -255,7 +255,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
         result: dict[str, Any] = {}
         for prop_name_inner, prop_schema in properties.items():
             if isinstance(prop_schema, dict):
-                result[prop_name_inner] = _schema_to_compact_example(
+                result[prop_name_inner] = schema_to_compact_example(
                     prop_schema, depth + 1, max_depth, prop_name=prop_name_inner,
                     openapi_spec=openapi_spec,
                 )
@@ -264,7 +264,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     if schema_type == "array":
         items = schema.get("items", {})
         if isinstance(items, dict) and items:
-            return [_schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
+            return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
         return []
 
     if schema_type == "string":
@@ -275,7 +275,7 @@ def _schema_to_compact_example(  # noqa: PLR0911, PLR0912
     return None
 
 
-def _serialize_tool_schema(
+def serialize_tool_schema(
     tool: Tool,
     openapi_spec: OpenAPISpec | None = None,
 ) -> ToolSchemaResult:
@@ -284,7 +284,7 @@ def _serialize_tool_schema(
     Generates a compact ``output_example`` using the unresolved schema stored
     in ``tool.meta`` (if available) so nested ``$ref`` types show as
     ``{"$ref": "TypeName"}`` instead of inlined schemas.  Falls back to
-    ``_schema_to_compact_example`` on the resolved schema when the raw
+    ``schema_to_compact_example`` on the resolved schema when the raw
     schema is absent (though this path is rarely taken in practice).
 
     When ``openapi_spec`` is provided, bare ``$ref`` at the top level of the
@@ -304,7 +304,7 @@ def _serialize_tool_schema(
         # directly — no unwrapping needed.
         raw = (tool.meta or {}).get("output_schema_raw")
         if raw is not None:
-            example = _schema_to_compact_example(
+            example = schema_to_compact_example(
                 raw, openapi_spec=openapi_spec
             )
         else:
@@ -314,11 +314,11 @@ def _serialize_tool_schema(
             # the code path consistent and future-proof.
             # Unwrap the result envelope to get the inner schema.
             inner = _unwrap_result_schema(tool.output_schema) or {}
-            example = _schema_to_compact_example(
+            example = schema_to_compact_example(
                 inner, openapi_spec=openapi_spec
             )
         # Guard against null results (e.g. empty-body endpoints where the
-        # schema has ``type: null`` and ``_schema_to_compact_example``
+        # schema has ``type: null`` and ``schema_to_compact_example``
         # returns ``None``).  Silently omit the field — agents can infer
         # from ``output_schema`` that the result is null.
         if example is not None:
@@ -338,6 +338,6 @@ def _serialize_tool_schema(
 
 
 __all__ = [
-    "_schema_to_compact_example",
-    "_serialize_tool_schema",
+    "schema_to_compact_example",
+    "serialize_tool_schema",
 ]

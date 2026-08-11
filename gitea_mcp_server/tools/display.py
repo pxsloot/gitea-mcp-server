@@ -1,7 +1,7 @@
 """Domain-specific display formatters for resources.
 
 All resources return raw data.  This module provides the registered
-formatters that the unified display pipeline (``_format_resource_content``
+formatters that the unified display pipeline (``format_resource_content``
 in ``tools/resource_display.py``) dispatches to when a ``format_hint`` is present.
 
 Each formatter has the signature ``(data, *, detail='full') -> str``.
@@ -12,7 +12,7 @@ so that ``detail=concise`` produces collapsed markdown everywhere.
 from collections.abc import Callable
 from typing import Any
 
-from gitea_mcp_server.format import _format_as_markdown
+from gitea_mcp_server.format import format_as_markdown
 
 # ---------------------------------------------------------------------------
 # Formatter registry
@@ -170,7 +170,7 @@ _RELEASE_FIELDS: dict[str, dict] = {
 
 @register_formatter("repository")
 def _format_repo_markdown(data: dict, *, detail: str = "full") -> str:
-    return _format_as_markdown(
+    return format_as_markdown(
         data,
         title=data.get("full_name", "Repository"),
         field_filter=_REPO_FIELDS,
@@ -202,7 +202,7 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
         ) if data else False
         title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
-    return _format_as_markdown(
+    return format_as_markdown(
         data,
         title=title,
         field_filter=_ISSUE_FIELDS,
@@ -214,7 +214,7 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
 @register_formatter("pull_requests")
 def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
     title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
-    return _format_as_markdown(
+    return format_as_markdown(
         data,
         title=title,
         field_filter=_PULL_FIELDS,
@@ -234,12 +234,12 @@ def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
             "_type": type(data).__name__,
             "_raw": str(data)[:500],
         }
-        return _format_as_markdown(fallback_data, title="User", detail=detail)
+        return format_as_markdown(fallback_data, title="User", detail=detail)
     # Normalize: API may return 'created_at' or 'created' for the same field
     normalized = dict(data)
     if "created_at" not in normalized and "created" in normalized:
         normalized["created_at"] = normalized["created"]
-    return _format_as_markdown(
+    return format_as_markdown(
         normalized,
         title=normalized.get("login", "User"),
         field_filter=_USER_FIELDS,
@@ -251,7 +251,7 @@ def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
 def _format_release_markdown(data: list, *, detail: str = "full") -> str:
     """Format a list of releases as markdown."""
     title = f"Releases - {len(data)} releases" if data else "Releases"
-    return _format_as_markdown(
+    return format_as_markdown(
         data,
         title=title,
         field_filter=_RELEASE_FIELDS,

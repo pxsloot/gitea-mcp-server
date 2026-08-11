@@ -1,9 +1,9 @@
 """Unit tests for OpenAPI converter - response conversion."""
 
 from gitea_mcp_server.openapi_converter import (
-    _determine_content_type,
     convert_responses,
 )
+from gitea_mcp_server.openapi_converter.core import _determine_content_type
 
 
 class TestDetermineContentType:

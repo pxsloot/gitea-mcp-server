@@ -337,14 +337,18 @@ class OperationTransformer:
             p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
         ]
         body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
-        if body_params or form_params:
-            form_body = self.request_body_builder.build_from_form_data(form_params)
-            if form_body:
-                op_copy["requestBody"] = form_body
-
+        # body params (application/json) take precedence over formData
+        # (multipart/form-data, url-encoded) when both are present on the
+        # same operation.  In practice no Gitea endpoint declares both,
+        # but the explicit if/elif makes the precedence unambiguous.
+        if body_params:
             body_req = self.request_body_builder.build_from_body_params(body_params)
             if body_req:
                 op_copy["requestBody"] = body_req
+        elif form_params:
+            form_body = self.request_body_builder.build_from_form_data(form_params)
+            if form_body:
+                op_copy["requestBody"] = form_body
 
         # Preserve non-JSON content types before conversion (produces is
         # stripped by remove_swagger_fields below). Used downstream to

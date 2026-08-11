@@ -1,21 +1,19 @@
 """Factory for creating custom resource handlers with auto schema derivation.
 
 Provides ``make_api_resource()`` which generates and registers a resource
-handler from a declarative description -- eliminating the 5-step boilerplate
-pattern that was repeated across every custom resource.
+handler from a declarative description
 
 The factory auto-derives the response schema from the OpenAPI spec via
-the endpoint's ``api_path + method``, removing the need for manual
-``get_success_schema`` / ``unwrap_result_schema`` calls.  Handlers
-handle ``str`` vs JSON branching automatically.
+the endpoint's ``api_path + method``. Handlers handle ``str`` vs JSON branching
+automatically.
 
 URI tracking
 ------------
 The module-level ``_registered_uris`` set is populated dynamically at
-registration time (not at import time) by ``make_api_resource()``.
-``register_custom_resources()`` returns a snapshot of this set, and the
-orchestrator (``resource_setup.py``) passes it as ``skip_uris`` to
-``register_auto_generated_resources()`` -- avoiding duplicate registrations.
+registration time by ``make_api_resource()``.  ``register_custom_resources()``
+returns a snapshot of this set, and the orchestrator (``resource_setup.py``)
+passes it as ``skip_uris`` to ``register_auto_generated_resources()`` --
+avoiding duplicate registrations.
 
 Parameter reference
 -------------------
@@ -30,27 +28,27 @@ Parameter                         Default        Purpose
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
 ``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
-                                                  When ``None``, FastMCP auto-generates one.
+                                                 When ``None``, FastMCP auto-generates one.
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
-                                                  Ignored when ``handler_hook`` is set.
+                                                 Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
                                                  response.  Skips schema derivation, registers as
                                                  ``text/plain``.
 ``resource_type``                 ``format_hint`` Machine-readable type for error responses.  Falls
-                                  or ``"api"``   back to ``"api"``.
+                                                  back to ``"api"``.
 ``scope``                         ``None``       Required token scope.  Resource silently skipped when
                                                  absent from ``available_scopes``.
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
 ``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
-                                                  must be included explicitly when the resource has
-                                                  a ``format_hint`` (i.e., a markdown formatter).
+                                                 must be included explicitly when the resource has
+                                                 a ``format_hint`` (i.e., a markdown formatter).
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
-                                 not found."``  placeholders.
+                                                 placeholders.
 ``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6
-                                                  parameter-routing fields (query_params,
-                                                  query_param_validators, context_params,
-                                                  context_param_validators, context_meta_keys,
-                                                  optional_params).  All fields optional.
+                                                 parameter-routing fields (query_params,
+                                                 query_param_validators, context_params,
+                                                 context_param_validators, context_meta_keys,
+                                                 optional_params).  All fields optional.
 ``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
 ``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
 ``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks

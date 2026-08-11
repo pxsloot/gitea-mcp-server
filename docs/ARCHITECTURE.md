@@ -562,9 +562,6 @@ The customization layers as applied during server startup:
      shim maps it back to the original name.  No Gitea endpoint currently
      exhibits this pattern.
 
-     Affected endpoints (3 total): ``issue_create_issue_blocking``,
-     ``issue_create_issue_dependencies``, ``admin_create_org``.
-
 ---
 ## Response Content-Type Handling
 

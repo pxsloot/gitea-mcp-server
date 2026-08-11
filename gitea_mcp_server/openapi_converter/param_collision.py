@@ -51,7 +51,12 @@ def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     Returns:
         The resolved schema dict, or ``None`` if resolution fails.
     """
-    parts = ref.lstrip("#/").split("/")
+    # Strip leading "#/" prefix precisely (not via lstrip which strips
+    # all leading "#" and "/" characters indiscriminately).
+    prefix = "#/"
+    if ref.startswith(prefix):
+        ref = ref[len(prefix):]
+    parts = ref.split("/")
     current: Any = spec
     try:
         for part in parts:
@@ -64,8 +69,8 @@ def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
 def _collect_path_param_names(operation: dict[str, Any]) -> set[str]:
     """Collect path parameter names from an operation.
 
-    Checks both operation-level and path-level parameters (path-level
-    parameters are inherited by all operations in the path item).
+    Only checks operation-level parameters. Path-level parameters from
+    the path item are handled separately via ``_merge_path_params``.
 
     Args:
         operation: The OpenAPI operation dict.
@@ -213,16 +218,18 @@ def _resolve_operation_collisions(
     return rename_map if rename_map else None
 
 
-def _collect_path_level_params(path_item: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collect path-level parameters from a path item.
+def _collect_path_item_params(path_item: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect all parameters defined at the path-item level.
 
-    Path-level parameters are inherited by all operations in the path item.
+    Path-item-level parameters are inherited by all operations in the path
+    item.  This function collects all parameter types (path, query, header);
+    filtering for path-type parameters happens in ``_merge_path_params``.
 
     Args:
         path_item: The OpenAPI path item dict.
 
     Returns:
-        List of path-level parameter dicts.
+        List of parameter dicts defined at the path-item level.
     """
     result: list[dict[str, Any]] = []
     raw = path_item.get("parameters", [])
@@ -235,19 +242,20 @@ def _collect_path_level_params(path_item: dict[str, Any]) -> list[dict[str, Any]
 
 def _merge_path_params(
     operation_params: set[str],
-    path_level_params: list[dict[str, Any]],
+    path_item_params: list[dict[str, Any]],
 ) -> set[str]:
-    """Merge operation-level and path-level path parameter names.
+    """Merge operation-level and path-item-level path parameter names.
 
     Args:
         operation_params: Path parameter names from the operation.
-        path_level_params: Path-level parameter dicts from the path item.
+        path_item_params: Parameter dicts from the path item (all types;
+            only ``in == "path"`` entries are used).
 
     Returns:
         Combined set of path parameter names.
     """
     result = set(operation_params)
-    for p in path_level_params:
+    for p in path_item_params:
         if p.get("in") == "path":
             name = p.get("name", "")
             if name:
@@ -272,53 +280,65 @@ def resolve_param_collisions(openapi_spec: OpenAPISpec) -> None:
     Mutates ``openapi_spec`` in-place. Called after spec conversion, before
     FastMCP processes the spec.
 
+    This function is guaranteed not to raise: all internal errors are caught
+    and logged.  Callers do not need a try/except wrapper.
+
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (mutated in-place).
     """
-    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
-    total_collisions = 0
-    affected_ops: list[str] = []
+    try:
+        paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
+        total_collisions = 0
+        affected_ops: list[str] = []
 
-    for path, path_item in paths.items():
-        if not isinstance(path_item, dict):
-            continue
-
-        path_level_params = _collect_path_level_params(path_item)
-
-        for method in HTTP_METHODS_ALL:
-            if method not in _BODY_METHODS:
+        for path, path_item in paths.items():
+            if not isinstance(path_item, dict):
                 continue
 
-            operation = path_item.get(method)
-            if not isinstance(operation, dict):
-                continue
+            path_item_params = _collect_path_item_params(path_item)
 
-            op_path_params = _merge_path_params(
-                _collect_path_param_names(operation),
-                path_level_params,
-            )
+            for method in HTTP_METHODS_ALL:
+                if method not in _BODY_METHODS:
+                    continue
 
-            rename_map = _resolve_operation_collisions(
-                operation, op_path_params, openapi_spec,
-            )
-            if rename_map:
-                total_collisions += len(rename_map)
-                op_id = operation.get("operationId", f"{method} {path}")
-                affected_ops.append(op_id)
-                logger.debug(
-                    "Resolved %d param collisions for %s: %s",
-                    len(rename_map),
-                    op_id,
-                    rename_map,
+                operation = path_item.get(method)
+                if not isinstance(operation, dict):
+                    continue
+
+                op_path_params = _merge_path_params(
+                    _collect_path_param_names(operation),
+                    path_item_params,
                 )
 
-    if total_collisions:
-        logger.info(
-            "Resolved %d parameter name collisions across %d operations: %s",
-            total_collisions,
-            len(affected_ops),
-            sorted(affected_ops),
-        )
+                rename_map = _resolve_operation_collisions(
+                    operation, op_path_params, openapi_spec,
+                )
+                if rename_map:
+                    total_collisions += len(rename_map)
+                    op_id = operation.get("operationId", f"{method} {path}")
+                    affected_ops.append(op_id)
+                    logger.debug(
+                        "Resolved %d param collisions for %s: %s",
+                        len(rename_map),
+                        op_id,
+                        rename_map,
+                    )
+
+        if total_collisions:
+            logger.info(
+                "Resolved %d parameter name collisions across %d operations: %s",
+                total_collisions,
+                len(affected_ops),
+                sorted(affected_ops),
+            )
+    except Exception:
+        # Broad catch is intentional: this function is called during spec
+        # loading and must never propagate.  Collision resolution is a
+        # best-effort optimisation — if it fails, the old ``__path`` suffix
+        # behaviour returns, which is a degraded UX but not a crash.
+        # ``logger.exception`` includes the full traceback so operators
+        # can diagnose the root cause.
+        logger.exception("Failed to resolve parameter name collisions")
 
 
 __all__ = [

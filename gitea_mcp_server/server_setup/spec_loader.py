@@ -245,18 +245,12 @@ async def load_and_convert_spec(
         msg = f"Failed to convert OpenAPI spec: {e}"
         raise SpecError(msg) from e
 
-    # Resolve parameter name collisions between path params and body properties.
-    # Renames colliding body properties with a ``body_`` prefix so FastMCP
-    # never generates confusing ``__path`` suffixes.  The mapping is stored
-    # in ``x-param-rename`` on each affected operation.
-    try:
-        resolve_param_collisions(openapi_spec)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "Failed to resolve param collisions, proceeding without: %s",
-            e,
-        )
-
+    # ── Apply MCP extensions (YAML overrides) ──────────────────────────
+    # Must run BEFORE collision resolution so that resolve_param_collisions
+    # is the final authority on ``x-param-rename``.  If an extension YAML
+    # were to set ``x-param-rename``, collision resolution would overwrite
+    # it — which is correct because ``x-param-rename`` is reserved for
+    # internal use by the collision resolution system.
     extensions: dict[str, Any] = {}
     try:
         extensions = load_mcp_extensions()
@@ -267,6 +261,14 @@ async def load_and_convert_spec(
             "Failed to apply MCP extensions, proceeding without customizations",
             extra={"error": str(e)},
         )
+
+    # Resolve parameter name collisions between path params and body properties.
+    # Renames colliding body properties with a ``body_`` prefix so FastMCP
+    # never generates confusing ``__path`` suffixes.  The mapping is stored
+    # in ``x-param-rename`` on each affected operation.
+    # This function is guaranteed not to raise (internal errors are caught
+    # and logged), so no try/except wrapper is needed here.
+    resolve_param_collisions(openapi_spec)
 
     # ── Compute spec-level filtering ───────────────────────────────────
     # Exclusion config is always honoured (it never required token scopes).

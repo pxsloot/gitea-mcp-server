@@ -556,6 +556,12 @@ The customization layers as applied during server startup:
      "the owner field in the request body"), consistent (same prefix for all
      collisions), and does not leak FastMCP internals (unlike ``__path``).
 
+     **Edge case**: If a Gitea endpoint ever has a body property whose name
+     already starts with ``body_`` (e.g., ``body_owner``), the prefix would
+     produce ``body_body_owner``.  This is ugly but functional — the runtime
+     shim maps it back to the original name.  No Gitea endpoint currently
+     exhibits this pattern.
+
      Affected endpoints (3 total): ``issue_create_issue_blocking``,
      ``issue_create_issue_dependencies``, ``admin_create_org``.
 

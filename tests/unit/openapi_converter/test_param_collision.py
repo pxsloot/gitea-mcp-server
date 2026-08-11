@@ -10,7 +10,7 @@ from copy import deepcopy
 from typing import Any, cast
 
 from gitea_mcp_server.openapi_converter.param_collision import (
-    _collect_path_level_params,
+    _collect_path_item_params,
     _collect_path_param_names,
     _get_body_schema,
     _merge_path_params,
@@ -375,16 +375,16 @@ class TestResolveOperationCollisions:
 
 
 # ===========================================================================
-# Tests: _collect_path_level_params
+# Tests: _collect_path_item_params
 # ===========================================================================
 
 
-class TestCollectPathLevelParams:
-    """Tests for collecting path-level parameters."""
+class TestCollectPathItemParams:
+    """Tests for collecting path-item-level parameters."""
 
     def test_empty_params(self) -> None:
         """No parameters returns empty list."""
-        assert _collect_path_level_params({}) == []
+        assert _collect_path_item_params({}) == []
 
     def test_collects_dict_items(self) -> None:
         """Dict items are collected."""
@@ -394,11 +394,11 @@ class TestCollectPathLevelParams:
                 {"name": "repo", "in": "path"},
             ],
         }
-        result = _collect_path_level_params(path_item)
+        result = _collect_path_item_params(path_item)
         assert len(result) == 2
 
     def test_skips_non_dict_items(self) -> None:
-        """Non-dict items are skipped (lines 231-232)."""
+        """Non-dict items are skipped."""
         path_item = {
             "parameters": [
                 {"name": "owner", "in": "path"},
@@ -407,14 +407,14 @@ class TestCollectPathLevelParams:
                 42,
             ],
         }
-        result = _collect_path_level_params(path_item)
+        result = _collect_path_item_params(path_item)
         assert len(result) == 1
         assert result[0]["name"] == "owner"
 
     def test_non_list_params(self) -> None:
         """Non-list parameters returns empty list."""
         path_item = {"parameters": "not_a_list"}
-        assert _collect_path_level_params(path_item) == []
+        assert _collect_path_item_params(path_item) == []
 
 
 # ===========================================================================

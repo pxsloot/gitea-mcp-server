@@ -127,15 +127,15 @@ def _get_body_schema(
         return None
 
     # Resolve $ref to shared component (e.g. IssueMeta)
-    if "$ref" in body_schema:
-        resolved = _resolve_spec_ref(spec, body_schema["$ref"])
+    ref = body_schema.get("$ref")
+    if ref is not None:
+        resolved = _resolve_spec_ref(spec, ref)
         if resolved is not None:
             body_schema = deepcopy(resolved)
             # Replace the $ref with the inlined schema
             json_content["schema"] = body_schema
             logger.debug(
-                "Inlined $ref %s for collision resolution",
-                body_schema.get("$ref", "unknown"),
+                "Inlined $ref %s for collision resolution", ref,
             )
 
     return body_schema

@@ -556,11 +556,18 @@ The customization layers as applied during server startup:
      "the owner field in the request body"), consistent (same prefix for all
      collisions), and does not leak FastMCP internals (unlike ``__path``).
 
-     **Edge case**: If a Gitea endpoint ever has a body property whose name
-     already starts with ``body_`` (e.g., ``body_owner``), the prefix would
-     produce ``body_body_owner``.  This is ugly but functional — the runtime
-     shim maps it back to the original name.  No Gitea endpoint currently
-     exhibits this pattern.
+      **Edge case**: If a Gitea endpoint ever has a body property whose name
+      already starts with ``body_`` (e.g., ``body_owner``), the prefix would
+      produce ``body_body_owner``.  This is ugly but functional — the runtime
+      shim maps it back to the original name.  No Gitea endpoint currently
+      exhibits this pattern.
+
+      **Description injection**: Gitea's shared component schemas (e.g.
+      ``IssueMeta``) carry no descriptions on their properties.  When a body
+      property is renamed and has no description, the resolver injects one
+      derived from the colliding path parameter's description with a
+      ``(Request body)`` prefix.  See ``openapi_converter/param_collision.py``
+      module docstring for the collection and fallback strategy.
 
 ---
 ## Response Content-Type Handling

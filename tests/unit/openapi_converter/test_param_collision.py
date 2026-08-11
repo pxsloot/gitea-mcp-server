@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from gitea_mcp_server.openapi_converter.param_collision import (
     _collect_path_item_params,
+    _collect_path_param_descriptions,
     _collect_path_param_names,
     _get_body_schema,
     _merge_path_params,
@@ -324,6 +325,171 @@ class TestRenameCollidingBodyProperties:
         # Non-list required is replaced with empty list
         assert schema["required"] == []
 
+    # ------------------------------------------------------------------
+    # Description injection
+    # ------------------------------------------------------------------
+
+    def test_injects_description_from_path_param(self) -> None:
+        """Empty description is filled from path param description."""
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "title": {"type": "string"},
+            },
+        }
+        _rename_colliding_body_properties(
+            schema,
+            {"owner", "repo"},
+            path_param_descriptions={
+                "owner": "owner of the repo",
+                "repo": "name of the repo",
+            },
+        )
+
+        body_owner = cast("dict[str, Any]", schema["properties"]["body_owner"])
+        assert body_owner["description"] == "(Request body) owner of the repo"
+        body_repo = cast("dict[str, Any]", schema["properties"]["body_repo"])
+        assert body_repo["description"] == "(Request body) name of the repo"
+
+    def test_fallback_when_path_param_has_no_description(self) -> None:
+        """Fallback to generic description when path param has none."""
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+            },
+        }
+        _rename_colliding_body_properties(
+            schema,
+            {"owner"},
+            path_param_descriptions={},  # Empty descriptions dict
+        )
+
+        body_owner = cast("dict[str, Any]", schema["properties"]["body_owner"])
+        assert body_owner["description"] == (
+            "owner field of the request body resource"
+        )
+
+    def test_preserves_existing_description(self) -> None:
+        """Non-empty existing description is not overwritten."""
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string", "description": "the issue owner"},
+            },
+        }
+        _rename_colliding_body_properties(
+            schema,
+            {"owner"},
+            path_param_descriptions={
+                "owner": "owner of the repo",
+            },
+        )
+
+        body_owner = cast("dict[str, Any]", schema["properties"]["body_owner"])
+        assert body_owner["description"] == "the issue owner"
+
+    def test_path_param_descriptions_none_skips_injection(self) -> None:
+        """``path_param_descriptions=None`` skips description injection entirely."""
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+            },
+        }
+        _rename_colliding_body_properties(
+            schema,
+            {"owner"},
+            path_param_descriptions=None,
+        )
+
+        body_owner = cast("dict[str, Any]", schema["properties"]["body_owner"])
+        assert "description" not in body_owner
+
+
+# ===========================================================================
+# Tests: _collect_path_param_descriptions
+# ===========================================================================
+
+
+class TestCollectPathParamDescriptions:
+    """Tests for collecting path param descriptions from both levels."""
+
+    def test_collects_from_operation_level(self) -> None:
+        """Descriptions from operation-level params are collected."""
+        op = _make_operation(path_params=["owner", "repo"])
+        # Override params to include descriptions
+        op["parameters"][0]["description"] = "owner of the repo"
+        op["parameters"][1]["description"] = "name of the repo"
+
+        result = _collect_path_param_descriptions(op, [])
+        assert result == {"owner": "owner of the repo", "repo": "name of the repo"}
+
+    def test_collects_from_path_item_level(self) -> None:
+        """Descriptions from path-item-level params are collected."""
+        op = _make_operation()
+        path_item_params: list[dict[str, Any]] = [
+            {"name": "owner", "in": "path", "description": "owner of the repo"},
+            {"name": "repo", "in": "path", "description": "name of the repo"},
+        ]
+        result = _collect_path_param_descriptions(op, path_item_params)
+        assert result == {
+            "owner": "owner of the repo",
+            "repo": "name of the repo",
+        }
+
+    def test_operation_level_overrides_path_item(self) -> None:
+        """Operation-level description takes precedence."""
+        op = _make_operation(path_params=["owner"])
+        op["parameters"][0]["description"] = "from operation"
+
+        path_item_params: list[dict[str, Any]] = [
+            {"name": "owner", "in": "path", "description": "from path item"},
+        ]
+        result = _collect_path_param_descriptions(op, path_item_params)
+        assert result == {"owner": "from operation"}
+
+    def test_skips_empty_descriptions(self) -> None:
+        """Params with empty descriptions are skipped."""
+        op = _make_operation(path_params=["owner", "repo"])
+        op["parameters"][0]["description"] = ""  # Empty
+        op["parameters"][1]["description"] = "name of the repo"
+
+        result = _collect_path_param_descriptions(op, [])
+        assert result == {"repo": "name of the repo"}
+
+    def test_skips_non_path_params(self) -> None:
+        """Query and header params are skipped."""
+        op = {
+            "operationId": "test",
+            "parameters": [
+                {"name": "q", "in": "query", "description": "search query"},
+                {"name": "X-Custom", "in": "header", "description": "custom header"},
+            ],
+        }
+        result = _collect_path_param_descriptions(op, [])
+        assert result == {}
+
+    def test_skips_non_dict_params(self) -> None:
+        """Non-dict parameters are skipped."""
+        op = {
+            "operationId": "test",
+            "parameters": [
+                {"name": "owner", "in": "path", "description": "owner of the repo"},
+                "not_a_dict",
+            ],
+        }
+        result = _collect_path_param_descriptions(op, [])
+        assert result == {"owner": "owner of the repo"}
+
+    def test_non_list_parameters(self) -> None:
+        """Non-list ``parameters`` returns empty dict."""
+        op = {"operationId": "test", "parameters": "not_a_list"}
+        result = _collect_path_param_descriptions(op, [])
+        assert result == {}
+
 
 # ===========================================================================
 # Tests: _resolve_operation_collisions
@@ -377,6 +543,48 @@ class TestResolveOperationCollisions:
         result = _resolve_operation_collisions(op, {"owner", "repo"}, spec)
         assert result == {"body_owner": "owner", "body_repo": "repo"}
         assert op["x-param-rename"] == result
+
+    def test_injects_descriptions_via_path_item_params(self) -> None:
+        """Renamed body properties get descriptions from path param descriptions."""
+        op = _make_operation(
+            path_params=["owner", "repo"],
+            body_props={"owner": {"type": "string"}, "repo": {"type": "string"}},
+        )
+        # Add descriptions to operation-level path params
+        for p in op["parameters"]:
+            if p["name"] == "owner":
+                p["description"] = "owner of the repo"
+            elif p["name"] == "repo":
+                p["description"] = "name of the repo"
+
+        spec = make_openapi_spec()
+        result = _resolve_operation_collisions(
+            op, {"owner", "repo"}, spec,
+            path_item_params=[],
+        )
+        assert result == {"body_owner": "owner", "body_repo": "repo"}
+
+        # Verify descriptions were injected
+        body_schema = op["requestBody"]["content"]["application/json"]["schema"]
+        body_props = body_schema["properties"]
+        assert body_props["body_owner"]["description"] == "(Request body) owner of the repo"
+        assert body_props["body_repo"]["description"] == "(Request body) name of the repo"
+
+    def test_no_path_item_params_skips_injection(self) -> None:
+        """When path_item_params is not passed, no description injection occurs."""
+        op = _make_operation(
+            path_params=["owner", "repo"],
+            body_props={"owner": {"type": "string"}, "repo": {"type": "string"}},
+        )
+        spec = make_openapi_spec()
+        result = _resolve_operation_collisions(op, {"owner", "repo"}, spec)
+        assert result == {"body_owner": "owner", "body_repo": "repo"}
+
+        # Verify no descriptions were injected
+        body_schema = op["requestBody"]["content"]["application/json"]["schema"]
+        body_props = body_schema["properties"]
+        assert "description" not in body_props["body_owner"]
+        assert "description" not in body_props["body_repo"]
 
 
 # ===========================================================================

@@ -159,7 +159,7 @@ class TestExclusionIntegration:
         """When a tool is excluded by config, its corresponding auto-generated
         resource should also be excluded at registration time."""
         # Use paths with {path_params} that are NOT in the factory's
-        # ``registered_uris`` set so they produce auto resources.
+        # ``_registered_uris`` set so they produce auto resources.
         spec = {
             "swagger": "2.0",
             "info": {"title": "Gitea API", "version": "1.0"},

@@ -11,7 +11,7 @@ handle ``str`` vs JSON branching automatically.
 
 URI tracking
 ------------
-The module-level ``registered_uris`` set is populated dynamically at
+The module-level ``_registered_uris`` set is populated dynamically at
 registration time (not at import time).  ``register_custom_resources()``
 runs *before* ``register_auto_generated_resources()``, and the resulting
 set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
@@ -107,7 +107,7 @@ class ResourceParamConfig:
 # Populated at registration time by ``make_api_resource()``.
 # Starts empty; grows as ``register_custom_resources()`` calls
 # ``make_api_resource`` for each factory resource.
-registered_uris: set[str] = set()
+_registered_uris: set[str] = set()
 
 
 def _auto_derive_schema(
@@ -411,7 +411,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     Derives the response schema from ``openapi_spec[api_path][method]``
     (unresolved, then unwrapped from the result envelope).  Generates the
     handler closure, handles ``str`` vs JSON branching, registers the URI
-    in ``registered_uris``, and calls ``mcp.resource()``.
+    in ``_registered_uris``, and calls ``mcp.resource()``.
 
     When ``handler_hook`` is provided, schema derivation and JSON wrapping
     are skipped.  The API response is passed through the hook for post-
@@ -707,7 +707,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     )(handler)
 
     # Track URI for auto-generation skip.
-    registered_uris.add(uri)
+    _registered_uris.add(uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler
@@ -716,5 +716,4 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
 __all__ = [
     "ResourceParamConfig",
     "make_api_resource",
-    "registered_uris",
 ]

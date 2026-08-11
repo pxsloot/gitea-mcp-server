@@ -351,7 +351,7 @@ The customization layers as applied during server startup:
 4. **Custom resources override auto-generated** -- Resources are registered in
    two phases: custom (Markdown wrappers for common URIs) then auto-generated
    (raw JSON from every GET endpoint).  Custom registration runs first,
-    populating the ``registered_uris`` set in ``factory.py``.  The orchestrator
+    populating the ``_registered_uris`` set in ``factory.py``.  The orchestrator
    (``resource_setup.py``) passes the combined custom URI set as ``skip_uris``
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
    already handled by custom resources.  This avoids the need for a separate

@@ -304,7 +304,6 @@ def _detect_has_labels(component: Any) -> bool:
 
 
 __all__ = [
-
     "add_inferred_hints",
     "categorize_tool",
     "compute_invalidation_patterns",

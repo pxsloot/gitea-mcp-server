@@ -6,7 +6,7 @@ response construction, and registration to the shared pipeline.  These
 can be overridden by custom resources with the same URI.
 
 The ``skip_uris`` for auto-generation is provided by the orchestrator
-(``resource_setup.py``), which passes the factory's ``registered_uris``
+(``resource_setup.py``), which passes the factory's ``_registered_uris``
 set (from ``make_api_resource()``).  All custom resources that have API
 equivalents in the spec are now registered via the factory, so no
 additional skip set is needed.
@@ -69,7 +69,7 @@ def register_auto_generated_resources(
         openapi_spec: The OpenAPI specification dictionary.
         skip_uris: Set of URI templates to skip (custom resource overrides).
             The orchestrator (``resource_setup.py``) passes the factory's
-            ``registered_uris`` set.  When ``None``, defaults to an empty
+            ``_registered_uris`` set.  When ``None``, defaults to an empty
             set (no URIs skipped).
         filtered_tools_info: Filter-prediction data from spec-level filtering.
             When provided, resources whose operationId appears in the ``filtered``
@@ -146,6 +146,5 @@ def register_auto_generated_resources(
 
 
 __all__ = [
-
     "register_auto_generated_resources",
 ]

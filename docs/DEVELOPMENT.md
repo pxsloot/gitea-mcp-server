@@ -495,7 +495,7 @@ The factory:
 - Generates a handler closure that calls ``gitea_client.request``
 - Handles ``isinstance(data, str)`` branching (text/plain vs application/json)
 - Attaches the schema and ``format_hint`` in ``ResourceContent.meta``
-- Registers via ``mcp.resource()`` and adds the URI to ``registered_uris``
+- Registers via ``mcp.resource()`` and adds the URI to ``_registered_uris``
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
@@ -678,7 +678,7 @@ working together::
         available_scopes=available_scopes,
     )
 
-No manual skip-URI maintenance is needed — the factory's ``registered_uris``
+No manual skip-URI maintenance is needed — the factory's ``_registered_uris``
 set is populated at registration time and passed as ``skip_uris`` to
 ``register_auto_generated_resources()`` by ``resource_setup.py``.
 
@@ -699,7 +699,7 @@ non-GET methods) that don't fit the factory pattern, register directly with
 3. **Register** with a direct ``mcp.resource()`` call — no decorator needed.
    Add a scope guard inline when the resource requires a token scope.
 4. **No skip-URI update needed** — factory resources are auto-tracked in
-   ``registered_uris`` and skipped by the auto-generation loop.
+   ``_registered_uris`` and skipped by the auto-generation loop.
 
 ### Pre-computed static resources
 
@@ -945,7 +945,7 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
    functions may be renamed/refactored without notice.
 3. **Resource URIs conflict** -- When adding a custom resource that shadows
    a GET endpoint, use ``make_api_resource()`` (factory auto-tracks URIs
-   in ``registered_uris``).  For static resources registered via direct
+   in ``_registered_uris``).  For static resources registered via direct
    ``mcp.resource()`` calls, add the URI to the ``skip_uris`` set that
    ``resource_setup.py`` passes to ``register_auto_generated_resources``.
 4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.

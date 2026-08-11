@@ -12,9 +12,9 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import (
     BasePathToServerConverter,
     SecuritySchemeConverter,
-    _wrap_success_response_schemas,
     convert_swagger_to_openapi_v3,
 )
+from gitea_mcp_server.openapi_converter.core import _wrap_success_response_schemas
 from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 from tests.helpers.spec_fixtures import minimal_spec as _minimal_spec
 

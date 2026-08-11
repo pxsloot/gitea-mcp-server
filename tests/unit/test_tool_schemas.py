@@ -328,7 +328,7 @@ class TestDeriveOutputSchema:
 
     def test_integration_via_customize_metadata(self) -> None:
         """_customize_metadata should set output_schema from openapi_spec."""
-        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
+        from gitea_mcp_server.openapi_converter.core import _wrap_success_response_schemas
 
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
@@ -494,7 +494,7 @@ class TestDeriveOutputSchema:
     async def test_transform_pipeline_handles_array_result(self) -> None:
         """When the output schema declares an array result, the transform pipeline
         passes through and injects pagination metadata."""
-        from gitea_mcp_server.openapi_converter import _wrap_success_response_schemas
+        from gitea_mcp_server.openapi_converter.core import _wrap_success_response_schemas
 
         route = self._make_route("/repos/{owner}/{repo}/issues", "GET")
         tool = MagicMock(spec=OpenAPITool)

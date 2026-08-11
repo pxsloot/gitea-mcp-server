@@ -502,9 +502,6 @@ def register_type_tools(
 
 
 __all__ = [
-    "_walk_parameter_refs",
-    "_walk_request_body_refs",
-    "_walk_response_refs",
     "build_type_index",
     "register_type_tools",
     "resolve_type_info",

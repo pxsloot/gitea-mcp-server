@@ -338,11 +338,6 @@ def _serialize_tool_schema(
 
 
 __all__ = [
-    "_example_array",
-    "_example_object",
-    "_example_string",
-    "_lookup_string_example",
     "_schema_to_compact_example",
-    "_schema_to_example",
     "_serialize_tool_schema",
 ]

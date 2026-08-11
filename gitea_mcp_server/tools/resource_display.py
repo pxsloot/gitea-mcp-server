@@ -201,5 +201,4 @@ __all__ = [
     "_clean_resource_uri",
     "_extract_resource_content",
     "_format_resource_content",
-    "_make_resource_formatter",
 ]

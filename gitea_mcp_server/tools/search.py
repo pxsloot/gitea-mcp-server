@@ -1137,15 +1137,9 @@ def register_synthetic_tools(
 __all__ = [
     "TolerantBM25Search",
     "TolerantSearchTransform",
-    "_call_tool_impl",
     "_compact_search_serializer",
     "_extract_resource_text",
     "_extract_searchable_text_enhanced",
-    "_find_tool_by_name",
-    "_name_matches",
     "_search_and_slice",
-    "_search_resources_impl",
-    "_search_tools_impl",
-    "_tool_info_impl",
     "register_synthetic_tools",
 ]

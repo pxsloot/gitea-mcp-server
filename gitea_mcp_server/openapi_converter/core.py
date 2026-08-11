@@ -326,18 +326,22 @@ class OperationTransformer:
         # Convert parameters (filters out body/formData)
         op_copy["parameters"] = convert_parameters(raw_params)
 
-        # Only add requestBody for methods that typically have bodies
-        if method in ("post", "put", "patch"):
-            # Handle formData parameters -> requestBody
-            form_params = [
-                p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
-            ]
+        # Build requestBody when raw parameters declare in: body or
+        # in: formData, regardless of HTTP method.  Gitea's Swagger
+        # declares bodies on DELETE endpoints (e.g. IssueMeta on
+        # DELETE /repos/{owner}/{repo}/issues/{index}/blocks) —
+        # gating on method would silently drop those bodies.  Gate
+        # on data presence, the same behaviour-driven approach used
+        # in param_collision.py.
+        form_params = [
+            p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
+        ]
+        body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
+        if body_params or form_params:
             form_body = self.request_body_builder.build_from_form_data(form_params)
             if form_body:
                 op_copy["requestBody"] = form_body
 
-            # Handle body parameters -> requestBody
-            body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
             body_req = self.request_body_builder.build_from_body_params(body_params)
             if body_req:
                 op_copy["requestBody"] = body_req

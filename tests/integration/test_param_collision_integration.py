@@ -1,0 +1,422 @@
+"""Integration tests for parameter collision resolution end-to-end.
+
+Tests the full pipeline: spec-level renaming -> FastMCP provider creation ->
+runtime shim -> tool parameter names.  Verifies that colliding body properties
+are renamed with a ``body_`` prefix and that the resulting tools have the
+correct parameter names.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING, Any, cast
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+
+from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
+from gitea_mcp_server.server_setup.mcp_builder import (
+    _apply_param_rename,
+    _read_param_rename,
+    create_openapi_provider,
+)
+from tests.helpers.spec_fixtures import make_openapi_spec
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from gitea_mcp_server.openapi_types import OpenAPISpec
+
+
+def _tool_dict(tools: Sequence[Any]) -> dict[str, Any]:
+    """Extract tool name -> tool mapping from provider.list_tools() result."""
+    return {t.name: t for t in tools}
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def blocking_spec() -> OpenAPISpec:
+    """OpenAPI spec with a blocking endpoint that has param collisions."""
+    return make_openapi_spec(
+        components={
+            "schemas": {
+                "IssueMeta": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "index": {"type": "integer"},
+                    },
+                },
+            },
+        },
+        paths={
+            "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                "post": {
+                    "operationId": "issueCreateIssueBlocking",
+                    "summary": "Create issue blocking",
+                    "parameters": [
+                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/IssueMeta"},
+                            },
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {"description": "Created"},
+                    },
+                },
+            },
+            "/repos/{owner}/{repo}/issues": {
+                "post": {
+                    "operationId": "issueCreateIssue",
+                    "summary": "Create an issue (no collision)",
+                    "parameters": [
+                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "body": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {"description": "Created"},
+                    },
+                },
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: spec-level collision resolution
+# ---------------------------------------------------------------------------
+
+
+class TestSpecLevelResolution:
+    """Tests that resolve_param_collisions correctly renames body properties."""
+
+    def test_renames_colliding_properties(self, blocking_spec: OpenAPISpec) -> None:
+        """Colliding body properties are renamed with body_ prefix."""
+        resolve_param_collisions(blocking_spec)
+
+        op = blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        assert "body_owner" in props
+        assert "body_repo" in props
+        assert "body_index" in props
+        assert "owner" not in props
+        assert "repo" not in props
+        assert "index" not in props
+
+    def test_sets_x_param_rename(self, blocking_spec: OpenAPISpec) -> None:
+        """x-param-rename extension is set with correct mapping."""
+        resolve_param_collisions(blocking_spec)
+
+        op = blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        rename_map = cast("dict[str, Any]", op).get("x-param-rename")
+        assert rename_map == {
+            "body_owner": "owner",
+            "body_repo": "repo",
+            "body_index": "index",
+        }
+
+    def test_shared_component_not_mutated(self, blocking_spec: OpenAPISpec) -> None:
+        """Shared IssueMeta component is not mutated by inlining."""
+        resolve_param_collisions(blocking_spec)
+
+        issue_meta = blocking_spec["components"]["schemas"]["IssueMeta"]
+        assert "owner" in issue_meta["properties"]
+        assert "body_owner" not in issue_meta["properties"]
+
+    def test_non_colliding_endpoint_unchanged(self, blocking_spec: OpenAPISpec) -> None:
+        """Endpoints without collisions are not affected."""
+        resolve_param_collisions(blocking_spec)
+
+        op = blocking_spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+        assert "title" in props
+        assert "body" in props
+        assert "x-param-rename" not in cast("dict[str, Any]", op)
+
+
+# ---------------------------------------------------------------------------
+# Tests: runtime shim (_read_param_rename / _apply_param_rename)
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeShim:
+    """Tests that the runtime shim correctly fixes parameter_map."""
+
+    def test_read_param_rename_after_resolution(self, blocking_spec: OpenAPISpec) -> None:
+        """_read_param_rename finds the x-param-rename set by resolution."""
+        resolve_param_collisions(blocking_spec)
+        rename_map = _read_param_rename(
+            blocking_spec,
+            "/repos/{owner}/{repo}/issues/{index}/blocks",
+            "POST",
+        )
+        assert rename_map == {
+            "body_owner": "owner",
+            "body_repo": "repo",
+            "body_index": "index",
+        }
+
+    def test_apply_param_rename_fixes_parameter_map(self, blocking_spec: OpenAPISpec) -> None:
+        """_apply_param_rename corrects openapi_name in parameter_map."""
+        resolve_param_collisions(blocking_spec)
+
+        # Simulate what FastMCP's parameter_map would look like
+        parameter_map = {
+            "owner": {"location": "path", "openapi_name": "owner"},
+            "repo": {"location": "path", "openapi_name": "repo"},
+            "index": {"location": "path", "openapi_name": "index"},
+            "body_owner": {"location": "body", "openapi_name": "body_owner"},
+            "body_repo": {"location": "body", "openapi_name": "body_repo"},
+            "body_index": {"location": "body", "openapi_name": "body_index"},
+        }
+
+        class _RouteStub:
+            def __init__(self, path: str, method: str, parameter_map: dict[str, Any]) -> None:
+                self.path = path
+                self.method = method
+                self.parameter_map = parameter_map
+
+        route = _RouteStub(
+            path="/repos/{owner}/{repo}/issues/{index}/blocks",
+            method="POST",
+            parameter_map=parameter_map,
+        )
+
+        _apply_param_rename(route, blocking_spec)
+
+        # Body params should now map to original names
+        assert route.parameter_map["body_owner"]["openapi_name"] == "owner"
+        assert route.parameter_map["body_repo"]["openapi_name"] == "repo"
+        assert route.parameter_map["body_index"]["openapi_name"] == "index"
+        # Path params unchanged
+        assert route.parameter_map["owner"]["openapi_name"] == "owner"
+        assert route.parameter_map["repo"]["openapi_name"] == "repo"
+        assert route.parameter_map["index"]["openapi_name"] == "index"
+
+
+# ---------------------------------------------------------------------------
+# Tests: full pipeline (spec -> FastMCP provider -> tools)
+# ---------------------------------------------------------------------------
+
+
+class TestFullPipeline:
+    """Tests the full pipeline from spec to FastMCP tools."""
+
+    @pytest.mark.asyncio
+    async def test_tool_has_correct_param_names(self, blocking_spec: OpenAPISpec) -> None:
+        """Tool parameters use body_ prefix for renamed body properties."""
+        resolve_param_collisions(blocking_spec)
+
+        mock_client = MagicMock()
+        mock_client.client = MagicMock()
+        mock_client.request.return_value = {}
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=mock_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool_map = _tool_dict(tools)
+
+        # The blocking tool should have body_ prefixed params.
+        # Tool names in the provider are the raw operationIds (camelCase);
+        # snake_case conversion and the gitea_ prefix are applied later
+        # by server-level transforms (GiteaNamespace).
+        blocking_tool = tool_map.get("issueCreateIssueBlocking")
+        assert blocking_tool is not None, (
+            f"Expected issueCreateIssueBlocking tool, got: {list(tool_map.keys())}"
+        )
+
+        # blocking_tool.parameters is a JSON Schema dict with property names
+        # as keys under the "properties" key.
+        params = blocking_tool.parameters
+        if isinstance(params, dict):
+            param_names = set(params.get("properties", {}).keys())
+        else:
+            param_names = set(params) if isinstance(params, (list, set)) else set()
+
+        assert "body_owner" in param_names, f"Expected body_owner in params: {param_names}"
+        assert "body_repo" in param_names, f"Expected body_repo in params: {param_names}"
+        assert "body_index" in param_names, f"Expected body_index in params: {param_names}"
+        # Original names should still be present (they're the path params)
+        assert "owner" in param_names
+        assert "repo" in param_names
+        assert "index" in param_names
+
+    @pytest.mark.asyncio
+    async def test_non_colliding_tool_unchanged(self, blocking_spec: OpenAPISpec) -> None:
+        """Tools without collisions have their original parameter names."""
+        resolve_param_collisions(blocking_spec)
+
+        mock_client = MagicMock()
+        mock_client.client = MagicMock()
+        mock_client.request.return_value = {}
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=mock_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool_map = _tool_dict(tools)
+
+        create_tool = tool_map.get("issueCreateIssue")
+        assert create_tool is not None
+
+        params = create_tool.parameters
+        if isinstance(params, dict):
+            param_names = set(params.get("properties", {}).keys())
+        else:
+            param_names = set(params) if isinstance(params, (list, set)) else set()
+
+        assert "title" in param_names
+        assert "body" in param_names
+        # No body_ prefix for non-colliding params
+        assert "body_title" not in param_names
+        assert "body_body" not in param_names
+
+
+# ---------------------------------------------------------------------------
+# Tests: request emission (pins the FastMCP parameter_map contract)
+# ---------------------------------------------------------------------------
+
+
+class TestRequestEmission:
+    """Tests that the emitted HTTP request uses the original Gitea field names.
+
+    The runtime shim (``_apply_param_rename``) depends on FastMCP-internal
+    ``parameter_map`` structure (``{"location": ..., "openapi_name": ...}``
+    dicts).  The unit tests verify the shim against a hand-built stub of that
+    structure; these tests go through real FastMCP parsing and call the tool
+    with a recording httpx client.  If a FastMCP upgrade changes the
+    ``parameter_map`` structure, the shim silently no-ops (defensive
+    ``isinstance`` checks) and the body would contain ``body_owner`` instead
+    of ``owner`` — these tests are the tripwire for that regression.
+    """
+
+    @staticmethod
+    def _make_recording_client() -> tuple[MagicMock, AsyncMock]:
+        """Build a GiteaClient stub whose httpx client records the request.
+
+        Returns:
+            Tuple of (gitea_client stub, send mock).  The send mock's first
+            positional call argument is the emitted ``httpx.Request``.
+        """
+        send = AsyncMock(
+            side_effect=lambda request: httpx.Response(
+                200, json={"number": 7}, request=request
+            )
+        )
+        http_client = MagicMock()
+        http_client.base_url = "http://localhost"
+        http_client.headers = {}
+        http_client.send = send
+        gitea_client = MagicMock()
+        gitea_client.client = http_client
+        gitea_client.request.return_value = {}
+        return gitea_client, send
+
+    @pytest.mark.asyncio
+    async def test_emitted_body_uses_original_field_names(
+        self, blocking_spec: OpenAPISpec
+    ) -> None:
+        """Request body contains ``owner``/``repo``/``index``, not ``body_*``."""
+        resolve_param_collisions(blocking_spec)
+        gitea_client, send = self._make_recording_client()
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool = _tool_dict(tools)["issueCreateIssueBlocking"]
+
+        await tool.run(
+            arguments={
+                "owner": "pathowner",
+                "repo": "pathrepo",
+                "index": 42,
+                "body_owner": "bodyowner",
+                "body_repo": "bodyrepo",
+                "body_index": 7,
+            }
+        )
+
+        send.assert_awaited_once()
+        request = send.call_args.args[0]
+        # Path params go to the URL with their original values.
+        assert request.url.path == "/repos/pathowner/pathrepo/issues/42/blocks"
+        # Body params are emitted under their original Gitea field names.
+        assert json.loads(request.content) == {
+            "owner": "bodyowner",
+            "repo": "bodyrepo",
+            "index": 7,
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_colliding_tool_emits_body_unchanged(
+        self, blocking_spec: OpenAPISpec
+    ) -> None:
+        """Tools without collisions emit their body untouched (control case)."""
+        resolve_param_collisions(blocking_spec)
+        gitea_client, send = self._make_recording_client()
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool = _tool_dict(tools)["issueCreateIssue"]
+
+        await tool.run(
+            arguments={
+                "owner": "someowner",
+                "repo": "somerepo",
+                "title": "A title",
+                "body": "A body",
+            }
+        )
+
+        send.assert_awaited_once()
+        request = send.call_args.args[0]
+        assert request.url.path == "/repos/someowner/somerepo/issues"
+        assert json.loads(request.content) == {"title": "A title", "body": "A body"}

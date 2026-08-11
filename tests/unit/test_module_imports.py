@@ -49,6 +49,7 @@ ALL_MODULES: list[str] = [
     # Subpackages
     "gitea_mcp_server.openapi_converter",
     "gitea_mcp_server.openapi_converter.core",
+    "gitea_mcp_server.openapi_converter.param_collision",
     "gitea_mcp_server.openapi_converter.schema",
     "gitea_mcp_server.resources",
     "gitea_mcp_server.resources.auto",

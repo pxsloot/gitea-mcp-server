@@ -36,6 +36,7 @@ from gitea_mcp_server.openapi_converter.core import (
     fix_references,
     remove_swagger_fields,
 )
+from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.openapi_converter.schema import (
     OptionalPropertyTransformer,
     PropertyRequiredCollector,
@@ -77,4 +78,5 @@ __all__ = [
     "convert_swagger_to_openapi_v3",
     "fix_references",
     "remove_swagger_fields",
+    "resolve_param_collisions",
 ]

@@ -6,8 +6,10 @@ parameter names, and the runtime shim that fixes the ``parameter_map``.
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 from gitea_mcp_server.openapi_converter.param_collision import (
     _collect_path_item_params,
@@ -706,6 +708,34 @@ class TestResolveParamCollisions:
             },
         )
         resolve_param_collisions(spec)  # Should not raise
+
+    def test_never_raises(self, caplog, monkeypatch) -> None:
+        """Exceptions inside collision resolution are caught and logged.
+
+        The ``resolve_param_collisions`` docstring declares a
+        "guaranteed not to raise" contract.  This test validates it
+        by forcing an exception deep inside the scan loop and asserting
+        that the function returns normally (no propagation) and logs
+        at error level.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/test/{owner}": {
+                    "post": _make_operation(
+                        path_params=["owner"],
+                        body_props={"owner": {"type": "string"}},
+                    ),
+                },
+            },
+        )
+        monkeypatch.setattr(
+            "gitea_mcp_server.openapi_converter.param_collision._resolve_operation_collisions",
+            MagicMock(side_effect=RuntimeError("simulated internal failure")),
+        )
+        with caplog.at_level(logging.ERROR):
+            resolve_param_collisions(spec)  # Must not raise
+
+        assert "Failed to resolve parameter name collisions" in caplog.text
 
 
 # ===========================================================================

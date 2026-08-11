@@ -519,10 +519,10 @@ The customization layers as applied during server startup:
      ``x-original-content-types`` (set by ``OperationTransformer`` and read by
      ``tools/schemas.py:_is_text_response`` to distinguish non-JSON endpoints)
      and ``x-mcp`` (consumed by ``server_setup/mcp_extensions.py``).  The
-      post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
-      schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
-      the strip to the whole spec -- that would silently break text/plain
-      response detection and MCP extension overrides.
+     post-conversion ``x-fastmcp-wrap-result`` extension is injected on output
+     schemas in ``mcp_builder.py`` and is likewise unaffected.  Do not broaden
+     the strip to the whole spec -- that would silently break text/plain
+     response detection and MCP extension overrides.
 
  15. **Parameter collision resolution (``body_`` prefix)** -- FastMCP's
      ``_combine_schemas_and_map_params`` detects name collisions between path

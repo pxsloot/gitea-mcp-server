@@ -495,7 +495,11 @@ The factory:
 - Generates a handler closure that calls ``gitea_client.request``
 - Handles ``isinstance(data, str)`` branching (text/plain vs application/json)
 - Attaches the schema and ``format_hint`` in ``ResourceContent.meta``
-- Registers via ``mcp.resource()`` and adds the URI to ``_registered_uris``
+- Registers via ``mcp.resource()`` and adds the URI to a caller-owned
+  ``tracking_set`` when provided.  ``register_custom_resources()`` creates
+  a local set, passes it to every factory call, and returns it so the
+  orchestrator can pass it as ``skip_uris`` to
+  ``register_auto_generated_resources()``.
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
@@ -678,9 +682,11 @@ working together::
         available_scopes=available_scopes,
     )
 
-No manual skip-URI maintenance is needed — the factory's ``_registered_uris``
-set is populated at registration time and passed as ``skip_uris`` to
-``register_auto_generated_resources()`` by ``resource_setup.py``.
+No manual skip-URI maintenance is needed — ``register_custom_resources()``
+returns the set of URIs registered via ``make_api_resource()`` and
+``resource_setup.py`` passes it directly as ``skip_uris`` to
+``register_auto_generated_resources()`` — a fresh caller-owned set,
+no defensive copy needed.
 
 **Note**: If future patterns repeat (many list resources sharing the same
 structure), consider extracting higher-level wrappers like
@@ -698,8 +704,8 @@ non-GET methods) that don't fit the factory pattern, register directly with
 2. **Write the resource function** in ``resources/custom.py``.
 3. **Register** with a direct ``mcp.resource()`` call — no decorator needed.
    Add a scope guard inline when the resource requires a token scope.
-4. **No skip-URI update needed** — factory resources are auto-tracked in
-   ``_registered_uris`` and skipped by the auto-generation loop.
+4. **No skip-URI update needed** — factory resources are auto-tracked via
+   the ``tracking_set`` parameter and skipped by the auto-generation loop.
 
 ### Pre-computed static resources
 
@@ -943,11 +949,13 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
 1. **Don't edit on `main`** -- Always create a feature branch first.
 2. **Don't import from outside `__all__`** in production code.  Internal
    functions may be renamed/refactored without notice.
-3. **Resource URIs conflict** -- When adding a custom resource that shadows
+3. **Resource URIs conflict** — When adding a custom resource that shadows
    a GET endpoint, use ``make_api_resource()`` (factory auto-tracks URIs
-   in ``_registered_uris``).  For static resources registered via direct
-   ``mcp.resource()`` calls, add the URI to the ``skip_uris`` set that
-   ``resource_setup.py`` passes to ``register_auto_generated_resources``.
+   via the ``tracking_set`` parameter and ``register_custom_resources()``
+   returns them).
+   For static resources registered via direct ``mcp.resource()`` calls,
+   add the URI to the ``skip_uris`` set that the orchestrator passes to
+   ``register_auto_generated_resources()``.
 4. **Tests that make HTTP calls** -- Use `respx` to mock the Gitea API.
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't

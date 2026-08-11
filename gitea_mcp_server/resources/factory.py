@@ -1,20 +1,20 @@
 """Factory for creating custom resource handlers with auto schema derivation.
 
 Provides ``make_api_resource()`` which generates and registers a resource
-handler from a declarative description -- eliminating the 5-step boilerplate
-pattern that was repeated across every custom resource.
+handler from a declarative description.
 
 The factory auto-derives the response schema from the OpenAPI spec via
-the endpoint's ``api_path + method``, removing the need for manual
-``get_success_schema`` / ``unwrap_result_schema`` calls.  Handlers
-handle ``str`` vs JSON branching automatically.
+the endpoint's ``api_path + method``. Handlers handle ``str`` vs JSON branching
+automatically.
 
 URI tracking
 ------------
-The module-level ``_registered_uris`` set is populated dynamically at
-registration time (not at import time).  ``register_custom_resources()``
-runs *before* ``register_auto_generated_resources()``, and the resulting
-set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
+``make_api_resource()`` accepts an optional ``tracking_set`` parameter.
+When provided, the registered URI is added to the caller-owned set --
+no module-level mutable state.  ``register_custom_resources()`` creates
+a local set, passes it to every factory call, and returns it so the
+orchestrator can pass it as ``skip_uris`` to
+``register_auto_generated_resources()``.
 
 Parameter reference
 -------------------
@@ -29,27 +29,27 @@ Parameter                         Default        Purpose
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
 ``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
-                                                  When ``None``, FastMCP auto-generates one.
+                                                 When ``None``, FastMCP auto-generates one.
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
-                                                  Ignored when ``handler_hook`` is set.
+                                                 Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
                                                  response.  Skips schema derivation, registers as
                                                  ``text/plain``.
 ``resource_type``                 ``format_hint`` Machine-readable type for error responses.  Falls
-                                  or ``"api"``   back to ``"api"``.
+                                                  back to ``"api"``.
 ``scope``                         ``None``       Required token scope.  Resource silently skipped when
                                                  absent from ``available_scopes``.
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
 ``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
-                                                  must be included explicitly when the resource has
-                                                  a ``format_hint`` (i.e., a markdown formatter).
+                                                 must be included explicitly when the resource has
+                                                 a ``format_hint`` (i.e., a markdown formatter).
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
-                                 not found."``  placeholders.
+                                                 placeholders.
 ``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6
-                                                  parameter-routing fields (query_params,
-                                                  query_param_validators, context_params,
-                                                  context_param_validators, context_meta_keys,
-                                                  optional_params).  All fields optional.
+                                                 parameter-routing fields (query_params,
+                                                 query_param_validators, context_params,
+                                                 context_param_validators, context_meta_keys,
+                                                 optional_params).  All fields optional.
 ``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
 ``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
 ``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
@@ -102,12 +102,6 @@ class ResourceParamConfig:
     context_param_validators: dict[str, list[str]] | None = None
     context_meta_keys: list[str] | None = None
     optional_params: list[dict[str, Any]] | None = None
-
-
-# Populated at registration time by ``make_api_resource()``.
-# Starts empty; grows as ``register_custom_resources()`` calls
-# ``make_api_resource`` for each factory resource.
-_registered_uris: set[str] = set()
 
 
 def _auto_derive_schema(
@@ -405,13 +399,15 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     param_config: ResourceParamConfig | None = None,
     size_hint: str | None = None,
     default_detail: str | None = None,
+    tracking_set: set[str] | None = None,
 ) -> Callable[..., Any] | None:
     """Create and register a custom resource from an API endpoint.
 
     Derives the response schema from ``openapi_spec[api_path][method]``
     (unresolved, then unwrapped from the result envelope).  Generates the
-    handler closure, handles ``str`` vs JSON branching, registers the URI
-    in ``_registered_uris``, and calls ``mcp.resource()``.
+    handler closure, handles ``str`` vs JSON branching, and calls
+    ``mcp.resource()``.  When ``tracking_set`` is provided, the registered
+    URI is added to it.
 
     When ``handler_hook`` is provided, schema derivation and JSON wrapping
     are skipped.  The API response is passed through the hook for post-
@@ -474,6 +470,20 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             When not set, auto-derived from ``size_hint`` (``large``
             resources default to ``concise``; everything else to
             ``full``).
+        tracking_set: Optional caller-owned set to which the registered
+            URI is added.  When ``None`` (default), no tracking occurs.
+
+            **When to pass a tracking set**: callers whose resources must
+            be skipped by ``register_auto_generated_resources()`` (e.g.,
+            ``register_custom_resources()``).  Pass a local ``set()``,
+            collect URIs across all factory calls, and return it so the
+            orchestrator can hand it to ``auto.py`` as ``skip_uris``.
+
+            **When to omit**: callers that are *consumers* of skip_uris
+            (e.g., ``auto.py`` itself) or don't participate in the custom-
+            vs-auto override pattern.  Omitting is the right default —
+            it keeps the two-sentence call site clean and the intent
+            explicit at the point where tracking *does* matter.
 
     Returns:
         The registered handler callable, or ``None`` if scope-filtered.
@@ -706,8 +716,10 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         meta=meta if meta else None,
     )(handler)
 
-    # Track URI for auto-generation skip.
-    _registered_uris.add(uri)
+    # Track URI when the caller provides a tracking set
+    # (e.g., register_custom_resources collects factory URIs for skip_uris).
+    if tracking_set is not None:
+        tracking_set.add(uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

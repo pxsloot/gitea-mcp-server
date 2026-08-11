@@ -16,7 +16,6 @@ from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
     _build_optional_param_signature,
-    _registered_uris,
     make_api_resource,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
@@ -120,22 +119,6 @@ def _make_mock_client(json_response: object = None) -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clear_registered_uris() -> None:
-    """Clear ``_registered_uris`` before each test to ensure test isolation.
-
-    ``make_api_resource`` populates this module-level set at registration
-    time; without resetting, test ordering matters and parallel execution
-    would produce false failures.
-    """
-    _registered_uris.clear()
-
-
-# ---------------------------------------------------------------------------
 # Tests: _auto_derive_schema
 # ---------------------------------------------------------------------------
 
@@ -229,19 +212,21 @@ class TestMakeApiResourceRegistration:
             for c in mcp.resource.call_args_list
         )
 
-    def test_tracks_uri_in_registered_uris(self) -> None:
+    def test_tracks_uri_in_tracking_set(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
+        tracking_set: set[str] = set()
 
         handler = make_api_resource(
             mcp, client, spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
+            tracking_set=tracking_set,
         )
 
         assert handler is not None
-        assert _registered_uris == {"gitea://repos/{owner}/{repo}"}
+        assert tracking_set == {"gitea://repos/{owner}/{repo}"}
 
     def test_tags_are_caller_owned(self) -> None:
         """Caller-provided tags are passed through unchanged (no auto-adder)."""

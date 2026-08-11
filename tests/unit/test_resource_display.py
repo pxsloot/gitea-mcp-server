@@ -148,7 +148,7 @@ class TestContextMetaKeysPipeline:
         assert "state" not in meta
         assert meta.get("format_hint") == "repository"
 
-    def testformat_resource_content_with_extra_pulls(self) -> None:
+    def test_format_resource_content_with_extra_pulls(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Pull Requests' title."""
         from gitea_mcp_server.tools.resource_display import format_resource_content
 
@@ -160,7 +160,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Pull Requests - 1 items" in result
 
-    def testformat_resource_content_with_extra_issues(self) -> None:
+    def test_format_resource_content_with_extra_issues(self) -> None:
         """Display pipeline passes extra to formatter - produces 'Issues' title."""
         from gitea_mcp_server.tools.resource_display import format_resource_content
 
@@ -172,7 +172,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Issues - 1 items" in result
 
-    def testformat_resource_content_without_extra_fallback(self) -> None:
+    def test_format_resource_content_without_extra_fallback(self) -> None:
         """Display pipeline falls back to scanning when extra is absent."""
         from gitea_mcp_server.tools.resource_display import format_resource_content
 
@@ -184,7 +184,7 @@ class TestContextMetaKeysPipeline:
         )
         assert "Issues - 1 items" in result
 
-    def testformat_resource_content_without_format_hint(self) -> None:
+    def test_format_resource_content_without_format_hint(self) -> None:
         """Display pipeline ignores extra when no format_hint is provided."""
         from gitea_mcp_server.tools.resource_display import format_resource_content
 

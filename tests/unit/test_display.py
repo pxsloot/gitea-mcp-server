@@ -414,7 +414,7 @@ class TestFormatterGaps:
         assert "| Draft | True |" in result
         assert "| Prerelease | True |" in result
 
-    def testbuild_server_info_markdown(self) -> None:
+    def test_build_server_info_markdown(self) -> None:
         spec: OpenAPISpec = {
             "info": {
                 "title": "Gitea API",
@@ -429,14 +429,14 @@ class TestFormatterGaps:
         assert "## Description" in result
         assert "Gitea API description." in result
 
-    def testbuild_server_info_markdown_no_description(self) -> None:
+    def test_build_server_info_markdown_no_description(self) -> None:
         spec: OpenAPISpec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
         result = build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result
         assert "## Description" not in result
 
-    def testbuild_server_info_markdown_missing_info(self) -> None:
+    def test_build_server_info_markdown_missing_info(self) -> None:
         result = build_server_info_markdown({})
 
         assert "**Server Type**: Unknown" in result

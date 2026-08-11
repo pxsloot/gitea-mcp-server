@@ -164,7 +164,7 @@ class TestSchemaToExample:
 
         assert _schema_to_example({"type": "object", "properties": {}}) == {}
 
-    def testserialize_tool_schema_uses_output_example(self) -> None:
+    def test_serialize_tool_schema_uses_output_example(self) -> None:
         """serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
@@ -192,7 +192,7 @@ class TestSchemaToExample:
         assert result["output_example"]["id"] == 0
         assert result["output_example"]["name"] == "example-name"
 
-    def testserialize_tool_schema_no_output_schema(self) -> None:
+    def test_serialize_tool_schema_no_output_schema(self) -> None:
         """serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
 
@@ -260,7 +260,7 @@ class TestSchemaToExample:
         """_example_object without properties should return empty dict."""
         assert _example_object({}, 0, 3, 15) == {}
 
-    def testserialize_tool_schema_with_tags(self) -> None:
+    def test_serialize_tool_schema_with_tags(self) -> None:
         """serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
 
@@ -275,7 +275,7 @@ class TestSchemaToExample:
         assert "tags" in result
         assert set(result["tags"]) == {"issue", "repository"}
 
-    def testserialize_tool_schema_with_version(self) -> None:
+    def test_serialize_tool_schema_with_version(self) -> None:
         """serialize_tool_schema should include version when present."""
         from fastmcp.tools.base import Tool
 
@@ -289,7 +289,7 @@ class TestSchemaToExample:
         result = serialize_tool_schema(tool)
         assert result["version"] == "2.0"
 
-    def testserialize_tool_schema_with_open_world_hint(self) -> None:
+    def test_serialize_tool_schema_with_open_world_hint(self) -> None:
         """serialize_tool_schema should include openWorldHint when True."""
         from fastmcp.tools.base import Tool
         from mcp.types import ToolAnnotations
@@ -457,7 +457,7 @@ class TestSchemaToCompactExample:
 
         assert schema_to_compact_example({"type": "array", "items": {}}) == []
 
-    def testserialize_tool_schema_with_raw_meta(self) -> None:
+    def test_serialize_tool_schema_with_raw_meta(self) -> None:
         """serialize_tool_schema should use raw meta schema for compact example."""
 
         tool = Tool(
@@ -500,7 +500,7 @@ class TestSchemaToCompactExample:
         assert result["output_example"]["user"] == {"$ref": "User"}
         assert result["output_example"]["id"] == 0
 
-    def testserialize_tool_schema_no_raw_meta_fallback(self) -> None:
+    def test_serialize_tool_schema_no_raw_meta_fallback(self) -> None:
         """Without raw meta, serialize_tool_schema falls back to old behavior."""
 
         tool = Tool(

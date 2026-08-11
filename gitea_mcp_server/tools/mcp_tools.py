@@ -705,7 +705,6 @@ def register_mcp_resource_tools(
 
 __all__ = [
     "_extract_extra_meta",
-    "_make_tool_schema_resource_handler",
     "_maybe_decode_base64",
     "_mcp_list_resources_impl",
     "_mcp_read_resource_impl",

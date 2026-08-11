@@ -992,6 +992,5 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
 
 
 __all__ = [
-    "_response_is_contents_base64",
     "convert_swagger_to_openapi_v3",
 ]

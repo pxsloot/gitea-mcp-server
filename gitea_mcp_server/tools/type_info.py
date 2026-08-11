@@ -502,7 +502,6 @@ def register_type_tools(
 
 
 __all__ = [
-    "_walk_operation_refs",
     "_walk_parameter_refs",
     "_walk_request_body_refs",
     "_walk_response_refs",

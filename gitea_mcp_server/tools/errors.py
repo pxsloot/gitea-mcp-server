@@ -272,7 +272,6 @@ async def _run_with_error_handling(
 
 __all__ = [
     "_lookup_response_description",
-    "_raise_validation_error",
     "_raise_value_error",
     "_raise_value_error_from",
     "_run_validation",

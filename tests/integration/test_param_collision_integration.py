@@ -133,6 +133,88 @@ class TestSpecLevelResolution:
         assert "repo" not in props
         assert "index" not in props
 
+    def test_body_params_have_descriptions_after_resolution(
+        self, blocking_spec: OpenAPISpec
+    ) -> None:
+        """Renamed body_* params have non-empty descriptions (issue #681).
+
+        Path params in the fixture carry no descriptions, so body_*
+        properties fall back to the generic ``<name> field of the request
+        body resource`` message — not empty.
+        """
+        resolve_param_collisions(blocking_spec)
+
+        op = blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        # Every renamed param must have a non-empty description
+        assert props["body_owner"]["description"], "body_owner has empty description"
+        assert props["body_repo"]["description"], "body_repo has empty description"
+        assert props["body_index"]["description"], "body_index has empty description"
+
+    def test_body_params_get_path_param_descriptions(self) -> None:
+        """Renamed body_* params inherit path param descriptions (issue #681).
+
+        When path params carry descriptions, the renamed body properties
+        use the ``(Request body)`` prefix.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                    "post": {
+                        "operationId": "issueCreateIssueBlocking",
+                        "parameters": [
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                                "description": "owner of the repo",
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                                "description": "name of the repo",
+                            },
+                            {
+                                "name": "index",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                                "description": "index of the issue",
+                            },
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "owner": {"type": "string"},
+                                            "repo": {"type": "string"},
+                                            "index": {"type": "integer"},
+                                        },
+                                    },
+                                },
+                            },
+                            "required": True,
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        )
+        resolve_param_collisions(spec)
+
+        op = spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        assert props["body_owner"]["description"] == "(Request body) owner of the repo"
+        assert props["body_repo"]["description"] == "(Request body) name of the repo"
+        assert props["body_index"]["description"] == "(Request body) index of the issue"
+
     def test_sets_x_param_rename(self, blocking_spec: OpenAPISpec) -> None:
         """x-param-rename extension is set with correct mapping."""
         resolve_param_collisions(blocking_spec)
@@ -544,3 +626,40 @@ class TestSwaggerV1DeleteWithBody:
             "body_repo": "repo",
             "body_index": "index",
         }, f"Wrong renaming map: {rename_map}"
+
+    def test_body_params_have_descriptions(
+        self, converted_spec: OpenAPISpec
+    ) -> None:
+        """Renamed body_* params have non-empty descriptions (issue #681).
+
+        The real swagger.v1.json carries descriptions on path params
+        (e.g., ``owner of the repo``), so body_* properties should
+        inherit them with the ``(Request body)`` prefix.
+        """
+        op = converted_spec["paths"][
+            "/repos/{owner}/{repo}/issues/{index}/blocks"
+        ]["delete"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        assert props["body_owner"]["description"], "body_owner has empty description"
+        assert props["body_repo"]["description"], "body_repo has empty description"
+        assert props["body_index"]["description"], "body_index has empty description"
+
+        # When path params have descriptions in the real spec, the
+        # body_* params should carry the (Request body) prefix.
+        assert "(Request body)" in props["body_owner"]["description"]
+        assert "(Request body)" in props["body_repo"]["description"]
+        assert "(Request body)" in props["body_index"]["description"]
+
+    def test_dependencies_body_params_have_descriptions(
+        self, converted_spec: OpenAPISpec
+    ) -> None:
+        """Body_* params on the dependencies endpoint also have descriptions."""
+        op = converted_spec["paths"][
+            "/repos/{owner}/{repo}/issues/{index}/dependencies"
+        ]["delete"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        assert props["body_owner"]["description"], "body_owner has empty description"
+        assert props["body_repo"]["description"], "body_repo has empty description"
+        assert props["body_index"]["description"], "body_index has empty description"

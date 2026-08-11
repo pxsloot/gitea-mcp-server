@@ -11,6 +11,8 @@ from copy import deepcopy
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+import pytest
+
 from gitea_mcp_server.openapi_converter.param_collision import (
     _collect_path_item_params,
     _collect_path_param_names,
@@ -709,7 +711,9 @@ class TestResolveParamCollisions:
         )
         resolve_param_collisions(spec)  # Should not raise
 
-    def test_never_raises(self, caplog, monkeypatch) -> None:
+    def test_never_raises(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Exceptions inside collision resolution are caught and logged.
 
         The ``resolve_param_collisions`` docstring declares a

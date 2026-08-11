@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import jsonschema  # type: ignore[import-untyped]
 import pytest
@@ -881,3 +881,108 @@ class TestBasePathToServerConverter:
         spec: dict[str, Any] = {"basePath": "/api", "host": "git.example.com"}
         BasePathToServerConverter().convert(spec)
         assert spec["servers"][0]["url"].startswith("http://")
+
+
+# ===========================================================================
+# Tests: requestBody on non-POST/PUT/PATCH methods
+# ===========================================================================
+
+
+class TestDeleteRequestBody:
+    """DELETE endpoints with ``in: body`` parameters must emit requestBody.
+
+    Gitea's Swagger declares request bodies on some DELETE endpoints
+    (e.g. ``DELETE /repos/{owner}/{repo}/issues/{index}/blocks`` carries
+    an ``IssueMeta`` body).  The converter must not gate on HTTP method —
+    it must build ``requestBody`` whenever raw parameters declare
+    ``in: body`` or ``in: formData``, matching the behaviour-driven
+    approach used in ``param_collision.py``.
+    """
+
+    @staticmethod
+    def _make_swagger_spec(
+        paths: dict[str, Any] | None = None,
+        definitions: dict[str, Any] | None = None,
+    ) -> SwaggerV2Spec:
+        """Minimal Swagger 2.0 spec with the given paths and definitions."""
+        spec: dict[str, Any] = {
+            "swagger": "2.0",
+            "info": {"title": "Test", "version": "1.0"},
+            "basePath": "/api/v1",
+        }
+        if paths is not None:
+            spec["paths"] = paths
+        if definitions is not None:
+            spec["definitions"] = definitions
+        return cast("SwaggerV2Spec", spec)
+
+    def test_delete_with_body_param_produces_request_body(self) -> None:
+        """DELETE with ``in: body`` parameter survives as requestBody."""
+        spec = self._make_swagger_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                    "delete": {
+                        "operationId": "issueRemoveIssueBlocking",
+                        "parameters": [
+                            {"in": "path", "name": "owner", "type": "string", "required": True},
+                            {"in": "path", "name": "repo", "type": "string", "required": True},
+                            {"in": "path", "name": "index", "type": "integer", "required": True},
+                            {
+                                "in": "body",
+                                "name": "body",
+                                "schema": {"$ref": "#/definitions/IssueMeta"},
+                            },
+                        ],
+                        "responses": {"204": {"description": "removed"}},
+                    },
+                },
+            },
+            definitions={
+                "IssueMeta": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "index": {"type": "integer"},
+                    },
+                },
+            },
+        )
+        result = convert_swagger_to_openapi_v3(spec)
+
+        op = result["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["delete"]
+        assert "requestBody" in op, (
+            f"DELETE endpoint with in:body param must have requestBody. "
+            f"Keys in operation: {list(op.keys())}"
+        )
+        rb = op["requestBody"]
+        schema = rb["content"]["application/json"]["schema"]
+        # $ref should be converted to components/schemas/IssueMeta
+        assert (
+            "$ref" in schema
+            or "properties" in schema
+        ), f"Body schema missing expected content: {schema}"
+
+    def test_delete_without_body_param_has_no_request_body(self) -> None:
+        """DELETE without body params must not produce a spurious requestBody."""
+        spec = self._make_swagger_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "delete": {
+                        "operationId": "repoDelete",
+                        "parameters": [
+                            {"in": "path", "name": "owner", "type": "string", "required": True},
+                            {"in": "path", "name": "repo", "type": "string", "required": True},
+                        ],
+                        "responses": {"204": {"description": "deleted"}},
+                    },
+                },
+            },
+        )
+        result = convert_swagger_to_openapi_v3(spec)
+
+        op = result["paths"]["/repos/{owner}/{repo}"]["delete"]
+        assert "requestBody" not in op, (
+            f"DELETE endpoint without body params must not have requestBody. "
+            f"Keys in operation: {list(op.keys())}"
+        )

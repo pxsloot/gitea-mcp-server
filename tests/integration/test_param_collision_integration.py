@@ -9,12 +9,14 @@ correct parameter names.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
+from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.server_setup.mcp_builder import (
     _apply_param_rename,
@@ -26,7 +28,7 @@ from tests.helpers.spec_fixtures import make_openapi_spec
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 
 def _tool_dict(tools: Sequence[Any]) -> dict[str, Any]:
@@ -420,3 +422,125 @@ class TestRequestEmission:
         request = send.call_args.args[0]
         assert request.url.path == "/repos/someowner/somerepo/issues"
         assert json.loads(request.content) == {"title": "A title", "body": "A body"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: full pipeline from swagger.v1.json (DELETE-with-body)
+# ---------------------------------------------------------------------------
+
+
+class TestSwaggerV1DeleteWithBody:
+    """Full-pipeline test: ``tests/swagger.v1.json`` → converter → collision
+    resolver → FastMCP tools.
+
+    Verifies that the real-world DELETE-with-body endpoints
+    (``/repos/{owner}/{repo}/issues/{index}/blocks`` and
+    ``/repos/{owner}/{repo}/issues/{index}/dependencies``) survive the
+    converter (no method-gate dropping), have their param collisions
+    resolved (``body_owner`` / ``body_repo`` / ``body_index``), and end
+    up as usable FastMCP tools with the expected parameter names.
+
+    This is the integration-level acceptance test for issue #680 /
+    PR #682.
+    """
+
+    @pytest.fixture(scope="class")
+    def converted_spec(self) -> OpenAPISpec:
+        """Load swagger.v1.json, convert, resolve collisions."""
+        spec_path = Path(__file__).parent.parent / "swagger.v1.json"
+        with spec_path.open() as f:
+            swag: dict[str, Any] = json.load(f)
+        openapi_spec: dict[str, Any] = convert_swagger_to_openapi_v3(
+            cast("SwaggerV2Spec", swag)
+        )
+        # widen to OpenAPISpec for collision resolution
+        typed: OpenAPISpec = cast("OpenAPISpec", openapi_spec)
+        resolve_param_collisions(typed)
+        return typed
+
+    @pytest.fixture(scope="class")
+    def tools(self, converted_spec: OpenAPISpec) -> dict[str, Any]:
+        """Provider tools from the converted+resolved spec."""
+        import asyncio
+
+        mock_client = MagicMock()
+        mock_client.client = MagicMock()
+        mock_client.request.return_value = {}
+
+        provider = create_openapi_provider(
+            openapi_spec=converted_spec,
+            gitea_client=mock_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        async def _get() -> Sequence[Any]:
+            return await provider.list_tools()
+
+        return _tool_dict(asyncio.run(_get()))
+
+    def test_blocking_tool_has_body_prefixed_params(
+        self, tools: dict[str, Any]
+    ) -> None:
+        """issue_remove_issue_blocking exposes body_owner/body_repo/body_index."""
+        t = tools.get("issue_remove_issue_blocking")
+        assert t is not None, f"Tool not found; available: {sorted(tools.keys())}"
+
+        param_names = set(t.parameters.get("properties", {}).keys())
+        assert "body_owner" in param_names, f"Missing body_owner in {sorted(param_names)}"
+        assert "body_repo" in param_names, f"Missing body_repo in {sorted(param_names)}"
+        assert "body_index" in param_names, f"Missing body_index in {sorted(param_names)}"
+        # Original path params still present
+        assert "owner" in param_names
+        assert "repo" in param_names
+        assert "index" in param_names
+
+    def test_dependencies_tool_has_body_prefixed_params(
+        self, tools: dict[str, Any]
+    ) -> None:
+        """issue_remove_issue_dependencies exposes body_owner/body_repo/body_index."""
+        t = tools.get("issue_remove_issue_dependencies")
+        assert t is not None, f"Tool not found; available: {sorted(tools.keys())}"
+
+        param_names = set(t.parameters.get("properties", {}).keys())
+        assert "body_owner" in param_names, f"Missing body_owner in {sorted(param_names)}"
+        assert "body_repo" in param_names, f"Missing body_repo in {sorted(param_names)}"
+        assert "body_index" in param_names, f"Missing body_index in {sorted(param_names)}"
+        assert "owner" in param_names
+        assert "repo" in param_names
+        assert "index" in param_names
+
+    def test_request_body_uses_original_field_names(
+        self, converted_spec: OpenAPISpec
+    ) -> None:
+        """Emitted request body maps body_* params back to owner/repo/index."""
+        import asyncio
+
+        gitea_client = MagicMock()
+        gitea_client.client = MagicMock()
+        gitea_client.request.return_value = {}
+
+        provider = create_openapi_provider(
+            openapi_spec=converted_spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        async def _run() -> dict[str, Any]:
+            tools = await provider.list_tools()
+            return _tool_dict(tools)
+
+        tools = asyncio.run(_run())
+        t = tools["issue_remove_issue_blocking"]
+
+        # Verify x-param-rename is set and maps body_* → original names
+        op = converted_spec["paths"][
+            "/repos/{owner}/{repo}/issues/{index}/blocks"
+        ]["delete"]
+        rename_map = op.get("x-param-rename")
+        assert rename_map == {
+            "body_owner": "owner",
+            "body_repo": "repo",
+            "body_index": "index",
+        }, f"Wrong renaming map: {rename_map}"

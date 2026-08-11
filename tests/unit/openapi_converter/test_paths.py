@@ -99,8 +99,16 @@ class TestConvertPaths:
         # Should have requestBody from the body parameter
         assert "requestBody" in op
 
-    def test_delete_has_no_request_body(self) -> None:
-        """DELETE operations should never include requestBody, even with body/formData params."""
+    def test_delete_with_body_params_has_request_body(self) -> None:
+        """DELETE operations with ``in: body`` or ``in: formData`` parameters must
+        produce requestBody.
+        
+        Gitea's Swagger declares request bodies on some DELETE endpoints
+        (e.g. DELETE /repos/{owner}/{repo}/issues/{index}/blocks carries
+        an IssueMeta body).  The converter builds requestBody whenever
+        raw parameters declare in: body or in: formData, regardless of
+        HTTP method.
+        """
         paths = {
             "/items/{id}": {
                 "delete": {
@@ -117,11 +125,79 @@ class TestConvertPaths:
         op = result["/items/{id}"]["delete"]
         # path params are preserved
         assert any(p["name"] == "id" for p in op["parameters"])
-        # body and formData params are filtered out (handled by convert_parameters)
+        # body and formData params are filtered out of parameters
+        # (they become requestBody, handled by convert_parameters)
         assert not any(p["name"] == "body" for p in op["parameters"])
         assert not any(p["name"] == "file" for p in op["parameters"])
-        # No requestBody should be created for DELETE
-        assert "requestBody" not in op
+        # Request body is built from in:body / in:formData params
+        assert "requestBody" in op
+        rb = op["requestBody"]
+        assert "content" in rb
+
+    def test_delete_without_body_params_has_no_request_body(self) -> None:
+        """DELETE without ``in: body`` or ``in: formData`` must not produce
+        a spurious requestBody.
+
+        Complements ``test_delete_with_body_params_has_request_body``:
+        the converter gates on data presence, not method, so a DELETE
+        that carries no body parameters must behave exactly like any
+        other body-less operation — no requestBody emitted.
+        """
+        paths = {
+            "/items/{id}": {
+                "delete": {
+                    "parameters": [
+                        {"name": "id", "in": "path", "type": "integer", "required": True},
+                    ],
+                    "responses": {"204": {"description": "No Content"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        op = result["/items/{id}"]["delete"]
+        assert any(p["name"] == "id" for p in op["parameters"])
+        assert "requestBody" not in op, (
+            f"DELETE without body params must not have requestBody. "
+            f"Keys: {list(op.keys())}"
+        )
+
+    def test_delete_with_formdata_produces_request_body(self) -> None:
+        """DELETE with only ``in: formData`` must produce multipart requestBody.
+
+        The converter builds requestBody whenever any raw parameter declares
+        ``in: body`` or ``in: formData``.  This test isolates the formData
+        path to verify it works independently on DELETE (the existing
+        ``test_delete_with_body_params_has_request_body`` tests both together).
+        """
+        paths = {
+            "/items/{id}/attachments": {
+                "delete": {
+                    "parameters": [
+                        {"name": "id", "in": "path", "type": "integer", "required": True},
+                        {
+                            "name": "attachment_ids",
+                            "in": "formData",
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "required": True,
+                        },
+                    ],
+                    "responses": {"204": {"description": "No Content"}},
+                }
+            }
+        }
+        result = convert_paths(paths)
+        op = result["/items/{id}/attachments"]["delete"]
+        assert any(p["name"] == "id" for p in op["parameters"])
+        # formData params are filtered out of parameters
+        assert not any(p["name"] == "attachment_ids" for p in op["parameters"])
+        # requestBody is built from formData params
+        assert "requestBody" in op
+        rb = op["requestBody"]
+        assert "multipart/form-data" in rb["content"]
+        schema = rb["content"]["multipart/form-data"]["schema"]
+        assert "attachment_ids" in schema["properties"]
+        assert schema["type"] == "object"
 
     def test_path_level_parameters_converted(self) -> None:
         """Path-level parameters should be converted and preserved."""

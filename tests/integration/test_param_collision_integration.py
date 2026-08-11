@@ -8,9 +8,11 @@ correct parameter names.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
@@ -305,3 +307,116 @@ class TestFullPipeline:
         # No body_ prefix for non-colliding params
         assert "body_title" not in param_names
         assert "body_body" not in param_names
+
+
+# ---------------------------------------------------------------------------
+# Tests: request emission (pins the FastMCP parameter_map contract)
+# ---------------------------------------------------------------------------
+
+
+class TestRequestEmission:
+    """Tests that the emitted HTTP request uses the original Gitea field names.
+
+    The runtime shim (``_apply_param_rename``) depends on FastMCP-internal
+    ``parameter_map`` structure (``{"location": ..., "openapi_name": ...}``
+    dicts).  The unit tests verify the shim against a hand-built stub of that
+    structure; these tests go through real FastMCP parsing and call the tool
+    with a recording httpx client.  If a FastMCP upgrade changes the
+    ``parameter_map`` structure, the shim silently no-ops (defensive
+    ``isinstance`` checks) and the body would contain ``body_owner`` instead
+    of ``owner`` — these tests are the tripwire for that regression.
+    """
+
+    @staticmethod
+    def _make_recording_client() -> tuple[MagicMock, AsyncMock]:
+        """Build a GiteaClient stub whose httpx client records the request.
+
+        Returns:
+            Tuple of (gitea_client stub, send mock).  The send mock's first
+            positional call argument is the emitted ``httpx.Request``.
+        """
+        send = AsyncMock(
+            side_effect=lambda request: httpx.Response(
+                200, json={"number": 7}, request=request
+            )
+        )
+        http_client = MagicMock()
+        http_client.base_url = "http://localhost"
+        http_client.headers = {}
+        http_client.send = send
+        gitea_client = MagicMock()
+        gitea_client.client = http_client
+        gitea_client.request.return_value = {}
+        return gitea_client, send
+
+    @pytest.mark.asyncio
+    async def test_emitted_body_uses_original_field_names(
+        self, blocking_spec: OpenAPISpec
+    ) -> None:
+        """Request body contains ``owner``/``repo``/``index``, not ``body_*``."""
+        resolve_param_collisions(blocking_spec)
+        gitea_client, send = self._make_recording_client()
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool = _tool_dict(tools)["issueCreateIssueBlocking"]
+
+        await tool.run(
+            arguments={
+                "owner": "pathowner",
+                "repo": "pathrepo",
+                "index": 42,
+                "body_owner": "bodyowner",
+                "body_repo": "bodyrepo",
+                "body_index": 7,
+            }
+        )
+
+        send.assert_awaited_once()
+        request = send.call_args.args[0]
+        # Path params go to the URL with their original values.
+        assert request.url.path == "/repos/pathowner/pathrepo/issues/42/blocks"
+        # Body params are emitted under their original Gitea field names.
+        assert json.loads(request.content) == {
+            "owner": "bodyowner",
+            "repo": "bodyrepo",
+            "index": 7,
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_colliding_tool_emits_body_unchanged(
+        self, blocking_spec: OpenAPISpec
+    ) -> None:
+        """Tools without collisions emit their body untouched (control case)."""
+        resolve_param_collisions(blocking_spec)
+        gitea_client, send = self._make_recording_client()
+
+        provider = create_openapi_provider(
+            openapi_spec=blocking_spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool = _tool_dict(tools)["issueCreateIssue"]
+
+        await tool.run(
+            arguments={
+                "owner": "someowner",
+                "repo": "somerepo",
+                "title": "A title",
+                "body": "A body",
+            }
+        )
+
+        send.assert_awaited_once()
+        request = send.call_args.args[0]
+        assert request.url.path == "/repos/someowner/somerepo/issues"
+        assert json.loads(request.content) == {"title": "A title", "body": "A body"}

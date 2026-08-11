@@ -16,7 +16,7 @@ Public functions:
         Separates display from data creation: handles page slicing (or
         ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
         over manual ``apply_format()`` + ``apply_pagination()`` composition.
-    _format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
+    format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
@@ -602,7 +602,7 @@ def _format_json_section(title: str, data: Any) -> str:
     return f"## {title}\n\n```json\n{json_module.dumps(data, indent=2)}\n```\n"
 
 
-def _format_tool_info_markdown(schema: ToolSchemaResult) -> str:
+def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
 
     Produces a predictable structure with a parameter table that agents can

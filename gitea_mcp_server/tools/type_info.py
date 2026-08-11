@@ -27,9 +27,9 @@ from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progre
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.schemas import (
-    _collect_refs,
-    _deep_resolve_schema,
-    _resolve_ref,
+    collect_refs,
+    deep_resolve_schema,
+    resolve_ref,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _walk_response_refs(
         if not isinstance(response, dict):
             continue
         if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = resolve_ref(openapi_spec, response["$ref"])
             if isinstance(resolved, dict):
                 response = resolved
         content = response.get("content", {})
@@ -65,7 +65,7 @@ def _walk_response_refs(
             continue
         schema = json_content.get("schema")
         if isinstance(schema, dict):
-            for ref in _collect_refs(schema):
+            for ref in collect_refs(schema):
                 if ref in type_index:
                     type_index[ref].setdefault("returned_by", []).append(operation_id)
 
@@ -83,7 +83,7 @@ def _walk_parameter_refs(
             continue
         param_schema = param.get("schema")
         if isinstance(param_schema, dict):
-            for ref in _collect_refs(param_schema):
+            for ref in collect_refs(param_schema):
                 if ref in type_index:
                     type_index[ref].setdefault("accepted_by", []).append(operation_id)
 
@@ -104,7 +104,7 @@ def _walk_request_body_refs(
             continue
         body_schema = media_item.get("schema")
         if isinstance(body_schema, dict):
-            for ref in _collect_refs(body_schema):
+            for ref in collect_refs(body_schema):
                 if ref in type_index:
                     type_index[ref].setdefault("accepted_by", []).append(operation_id)
 
@@ -164,7 +164,7 @@ def build_type_index(openapi_spec: OpenAPISpec) -> dict[str, dict[str, Any]]:
     for type_name, schema in schemas.items():
         if not isinstance(schema, dict):
             continue
-        schema_refs = _collect_refs(schema)
+        schema_refs = collect_refs(schema)
         type_index[type_name] = {
             "schema": schema,
             "referenced_types": sorted(schema_refs),
@@ -252,7 +252,7 @@ def resolve_type_info(
     }
 
     if detail == "full":
-        result["resolved_schema"] = _deep_resolve_schema(schema, openapi_spec)
+        result["resolved_schema"] = deep_resolve_schema(schema, openapi_spec)
 
     return result
 

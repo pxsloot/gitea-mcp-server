@@ -326,5 +326,4 @@ class LabelService:
 
 __all__ = [
     "LabelService",
-    "_LabelCacheStats",
 ]

@@ -15,7 +15,7 @@ from fastmcp import FastMCP
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources import register_auto_generated_resources, register_custom_resources
-from gitea_mcp_server.resources.factory import _registered_uris as _factory_registered_uris
+from gitea_mcp_server.resources.factory import registered_uris as _factory_registered_uris
 from gitea_mcp_server.tools.mcp_tools import register_mcp_resource_tools
 
 
@@ -32,7 +32,7 @@ def register_all_resources(  # noqa: PLR0913 — mcp + client + spec + filter + 
 
     Custom resources are registered first so that ``_factory_registered_uris``
     is populated by ``make_api_resource()``.  Auto-generated resources are
-    then registered with the factory's ``_registered_uris`` as ``skip_uris`` --
+    then registered with the factory's ``registered_uris`` as ``skip_uris`` --
     avoiding duplicate resource registrations.
 
     Auto-generated resources are filtered by ``filtered_tools_info`` (the same

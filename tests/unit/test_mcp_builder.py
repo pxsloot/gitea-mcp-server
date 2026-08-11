@@ -429,7 +429,7 @@ class TestCustomizeMetadata:
                 return_value=None,
             ),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_text_response",
+                "gitea_mcp_server.server_setup.mcp_builder.is_text_response",
                 return_value=True,
             ),
         ):
@@ -1852,7 +1852,7 @@ class TestDetectContentsResponseEdgeCases:
     """Cover defensive guard in ``_detect_contents_response``.
 
     The inner isinstance guard is unreachable in normal operation
-    (``_unwrap_result_schema`` always returns a dict for non-None input),
+    (``unwrap_result_schema`` always returns a dict for non-None input),
     but is kept as a safety check.  Exercised by passing a type-violating
     non-dict schema directly.
     """

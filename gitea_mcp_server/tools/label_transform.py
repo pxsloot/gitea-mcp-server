@@ -199,5 +199,5 @@ async def _convert_labels_inline(
 
 __all__ = [
     "LabelTransform",
-    "_convert_labels_inline",
+
 ]

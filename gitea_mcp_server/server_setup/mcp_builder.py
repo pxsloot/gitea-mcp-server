@@ -53,11 +53,11 @@ from gitea_mcp_server.tools.errors import run_validation, run_with_error_handlin
 from gitea_mcp_server.tools.label_transform import LabelTransform
 from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.schemas import (
-    _get_success_schema,
-    _is_text_response,
-    _response_has_no_content,
-    _unwrap_result_schema,
     derive_output_schema,
+    get_success_schema,
+    is_text_response,
+    response_has_no_content,
+    unwrap_result_schema,
 )
 from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
@@ -153,7 +153,7 @@ def _detect_contents_response(
     """
     if output_schema is None or is_text_response:
         return is_text_response, response_transform
-    inner = _unwrap_result_schema(output_schema)
+    inner = unwrap_result_schema(output_schema)
     if not isinstance(inner, dict):
         return is_text_response, response_transform
     props = inner.get("properties", {})
@@ -206,22 +206,22 @@ def _compute_tool_schema(
     output_schema = derive_output_schema(route, openapi_spec)
     raw_schema: dict[str, Any] | None = None
     if output_schema is not None:
-        raw_schema = _get_success_schema(
+        raw_schema = get_success_schema(
             openapi_spec, path, method.lower(), resolve=False,
         )
 
-    is_text_response = _is_text_response(openapi_spec, path, method)
+    is_text = is_text_response(openapi_spec, path, method)
     response_transform = _read_response_transform(
         openapi_spec, path, method,
     )
-    is_text_response, response_transform = _detect_contents_response(
-        output_schema, is_text_response, response_transform,
+    is_text, response_transform = _detect_contents_response(
+        output_schema, is_text, response_transform,
     )
 
     is_binary_response = _response_is_binary(openapi_spec, path, method)
 
     return _ComputedSchema(
-        output_schema, raw_schema, is_text_response, is_binary_response,
+        output_schema, raw_schema, is_text, is_binary_response,
         response_transform, path, method,
     )
 
@@ -255,7 +255,7 @@ def _apply_fallback_schemas(
         }
         return False
 
-    has_no_content = _response_has_no_content(
+    has_no_content = response_has_no_content(
         openapi_spec, schema.route_path, schema.route_method,
     )
     if has_no_content:
@@ -396,7 +396,7 @@ def _build_customization_meta(
     component_meta["required_scope"] = required_scope
 
     if schema.raw_schema is not None:
-        component_meta["output_schema_raw"] = _unwrap_result_schema(schema.raw_schema)
+        component_meta["output_schema_raw"] = unwrap_result_schema(schema.raw_schema)
 
     component_meta["_customization"] = ToolCustomization(
         has_labels=has_labels,

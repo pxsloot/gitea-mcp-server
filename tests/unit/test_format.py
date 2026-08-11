@@ -1492,11 +1492,11 @@ class TestFormatDictAsMarkdownEmptyFieldFilter:
 
 
 class TestFormatToolInfoMarkdown:
-    """Tests for _format_tool_info_markdown."""
+    """Tests for format_tool_info_markdown."""
 
     def test_output_schema_section_included(self) -> None:
         """When output_schema is present, 'Output Schema' section is rendered."""
-        from gitea_mcp_server.format import _format_tool_info_markdown
+        from gitea_mcp_server.format import format_tool_info_markdown
 
         schema: ToolSchemaResult = {
             "name": "test_tool",
@@ -1504,7 +1504,7 @@ class TestFormatToolInfoMarkdown:
             "parameters": {"properties": {"x": {"type": "string"}}, "required": []},
             "output_schema": {"type": "object", "properties": {"result": {"type": "string"}}},
         }
-        result = _format_tool_info_markdown(schema)
+        result = format_tool_info_markdown(schema)
         assert "## Output Schema" in result
         assert "type" in result
         assert "object" in result

@@ -7,7 +7,7 @@ from fastmcp.tools.base import Tool
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.schema_utils import get_schema_type
-from gitea_mcp_server.tools.schemas import _resolve_ref, _unwrap_result_schema
+from gitea_mcp_server.tools.schemas import resolve_ref, unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
@@ -212,7 +212,7 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     # At depth > 0, emit {"$ref": "TypeName"} as a compact placeholder.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
         if depth == 0 and openapi_spec is not None:
-            resolved = _resolve_ref(openapi_spec, schema["$ref"])
+            resolved = resolve_ref(openapi_spec, schema["$ref"])
             if isinstance(resolved, dict):
                 # Recurse at same depth — the ref's resolved properties will
                 # be processed normally; nested $refs inside will hit depth >= 1
@@ -299,7 +299,7 @@ def serialize_tool_schema(
     if tool.output_schema is not None:
         # Prefer the raw (unresolved) schema from meta for compact examples.
         # output_schema_raw stores the inner (unwrapped) schema
-        # (see mcp_builder._customize_metadata where _unwrap_result_schema
+        # (see mcp_builder._customize_metadata where unwrap_result_schema
         # is applied), so it matches the shape of the tool output data
         # directly — no unwrapping needed.
         raw = (tool.meta or {}).get("output_schema_raw")
@@ -313,7 +313,7 @@ def serialize_tool_schema(
             # won't trigger ref resolution, but passing it through keeps
             # the code path consistent and future-proof.
             # Unwrap the result envelope to get the inner schema.
-            inner = _unwrap_result_schema(tool.output_schema) or {}
+            inner = unwrap_result_schema(tool.output_schema) or {}
             example = schema_to_compact_example(
                 inner, openapi_spec=openapi_spec
             )

@@ -345,13 +345,6 @@ def _build_labels_markdown(data: list, owner: str, repo: str, *, detail: str = "
 
 
 __all__ = [
-    "_build_labels_markdown",
-    "_format_issues_markdown",
-    "_format_labels_markdown",
-    "_format_pulls_markdown",
-    "_format_release_markdown",
-    "_format_repo_markdown",
-    "_format_user_markdown",
     "call_formatter",
     "get_formatter",
     "get_formatter_meta",

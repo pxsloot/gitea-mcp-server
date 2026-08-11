@@ -6,12 +6,12 @@ pattern that was repeated across every custom resource.
 
 The factory auto-derives the response schema from the OpenAPI spec via
 the endpoint's ``api_path + method``, removing the need for manual
-``_get_success_schema`` / ``_unwrap_result_schema`` calls.  Handlers
+``get_success_schema`` / ``unwrap_result_schema`` calls.  Handlers
 handle ``str`` vs JSON branching automatically.
 
 URI tracking
 ------------
-The module-level ``_registered_uris`` set is populated dynamically at
+The module-level ``registered_uris`` set is populated dynamically at
 registration time (not at import time).  ``register_custom_resources()``
 runs *before* ``register_auto_generated_resources()``, and the resulting
 set is passed as ``skip_uris`` to skip auto-generation for factory URIs.
@@ -74,7 +74,7 @@ from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.scope import has_sufficient_scope
-from gitea_mcp_server.tools.schemas import _get_success_schema, _unwrap_result_schema
+from gitea_mcp_server.tools.schemas import get_success_schema, unwrap_result_schema
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ class ResourceParamConfig:
 # Populated at registration time by ``make_api_resource()``.
 # Starts empty; grows as ``register_custom_resources()`` calls
 # ``make_api_resource`` for each factory resource.
-_registered_uris: set[str] = set()
+registered_uris: set[str] = set()
 
 
 def _auto_derive_schema(
@@ -119,7 +119,7 @@ def _auto_derive_schema(
 
     Unwraps the ``{result: ...}`` envelope so the returned schema matches
     the raw API response shape -- exactly as ``custom.py`` did manually with
-    ``_unwrap_result_schema(_get_success_schema(...))``.
+    ``unwrap_result_schema(get_success_schema(...))``.
 
     The schema is returned with ``$ref`` intact (``resolve=False``) for
     ``$ref``-aware data collapse in the display layer.
@@ -135,8 +135,8 @@ def _auto_derive_schema(
     """
     if openapi_spec is None:
         return None
-    schema = _get_success_schema(openapi_spec, api_path, method, resolve=False)
-    return _unwrap_result_schema(schema)
+    schema = get_success_schema(openapi_spec, api_path, method, resolve=False)
+    return unwrap_result_schema(schema)
 
 
 def _validate_optional_param(
@@ -411,7 +411,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     Derives the response schema from ``openapi_spec[api_path][method]``
     (unresolved, then unwrapped from the result envelope).  Generates the
     handler closure, handles ``str`` vs JSON branching, registers the URI
-    in ``_registered_uris``, and calls ``mcp.resource()``.
+    in ``registered_uris``, and calls ``mcp.resource()``.
 
     When ``handler_hook`` is provided, schema derivation and JSON wrapping
     are skipped.  The API response is passed through the hook for post-
@@ -707,7 +707,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     )(handler)
 
     # Track URI for auto-generation skip.
-    _registered_uris.add(uri)
+    registered_uris.add(uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler
@@ -715,11 +715,6 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
 
 __all__ = [
     "ResourceParamConfig",
-    "_auto_derive_schema",
-    "_build_optional_param_signature",
-    "_registered_uris",
-    "_request_and_wrap",
-    "_set_handler_docstring",
-    "_validate_optional_param",
     "make_api_resource",
+    "registered_uris",
 ]

@@ -339,7 +339,7 @@ class TestLookupResponseDescription:
         assert result == "Resource not found"
 
     def test_ref_resolution_resolved_not_dict(self) -> None:
-        """When _resolve_ref returns non-dict, should fallback."""
+        """When resolve_ref returns non-dict, should fallback."""
         openapi_spec: OpenAPISpec = {
             "paths": {
                 "/test": {

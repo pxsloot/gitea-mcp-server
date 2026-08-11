@@ -16,74 +16,74 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
 )
 from gitea_mcp_server.tools.schemas import (
-    _deep_resolve_schema,
-    _is_object_type,
-    _is_text_response,
-    _schema_type_is_array,
+    deep_resolve_schema,
     derive_output_schema,
+    is_object_type,
+    is_text_response,
+    schema_type_is_array,
 )
 from tests.helpers.mcp_results import get_structured
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestSchemaTypeIsArray:
-    """Tests for _schema_type_is_array."""
+    """Tests for schema_type_is_array."""
 
     def test_detects_string_type(self) -> None:
         """Should return True for type 'array'."""
 
-        assert _schema_type_is_array({"type": "array"}) is True
+        assert schema_type_is_array({"type": "array"}) is True
 
     def test_detects_list_type(self) -> None:
         """Should return True for type ['array', 'null']."""
 
-        assert _schema_type_is_array({"type": ["array", "null"]}) is True
+        assert schema_type_is_array({"type": ["array", "null"]}) is True
 
     def test_rejects_non_array_string(self) -> None:
         """Should return False for non-array string types."""
 
-        assert _schema_type_is_array({"type": "string"}) is False
-        assert _schema_type_is_array({"type": "object"}) is False
+        assert schema_type_is_array({"type": "string"}) is False
+        assert schema_type_is_array({"type": "object"}) is False
 
     def test_rejects_non_array_list(self) -> None:
         """Should return False when 'array' not in type list."""
 
-        assert _schema_type_is_array({"type": ["string", "null"]}) is False
+        assert schema_type_is_array({"type": ["string", "null"]}) is False
 
     def test_no_type_key(self) -> None:
         """Should return False when no type key."""
 
-        assert _schema_type_is_array({}) is False
+        assert schema_type_is_array({}) is False
 
 
 class TestIsObjectType:
-    """Tests for _is_object_type."""
+    """Tests for is_object_type."""
 
     def test_detects_string_type(self) -> None:
         """Should return True for schema with type 'object'."""
-        assert _is_object_type({"type": "object"}) is True
+        assert is_object_type({"type": "object"}) is True
 
     def test_detects_list_type(self) -> None:
         """Should return True for schema with type ['object', 'null']."""
-        assert _is_object_type({"type": ["object", "null"]}) is True
+        assert is_object_type({"type": ["object", "null"]}) is True
 
     def test_rejects_non_object_string(self) -> None:
         """Should return False for non-object string types."""
-        assert _is_object_type({"type": "string"}) is False
-        assert _is_object_type({"type": "array"}) is False
+        assert is_object_type({"type": "string"}) is False
+        assert is_object_type({"type": "array"}) is False
 
     def test_rejects_non_object_list(self) -> None:
         """Should return False when 'object' not in type list."""
-        assert _is_object_type({"type": ["string", "null"]}) is False
+        assert is_object_type({"type": ["string", "null"]}) is False
 
     def test_no_type_key(self) -> None:
         """Should return False when no type key."""
-        assert _is_object_type({}) is False
+        assert is_object_type({}) is False
 
     def test_rejects_unknown_type(self) -> None:
         """Should return False for non-string, non-list type values."""
-        assert _is_object_type({"type": None}) is False
-        assert _is_object_type({"type": 42}) is False
+        assert is_object_type({"type": None}) is False
+        assert is_object_type({"type": 42}) is False
 
 
 class TestDeriveOutputSchema:
@@ -535,7 +535,7 @@ class TestDeriveOutputSchema:
 
 
 class TestIsTextResponse:
-    """Tests for _is_text_response function."""
+    """Tests for is_text_response function."""
 
     @pytest.fixture
     def text_spec(self) -> OpenAPISpec:
@@ -584,31 +584,31 @@ class TestIsTextResponse:
         )
 
     def test_text_plain_endpoint_detected(self, text_spec: OpenAPISpec) -> None:
-        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
+        assert is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
 
     def test_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
-        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
+        assert is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
 
     def test_no_content_types_not_text(self, text_spec: OpenAPISpec) -> None:
-        assert _is_text_response(text_spec, "/no-content-types", "get") is False
+        assert is_text_response(text_spec, "/no-content-types", "get") is False
 
     def test_missing_path_returns_false(self, text_spec: OpenAPISpec) -> None:
-        assert _is_text_response(text_spec, "/nonexistent", "get") is False
+        assert is_text_response(text_spec, "/nonexistent", "get") is False
 
     def test_missing_method_returns_false(self, text_spec: OpenAPISpec) -> None:
-        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
+        assert is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "post") is False
 
     def test_uppercase_method_normalized(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
-        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
+        assert is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
 
     def test_uppercase_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method on JSON endpoint should still return False."""
-        assert _is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
+        assert is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "GET") is False
 
 
 class TestResponseHasNoContent:
-    """Tests for _response_has_no_content function."""
+    """Tests for response_has_no_content function."""
 
     @pytest.fixture
     def empty_body_spec(self) -> OpenAPISpec:
@@ -722,23 +722,23 @@ class TestResponseHasNoContent:
 
     def test_204_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """204 No Content response should return True."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
 
     def test_202_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """202 Accepted with no body should return True."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
 
     def test_205_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """205 Reset Content should return True."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
 
     def test_200_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """200 with $ref to empty response should return True (merge endpoint scenario)."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(
             empty_body_spec,
             "/repos/{owner}/{repo}/pulls/{index}/merge",
             "put",
@@ -746,8 +746,8 @@ class TestResponseHasNoContent:
 
     def test_201_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """201 with $ref to empty response should return True."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(
             empty_body_spec,
             "/repos/{owner}/{repo}/pulls/{index}/merge-201",
             "put",
@@ -760,8 +760,8 @@ class TestResponseHasNoContent:
         empty-body declarations.  Inline 200/201 without ``content`` are
         treated as incomplete specs, not genuine empty-body endpoints.
         """
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(
             empty_body_spec,
             "/repos/{owner}/{repo}/200-inline-empty",
             "post",
@@ -769,8 +769,8 @@ class TestResponseHasNoContent:
 
     def test_201_inline_empty_not_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """201 inline with no content key should NOT be flagged (spec gap, not empty body)."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(
             empty_body_spec,
             "/repos/{owner}/{repo}/201-inline-empty",
             "post",
@@ -778,32 +778,32 @@ class TestResponseHasNoContent:
 
     def test_json_endpoint_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """JSON endpoint with 200 should return False."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
 
     def test_get_with_200_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """GET endpoint with 200 response should return False."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
 
     def test_response_with_content_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """204 with content body should NOT be flagged as empty."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
 
     def test_missing_path_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """Nonexistent path should return False."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
 
     def test_uppercase_method_normalized(self, empty_body_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
-        assert _response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True
+        from gitea_mcp_server.tools.schemas import response_has_no_content
+        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True
 
     def test_non_dict_responses_returns_false(self) -> None:
         """When responses is not a dict, should return False."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        from gitea_mcp_server.tools.schemas import response_has_no_content
         spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
@@ -814,22 +814,22 @@ class TestResponseHasNoContent:
                 }
             },
         })
-        assert _response_has_no_content(spec, "/test", "delete") is False
+        assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_non_dict_path_item_returns_false(self) -> None:
         """When path_item is not a dict, should return False."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        from gitea_mcp_server.tools.schemas import response_has_no_content
         spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
                 "/test": "not a dict",
             },
         })
-        assert _response_has_no_content(spec, "/test", "delete") is False
+        assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_non_dict_operation_returns_false(self) -> None:
         """When operation is not a dict, should return False (line 175)."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        from gitea_mcp_server.tools.schemas import response_has_no_content
         spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
@@ -838,11 +838,11 @@ class TestResponseHasNoContent:
                 },
             },
         })
-        assert _response_has_no_content(spec, "/test", "delete") is False
+        assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_ref_resolved_not_a_dict_continues(self) -> None:
         """When a $ref resolves to a non-dict, the loop continues (line 199)."""
-        from gitea_mcp_server.tools.schemas import _response_has_no_content
+        from gitea_mcp_server.tools.schemas import response_has_no_content
         spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
             "paths": {
@@ -862,7 +862,7 @@ class TestResponseHasNoContent:
         })
         # The ref resolves to a non-dict string, so the loop continues
         # and no response has no content, so it should return False
-        assert _response_has_no_content(spec, "/test", "delete") is False
+        assert response_has_no_content(spec, "/test", "delete") is False
 
 
 class TestTextResponseOutputSchema:
@@ -944,7 +944,7 @@ class TestTextResponseOutputSchema:
 
 
 class TestDeepResolveSchema:
-    """Tests for _deep_resolve_schema function."""
+    """Tests for deep_resolve_schema function."""
 
     SPEC: OpenAPISpec = {
         "openapi": "3.1.0",
@@ -987,7 +987,7 @@ class TestDeepResolveSchema:
 
     def test_resolves_nested_property_refs(self) -> None:
         """Resolves $ref inside property values."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {
             "type": "object",
@@ -996,29 +996,29 @@ class TestDeepResolveSchema:
                 "user": {"$ref": "#/components/schemas/User"},
             },
         }
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved["properties"]["user"]["type"] == "object"
         assert resolved["properties"]["user"]["properties"]["id"]["type"] == "integer"
         assert resolved["properties"]["user"]["properties"]["login"]["type"] == "string"
 
     def test_resolves_items_ref(self) -> None:
         """Resolves $ref in array items."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/User"},
         }
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved["items"]["type"] == "object"
         assert "id" in resolved["items"]["properties"]
 
     def test_resolves_chain_of_refs(self) -> None:
         """Resolves $ref chains (Repo -> User -> no more refs)."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/NestedRef"}
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved["type"] == "object"
         assert resolved["properties"]["repo"]["type"] == "object"
         assert resolved["properties"]["repo"]["properties"]["owner"]["type"] == "object"
@@ -1026,34 +1026,34 @@ class TestDeepResolveSchema:
 
     def test_resolves_allOf_entries(self) -> None:
         """Recursively resolves $ref inside allOf entries."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/AllOfSchema"}
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved["allOf"][0]["type"] == "object"
         assert resolved["allOf"][0]["properties"]["id"]["type"] == "integer"
 
     def test_resolves_top_level_ref(self) -> None:
         """Resolves a top-level $ref."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {"$ref": "#/components/schemas/User"}
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved["type"] == "object"
         assert resolved["properties"]["id"]["type"] == "integer"
         assert resolved["properties"]["login"]["type"] == "string"
 
     def test_leaf_schema_unchanged(self) -> None:
         """A schema with no refs should return a copy unchanged."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
-        resolved = _deep_resolve_schema(schema, self.SPEC)
+        resolved = deep_resolve_schema(schema, self.SPEC)
         assert resolved == schema
 
     def test_circular_ref_does_not_loop(self) -> None:
         """Circular $ref should not cause infinite recursion."""
-        from gitea_mcp_server.tools.schemas import _deep_resolve_schema
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         circular_spec: OpenAPISpec = {
             "components": {
@@ -1069,7 +1069,7 @@ class TestDeepResolveSchema:
             },
         }
         schema = {"$ref": "#/components/schemas/Node"}
-        resolved = _deep_resolve_schema(schema, circular_spec)
+        resolved = deep_resolve_schema(schema, circular_spec)
         assert resolved["type"] == "object"
         assert resolved["properties"]["id"]["type"] == "integer"
         assert resolved["properties"]["child"]["$ref"] == "#/components/schemas/Node"
@@ -1120,10 +1120,10 @@ class TestDeepResolveSchema:
         assert schema["properties"]["owner"]["properties"]["login"]["type"] == "string"
 
     def test_deep_resolve_non_dict_schema(self) -> None:
-        """_deep_resolve_schema should return {} for non-dict input."""
-        assert _deep_resolve_schema("not a dict", {}) == {}
+        """deep_resolve_schema should return {} for non-dict input."""
+        assert deep_resolve_schema("not a dict", {}) == {}
 
-    def test_deep_resolve_ref_resolves_to_non_dict(self) -> None:
+    def test_deepresolve_ref_resolves_to_non_dict(self) -> None:
         """When $ref resolves to non-dict, should keep the $ref key."""
         spec: OpenAPISpec = {
             "components": {
@@ -1132,7 +1132,7 @@ class TestDeepResolveSchema:
                 }
             }
         }
-        result = _deep_resolve_schema({"$ref": "#/components/schemas/Foo"}, spec)
+        result = deep_resolve_schema({"$ref": "#/components/schemas/Foo"}, spec)
         assert "$ref" in result
 
     def test_deep_resolve_custom_dict_key(self) -> None:
@@ -1142,16 +1142,16 @@ class TestDeepResolveSchema:
             "type": "object",
             "example": {"nested": {"$ref": "#/components/schemas/Bar"}},
         }
-        resolved = _deep_resolve_schema(schema, spec)
+        resolved = deep_resolve_schema(schema, spec)
         assert resolved["example"]["nested"]["type"] == "string"
 
 
 class TestGetSuccessSchema:
-    """Tests for _get_success_schema edge cases."""
+    """Tests for get_success_schema edge cases."""
 
     def test_non_dict_responses(self) -> None:
         """When responses is not a dict, should return None."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec = cast("OpenAPISpec", {
             "openapi": "3.1.0",
@@ -1163,11 +1163,11 @@ class TestGetSuccessSchema:
                 }
             },
         })
-        assert _get_success_schema(spec, "/test", "get") is None
+        assert get_success_schema(spec, "/test", "get") is None
 
     def test_ref_resolves_to_non_dict(self) -> None:
         """When $ref in response resolves to non-dict, should continue to next status code."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1194,13 +1194,13 @@ class TestGetSuccessSchema:
                 }
             },
         }
-        result = _get_success_schema(spec, "/test", "get")
+        result = get_success_schema(spec, "/test", "get")
         assert result is not None
         assert result["type"] == "object"
 
     def test_non_dict_content(self) -> None:
         """When content is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1220,12 +1220,12 @@ class TestGetSuccessSchema:
                 }
             },
         }
-        result = _get_success_schema(spec, "/test", "get")
+        result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
     def test_non_dict_json_content(self) -> None:
         """When application/json content is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1250,12 +1250,12 @@ class TestGetSuccessSchema:
                 }
             },
         }
-        result = _get_success_schema(spec, "/test", "get")
+        result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
     def test_non_dict_schema(self) -> None:
         """When schema is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1280,16 +1280,16 @@ class TestGetSuccessSchema:
                 }
             },
         }
-        result = _get_success_schema(spec, "/test", "get")
+        result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
 
 class TestGetRawSuccessSchema:
-    """Tests for _get_success_schema with resolve=False."""
+    """Tests for get_success_schema with resolve=False."""
 
     def test_inline_schema_keeps_ref_intact(self) -> None:
         """resolve=False should return schema with $ref intact."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1326,7 +1326,7 @@ class TestGetRawSuccessSchema:
                 },
             },
         }
-        result = _get_success_schema(spec, "/test", "get", resolve=False)
+        result = get_success_schema(spec, "/test", "get", resolve=False)
         assert result is not None
         user_schema = result["properties"]["user"]
         # $ref must survive - NOT deep-resolved
@@ -1335,7 +1335,7 @@ class TestGetRawSuccessSchema:
 
     def test_resolve_true_expands_ref(self) -> None:
         """resolve=True (default) should deep-resolve $ref."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1372,7 +1372,7 @@ class TestGetRawSuccessSchema:
                 },
             },
         }
-        result = _get_success_schema(spec, "/test", "get", resolve=True)
+        result = get_success_schema(spec, "/test", "get", resolve=True)
         assert result is not None
         user_schema = result["properties"]["user"]
         # $ref must be resolved - not a $ref dict
@@ -1382,7 +1382,7 @@ class TestGetRawSuccessSchema:
 
     def test_text_response_returns_none(self) -> None:
         """Text responses should return None regardless of resolve flag."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec = make_openapi_spec(openapi="3.1.0", paths={
             "/test": {
@@ -1399,19 +1399,19 @@ class TestGetRawSuccessSchema:
                 },
             },
         })
-        assert _get_success_schema(spec, "/test", "get", resolve=False) is None
-        assert _get_success_schema(spec, "/test", "get", resolve=True) is None
+        assert get_success_schema(spec, "/test", "get", resolve=False) is None
+        assert get_success_schema(spec, "/test", "get", resolve=True) is None
 
     def test_missing_path_returns_none(self) -> None:
         """Missing path should return None."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
-        assert _get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
+        assert get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
 
     def test_missing_method_returns_none(self) -> None:
         """Missing method should return None."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1430,11 +1430,11 @@ class TestGetRawSuccessSchema:
                 },
             },
         }
-        assert _get_success_schema(spec, "/test", "post", resolve=False) is None
+        assert get_success_schema(spec, "/test", "post", resolve=False) is None
 
     def test_prefers_200_over_201(self) -> None:
         """Should prefer 200 status code over 201."""
-        from gitea_mcp_server.tools.schemas import _get_success_schema
+        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1463,38 +1463,38 @@ class TestGetRawSuccessSchema:
                 },
             },
         }
-        result = _get_success_schema(spec, "/test", "get", resolve=False)
+        result = get_success_schema(spec, "/test", "get", resolve=False)
         assert result is not None
         assert "from_200" in result["properties"]
         assert "from_201" not in result["properties"]
 
 
 class TestCollectRefs:
-    """Tests for _collect_refs."""
+    """Tests for collect_refs."""
 
     def test_empty_schema_returns_empty(self) -> None:
         """Should return empty set for empty schema."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
-        assert _collect_refs({}) == set()
+        assert collect_refs({}) == set()
 
     def test_no_refs_returns_empty(self) -> None:
         """Should return empty set when no $ref present."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {"type": "object", "properties": {"id": {"type": "integer"}}}
-        assert _collect_refs(schema) == set()
+        assert collect_refs(schema) == set()
 
     def test_top_level_ref_extracts_type_name(self) -> None:
         """Should extract type name from a top-level $ref."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {"$ref": "#/components/schemas/User"}
-        assert _collect_refs(schema) == {"User"}
+        assert collect_refs(schema) == {"User"}
 
     def test_ref_in_property(self) -> None:
         """Should find $ref in a property schema."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "type": "object",
@@ -1502,21 +1502,21 @@ class TestCollectRefs:
                 "assignee": {"$ref": "#/components/schemas/User"},
             },
         }
-        assert _collect_refs(schema) == {"User"}
+        assert collect_refs(schema) == {"User"}
 
     def test_ref_in_array_items(self) -> None:
         """Should find $ref in array items."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/Label"},
         }
-        assert _collect_refs(schema) == {"Label"}
+        assert collect_refs(schema) == {"Label"}
 
     def test_ref_in_allOf(self) -> None:
         """Should find $ref inside allOf."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "allOf": [
@@ -1524,11 +1524,11 @@ class TestCollectRefs:
                 {"type": "object", "properties": {"extra": {"type": "string"}}},
             ]
         }
-        assert _collect_refs(schema) == {"Timestamps"}
+        assert collect_refs(schema) == {"Timestamps"}
 
     def test_multiple_refs(self) -> None:
         """Should collect all distinct refs from a complex schema."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "type": "object",
@@ -1541,48 +1541,48 @@ class TestCollectRefs:
                 "milestone": {"$ref": "#/components/schemas/Milestone"},
             },
         }
-        assert _collect_refs(schema) == {"User", "Label", "Milestone"}
+        assert collect_refs(schema) == {"User", "Label", "Milestone"}
 
     def test_ref_in_not(self) -> None:
         """Should find $ref inside a 'not' applicator."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "not": {"$ref": "#/components/schemas/ForbiddenType"},
         }
-        assert _collect_refs(schema) == {"ForbiddenType"}
+        assert collect_refs(schema) == {"ForbiddenType"}
 
     def test_ref_in_if_then_else(self) -> None:
         """Should find $ref inside if/then/else applicators."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
         schema = {
             "if": {"$ref": "#/components/schemas/Condition"},
             "then": {"$ref": "#/components/schemas/Positive"},
             "else": {"$ref": "#/components/schemas/Negative"},
         }
-        assert _collect_refs(schema) == {"Condition", "Positive", "Negative"}
+        assert collect_refs(schema) == {"Condition", "Positive", "Negative"}
 
     def test_non_dict_input(self) -> None:
         """Should handle non-dict input gracefully."""
-        from gitea_mcp_server.tools.schemas import _collect_refs
+        from gitea_mcp_server.tools.schemas import collect_refs
 
-        assert _collect_refs("not_a_dict") == set()
-        assert _collect_refs([]) == set()
+        assert collect_refs("not_a_dict") == set()
+        assert collect_refs([]) == set()
 
 
 class TestUnwrapResultSchema:
-    """Tests for _unwrap_result_schema."""
+    """Tests for unwrap_result_schema."""
 
     def test_none_returns_none(self) -> None:
         """None input returns None."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
-        assert _unwrap_result_schema(None) is None
+        assert unwrap_result_schema(None) is None
 
     def test_already_unwrapped_unchanged(self) -> None:
         """Schema without result wrapper is returned unchanged."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         schema = {
             "type": "object",
@@ -1591,12 +1591,12 @@ class TestUnwrapResultSchema:
                 "user": {"$ref": "#/components/schemas/User"},
             },
         }
-        result = _unwrap_result_schema(schema)
+        result = unwrap_result_schema(schema)
         assert result is schema  # Same object, no copy
 
     def test_wrapped_extracts_inner(self) -> None:
         """Wrapped schema {result: inner} extracts inner schema."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         inner = {
             "type": "object",
@@ -1609,12 +1609,12 @@ class TestUnwrapResultSchema:
             "type": "object",
             "properties": {"result": inner},
         }
-        result = _unwrap_result_schema(wrapped)
+        result = unwrap_result_schema(wrapped)
         assert result is inner  # The inner object is returned directly
 
     def test_wrapped_preserves_refs(self) -> None:
         """Inner schema retains $ref pointers for collapse-aware consumers."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         wrapped = {
             "type": "object",
@@ -1628,25 +1628,25 @@ class TestUnwrapResultSchema:
                 },
             },
         }
-        result = _unwrap_result_schema(wrapped)
+        result = unwrap_result_schema(wrapped)
         assert result is not None, "Expected unwrapped schema to be present"
         assert result["properties"]["owner"]["$ref"] == "#/components/schemas/User"
         assert result["properties"]["repo"]["$ref"] == "#/components/schemas/Repository"
 
     def test_array_schema_unchanged(self) -> None:
         """Array-type schema (not wrapped) is returned unchanged."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/Issue"},
         }
-        result = _unwrap_result_schema(schema)
+        result = unwrap_result_schema(schema)
         assert result is schema
 
     def test_wrapped_array_extracts_inner(self) -> None:
         """Wrapped array schema extracts the inner array schema."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         inner = {
             "type": "array",
@@ -1656,12 +1656,12 @@ class TestUnwrapResultSchema:
             "type": "object",
             "properties": {"result": inner},
         }
-        result = _unwrap_result_schema(wrapped)
+        result = unwrap_result_schema(wrapped)
         assert result is inner
 
     def test_wrapped_without_result_property(self) -> None:
         """Object schema without 'result' property is returned unchanged (not wrapped)."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         schema = {
             "type": "object",
@@ -1670,12 +1670,12 @@ class TestUnwrapResultSchema:
                 "count": {"type": "integer"},
             },
         }
-        result = _unwrap_result_schema(schema)
+        result = unwrap_result_schema(schema)
         assert result is schema
 
     def test_wrapped_with_type_list(self) -> None:
         """Wrapped schema with ``type: [\"object\", \"null\"]`` extracts inner schema."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         inner = {
             "type": "object",
@@ -1688,12 +1688,12 @@ class TestUnwrapResultSchema:
             "type": ["object", "null"],
             "properties": {"result": inner},
         }
-        result = _unwrap_result_schema(wrapped)
+        result = unwrap_result_schema(wrapped)
         assert result is inner
 
     def test_unwrapped_type_list_without_result(self) -> None:
         """Schema with ``type: [\"object\", \"null\"]`` but no 'result' property is returned unchanged."""
-        from gitea_mcp_server.tools.schemas import _unwrap_result_schema
+        from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
         schema = {
             "type": ["object", "null"],
@@ -1701,7 +1701,7 @@ class TestUnwrapResultSchema:
                 "name": {"type": "string"},
             },
         }
-        result = _unwrap_result_schema(schema)
+        result = unwrap_result_schema(schema)
         assert result is schema
 
 

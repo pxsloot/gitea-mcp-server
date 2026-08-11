@@ -24,9 +24,9 @@ from gitea_mcp_server.constants import (
     SEARCH_NAME_BOOST,
 )
 from gitea_mcp_server.format import (
-    _format_tool_info_markdown,
     apply_format,
     format_paginated_result,
+    format_tool_info_markdown,
 )
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -43,9 +43,9 @@ from gitea_mcp_server.tools.filter_info import (
     get_filtered_tool_info,
 )
 from gitea_mcp_server.tools.schemas import (
-    _is_object_type,
-    _schema_type_is_array,
-    _unwrap_result_schema,
+    is_object_type,
+    schema_type_is_array,
+    unwrap_result_schema,
 )
 
 # ============================================================================
@@ -637,12 +637,12 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                 # FastMCP wraps API tool output_schemas in {"result": {...}}
                 # (x-fastmcp-wrap-result). Unwrap to access the actual
                 # schema for pagination.
-                result_obj = _unwrap_result_schema(tool.output_schema) or {}
+                result_obj = unwrap_result_schema(tool.output_schema) or {}
                 # Build the result envelope.  For objects we paginate
                 # top-level properties; for arrays we paginate the item
                 # properties; for strings/other we return the full schema
                 # unchanged (no meaningful pagination).
-                if _is_object_type(result_obj):
+                if is_object_type(result_obj):
                     result_props = result_obj.get("properties", {})
                     prop_keys = list(result_props.keys())
                     total_props = len(result_props)
@@ -656,9 +656,9 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                             k: result_props[k] for k in sliced_keys
                         },
                     }
-                elif _schema_type_is_array(result_obj):
+                elif schema_type_is_array(result_obj):
                     items_schema = result_obj.get("items", {})
-                    if _is_object_type(items_schema):
+                    if is_object_type(items_schema):
                         items_props = items_schema.get("properties", {})
                         prop_keys = list(items_props.keys())
                         total_props = len(items_props)
@@ -686,13 +686,13 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                 sliced_schema["properties"] = {"result": result_schema}
                 schema["output_schema"] = sliced_schema
 
-                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+                result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
 
                 # Add pagination metadata to structured_content so agents can
                 # discover total property count and navigate pages.
                 result = apply_pagination(result, page, limit, total_props)
             else:
-                result = apply_format(schema, format, markdown_formatter=_format_tool_info_markdown)
+                result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
 
             return result
 

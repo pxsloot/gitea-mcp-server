@@ -33,10 +33,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Operations with request bodies that can have parameter collisions.
-# Only POST, PUT, PATCH can have request bodies.
-_BODY_METHODS = frozenset({"post", "put", "patch"})
-
 
 def _resolve_spec_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     """Resolve a ``$ref`` pointer in a spec.
@@ -297,10 +293,14 @@ def resolve_param_collisions(openapi_spec: OpenAPISpec) -> None:
 
             path_item_params = _collect_path_item_params(path_item)
 
+            # Every method is visited: resolution is behavior-driven, gated
+            # on the *presence* of a request body (checked in
+            # ``_resolve_operation_collisions`` via ``_get_body_schema``),
+            # not on an HTTP method allowlist.  A method gate would couple
+            # this module to assumptions about which methods carry bodies —
+            # an assumption Gitea already violates (DELETE endpoints with
+            # ``IssueMeta`` bodies).
             for method in HTTP_METHODS_ALL:
-                if method not in _BODY_METHODS:
-                    continue
-
                 operation = path_item.get(method)
                 if not isinstance(operation, dict):
                     continue

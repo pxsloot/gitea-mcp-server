@@ -569,6 +569,71 @@ class TestResolveParamCollisions:
         resolve_param_collisions(spec)
         assert cast("dict[str, Any]", spec) == original
 
+    def test_delete_operation_with_body_resolved(self) -> None:
+        """DELETE operations with request bodies are resolved.
+
+        Gitea's swagger declares bodies on some DELETE endpoints (e.g.
+        ``DELETE /repos/{owner}/{repo}/issues/{index}/blocks`` takes an
+        ``IssueMeta`` body).  The converter currently drops DELETE bodies,
+        so this case is synthetic today — resolution must still cover it so
+        it keeps working when the converter starts emitting DELETE request
+        bodies.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                    "delete": _make_operation(
+                        path_params=["owner", "repo", "index"],
+                        body_props={
+                            "owner": {"type": "string"},
+                            "repo": {"type": "string"},
+                            "index": {"type": "integer"},
+                        },
+                        method="delete",
+                    ),
+                },
+            },
+        )
+        resolve_param_collisions(spec)
+
+        op = spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["delete"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+        assert "body_owner" in props
+        assert "body_repo" in props
+        assert "body_index" in props
+        assert cast("dict[str, Any]", op)["x-param-rename"] == {
+            "body_owner": "owner",
+            "body_repo": "repo",
+            "body_index": "index",
+        }
+
+    def test_resolution_is_method_agnostic(self) -> None:
+        """Any operation with a request body is resolved, regardless of method.
+
+        Resolution is behavior-driven: the presence of a request body is
+        the gate, not the HTTP method.  A GET with a request body is
+        unusual (and Gitea has none), but if a spec ever contains one,
+        FastMCP would generate ``__path`` suffixes for it — so the resolver
+        must not skip it.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": _make_operation(
+                        path_params=["owner", "repo"],
+                        body_props={"owner": {"type": "string"}},
+                        method="get",
+                    ),
+                },
+            },
+        )
+        resolve_param_collisions(spec)
+
+        op = spec["paths"]["/repos/{owner}/{repo}"]["get"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+        assert "body_owner" in props
+        assert cast("dict[str, Any]", op)["x-param-rename"] == {"body_owner": "owner"}
+
     def test_multiple_affected_operations(self) -> None:
         """Multiple operations with collisions are all resolved."""
         spec = make_openapi_spec(

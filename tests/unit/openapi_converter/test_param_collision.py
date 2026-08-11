@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 from gitea_mcp_server.openapi_converter.param_collision import (
     _collect_path_item_params,

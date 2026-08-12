@@ -1174,6 +1174,53 @@ class TestResolveOperationCollisions:
         schema = op["requestBody"]["content"]["application/json"]["schema"]
         assert "anyOf" in schema
 
+    def test_nested_composition_in_allof_dropped_without_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A oneOf nested inside an allOf member is dropped without a warning.
+
+        The tripwire inspects the flattened *top-level* schema only.  A
+        ``oneOf``/``anyOf`` buried in an ``allOf`` member is invisible to
+        ``_merge_allof_members`` — and to FastMCP itself, which merges only
+        members carrying their own ``properties`` — so the tool shape is
+        parity by construction and warning about it would be noise.  This
+        test pins that contract so a future change cannot silently turn the
+        nested case into a warning (or vice versa).
+        """
+        spec = make_openapi_spec()
+        op: dict[str, Any] = {
+            "operationId": "test_nested_oneof_in_allof",
+            "parameters": [
+                {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+            ],
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "oneOf": [
+                                        {"type": "object", "properties": {"owner": {"type": "string"}}},
+                                        {"type": "object", "properties": {"note": {"type": "string"}}},
+                                    ],
+                                },
+                                {"type": "object", "properties": {"note": {"type": "string"}}},
+                            ],
+                        },
+                    },
+                },
+                "required": True,
+            },
+        }
+        with caplog.at_level(logging.WARNING):
+            result = _resolve_operation_collisions(op, {"owner"}, spec)
+
+        assert result is None  # Nested oneOf member dropped; no properties to collide
+        assert "oneOf" not in caplog.text  # No tripwire warning for the nested case
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "allOf" not in schema  # Flattened (mirrors FastMCP's merge)
+        assert schema["properties"] == {"note": {"type": "string"}}
+
 
 # ===========================================================================
 # Tests: _collect_path_item_params

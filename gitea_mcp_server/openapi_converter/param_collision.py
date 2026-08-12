@@ -21,13 +21,17 @@ The ``body_`` prefix is chosen because:
 
 **Schema flattening** (issue #679): Body schemas using ``allOf`` composition
 or nested ``$ref`` chains are flattened by ``_flatten_body_schema`` before
-collision detection.  The guiding invariant is *parity with FastMCP*:
-FastMCP's ``_combine_schemas_and_map_params`` merges top-level ``allOf``
-members into one property set before its own collision check, so collision
-detection here must see that same set — otherwise FastMCP detects the
-collision first and the ``__path`` suffix silently returns.  ``$ref``
-resolution is recursive and cycle-guarded; resolved schemas are deep-copied
-so shared components are never mutated.  ``oneOf``/``anyOf`` bodies are
+collision detection.  The invariant is that the schema handed to FastMCP is
+flat: FastMCP's ``_combine_schemas_and_map_params`` merges only top-level
+``allOf`` members that carry their own ``properties``/``required`` — a
+``$ref`` member is renamed to ``$defs``, not inlined, so its properties are
+invisible there.  Without flattening, a colliding property in an inline
+``allOf`` member leaks a ``__path`` suffix, while a ``$ref`` member's
+properties are silently dropped from the tool's parameters.
+``_flatten_body_schema`` resolves ``$ref`` chains (recursively,
+cycle-guarded, deep-copied so shared components are never mutated) and
+merges ``allOf`` members, so collision detection sees the full property set
+and the spec FastMCP receives is flat.  ``oneOf``/``anyOf`` bodies are
 *not* flattened (FastMCP does not explode them into parameters, so no
 property-level collision can exist); instead a tripwire warning is logged
 so an evolving spec fails loudly rather than silently.
@@ -88,13 +92,15 @@ def _flatten_body_schema(
 ) -> dict[str, Any]:
     """Flatten a request body schema for collision detection.
 
-    Maintains parity with FastMCP's ``_combine_schemas_and_map_params``,
-    which merges top-level ``allOf`` members into a single property set
-    before its own collision check.  Collision detection must operate on
-    the same property set FastMCP will expose as tool parameters —
-    otherwise FastMCP detects the collision first and renames the *path*
-    parameter with a ``__path`` suffix (the behaviour this module exists
-    to prevent).
+    The schema handed to FastMCP must be flat, so that collision detection
+    here and FastMCP's own collision check see the same property set.
+    FastMCP's ``_combine_schemas_and_map_params`` merges only top-level
+    ``allOf`` members that carry their own ``properties``/``required`` (a
+    ``$ref`` member is renamed to ``$defs``, not inlined, so its properties
+    are invisible there).  Without flattening, a colliding property in an
+    inline ``allOf`` member leaks a ``__path`` suffix, and a ``$ref``
+    member's properties are silently dropped from the tool's parameters.
+    Flattening prevents both.
 
     Two normalisations, applied recursively (``$ref`` here, ``allOf`` in
     :func:`_merge_allof_members`):
@@ -354,6 +360,13 @@ def _resolve_operation_collisions(
     # FastMCP does not explode them into parameters, so there is no
     # property-level collision to resolve.  Warn loudly so an evolving
     # spec surfaces here instead of silently degrading the tool shape.
+    #
+    # Scope note: this inspects the flattened *top-level* schema only.
+    # A oneOf/anyOf nested inside an allOf member is dropped by
+    # _merge_allof_members — and by FastMCP itself, which merges only
+    # members carrying their own ``properties`` — so the tool shape is
+    # parity by construction and no warning is needed there (pinned by
+    # test_nested_composition_in_allof_dropped_without_warning).
     for keyword in ("oneOf", "anyOf"):
         if isinstance(body_schema.get(keyword), list):
             logger.warning(

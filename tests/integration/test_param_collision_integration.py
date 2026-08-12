@@ -663,3 +663,111 @@ class TestSwaggerV1DeleteWithBody:
         assert props["body_owner"]["description"], "body_owner has empty description"
         assert props["body_repo"]["description"], "body_repo has empty description"
         assert props["body_index"]["description"], "body_index has empty description"
+
+
+# ---------------------------------------------------------------------------
+# Tests: allOf body schemas
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def allof_blocking_spec() -> OpenAPISpec:
+    """OpenAPI spec with a blocking endpoint using allOf + nested $ref in body.
+
+    Simulates the scenario from issue #679: a body schema that uses
+    ``allOf`` with a ``$ref`` to a shared component schema plus inline
+    property extensions, rather than a flat ``$ref``.
+    """
+    return make_openapi_spec(
+        components={
+            "schemas": {
+                "IssueMeta": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "index": {"type": "integer"},
+                    },
+                },
+            },
+        },
+        paths={
+            "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                "post": {
+                    "operationId": "issueCreateIssueBlocking",
+                    "summary": "Create issue blocking",
+                    "parameters": [
+                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/IssueMeta"},
+                                        {
+                                            "type": "object",
+                                            "properties": {"note": {"type": "string"}},
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {"description": "Created"},
+                    },
+                },
+            },
+        },
+    )
+
+
+class TestAllOfSpecLevelResolution:
+    """Tests that resolve_param_collisions handles allOf body schemas."""
+
+    def test_renames_colliding_properties_in_allof(
+        self, allof_blocking_spec: OpenAPISpec
+    ) -> None:
+        """Colliding body properties inside allOf are renamed with body_ prefix."""
+        resolve_param_collisions(allof_blocking_spec)
+
+        op = allof_blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+
+        assert "body_owner" in props
+        assert "body_repo" in props
+        assert "body_index" in props
+        assert "owner" not in props
+        assert "repo" not in props
+        assert "index" not in props
+        # Non-colliding allOf properties preserved
+        assert "note" in props
+
+    def test_sets_x_param_rename_for_allof(
+        self, allof_blocking_spec: OpenAPISpec
+    ) -> None:
+        """x-param-rename is set for allOf body schema collisions."""
+        resolve_param_collisions(allof_blocking_spec)
+
+        op = allof_blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        rename_map = cast("dict[str, Any]", op).get("x-param-rename")
+        assert rename_map == {
+            "body_owner": "owner",
+            "body_repo": "repo",
+            "body_index": "index",
+        }
+
+    def test_shared_component_not_mutated_by_allof(
+        self, allof_blocking_spec: OpenAPISpec
+    ) -> None:
+        """Shared IssueMeta component is not mutated by allOf flattening."""
+        resolve_param_collisions(allof_blocking_spec)
+
+        issue_meta = allof_blocking_spec["components"]["schemas"]["IssueMeta"]
+        assert "owner" in issue_meta["properties"]
+        assert "body_owner" not in issue_meta["properties"]
+        assert "note" not in issue_meta["properties"]  # Inline property from allOf

@@ -19,6 +19,16 @@ The ``body_`` prefix is chosen because:
 - It is consistent: same prefix for all collisions
 - It does not leak FastMCP internals (unlike ``__path``)
 
+**Schema flattening**: Body schemas using ``allOf``, ``oneOf``, or ``anyOf``
+composition keywords are flattened before collision detection.
+``_get_body_schema`` already resolves top-level ``$ref`` references and
+deep-copies shared component schemas; ``_flatten_body_schema`` extends this
+to handle nested ``$ref`` chains inside composition items.  For ``allOf``,
+properties from all members are merged (all exist simultaneously).  For
+``oneOf``/``anyOf``, only the **intersection** of property names across
+variants is considered — preventing false renames on properties that do
+not exist in the variant the user selects.
+
 **Description injection**: Gitea's shared component schemas (e.g.
 ``IssueMeta``) carry no descriptions on their properties. After renaming,
 empty descriptions are filled from the colliding path parameter's
@@ -68,6 +78,161 @@ def _collect_path_param_names(operation: dict[str, Any]) -> set[str]:
     return path_params
 
 
+def _resolve_composition_item(
+    item: dict[str, Any], spec: OpenAPISpec
+) -> dict[str, Any]:
+    """Resolve a ``$ref`` inside a composition item, deep-copying the result.
+
+    If ``item`` has no ``$ref`` or resolution fails, returns ``item`` unchanged.
+
+    Args:
+        item: A composition item dict (may contain ``$ref``).
+        spec: The full OpenAPI spec for ``$ref`` resolution.
+
+    Returns:
+        The resolved (deep-copied) schema dict, or the original item.
+    """
+    ref = item.get("$ref")
+    if isinstance(ref, str):
+        resolved = resolve_spec_ref(spec, ref)
+        if resolved is not None:
+            return deepcopy(resolved)
+    return item
+
+
+def _flatten_allof(
+    all_of: list[Any], spec: OpenAPISpec
+) -> dict[str, Any]:
+    """Flatten an ``allOf`` composition into a merged property set.
+
+    All members' properties exist simultaneously, so the union is correct.
+    ``$ref`` members are deep-copied via ``_resolve_composition_item``.
+
+    Args:
+        all_of: The list of composition items from the ``allOf``.
+        spec: The full OpenAPI spec.
+
+    Returns:
+        A flat schema dict with merged ``properties`` and ``required``.
+    """
+    merged: dict[str, Any] = {"type": "object", "properties": {}}
+    required_merged: list[str] = []
+
+    for item in all_of:
+        if not isinstance(item, dict):
+            continue
+        resolved_item = _resolve_composition_item(item, spec)
+
+        props = resolved_item.get("properties", {})
+        if isinstance(props, dict):
+            merged["properties"].update(props)
+
+        req = resolved_item.get("required", [])
+        if isinstance(req, list):
+            required_merged.extend(req)
+
+    if required_merged:
+        merged["required"] = required_merged
+
+    logger.debug("Flattened allOf body schema: %d properties", len(merged["properties"]))
+    return merged
+
+
+def _flatten_oneof_anyof(
+    combined: list[Any], spec: OpenAPISpec, keyword: str
+) -> dict[str, Any] | None:
+    """Flatten ``oneOf``/``anyOf`` using intersection of property names.
+
+    Only properties present in *every* variant are considered.
+    ``$ref`` members are deep-copied via ``_resolve_composition_item``.
+
+    Args:
+        combined: The list of variant schemas from ``oneOf``/``anyOf``.
+        spec: The full OpenAPI spec.
+        keyword: The composition keyword (``"oneOf"`` or ``"anyOf"``),
+            used only for logging.
+
+    Returns:
+        A flat schema dict with the common properties, or ``None`` if
+        no common properties exist across all variants.
+    """
+    variant_prop_sets: list[set[str]] = []
+
+    for variant in combined:
+        if not isinstance(variant, dict):
+            continue
+        resolved_variant = _resolve_composition_item(variant, spec)
+
+        props = resolved_variant.get("properties", {})
+        if isinstance(props, dict):
+            variant_prop_sets.append(set(props.keys()))
+
+    if not variant_prop_sets:
+        return None
+
+    common = (
+        variant_prop_sets[0].intersection(*variant_prop_sets[1:])
+        if len(variant_prop_sets) > 1
+        else variant_prop_sets[0]
+    )
+    if not common:
+        return None
+
+    result: dict[str, Any] = {
+        "type": "object",
+        "properties": {k: {} for k in common},
+    }
+    logger.debug(
+        "Flattened %s body schema: %d common properties across %d variants",
+        keyword,
+        len(common),
+        len(variant_prop_sets),
+    )
+    return result
+
+
+def _flatten_body_schema(
+    body_schema: dict[str, Any], spec: OpenAPISpec
+) -> dict[str, Any]:
+    """Flatten ``allOf``/``oneOf``/``anyOf`` body schemas for collision detection.
+
+    Resolves nested ``$ref`` chains inside composition items and produces a
+    flat ``properties`` dict at the top level so ``_rename_colliding_body_properties``
+    can operate on a single property namespace.
+
+    - **allOf**: merges ``properties`` from all members.  Every member's
+      properties exist simultaneously, so the union is correct.
+      ``$ref`` members are deep-copied before their properties are merged
+      so shared component schemas are never mutated.
+    - **oneOf/anyOf**: takes the **intersection** of property names across
+      all variants.  Only properties present in *every* variant are
+      considered for collision detection.  This avoids false renames on
+      properties that don't exist in the variant the user selects.
+
+    Args:
+        body_schema: The body schema dict (may contain composition keywords).
+        spec: The full OpenAPI spec for ``$ref`` resolution.
+
+    Returns:
+        A flat schema dict with top-level ``properties``, or the original
+        ``body_schema`` unchanged if no composition keywords are present.
+    """
+    all_of = body_schema.get("allOf")
+    if isinstance(all_of, list) and all_of:
+        return _flatten_allof(all_of, spec)
+
+    one_of = body_schema.get("oneOf")
+    any_of = body_schema.get("anyOf")
+
+    for keyword, variants in [("oneOf", one_of), ("anyOf", any_of)]:
+        if isinstance(variants, list) and variants:
+            result = _flatten_oneof_anyof(variants, spec, keyword)
+            if result is not None:
+                return result
+
+    return body_schema
+
+
 def _get_body_schema(
     operation: dict[str, Any], spec: OpenAPISpec
 ) -> dict[str, Any] | None:
@@ -110,6 +275,12 @@ def _get_body_schema(
             logger.debug(
                 "Inlined $ref %s for collision resolution", ref,
             )
+
+    # Flatten allOf/oneOf/anyOf compositions so nested properties
+    # (e.g. properties inside a $ref within an allOf) are visible
+    # for collision detection.
+    body_schema = _flatten_body_schema(body_schema, spec)
+    json_content["schema"] = body_schema
 
     return body_schema
 

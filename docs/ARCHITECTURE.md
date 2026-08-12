@@ -543,6 +543,14 @@ The customization layers as applied during server startup:
      schemas (referenced via ``$ref``) are inlined (deep-copied) so the
      original component definition is not mutated.
 
+     Body schemas using ``allOf``, ``oneOf``, or ``anyOf`` composition keywords
+     are flattened before collision detection.  ``$ref`` chains inside
+     composition items are resolved and deep-copied.  For ``allOf``, properties
+     from all members are merged (all exist simultaneously).  For
+     ``oneOf``/``anyOf``, only the **intersection** of property names across
+     all variants is considered — preventing false renames on properties that
+     don't exist in the variant the user selects.
+
      **Phase 2 — Runtime shim** (``server_setup/mcp_builder.py``):
      In ``_apply_param_rename()``, the ``parameter_map`` on the ``HTTPRoute``
      is corrected so renamed body params map to the correct ``openapi_name``.

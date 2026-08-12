@@ -9,6 +9,7 @@ correct parameter names.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -736,7 +737,9 @@ class TestAllOfSpecLevelResolution:
         resolve_param_collisions(allof_blocking_spec)
 
         op = allof_blocking_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
-        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "allOf" not in schema  # Flattened (mirrors FastMCP's merge)
+        props = schema["properties"]
 
         assert "body_owner" in props
         assert "body_repo" in props
@@ -771,3 +774,105 @@ class TestAllOfSpecLevelResolution:
         assert "owner" in issue_meta["properties"]
         assert "body_owner" not in issue_meta["properties"]
         assert "note" not in issue_meta["properties"]  # Inline property from allOf
+
+
+class TestAllOfFullPipeline:
+    """allOf body schema through the full FastMCP provider pipeline (#679)."""
+
+    @pytest.mark.asyncio
+    async def test_allof_tool_has_no_path_suffixes(
+        self, allof_blocking_spec: OpenAPISpec
+    ) -> None:
+        """The flattened allOf spec yields body_ params, never __path params.
+
+        This is the regression issue #679 guards against: without
+        flattening, FastMCP's own allOf merge would detect the collision
+        first and rename the path params with ``__path`` suffixes.
+        """
+        resolve_param_collisions(allof_blocking_spec)
+
+        mock_client = MagicMock()
+        mock_client.client = MagicMock()
+        mock_client.request.return_value = {}
+
+        provider = create_openapi_provider(
+            openapi_spec=allof_blocking_spec,
+            gitea_client=mock_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool_map = _tool_dict(tools)
+
+        blocking_tool = tool_map.get("issueCreateIssueBlocking")
+        assert blocking_tool is not None, (
+            f"Expected issueCreateIssueBlocking tool, got: {list(tool_map.keys())}"
+        )
+
+        params = blocking_tool.parameters
+        param_names = set(params.get("properties", {}).keys()) if isinstance(params, dict) else set()
+
+        # Renamed body params and original path params coexist
+        assert {"body_owner", "body_repo", "body_index"} <= param_names
+        assert {"owner", "repo", "index"} <= param_names
+        # The inline allOf member property survives
+        assert "note" in param_names
+        # The actual regression check: no FastMCP __path suffixes anywhere
+        assert not any(name.endswith("__path") for name in param_names), (
+            f"FastMCP __path suffix leaked into params: {param_names}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: oneOf/anyOf tripwire (issue #679)
+# ---------------------------------------------------------------------------
+
+
+class TestOneOfTripwire:
+    """oneOf bodies are not flattened; a loud warning surfaces instead."""
+
+    def test_oneof_body_warns_and_stays_intact(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Full resolve_param_collisions logs a tripwire warning for oneOf."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                    "post": {
+                        "operationId": "issueCreateIssueBlocking",
+                        "parameters": [
+                            {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                            {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                            {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {"type": "object", "properties": {"owner": {"type": "string"}}},
+                                            {"type": "object", "properties": {"owner": {"type": "string"}, "note": {"type": "string"}}},
+                                        ],
+                                    },
+                                },
+                            },
+                            "required": True,
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        )
+        with caplog.at_level(logging.WARNING):
+            resolve_param_collisions(spec)
+
+        assert "issueCreateIssueBlocking" in caplog.text
+        assert "oneOf" in caplog.text
+
+        # Schema untouched (FastMCP needs the composition), no rename map
+        op = spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["post"]
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "oneOf" in schema
+        assert "properties" not in schema
+        assert "x-param-rename" not in cast("dict[str, Any]", op)

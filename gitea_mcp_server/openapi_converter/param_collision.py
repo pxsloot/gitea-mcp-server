@@ -19,15 +19,18 @@ The ``body_`` prefix is chosen because:
 - It is consistent: same prefix for all collisions
 - It does not leak FastMCP internals (unlike ``__path``)
 
-**Schema flattening**: Body schemas using ``allOf``, ``oneOf``, or ``anyOf``
-composition keywords are flattened before collision detection.
-``_get_body_schema`` already resolves top-level ``$ref`` references and
-deep-copies shared component schemas; ``_flatten_body_schema`` extends this
-to handle nested ``$ref`` chains inside composition items.  For ``allOf``,
-properties from all members are merged (all exist simultaneously).  For
-``oneOf``/``anyOf``, only the **intersection** of property names across
-variants is considered — preventing false renames on properties that do
-not exist in the variant the user selects.
+**Schema flattening** (issue #679): Body schemas using ``allOf`` composition
+or nested ``$ref`` chains are flattened by ``_flatten_body_schema`` before
+collision detection.  The guiding invariant is *parity with FastMCP*:
+FastMCP's ``_combine_schemas_and_map_params`` merges top-level ``allOf``
+members into one property set before its own collision check, so collision
+detection here must see that same set — otherwise FastMCP detects the
+collision first and the ``__path`` suffix silently returns.  ``$ref``
+resolution is recursive and cycle-guarded; resolved schemas are deep-copied
+so shared components are never mutated.  ``oneOf``/``anyOf`` bodies are
+*not* flattened (FastMCP does not explode them into parameters, so no
+property-level collision can exist); instead a tripwire warning is logged
+so an evolving spec fails loudly rather than silently.
 
 **Description injection**: Gitea's shared component schemas (e.g.
 ``IssueMeta``) carry no descriptions on their properties. After renaming,
@@ -78,159 +81,134 @@ def _collect_path_param_names(operation: dict[str, Any]) -> set[str]:
     return path_params
 
 
-def _resolve_composition_item(
-    item: dict[str, Any], spec: OpenAPISpec
+def _flatten_body_schema(
+    schema: dict[str, Any],
+    spec: OpenAPISpec,
+    _seen: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
-    """Resolve a ``$ref`` inside a composition item, deep-copying the result.
+    """Flatten a request body schema for collision detection.
 
-    If ``item`` has no ``$ref`` or resolution fails, returns ``item`` unchanged.
+    Maintains parity with FastMCP's ``_combine_schemas_and_map_params``,
+    which merges top-level ``allOf`` members into a single property set
+    before its own collision check.  Collision detection must operate on
+    the same property set FastMCP will expose as tool parameters —
+    otherwise FastMCP detects the collision first and renames the *path*
+    parameter with a ``__path`` suffix (the behaviour this module exists
+    to prevent).
+
+    Two normalisations, applied recursively (``$ref`` here, ``allOf`` in
+    :func:`_merge_allof_members`):
+
+    - **``$ref`` chains** are resolved and inlined.  The resolved schema
+      is deep-copied so shared component schemas are never mutated, and
+      sibling keys next to ``$ref`` (allowed since OpenAPI 3.1) override
+      the resolved keys.  Cycles are guarded by ``_seen``: an
+      already-visited ``$ref`` is left unresolved.
+    - **``allOf``** members are merged into the schema's own
+      ``properties``/``required`` and the ``allOf`` key is removed,
+      mirroring FastMCP's merge.
+
+    ``oneOf``/``anyOf`` are deliberately **not** flattened: FastMCP does
+    not explode them into parameters (the body collapses into a single
+    ``body`` parameter there), so no property-level collision exists to
+    resolve.  ``_resolve_operation_collisions`` emits a tripwire warning
+    for these instead.
 
     Args:
-        item: A composition item dict (may contain ``$ref``).
+        schema: The body schema dict.  Mutated in-place when it contains
+            an ``allOf``; replaced by a deep copy when a ``$ref`` is
+            resolved.
         spec: The full OpenAPI spec for ``$ref`` resolution.
+        _seen: ``$ref`` pointers already resolved on the current
+            resolution path (cycle guard).
 
     Returns:
-        The resolved (deep-copied) schema dict, or the original item.
+        The flattened schema dict.
     """
-    ref = item.get("$ref")
-    if isinstance(ref, str):
-        resolved = resolve_spec_ref(spec, ref)
-        if resolved is not None:
-            return deepcopy(resolved)
-    return item
+    ref = schema.get("$ref")
+    if not isinstance(ref, str):
+        return _merge_allof_members(schema, spec, _seen)
+
+    if ref in _seen:
+        # Cycle (e.g. A allOf [$ref A]): leave the $ref unresolved rather
+        # than recurse forever.  The first occurrence was already merged
+        # on the path above, so nothing is lost.
+        logger.debug("Skipping cyclic $ref %s in body schema", ref)
+        return schema
+    resolved = resolve_spec_ref(spec, ref)
+    if resolved is None:
+        # Unresolvable $ref: return the schema as-is (the body still
+        # exists; its properties are simply invisible to us — and to
+        # FastMCP, which cannot resolve it either).
+        return schema
+    merged = deepcopy(resolved)
+    for key, value in schema.items():
+        if key != "$ref":
+            merged[key] = value
+    logger.debug("Inlined $ref %s for collision resolution", ref)
+    return _flatten_body_schema(merged, spec, _seen | {ref})
 
 
-def _flatten_allof(
-    all_of: list[Any], spec: OpenAPISpec
+def _merge_allof_members(
+    schema: dict[str, Any],
+    spec: OpenAPISpec,
+    seen: frozenset[str],
 ) -> dict[str, Any]:
-    """Flatten an ``allOf`` composition into a merged property set.
+    """Merge ``allOf`` members into the schema's own property set.
 
-    All members' properties exist simultaneously, so the union is correct.
-    ``$ref`` members are deep-copied via ``_resolve_composition_item``.
+    Members are flattened recursively (nested ``$ref``/``allOf``), then
+    merged in document order into ``properties``/``required``; on a
+    property name conflict a later member wins, and pre-existing
+    top-level keys win over all members.  Duplicates in the merged
+    ``required`` list are removed.  The ``allOf`` key is removed,
+    mirroring FastMCP's merge.  Mutates ``schema`` in-place.
 
     Args:
-        all_of: The list of composition items from the ``allOf``.
-        spec: The full OpenAPI spec.
+        schema: The body schema dict (mutated in-place).
+        spec: The full OpenAPI spec for ``$ref`` resolution.
+        seen: ``$ref`` pointers already resolved on the current path.
 
     Returns:
-        A flat schema dict with merged ``properties`` and ``required``.
+        The mutated schema dict.
     """
-    merged: dict[str, Any] = {"type": "object", "properties": {}}
-    required_merged: list[str] = []
+    all_of = schema.get("allOf")
+    if not isinstance(all_of, list) or not all_of:
+        return schema
+
+    merged_props: dict[str, Any] = {}
+    merged_required: list[str] = []
 
     for item in all_of:
         if not isinstance(item, dict):
             continue
-        resolved_item = _resolve_composition_item(item, spec)
+        flat_item = _flatten_body_schema(item, spec, seen)
+        item_props = flat_item.get("properties")
+        if isinstance(item_props, dict):
+            merged_props.update(item_props)
+        item_required = flat_item.get("required")
+        if isinstance(item_required, list):
+            merged_required.extend(item_required)
 
-        props = resolved_item.get("properties", {})
-        if isinstance(props, dict):
-            merged["properties"].update(props)
+    # Top-level keys are merged last so they win over allOf members.
+    # Note: FastMCP 3.4.6 *replaces* top-level properties with the merged
+    # allOf set; keeping them is a deliberate, safer divergence — a schema
+    # carrying both loses nothing here, and collision detection stays
+    # consistent whether FastMCP keeps or drops the top-level set.
+    top_props = schema.get("properties")
+    if isinstance(top_props, dict):
+        merged_props.update(top_props)
+    top_required = schema.get("required")
+    if isinstance(top_required, list):
+        merged_required.extend(top_required)
 
-        req = resolved_item.get("required", [])
-        if isinstance(req, list):
-            required_merged.extend(req)
+    schema.pop("allOf", None)
+    if merged_props:
+        schema["properties"] = merged_props
+    if merged_required:
+        schema["required"] = list(dict.fromkeys(merged_required))
 
-    if required_merged:
-        merged["required"] = required_merged
-
-    logger.debug("Flattened allOf body schema: %d properties", len(merged["properties"]))
-    return merged
-
-
-def _flatten_oneof_anyof(
-    combined: list[Any], spec: OpenAPISpec, keyword: str
-) -> dict[str, Any] | None:
-    """Flatten ``oneOf``/``anyOf`` using intersection of property names.
-
-    Only properties present in *every* variant are considered.
-    ``$ref`` members are deep-copied via ``_resolve_composition_item``.
-
-    Args:
-        combined: The list of variant schemas from ``oneOf``/``anyOf``.
-        spec: The full OpenAPI spec.
-        keyword: The composition keyword (``"oneOf"`` or ``"anyOf"``),
-            used only for logging.
-
-    Returns:
-        A flat schema dict with the common properties, or ``None`` if
-        no common properties exist across all variants.
-    """
-    variant_prop_sets: list[set[str]] = []
-
-    for variant in combined:
-        if not isinstance(variant, dict):
-            continue
-        resolved_variant = _resolve_composition_item(variant, spec)
-
-        props = resolved_variant.get("properties", {})
-        if isinstance(props, dict):
-            variant_prop_sets.append(set(props.keys()))
-
-    if not variant_prop_sets:
-        return None
-
-    common = (
-        variant_prop_sets[0].intersection(*variant_prop_sets[1:])
-        if len(variant_prop_sets) > 1
-        else variant_prop_sets[0]
-    )
-    if not common:
-        return None
-
-    result: dict[str, Any] = {
-        "type": "object",
-        "properties": {k: {} for k in common},
-    }
-    logger.debug(
-        "Flattened %s body schema: %d common properties across %d variants",
-        keyword,
-        len(common),
-        len(variant_prop_sets),
-    )
-    return result
-
-
-def _flatten_body_schema(
-    body_schema: dict[str, Any], spec: OpenAPISpec
-) -> dict[str, Any]:
-    """Flatten ``allOf``/``oneOf``/``anyOf`` body schemas for collision detection.
-
-    Resolves nested ``$ref`` chains inside composition items and produces a
-    flat ``properties`` dict at the top level so ``_rename_colliding_body_properties``
-    can operate on a single property namespace.
-
-    - **allOf**: merges ``properties`` from all members.  Every member's
-      properties exist simultaneously, so the union is correct.
-      ``$ref`` members are deep-copied before their properties are merged
-      so shared component schemas are never mutated.
-    - **oneOf/anyOf**: takes the **intersection** of property names across
-      all variants.  Only properties present in *every* variant are
-      considered for collision detection.  This avoids false renames on
-      properties that don't exist in the variant the user selects.
-
-    Args:
-        body_schema: The body schema dict (may contain composition keywords).
-        spec: The full OpenAPI spec for ``$ref`` resolution.
-
-    Returns:
-        A flat schema dict with top-level ``properties``, or the original
-        ``body_schema`` unchanged if no composition keywords are present.
-    """
-    all_of = body_schema.get("allOf")
-    if isinstance(all_of, list) and all_of:
-        return _flatten_allof(all_of, spec)
-
-    one_of = body_schema.get("oneOf")
-    any_of = body_schema.get("anyOf")
-
-    for keyword, variants in [("oneOf", one_of), ("anyOf", any_of)]:
-        if isinstance(variants, list) and variants:
-            result = _flatten_oneof_anyof(variants, spec, keyword)
-            if result is not None:
-                return result
-
-    return body_schema
+    logger.debug("Flattened allOf body schema: %d properties", len(merged_props))
+    return schema
 
 
 def _get_body_schema(
@@ -239,7 +217,9 @@ def _get_body_schema(
     """Extract the request body schema from an operation.
 
     Resolves ``$ref`` references to shared components (e.g. ``IssueMeta``)
-    and returns a deep copy so the original component is not mutated.
+    and flattens ``allOf`` compositions via :func:`_flatten_body_schema`,
+    deep-copying shared schemas so the original components are not mutated.
+    The flattened schema is written back into the operation.
 
     Args:
         operation: The OpenAPI operation dict.
@@ -264,23 +244,13 @@ def _get_body_schema(
     if not isinstance(body_schema, dict):
         return None
 
-    # Resolve $ref to shared component (e.g. IssueMeta)
-    ref = body_schema.get("$ref")
-    if ref is not None:
-        resolved = resolve_spec_ref(spec, ref)
-        if resolved is not None:
-            body_schema = deepcopy(resolved)
-            # Replace the $ref with the inlined schema
-            json_content["schema"] = body_schema
-            logger.debug(
-                "Inlined $ref %s for collision resolution", ref,
-            )
-
-    # Flatten allOf/oneOf/anyOf compositions so nested properties
-    # (e.g. properties inside a $ref within an allOf) are visible
-    # for collision detection.
-    body_schema = _flatten_body_schema(body_schema, spec)
-    json_content["schema"] = body_schema
+    # Resolve $ref chains and flatten allOf compositions so nested body
+    # properties (e.g. inside a $ref within an allOf) are visible for
+    # collision detection.  Shared components are deep-copied before
+    # inlining, so the original component definitions are never mutated.
+    if "$ref" in body_schema or "allOf" in body_schema:
+        body_schema = _flatten_body_schema(body_schema, spec)
+        json_content["schema"] = body_schema
 
     return body_schema
 
@@ -379,6 +349,20 @@ def _resolve_operation_collisions(
     body_schema = _get_body_schema(operation, openapi_spec)
     if body_schema is None:
         return None
+
+    # Tripwire (issue #679): oneOf/anyOf bodies are not flattened —
+    # FastMCP does not explode them into parameters, so there is no
+    # property-level collision to resolve.  Warn loudly so an evolving
+    # spec surfaces here instead of silently degrading the tool shape.
+    for keyword in ("oneOf", "anyOf"):
+        if isinstance(body_schema.get(keyword), list):
+            logger.warning(
+                "Operation %s uses a %s request body composition, which "
+                "parameter collision resolution does not cover (issue "
+                "#679) — the generated tool shape may degrade",
+                operation.get("operationId", "<unknown>"),
+                keyword,
+            )
 
     body_props = body_schema.get("properties", {})
     if not isinstance(body_props, dict):

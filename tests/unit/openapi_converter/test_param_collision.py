@@ -246,12 +246,12 @@ class TestGetBodySchema:
 
 
 class TestFlattenBodySchema:
-    """Tests for flattening allOf/oneOf/anyOf body schemas."""
+    """Tests for allOf/$ref flattening and oneOf/anyOf passthrough (issue #679)."""
 
     # --- No composition ---
 
     def test_flat_schema_passes_through(self) -> None:
-        """A flat schema with no composition returns unchanged."""
+        """A flat schema with no composition returns the same object."""
         schema: dict[str, Any] = {
             "type": "object",
             "properties": {"title": {"type": "string"}},
@@ -261,21 +261,107 @@ class TestFlattenBodySchema:
         assert result is schema  # Same object returned
         assert result["properties"] == {"title": {"type": "string"}}
 
-    def test_top_level_ref_passes_through(self) -> None:
-        """A top-level $ref (already resolved by _get_body_schema) passes through."""
-        schema: dict[str, Any] = {
-            "type": "object",
-            "properties": {"owner": {"type": "string"}},
+    # --- $ref resolution ---
+
+    def test_top_level_ref_resolved_and_inlined(self) -> None:
+        """A top-level $ref is resolved; the result is a deep copy."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "IssueMeta": {
+                        "type": "object",
+                        "properties": {"owner": {"type": "string"}},
+                    },
+                },
+            },
+        )
+        schema: dict[str, Any] = {"$ref": "#/components/schemas/IssueMeta"}
+        result = _flatten_body_schema(schema, spec)
+        assert result is not schema
+        assert "$ref" not in result
+        assert result["properties"] == {"owner": {"type": "string"}}
+        # Shared component untouched
+        assert spec["components"]["schemas"]["IssueMeta"]["properties"] == {
+            "owner": {"type": "string"},
         }
+
+    def test_ref_chain_resolved_recursively(self) -> None:
+        """A $ref whose target has an allOf [$ref B] resolves both levels."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Base": {
+                        "type": "object",
+                        "properties": {"owner": {"type": "string"}},
+                    },
+                    "Extended": {
+                        "allOf": [{"$ref": "#/components/schemas/Base"}],
+                        "properties": {"note": {"type": "string"}},
+                    },
+                },
+            },
+        )
+        schema: dict[str, Any] = {"$ref": "#/components/schemas/Extended"}
+        result = _flatten_body_schema(schema, spec)
+        assert result["properties"] == {
+            "owner": {"type": "string"},
+            "note": {"type": "string"},
+        }
+        assert "allOf" not in result
+
+    def test_ref_cycle_terminates(self) -> None:
+        """A self-referential $ref (A allOf [$ref A]) terminates gracefully."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Cyclic": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/Cyclic"},
+                            {"type": "object", "properties": {"owner": {"type": "string"}}},
+                        ],
+                    },
+                },
+            },
+        )
+        schema: dict[str, Any] = {"$ref": "#/components/schemas/Cyclic"}
+        result = _flatten_body_schema(schema, spec)  # Must not hang
+        # The cyclic member contributes nothing; the inline member is merged
+        assert result["properties"] == {"owner": {"type": "string"}}
+        assert "allOf" not in result
+
+    def test_unresolvable_ref_returned_unchanged(self) -> None:
+        """An unresolvable $ref returns the schema as-is."""
+        schema: dict[str, Any] = {"$ref": "#/components/schemas/Nonexistent"}
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
         assert result is schema
-        assert "owner" in result["properties"]
+        assert "$ref" in result
+
+    def test_sibling_keys_override_ref(self) -> None:
+        """Keys next to $ref (allowed since OpenAPI 3.1) override resolved keys."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Base": {
+                        "type": "object",
+                        "description": "component description",
+                        "properties": {"owner": {"type": "string"}},
+                    },
+                },
+            },
+        )
+        schema: dict[str, Any] = {
+            "$ref": "#/components/schemas/Base",
+            "description": "operation-level description",
+        }
+        result = _flatten_body_schema(schema, spec)
+        assert result["description"] == "operation-level description"
+        assert result["properties"] == {"owner": {"type": "string"}}
 
     # --- allOf ---
 
     def test_allof_merges_inline_properties(self) -> None:
-        """allOf with inline properties merges them into one flat set."""
+        """allOf members' properties merge into the schema in place."""
         schema: dict[str, Any] = {
             "allOf": [
                 {"type": "object", "properties": {"owner": {"type": "string"}}},
@@ -284,13 +370,15 @@ class TestFlattenBodySchema:
         }
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
+        assert result is schema  # Mutated in place
+        assert "allOf" not in result  # allOf removed (mirrors FastMCP's merge)
         assert result["properties"] == {
             "owner": {"type": "string"},
             "repo": {"type": "string"},
         }
 
     def test_allof_resolves_nested_ref(self) -> None:
-        """allOf with a $ref item resolves and merges its properties."""
+        """allOf with a $ref member resolves and merges its properties."""
         spec = make_openapi_spec(
             components={
                 "schemas": {
@@ -320,16 +408,30 @@ class TestFlattenBodySchema:
         }
 
     def test_allof_preserves_required(self) -> None:
-        """allOf required lists from all members are merged."""
+        """required lists from all members are merged and de-duplicated."""
         schema: dict[str, Any] = {
             "allOf": [
                 {"type": "object", "properties": {"owner": {"type": "string"}}, "required": ["owner"]},
-                {"type": "object", "properties": {"repo": {"type": "string"}}, "required": ["repo"]},
+                {"type": "object", "properties": {"repo": {"type": "string"}}, "required": ["repo", "owner"]},
             ],
         }
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
-        assert set(result["required"]) == {"owner", "repo"}
+        assert result["required"] == ["owner", "repo"]
+
+    def test_allof_merges_top_level_required(self) -> None:
+        """A pre-existing top-level required list unions with member lists."""
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {"note": {"type": "string"}},
+            "required": ["note"],
+            "allOf": [
+                {"type": "object", "properties": {"owner": {"type": "string"}}, "required": ["owner", "note"]},
+            ],
+        }
+        spec = make_openapi_spec()
+        result = _flatten_body_schema(schema, spec)
+        assert result["required"] == ["owner", "note"]
 
     def test_allof_deep_copies_ref_item(self) -> None:
         """allOf with $ref does not mutate the shared component schema."""
@@ -358,8 +460,8 @@ class TestFlattenBodySchema:
         assert original["properties"] == {"owner": {"type": "string"}}
         assert "note" not in original["properties"]
 
-    def test_allof_with_single_item_skips_merge(self) -> None:
-        """allOf with a single $ref item resolves and returns its properties."""
+    def test_allof_single_item_merged(self) -> None:
+        """allOf with a single $ref member resolves and merges its properties."""
         spec = make_openapi_spec(
             components={
                 "schemas": {
@@ -384,72 +486,85 @@ class TestFlattenBodySchema:
             "repo": {"type": "string"},
         }
 
-    # --- oneOf ---
-
-    def test_oneof_intersection_all_variants_share(self) -> None:
-        """oneOf returns intersection — only properties in every variant."""
+    def test_top_level_properties_win_over_allof(self) -> None:
+        """Pre-existing top-level properties union with — and win over — allOf members."""
         schema: dict[str, Any] = {
-            "oneOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}, "title": {"type": "string"}}},
-                {"type": "object", "properties": {"owner": {"type": "string"}, "url": {"type": "string"}}},
-                {"type": "object", "properties": {"owner": {"type": "string"}, "content": {"type": "string"}}},
+            "type": "object",
+            "properties": {"owner": {"type": "integer"}},
+            "allOf": [
+                {"type": "object", "properties": {"owner": {"type": "string"}, "note": {"type": "string"}}},
             ],
         }
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
-        # Only "owner" is in all three variants
-        assert list(result["properties"].keys()) == ["owner"]
+        assert result["properties"]["owner"] == {"type": "integer"}  # top-level wins
+        assert result["properties"]["note"] == {"type": "string"}  # union
+        assert "allOf" not in result
 
-    def test_oneof_no_common_properties(self) -> None:
-        """oneOf with no shared properties returns flat schema with empty props."""
+    def test_allof_preserves_other_keywords(self) -> None:
+        """Top-level keywords (description, title) survive flattening."""
         schema: dict[str, Any] = {
-            "oneOf": [
-                {"type": "object", "properties": {"a": {"type": "string"}}},
-                {"type": "object", "properties": {"b": {"type": "string"}}},
+            "description": "body description",
+            "title": "BlockingInput",
+            "allOf": [
+                {"type": "object", "properties": {"owner": {"type": "string"}}},
             ],
         }
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
-        # No common properties → returned unchanged (no flattening)
-        assert result is schema
+        assert result["description"] == "body description"
+        assert result["title"] == "BlockingInput"
 
-    def test_oneof_resolves_nested_ref_for_intersection(self) -> None:
-        """oneOf resolves nested $ref before computing intersection."""
-        spec = make_openapi_spec(
-            components={
-                "schemas": {
-                    "Base": {
-                        "type": "object",
-                        "properties": {
-                            "owner": {"type": "string"},
-                            "repo": {"type": "string"},
-                        },
-                    },
+    def test_nested_allof_inside_allof(self) -> None:
+        """An allOf member with its own allOf is flattened recursively."""
+        schema: dict[str, Any] = {
+            "allOf": [
+                {
+                    "allOf": [
+                        {"type": "object", "properties": {"owner": {"type": "string"}}},
+                        {"type": "object", "properties": {"repo": {"type": "string"}}},
+                    ],
                 },
-            },
-        )
-        schema: dict[str, Any] = {
-            "oneOf": [
-                {"$ref": "#/components/schemas/Base"},
-                {"type": "object", "properties": {"owner": {"type": "string"}, "extra": {"type": "string"}}},
+                {"type": "object", "properties": {"note": {"type": "string"}}},
             ],
         }
+        spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
-        assert list(result["properties"].keys()) == ["owner"]
+        assert result["properties"] == {
+            "owner": {"type": "string"},
+            "repo": {"type": "string"},
+            "note": {"type": "string"},
+        }
 
-    # --- anyOf ---
+    # --- oneOf / anyOf: not flattened (FastMCP parity, see #679) ---
 
-    def test_anyof_intersection_same_as_oneof(self) -> None:
-        """anyOf uses the same intersection logic as oneOf."""
+    def test_oneof_passes_through_unmodified(self) -> None:
+        """oneOf is NOT flattened — FastMCP does not explode it into params."""
+        schema: dict[str, Any] = {
+            "oneOf": [
+                {"type": "object", "properties": {"owner": {"type": "string"}}},
+                {"type": "object", "properties": {"owner": {"type": "string"}, "url": {"type": "string"}}},
+            ],
+        }
+        spec = make_openapi_spec()
+        result = _flatten_body_schema(schema, spec)
+        assert result is schema
+        assert "oneOf" in result
+        assert "properties" not in result
+
+    def test_anyof_passes_through_unmodified(self) -> None:
+        """anyOf is NOT flattened — same FastMCP parity reasoning as oneOf."""
         schema: dict[str, Any] = {
             "anyOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}, "a": {"type": "string"}}},
-                {"type": "object", "properties": {"owner": {"type": "string"}, "b": {"type": "string"}}},
+                {"type": "object", "properties": {"owner": {"type": "string"}}},
+                {"type": "null"},
             ],
         }
         spec = make_openapi_spec()
         result = _flatten_body_schema(schema, spec)
-        assert list(result["properties"].keys()) == ["owner"]
+        assert result is schema
+        assert "anyOf" in result
+        assert "properties" not in result
 
     # --- Edge cases ---
 
@@ -482,32 +597,8 @@ class TestFlattenBodySchema:
             ],
         }
         result = _flatten_body_schema(schema, spec)
-        # Only the inline item's properties are merged
+        # Only the inline member's properties are merged
         assert result["properties"] == {"note": {"type": "string"}}
-
-    def test_non_dict_oneof_items_skipped(self) -> None:
-        """Non-dict items inside oneOf are skipped."""
-        schema: dict[str, Any] = {
-            "oneOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}}},
-                "not_a_dict",
-                {"type": "object", "properties": {"owner": {"type": "string"}}},
-            ],
-        }
-        spec = make_openapi_spec()
-        result = _flatten_body_schema(schema, spec)
-        # Only "owner" is common to both valid variants
-        assert list(result["properties"].keys()) == ["owner"]
-
-    def test_all_non_dict_oneof_returns_unchanged(self) -> None:
-        """oneOf where all items are non-dict returns unchanged (no props found)."""
-        schema: dict[str, Any] = {
-            "oneOf": ["not_a_dict", None, 42],
-        }
-        spec = make_openapi_spec()
-        result = _flatten_body_schema(schema, spec)
-        # No valid variants → no flattening occurs
-        assert result is schema
 
 
 # ===========================================================================
@@ -904,6 +995,7 @@ class TestResolveOperationCollisions:
 
         # Verify the inlined+flattened schema has the renamed properties
         body_schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "allOf" not in body_schema  # Flattened (mirrors FastMCP's merge)
         props = body_schema["properties"]
         assert "body_owner" in props
         assert "body_repo" in props
@@ -965,13 +1057,62 @@ class TestResolveOperationCollisions:
         assert "title" in props  # Not a collision
         assert "body" in props  # Not a collision
 
-    # --- oneOf body schemas ---
+    def test_allof_merges_with_top_level_properties(self) -> None:
+        """A body schema with both top-level properties and allOf unions them."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Base": {
+                        "type": "object",
+                        "properties": {"repo": {"type": "string"}},
+                    },
+                },
+            },
+        )
+        op: dict[str, Any] = {
+            "operationId": "test_mixed_collision",
+            "parameters": [
+                {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
+                {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+            ],
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"owner": {"type": "string"}},
+                            "allOf": [
+                                {"$ref": "#/components/schemas/Base"},
+                            ],
+                        },
+                    },
+                },
+                "required": True,
+            },
+        }
+        result = _resolve_operation_collisions(op, {"owner", "repo"}, spec)
+        assert result == {"body_owner": "owner", "body_repo": "repo"}
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "allOf" not in schema
+        props = schema["properties"]
+        assert "body_owner" in props
+        assert "body_repo" in props
 
-    def test_oneof_with_intersection_collision(self) -> None:
-        """oneOf where intersection property collides with path param is resolved."""
+    # --- oneOf/anyOf body schemas: tripwire warning (issue #679) ---
+
+    def test_oneof_body_warns_and_is_not_renamed(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """oneOf bodies are not flattened; a tripwire warning is logged.
+
+        FastMCP does not explode oneOf into parameters, so there is no
+        property-level collision to resolve.  The body schema must stay
+        intact for FastMCP, and the warning makes the uncovered shape
+        visible instead of silently degrading.
+        """
         spec = make_openapi_spec()
         op: dict[str, Any] = {
-            "operationId": "test_oneof_intersection",
+            "operationId": "test_oneof_tripwire",
             "parameters": [
                 {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
             ],
@@ -989,18 +1130,24 @@ class TestResolveOperationCollisions:
                 "required": True,
             },
         }
-        result = _resolve_operation_collisions(op, {"owner"}, spec)
-        assert result == {"body_owner": "owner"}
+        with caplog.at_level(logging.WARNING):
+            result = _resolve_operation_collisions(op, {"owner"}, spec)
 
-        props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
-        assert "body_owner" in props
-        assert "owner" not in props
+        assert result is None  # No rename: no visible properties to collide
+        assert "test_oneof_tripwire" in caplog.text
+        assert "oneOf" in caplog.text
+        # The oneOf schema is preserved for FastMCP
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "oneOf" in schema
+        assert "properties" not in schema
 
-    def test_oneof_no_intersection_returns_none(self) -> None:
-        """oneOf with no shared properties returns None (no collision possible)."""
+    def test_anyof_body_warns_and_is_not_renamed(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """anyOf bodies trigger the same tripwire warning as oneOf."""
         spec = make_openapi_spec()
         op: dict[str, Any] = {
-            "operationId": "test_oneof_no_intersection",
+            "operationId": "test_anyof_tripwire",
             "parameters": [
                 {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
             ],
@@ -1008,9 +1155,9 @@ class TestResolveOperationCollisions:
                 "content": {
                     "application/json": {
                         "schema": {
-                            "oneOf": [
-                                {"type": "object", "properties": {"title": {"type": "string"}}},
-                                {"type": "object", "properties": {"url": {"type": "string"}}},
+                            "anyOf": [
+                                {"type": "object", "properties": {"owner": {"type": "string"}}},
+                                {"type": "null"},
                             ],
                         },
                     },
@@ -1018,9 +1165,14 @@ class TestResolveOperationCollisions:
                 "required": True,
             },
         }
-        # Neither variant has "owner" in common → no collision
-        result = _resolve_operation_collisions(op, {"owner"}, spec)
+        with caplog.at_level(logging.WARNING):
+            result = _resolve_operation_collisions(op, {"owner"}, spec)
+
         assert result is None
+        assert "test_anyof_tripwire" in caplog.text
+        assert "anyOf" in caplog.text
+        schema = op["requestBody"]["content"]["application/json"]["schema"]
+        assert "anyOf" in schema
 
 
 # ===========================================================================

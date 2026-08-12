@@ -719,7 +719,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # Track URI when the caller provides a tracking set
     # (e.g., register_custom_resources collects factory URIs for skip_uris).
     if tracking_set is not None:
-        tracking_set.add(uri)
+        # Strip RFC 6570 {?query} suffix so the base URI matches
+        # auto-generated resources.  Auto resources never carry query
+        # suffixes (they build URIs from spec paths alone), so
+        # "gitea://repos/{owner}/{repo}/issues" won't match
+        # "gitea://repos/{owner}/{repo}/issues{?state}" without
+        # this normalization.
+        base_uri = re.sub(r"\{\?[^}]+\}$", "", uri)
+        tracking_set.add(base_uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

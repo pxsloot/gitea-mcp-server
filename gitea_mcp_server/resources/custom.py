@@ -191,7 +191,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         method="GET",
         format_hint="issues",
         resource_type="issues",
-        scope="read:repository",
+        scope="read:issue",
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found.",
         param_config=ResourceParamConfig(
@@ -215,7 +215,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         method="GET",
         format_hint="pull_requests",
         resource_type="pulls",
-        scope="read:repository",
+        scope="read:issue",
         tags={"wrapper", "pull_requests"},
         error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
         param_config=ResourceParamConfig(

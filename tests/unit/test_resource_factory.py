@@ -228,6 +228,29 @@ class TestMakeApiResourceRegistration:
         assert handler is not None
         assert tracking_set == {"gitea://repos/{owner}/{repo}"}
 
+    def test_tracks_base_uri_when_query_suffix_present(self) -> None:
+        """Tracking set strips RFC 6570 {?query} suffix for auto skip matching.
+
+        Auto-generated resources build URIs from spec paths alone (no query
+        suffix), so "gitea://repos/{owner}/{repo}/issues" won't match
+        "gitea://repos/{owner}/{repo}/issues{?state,type}" in the skip set.
+        The factory normalizes by stripping the suffix before adding.
+        """
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+        tracking_set: set[str] = set()
+
+        handler = make_api_resource(
+            mcp, client, spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            tracking_set=tracking_set,
+        )
+
+        assert handler is not None
+        assert tracking_set == {"gitea://repos/{owner}/{repo}/issues"}
+
     def test_tags_are_caller_owned(self) -> None:
         """Caller-provided tags are passed through unchanged (no auto-adder)."""
         mcp = _make_mock_mcp()

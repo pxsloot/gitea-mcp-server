@@ -8,7 +8,8 @@ both delegate to ``format.py`` for shared formatting primitives and to
 ``tools/display.py`` for domain-specific formatters.
 
 Public functions:
-    clean_resource_uri - strip ``{?query}`` params from URI templates for display
+    clean_resource_uri - re-exported from ``uri_utils.py``; strip ``{?query}``
+        from URI templates
     format_resource_content - unified display pipeline (JSON parse → collapse → format)
     extract_resource_content - extract text content from ResourceResult
     _make_resource_formatter - resolve a format_hint to a callable formatter
@@ -16,7 +17,6 @@ Public functions:
 
 import json
 import logging
-import re
 from collections.abc import Callable
 from typing import Any
 
@@ -24,36 +24,9 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.format import apply_format, collapse_data
 from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
+from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
-
-
-def clean_resource_uri(uri: str) -> str:
-    """Strip RFC 6570 form-style query parameters from a resource URI for display.
-
-    Resource templates use ``{?param}`` syntax internally so FastMCP routes
-    query-string parameters to the handler.  The display-layer URI is cleaned
-    to show a clean template without ``{?param}`` — agents discover available
-    optional parameters via the ``optional_params`` metadata field instead.
-
-    Example:
-        ``gitea://repos/{owner}/{repo}/issues{?state}`` →
-        ``gitea://repos/{owner}/{repo}/issues``
-
-    Note:
-        The regex only strips ``{?...}`` when it appears at the **end** of the
-        URI (``$`` anchor).  This assumes query params are always the last
-        segment in a URI template — a convention enforced by convention, not
-        code.  If a future URI template places ``{?param}`` before trailing
-        path segments, this function must be updated.
-
-    Args:
-        uri: The raw URI template from FastMCP registration.
-
-    Returns:
-        Cleaned URI with ``{?...}`` suffix removed.
-    """
-    return re.sub(r"\{\?[^}]+\}$", "", uri)
 
 
 def extract_resource_content(contents: list[Any] | None, uri: str) -> str:

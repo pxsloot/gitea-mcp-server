@@ -75,6 +75,7 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.tools.schemas import get_success_schema, unwrap_result_schema
+from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
 
@@ -719,7 +720,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # Track URI when the caller provides a tracking set
     # (e.g., register_custom_resources collects factory URIs for skip_uris).
     if tracking_set is not None:
-        tracking_set.add(uri)
+        # Strip RFC 6570 {?query} suffix so the base URI matches
+        # auto-generated resources.  Auto resources never carry query
+        # suffixes (they build URIs from spec paths alone), so
+        # "gitea://repos/{owner}/{repo}/issues" won't match
+        # "gitea://repos/{owner}/{repo}/issues{?state}" without
+        # this normalization.
+        base_uri = clean_resource_uri(uri)
+        tracking_set.add(base_uri)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

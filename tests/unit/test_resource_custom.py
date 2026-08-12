@@ -61,6 +61,51 @@ class TestRegisterCustomResources:
         for template in expected:
             assert template in uri_templates
 
+    async def test_issues_pulls_resources_use_read_issue_scope(
+        self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
+    ) -> None:
+        """Issues and pulls resources use read:issue (not read:repository).
+
+        Gitea's reqRepoIssuesOrPullsReader middleware accepts either
+        read:issue or read:repository — read:issue is the minimal scope.
+        A token with read:issue but not read:repository should be able
+        to access these resources.
+        """
+        # Capture (uri, meta) pairs from mcp.resource() calls.
+        registered_meta: dict[str, dict[str, Any]] = {}
+
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            if "meta" in kwargs and kwargs["meta"] is not None:
+                registered_meta[uri] = kwargs["meta"]
+
+            def deco(func: Callable) -> Callable:
+                return func
+            return deco
+
+        mock_mcp.resource = MagicMock(side_effect=resource_decorator)
+
+        register_custom_resources(mock_mcp, mock_gitea_client)
+
+        issues_meta = registered_meta.get(
+            "gitea://repos/{owner}/{repo}/issues{?state,type}"
+        )
+        pulls_meta = registered_meta.get(
+            "gitea://repos/{owner}/{repo}/pulls{?state}"
+        )
+
+        assert issues_meta is not None, (
+            "issues resource should have registered meta"
+        )
+        assert issues_meta.get("required_scope") == "read:issue", (
+            f"issues scope should be read:issue, got {issues_meta.get('required_scope')}"
+        )
+        assert pulls_meta is not None, (
+            "pulls resource should have registered meta"
+        )
+        assert pulls_meta.get("required_scope") == "read:issue", (
+            f"pulls scope should be read:issue, got {pulls_meta.get('required_scope')}"
+        )
+
     async def test_registers_all_custom_resources_with_server_info_md(
         self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
     ) -> None:

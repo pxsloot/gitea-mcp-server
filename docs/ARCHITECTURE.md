@@ -328,6 +328,7 @@ The customization layers as applied during server startup:
 | `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
 | `pagination.py` | Pagination metadata, headers, ``PaginationRunner`` |
+| `uri_utils.py` | URI template helpers (``clean_resource_uri``) shared by resources, tools, and display layers |
 
 ---
 

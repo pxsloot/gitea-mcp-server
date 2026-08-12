@@ -24,6 +24,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,18 @@ def register_auto_generated_resources(
     if skip_uris is None:
         skip_uris = set()
 
+    # Normalize skip URIs: strip RFC 6570 {?query} suffixes so base
+    # URIs match auto-generated URI templates.  Custom resources may
+    # register with "gitea://repos/{owner}/{repo}/issues{?state,type}"
+    # while auto resources build "gitea://repos/{owner}/{repo}/issues"
+    # from the spec path alone.  Stripping suffixes on both sides
+    # ensures the comparison is always on the base URI.
+    #
+    # This is a defense-in-depth complement to the factory's own
+    # normalization in tracking_set.add() — auto.py normalizes its
+    # input regardless of who provides the skip_uris set.
+    normalized_skip: set[str] = {clean_resource_uri(u) for u in skip_uris}
+
     filtered: dict[str, Any] = {}
     if filtered_tools_info:
         filtered = filtered_tools_info.get("filtered", {})
@@ -102,7 +115,7 @@ def register_auto_generated_resources(
 
                 uri_template = f"gitea://{path.lstrip('/')}"
 
-                if uri_template in skip_uris:
+                if uri_template in normalized_skip:
                     logger.debug(
                         "Skipping auto-generated resource %s: will be provided by custom resource",
                         uri_template,

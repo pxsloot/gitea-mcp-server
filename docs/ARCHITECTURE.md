@@ -543,6 +543,22 @@ The customization layers as applied during server startup:
      schemas (referenced via ``$ref``) are inlined (deep-copied) so the
      original component definition is not mutated.
 
+     Body schemas using ``allOf`` composition or nested ``$ref`` chains
+     are flattened (``_flatten_body_schema``) before collision detection
+     (issue #679).  The invariant is that the schema handed to FastMCP is
+     flat: FastMCP's ``_combine_schemas_and_map_params`` merges only
+     top-level ``allOf`` members that carry their own
+     ``properties``/``required`` (a ``$ref`` member is renamed to ``$defs``,
+     not inlined, so its properties are invisible there).  Without
+     flattening, a colliding property in an inline ``allOf`` member leaks a
+     ``__path`` suffix, while a ``$ref`` member's properties are silently
+     dropped from the tool's parameters.  ``$ref`` resolution is recursive
+     and cycle-guarded; resolved schemas are deep-copied.  ``oneOf``/``anyOf``
+     bodies are **not** flattened (FastMCP does not explode them into
+     parameters, so no property-level collision can exist); a tripwire
+     warning is logged instead so an evolving spec fails loudly rather than
+     silently.
+
      **Phase 2 — Runtime shim** (``server_setup/mcp_builder.py``):
      In ``_apply_param_rename()``, the ``parameter_map`` on the ``HTTPRoute``
      is corrected so renamed body params map to the correct ``openapi_name``.

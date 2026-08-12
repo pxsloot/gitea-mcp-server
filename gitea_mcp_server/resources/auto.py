@@ -16,7 +16,6 @@ set is needed.
 """
 
 import logging
-import re
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -25,6 +24,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.scope import derive_required_scope
+from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def register_auto_generated_resources(
     # This is a defense-in-depth complement to the factory's own
     # normalization in tracking_set.add() — auto.py normalizes its
     # input regardless of who provides the skip_uris set.
-    normalized_skip: set[str] = {re.sub(r"\{\?[^}]+\}$", "", u) for u in skip_uris}
+    normalized_skip: set[str] = {clean_resource_uri(u) for u in skip_uris}
 
     filtered: dict[str, Any] = {}
     if filtered_tools_info:

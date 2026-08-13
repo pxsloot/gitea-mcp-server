@@ -288,8 +288,15 @@ def _format_post_hook(
     are read from ``all_extracted`` — ``detail`` is a companion
     VirtualParam, ``_raw_schema`` is pipeline metadata attached by
     the transform_fn before ``apply_to`` runs.
+
+    Results already rendered by their executor (marked ``_formatted`` in
+    ``result.meta``) pass through unchanged — synthetic executors render
+    inline when the output shape is bespoke (markdown extras, custom
+    formatters), so the shared post-hook must not re-render them.
     """
     if value == "raw":
+        return result
+    if (result.meta or {}).get("_formatted"):
         return result
 
     detail: str = all_extracted.get("detail", "full")
@@ -379,8 +386,9 @@ def inject_into(
     parameters: dict[str, Any],
     tool: Any | None = None,
     default_overrides: dict[str, Any] | None = None,
+    only: set[str] | None = None,
 ) -> None:
-    """Add every virtual parameter to *parameters* (a tool's parameter schema).
+    """Add virtual parameters to *parameters* (a tool's parameter schema).
 
     Idempotent - skips any parameter name that already exists, which also
     guards against shadowing a real API parameter.
@@ -393,6 +401,11 @@ def inject_into(
     injected into tools where the predicate returns ``True``.  Pass the
     :class:`~fastmcp.tools.base.Tool` object as *tool* to enable this.
 
+    Per-tool allowlist via *only*: when set, only the named params are
+    injected.  Autogen tools pass ``None`` (inject every visible param);
+    synthetic tools stamp their allowlist in ``tool.meta["_virtual_params"]``
+    (e.g. ``read_doc`` opts into ``format`` only, and ``sudo`` is opt-in).
+
     Args:
         parameters: Tool parameter schema dict (mutated in place).
         tool: The Tool being wrapped, for ``tool_predicate`` gating.
@@ -400,9 +413,13 @@ def inject_into(
             defaults to overwrite after injection.  Use for params whose
             default is dynamic (e.g. ``format``'s default comes from
             server config, not the registry).
+        only: Optional allowlist of param names to inject.  ``None``
+            injects every visible param (autogen behavior).
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
+        if only is not None and name not in only:
+            continue
         if name not in props:
             # Skip params whose scope is not available (e.g. ``sudo``
             # when the active token lacks the ``sudo`` or ``all`` scope).

@@ -33,6 +33,13 @@ _FORMAT_VP = VirtualParam(
     description="Response format control.",
 )
 
+# A second minimal entry for allowlist (only=) injection tests.
+_DETAIL_VP = VirtualParam(
+    schema={"type": "string", "enum": ["full", "concise"]},
+    default="full",
+    description="Output detail level.",
+)
+
 
 # ---------------------------------------------------------------------------
 # inject_into
@@ -85,6 +92,35 @@ class TestInjectInto:
         ):
             inject_into(params)
         assert "test_param" in params["properties"]
+
+    def test_only_allowlist_restricts_injection(self) -> None:
+        """only= restricts injection to the named params (synthetic allowlist)."""
+        params: dict = {"properties": {}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "format": _FORMAT_VP,
+                "detail": _DETAIL_VP,
+            },
+        ):
+            inject_into(params, only={"format"})
+        props = params["properties"]
+        assert "format" in props
+        assert "detail" not in props
+
+    def test_only_none_injects_all(self) -> None:
+        """only=None (autogen) injects every visible param."""
+        params: dict = {"properties": {}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "format": _FORMAT_VP,
+                "detail": _DETAIL_VP,
+            },
+        ):
+            inject_into(params, only=None)
+        assert "format" in params["properties"]
+        assert "detail" in params["properties"]
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +495,35 @@ class TestApplyTo:
             },
         ):
             assert apply_to(result, extracted) is result
+
+
+class TestFormatPostHookFormattedGuard:
+    """The shared format post-hook skips results already rendered by their executor."""
+
+    @pytest.mark.asyncio
+    async def test_skips_result_marked_formatted(self) -> None:
+        """_formatted results pass through unchanged (synthetic executors render inline)."""
+        from gitea_mcp_server.tools.virtual_params import _format_post_hook
+
+        data = {"content": "guide text"}
+        result = ToolResult(
+            content=[TextContent(type="text", text="guide text")],
+            structured_content={"result": data},
+            meta={"_formatted": True},
+        )
+        out = _format_post_hook(result, "markdown", {"detail": "full"})
+        assert out is result
+        assert out.content[0].text == "guide text"  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_renders_unmarked_result(self) -> None:
+        """Unmarked results are still rendered by the post-hook (autogen path)."""
+        from gitea_mcp_server.tools.virtual_params import _format_post_hook
+
+        result = ToolResult(structured_content={"result": {"name": "alpha"}})
+        out = _format_post_hook(result, "json", {"detail": "full"})
+        assert out is not result
+        assert '"name": "alpha"' in out.content[0].text  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------

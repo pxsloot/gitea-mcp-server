@@ -1036,6 +1036,69 @@ class TestToolWrappingTransform:
             assert "format" in wrapped.parameters["properties"]
 
     @pytest.mark.asyncio
+    async def test_uses_meta_executor_for_synthetic_tool(self) -> None:
+        """Synthetic tools run through their own executor stored in meta.
+
+        The spine (extract virtual params, resolve ctx, post-hooks) is
+        shared; only the executor differs.  The synthetic executor receives
+        kwargs with virtual params popped and the extracted values.
+        """
+        captured: dict[str, Any] = {}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any | None,
+        ) -> ToolResult:
+            captured["kwargs"] = dict(kwargs)
+            captured["extracted"] = dict(extracted or {})
+            return ToolResult(structured_content={"result": "synth-ok"})
+
+        tool = Tool(
+            name="synth_tool",
+            description="Synthetic tool.",
+            parameters={"properties": {}},
+            meta={
+                "_contract_wrap": True,
+                "_synthetic": True,
+                "_executor": executor,
+                "_virtual_params": {"format", "detail", "fetch_all"},
+            },
+        )
+        transform = self.make_transform()
+        [wrapped] = await transform.list_tools([tool])
+        result = await wrapped.run({"query": "q", "format": "json"})
+
+        assert captured["kwargs"] == {"query": "q"}
+        assert captured["extracted"] == {
+            "format": "json",
+            "detail": "full",
+            "fetch_all": False,
+        }
+        assert result.structured_content == {"result": "synth-ok"}
+
+    @pytest.mark.asyncio
+    async def test_inject_params_respects_virtual_params_allowlist(self) -> None:
+        """Synthetic tools stamp _virtual_params; only those are injected."""
+        tool = Tool(
+            name="read_doc_like",
+            description="Synthetic tool with a format-only profile.",
+            parameters={"properties": {}},
+            meta={
+                "_contract_wrap": True,
+                "_synthetic": True,
+                "_virtual_params": {"format"},
+            },
+        )
+        transform = self.make_transform()
+        [wrapped] = await transform.list_tools([tool])
+        props = wrapped.parameters["properties"]
+        assert "format" in props
+        assert "detail" not in props
+        assert "fetch_all" not in props
+        assert "sudo" not in props
+
+    @pytest.mark.asyncio
     async def test_run_transform_pipeline_no_customization(self) -> None:
         """_run_transform_pipeline handles customization=None gracefully.
 

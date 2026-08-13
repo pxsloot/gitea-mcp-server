@@ -103,6 +103,7 @@ class TestSyntheticToolRegistration:
         *,
         limit_max: int | None = None,
         virtual_params: set[str] | None = None,
+        required_scope: str | None = None,
         impl: Any = None,
     ) -> Any:
         """Register a paginated example tool and return (fn, executor)."""
@@ -118,6 +119,7 @@ class TestSyntheticToolRegistration:
             paginated=True,
             limit_max=limit_max,
             virtual_params=virtual_params,
+            required_scope=required_scope,
             output_schema={"type": "object", "properties": {"result": {}}},
         )(impl)
         return impl, executor
@@ -150,6 +152,23 @@ class TestSyntheticToolRegistration:
         schema = next(tool for tool in tools if tool.name == "impl").output_schema
         assert schema is not None
         assert set(PAGINATION_SCHEMA_PROPERTIES) <= set(schema["properties"])
+
+    @pytest.mark.asyncio
+    async def test_required_scope_stamped_in_meta(self) -> None:
+        """required_scope is stamped into tool.meta for future scope gating."""
+        mcp = FastMCP("test")
+        self._register_example(mcp, required_scope="read:repository")
+
+        tools = await mcp.list_tools()
+        meta = next(tool for tool in tools if tool.name == "impl").meta or {}
+        assert meta["required_scope"] == "read:repository"
+
+        # Without required_scope the key is absent — no accidental gating.
+        mcp2 = FastMCP("test2")
+        self._register_example(mcp2)
+        tools2 = await mcp2.list_tools()
+        meta2 = next(tool for tool in tools2 if tool.name == "impl").meta or {}
+        assert "required_scope" not in meta2
 
     @pytest.mark.asyncio
     async def test_boundary_rejects_with_friendly_error_not_pydantic(self) -> None:

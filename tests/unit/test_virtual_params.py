@@ -649,7 +649,7 @@ class TestWrapIntegration:
     """Tests that _ToolWrappingTransform._wrap() integrates with the VirtualParam lifecycle."""
 
     def _make_tool(self) -> Tool:
-        """Minimal Tool with _customization_applied flag."""
+        """Minimal Tool stamped with the contract wrap marker."""
         return Tool(
             name="issue_list_issues",
             description="List issues in a repository.",

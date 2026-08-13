@@ -659,7 +659,10 @@ class _ToolWrappingTransform(Transform):
         is parameterized with an executor.  Autogen tools use the HTTP
         pipeline executor (:meth:`_make_autogen_executor`); synthetic tools
         resolve theirs from the synthetic-executor registry via
-        ``tool.meta["_executor_id"]``.  Both run through the same spine.
+        ``tool.meta["_executor_id"]`` and have it wrapped with the shared
+        argument validation (:meth:`_wrap_synthetic_executor`), giving them
+        the same missing/unknown/enum validation surface as autogen tools.
+        Both run through the same spine.
 
         Args:
             tool: The ``Tool`` being wrapped.
@@ -675,7 +678,41 @@ class _ToolWrappingTransform(Transform):
         executor = get_synthetic_executor(meta.get("_executor_id"))
         if executor is None:
             executor = self._make_autogen_executor(tool, customization)
+        else:
+            executor = self._wrap_synthetic_executor(tool, executor)
         return build_transform_fn(tool, executor)
+
+    def _wrap_synthetic_executor(
+        self,
+        tool: Tool,
+        executor: Any,
+    ) -> Any:
+        """Wrap a synthetic executor with the shared argument validation.
+
+        Runs :func:`~tools.errors.run_validation` — missing required params,
+        unknown-parameter rejection, schema-driven enums, and
+        ``SINGLE_VALIDATORS`` — against the tool's parameter schema before
+        delegating to the executor, matching the autogen pipeline's
+        validation surface.  ``ValidationError`` is converted to
+        ``ValueError`` (the friendly error surface autogen uses).  Pagination
+        (``page``/``limit`` with the tool's ``limit_max``) is validated
+        inside the executor itself.
+        """
+        required = tool.parameters.get("required")
+        properties = tool.parameters.get("properties")
+
+        async def wrapped(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any | None,
+        ) -> ToolResult:
+            try:
+                run_validation(kwargs, required, properties)
+            except ValidationError as e:
+                raise ValueError(str(e)) from e
+            return cast("ToolResult", await executor(kwargs, extracted, ctx))
+
+        return wrapped
 
     async def _wrap(self, tool: Tool) -> Tool:
         """Wrap a marked Tool with injected params and a runtime transform.

@@ -1061,7 +1061,7 @@ class TestToolWrappingTransform:
         tool = Tool(
             name="synth_tool",
             description="Synthetic tool.",
-            parameters={"properties": {}},
+            parameters={"properties": {"query": {"type": "string"}}},
             meta={
                 "_contract_wrap": True,
                 "_synthetic": True,
@@ -1084,6 +1084,42 @@ class TestToolWrappingTransform:
             "fetch_all": False,
         }
         assert result.structured_content == {"result": "synth-ok"}
+
+    @pytest.mark.asyncio
+    async def test_synthetic_executor_runs_shared_validation(self) -> None:
+        """Synthetic executors are wrapped with run_validation.
+
+        Unknown parameters are rejected with the friendly ValueError surface
+        (matching autogen tools), not silently dropped.
+        """
+        from gitea_mcp_server.tools.synthetic_contract import _SYNTHETIC_EXECUTORS
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any | None,
+        ) -> ToolResult:
+            return ToolResult(structured_content={"result": "ok"})
+
+        tool = Tool(
+            name="synth_val",
+            description="Synthetic validation tool.",
+            parameters={"properties": {"query": {"type": "string"}}},
+            meta={
+                "_contract_wrap": True,
+                "_synthetic": True,
+                "_executor_id": "synth_val",
+                "_virtual_params": {"format"},
+            },
+        )
+        _SYNTHETIC_EXECUTORS["synth_val"] = executor
+        try:
+            transform = self.make_transform()
+            [wrapped] = await transform.list_tools([tool])
+            with pytest.raises(ValueError, match="Unknown parameter"):
+                await wrapped.run({"query": "q", "typo": 1})
+        finally:
+            _SYNTHETIC_EXECUTORS.pop("synth_val", None)
 
     @pytest.mark.asyncio
     async def test_inject_params_respects_virtual_params_allowlist(self) -> None:

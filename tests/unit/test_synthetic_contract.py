@@ -351,7 +351,7 @@ class TestSyntheticToolRegistration:
         signature: a tool that declares neither ``page`` nor ``limit`` (or
         only one of them) must register without bounds injection and without
         inventing parameters.  Runtime validation stays a no-op for the
-        missing param (``validate_page_limit`` skips ``None``).
+        missing param (``validate_pagination`` skips ``None``).
         """
         mcp = FastMCP("test")
 

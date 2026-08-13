@@ -342,7 +342,11 @@ spine: ``tools/contract.build_transform_fn`` — extract virtual params,
 pre-hooks, context resolution, executor, post-hook formatting.  The executor
 is the only difference: the autogen HTTP pipeline vs. the synthetic local
 implementation (which renders its own output and marks it ``_formatted`` so
-the shared format post-hook does not re-render it).
+the shared format post-hook does not re-render it).  Synthetic executors are
+wrapped with ``run_validation`` (missing/unknown/enum validation against the
+tool's schema, matching autogen) and pagination is one rule
+(``validation.validate_pagination``) with a param-name adapter — ``per_page``
+for autogen, ``limit`` with a per-tool ``limit_max`` for synthetic.
 
 ### Resource System
 

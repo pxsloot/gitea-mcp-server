@@ -848,7 +848,10 @@ OpenAPI spec). They live in the same codebase and register themselves via
    ``page``/``limit`` for paginated tools and marks the result ``_formatted``
    so the shared format post-hook does not re-render the impl's own output.
    Set ``wrap=False`` on proxy tools (``call_tool``) that must pass arguments
-   through untouched.
+   through untouched.  The transform wraps synthetic executors with the same
+   ``run_validation`` surface as autogen tools (missing/unknown/enum checks);
+   pagination is one rule (``validate_pagination``) with ``page_size_name`` /
+   ``page_size_max`` adapting ``limit`` (synthetic) vs ``per_page`` (API).
 
    For factory-migrated resources, use ``make_api_resource()`` which auto-derives
    ``size_hint`` from the response schema via ``ResourceMeta.for_schema()``.

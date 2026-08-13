@@ -486,14 +486,14 @@ class TestValidateLabels:
 
 
 class TestValidatePagination:
-    """Tests for the validate_pagination function."""
+    """Tests for the unified validate_pagination function."""
 
     def test_valid_none(self) -> None:
         validate_pagination()  # no error
-        validate_pagination(page=None, per_page=None)
+        validate_pagination(page=None, page_size=None)
 
     @pytest.mark.parametrize(
-        ("page", "per_page"),
+        ("page", "page_size"),
         [
             (1, 1),
             (1, 10),
@@ -504,24 +504,24 @@ class TestValidatePagination:
             (50, None),
         ],
     )
-    def test_valid_combinations(self, page: int, per_page: int) -> None:
-        validate_pagination(page=page, per_page=per_page)
+    def test_valid_combinations(self, page: int, page_size: int) -> None:
+        validate_pagination(page=page, page_size=page_size)
 
     @pytest.mark.parametrize(
-        ("page", "per_page"),
+        ("page", "page_size"),
         [
             (0, 10),
             (-1, 10),
             (0, None),
         ],
     )
-    def test_invalid_page(self, page: int, per_page: int) -> None:
+    def test_invalid_page(self, page: int, page_size: int) -> None:
         with pytest.raises(ValidationError) as exc:
-            validate_pagination(page=page, per_page=per_page)
+            validate_pagination(page=page, page_size=page_size)
         assert exc.value.field == "page"
 
     @pytest.mark.parametrize(
-        ("page", "per_page"),
+        ("page", "page_size"),
         [
             (1, 0),
             (1, -5),
@@ -531,20 +531,41 @@ class TestValidatePagination:
             (None, 101),
         ],
     )
-    def test_invalid_per_page(self, page: int, per_page: int) -> None:
+    def test_invalid_page_size(self, page: int, page_size: int) -> None:
         with pytest.raises(ValidationError) as exc:
-            validate_pagination(page=page, per_page=per_page)
-        assert exc.value.field == "per_page"
+            validate_pagination(page=page, page_size=page_size)
+        # The default page_size_name is "limit"; the reported field follows it.
+        assert exc.value.field == "limit"
 
     def test_invalid_page_type(self) -> None:
         with pytest.raises(ValidationError) as exc:
-            validate_pagination(page="1", per_page=10)
+            validate_pagination(page="1", page_size=10)
         assert "must be an integer" in str(exc.value)
 
-    def test_invalid_per_page_type(self) -> None:
+    def test_invalid_page_size_type(self) -> None:
         with pytest.raises(ValidationError) as exc:
-            validate_pagination(page=1, per_page="10")
+            validate_pagination(page=1, page_size="10")
         assert "must be an integer" in str(exc.value)
+
+    def test_page_size_name_reported_in_errors(self) -> None:
+        """The public page-size name flows into error messages (limit/per_page)."""
+        with pytest.raises(ValidationError) as exc:
+            validate_pagination(page=1, page_size=0, page_size_name="limit")
+        assert "limit must be >= 1" in str(exc.value)
+        assert exc.value.field == "limit"
+
+        with pytest.raises(ValidationError) as exc:
+            validate_pagination(page=1, page_size=0, page_size_name="per_page")
+        assert "per_page must be >= 1" in str(exc.value)
+        assert exc.value.field == "per_page"
+
+    def test_page_size_max_raises_bound(self) -> None:
+        """A custom page_size_max raises the upper bound (synthetic limit_max)."""
+        validate_pagination(page=1, page_size=200, page_size_max=200)
+        with pytest.raises(ValidationError) as exc:
+            validate_pagination(page=1, page_size=201, page_size_max=200)
+        assert "limit must be <= 200" in str(exc.value)
+        assert exc.value.field == "limit"
 
 
 class TestCollectEnumValues:

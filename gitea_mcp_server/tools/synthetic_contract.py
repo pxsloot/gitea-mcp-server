@@ -50,7 +50,7 @@ from pydantic import Field
 
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
-from gitea_mcp_server.validation import validate_page_limit
+from gitea_mcp_server.validation import validate_pagination
 
 # Executors cannot live in ``tool.meta`` — FastMCP pydantic-serializes meta
 # (a callable raises PydanticSerializationError).  They are stored in this
@@ -228,7 +228,7 @@ def _annotations_with_pagination_bounds(
     schema-only, so pydantic does not enforce them at the MCP boundary.
     ``Field(ge=..., le=...)`` would reject invalid values with a pydantic
     ``ValidationError`` (leaking ``errors.pydantic.dev`` URLs to agents)
-    before the executor's friendly ``validate_page_limit`` runs.  Schema-only
+    before the executor's friendly ``validate_pagination`` runs.  Schema-only
     declaration keeps the error surface identical to autogen tools: the
     executor rejects with ``"page must be >= 1"`` / ``"limit must be <= N"``.
     """
@@ -285,10 +285,11 @@ def make_impl_executor(
             if name in fn_params:
                 call_kwargs[name] = value
         if paginated:
-            validate_page_limit(
+            validate_pagination(
                 call_kwargs.get("page"),
                 call_kwargs.get("limit"),
-                limit_max=effective_limit_max,
+                page_size_name="limit",
+                page_size_max=effective_limit_max,
             )
         if "ctx" in fn_params:
             call_kwargs["ctx"] = ctx

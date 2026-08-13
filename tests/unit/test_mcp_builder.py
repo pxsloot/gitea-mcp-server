@@ -403,8 +403,13 @@ class TestCustomizeMetadata:
             assert "next_offset" in props
             assert "total_count" in props
             assert props["has_more"]["type"] == "boolean"
-            assert props["next_offset"]["type"] == "integer"
-            assert props["total_count"]["type"] == "integer"
+            # next_offset/total_count are nullable (runtime emits null on the
+            # last page / when total is unknown) — shared envelope contract.
+            for key in ("next_offset", "total_count"):
+                any_of_types = {entry.get("type") for entry in props[key]["anyOf"]}
+                assert any_of_types == {"integer", "null"}, (
+                    f"{key} must be integer|null, got {props[key]}"
+                )
 
     def test_text_plain_fallback_schema(self) -> None:
         """Text/plain endpoints get string output_schema when derive_output_schema returns None."""

@@ -129,6 +129,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
+| `tools/synthetic_contract.py` | Shared registration wrapper for synthetic-tool validation and pagination schemas |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref:Type`` name resolution and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo``, ``fetch_all``, ``content_type``, ``detail``, ``format``. See the `virtual params how-to`_ below for adding new entries. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
@@ -319,7 +320,14 @@ and merge results.  The hook should update the ``ToolResult``'s
     resource list), ``fetch_all`` simply skips the page/limit slice and
     returns all results through the shared
     :func:`~gitea_mcp_server.format.format_paginated_result` utility — no
-    loop needed.
+    loop needed.  These tools are registered through
+    :func:`~gitea_mcp_server.tools.synthetic_contract.register_synthetic_tool`,
+    which also validates ``page``/``limit`` and declares the pagination
+    metadata in their output schemas.  Pass ``limit_max`` to raise the
+    ``limit`` upper bound beyond the default ``PAGE_SIZE_MAX`` (e.g.
+    ``read_doc`` paginates guide lines and allows 200); the bound is declared
+    as a JSON Schema ``maximum`` on the ``limit`` parameter so agents
+    discover it via ``tool_info``.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single

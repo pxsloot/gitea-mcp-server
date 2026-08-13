@@ -12,6 +12,9 @@ Tool list:
 ``search_resources`` is registered in ``tools/search.py`` alongside
 ``search_tools`` via ``register_synthetic_tools()``.
 
+``list_resources`` uses the shared synthetic registration contract so its
+pagination validation and output schema match generated API tools.
+
 Display pipeline lives in ``tools/resource_display.py`` — this module imports
 from it rather than duplicating formatting logic.
 """
@@ -40,6 +43,7 @@ from gitea_mcp_server.tools.resource_display import (
     extract_resource_content,
     format_resource_content,
 )
+from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
 
 logger = logging.getLogger(__name__)
 
@@ -676,7 +680,9 @@ def register_mcp_resource_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve bare
             ``$ref`` in tool output examples.
     """
-    mcp.tool(
+    register_synthetic_tool(
+        mcp,
+        paginated=True,
         name="list_resources",
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),

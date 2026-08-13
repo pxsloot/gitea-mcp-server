@@ -29,7 +29,7 @@ tool_names:
   issue_create_comment:
     description: |
       Add a comment to an issue or pull request.
-      
+
       **Note**: In Gitea, pull requests are implemented as issues.
       This endpoint works for both - use the 'index' parameter with either
       an issue number or a PR number.
@@ -38,61 +38,61 @@ tool_names:
   issue_create_issue:
     description: |
       Create a new issue in a Gitea repository.
-      
+
       **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
-      
-      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+
+      **CRITICAL**: Only labels that already exist in the repository are accepted.
       Using a non-existent label name will cause an API error.
-      
+
       **Best practice**: Use integer label IDs for reliability.
-      
+
       To see available labels:
-      - Call `list_labels(owner, repo)`
+      - Call `issue_list_labels(owner, repo)`
       - Read `gitea://repos/{owner}/{repo}/labels`
 
   issue_add_label:
     description: |
       Add labels to an issue or pull request.
-      
+
       **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
-      
-      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+
+      **CRITICAL**: Only labels that already exist in the repository are accepted.
       Using a non-existent label name will cause an API error.
-      
+
       **Best practice**: Use integer label IDs for reliability.
-      
+
       To see available labels:
-      - Call `list_labels(owner, repo)`
+      - Call `issue_list_labels(owner, repo)`
       - Read `gitea://repos/{owner}/{repo}/labels`
 
   issue_replace_labels:
     description: |
       Replace all labels on an issue or pull request.
-      
+
       **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
-      
-      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+
+      **CRITICAL**: Only labels that already exist in the repository are accepted.
       Using a non-existent label name will cause an API error.
-      
+
       **Best practice**: Use integer label IDs for reliability.
-      
+
       To see available labels:
-      - Call `list_labels(owner, repo)`
+      - Call `issue_list_labels(owner, repo)`
       - Read `gitea://repos/{owner}/{repo}/labels`
 
   repo_create_pull_request:
     description: |
       Create a new pull request from a branch.
-      
+
       **Labels**: Provide existing label **names** (strings) or **IDs** (integers).
-      
-      ⚠️  **CRITICAL**: Only labels that already exist in the repository are accepted.
+
+      **CRITICAL**: Only labels that already exist in the repository are accepted.
       Using a non-existent label name will cause an API error.
-      
+
       **Best practice**: Use integer label IDs for reliability.
-      
+
       To see available labels:
-      - Call `list_labels(owner, repo)`
+      - Call `issue_list_labels(owner, repo)`
       - Read `gitea://repos/{owner}/{repo}/labels`
 
   repo_update_pull_request:
@@ -129,7 +129,7 @@ tool_names:
 
       For searching across multiple repos, use `repo_search` with keyword filters.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}`
+      **Resource**: Use `gitea_read_resource` with `gitea://repos/{owner}/{repo}`
       for a formatted Markdown version of this data.
 
   # List pull requests: paginated PR listing with filters
@@ -140,7 +140,7 @@ tool_names:
 
       Use `repo_get_pull_request` to fetch a single PR by index for full details.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}/pulls`
+      **Resource**: Use `gitea_read_resource` with `gitea://repos/{owner}/{repo}/pulls`
       for a formatted overview of open pull requests.
 
   # Edit pull request: modify PR metadata (not branch)
@@ -161,7 +161,7 @@ tool_names:
       Issues include pull requests in Gitea. Use the `type` parameter to filter
       by issue type if needed.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://repos/{owner}/{repo}/issues`
+      **Resource**: Use `gitea_read_resource` with `gitea://repos/{owner}/{repo}/issues`
       for a formatted overview of open issues.
 
   # Edit issue: modify existing issue
@@ -181,7 +181,7 @@ tool_names:
       Use this to verify your identity and get your username for subsequent
       API calls that require `owner` parameters.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://users/{username}`
+      **Resource**: Use `gitea_read_resource` with `gitea://users/{username}`
       for a formatted Markdown profile of any user.
 
   # User lookup by name
@@ -192,7 +192,7 @@ tool_names:
       Returns profile details including full name, avatar URL, email,
       and account creation date. Does not require authentication for public users.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://users/{username}`
+      **Resource**: Use `gitea_read_resource` with `gitea://users/{username}`
       for a formatted Markdown profile.
 
   # User search across the instance
@@ -212,7 +212,7 @@ tool_names:
       location, and visibility. Use `org_list_repos` to list the
       organization's repositories.
 
-      **Resource**: Use `mcp_read_resource` with `gitea://orgs/{orgname}`
+      **Resource**: Use `gitea_read_resource` with `gitea://orgs/{orgname}`
       for a formatted Markdown profile.
 
   # List organization's repos
@@ -238,4 +238,3 @@ tool_names:
 
       Labels are used to categorize issues and pull requests.
       Provide a `color` in hex format (e.g., "00aabb") and a `name`.
-

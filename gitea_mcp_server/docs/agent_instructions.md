@@ -92,8 +92,8 @@ parameter table (``Parameter | Type | Required | Description``), a compact
 ``output_example``, annotations, and tags. The markdown output is designed
 to be parsed reliably -- you do not need ``format="json"`` for structured
 extraction. Use ``tool_info(name, detail="full")`` when you need the complete
-JSON Schema; it can be paginated with ``pagination=(page, limit)`` for large
-schemas.
+JSON Schema; it can be paginated with the ``page`` and ``limit`` parameters for
+large schemas.
 
 That said, a handful of parameters recur across almost every tool because they
 mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
@@ -213,7 +213,9 @@ large schemas. Run `tool_info` once on a small tool to get a feel for the
 shape, then trust the compact example day to day.
 
 `read_doc(topic)` also supports `page` and `limit` for line-based pagination
-through long guides. Each page is `limit` lines (default 50, max 200).
+through long guides. Each page is `limit` lines (default 50; the accepted
+maximum is server-enforced — discover the exact bound with
+`tool_info("read_doc")`).
 For ``json`` and ``raw`` formats, pagination metadata (``has_more``,
 ``next_offset``, ``total_count``) accompanies the guide content.
 
@@ -285,7 +287,7 @@ trip of confusion:
   Error calling tool '{{TOOL_PREFIX}}issue_create_issue': Unknown label name(s): ['NonExistentLabelXYZ'].
   Available labels for docker/docker_python:
   <empty -- repo has no labels yet>
-  Use list_labels(docker, docker_python) or read gitea://repos/docker/docker_python/labels to see details.
+  Use `{{TOOL_PREFIX}}issue_list_labels(docker, docker_python)` or read gitea://repos/docker/docker_python/labels to see details.
   ```
   Prefer integer label **IDs** over names for reliability, and confirm valid
   labels via `{{TOOL_PREFIX}}issue_list_labels` or the `gitea://repos/{owner}/{repo}/labels`

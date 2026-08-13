@@ -3,8 +3,9 @@
 BM25 search engine lives in gitea_mcp_server/search.py (flat infra layer).
 This module contains Tool-specific search wrappers, the TolerantSearchTransform,
 and the shared name-match + BM25 + format pipeline used by both search_tools and search_resources.
-Paginated registrations use ``synthetic_contract.register_synthetic_tool`` so
-their validation and output metadata match generated API tools.
+Paginated registrations use ``synthetic_contract.SyntheticToolSpec`` +
+``register_all_synthetic_tools`` so their validation and output metadata
+match generated API tools.
 """
 
 import json

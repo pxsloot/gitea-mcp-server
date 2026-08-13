@@ -52,10 +52,13 @@ async def _make_server() -> tuple:
         enable_lazy_loading=True,
     )
     gitea_client = GiteaClient(config)
-    with respx.mock() as mock_http:
-        mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=_make_spec())
-        mcp = await create_mcp_server(gitea_client)
-    return mcp, (config.tool_prefix or "")
+    try:
+        with respx.mock() as mock_http:
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=_make_spec())
+            mcp = await create_mcp_server(gitea_client)
+        return mcp, (config.tool_prefix or "")
+    finally:
+        await gitea_client.close()
 
 
 class TestDirectVsProxiedParity:
@@ -133,13 +136,9 @@ class TestSyntheticValidationSurface:
         """run_validation rejects typos instead of silently dropping them."""
         mcp, prefix = await _make_server()
 
-        for call_args in (
-            {f"{prefix}search_tools": {"query": "issue", "typo": 1}},
-        ):
-            kwargs = next(iter(call_args.values()))
-            with pytest.raises(ToolError) as exc:
-                await mcp.call_tool(next(iter(call_args)), kwargs)
-            assert "Unknown parameter" in str(exc.value)
+        with pytest.raises(ToolError) as exc:
+            await mcp.call_tool(f"{prefix}search_tools", {"query": "issue", "typo": 1})
+        assert "Unknown parameter" in str(exc.value)
 
         with pytest.raises(ToolError) as exc:
             await mcp.call_tool(

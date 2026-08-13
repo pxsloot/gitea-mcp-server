@@ -772,7 +772,8 @@ See ``register_custom_resources()`` for the available pre-computed parameters
 
 Synthetic tools and resources are hand-written (not auto-generated from the
 OpenAPI spec). They live in the same codebase and register themselves via
-``register_synthetic_tool`` / ``mcp.resource()``. Examples: ``resolve_type``,
+``register_all_synthetic_tools`` (declarative ``SyntheticToolSpec`` lists) /
+``mcp.resource()``. Examples: ``resolve_type``,
 ``search_tools``, ``tool_info``, ``gitea://types/{typeName}{?detail}``.
 
 ### Pattern
@@ -784,7 +785,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 
 3. **Registration closure** is a ``register_*`` function that takes ``mcp: FastMCP``
    (and any deps like ``openapi_spec``) and calls
-   ``register_synthetic_tool`` / ``mcp.resource()``:
+   ``register_all_synthetic_tools`` / ``mcp.resource()``:
 
    ```python
    def register_my_tool(

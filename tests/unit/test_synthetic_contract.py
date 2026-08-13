@@ -56,8 +56,12 @@ class TestRegisterAllSyntheticTools:
         # Wrapped spec stamps the marker + registers an executor; unwrapped does not.
         wrapped_meta = by_name["wrapped_tool"].meta or {}
         assert wrapped_meta.get("_contract_wrap") is True
-        assert wrapped_meta.get("_executor_id") == "wrapped_tool"
-        assert "wrapped_tool" in _SYNTHETIC_EXECUTORS
+        executor_id = wrapped_meta.get("_executor_id")
+        # The registry key is server-scoped (id(mcp):name) so multiple servers
+        # in one process never cross-resolve executors.
+        assert isinstance(executor_id, str)
+        assert executor_id.endswith(":wrapped_tool")
+        assert executor_id in _SYNTHETIC_EXECUTORS
         assert (by_name["proxy_tool"].meta or {}).get("_contract_wrap") is None
 
         # Paginated envelope declared for the wrapped spec.

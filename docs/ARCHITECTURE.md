@@ -553,13 +553,14 @@ for autogen, ``limit`` with a per-tool ``limit_max`` for synthetic.
       own close in the ``except`` block since lifespan is never entered on init
       failure.
 
-    - **Context injection**: ``_ToolWrappingTransform._wrap()`` resolves the
-      MCP ``Context`` inside the ``transform_fn`` closure via
-      ``_resolve_current_context()``, a helper that catches ``RuntimeError``
-      from ``CurrentContext()`` (raised outside an active session) and returns
-      ``None``.  The resolved ``ctx`` is passed explicitly to
+    - **Context injection**: the contract spine
+      (``tools/contract.build_transform_fn``) resolves the MCP ``Context``
+      via ``context_utils.resolve_current_context()``, a helper that catches
+      ``RuntimeError`` from ``CurrentContext()`` (raised outside an active
+      session) and returns ``None``.  The resolved ``ctx`` is passed to the
+      executor, which threads it through
       ``_run_transform_pipeline(kwargs, tool, extracted=..., ctx=ctx)`` and
-      threaded through to ``_pipeline_with_context()``.  Context operations
+      ``_pipeline_with_context()``.  Context operations
       (``ctx.info()``, ``ctx.report_progress()``) are wrapped in
       ``safe_ctx_info()`` and ``safe_ctx_report_progress()`` helpers from
       ``context_utils.py`` that silently degrade when ``ctx.session`` is

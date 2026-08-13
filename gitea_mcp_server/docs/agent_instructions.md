@@ -287,7 +287,7 @@ trip of confusion:
   Error calling tool '{{TOOL_PREFIX}}issue_create_issue': Unknown label name(s): ['NonExistentLabelXYZ'].
   Available labels for docker/docker_python:
   <empty -- repo has no labels yet>
-  Use list_labels(docker, docker_python) or read gitea://repos/docker/docker_python/labels to see details.
+  Use `{{TOOL_PREFIX}}issue_list_labels(docker, docker_python)` or read gitea://repos/docker/docker_python/labels to see details.
   ```
   Prefer integer label **IDs** over names for reliability, and confirm valid
   labels via `{{TOOL_PREFIX}}issue_list_labels` or the `gitea://repos/{owner}/{repo}/labels`

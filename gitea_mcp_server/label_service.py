@@ -172,7 +172,7 @@ class LabelService:
                 f"{'; '.join(parts)}.\n\n"
                 f"Available labels for {owner}/{repo}:\n"
                 f"{available}\n\n"
-                f"Use list_labels({owner}, {repo}) or read "
+                f"Use issue_list_labels({owner}, {repo}) or read "
                 f"gitea://repos/{owner}/{repo}/labels to see details."
             )
             raise ValidationError(message=msg, field="labels")

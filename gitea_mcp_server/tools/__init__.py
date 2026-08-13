@@ -2,6 +2,8 @@
 
 All tool-related runtime concerns live here:
 - customize: Core customization pipeline (annotations, hints, title, categorization)
+- contract: Generic agent-facing contract spine (build_transform_fn) shared by
+  autogen and synthetic tools
 - schemas: Output schema derivation and $ref resolution
 - errors: Error handling for tool execution
 - labels: Label name→ID conversion

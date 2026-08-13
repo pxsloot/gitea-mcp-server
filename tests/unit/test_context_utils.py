@@ -106,3 +106,37 @@ class TestSafeCtxReportProgress:
         # Should not raise
         await safe_ctx_report_progress(ctx, progress=0.5, total=1.0)
         ctx.report_progress.assert_awaited_once_with(progress=0.5, total=1.0)
+
+
+class TestResolveCurrentContext:
+    """Tests for resolve_current_context."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_outside_session(self) -> None:
+        """Returns None when no MCP session is active (RuntimeError suppressed)."""
+        from gitea_mcp_server.context_utils import resolve_current_context
+
+        ctx = await resolve_current_context()
+        assert ctx is None
+
+    @pytest.mark.asyncio
+    async def test_returns_context_inside_session(self) -> None:
+        """Returns the Context object when a session is active."""
+        from unittest.mock import patch
+
+        from gitea_mcp_server import context_utils
+        from gitea_mcp_server.context_utils import resolve_current_context
+
+        mock_ctx = AsyncMock()
+
+        class _MockCurrentContext:
+            async def __aenter__(self) -> AsyncMock:
+                return mock_ctx
+
+            async def __aexit__(self, *args: object) -> None:
+                pass
+
+        with patch.object(context_utils, "CurrentContext", return_value=_MockCurrentContext()):
+            resolved = await resolve_current_context()
+
+        assert resolved is mock_ctx

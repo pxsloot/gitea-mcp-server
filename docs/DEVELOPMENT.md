@@ -100,7 +100,7 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | Directory | Contains |
 |-----------|----------|
 | `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_service`, `format` |
-| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, schemas, errors, labels, examples, exclusion, search, virtual_params, namespace |
+| `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, contract, schemas, errors, labels, examples, exclusion, search, virtual_params, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, resource registration |
 | `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
@@ -123,6 +123,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 
 | Module | Concern |
 |--------|---------|
+| `tools/contract.py` | Generic agent-facing contract spine — `build_transform_fn(tool, executor)`, shared by autogen and synthetic tools |
 | `tools/customize.py` | Helpers: title/category generation, hint inference, invalidation |
 | `tools/schemas.py` | Output schema derivation, `$ref` resolution |
 | `tools/errors.py` | Error translation, argument validation runner |
@@ -163,16 +164,19 @@ The customization pipeline has two phases:
      by runtime transforms
 
 2. **``_ToolWrappingTransform._wrap()``** in
-   `server_setup/mcp_builder.py` — the ``transform_fn`` closure resolves the
-   MCP ``Context`` via ``_resolve_current_context()`` (which catches
+   `server_setup/mcp_builder.py` — the per-call ``transform_fn`` is built by
+   the shared contract spine
+   (``tools/contract.build_transform_fn(tool, executor)``); this module
+   supplies the autogen executor.  The executor resolves the MCP ``Context``
+   via ``context_utils.resolve_current_context()`` (which catches
    ``RuntimeError`` from ``CurrentContext()`` outside an active session),
    then threads the ``ToolCustomization`` explicitly through
-   ``_make_transform_fn`` and ``_run_transform_pipeline(kwargs, tool,
-   customization, extracted=..., ctx=ctx)``, ultimately reaching
-   ``_pipeline_with_context()``.  Runtime wrapping (validation, label
-   conversion, error handling, text wrapping, pagination) all receive
-   ``ctx`` for ``ctx.info()`` logging and ``ctx.report_progress()`` calls
-   at key stages, gracefully degraded to no-ops when ``ctx`` is ``None``.
+   ``_run_transform_pipeline(kwargs, tool, customization, extracted=...,
+   ctx=ctx)``, ultimately reaching ``_pipeline_with_context()``.  Runtime
+   wrapping (validation, label conversion, error handling, text wrapping,
+   pagination) all receive ``ctx`` for ``ctx.info()`` logging and
+   ``ctx.report_progress()`` calls at key stages, gracefully degraded to
+   no-ops when ``ctx`` is ``None``.
 
 Common customizations:
 

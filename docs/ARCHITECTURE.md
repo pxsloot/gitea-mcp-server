@@ -263,6 +263,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 
 | Module | One-line role |
 |--------|---------------|
+| `tools/contract.py` | Generic agent-facing contract spine — ``build_transform_fn(tool, executor)``, shared by autogen and synthetic tools |
 | `tools/customize.py` | title/category, hint inference, annotation prep |
 | `tools/schemas.py` | ``derive_output_schema``, ``$ref`` resolution, response classification |
 | `tools/errors.py` | runtime validation runner, HTTP error translation |
@@ -304,10 +305,20 @@ transform.  They nevertheless share the agent-facing pagination contract via
 their output schema.  The per-tool ``limit`` upper bound (``limit_max``,
 defaulting to ``PAGE_SIZE_MAX``) is declared as a JSON Schema ``maximum`` on
 the ``limit`` parameter so agents discover each tool's page-size bound via
-``tool_info``.  Backend-specific behaviour such as HTTP error translation and
-API ``fetch_all`` re-execution remains provider-only.  This boundary is
-intentional for now and is a candidate for the future generic transform
-refactor.
+``tool_info``.
+
+The **per-call contract spine is shared** via ``tools/contract.py``:
+``build_transform_fn(tool, executor)`` runs virtual-param extraction,
+pre-hooks, context resolution, and post-hoc formatting for both tool
+families.  Autogen tools supply the autogen executor (the HTTP pipeline in
+``server_setup/mcp_builder.py``: validation, route-aware HTTP execution,
+error translation, response-class wrapping, pagination metadata, loop
+hooks); synthetic tools supply a local in-memory executor.  Backend-specific
+behaviour (HTTP error translation, API ``fetch_all`` re-execution) stays
+inside the executor, never in the shared spine.  Synthetic tools still use
+their own registration wrapper (``register_synthetic_tool``) — unifying
+their registration onto the shared transform is the next stage of the
+generic transform refactor.
 
 ### Resource System
 
@@ -351,7 +362,10 @@ refactor.
 1. **FastMCP providers, not manual tool registration** -- The OpenAPI provider
    auto-generates tools from the spec. Customization happens via
    `_ToolWrappingTransform` and the `transform_fn` pattern, not by
-   hand-registering each tool.
+   hand-registering each tool.  The per-call `transform_fn` spine is extracted
+   into `tools/contract.py` (`build_transform_fn(tool, executor)`) and shared
+   with synthetic tools; `_ToolWrappingTransform` supplies the autogen
+   HTTP-pipeline executor.
 
    Synthetic discovery and documentation tools are the exception: they are
    manually registered because they operate on server-local catalogs and
@@ -803,19 +817,21 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   │
   └─▶ _ToolWrappingTransform (outermost)
         ├─▶ inject virtual params into schema (tools/virtual_params.py)
-        ├─▶ extract virtual params from kwargs → stash
-        ├─▶ resolve MCP Context via _resolve_current_context()
-        ├─▶ validate arguments (validation.py)
-        ├─▶ log validation result (ctx.info)
-        ├─▶ report execution progress (ctx.report_progress)
-        ├─▶ call inner tool's run()
-        │  └─▶ LabelTransform (innermost)
-        │        ├─▶ convert label strings→IDs (label_service)
-        │        ├─▶ log label result (ctx.info)
-        │        └─▶ call original tool's run()
-        │           └─▶ OpenAPITool.run() → httpx request to Gitea API
-        ├─▶ log completion (ctx.info)
-        ├─▶ wrap response in {"result": ...}
+        └─▶ transform_fn — the shared contract spine
+            (tools/contract.build_transform_fn):
+            ├─▶ extract virtual params from kwargs → stash
+            ├─▶ resolve MCP Context via context_utils.resolve_current_context()
+            ├─▶ executor: validate arguments (validation.py)
+            ├─▶ log validation result (ctx.info)
+            ├─▶ report execution progress (ctx.report_progress)
+            ├─▶ call inner tool's run()
+            │  └─▶ LabelTransform (innermost)
+            │        ├─▶ convert label strings→IDs (label_service)
+            │        ├─▶ log label result (ctx.info)
+            │        └─▶ call original tool's run()
+            │           └─▶ OpenAPITool.run() → httpx request to Gitea API
+            ├─▶ log completion (ctx.info)
+            ├─▶ wrap response in {"result": ...}
         ├─▶ apply loop hooks with ``execute_fn`` for re-execution
         │   (e.g. auto-pagination via VirtualParam.loop_hook)
         ├─▶ report progress for paginated fetches (ctx.report_progress)

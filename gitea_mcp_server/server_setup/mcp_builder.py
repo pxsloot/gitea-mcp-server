@@ -18,7 +18,11 @@ phases:
 
 Runtime wrapping (validation, labels, error handling, text/binary response
 wrapping, pagination) is handled by :class:`_ToolWrappingTransform` via
-``provider.add_transform()`` — no private FastMCP APIs are used.
+``provider.add_transform()`` — no private FastMCP APIs are used.  The
+per-call spine (virtual-param extraction, pre-hooks, context resolution,
+post-hoc formatting) is shared with synthetic tools via
+:func:`~tools.contract.build_transform_fn`; this module supplies the
+autogen HTTP-pipeline executor.
 """
 
 import copy
@@ -26,7 +30,6 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
-from fastmcp.dependencies import CurrentContext
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
 from fastmcp.telemetry import get_tracer
@@ -45,6 +48,7 @@ from gitea_mcp_server.pagination import (
     pagination_ctx,
 )
 from gitea_mcp_server.scope import derive_required_scope
+from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.customize import (
     _detect_has_labels,
     _is_array_response,
@@ -64,13 +68,7 @@ from gitea_mcp_server.tools.schemas import (
     response_has_no_content,
     unwrap_result_schema,
 )
-from gitea_mcp_server.tools.virtual_params import (
-    apply_pre_hooks,
-    apply_to,
-    extract_from,
-    get_loop_hooks,
-    inject_into,
-)
+from gitea_mcp_server.tools.virtual_params import get_loop_hooks, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -605,11 +603,13 @@ class _ToolWrappingTransform(Transform):
     ) -> Any:
         """Build the per-call :func:`transform_fn` closure for a tool.
 
-        The returned callable receives ``**kwargs`` (the agent's arguments)
-        and performs the full runtime pipeline: extract virtual params,
-        run pre-hooks, resolve context, validate, execute via the HTTP
-        layer, then hand off to :func:`apply_to` for post-hooks (formatting,
-        sudo cleanup).
+        The generic contract spine (:func:`~tools.contract.build_transform_fn`)
+        is parameterized with an executor that binds this tool's HTTP
+        pipeline (:meth:`_run_transform_pipeline`) to its ``customization``.
+        The spine handles virtual-param extraction, pre-hooks, context
+        resolution, ``_raw_schema`` attachment, and post-hook formatting —
+        the same code path synthetic tools will use with their local
+        executor.
 
         Args:
             tool: The ``Tool`` being wrapped.
@@ -621,38 +621,20 @@ class _ToolWrappingTransform(Transform):
         and post-hook formatting — is driven by the :mod:`virtual_params`
         registry.  The transform_fn is pure orchestration.
         """
-        async def transform_fn(**kwargs: Any) -> ToolResult:
-            # Pop all virtual params (format, detail, sudo, fetch_all,
-            # content_type, etc.) — unified extraction, no special cases.
-            virtual_values = extract_from(kwargs)
-
-            # Run pre-hooks.  Hooks may mutate kwargs (e.g. content_type
-            # base64-encodes ``content``).
-            apply_pre_hooks(virtual_values, kwargs)
-
-            # Resolve the current MCP Context so progress reporting and
-            # structured logging work inside the pipeline.
-            ctx = await self._resolve_current_context()
-            result = await self._run_transform_pipeline(
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any | None,
+        ) -> ToolResult:
+            return await self._run_transform_pipeline(
                 kwargs,
                 tool,
                 customization,
-                extracted=virtual_values,
+                extracted=extracted,
                 ctx=ctx,
             )
 
-            # Attach raw_schema to the extracted dict so format's post-hook
-            # can access it for schema-aware rendering.  Not a VirtualParam —
-            # pipeline metadata carried through the same channel as detail,
-            # format, etc.  The hook reads it from ``all_extracted``.
-            virtual_values["_raw_schema"] = (
-                (tool.meta or {}).get("output_schema_raw")
-            )
-
-            # Run post-hooks: sudo clears context, format renders output.
-            return apply_to(result, virtual_values)
-
-        return transform_fn
+        return build_transform_fn(tool, executor)
 
     async def _wrap(self, tool: Tool) -> Tool:
         """Wrap a customized Tool with injected params and a runtime transform.
@@ -696,23 +678,6 @@ class _ToolWrappingTransform(Transform):
             output_schema=tool.output_schema,
             meta=tool.meta,
         )
-
-    async def _resolve_current_context(self) -> Any | None:
-        """Resolve the current MCP Context if inside a request scope.
-
-        ``CurrentContext()`` raises ``RuntimeError`` when called outside an
-        active MCP session (e.g. in unit tests or in-memory
-        ``mcp.call_tool()``).  This helper catches that and returns ``None``,
-        matching the ``ctx=None`` contract of ``_pipeline_with_context``.
-
-        Returns:
-            The MCP ``Context`` object, or ``None`` if no session is active.
-        """
-        try:
-            async with CurrentContext() as ctx:
-                return ctx
-        except RuntimeError:
-            return None
 
     async def _apply_loop_hooks(  # noqa: PLR0913
         self,
@@ -829,7 +794,8 @@ class _ToolWrappingTransform(Transform):
                 so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
                 ``None`` or empty means no loop hooks to run.
             ctx: The MCP ``Context`` object, or ``None`` if no session is
-                active.  Resolved by the caller via :meth:`_resolve_current_context`.
+                active.  Resolved by the caller via
+                :func:`~gitea_mcp_server.context_utils.resolve_current_context`.
         """
         if customization is None:
             route_path, route_method = "", ""
@@ -939,9 +905,9 @@ class _ToolWrappingTransform(Transform):
         """Run the tool execution pipeline with an optional Context.
 
         ``ctx`` is resolved by the caller (``transform_fn`` via
-        :meth:`_resolve_current_context`) and passed through.  ``ctx`` is
-        ``None`` when no request context is active (e.g. in-memory
-        ``mcp.call_tool()``).
+        :func:`~gitea_mcp_server.context_utils.resolve_current_context`) and
+        passed through.  ``ctx`` is ``None`` when no request context is
+        active (e.g. in-memory ``mcp.call_tool()``).
 
         Handles four response classes (in order):
         1. **JSON** — standard, passed through to output formatting.

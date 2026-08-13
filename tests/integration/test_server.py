@@ -1608,7 +1608,7 @@ class TestWrappingPipelineEdgeCases:
             200, json={"version": "1.0.0"}
         )
         with patch(
-            "gitea_mcp_server.server_setup.mcp_builder.CurrentContext",
+            "gitea_mcp_server.context_utils.CurrentContext",
             return_value=_MockCurrentContext(),
         ):
             result = await mcp_server.call_tool("gitea_get_version", {})

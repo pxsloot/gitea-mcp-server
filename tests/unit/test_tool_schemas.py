@@ -1726,7 +1726,7 @@ class TestContentTypeVirtualParam:
             parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
@@ -1756,7 +1756,7 @@ class TestContentTypeVirtualParam:
             parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
@@ -1827,7 +1827,7 @@ class TestContentTypeVirtualParam:
                 "properties": {"result": {"type": "object"}},
             },
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
@@ -1895,7 +1895,7 @@ class TestContentTypeVirtualParam:
                 "properties": {"result": {"type": "object"}},
             },
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,

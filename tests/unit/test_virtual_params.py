@@ -590,7 +590,7 @@ class TestWrapIntegration:
             description="List issues in a repository.",
             parameters={"properties": {"owner": {"type": "string"}}},
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,

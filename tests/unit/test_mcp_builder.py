@@ -1037,12 +1037,16 @@ class TestToolWrappingTransform:
 
     @pytest.mark.asyncio
     async def test_uses_meta_executor_for_synthetic_tool(self) -> None:
-        """Synthetic tools run through their own executor stored in meta.
+        """Synthetic tools run through their registered executor.
 
         The spine (extract virtual params, resolve ctx, post-hooks) is
         shared; only the executor differs.  The synthetic executor receives
         kwargs with virtual params popped and the extracted values.
         """
+        from gitea_mcp_server.tools.synthetic_contract import (
+            _SYNTHETIC_EXECUTORS,
+        )
+
         captured: dict[str, Any] = {}
 
         async def executor(
@@ -1061,13 +1065,17 @@ class TestToolWrappingTransform:
             meta={
                 "_contract_wrap": True,
                 "_synthetic": True,
-                "_executor": executor,
+                "_executor_id": "synth_tool",
                 "_virtual_params": {"format", "detail", "fetch_all"},
             },
         )
-        transform = self.make_transform()
-        [wrapped] = await transform.list_tools([tool])
-        result = await wrapped.run({"query": "q", "format": "json"})
+        _SYNTHETIC_EXECUTORS["synth_tool"] = executor
+        try:
+            transform = self.make_transform()
+            [wrapped] = await transform.list_tools([tool])
+            result = await wrapped.run({"query": "q", "format": "json"})
+        finally:
+            _SYNTHETIC_EXECUTORS.pop("synth_tool", None)
 
         assert captured["kwargs"] == {"query": "q"}
         assert captured["extracted"] == {

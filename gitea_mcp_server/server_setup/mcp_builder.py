@@ -68,6 +68,7 @@ from gitea_mcp_server.tools.schemas import (
     response_has_no_content,
     unwrap_result_schema,
 )
+from gitea_mcp_server.tools.synthetic_contract import get_synthetic_executor
 from gitea_mcp_server.tools.virtual_params import get_loop_hooks, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
@@ -657,8 +658,8 @@ class _ToolWrappingTransform(Transform):
         The generic contract spine (:func:`~tools.contract.build_transform_fn`)
         is parameterized with an executor.  Autogen tools use the HTTP
         pipeline executor (:meth:`_make_autogen_executor`); synthetic tools
-        stamp their own executor (a closure over their local implementation)
-        in ``tool.meta["_executor"]``.  Both run through the same spine.
+        resolve theirs from the synthetic-executor registry via
+        ``tool.meta["_executor_id"]``.  Both run through the same spine.
 
         Args:
             tool: The ``Tool`` being wrapped.
@@ -671,7 +672,7 @@ class _ToolWrappingTransform(Transform):
         registry.  The transform_fn is pure orchestration.
         """
         meta = tool.meta or {}
-        executor = meta.get("_executor")
+        executor = get_synthetic_executor(meta.get("_executor_id"))
         if executor is None:
             executor = self._make_autogen_executor(tool, customization)
         return build_transform_fn(tool, executor)

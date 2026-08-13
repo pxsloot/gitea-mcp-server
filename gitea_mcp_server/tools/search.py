@@ -49,7 +49,10 @@ from gitea_mcp_server.tools.schemas import (
     schema_type_is_array,
     unwrap_result_schema,
 )
-from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
+from gitea_mcp_server.tools.synthetic_contract import (
+    make_impl_executor,
+    register_synthetic_tool,
+)
 
 # ============================================================================
 # Shared BM25 + format pipeline (used by search_tools and search_resources)
@@ -903,6 +906,7 @@ def register_synthetic_tools(
 
     register_synthetic_tool(
         mcp,
+        executor=make_impl_executor(search_tools_fn, paginated=True),
         paginated=True,
         name="search_tools",
         description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
@@ -1014,7 +1018,9 @@ def register_synthetic_tools(
 
     register_synthetic_tool(
         mcp,
+        executor=make_impl_executor(tool_info_fn, paginated=True),
         paginated=True,
+        virtual_params={"format"},
         name="tool_info",
         description="Get the full schema for a registered tool by exact name. Returns parameter details, output example, annotations, and tags. Use after search_tools to inspect a specific tool before calling it.",
         tags={"synthetic"},
@@ -1139,6 +1145,7 @@ def register_synthetic_tools(
 
     register_synthetic_tool(
         mcp,
+        executor=make_impl_executor(search_resources_fn, paginated=True),
         paginated=True,
         name="search_resources",
         description="Search MCP resources by natural language query. "

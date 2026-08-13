@@ -31,6 +31,10 @@ from gitea_mcp_server.tools.schemas import (
     deep_resolve_schema,
     resolve_ref,
 )
+from gitea_mcp_server.tools.synthetic_contract import (
+    make_impl_executor,
+    register_synthetic_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +355,9 @@ def register_type_tools(
 
         return apply_format(info, format, detail=detail)
 
-    mcp.tool(
+    register_synthetic_tool(
+        mcp,
+        executor=make_impl_executor(_resolve_type_impl),
         name="resolve_type",
         description=(
             "Resolve a ``$ref`` type name to its schema and cross-references. "

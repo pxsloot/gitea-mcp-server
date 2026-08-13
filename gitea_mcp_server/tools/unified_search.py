@@ -33,7 +33,10 @@ from gitea_mcp_server.tools.search import (
     extract_searchable_text_enhanced,
     search_and_slice,
 )
-from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
+from gitea_mcp_server.tools.synthetic_contract import (
+    make_impl_executor,
+    register_synthetic_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +205,7 @@ def register_unified_search(
 
     register_synthetic_tool(
         mcp,
+        executor=make_impl_executor(search, paginated=True),
         paginated=True,
         name="search",
         description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",

@@ -130,7 +130,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
-| `tools/synthetic_contract.py` | Shared registration wrapper for synthetic-tool validation and pagination schemas |
+| `tools/synthetic_contract.py` | Synthetic registration contract — wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref:Type`` name resolution and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo``, ``fetch_all``, ``content_type``, ``detail``, ``format``. See the `virtual params how-to`_ below for adding new entries. |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |
@@ -324,19 +324,21 @@ and merge results.  The hook should update the ``ToolResult``'s
 
     **Synthetic tools** (``search_tools``, ``search_resources``,
     ``search_docs``, ``search``, ``list_resources``):
-    ``fetch_all`` is declared as an explicit parameter in the tool's function
-    signature.  Since all data is already in memory (tool catalog, doc index,
-    resource list), ``fetch_all`` simply skips the page/limit slice and
-    returns all results through the shared
+    ``fetch_all`` is a virtual parameter injected from the registry
+    (via the tool's ``_virtual_params`` allowlist) and popped by the shared
+    spine before the executor runs.  Since all data is already in memory
+    (tool catalog, doc index, resource list), ``fetch_all`` simply skips the
+    page/limit slice and returns all results through the shared
     :func:`~gitea_mcp_server.format.format_paginated_result` utility — no
     loop needed.  These tools are registered through
     :func:`~gitea_mcp_server.tools.synthetic_contract.register_synthetic_tool`,
-    which also validates ``page``/``limit`` and declares the pagination
-    metadata in their output schemas.  Pass ``limit_max`` to raise the
-    ``limit`` upper bound beyond the default ``PAGE_SIZE_MAX`` (e.g.
-    ``read_doc`` paginates guide lines and allows 200); the bound is declared
-    as a JSON Schema ``maximum`` on the ``limit`` parameter so agents
-    discover it via ``tool_info``.
+    which stamps the wrap-me marker + executor registry entry, injects the
+    virtual-param allowlist, validates ``page``/``limit`` (in the executor),
+    and declares the pagination metadata in their output schemas.  Pass
+    ``limit_max`` to raise the ``limit`` upper bound beyond the default
+    ``PAGE_SIZE_MAX`` (e.g. ``read_doc`` paginates guide lines and allows
+    200); the bound is declared as a JSON Schema ``maximum`` on the
+    ``limit`` parameter so agents discover it via ``tool_info``.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single
@@ -770,7 +772,7 @@ See ``register_custom_resources()`` for the available pre-computed parameters
 
 Synthetic tools and resources are hand-written (not auto-generated from the
 OpenAPI spec). They live in the same codebase and register themselves via
-``mcp.tool()`` / ``mcp.resource()`` directly. Examples: ``resolve_type``,
+``register_synthetic_tool`` / ``mcp.resource()``. Examples: ``resolve_type``,
 ``search_tools``, ``tool_info``, ``gitea://types/{typeName}{?detail}``.
 
 ### Pattern
@@ -781,7 +783,8 @@ OpenAPI spec). They live in the same codebase and register themselves via
    plain dicts/lists — easy to unit test without mocking FastMCP.
 
 3. **Registration closure** is a ``register_*`` function that takes ``mcp: FastMCP``
-   (and any deps like ``openapi_spec``) and calls ``mcp.tool()`` / ``mcp.resource()``:
+   (and any deps like ``openapi_spec``) and calls
+   ``register_synthetic_tool`` / ``mcp.resource()``:
 
    ```python
    def register_my_tool(
@@ -802,9 +805,11 @@ OpenAPI spec). They live in the same codebase and register themselves via
            await ctx.info(f"Processing '{param}'", ...)
            result = do_the_work(my_data, param)
            await ctx.report_progress(progress=1.0)
-            return apply_format(result, format)
+           return apply_format(result, format)
 
-       mcp.tool(
+       register_synthetic_tool(
+           mcp,
+           executor=make_impl_executor(_my_tool_impl),
            name="my_tool",
            description="...",
            tags={"synthetic", "my-domain"},
@@ -832,6 +837,15 @@ OpenAPI spec). They live in the same codebase and register themselves via
         )(_my_resource)
    ```
 
+   ``register_synthetic_tool`` stamps the wrap-me marker (``_contract_wrap``)
+   and registers the executor so the **server-level contract transform**
+   wraps the tool exactly like an autogenerated one: virtual params
+   (``format``/``detail``/``fetch_all`` — from the registry, not hand-declared)
+   are injected into the schema, popped before the executor runs, and
+   re-supplied to the impl by ``make_impl_executor``.  The executor validates
+   ``page``/``limit`` for paginated tools and marks the result ``_formatted``
+   so the shared format post-hook does not re-render the impl's own output.
+
    For factory-migrated resources, use ``make_api_resource()`` which auto-derives
    ``size_hint`` from the response schema via ``ResourceMeta.for_schema()``.
 
@@ -846,7 +860,9 @@ OpenAPI spec). They live in the same codebase and register themselves via
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
-| ``format`` param | Accept it as the last non-``ctx`` param with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
+| Registration | Use ``register_synthetic_tool(mcp, executor=make_impl_executor(impl, paginated=..., limit_max=...), ...)`` — stamps the wrap marker and wires the tool onto the shared contract transform |
+| Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``_virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}``; ``sudo`` is opt-in). ``make_impl_executor`` re-supplies the popped values to the impl and marks results ``_formatted`` |
+| ``format`` param | Accept it with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |

@@ -4,10 +4,12 @@ from typing import Any
 
 import pytest
 from fastmcp import FastMCP
+from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.tools.synthetic_contract import (
     PAGINATION_SCHEMA_PROPERTIES,
+    make_impl_executor,
     paginated_output_schema,
     register_synthetic_tool,
 )
@@ -32,18 +34,36 @@ class TestPaginatedOutputSchema:
 class TestSyntheticToolRegistration:
     """Tests for shared synthetic registration behaviour."""
 
+    def _register_example(
+        self,
+        mcp: FastMCP,
+        *,
+        limit_max: int | None = None,
+        virtual_params: set[str] | None = None,
+        impl: Any = None,
+    ) -> Any:
+        """Register a paginated example tool and return (fn, executor)."""
+        if impl is None:
+
+            async def impl(page: int = 1, limit: int = 10) -> ToolResult:
+                return ToolResult(structured_content={"result": []})
+
+        executor = make_impl_executor(impl, paginated=True, limit_max=limit_max)
+        register_synthetic_tool(
+            mcp,
+            executor=executor,
+            paginated=True,
+            limit_max=limit_max,
+            virtual_params=virtual_params,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )(impl)
+        return impl, executor
+
     @pytest.mark.asyncio
     async def test_rejects_invalid_page_and_limit(self) -> None:
         """Paginated synthetic tools reject the same invalid values as API tools."""
         mcp = FastMCP("test")
-
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
-            return {"result": []}
+        _, executor = self._register_example(mcp)
 
         invalid_values = (
             ({"page": 0}, "page"),
@@ -54,52 +74,38 @@ class TestSyntheticToolRegistration:
         )
         for kwargs, field in invalid_values:
             with pytest.raises(ValidationError) as exc_info:
-                await example(**kwargs)
+                await executor(kwargs, {}, None)
             assert exc_info.value.field == field
 
     @pytest.mark.asyncio
     async def test_schema_declares_pagination_metadata(self) -> None:
         """Registered paginated tools expose metadata in their output schema."""
         mcp = FastMCP("test")
-
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
-            return {"result": []}
+        self._register_example(mcp)
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").output_schema
+        schema = next(tool for tool in tools if tool.name == "impl").output_schema
         assert schema is not None
         assert set(PAGINATION_SCHEMA_PROPERTIES) <= set(schema["properties"])
 
     @pytest.mark.asyncio
     async def test_boundary_rejects_with_friendly_error_not_pydantic(self) -> None:
-        """MCP-boundary calls must surface the server error, not pydantic's.
+        """Calls must surface the server error, not pydantic's.
 
         Regression test: declaring bounds via ``Field(ge=..., le=...)`` made
         pydantic reject invalid values at the boundary with a raw
         ``ValidationError`` (leaking ``errors.pydantic.dev`` URLs to agents)
-        before the wrapper's friendly validation ran.  Bounds are now declared
-        with ``Field(json_schema_extra=...)`` — schema-only — so the wrapper
-        runs and raises ``gitea_mcp_server.exceptions.ValidationError`` with
-        the same message surface autogen tools use.
+        before the executor's friendly validation ran.  Bounds are now
+        declared with ``Field(json_schema_extra=...)`` — schema-only — so the
+        executor runs and raises ``gitea_mcp_server.exceptions.ValidationError``
+        with the same message surface autogen tools use.
         """
         mcp = FastMCP("test")
-
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
-            return {"result": []}
+        _, executor = self._register_example(mcp)
 
         # Bounds are still declared in the schema (agents discover via tool_info).
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         assert schema["properties"]["page"].get("minimum") == 1
         assert schema["properties"]["limit"].get("minimum") == 1
         assert schema["properties"]["limit"].get("maximum") == 100
@@ -110,7 +116,7 @@ class TestSyntheticToolRegistration:
             ({"limit": 101}, "limit must be <= 100"),
         ):
             with pytest.raises(ValidationError) as exc_info:
-                await example(**kwargs)
+                await executor(kwargs, {}, None)
             assert expected in str(exc_info.value)
             assert "pydantic.dev" not in str(exc_info.value)
             assert "less_than_equal" not in str(exc_info.value)
@@ -125,21 +131,13 @@ class TestSyntheticToolRegistration:
         contract.
         """
         mcp = FastMCP("test")
-
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
-            return {"result": []}
+        _, executor = self._register_example(mcp, limit_max=200)
 
         # Within the tool's own bound — must be accepted.
-        await example(limit=200)
+        await executor({"page": 1, "limit": 200}, {}, None)
         # Above it — must be rejected.
         with pytest.raises(ValidationError) as exc_info:
-            await example(limit=201)
+            await executor({"page": 1, "limit": 201}, {}, None)
         assert exc_info.value.field == "limit"
 
     @pytest.mark.asyncio
@@ -151,18 +149,10 @@ class TestSyntheticToolRegistration:
         discover per-tool page-size bounds instead of hardcoded doc numbers.
         """
         mcp = FastMCP("test")
-
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
-            return {"result": []}
+        self._register_example(mcp, limit_max=200)
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         limit_param = schema["properties"]["limit"]
         assert limit_param.get("maximum") == 200
         assert limit_param.get("minimum") == 1
@@ -185,20 +175,16 @@ class TestSyntheticToolRegistration:
 
         mcp = FastMCP("test")
 
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(
+        async def impl(
             page: Annotated[int, "Page number (1-based, default 1)"] = 1,
             limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
-        ) -> dict[str, Any]:
-            return {"result": []}
+        ) -> ToolResult:
+            return ToolResult(structured_content={"result": []})
+
+        self._register_example(mcp, limit_max=200, impl=impl)
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         props = schema["properties"]
         # Descriptions survive the additive bounds declaration.
         assert props["page"]["description"] == "Page number (1-based, default 1)"
@@ -229,13 +215,7 @@ class TestSyntheticToolRegistration:
 
         mcp = FastMCP("test")
 
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(
+        async def impl(
             page: Annotated[
                 int,
                 Field(
@@ -250,11 +230,13 @@ class TestSyntheticToolRegistration:
                     examples=[50, 100],
                 ),
             ] = 50,
-        ) -> dict[str, Any]:
-            return {"result": []}
+        ) -> ToolResult:
+            return ToolResult(structured_content={"result": []})
+
+        self._register_example(mcp, limit_max=200, impl=impl)
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         props = schema["properties"]
         assert props["page"]["description"] == "Page number (1-based, default 1)"
         assert props["page"]["examples"] == [1, 2]
@@ -269,23 +251,19 @@ class TestSyntheticToolRegistration:
         """Docstring-derived parameter descriptions survive bound injection."""
         mcp = FastMCP("test")
 
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
+        async def impl(page: int = 1, limit: int = 50) -> ToolResult:
             """Read a workflow guide.
 
             Args:
                 page: Page number (1-based, default 1).
                 limit: Lines per page (default 50).
             """
-            return {"result": []}
+            return ToolResult(structured_content={"result": []})
+
+        self._register_example(mcp, limit_max=200, impl=impl)
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         props = schema["properties"]
         assert props["page"]["description"] == "Page number (1-based, default 1)."
         assert props["limit"]["description"] == "Lines per page (default 50)."
@@ -295,22 +273,15 @@ class TestSyntheticToolRegistration:
     async def test_default_limit_max_is_page_size_max(self) -> None:
         """Without ``limit_max`` the bound stays at the default 100."""
         mcp = FastMCP("test")
+        _, executor = self._register_example(mcp)
 
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
-            return {"result": []}
-
-        await example(limit=100)
+        await executor({"page": 1, "limit": 100}, {}, None)
         with pytest.raises(ValidationError) as exc_info:
-            await example(limit=101)
+            await executor({"page": 1, "limit": 101}, {}, None)
         assert exc_info.value.field == "limit"
 
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         assert schema["properties"]["limit"].get("maximum") == 100
 
     @pytest.mark.asyncio
@@ -325,22 +296,41 @@ class TestSyntheticToolRegistration:
         """
         mcp = FastMCP("test")
 
-        @register_synthetic_tool(
-            mcp,
-            paginated=True,
-            limit_max=200,
-            output_schema={"type": "object", "properties": {"result": {}}},
-        )
-        async def example(query: str = "x") -> dict[str, Any]:
-            return {"result": []}
+        async def impl(query: str = "x") -> ToolResult:
+            return ToolResult(structured_content={"result": []})
 
+        self._register_example(mcp, limit_max=200, impl=impl)
         tools = await mcp.list_tools()
-        schema = next(tool for tool in tools if tool.name == "example").parameters
+        schema = next(tool for tool in tools if tool.name == "impl").parameters
         props = schema["properties"]
         assert props["query"]["type"] == "string"
         assert "page" not in props
         assert "limit" not in props
 
-        # The wrapper must still run (validation skips absent params).
-        result = await example(query="y")
-        assert result == {"result": []}
+        # The executor must still run (validation skips absent params).
+        executor = make_impl_executor(impl, paginated=True, limit_max=200)
+        result = await executor({"query": "y"}, {}, None)
+        assert result.structured_content == {"result": []}
+
+    @pytest.mark.asyncio
+    async def test_executor_marks_result_formatted(self) -> None:
+        """The executor marks results _formatted so the post-hook skips them."""
+        mcp = FastMCP("test")
+        _, executor = self._register_example(mcp)
+
+        result = await executor({"page": 1, "limit": 10}, {}, None)
+        assert result.meta == {"_formatted": True}
+
+    @pytest.mark.asyncio
+    async def test_executor_resupplies_declared_virtual_params(self) -> None:
+        """Popped virtual params the impl declares are passed back to it."""
+        seen: dict[str, Any] = {}
+        mcp = FastMCP("test")
+
+        async def impl(format: str = "markdown", page: int = 1) -> ToolResult:
+            seen["format"] = format
+            return ToolResult(structured_content={"result": []})
+
+        executor = make_impl_executor(impl, paginated=True)
+        await executor({"page": 2}, {"format": "json"}, None)
+        assert seen["format"] == "json"

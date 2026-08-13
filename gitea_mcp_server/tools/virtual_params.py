@@ -402,9 +402,14 @@ def inject_into(
     :class:`~fastmcp.tools.base.Tool` object as *tool* to enable this.
 
     Per-tool allowlist via *only*: when set, only the named params are
-    injected.  Autogen tools pass ``None`` (inject every visible param);
-    synthetic tools stamp their allowlist in ``tool.meta["_virtual_params"]``
-    (e.g. ``read_doc`` opts into ``format`` only, and ``sudo`` is opt-in).
+    considered.  Autogen tools pass ``None`` (inject every visible param,
+    skipping names that already exist — never shadowing a real API
+    parameter).  Synthetic tools stamp their allowlist in
+    ``tool.meta["_virtual_params"]``; allowlisted names are **overwritten**
+    with the registry's schema so the agent-facing description/enum/default
+    come from the single registry source rather than hand-written signature
+    annotations (e.g. ``read_doc`` opts into ``format`` only, and ``sudo``
+    is opt-in).
 
     Args:
         parameters: Tool parameter schema dict (mutated in place).
@@ -413,25 +418,28 @@ def inject_into(
             defaults to overwrite after injection.  Use for params whose
             default is dynamic (e.g. ``format``'s default comes from
             server config, not the registry).
-        only: Optional allowlist of param names to inject.  ``None``
-            injects every visible param (autogen behavior).
+        only: Optional allowlist of param names to inject/overwrite.
+            ``None`` injects every visible param, skipping existing names
+            (autogen behavior).
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
         if only is not None and name not in only:
             continue
-        if name not in props:
-            # Skip params whose scope is not available (e.g. ``sudo``
-            # when the active token lacks the ``sudo`` or ``all`` scope).
-            if not vp.visible:
-                continue
-            if vp.tool_predicate and tool is not None and not vp.tool_predicate(tool):
-                continue
-            props[name] = {
-                **vp.schema,
-                "default": vp.default,
-                "description": vp.description,
-            }
+        # Skip params whose scope is not available (e.g. ``sudo`` when the
+        # active token lacks the ``sudo`` or ``all`` scope).
+        if not vp.visible:
+            continue
+        if vp.tool_predicate and tool is not None and not vp.tool_predicate(tool):
+            continue
+        if name in props and only is None:
+            # Autogen: never shadow a real API parameter.
+            continue
+        props[name] = {
+            **vp.schema,
+            "default": vp.default,
+            "description": vp.description,
+        }
 
     # Apply caller-specified default overrides (e.g. format's default
     # comes from server config, not the static registry default).

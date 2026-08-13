@@ -12,12 +12,13 @@ from __future__ import annotations
 import copy
 import inspect
 from functools import wraps
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from pydantic import Field
+from pydantic.fields import FieldInfo
 
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
@@ -38,28 +39,61 @@ def paginated_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _annotate_limit_max(
+def _annotation_description(annotation: Any) -> str | None:
+    """Extract the description from a parameter annotation, if any.
+
+    Synthetic tools declare parameter descriptions either as an
+    ``Annotated[int, "text"]`` string or as ``Annotated[int, Field(description=...)]``.
+    Returns ``None`` when the annotation carries no description so callers can
+    tell "no description" apart from an empty string.
+    """
+    if get_origin(annotation) is not Annotated:
+        return None
+    for metadata in get_args(annotation)[1:]:
+        if isinstance(metadata, str) and metadata:
+            return metadata
+        if isinstance(metadata, FieldInfo) and metadata.description:
+            return metadata.description
+    return None
+
+
+def _annotate_pagination_bounds(
     function: Callable[..., Any],
     limit_max: int,
 ) -> None:
-    """Rewrite the ``limit`` parameter annotation with the real upper bound.
+    """Rewrite ``page``/``limit`` annotations with declared bounds.
 
     FastMCP builds the tool's parameter schema from the function signature
     at registration time.  Injecting ``Field(ge=1, le=limit_max)`` into the
-    ``limit`` annotation makes the bound machine-readable in the schema, so
-    ``tool_info`` and the ``gitea://tool/{name}/schema`` resource surface it
-    to agents — the per-tool page-size maximum becomes discoverable instead
-    of a hardcoded number in prose.
+    ``limit`` annotation (and ``Field(ge=1)`` into ``page``) makes the bounds
+    machine-readable in the schema, so ``tool_info`` and the
+    ``gitea://tool/{name}/schema`` resource surface them to agents — the
+    per-tool page-size maximum becomes discoverable instead of a hardcoded
+    number in prose, matching autogen tools whose ``SCHEMA_CONSTRAINTS``
+    declare ``page.minimum`` / ``per_page.maximum``.
 
-    ``@wraps`` copies the original annotations onto the wrapper, so the
-    rewrite targets the wrapper FastMCP inspects.  Runtime validation stays
-    in ``register_synthetic_tool`` (it also guards direct invocation paths
-    that bypass schema-driven validation).
+    Existing descriptions are preserved: the original annotation (string or
+    ``FieldInfo``) is read via :func:`_annotation_description` and folded into
+    the new ``Field``.  ``@wraps`` copies the original annotations onto the
+    wrapper, so the rewrite targets the wrapper FastMCP inspects.  Runtime
+    validation stays in ``register_synthetic_tool`` (it also guards direct
+    invocation paths that bypass schema-driven validation).
     """
     annotations = dict(function.__annotations__)
-    if "limit" in annotations:
-        annotations["limit"] = Annotated[int, Field(ge=1, le=limit_max)]
-        function.__annotations__ = annotations
+    for param_name, bound in (("page", (1, None)), ("limit", (1, limit_max))):
+        if param_name not in annotations:
+            continue
+        description = _annotation_description(annotations[param_name])
+        if bound[1] is None:
+            field = Field(ge=bound[0], description=description) if description else Field(ge=bound[0])
+        else:
+            field = (
+                Field(ge=bound[0], le=bound[1], description=description)
+                if description
+                else Field(ge=bound[0], le=bound[1])
+            )
+        annotations[param_name] = Annotated[int, field]
+    function.__annotations__ = annotations
 
 
 def register_synthetic_tool(
@@ -92,7 +126,7 @@ def register_synthetic_tool(
             tool_options["output_schema"]
         )
 
-    effective_limit_max = limit_max or PAGE_SIZE_MAX
+    effective_limit_max = limit_max if limit_max is not None else PAGE_SIZE_MAX
 
     def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
         signature = inspect.signature(function)
@@ -109,10 +143,10 @@ def register_synthetic_tool(
             return await function(*args, **kwargs)
 
         if paginated:
-            # Declare the real limit bound in the parameter schema so
-            # ``tool_info`` surfaces it (agents discover per-tool maxima
+            # Declare page/limit bounds in the parameter schema so
+            # ``tool_info`` surfaces them (agents discover per-tool maxima
             # instead of relying on hardcoded doc numbers).
-            _annotate_limit_max(contract_wrapper, effective_limit_max)
+            _annotate_pagination_bounds(contract_wrapper, effective_limit_max)
 
         return cast("Callable[..., Any]", mcp.tool(**tool_options)(contract_wrapper))
 

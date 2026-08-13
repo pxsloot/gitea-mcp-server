@@ -128,6 +128,75 @@ class TestSyntheticToolRegistration:
         assert limit_param.get("minimum") == 1
 
     @pytest.mark.asyncio
+    async def test_annotation_rewrite_preserves_descriptions_and_page_bound(
+        self,
+    ) -> None:
+        """Bound injection must keep the parameter descriptions agents rely on.
+
+        Regression test: rewriting the ``limit`` annotation to
+        ``Field(ge=1, le=limit_max)`` used to drop the description that the
+        tool declared via ``Annotated[int, "text"]`` or a docstring ``Args``
+        entry.  The bound must be added without losing the description, and
+        ``page`` must gain a ``minimum`` matching autogen tools.
+        """
+        from typing import Annotated
+
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(
+            page: Annotated[int, "Page number (1-based, default 1)"] = 1,
+            limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        ) -> dict[str, Any]:
+            return {"result": []}
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        props = schema["properties"]
+        # Descriptions survive the annotation rewrite.
+        assert props["page"]["description"] == "Page number (1-based, default 1)"
+        assert (
+            props["limit"]["description"]
+            == "Maximum results per page (1-100, default 10)"
+        )
+        # page gains the autogen-style minimum; limit keeps both bounds.
+        assert props["page"]["minimum"] == 1
+        assert props["limit"]["minimum"] == 1
+        assert props["limit"]["maximum"] == 200
+
+    @pytest.mark.asyncio
+    async def test_annotation_rewrite_keeps_docstring_description(self) -> None:
+        """Docstring-derived parameter descriptions survive bound injection."""
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
+            """Read a workflow guide.
+
+            Args:
+                page: Page number (1-based, default 1).
+                limit: Lines per page (default 50).
+            """
+            return {"result": []}
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        props = schema["properties"]
+        assert props["page"]["description"] == "Page number (1-based, default 1)."
+        assert props["limit"]["description"] == "Lines per page (default 50)."
+        assert props["limit"]["maximum"] == 200
+
+    @pytest.mark.asyncio
     async def test_default_limit_max_is_page_size_max(self) -> None:
         """Without ``limit_max`` the bound stays at the default 100."""
         mcp = FastMCP("test")

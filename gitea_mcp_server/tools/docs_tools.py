@@ -1,7 +1,8 @@
 """Doc tools and resources for workflow guides.
 
 Provides search_docs and read_doc tools, plus gitea://docs/guide/{topic} resources.
-Guides are markdown files in gitea_mcp_server/docs/guides/.
+Guides are markdown files in gitea_mcp_server/docs/guides/. Paginated tools use
+the shared synthetic registration contract for input validation and schemas.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
+from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -252,7 +254,9 @@ def register_doc_tools(
         doc_manager: Initialized DocManager with loaded guides
     """
 
-    @mcp.tool(
+    @register_synthetic_tool(
+        mcp,
+        paginated=True,
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
@@ -353,7 +357,9 @@ def register_doc_tools(
             detail=detail,
         )
 
-    @mcp.tool(
+    @register_synthetic_tool(
+        mcp,
+        paginated=True,
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={

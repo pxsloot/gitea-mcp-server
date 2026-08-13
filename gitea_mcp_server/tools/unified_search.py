@@ -3,7 +3,8 @@
 Provides a single ``search`` tool that queries all three subsystems
 (tools, workflow docs, MCP resources) and returns merged results
 with a ``type`` discriminator so agents can route each result
-to the appropriate access path.
+to the appropriate access path. Its paginated registration uses the shared
+synthetic-tool contract.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from gitea_mcp_server.tools.search import (
     extract_searchable_text_enhanced,
     search_and_slice,
 )
+from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +200,9 @@ def register_unified_search(
             detail=detail,
         )
 
-    mcp.tool(
+    register_synthetic_tool(
+        mcp,
+        paginated=True,
         name="search",
         description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
         tags={"synthetic"},

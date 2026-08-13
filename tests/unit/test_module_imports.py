@@ -79,6 +79,7 @@ ALL_MODULES: list[str] = [
     "gitea_mcp_server.tools.resource_display",
     "gitea_mcp_server.tools.schemas",
     "gitea_mcp_server.tools.search",
+    "gitea_mcp_server.tools.synthetic_contract",
     "gitea_mcp_server.tools.tool_display",
     "gitea_mcp_server.tools.type_info",
     "gitea_mcp_server.tools.unified_search",

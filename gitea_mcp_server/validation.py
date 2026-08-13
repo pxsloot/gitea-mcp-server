@@ -194,6 +194,28 @@ def validate_pagination(page: Any = None, per_page: Any = None) -> None:
             _raise_validation_error(msg, "per_page")
 
 
+def validate_page_limit(page: Any = None, limit: Any = None) -> None:
+    """Validate synthetic-tool ``page`` and ``limit`` parameters.
+
+    API schemas use both ``per_page`` and ``limit`` depending on the endpoint.
+    Synthetic tools consistently expose ``limit``, so this adapter preserves
+    the shared pagination rules while reporting the public parameter name.
+    """
+    if page is not None:
+        if not isinstance(page, int):
+            _raise_validation_error("page must be an integer", "page")
+        if page < 1:
+            _raise_validation_error("page must be >= 1", "page")
+    if limit is not None:
+        if not isinstance(limit, int):
+            _raise_validation_error("limit must be an integer", "limit")
+        if limit < 1:
+            _raise_validation_error("limit must be >= 1", "limit")
+        if limit > PAGE_SIZE_MAX:
+            msg = f"limit must be <= {PAGE_SIZE_MAX}"
+            _raise_validation_error(msg, "limit")
+
+
 # ---------------------------------------------------------------------------
 # Schema-driven enum validation
 # ---------------------------------------------------------------------------

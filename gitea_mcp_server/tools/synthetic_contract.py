@@ -25,9 +25,9 @@ This module provides the registration-side contract:
   :func:`register_all_synthetic_tools` — no hand-rolled per-call wrapper
   options.
 - :func:`register_synthetic_tool` stamps the wrap marker + a serializable
-  ``_executor_id`` (the executor itself lives in the registry — a callable in
-  ``tool.meta`` raises ``PydanticSerializationError``) + the tool's
-  virtual-param allowlist into ``tool.meta``, declares the pagination
+  ``_executor_id`` (the executor itself lives in the server's registry — a
+  callable in ``tool.meta`` raises ``PydanticSerializationError``) + the
+  tool's virtual-param allowlist into ``tool.meta``, declares the pagination
   envelope in ``output_schema``, and declares the per-tool ``limit`` bound.
 
 API execution and HTTP error handling remain backend concerns — the
@@ -40,6 +40,7 @@ import copy
 import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -54,12 +55,54 @@ from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
 from gitea_mcp_server.validation import validate_pagination
 
-# Executors cannot live in ``tool.meta`` — FastMCP pydantic-serializes meta
-# (a callable raises PydanticSerializationError).  They are stored in this
-# registry keyed by the tool's unprefixed name; the tool's meta carries only
-# the serializable ``_executor_id`` reference.  The server-level transform
-# resolves the executor via :func:`get_synthetic_executor` at wrap time.
-_SYNTHETIC_EXECUTORS: dict[str, Executor] = {}
+
+class SyntheticExecutorRegistry:
+    """Per-server registry of synthetic executors.
+
+    Executors cannot live in ``tool.meta`` — FastMCP pydantic-serializes meta
+    (a callable raises ``PydanticSerializationError``).  Instead each server's
+    executors live in a registry scoped to that server and released with it;
+    ``tool.meta`` carries only the serializable ``_executor_id`` (the tool's
+    unprefixed registration name, unique within one server).
+    """
+
+    def __init__(self) -> None:
+        self._executors: dict[str, Executor] = {}
+
+    def register(self, name: str, executor: Executor) -> None:
+        """Store *executor* under *name* (the tool's unprefixed registration name)."""
+        self._executors[name] = executor
+
+    def get(self, name: str | None) -> Executor | None:
+        """Return the executor registered under *name*, or ``None``."""
+        if name is None:
+            return None
+        return self._executors.get(name)
+
+
+# One registry per FastMCP server, keyed weakly by the server instance so a
+# server's executors are released when the server is garbage-collected
+# (tests, hot-reload) — no unbounded accumulation across server instances in
+# one process.  Per-server scoping also means the same tool name on two
+# servers can never resolve to another server's executor closure.
+_SERVER_REGISTRIES: WeakKeyDictionary[Any, SyntheticExecutorRegistry] = WeakKeyDictionary()
+
+
+def get_executor_registry(mcp: Any) -> SyntheticExecutorRegistry:
+    """Return the per-server synthetic executor registry for *mcp*, creating it lazily.
+
+    Args:
+        mcp: The FastMCP server instance the registry belongs to.
+
+    Returns:
+        The server's registry.  The same server always returns the same
+        registry; a different server gets its own.
+    """
+    registry = _SERVER_REGISTRIES.get(mcp)
+    if registry is None:
+        registry = SyntheticExecutorRegistry()
+        _SERVER_REGISTRIES[mcp] = registry
+    return registry
 
 
 @dataclass
@@ -162,18 +205,6 @@ def register_all_synthetic_tools(
             required_scope=spec.required_scope,
             **options,
         )(spec.impl)
-
-
-def get_synthetic_executor(executor_id: str | None) -> Executor | None:
-    """Return the registered synthetic executor for *executor_id*, or ``None``.
-
-    *executor_id* is the tool's unprefixed registration name (stored in
-    ``tool.meta["_executor_id"]``), independent of the namespace prefix the
-    transform may see on the tool's name at wrap time.
-    """
-    if executor_id is None:
-        return None
-    return _SYNTHETIC_EXECUTORS.get(executor_id)
 
 
 def paginated_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -318,9 +349,9 @@ def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are 
     """Register a synthetic tool on the server-level contract transform.
 
     Stamps the wrap-me marker (``_contract_wrap``), a serializable
-    ``_executor_id`` (the executor itself is registered by id — a callable
-    in ``tool.meta`` raises ``PydanticSerializationError``), and the tool's
-    virtual-param allowlist into ``tool.meta`` so the server-level
+    ``_executor_id`` (the executor itself lives in the server's registry — a
+    callable in ``tool.meta`` raises ``PydanticSerializationError``), and the
+    tool's virtual-param allowlist into ``tool.meta`` so the server-level
     ``_ToolWrappingTransform`` wraps this tool exactly like an autogenerated
     one: virtual params injected from the registry, validated, and formatted
     through the shared spine.
@@ -332,8 +363,8 @@ def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are 
     Args:
         mcp: The FastMCP server instance to register on.
         executor: The per-tool executor (see :func:`make_impl_executor`).
-            Registered in the executor registry under a server-scoped key
-            and run by the transform's spine on every call.
+            Registered in the server's executor registry (released with the
+            server) and run by the transform's spine on every call.
         paginated: When True, validate ``page``/``limit`` at runtime and
             declare the pagination envelope in ``output_schema``.
         limit_max: Upper bound for ``limit``.  Defaults to ``PAGE_SIZE_MAX``
@@ -376,20 +407,18 @@ def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are 
             )
 
         tool_name = tool_options.get("name") or function.__name__
-        # Executors cannot live in meta (pydantic serializes it) — register
-        # them in the registry and carry only a serializable id reference.
-        # The key is scoped to the server instance (``id(mcp)``) so multiple
-        # servers in one process (tests, hot-reload) never resolve a tool to
-        # another server's executor closure.
-        executor_key = f"{id(mcp)}:{tool_name}"
-        _SYNTHETIC_EXECUTORS[executor_key] = executor
+        # Executors cannot live in meta (pydantic serializes it) — store
+        # them in the server's registry and carry only a serializable id
+        # reference (the unprefixed name, unique within one server).  The
+        # registry dies with the server; per-server scoping means the same
+        # tool name on two servers never cross-resolves executors.
+        get_executor_registry(mcp).register(tool_name, executor)
 
         meta = {
             "_contract_wrap": True,
             "_synthetic": True,
-            "_executor_id": executor_key,
+            "_executor_id": tool_name,
             "_virtual_params": set(effective_virtual),
-            "_limit_max": effective_limit_max,
         }
         if required_scope is not None:
             meta["required_scope"] = required_scope
@@ -401,8 +430,9 @@ def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are 
 
 __all__ = [
     "PAGINATION_SCHEMA_PROPERTIES",
+    "SyntheticExecutorRegistry",
     "SyntheticToolSpec",
-    "get_synthetic_executor",
+    "get_executor_registry",
     "make_impl_executor",
     "paginated_output_schema",
     "register_all_synthetic_tools",

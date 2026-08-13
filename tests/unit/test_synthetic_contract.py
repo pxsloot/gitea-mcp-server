@@ -23,7 +23,7 @@ class TestRegisterAllSyntheticTools:
     @pytest.mark.asyncio
     async def test_registers_wrapped_and_unwrapped_specs(self) -> None:
         """Wrapped specs ride the contract; unwrapped (proxy) specs register plainly."""
-        from gitea_mcp_server.tools.synthetic_contract import _SYNTHETIC_EXECUTORS
+        from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
 
         mcp = FastMCP("test")
 
@@ -57,11 +57,12 @@ class TestRegisterAllSyntheticTools:
         wrapped_meta = by_name["wrapped_tool"].meta or {}
         assert wrapped_meta.get("_contract_wrap") is True
         executor_id = wrapped_meta.get("_executor_id")
-        # The registry key is server-scoped (id(mcp):name) so multiple servers
-        # in one process never cross-resolve executors.
-        assert isinstance(executor_id, str)
-        assert executor_id.endswith(":wrapped_tool")
-        assert executor_id in _SYNTHETIC_EXECUTORS
+        # The executor id is the unprefixed registration name; executors live
+        # in this server's registry (released when the server is GC'd).
+        assert executor_id == "wrapped_tool"
+        registry = get_executor_registry(mcp)
+        assert registry.get(executor_id) is not None
+        assert registry.get("proxy_tool") is None  # unwrapped specs register no executor
         assert (by_name["proxy_tool"].meta or {}).get("_contract_wrap") is None
 
         # Paginated envelope declared for the wrapped spec.
@@ -76,6 +77,59 @@ class TestRegisterAllSyntheticTools:
         assert options == {"name": "t", "tags": {"synthetic"}}
         assert "description" not in options
         assert "output_schema" not in options
+
+
+class TestSyntheticExecutorRegistry:
+    """Per-server executor registries: scoped to the server, released with it."""
+
+    def test_registries_are_per_server(self) -> None:
+        """Two servers with the same tool name hold independent executors."""
+        from gitea_mcp_server.tools.synthetic_contract import (
+            get_executor_registry,
+        )
+
+        async def impl(page: int = 1) -> ToolResult:
+            return ToolResult(structured_content={"result": []})
+
+        mcp_a = FastMCP("a")
+        mcp_b = FastMCP("b")
+        reg_a = get_executor_registry(mcp_a)
+        reg_b = get_executor_registry(mcp_b)
+
+        # Same server → same registry; different server → independent registry.
+        assert reg_a is get_executor_registry(mcp_a)
+        assert reg_a is not reg_b
+
+        executor_a = make_impl_executor(impl, paginated=True)
+        executor_b = make_impl_executor(impl, paginated=True)
+        reg_a.register("search_tools", executor_a)
+        reg_b.register("search_tools", executor_b)
+
+        # The same name resolves to each server's own executor.
+        assert reg_a.get("search_tools") is executor_a
+        assert reg_b.get("search_tools") is executor_b
+        assert reg_a.get("missing") is None
+        assert reg_a.get(None) is None
+
+    def test_registry_never_resolves_across_servers(self) -> None:
+        """A tool registered only on one server is absent from the other's registry."""
+        from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
+
+        async def impl() -> ToolResult:
+            return ToolResult(structured_content={"result": []})
+
+        mcp_a = FastMCP("a")
+        mcp_b = FastMCP("b")
+        get_executor_registry(mcp_a).register("only_on_a", make_impl_executor(impl))
+        assert get_executor_registry(mcp_b).get("only_on_a") is None
+
+    def test_registry_defaults(self) -> None:
+        """A fresh registry resolves nothing."""
+        from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
+
+        reg = SyntheticExecutorRegistry()
+        assert reg.get("anything") is None
+        assert reg.get(None) is None
 
 
 class TestPaginatedOutputSchema:

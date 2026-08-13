@@ -334,11 +334,15 @@ at registration (``tools/synthetic_contract.py``), carry their per-tool
 executor in a registry referenced by a serializable ``_executor_id`` in meta,
 and declare a per-tool virtual-param allowlist (``_virtual_params``) so
 ``format``/``detail``/``fetch_all``/``sudo`` are injected from the registry
-rather than hand-declared per signature.  Registration is declarative: each
-module builds a list of ``SyntheticToolSpec`` dataclasses (impl + tool options
-+ contract knobs) and hands it to ``register_all_synthetic_tools`` — one loop,
-mirroring how ``mcp_builder`` iterates routes.  Both families run the same
-spine: ``tools/contract.build_transform_fn`` — extract virtual params,
+rather than hand-declared per signature.  The executor registry is
+**per-server** — keyed weakly by the server instance so a server's executors
+are released when the server is garbage-collected (tests, hot-reload) — and
+the same tool name on two servers never cross-resolves.  Registration is
+declarative: each module builds a list of ``SyntheticToolSpec`` dataclasses
+(impl + tool options + contract knobs) and hands it to
+``register_all_synthetic_tools`` — one loop, mirroring how ``mcp_builder``
+iterates routes.  Both families run the same spine:
+``tools/contract.build_transform_fn`` — extract virtual params,
 pre-hooks, context resolution, executor, post-hook formatting.  The executor
 is the only difference: the autogen HTTP pipeline vs. the synthetic local
 implementation (which renders its own output and marks it ``_formatted`` so

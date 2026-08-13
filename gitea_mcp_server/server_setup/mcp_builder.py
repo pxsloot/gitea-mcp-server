@@ -68,7 +68,7 @@ from gitea_mcp_server.tools.schemas import (
     response_has_no_content,
     unwrap_result_schema,
 )
-from gitea_mcp_server.tools.synthetic_contract import get_synthetic_executor
+from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
 from gitea_mcp_server.tools.virtual_params import get_loop_hooks, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
@@ -573,15 +573,23 @@ class _ToolWrappingTransform(Transform):
     Label conversion is delegated to :class:`LabelTransform`, which stays
     provider-level and runs *inside* this transform (after validation, before
     the HTTP call).
+
+    Synthetic executors are resolved from the per-server
+    :class:`~gitea_mcp_server.tools.synthetic_contract.SyntheticExecutorRegistry`
+    passed in at construction (see ``server.create_mcp_server``).  Holding
+    the registry here keeps executor lookup scoped to this server and lets
+    the executors die with it.
     """
 
     def __init__(
         self,
         openapi_spec: OpenAPISpec,
         response_format: str = "markdown",
+        synthetic_executors: SyntheticExecutorRegistry | None = None,
     ) -> None:
         self._openapi_spec = openapi_spec
         self._response_format = response_format
+        self._synthetic_executors = synthetic_executors or SyntheticExecutorRegistry()
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [await self._wrap(t) for t in tools]
@@ -675,7 +683,7 @@ class _ToolWrappingTransform(Transform):
         registry.  The transform_fn is pure orchestration.
         """
         meta = tool.meta or {}
-        executor = get_synthetic_executor(meta.get("_executor_id"))
+        executor = self._synthetic_executors.get(meta.get("_executor_id"))
         if executor is None:
             executor = self._make_autogen_executor(tool, customization)
         else:

@@ -53,6 +53,7 @@ from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
 from gitea_mcp_server.tools.namespace import GiteaNamespace
 from gitea_mcp_server.tools.search import TolerantSearchTransform, register_synthetic_tools
+from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
 from gitea_mcp_server.tools.type_info import register_type_tools
 from gitea_mcp_server.tools.unified_search import register_unified_search
 from gitea_mcp_server.tools.virtual_params import apply_scope_filter
@@ -406,9 +407,14 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # ``register_all_synthetic_tools``).  Added first so it runs before the
     # lazy-loading, namespace, and extension-metadata transforms, matching
     # the previous provider-level placement in ``list_tools`` order.
+    # Synthetic executors are resolved from this server's per-server registry
+    # (see ``tools.synthetic_contract.get_executor_registry``), which the
+    # transform shares with the registration functions and which dies with
+    # the server.
     contract_transform = _ToolWrappingTransform(
         openapi_spec=openapi_spec,
         response_format=config.response_format,
+        synthetic_executors=get_executor_registry(mcp),
     )
     mcp.add_transform(contract_transform)
 

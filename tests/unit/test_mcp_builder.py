@@ -1043,10 +1043,6 @@ class TestToolWrappingTransform:
         shared; only the executor differs.  The synthetic executor receives
         kwargs with virtual params popped and the extracted values.
         """
-        from gitea_mcp_server.tools.synthetic_contract import (
-            _SYNTHETIC_EXECUTORS,
-        )
-
         captured: dict[str, Any] = {}
 
         async def executor(
@@ -1069,13 +1065,11 @@ class TestToolWrappingTransform:
                 "_virtual_params": {"format", "detail", "fetch_all"},
             },
         )
-        _SYNTHETIC_EXECUTORS["synth_tool"] = executor
-        try:
-            transform = self.make_transform()
-            [wrapped] = await transform.list_tools([tool])
-            result = await wrapped.run({"query": "q", "format": "json"})
-        finally:
-            _SYNTHETIC_EXECUTORS.pop("synth_tool", None)
+        transform = self.make_transform()
+        # The executor is resolved from the transform's per-server registry.
+        transform._synthetic_executors.register("synth_tool", executor)
+        [wrapped] = await transform.list_tools([tool])
+        result = await wrapped.run({"query": "q", "format": "json"})
 
         assert captured["kwargs"] == {"query": "q"}
         assert captured["extracted"] == {
@@ -1092,8 +1086,6 @@ class TestToolWrappingTransform:
         Unknown parameters are rejected with the friendly ValueError surface
         (matching autogen tools), not silently dropped.
         """
-        from gitea_mcp_server.tools.synthetic_contract import _SYNTHETIC_EXECUTORS
-
         async def executor(
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
@@ -1112,14 +1104,11 @@ class TestToolWrappingTransform:
                 "_virtual_params": {"format"},
             },
         )
-        _SYNTHETIC_EXECUTORS["synth_val"] = executor
-        try:
-            transform = self.make_transform()
-            [wrapped] = await transform.list_tools([tool])
-            with pytest.raises(ValueError, match="Unknown parameter"):
-                await wrapped.run({"query": "q", "typo": 1})
-        finally:
-            _SYNTHETIC_EXECUTORS.pop("synth_val", None)
+        transform = self.make_transform()
+        transform._synthetic_executors.register("synth_val", executor)
+        [wrapped] = await transform.list_tools([tool])
+        with pytest.raises(ValueError, match="Unknown parameter"):
+            await wrapped.run({"query": "q", "typo": 1})
 
     @pytest.mark.asyncio
     async def test_inject_params_respects_virtual_params_allowlist(self) -> None:

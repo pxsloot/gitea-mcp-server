@@ -767,6 +767,98 @@ class TestToolInfo:
         assert result_schema.get("description") == "The guide content in Markdown"
 
     @pytest.mark.asyncio
+    async def test_tool_info_detail_full_preserves_pagination_envelope(self) -> None:
+        """tool_info detail=full must keep pagination metadata siblings of result.
+
+        Regression test: the schema slicing in ``_tool_info_impl`` replaced
+        the whole ``properties`` dict with ``{"result": ...}``, dropping the
+        ``has_more`` / ``next_offset`` / ``total_count`` properties that
+        autogen and synthetic output schemas declare next to ``result``.
+        MCP clients reading the declared schema then could not discover the
+        pagination envelope, even though runtime ``structured_content``
+        carries it.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_with_pagination",
+            description="A paginated tool",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"name": {"type": "string"}},
+                        },
+                    },
+                    "has_more": {"type": "boolean", "description": "Whether more pages exist"},
+                    "next_offset": {"type": "integer", "description": "Page number for next page, if any"},
+                    "total_count": {"type": "integer", "description": "Total item count from server, if available"},
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_tool_with_pagination", "json", mock_ctx, transform, detail="full"
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        output_schema = schema["output_schema"]
+        props = output_schema["properties"]
+        for key in ("has_more", "next_offset", "total_count"):
+            assert key in props, f"pagination key '{key}' stripped from tool_info output_schema"
+        # The result itself must still be sliced/preserved as an array.
+        assert props["result"]["type"] == "array"
+
+    @pytest.mark.asyncio
+    async def test_tool_info_detail_full_preserves_envelope_for_object_result(self) -> None:
+        """tool_info detail=full keeps envelope for object results (read_doc shape)."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_doc_tool",
+            description="Read a doc",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {"content": {"type": "string"}},
+                    },
+                    "has_more": {"type": "boolean"},
+                    "next_offset": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    },
+                    "total_count": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl(
+            "gitea_doc_tool", "json", mock_ctx, transform, detail="full"
+        )
+        assert result.structured_content is not None
+        schema = result.structured_content["result"]
+        props = schema["output_schema"]["properties"]
+        for key in ("has_more", "next_offset", "total_count"):
+            assert key in props, f"pagination key '{key}' stripped from tool_info output_schema"
+        assert props["result"]["type"] == "object"
+
+    @pytest.mark.asyncio
     async def test_tool_info_detail_full_array_of_primitives(self) -> None:
         """tool_info detail=full with array of primitive items preserves the array.
 

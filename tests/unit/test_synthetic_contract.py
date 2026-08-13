@@ -74,3 +74,77 @@ class TestSyntheticToolRegistration:
         schema = next(tool for tool in tools if tool.name == "example").output_schema
         assert schema is not None
         assert set(PAGINATION_SCHEMA_PROPERTIES) <= set(schema["properties"])
+
+    @pytest.mark.asyncio
+    async def test_limit_max_extends_default_page_size_bound(self) -> None:
+        """A custom ``limit_max`` raises the upper bound for a tool's limit.
+
+        ``read_doc`` paginates guide lines rather than API items, so its
+        documented maximum is 200 while the default ``PAGE_SIZE_MAX`` is 100.
+        The per-tool bound must not reject values inside the tool's own
+        contract.
+        """
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
+            return {"result": []}
+
+        # Within the tool's own bound — must be accepted.
+        await example(limit=200)
+        # Above it — must be rejected.
+        with pytest.raises(ValidationError) as exc_info:
+            await example(limit=201)
+        assert exc_info.value.field == "limit"
+
+    @pytest.mark.asyncio
+    async def test_limit_max_declared_in_parameter_schema(self) -> None:
+        """The real limit bound is machine-readable in the tool's schema.
+
+        ``tool_info`` and the ``gitea://tool/{name}/schema`` resource render
+        the parameter schema; the ``maximum`` declared there is how agents
+        discover per-tool page-size bounds instead of hardcoded doc numbers.
+        """
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(page: int = 1, limit: int = 50) -> dict[str, Any]:
+            return {"result": []}
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        limit_param = schema["properties"]["limit"]
+        assert limit_param.get("maximum") == 200
+        assert limit_param.get("minimum") == 1
+
+    @pytest.mark.asyncio
+    async def test_default_limit_max_is_page_size_max(self) -> None:
+        """Without ``limit_max`` the bound stays at the default 100."""
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
+            return {"result": []}
+
+        await example(limit=100)
+        with pytest.raises(ValidationError) as exc_info:
+            await example(limit=101)
+        assert exc_info.value.field == "limit"
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        assert schema["properties"]["limit"].get("maximum") == 100

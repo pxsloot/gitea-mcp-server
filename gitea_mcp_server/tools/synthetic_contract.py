@@ -12,28 +12,16 @@ from __future__ import annotations
 import copy
 import inspect
 from functools import wraps
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from gitea_mcp_server.validation import validate_page_limit
+from pydantic import Field
 
-PAGINATION_SCHEMA_PROPERTIES: dict[str, dict[str, Any]] = {
-    "has_more": {
-        "type": "boolean",
-        "description": "Whether another page is available.",
-    },
-    "next_offset": {
-        "anyOf": [{"type": "integer"}, {"type": "null"}],
-        "description": "The next page number, or null when this is the last page.",
-    },
-    "total_count": {
-        "anyOf": [{"type": "integer"}, {"type": "null"}],
-        "description": "Total matching items when known.",
-    },
-}
-"""The standard pagination metadata returned in ``structured_content``."""
+from gitea_mcp_server.constants import PAGE_SIZE_MAX
+from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
+from gitea_mcp_server.validation import validate_page_limit
 
 
 def paginated_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -50,10 +38,35 @@ def paginated_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _annotate_limit_max(
+    function: Callable[..., Any],
+    limit_max: int,
+) -> None:
+    """Rewrite the ``limit`` parameter annotation with the real upper bound.
+
+    FastMCP builds the tool's parameter schema from the function signature
+    at registration time.  Injecting ``Field(ge=1, le=limit_max)`` into the
+    ``limit`` annotation makes the bound machine-readable in the schema, so
+    ``tool_info`` and the ``gitea://tool/{name}/schema`` resource surface it
+    to agents — the per-tool page-size maximum becomes discoverable instead
+    of a hardcoded number in prose.
+
+    ``@wraps`` copies the original annotations onto the wrapper, so the
+    rewrite targets the wrapper FastMCP inspects.  Runtime validation stays
+    in ``register_synthetic_tool`` (it also guards direct invocation paths
+    that bypass schema-driven validation).
+    """
+    annotations = dict(function.__annotations__)
+    if "limit" in annotations:
+        annotations["limit"] = Annotated[int, Field(ge=1, le=limit_max)]
+        function.__annotations__ = annotations
+
+
 def register_synthetic_tool(
     mcp: Any,
     *,
     paginated: bool = False,
+    limit_max: int | None = None,
     **tool_options: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a synthetic tool with shared validation and output metadata.
@@ -63,11 +76,23 @@ def register_synthetic_tool(
     before entering their implementation. This is intentionally a generic
     wrapper rather than reuse of the OpenAPI execution transform: synthetic
     tools have no route, HTTP method, or API re-execution function.
+
+    Args:
+        mcp: The FastMCP server instance to register on.
+        paginated: When True, validate ``page``/``limit`` at runtime and
+            declare the pagination envelope in ``output_schema``.
+        limit_max: Upper bound for ``limit``.  Defaults to ``PAGE_SIZE_MAX``
+            (100); pass a custom value for tools whose documented maximum
+            differs (e.g. ``read_doc`` paginates guide lines and allows 200).
+            The bound is declared in the tool's parameter schema (as
+            ``maximum``) so agents discover it via ``tool_info``.
     """
     if paginated and "output_schema" in tool_options:
         tool_options["output_schema"] = paginated_output_schema(
             tool_options["output_schema"]
         )
+
+    effective_limit_max = limit_max or PAGE_SIZE_MAX
 
     def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
         signature = inspect.signature(function)
@@ -79,11 +104,17 @@ def register_synthetic_tool(
                 validate_page_limit(
                     bound.arguments.get("page"),
                     bound.arguments.get("limit"),
+                    limit_max=effective_limit_max,
                 )
             return await function(*args, **kwargs)
 
-        registered = mcp.tool(**tool_options)(contract_wrapper)
-        return cast("Callable[..., Any]", registered)
+        if paginated:
+            # Declare the real limit bound in the parameter schema so
+            # ``tool_info`` surfaces it (agents discover per-tool maxima
+            # instead of relying on hardcoded doc numbers).
+            _annotate_limit_max(contract_wrapper, effective_limit_max)
+
+        return cast("Callable[..., Any]", mcp.tool(**tool_options)(contract_wrapper))
 
     return decorator
 

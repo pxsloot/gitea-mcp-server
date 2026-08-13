@@ -301,10 +301,13 @@ OpenAPI provider, so they cannot use the provider's route-aware execution
 transform.  They nevertheless share the agent-facing pagination contract via
 ``tools/synthetic_contract.py``: paginated registrations validate ``page`` and
 ``limit`` and declare ``has_more``, ``next_offset``, and ``total_count`` in
-their output schema.  Backend-specific behaviour such as HTTP error
-translation and API ``fetch_all`` re-execution remains provider-only.  This
-boundary is intentional for now and is a candidate for the future generic
-transform refactor.
+their output schema.  The per-tool ``limit`` upper bound (``limit_max``,
+defaulting to ``PAGE_SIZE_MAX``) is declared as a JSON Schema ``maximum`` on
+the ``limit`` parameter so agents discover each tool's page-size bound via
+``tool_info``.  Backend-specific behaviour such as HTTP error translation and
+API ``fetch_all`` re-execution remains provider-only.  This boundary is
+intentional for now and is a candidate for the future generic transform
+refactor.
 
 ### Resource System
 

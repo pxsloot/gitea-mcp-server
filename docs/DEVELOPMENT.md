@@ -323,7 +323,11 @@ and merge results.  The hook should update the ``ToolResult``'s
     loop needed.  These tools are registered through
     :func:`~gitea_mcp_server.tools.synthetic_contract.register_synthetic_tool`,
     which also validates ``page``/``limit`` and declares the pagination
-    metadata in their output schemas.
+    metadata in their output schemas.  Pass ``limit_max`` to raise the
+    ``limit`` upper bound beyond the default ``PAGE_SIZE_MAX`` (e.g.
+    ``read_doc`` paginates guide lines and allows 200); the bound is declared
+    as a JSON Schema ``maximum`` on the ``limit`` parameter so agents
+    discover it via ``tool_info``.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single

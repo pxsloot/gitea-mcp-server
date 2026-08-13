@@ -55,6 +55,31 @@ and returns a ``ToolResult`` from a fresh HTTP call.
 PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
 """Keys in structured_content that carry pagination metadata."""
 
+PAGINATION_SCHEMA_PROPERTIES: dict[str, dict[str, Any]] = {
+    "has_more": {
+        "type": "boolean",
+        "description": "Whether another page is available.",
+    },
+    "next_offset": {
+        "anyOf": [{"type": "integer"}, {"type": "null"}],
+        "description": "The next page number, or null when this is the last page.",
+    },
+    "total_count": {
+        "anyOf": [{"type": "integer"}, {"type": "null"}],
+        "description": "Total matching items when known.",
+    },
+}
+"""JSON Schema properties for the pagination metadata envelope.
+
+Single source of truth for the agent-facing pagination contract.  Both the
+OpenAPI provider (``mcp_builder``, for generated API tools) and the synthetic
+tool contract (``synthetic_contract``) declare these keys next to ``result``
+in their output schemas, matching the runtime ``structured_content`` shape
+(see :data:`PAGINATION_KEYS`).  ``next_offset`` and ``total_count`` are
+nullable because the runtime emits ``null`` for them on the last page and
+when the total is unknown.
+"""
+
 PAGINATION_HEADERS = ("X-Total-Count", "X-Total")
 """Response headers checked for total count, in priority order."""
 
@@ -285,6 +310,7 @@ def apply_pagination(
 __all__ = [
     "PAGINATION_HEADERS",
     "PAGINATION_KEYS",
+    "PAGINATION_SCHEMA_PROPERTIES",
     "PaginationRunner",
     "add_pagination_metadata",
     "apply_pagination",

@@ -685,8 +685,17 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                     # String or other primitive — no meaningful pagination.
                     result_schema = result_obj
                     total_props = 1
+                # Rebuild the display schema: replace only the ``result``
+                # property with the sliced version and keep the sibling
+                # properties (pagination metadata ``has_more`` /
+                # ``next_offset`` / ``total_count``, custom descriptions)
+                # intact.  Replacing the whole ``properties`` dict here used
+                # to drop the pagination envelope that both autogen and
+                # synthetic output schemas declare next to ``result``.
                 sliced_schema = dict(tool.output_schema)
-                sliced_schema["properties"] = {"result": result_schema}
+                properties = dict(sliced_schema.get("properties") or {})
+                properties["result"] = result_schema
+                sliced_schema["properties"] = properties
                 schema["output_schema"] = sliced_schema
 
                 result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)

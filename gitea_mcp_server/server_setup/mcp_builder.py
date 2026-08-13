@@ -21,6 +21,7 @@ wrapping, pagination) is handled by :class:`_ToolWrappingTransform` via
 ``provider.add_transform()`` — no private FastMCP APIs are used.
 """
 
+import copy
 import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
@@ -38,7 +39,11 @@ from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import add_pagination_metadata, pagination_ctx
+from gitea_mcp_server.pagination import (
+    PAGINATION_SCHEMA_PROPERTIES,
+    add_pagination_metadata,
+    pagination_ctx,
+)
 from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
     _detect_has_labels,
@@ -297,18 +302,13 @@ def _inject_response_metadata(
 
     if component.output_schema is not None and _is_array_response(component.output_schema):
         props = component.output_schema.setdefault("properties", {})
-        props["has_more"] = {
-            "type": "boolean",
-            "description": "Whether more pages exist",
-        }
-        props["next_offset"] = {
-            "type": "integer",
-            "description": "Page number for next page, if any",
-        }
-        props["total_count"] = {
-            "type": "integer",
-            "description": "Total item count from server, if available",
-        }
+        # Declare the pagination envelope next to ``result`` so agents can
+        # discover pagination fields from the schema.  The shared constant
+        # (pagination.PAGINATION_SCHEMA_PROPERTIES) is the single source of
+        # truth — synthetic tools declare the same shape via
+        # synthetic_contract.paginated_output_schema.
+        for name, property_schema in PAGINATION_SCHEMA_PROPERTIES.items():
+            props.setdefault(name, copy.deepcopy(property_schema))
 
 
 def _apply_schema_postprocessing(

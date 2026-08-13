@@ -194,12 +194,28 @@ def validate_pagination(page: Any = None, per_page: Any = None) -> None:
             _raise_validation_error(msg, "per_page")
 
 
-def validate_page_limit(page: Any = None, limit: Any = None) -> None:
+def validate_page_limit(
+    page: Any = None,
+    limit: Any = None,
+    *,
+    limit_max: int = PAGE_SIZE_MAX,
+) -> None:
     """Validate synthetic-tool ``page`` and ``limit`` parameters.
 
     API schemas use both ``per_page`` and ``limit`` depending on the endpoint.
     Synthetic tools consistently expose ``limit``, so this adapter preserves
     the shared pagination rules while reporting the public parameter name.
+
+    Args:
+        page: Page number (integer >= 1), or ``None`` when absent.
+        limit: Items per page (integer between 1 and *limit_max*), or
+            ``None`` when absent.
+        limit_max: Upper bound for ``limit``.  Defaults to ``PAGE_SIZE_MAX``;
+            tools with a different documented maximum (e.g. ``read_doc``,
+            which paginates guide lines) pass their own bound.
+
+    Raises:
+        ValidationError: If any parameter is invalid.
     """
     if page is not None:
         if not isinstance(page, int):
@@ -211,8 +227,8 @@ def validate_page_limit(page: Any = None, limit: Any = None) -> None:
             _raise_validation_error("limit must be an integer", "limit")
         if limit < 1:
             _raise_validation_error("limit must be >= 1", "limit")
-        if limit > PAGE_SIZE_MAX:
-            msg = f"limit must be <= {PAGE_SIZE_MAX}"
+        if limit > limit_max:
+            msg = f"limit must be <= {limit_max}"
             _raise_validation_error(msg, "limit")
 
 

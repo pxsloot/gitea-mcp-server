@@ -447,6 +447,21 @@ class TestRegisterDocTools:
         assert sc["total_count"] == 3  # 3 lines in the test guide
 
     @pytest.mark.asyncio
+    async def test_read_doc_accepts_limit_up_to_200(self) -> None:
+        """read_doc paginates guide lines, so its limit bound is 200 (not 100).
+
+        The shared synthetic contract caps ``limit`` at ``PAGE_SIZE_MAX``
+        (100); read_doc opts into a higher bound via ``limit_max=200`` so
+        long guides stay readable in fewer pages.
+        """
+        fn = self._capture_tool("read_doc")
+        result = await fn(topic="test", format="json", page=1, limit=200)
+        sc = result.structured_content
+        assert sc is not None
+        assert sc["total_count"] == 3  # all 3 lines fit in one page at limit=200
+        assert sc["has_more"] is False
+
+    @pytest.mark.asyncio
     async def test_search_docs_markdown_includes_cross_link_footer(self) -> None:
         fn = self._capture_tool("search_docs")
         result = await fn(query="test")

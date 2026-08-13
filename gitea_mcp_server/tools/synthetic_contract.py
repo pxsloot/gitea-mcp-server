@@ -64,34 +64,41 @@ def _annotate_pagination_bounds(
     """Rewrite ``page``/``limit`` annotations with declared bounds.
 
     FastMCP builds the tool's parameter schema from the function signature
-    at registration time.  Injecting ``Field(ge=1, le=limit_max)`` into the
-    ``limit`` annotation (and ``Field(ge=1)`` into ``page``) makes the bounds
-    machine-readable in the schema, so ``tool_info`` and the
+    at registration time.  Injecting ``Field(json_schema_extra=...)`` with
+    ``minimum``/``maximum`` into the ``page``/``limit`` annotations makes
+    the bounds machine-readable in the schema, so ``tool_info`` and the
     ``gitea://tool/{name}/schema`` resource surface them to agents — the
     per-tool page-size maximum becomes discoverable instead of a hardcoded
     number in prose, matching autogen tools whose ``SCHEMA_CONSTRAINTS``
     declare ``page.minimum`` / ``per_page.maximum``.
 
+    ``json_schema_extra`` is deliberate: it declares the bounds in the
+    schema **without** making pydantic enforce them at the MCP boundary.
+    ``Field(ge=..., le=...)`` would reject invalid values with a pydantic
+    ``ValidationError`` (leaking ``errors.pydantic.dev`` URLs to agents)
+    before the wrapper's friendly ``validate_page_limit`` runs.  Schema-only
+    declaration keeps the error surface identical to autogen tools: the
+    wrapper rejects with ``"page must be >= 1"`` / ``"limit must be <= N"``.
+
     Existing descriptions are preserved: the original annotation (string or
     ``FieldInfo``) is read via :func:`_annotation_description` and folded into
     the new ``Field``.  ``@wraps`` copies the original annotations onto the
-    wrapper, so the rewrite targets the wrapper FastMCP inspects.  Runtime
-    validation stays in ``register_synthetic_tool`` (it also guards direct
-    invocation paths that bypass schema-driven validation).
+    wrapper, so the rewrite targets the wrapper FastMCP inspects.
     """
     annotations = dict(function.__annotations__)
-    for param_name, bound in (("page", (1, None)), ("limit", (1, limit_max))):
+    for param_name, extra in (
+        ("page", {"minimum": 1}),
+        ("limit", {"minimum": 1, "maximum": limit_max}),
+    ):
         if param_name not in annotations:
             continue
         description = _annotation_description(annotations[param_name])
-        if bound[1] is None:
-            field = Field(ge=bound[0], description=description) if description else Field(ge=bound[0])
-        else:
-            field = (
-                Field(ge=bound[0], le=bound[1], description=description)
-                if description
-                else Field(ge=bound[0], le=bound[1])
-            )
+        extra_schema: dict[str, Any] = dict(extra)
+        field = (
+            Field(description=description, json_schema_extra=extra_schema)
+            if description
+            else Field(json_schema_extra=extra_schema)
+        )
         annotations[param_name] = Annotated[int, field]
     function.__annotations__ = annotations
 

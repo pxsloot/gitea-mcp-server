@@ -76,6 +76,46 @@ class TestSyntheticToolRegistration:
         assert set(PAGINATION_SCHEMA_PROPERTIES) <= set(schema["properties"])
 
     @pytest.mark.asyncio
+    async def test_boundary_rejects_with_friendly_error_not_pydantic(self) -> None:
+        """MCP-boundary calls must surface the server error, not pydantic's.
+
+        Regression test: declaring bounds via ``Field(ge=..., le=...)`` made
+        pydantic reject invalid values at the boundary with a raw
+        ``ValidationError`` (leaking ``errors.pydantic.dev`` URLs to agents)
+        before the wrapper's friendly validation ran.  Bounds are now declared
+        with ``Field(json_schema_extra=...)`` — schema-only — so the wrapper
+        runs and raises ``gitea_mcp_server.exceptions.ValidationError`` with
+        the same message surface autogen tools use.
+        """
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(page: int = 1, limit: int = 10) -> dict[str, Any]:
+            return {"result": []}
+
+        # Bounds are still declared in the schema (agents discover via tool_info).
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        assert schema["properties"]["page"].get("minimum") == 1
+        assert schema["properties"]["limit"].get("minimum") == 1
+        assert schema["properties"]["limit"].get("maximum") == 100
+
+        # But the boundary error comes from the server validation, not pydantic.
+        for kwargs, expected in (
+            ({"page": 0}, "page must be >= 1"),
+            ({"limit": 101}, "limit must be <= 100"),
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                await example(**kwargs)
+            assert expected in str(exc_info.value)
+            assert "pydantic.dev" not in str(exc_info.value)
+            assert "less_than_equal" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
     async def test_limit_max_extends_default_page_size_bound(self) -> None:
         """A custom ``limit_max`` raises the upper bound for a tool's limit.
 

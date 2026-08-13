@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from pydantic import Field
-from pydantic.fields import FieldInfo
 
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
@@ -39,68 +38,59 @@ def paginated_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _annotation_description(annotation: Any) -> str | None:
-    """Extract the description from a parameter annotation, if any.
+def _annotation_with_bounds(annotation: Any, extra: dict[str, Any]) -> Any:
+    """Return *annotation* with schema-only *extra* bounds appended.
 
-    Synthetic tools declare parameter descriptions either as an
-    ``Annotated[int, "text"]`` string or as ``Annotated[int, Field(description=...)]``.
-    Returns ``None`` when the annotation carries no description so callers can
-    tell "no description" apart from an empty string.
+    Additive by contract: every existing metadata item survives.  Pydantic
+    merges multiple ``FieldInfo`` items, so the bounds ``Field`` is appended
+    rather than replacing the annotation.  String metadata (FastMCP's short
+    description form, e.g. ``Annotated[int, "Page number (1-based, default 1)"]``)
+    is promoted to ``Field(description=...)`` first — a bare string would
+    otherwise be shadowed by the appended ``Field`` and its description lost.
     """
     if get_origin(annotation) is not Annotated:
-        return None
-    for metadata in get_args(annotation)[1:]:
-        if isinstance(metadata, str) and metadata:
-            return metadata
-        if isinstance(metadata, FieldInfo) and metadata.description:
-            return metadata.description
-    return None
+        return Annotated[annotation, Field(json_schema_extra=dict(extra))]
+    base, *metadata = get_args(annotation)
+    promoted = [
+        Field(description=item) if isinstance(item, str) else item
+        for item in metadata
+    ]
+    return Annotated[base, *promoted, Field(json_schema_extra=dict(extra))]
 
 
-def _annotate_pagination_bounds(
-    function: Callable[..., Any],
+def _annotations_with_pagination_bounds(
+    annotations: dict[str, Any],
     limit_max: int,
-) -> None:
-    """Rewrite ``page``/``limit`` annotations with declared bounds.
+) -> dict[str, Any]:
+    """Return *annotations* with page/limit bounds declared, nothing dropped.
 
-    FastMCP builds the tool's parameter schema from the function signature
-    at registration time.  Injecting ``Field(json_schema_extra=...)`` with
-    ``minimum``/``maximum`` into the ``page``/``limit`` annotations makes
-    the bounds machine-readable in the schema, so ``tool_info`` and the
-    ``gitea://tool/{name}/schema`` resource surface them to agents — the
-    per-tool page-size maximum becomes discoverable instead of a hardcoded
-    number in prose, matching autogen tools whose ``SCHEMA_CONSTRAINTS``
-    declare ``page.minimum`` / ``per_page.maximum``.
+    Mirrors the additive schema augmentation autogen tools receive from
+    ``validation.augment_schema_with_validation`` (inject ``minimum`` /
+    ``maximum`` without replacing existing schema keys).  FastMCP builds the
+    tool's parameter schema from the function annotations at registration
+    time; declaring the bounds here makes them machine-readable in the
+    schema, so ``tool_info`` and the ``gitea://tool/{name}/schema`` resource
+    surface the per-tool page-size maximum to agents instead of a hardcoded
+    doc number — matching autogen tools whose ``SCHEMA_CONSTRAINTS`` declare
+    ``page.minimum`` / ``per_page.maximum``.
 
-    ``json_schema_extra`` is deliberate: it declares the bounds in the
-    schema **without** making pydantic enforce them at the MCP boundary.
+    The bounds are declared via ``Field(json_schema_extra=...)`` —
+    schema-only, so pydantic does not enforce them at the MCP boundary.
     ``Field(ge=..., le=...)`` would reject invalid values with a pydantic
     ``ValidationError`` (leaking ``errors.pydantic.dev`` URLs to agents)
     before the wrapper's friendly ``validate_page_limit`` runs.  Schema-only
     declaration keeps the error surface identical to autogen tools: the
     wrapper rejects with ``"page must be >= 1"`` / ``"limit must be <= N"``.
-
-    Existing descriptions are preserved: the original annotation (string or
-    ``FieldInfo``) is read via :func:`_annotation_description` and folded into
-    the new ``Field``.  ``@wraps`` copies the original annotations onto the
-    wrapper, so the rewrite targets the wrapper FastMCP inspects.
     """
-    annotations = dict(function.__annotations__)
+    result = dict(annotations)
     for param_name, extra in (
         ("page", {"minimum": 1}),
         ("limit", {"minimum": 1, "maximum": limit_max}),
     ):
-        if param_name not in annotations:
+        if param_name not in result:
             continue
-        description = _annotation_description(annotations[param_name])
-        extra_schema: dict[str, Any] = dict(extra)
-        field = (
-            Field(description=description, json_schema_extra=extra_schema)
-            if description
-            else Field(json_schema_extra=extra_schema)
-        )
-        annotations[param_name] = Annotated[int, field]
-    function.__annotations__ = annotations
+        result[param_name] = _annotation_with_bounds(result[param_name], extra)
+    return result
 
 
 def register_synthetic_tool(
@@ -152,8 +142,12 @@ def register_synthetic_tool(
         if paginated:
             # Declare page/limit bounds in the parameter schema so
             # ``tool_info`` surfaces them (agents discover per-tool maxima
-            # instead of relying on hardcoded doc numbers).
-            _annotate_pagination_bounds(contract_wrapper, effective_limit_max)
+            # instead of relying on hardcoded doc numbers).  Additive —
+            # all existing annotation metadata is preserved, mirroring the
+            # autogen path's ``augment_schema_with_validation``.
+            contract_wrapper.__annotations__ = _annotations_with_pagination_bounds(
+                contract_wrapper.__annotations__, effective_limit_max
+            )
 
         return cast("Callable[..., Any]", mcp.tool(**tool_options)(contract_wrapper))
 

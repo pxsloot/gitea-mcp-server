@@ -168,16 +168,18 @@ class TestSyntheticToolRegistration:
         assert limit_param.get("minimum") == 1
 
     @pytest.mark.asyncio
-    async def test_annotation_rewrite_preserves_descriptions_and_page_bound(
+    async def test_bounds_declaration_preserves_annotated_descriptions(
         self,
     ) -> None:
         """Bound injection must keep the parameter descriptions agents rely on.
 
-        Regression test: rewriting the ``limit`` annotation to
-        ``Field(ge=1, le=limit_max)`` used to drop the description that the
-        tool declared via ``Annotated[int, "text"]`` or a docstring ``Args``
-        entry.  The bound must be added without losing the description, and
-        ``page`` must gain a ``minimum`` matching autogen tools.
+        Regression test: the bounds declaration is additive — it appends a
+        ``Field(json_schema_extra=...)`` to the ``page``/``limit`` annotations
+        instead of rebuilding them.  The string form
+        (``Annotated[int, "text"]``) must be promoted to
+        ``Field(description=...)`` so the description survives alongside the
+        injected bounds, and ``page`` must gain a ``minimum`` matching autogen
+        tools.
         """
         from typing import Annotated
 
@@ -198,7 +200,7 @@ class TestSyntheticToolRegistration:
         tools = await mcp.list_tools()
         schema = next(tool for tool in tools if tool.name == "example").parameters
         props = schema["properties"]
-        # Descriptions survive the annotation rewrite.
+        # Descriptions survive the additive bounds declaration.
         assert props["page"]["description"] == "Page number (1-based, default 1)"
         assert (
             props["limit"]["description"]
@@ -210,7 +212,60 @@ class TestSyntheticToolRegistration:
         assert props["limit"]["maximum"] == 200
 
     @pytest.mark.asyncio
-    async def test_annotation_rewrite_keeps_docstring_description(self) -> None:
+    async def test_bounds_declaration_preserves_existing_field_metadata(
+        self,
+    ) -> None:
+        """Non-description Field metadata survives — nothing is dropped.
+
+        Regression test for the wholesale-replacement trap: bounds injection
+        must never rebuild the annotation in a way that silently discards
+        metadata (description, examples, …) already declared on ``page`` /
+        ``limit``.  Everything the tool author wrote stays; bounds are
+        appended.
+        """
+        from typing import Annotated
+
+        from pydantic import Field
+
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(
+            page: Annotated[
+                int,
+                Field(
+                    description="Page number (1-based, default 1)",
+                    examples=[1, 2],
+                ),
+            ] = 1,
+            limit: Annotated[
+                int,
+                Field(
+                    description="Lines per page (default 50)",
+                    examples=[50, 100],
+                ),
+            ] = 50,
+        ) -> dict[str, Any]:
+            return {"result": []}
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        props = schema["properties"]
+        assert props["page"]["description"] == "Page number (1-based, default 1)"
+        assert props["page"]["examples"] == [1, 2]
+        assert props["limit"]["description"] == "Lines per page (default 50)"
+        assert props["limit"]["examples"] == [50, 100]
+        assert props["page"]["minimum"] == 1
+        assert props["limit"]["minimum"] == 1
+        assert props["limit"]["maximum"] == 200
+
+    @pytest.mark.asyncio
+    async def test_bounds_declaration_keeps_docstring_description(self) -> None:
         """Docstring-derived parameter descriptions survive bound injection."""
         mcp = FastMCP("test")
 
@@ -257,3 +312,35 @@ class TestSyntheticToolRegistration:
         tools = await mcp.list_tools()
         schema = next(tool for tool in tools if tool.name == "example").parameters
         assert schema["properties"]["limit"].get("maximum") == 100
+
+    @pytest.mark.asyncio
+    async def test_bounds_declaration_skips_absent_pagination_params(self) -> None:
+        """A paginated tool without ``page``/``limit`` registers unchanged.
+
+        The bounds declaration is keyed on the params actually present in the
+        signature: a tool that declares neither ``page`` nor ``limit`` (or
+        only one of them) must register without bounds injection and without
+        inventing parameters.  Runtime validation stays a no-op for the
+        missing param (``validate_page_limit`` skips ``None``).
+        """
+        mcp = FastMCP("test")
+
+        @register_synthetic_tool(
+            mcp,
+            paginated=True,
+            limit_max=200,
+            output_schema={"type": "object", "properties": {"result": {}}},
+        )
+        async def example(query: str = "x") -> dict[str, Any]:
+            return {"result": []}
+
+        tools = await mcp.list_tools()
+        schema = next(tool for tool in tools if tool.name == "example").parameters
+        props = schema["properties"]
+        assert props["query"]["type"] == "string"
+        assert "page" not in props
+        assert "limit" not in props
+
+        # The wrapper must still run (validation skips absent params).
+        result = await example(query="y")
+        assert result == {"result": []}

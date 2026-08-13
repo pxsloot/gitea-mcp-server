@@ -23,8 +23,8 @@ from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.synthetic_contract import (
-    make_impl_executor,
-    register_synthetic_tool,
+    SyntheticToolSpec,
+    register_all_synthetic_tools,
 )
 
 if TYPE_CHECKING:
@@ -353,14 +353,13 @@ def register_doc_tools(
             detail=detail,
         )
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(search_docs, paginated=True),
-        paginated=True,
+    search_docs_spec = SyntheticToolSpec(
+        impl=search_docs,
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
-    )(search_docs)
+        paginated=True,
+    )
 
     async def read_doc(
         topic: str,
@@ -439,10 +438,8 @@ def register_doc_tools(
         )
         return apply_pagination(result, page, limit, total_lines)
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(read_doc, paginated=True, limit_max=200),
-        paginated=True,
+    read_doc_spec = SyntheticToolSpec(
+        impl=read_doc,
         limit_max=200,
         virtual_params={"format"},
         tags={"synthetic"},
@@ -462,7 +459,10 @@ def register_doc_tools(
                 },
             },
         },
-    )(read_doc)
+        paginated=True,
+    )
+
+    register_all_synthetic_tools(mcp, [search_docs_spec, read_doc_spec])
 
     # Compute dynamic tags and description from all loaded guides
     # so resource discovery aligns with guide frontmatter content

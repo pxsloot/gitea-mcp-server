@@ -32,8 +32,8 @@ from gitea_mcp_server.tools.schemas import (
     resolve_ref,
 )
 from gitea_mcp_server.tools.synthetic_contract import (
-    make_impl_executor,
-    register_synthetic_tool,
+    SyntheticToolSpec,
+    register_all_synthetic_tools,
 )
 
 logger = logging.getLogger(__name__)
@@ -355,22 +355,22 @@ def register_type_tools(
 
         return apply_format(info, format, detail=detail)
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(_resolve_type_impl),
-        name="resolve_type",
-        description=(
-            "Resolve a ``$ref`` type name to its schema and cross-references. "
-            "When ``tool_info`` shows ``$ref:TypeName`` in its output_example, "
-            "use this tool to discover what fields that type contains. "
-            "Returns a compact type summary (with ``$ref`` placeholders for "
-            "nested types) and cross-references showing which tools return "
-            "or accept this type.\n\n"
-            '**Resource**: ``read_resource("gitea://types/{TypeName}")`` '
-            "for a cached JSON read."
-        ),
-        tags={"synthetic", "type-schema"},
-        annotations=synthetic_annotations(read_only=True, open_world=False),
+    register_all_synthetic_tools(mcp, [
+        SyntheticToolSpec(
+            impl=_resolve_type_impl,
+            name="resolve_type",
+            description=(
+                "Resolve a ``$ref`` type name to its schema and cross-references. "
+                "When ``tool_info`` shows ``$ref:TypeName`` in its output_example, "
+                "use this tool to discover what fields that type contains. "
+                "Returns a compact type summary (with ``$ref`` placeholders for "
+                "nested types) and cross-references showing which tools return "
+                "or accept this type.\n\n"
+                '**Resource**: ``read_resource("gitea://types/{TypeName}")`` '
+                "for a cached JSON read."
+            ),
+            tags={"synthetic", "type-schema"},
+            annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
             "type": "object",
             "properties": {
@@ -429,7 +429,8 @@ def register_type_tools(
                 },
             },
         },
-    )(_resolve_type_impl)
+        ),
+    ])
 
     # ── gitea://types/{typeName} resource ──────────────────────────────
 

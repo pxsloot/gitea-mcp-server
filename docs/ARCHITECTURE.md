@@ -282,7 +282,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/exclusion.py` | pattern matching helpers for config-based exclusion |
 | `tools/filter_info.py` | filter prediction data + ``FilteredToolMiddleware`` |
 | `tools/search.py` | BM25 search + ``TolerantSearchTransform``, synthetic discovery tools |
-| `tools/synthetic_contract.py` | Synthetic registration contract — wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
+| `tools/synthetic_contract.py` | Synthetic registration contract — `SyntheticToolSpec` declarative specs + `register_all_synthetic_tools`, wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource |
 | `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + guide resources |
 | `tools/virtual_params.py` | virtual parameter registry + lifecycle (inject/extract/apply) |
@@ -334,12 +334,15 @@ at registration (``tools/synthetic_contract.py``), carry their per-tool
 executor in a registry referenced by a serializable ``_executor_id`` in meta,
 and declare a per-tool virtual-param allowlist (``_virtual_params``) so
 ``format``/``detail``/``fetch_all``/``sudo`` are injected from the registry
-rather than hand-declared per signature.  Both families run the same spine:
-``tools/contract.build_transform_fn`` — extract virtual params, pre-hooks,
-context resolution, executor, post-hook formatting.  The executor is the only
-difference: the autogen HTTP pipeline vs. the synthetic local implementation
-(which renders its own output and marks it ``_formatted`` so the shared format
-post-hook does not re-render it).
+rather than hand-declared per signature.  Registration is declarative: each
+module builds a list of ``SyntheticToolSpec`` dataclasses (impl + tool options
++ contract knobs) and hands it to ``register_all_synthetic_tools`` — one loop,
+mirroring how ``mcp_builder`` iterates routes.  Both families run the same
+spine: ``tools/contract.build_transform_fn`` — extract virtual params,
+pre-hooks, context resolution, executor, post-hook formatting.  The executor
+is the only difference: the autogen HTTP pipeline vs. the synthetic local
+implementation (which renders its own output and marks it ``_formatted`` so
+the shared format post-hook does not re-render it).
 
 ### Resource System
 

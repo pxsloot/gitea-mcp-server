@@ -17,6 +17,13 @@ This module provides the registration-side contract:
   ``page``/``limit`` for paginated tools, calls the impl, and marks the
   result ``_formatted`` so the shared format post-hook does not re-render
   the impl's own formatting.
+- :class:`SyntheticToolSpec` is the declarative registration unit: one
+  dataclass per tool carrying the impl, ``mcp.tool()`` options, and the
+  contract knobs (``paginated``, ``limit_max``, ``virtual_params``,
+  ``required_scope``, ``wrap``).  Modules build their spec lists where their
+  implementation closures live and hand them to
+  :func:`register_all_synthetic_tools` — no hand-rolled per-call wrapper
+  options.
 - :func:`register_synthetic_tool` stamps the wrap marker + executor + the
   tool's virtual-param allowlist into ``tool.meta``, declares the pagination
   envelope in ``output_schema``, and declares the per-tool ``limit`` bound.
@@ -29,10 +36,11 @@ from __future__ import annotations
 
 import copy
 import inspect
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from fastmcp.tools.base import ToolResult
 
@@ -50,6 +58,108 @@ from gitea_mcp_server.validation import validate_page_limit
 # the serializable ``_executor_id`` reference.  The server-level transform
 # resolves the executor via :func:`get_synthetic_executor` at wrap time.
 _SYNTHETIC_EXECUTORS: dict[str, Executor] = {}
+
+
+@dataclass
+class SyntheticToolSpec:
+    """Declarative registration spec for one synthetic tool.
+
+    Built at registration time inside a module's ``register_*`` function
+    (where the implementation closure lives — the impl captures deps such as
+    the search transform, doc manager, or OpenAPI spec) and processed by
+    :func:`register_all_synthetic_tools`.
+
+    Attributes:
+        impl: The synthetic tool function.  Its signature (including
+            declared ``format``/``detail``/``fetch_all``/``ctx``) defines the
+            agent-facing schema; its body performs the real work.
+        name: Tool name.  Defaults to ``impl.__name__``.
+        description: Tool description.  Defaults to FastMCP's docstring
+            derivation.
+        tags: Tool tags (``"synthetic"`` plus a domain tag).
+        annotations: Tool annotations (use
+            :func:`~gitea_mcp_server.tools.customize.synthetic_annotations`).
+        output_schema: JSON Schema for the tool result envelope.
+        paginated: Validate ``page``/``limit`` at runtime and declare the
+            pagination envelope in ``output_schema``.
+        limit_max: Upper bound for ``limit`` (defaults to ``PAGE_SIZE_MAX``).
+        virtual_params: Allowlist of registry virtual params this tool opts
+            into.  Defaults to ``{"format", "detail", "fetch_all"}`` for
+            paginated tools, ``{"format", "detail"}`` otherwise.  Tool-
+            specific profiles pass their own set; ``sudo`` is opt-in.
+        required_scope: Optional Gitea API scope required to use this tool.
+            Stamped in ``tool.meta`` for future scope gating of synthetic
+            tools (mirrors ``ResourceMeta.required_scope``); currently no
+            synthetic tool declares one.
+        wrap: When ``True`` (default), ride the server-level contract
+            transform.  Set ``False`` for proxy tools that must pass
+            arguments through untouched (``call_tool``).
+    """
+
+    impl: Callable[..., Any]
+    name: str | None = None
+    description: str | None = None
+    tags: set[str] | None = None
+    annotations: Any | None = None
+    output_schema: dict[str, Any] | None = None
+    paginated: bool = False
+    limit_max: int | None = None
+    virtual_params: set[str] | None = None
+    required_scope: str | None = None
+    wrap: bool = True
+
+    def tool_options(self) -> dict[str, Any]:
+        """Return the ``mcp.tool()`` options this spec declares (non-None)."""
+        options: dict[str, Any] = {}
+        if self.name is not None:
+            options["name"] = self.name
+        if self.description is not None:
+            options["description"] = self.description
+        if self.tags is not None:
+            options["tags"] = self.tags
+        if self.annotations is not None:
+            options["annotations"] = self.annotations
+        if self.output_schema is not None:
+            options["output_schema"] = self.output_schema
+        return options
+
+
+def register_all_synthetic_tools(
+    mcp: Any,
+    specs: Iterable[SyntheticToolSpec],
+) -> None:
+    """Register every synthetic tool spec through the shared contract.
+
+    Wrapped specs (``wrap=True``) ride the server-level contract transform
+    via :func:`register_synthetic_tool` — the executor is built from the
+    spec's impl, and the tool is stamped with the wrap marker + virtual-param
+    allowlist.  Unwrapped specs (``wrap=False``, e.g. ``call_tool``, a
+    passthrough proxy) register plainly via ``mcp.tool()`` with no marker.
+
+    Args:
+        mcp: The FastMCP server instance to register on.
+        specs: The declarative tool specs (one per tool).
+    """
+    for spec in specs:
+        options = spec.tool_options()
+        if not spec.wrap:
+            mcp.tool(**options)(spec.impl)
+            continue
+
+        executor = make_impl_executor(
+            spec.impl,
+            paginated=spec.paginated,
+            limit_max=spec.limit_max,
+        )
+        register_synthetic_tool(
+            mcp,
+            executor=executor,
+            paginated=spec.paginated,
+            limit_max=spec.limit_max,
+            virtual_params=spec.virtual_params,
+            required_scope=spec.required_scope,
+            **options,
+        )(spec.impl)
 
 
 def get_synthetic_executor(executor_id: str | None) -> Executor | None:
@@ -189,13 +299,14 @@ def make_impl_executor(
     return executor
 
 
-def register_synthetic_tool(
+def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are clearer than a kwargs bag
     mcp: Any,
     *,
     executor: Executor,
     paginated: bool = False,
     limit_max: int | None = None,
     virtual_params: set[str] | None = None,
+    required_scope: str | None = None,
     **tool_options: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a synthetic tool on the server-level contract transform.
@@ -224,6 +335,10 @@ def register_synthetic_tool(
             ``{"format", "detail"}`` otherwise.  Tool-specific profiles pass
             their own set (e.g. ``read_doc`` opts into ``format`` only);
             ``sudo`` is opt-in for future API-calling synthetic scripts.
+        required_scope: Optional Gitea API scope required to use this tool.
+            Stamped in ``tool.meta`` for future scope gating of synthetic
+            tools (mirrors ``ResourceMeta.required_scope``); currently no
+            synthetic tool declares one.
         **tool_options: Remaining ``mcp.tool()`` options (name, description,
             tags, annotations, output_schema, ...).
     """
@@ -260,6 +375,8 @@ def register_synthetic_tool(
             "_virtual_params": set(effective_virtual),
             "_limit_max": effective_limit_max,
         }
+        if required_scope is not None:
+            meta["required_scope"] = required_scope
         tool_options["meta"] = meta
         return cast("Callable[..., Any]", mcp.tool(**tool_options)(function))
 
@@ -268,8 +385,10 @@ def register_synthetic_tool(
 
 __all__ = [
     "PAGINATION_SCHEMA_PROPERTIES",
+    "SyntheticToolSpec",
     "get_synthetic_executor",
     "make_impl_executor",
     "paginated_output_schema",
+    "register_all_synthetic_tools",
     "register_synthetic_tool",
 ]

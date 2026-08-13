@@ -9,10 +9,69 @@ from fastmcp.tools.base import ToolResult
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.tools.synthetic_contract import (
     PAGINATION_SCHEMA_PROPERTIES,
+    SyntheticToolSpec,
     make_impl_executor,
     paginated_output_schema,
+    register_all_synthetic_tools,
     register_synthetic_tool,
 )
+
+
+class TestRegisterAllSyntheticTools:
+    """Tests for the declarative spec list registration loop."""
+
+    @pytest.mark.asyncio
+    async def test_registers_wrapped_and_unwrapped_specs(self) -> None:
+        """Wrapped specs ride the contract; unwrapped (proxy) specs register plainly."""
+        from gitea_mcp_server.tools.synthetic_contract import _SYNTHETIC_EXECUTORS
+
+        mcp = FastMCP("test")
+
+        async def wrapped_impl(query: str = "x") -> ToolResult:
+            return ToolResult(structured_content={"result": []})
+
+        async def proxy_impl(name: str) -> ToolResult:
+            return ToolResult(structured_content={"result": name})
+
+        register_all_synthetic_tools(mcp, [
+            SyntheticToolSpec(
+                impl=wrapped_impl,
+                name="wrapped_tool",
+                paginated=True,
+                tags={"synthetic"},
+                output_schema={"type": "object", "properties": {"result": {"type": "array"}}},
+            ),
+            SyntheticToolSpec(
+                impl=proxy_impl,
+                name="proxy_tool",
+                wrap=False,
+                tags={"synthetic"},
+            ),
+        ])
+
+        tools = await mcp.list_tools()
+        by_name = {t.name: t for t in tools}
+        assert set(by_name) == {"wrapped_tool", "proxy_tool"}
+
+        # Wrapped spec stamps the marker + registers an executor; unwrapped does not.
+        wrapped_meta = by_name["wrapped_tool"].meta or {}
+        assert wrapped_meta.get("_contract_wrap") is True
+        assert wrapped_meta.get("_executor_id") == "wrapped_tool"
+        assert "wrapped_tool" in _SYNTHETIC_EXECUTORS
+        assert (by_name["proxy_tool"].meta or {}).get("_contract_wrap") is None
+
+        # Paginated envelope declared for the wrapped spec.
+        schema = by_name["wrapped_tool"].output_schema
+        assert schema is not None
+        assert set(PAGINATION_SCHEMA_PROPERTIES) <= set(schema["properties"])
+
+    def test_tool_options_omits_none_fields(self) -> None:
+        """tool_options() carries only the declared mcp.tool() options."""
+        spec = SyntheticToolSpec(impl=lambda: None, name="t", tags={"synthetic"})
+        options = spec.tool_options()
+        assert options == {"name": "t", "tags": {"synthetic"}}
+        assert "description" not in options
+        assert "output_schema" not in options
 
 
 class TestPaginatedOutputSchema:

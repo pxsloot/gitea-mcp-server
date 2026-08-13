@@ -50,8 +50,8 @@ from gitea_mcp_server.tools.schemas import (
     unwrap_result_schema,
 )
 from gitea_mcp_server.tools.synthetic_contract import (
-    make_impl_executor,
-    register_synthetic_tool,
+    SyntheticToolSpec,
+    register_all_synthetic_tools,
 )
 
 # ============================================================================
@@ -904,10 +904,8 @@ def register_synthetic_tools(
             tool_prefix=tool_prefix, fetch_all=fetch_all, detail=detail,
         )
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(search_tools_fn, paginated=True),
-        paginated=True,
+    search_tools_spec = SyntheticToolSpec(
+        impl=search_tools_fn,
         name="search_tools",
         description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
         tags={"synthetic"},
@@ -963,7 +961,8 @@ def register_synthetic_tools(
                 },
             },
         },
-    )(search_tools_fn)
+        paginated=True,
+    )
 
     async def call_tool_fn(
         name: Annotated[str, "The name of the tool to call"],
@@ -972,7 +971,9 @@ def register_synthetic_tools(
     ) -> ToolResult:
         return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
 
-    mcp.tool(
+    call_tool_spec = SyntheticToolSpec(
+        impl=call_tool_fn,
+        wrap=False,
         name="call_tool",
         description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
         tags={"synthetic"},
@@ -986,7 +987,7 @@ def register_synthetic_tools(
                 },
             },
         },
-    )(call_tool_fn)
+    )
 
     async def tool_info_fn(  # noqa: PLR0913 - 6 params: name, format, detail, page, limit, ctx
         name: Annotated[str, "The exact name of the tool to inspect"],
@@ -1016,11 +1017,8 @@ def register_synthetic_tools(
             filtered_tools_info=filtered_tools_info,
         )
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(tool_info_fn, paginated=True),
-        paginated=True,
-        virtual_params={"format"},
+    tool_info_spec = SyntheticToolSpec(
+        impl=tool_info_fn,
         name="tool_info",
         description="Get the full schema for a registered tool by exact name. Returns parameter details, output example, annotations, and tags. Use after search_tools to inspect a specific tool before calling it.",
         tags={"synthetic"},
@@ -1111,7 +1109,9 @@ def register_synthetic_tools(
                 },
             },
         },
-    )(tool_info_fn)
+        paginated=True,
+        virtual_params={"format"},
+    )
 
     async def search_resources_fn(  # noqa: PLR0913 - min_score is a new config axis
         query: Annotated[str, "Natural language query to search for resources"],
@@ -1143,10 +1143,8 @@ def register_synthetic_tools(
             detail=detail,
         )
 
-    register_synthetic_tool(
-        mcp,
-        executor=make_impl_executor(search_resources_fn, paginated=True),
-        paginated=True,
+    search_resources_spec = SyntheticToolSpec(
+        impl=search_resources_fn,
         name="search_resources",
         description="Search MCP resources by natural language query. "
         "Uses name-match boosting then BM25 to find the most relevant resources matching your query. "
@@ -1156,7 +1154,15 @@ def register_synthetic_tools(
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
-    )(search_resources_fn)
+        paginated=True,
+    )
+
+    register_all_synthetic_tools(mcp, [
+        search_tools_spec,
+        call_tool_spec,
+        tool_info_spec,
+        search_resources_spec,
+    ])
 
 
 __all__ = [

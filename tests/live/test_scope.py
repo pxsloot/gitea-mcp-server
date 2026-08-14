@@ -40,9 +40,7 @@ class TestToolVisibility:
         tool_result = await mcp.list_tools()
         tool_names = [tool.name for tool in tool_result.tools]
         admin_tools = [n for n in tool_names if "admin" in n.lower()]
-        assert len(admin_tools) == 0, (
-            f"Admin tools visible to non-admin token: {admin_tools}"
-        )
+        assert len(admin_tools) == 0, f"Admin tools visible to non-admin token: {admin_tools}"
 
     @pytest.mark.live
     async def test_synthetic_tools_always_visible(self, world: World) -> None:
@@ -50,8 +48,7 @@ class TestToolVisibility:
         mcp = await world.server_for(RO, SCOPE_READ)
 
         # search_tools should work
-        result = await mcp.call_tool(
-            "gitea_search_tools", {"query": "repo", "format": "json"})
+        result = await mcp.call_tool("gitea_search_tools", {"query": "repo", "format": "json"})
         assert not result.isError, (
             f"search_tools failed for read-only token: "
             f"{extract_text_content(result.content) if result.content else 'no content'}"
@@ -60,8 +57,8 @@ class TestToolVisibility:
         # call_tool should work (even if the proxied tool fails on scope)
         result = await mcp.call_tool(
             "gitea_call_tool",
-            {"name": "gitea_search_tools",
-             "arguments": {"query": "user", "format": "json"}})
+            {"name": "gitea_search_tools", "arguments": {"query": "user", "format": "json"}},
+        )
         assert not result.isError, (
             f"call_tool failed for read-only token: "
             f"{extract_text_content(result.content) if result.content else 'no content'}"
@@ -86,8 +83,7 @@ class TestWriteBlocked:
             {"name": "should-not-exist", "auto_init": False},
         )
         assert result.isError, (
-            "Create repo succeeded with read-only token — "
-            "scope filtering on write tools is broken."
+            "Create repo succeeded with read-only token — scope filtering on write tools is broken."
         )
 
     @pytest.mark.live
@@ -96,11 +92,13 @@ class TestWriteBlocked:
         mcp = await world.server_for(RO, SCOPE_READ)
         result = await mcp.call_tool(
             "gitea_issue_create_issue",
-            {"owner": "mcp-server", "repo": "gitea-mcp-server",
-             "title": "Test — should not be created"},
+            {
+                "owner": "mcp-server",
+                "repo": "gitea-mcp-server",
+                "title": "Test — should not be created",
+            },
         )
         if not result.isError:
             pytest.fail(
-                "Create issue succeeded with read-only token — "
-                "scope enforcement is broken."
+                "Create issue succeeded with read-only token — scope enforcement is broken."
             )

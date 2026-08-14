@@ -43,8 +43,13 @@ class TestSetup:
     async def test_create_repo(self, world: World) -> None:
         """Create the resource test repo."""
         repo = await Workflow(world).ensure_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            auto_init=True, description="Resource test repo")
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            auto_init=True,
+            description="Resource test repo",
+        )
         assert repo.data["name"] == _REPO
 
 
@@ -61,8 +66,7 @@ class TestListResources:
     async def test_list_resources_returns_data(self, world: World) -> None:
         """list_resources returns a flat list of resource dicts."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_list_resources", {"format": "json"})
+        result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
         assert not result.isError
         data = json.loads(extract_text_content(result.content))
         assert isinstance(data, list)
@@ -72,20 +76,25 @@ class TestListResources:
     async def test_resource_items_have_metadata(self, world: World) -> None:
         """Each resource item has uri, name, description, mimeType, type, tags."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_list_resources", {"format": "json"})
+        result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
         data = json.loads(extract_text_content(result.content))
         for res in data[:5]:
-            assert_keys(res, "uri", "name", "description",
-                        "mimeType", "type", "tags",
-                        msg=f"Resource {res.get('uri', '?')}: ")
+            assert_keys(
+                res,
+                "uri",
+                "name",
+                "description",
+                "mimeType",
+                "type",
+                "tags",
+                msg=f"Resource {res.get('uri', '?')}: ",
+            )
 
     @pytest.mark.live
     async def test_filter_by_tag(self, world: World) -> None:
         """Filtering by tag='wrapper' returns only wrapper resources."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_list_resources", {"format": "json", "tag": "wrapper"})
+        result = await mcp.call_tool("gitea_list_resources", {"format": "json", "tag": "wrapper"})
         data = json.loads(extract_text_content(result.content))
         for res in data:
             assert "wrapper" in res.get("tags", []), (
@@ -106,8 +115,7 @@ class TestReadResource:
     async def test_read_version(self, world: World) -> None:
         """Read ``gitea://version`` — returns version info."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        result = await mcp.call_tool(
-            "gitea_read_resource", {"uri": "gitea://version"})
+        result = await mcp.call_tool("gitea_read_resource", {"uri": "gitea://version"})
         assert not result.isError
         text = extract_text_content(result.content)
         assert text, "Version resource returned empty content"
@@ -124,9 +132,7 @@ class TestReadResource:
         )
         assert not result.isError
         text = extract_text_content(result.content)
-        assert _REPO in text, (
-            f"Repo resource should mention {_REPO}: {text[:200]}"
-        )
+        assert _REPO in text, f"Repo resource should mention {_REPO}: {text[:200]}"
 
     @pytest.mark.live
     async def test_read_user_resource(self, world: World) -> None:
@@ -138,9 +144,7 @@ class TestReadResource:
         )
         assert not result.isError
         text = extract_text_content(result.content)
-        assert DEV.username in text, (
-            f"User resource should mention {DEV.username}: {text[:200]}"
-        )
+        assert DEV.username in text, f"User resource should mention {DEV.username}: {text[:200]}"
 
     @pytest.mark.live
     async def test_read_resource_json_format(self, world: World) -> None:
@@ -150,8 +154,7 @@ class TestReadResource:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_read_resource",
-            {"uri": f"gitea://repos/{DEV.username}/{_REPO}",
-             "format": "json"},
+            {"uri": f"gitea://repos/{DEV.username}/{_REPO}", "format": "json"},
         )
         assert not result.isError
         data = json.loads(extract_text_content(result.content))
@@ -187,8 +190,7 @@ class TestResourceScope:
 
         counts: list[int] = []
         for mcp in (full_token_mcp, limited_token_mcp):
-            result = await mcp.call_tool(
-                "gitea_list_resources", {"format": "json"})
+            result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
             data = json.loads(extract_text_content(result.content))
             counts.append(len(data))
 

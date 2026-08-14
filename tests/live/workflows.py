@@ -44,10 +44,13 @@ class Workflow:
 
     async def ensure_user(self, user: User) -> dict[str, Any]:
         """Ensure and cache one test identity."""
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("user", user.username),
-            lambda: self.world.need_user(user),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("user", user.username),
+                lambda: self.world.need_user(user),
+            ),
+        )
 
     async def ensure_org(
         self,
@@ -58,12 +61,17 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure an organization as an administration dependency."""
         identity = (name, full_name or "", description or "")
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("organization", *identity),
-            lambda: self.world.need_org(
-                name, full_name=full_name, description=description,
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("organization", *identity),
+                lambda: self.world.need_org(
+                    name,
+                    full_name=full_name,
+                    description=description,
+                ),
             ),
-        ))
+        )
 
     async def ensure_team(
         self,
@@ -75,15 +83,23 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure a team and its repository-unit permissions."""
         identity = (
-            org, name, permission,
+            org,
+            name,
+            permission,
             repr(sorted((units_map or {}).items())),
         )
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("team", *identity),
-            lambda: self.world.need_team(
-                org, name, permission=permission, units_map=units_map,
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("team", *identity),
+                lambda: self.world.need_team(
+                    org,
+                    name,
+                    permission=permission,
+                    units_map=units_map,
+                ),
             ),
-        ))
+        )
 
     async def ensure_repo(
         self,
@@ -102,12 +118,13 @@ class Workflow:
             tuple(sorted(scopes)),
             repr(sorted(options.items())),
         )
-        return cast("RepoState", await self.dependencies.ensure(
-            node_key("repository", *identity),
-            lambda: self.world.need_repo(
-                owner, name, user=user, scopes=scopes, **options
+        return cast(
+            "RepoState",
+            await self.dependencies.ensure(
+                node_key("repository", *identity),
+                lambda: self.world.need_repo(owner, name, user=user, scopes=scopes, **options),
             ),
-        ))
+        )
 
     async def ensure_label(
         self,
@@ -118,10 +135,13 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure a repository label as a workflow dependency."""
         identity = (repo.owner, repo.name, name, color, repr(sorted(options.items())))
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("label", *identity),
-            lambda: repo.need_label(name, color, **options),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("label", *identity),
+                lambda: repo.need_label(name, color, **options),
+            ),
+        )
 
     async def ensure_branch(
         self,
@@ -131,10 +151,13 @@ class Workflow:
         old: str = "main",
     ) -> dict[str, Any]:
         """Ensure a branch as a workflow dependency."""
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("branch", repo.owner, repo.name, name, old),
-            lambda: repo.need_branch(name, old=old),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("branch", repo.owner, repo.name, name, old),
+                lambda: repo.need_branch(name, old=old),
+            ),
+        )
 
     async def ensure_file(
         self,
@@ -145,10 +168,13 @@ class Workflow:
         branch: str = "main",
     ) -> dict[str, Any]:
         """Ensure a committed file as a workflow dependency."""
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("file", repo.owner, repo.name, branch, path, content),
-            lambda: repo.need_file(path, content, branch=branch),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("file", repo.owner, repo.name, branch, path, content),
+                lambda: repo.need_file(path, content, branch=branch),
+            ),
+        )
 
     async def ensure_tag(
         self,
@@ -160,10 +186,13 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure a tag as a repository workflow dependency."""
         identity = (repo.owner, repo.name, name, target, message or "")
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("tag", *identity),
-            lambda: repo.need_tag(name, target=target, message=message),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("tag", *identity),
+                lambda: repo.need_tag(name, target=target, message=message),
+            ),
+        )
 
     async def ensure_issue(
         self,
@@ -173,10 +202,13 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure an issue as a workflow dependency."""
         identity = (repo.owner, repo.name, title, repr(sorted(options.items())))
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("issue", *identity),
-            lambda: repo.need_issue(title, **options),
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("issue", *identity),
+                lambda: repo.need_issue(title, **options),
+            ),
+        )
 
     async def ensure_milestone(
         self,
@@ -188,12 +220,17 @@ class Workflow:
     ) -> dict[str, Any]:
         """Ensure a milestone as an issue workflow dependency."""
         identity = (repo.owner, repo.name, title, description or "", due_date or "")
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("milestone", *identity),
-            lambda: repo.need_milestone(
-                title, description=description, due_date=due_date,
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("milestone", *identity),
+                lambda: repo.need_milestone(
+                    title,
+                    description=description,
+                    due_date=due_date,
+                ),
             ),
-        ))
+        )
 
     async def ensure_pull_request(
         self,
@@ -208,8 +245,14 @@ class Workflow:
     ) -> dict[str, Any]:
         """Create and verify a pull request dependency once."""
         identity = (
-            repo.owner, repo.name, head, base, title, body,
-            user.username, tuple(sorted(scopes)),
+            repo.owner,
+            repo.name,
+            head,
+            base,
+            title,
+            body,
+            user.username,
+            tuple(sorted(scopes)),
         )
 
         async def create() -> dict[str, Any]:
@@ -232,9 +275,13 @@ class Workflow:
             assert_content(data, title=title, state="open")
             return data
 
-        return cast("dict[str, Any]", await self.dependencies.ensure(
-            node_key("pull-request", *identity), create,
-        ))
+        return cast(
+            "dict[str, Any]",
+            await self.dependencies.ensure(
+                node_key("pull-request", *identity),
+                create,
+            ),
+        )
 
     async def call(
         self,

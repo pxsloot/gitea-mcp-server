@@ -24,7 +24,9 @@ from gitea_mcp_server.tools.labels import (
 _label_service = LabelService()
 
 
-async def _get_repository_label_map(owner: str, repo: str, client: Any) -> dict[str, dict[str, Any]]:
+async def _get_repository_label_map(
+    owner: str, repo: str, client: Any
+) -> dict[str, dict[str, Any]]:
     """Fetch label map using the test label service."""
     return await _label_service.get_label_map(owner, repo, client)
 
@@ -182,10 +184,12 @@ class TestLabelServiceValidateAndConvert:
     @pytest.mark.asyncio
     async def test_converts_known_strings(self) -> None:
         """Known string label names should be converted to integer IDs."""
-        client = self._make_client([
-            {"id": 1, "name": "bug"},
-            {"id": 2, "name": "feature"},
-        ])
+        client = self._make_client(
+            [
+                {"id": 1, "name": "bug"},
+                {"id": 2, "name": "feature"},
+            ]
+        )
         result = await _label_service.validate_and_convert(
             ["bug", "feature"], "owner", "repo", client
         )
@@ -194,25 +198,25 @@ class TestLabelServiceValidateAndConvert:
     @pytest.mark.asyncio
     async def test_passes_through_valid_integers(self) -> None:
         """Integer IDs that exist in the label map should pass through."""
-        client = self._make_client([
-            {"id": 1, "name": "bug"},
-            {"id": 42, "name": "feature"},
-        ])
-        result = await _label_service.validate_and_convert(
-            [1, 42], "owner", "repo", client
+        client = self._make_client(
+            [
+                {"id": 1, "name": "bug"},
+                {"id": 42, "name": "feature"},
+            ]
         )
+        result = await _label_service.validate_and_convert([1, 42], "owner", "repo", client)
         assert result == [1, 42]
 
     @pytest.mark.asyncio
     async def test_raises_for_unknown_integer(self) -> None:
         """Unknown integer ID should raise ValidationError."""
-        client = self._make_client([
-            {"id": 1, "name": "bug"},
-        ])
+        client = self._make_client(
+            [
+                {"id": 1, "name": "bug"},
+            ]
+        )
         with pytest.raises(ValidationError) as excinfo:
-            await _label_service.validate_and_convert(
-                [1, 99999], "owner", "repo", client
-            )
+            await _label_service.validate_and_convert([1, 99999], "owner", "repo", client)
         assert "99999" in str(excinfo.value)
         assert "owner/repo" in str(excinfo.value)
         assert excinfo.value.field == "labels"
@@ -220,22 +224,24 @@ class TestLabelServiceValidateAndConvert:
     @pytest.mark.asyncio
     async def test_raises_for_unknown_string(self) -> None:
         """Unknown string label should raise ValidationError."""
-        client = self._make_client([
-            {"id": 1, "name": "bug"},
-        ])
+        client = self._make_client(
+            [
+                {"id": 1, "name": "bug"},
+            ]
+        )
         with pytest.raises(ValidationError) as excinfo:
-            await _label_service.validate_and_convert(
-                ["nonexistent"], "owner", "repo", client
-            )
+            await _label_service.validate_and_convert(["nonexistent"], "owner", "repo", client)
         assert "nonexistent" in str(excinfo.value)
         assert excinfo.value.field == "labels"
 
     @pytest.mark.asyncio
     async def test_raises_for_mixed_unknowns(self) -> None:
         """Both unknown strings and integers should be reported in one error."""
-        client = self._make_client([
-            {"id": 1, "name": "bug"},
-        ])
+        client = self._make_client(
+            [
+                {"id": 1, "name": "bug"},
+            ]
+        )
         with pytest.raises(ValidationError) as excinfo:
             await _label_service.validate_and_convert(
                 ["bug", "bad_label", 99999], "owner", "repo", client
@@ -249,20 +255,22 @@ class TestLabelServiceValidateAndConvert:
     async def test_empty_labels_returns_empty_list(self) -> None:
         """Empty labels list should return empty list."""
         client = self._make_client([])
-        result = await _label_service.validate_and_convert(
-            [], "owner", "repo", client
-        )
+        result = await _label_service.validate_and_convert([], "owner", "repo", client)
         assert result == []
 
     @pytest.mark.asyncio
     async def test_case_insensitive_string_lookup(self) -> None:
         """String label lookup should be case-insensitive."""
-        client = self._make_client([
-            {"id": 5, "name": "Kind/Enhancement"},
-        ])
+        client = self._make_client(
+            [
+                {"id": 5, "name": "Kind/Enhancement"},
+            ]
+        )
         result = await _label_service.validate_and_convert(
             ["kind/enhancement", "KIND/ENHANCEMENT", "Kind/Enhancement"],
-            "owner", "repo", client,
+            "owner",
+            "repo",
+            client,
         )
         assert result == [5, 5, 5]
 
@@ -278,13 +286,15 @@ class TestLabelServiceFormatAvailable:
     async def test_groups_labels_by_prefix(self) -> None:
         """Labels with same prefix should be grouped together."""
         client = MagicMock()
-        client.request = AsyncMock(return_value=[
-            {"id": 1, "name": "type/bug"},
-            {"id": 2, "name": "priority/high"},
-            {"id": 3, "name": "type/feature"},
-            {"id": 4, "name": "priority/low"},
-            {"id": 5, "name": "status/triage"},
-        ])
+        client.request = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "type/bug"},
+                {"id": 2, "name": "priority/high"},
+                {"id": 3, "name": "type/feature"},
+                {"id": 4, "name": "priority/low"},
+                {"id": 5, "name": "status/triage"},
+            ]
+        )
         result = await _label_service.format_available("owner", "repo", client)
         assert "type/bug, type/feature" in result
         assert "priority/high, priority/low" in result
@@ -294,11 +304,13 @@ class TestLabelServiceFormatAvailable:
     async def test_labels_without_prefix(self) -> None:
         """Labels without a '/' should be grouped under empty prefix."""
         client = MagicMock()
-        client.request = AsyncMock(return_value=[
-            {"id": 1, "name": "urgent"},
-            {"id": 2, "name": "type/bug"},
-            {"id": 3, "name": "wontfix"},
-        ])
+        client.request = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "urgent"},
+                {"id": 2, "name": "type/bug"},
+                {"id": 3, "name": "wontfix"},
+            ]
+        )
         result = await _label_service.format_available("owner", "repo", client)
         assert "urgent, wontfix" in result
         assert "type/bug" in result

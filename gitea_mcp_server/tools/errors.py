@@ -125,9 +125,7 @@ def _format_missing_params(
         if param_properties and isinstance(param_properties.get(p), dict):
             enum_vals = _collect_enum_values(param_properties[p])
             if enum_vals:
-                parts.append(
-                    f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})"
-                )
+                parts.append(f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})")
             else:
                 parts.append(p)
         else:
@@ -269,9 +267,7 @@ async def run_with_error_handling(
             route_path,
             sorted(kwargs.keys()),
         )
-        raise_value_error(
-            "An unexpected error occurred. Please check the server logs for details."
-        )
+        raise_value_error("An unexpected error occurred. Please check the server logs for details.")
 
 
 __all__ = [

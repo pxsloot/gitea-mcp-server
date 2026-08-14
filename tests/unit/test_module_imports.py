@@ -107,10 +107,12 @@ class TestAllModulesImport:
 # Modules with zero runtime code (pure types only).  They have no public
 # callables to verify, so they are skipped in the __all__-validation test.
 # ---------------------------------------------------------------------------
-_ZERO_RUNTIME_MODULES = frozenset({
-    "gitea_mcp_server.models",
-    "gitea_mcp_server.openapi_types",
-})
+_ZERO_RUNTIME_MODULES = frozenset(
+    {
+        "gitea_mcp_server.models",
+        "gitea_mcp_server.openapi_types",
+    }
+)
 
 
 def _all_exports_skip_reason(module_name: str) -> str | None:
@@ -186,9 +188,7 @@ class TestAllExportsAreValid:
                 # Use importlib.import_module -> getattr pattern (equivalent
                 # to ``from module import name``) so we can loop.
                 imported = getattr(module, name)
-                assert imported is not None, (
-                    f"from {module_name} import {name} returned None"
-                )
+                assert imported is not None, f"from {module_name} import {name} returned None"
 
 
 class TestNoCircularImports:

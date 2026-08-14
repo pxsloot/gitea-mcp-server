@@ -64,9 +64,24 @@ def blocking_spec() -> OpenAPISpec:
                     "operationId": "issueCreateIssueBlocking",
                     "summary": "Create issue blocking",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "index",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        },
                     ],
                     "requestBody": {
                         "content": {
@@ -86,8 +101,18 @@ def blocking_spec() -> OpenAPISpec:
                     "operationId": "issueCreateIssue",
                     "summary": "Create an issue (no collision)",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "requestBody": {
                         "content": {
@@ -421,9 +446,7 @@ class TestRequestEmission:
             positional call argument is the emitted ``httpx.Request``.
         """
         send = AsyncMock(
-            side_effect=lambda request: httpx.Response(
-                200, json={"number": 7}, request=request
-            )
+            side_effect=lambda request: httpx.Response(200, json={"number": 7}, request=request)
         )
         http_client = MagicMock()
         http_client.base_url = "http://localhost"
@@ -435,9 +458,7 @@ class TestRequestEmission:
         return gitea_client, send
 
     @pytest.mark.asyncio
-    async def test_emitted_body_uses_original_field_names(
-        self, blocking_spec: OpenAPISpec
-    ) -> None:
+    async def test_emitted_body_uses_original_field_names(self, blocking_spec: OpenAPISpec) -> None:
         """Request body contains ``owner``/``repo``/``index``, not ``body_*``."""
         resolve_param_collisions(blocking_spec)
         gitea_client, send = self._make_recording_client()
@@ -533,9 +554,7 @@ class TestSwaggerV1DeleteWithBody:
         spec_path = Path(__file__).parent.parent / "swagger.v1.json"
         with spec_path.open() as f:
             swag: dict[str, Any] = json.load(f)
-        openapi_spec: dict[str, Any] = convert_swagger_to_openapi_v3(
-            cast("SwaggerV2Spec", swag)
-        )
+        openapi_spec: dict[str, Any] = convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", swag))
         # widen to OpenAPISpec for collision resolution
         typed: OpenAPISpec = cast("OpenAPISpec", openapi_spec)
         resolve_param_collisions(typed)
@@ -562,9 +581,7 @@ class TestSwaggerV1DeleteWithBody:
 
         return _tool_dict(asyncio.run(_get()))
 
-    def test_blocking_tool_has_body_prefixed_params(
-        self, tools: dict[str, Any]
-    ) -> None:
+    def test_blocking_tool_has_body_prefixed_params(self, tools: dict[str, Any]) -> None:
         """issue_remove_issue_blocking exposes body_owner/body_repo/body_index."""
         t = tools.get("issue_remove_issue_blocking")
         assert t is not None, f"Tool not found; available: {sorted(tools.keys())}"
@@ -578,9 +595,7 @@ class TestSwaggerV1DeleteWithBody:
         assert "repo" in param_names
         assert "index" in param_names
 
-    def test_dependencies_tool_has_body_prefixed_params(
-        self, tools: dict[str, Any]
-    ) -> None:
+    def test_dependencies_tool_has_body_prefixed_params(self, tools: dict[str, Any]) -> None:
         """issue_remove_issue_dependencies exposes body_owner/body_repo/body_index."""
         t = tools.get("issue_remove_issue_dependencies")
         assert t is not None, f"Tool not found; available: {sorted(tools.keys())}"
@@ -593,9 +608,7 @@ class TestSwaggerV1DeleteWithBody:
         assert "repo" in param_names
         assert "index" in param_names
 
-    def test_request_body_uses_original_field_names(
-        self, converted_spec: OpenAPISpec
-    ) -> None:
+    def test_request_body_uses_original_field_names(self, converted_spec: OpenAPISpec) -> None:
         """Emitted request body maps body_* params back to owner/repo/index."""
         import asyncio
 
@@ -618,9 +631,7 @@ class TestSwaggerV1DeleteWithBody:
         t = tools["issue_remove_issue_blocking"]
 
         # Verify x-param-rename is set and maps body_* → original names
-        op = converted_spec["paths"][
-            "/repos/{owner}/{repo}/issues/{index}/blocks"
-        ]["delete"]
+        op = converted_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["delete"]
         rename_map = op.get("x-param-rename")
         assert rename_map == {
             "body_owner": "owner",
@@ -628,18 +639,14 @@ class TestSwaggerV1DeleteWithBody:
             "body_index": "index",
         }, f"Wrong renaming map: {rename_map}"
 
-    def test_body_params_have_descriptions(
-        self, converted_spec: OpenAPISpec
-    ) -> None:
+    def test_body_params_have_descriptions(self, converted_spec: OpenAPISpec) -> None:
         """Renamed body_* params have non-empty descriptions (issue #681).
 
         The real swagger.v1.json carries descriptions on path params
         (e.g., ``owner of the repo``), so body_* properties should
         inherit them with the ``(Request body)`` prefix.
         """
-        op = converted_spec["paths"][
-            "/repos/{owner}/{repo}/issues/{index}/blocks"
-        ]["delete"]
+        op = converted_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/blocks"]["delete"]
         props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
 
         assert props["body_owner"]["description"], "body_owner has empty description"
@@ -652,13 +659,9 @@ class TestSwaggerV1DeleteWithBody:
         assert "(Request body)" in props["body_repo"]["description"]
         assert "(Request body)" in props["body_index"]["description"]
 
-    def test_dependencies_body_params_have_descriptions(
-        self, converted_spec: OpenAPISpec
-    ) -> None:
+    def test_dependencies_body_params_have_descriptions(self, converted_spec: OpenAPISpec) -> None:
         """Body_* params on the dependencies endpoint also have descriptions."""
-        op = converted_spec["paths"][
-            "/repos/{owner}/{repo}/issues/{index}/dependencies"
-        ]["delete"]
+        op = converted_spec["paths"]["/repos/{owner}/{repo}/issues/{index}/dependencies"]["delete"]
         props = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
 
         assert props["body_owner"]["description"], "body_owner has empty description"
@@ -698,9 +701,24 @@ def allof_blocking_spec() -> OpenAPISpec:
                     "operationId": "issueCreateIssueBlocking",
                     "summary": "Create issue blocking",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "index",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        },
                     ],
                     "requestBody": {
                         "content": {
@@ -730,9 +748,7 @@ def allof_blocking_spec() -> OpenAPISpec:
 class TestAllOfSpecLevelResolution:
     """Tests that resolve_param_collisions handles allOf body schemas."""
 
-    def test_renames_colliding_properties_in_allof(
-        self, allof_blocking_spec: OpenAPISpec
-    ) -> None:
+    def test_renames_colliding_properties_in_allof(self, allof_blocking_spec: OpenAPISpec) -> None:
         """Colliding body properties inside allOf are renamed with body_ prefix."""
         resolve_param_collisions(allof_blocking_spec)
 
@@ -750,9 +766,7 @@ class TestAllOfSpecLevelResolution:
         # Non-colliding allOf properties preserved
         assert "note" in props
 
-    def test_sets_x_param_rename_for_allof(
-        self, allof_blocking_spec: OpenAPISpec
-    ) -> None:
+    def test_sets_x_param_rename_for_allof(self, allof_blocking_spec: OpenAPISpec) -> None:
         """x-param-rename is set for allOf body schema collisions."""
         resolve_param_collisions(allof_blocking_spec)
 
@@ -764,9 +778,7 @@ class TestAllOfSpecLevelResolution:
             "body_index": "index",
         }
 
-    def test_shared_component_not_mutated_by_allof(
-        self, allof_blocking_spec: OpenAPISpec
-    ) -> None:
+    def test_shared_component_not_mutated_by_allof(self, allof_blocking_spec: OpenAPISpec) -> None:
         """Shared IssueMeta component is not mutated by allOf flattening."""
         resolve_param_collisions(allof_blocking_spec)
 
@@ -780,9 +792,7 @@ class TestAllOfFullPipeline:
     """allOf body schema through the full FastMCP provider pipeline (#679)."""
 
     @pytest.mark.asyncio
-    async def test_allof_tool_has_no_path_suffixes(
-        self, allof_blocking_spec: OpenAPISpec
-    ) -> None:
+    async def test_allof_tool_has_no_path_suffixes(self, allof_blocking_spec: OpenAPISpec) -> None:
         """The flattened allOf spec yields body_ params, never __path params.
 
         This is the regression issue #679 guards against: without
@@ -811,7 +821,9 @@ class TestAllOfFullPipeline:
         )
 
         params = blocking_tool.parameters
-        param_names = set(params.get("properties", {}).keys()) if isinstance(params, dict) else set()
+        param_names = (
+            set(params.get("properties", {}).keys()) if isinstance(params, dict) else set()
+        )
 
         # Renamed body params and original path params coexist
         assert {"body_owner", "body_repo", "body_index"} <= param_names
@@ -832,9 +844,7 @@ class TestAllOfFullPipeline:
 class TestOneOfTripwire:
     """oneOf bodies are not flattened; a loud warning surfaces instead."""
 
-    def test_oneof_body_warns_and_stays_intact(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_oneof_body_warns_and_stays_intact(self, caplog: pytest.LogCaptureFixture) -> None:
         """Full resolve_param_collisions logs a tripwire warning for oneOf."""
         spec = make_openapi_spec(
             paths={
@@ -842,17 +852,41 @@ class TestOneOfTripwire:
                     "post": {
                         "operationId": "issueCreateIssueBlocking",
                         "parameters": [
-                            {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                            {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                            {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "index",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            },
                         ],
                         "requestBody": {
                             "content": {
                                 "application/json": {
                                     "schema": {
                                         "oneOf": [
-                                            {"type": "object", "properties": {"owner": {"type": "string"}}},
-                                            {"type": "object", "properties": {"owner": {"type": "string"}, "note": {"type": "string"}}},
+                                            {
+                                                "type": "object",
+                                                "properties": {"owner": {"type": "string"}},
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "owner": {"type": "string"},
+                                                    "note": {"type": "string"},
+                                                },
+                                            },
                                         ],
                                     },
                                 },

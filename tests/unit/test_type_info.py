@@ -130,7 +130,10 @@ class TestBuildTypeIndex:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
                                     },
                                 },
                             },
@@ -171,7 +174,10 @@ class TestBuildTypeIndex:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
                                     },
                                 },
                             },
@@ -354,8 +360,14 @@ class TestResolveTypeInfoEdgeCases:
 
     def test_non_dict_schema_returns_none(self) -> None:
         """Non-dict schema in type index returns None."""
-        index = {"TestType": {"schema": "not a dict", "returned_by": [], "accepted_by": [],
-                               "referenced_types": []}}
+        index = {
+            "TestType": {
+                "schema": "not a dict",
+                "returned_by": [],
+                "accepted_by": [],
+                "referenced_types": [],
+            }
+        }
         result = resolve_type_info({"openapi": "3.1.0"}, index, "TestType")
         assert result is None
 
@@ -374,8 +386,12 @@ class TestWalkResponseRefs:
     def test_ref_in_response_is_resolved(self) -> None:
         """$ref in response is resolved before content access."""
         type_index = {
-            "User": {"schema": {"type": "object"}, "referenced_types": [],
-                     "returned_by": [], "accepted_by": []},
+            "User": {
+                "schema": {"type": "object"},
+                "referenced_types": [],
+                "returned_by": [],
+                "accepted_by": [],
+            },
         }
         spec = make_openapi_spec(
             components={
@@ -402,11 +418,16 @@ class TestWalkResponseRefs:
                 },
             },
         )
-        _walk_response_refs(spec, {
-            "200": {
-                "$ref": "#/components/responses/UserResponse",
+        _walk_response_refs(
+            spec,
+            {
+                "200": {
+                    "$ref": "#/components/responses/UserResponse",
+                },
             },
-        }, "op1", type_index)
+            "op1",
+            type_index,
+        )
         # The ref resolves to a response containing a $ref to User,
         # so User should be marked as returned_by op1
         assert "op1" in type_index["User"]["returned_by"]
@@ -414,25 +435,35 @@ class TestWalkResponseRefs:
     def test_non_dict_content_skipped(self) -> None:
         """Response with non-dict content is skipped."""
         type_index: dict = {}
-        _walk_response_refs(self.MINIMAL_SPEC, {
-            "200": {
-                "description": "OK",
-                "content": "not a dict",
+        _walk_response_refs(
+            self.MINIMAL_SPEC,
+            {
+                "200": {
+                    "description": "OK",
+                    "content": "not a dict",
+                },
             },
-        }, "op1", type_index)
+            "op1",
+            type_index,
+        )
         assert type_index == {}
 
     def test_non_dict_json_content_skipped(self) -> None:
         """Response with non-dict JSON content is skipped."""
         type_index: dict = {}
-        _walk_response_refs(self.MINIMAL_SPEC, {
-            "200": {
-                "description": "OK",
-                "content": {
-                    "application/json": "not a dict",
+        _walk_response_refs(
+            self.MINIMAL_SPEC,
+            {
+                "200": {
+                    "description": "OK",
+                    "content": {
+                        "application/json": "not a dict",
+                    },
                 },
             },
-        }, "op1", type_index)
+            "op1",
+            type_index,
+        )
         assert type_index == {}
 
 
@@ -467,11 +498,15 @@ class TestWalkRequestBodyRefs:
     def test_non_dict_media_item_skipped(self) -> None:
         """Non-dict media item in request body is skipped."""
         type_index: dict = {}
-        _walk_request_body_refs({
-            "content": {
-                "application/json": "not a dict",
+        _walk_request_body_refs(
+            {
+                "content": {
+                    "application/json": "not a dict",
+                },
             },
-        }, "op1", type_index)
+            "op1",
+            type_index,
+        )
         assert type_index == {}
 
 
@@ -490,19 +525,22 @@ class TestBuildTypeIndexEdgeCases:
 
     def test_non_dict_path_item_skipped(self) -> None:
         """Non-dict path item is skipped."""
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/valid": {
-                    "get": {
-                        "operationId": "get_valid",
-                        "responses": {"200": {"description": "OK"}},
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/valid": {
+                        "get": {
+                            "operationId": "get_valid",
+                            "responses": {"200": {"description": "OK"}},
+                        },
                     },
+                    "/invalid": "not a dict",
                 },
-                "/invalid": "not a dict",
+                "components": {"schemas": {}},
             },
-            "components": {"schemas": {}},
-        })
+        )
         result = build_type_index(spec)
         # Only the valid path should be processed; no error for the invalid one
         assert isinstance(result, dict)

@@ -46,12 +46,12 @@ class JsonShape(QualityContract):
     keys: tuple[str, ...] = ()
     key_types: tuple[tuple[str, type], ...] = ()
 
-    async def verify(self, mcp: ClientSession, tool_name: str,
-                     args: dict[str, Any], result: Any) -> None:
+    async def verify(
+        self, mcp: ClientSession, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
         data = assert_result_ok(result)
         assert isinstance(data, self.expected_type), (
-            f"{tool_name}: expected {self.expected_type.__name__}, "
-            f"got {type(data).__name__}"
+            f"{tool_name}: expected {self.expected_type.__name__}, got {type(data).__name__}"
         )
         if isinstance(data, dict):
             assert_keys(data, *self.keys)
@@ -64,12 +64,11 @@ class JsonContent(QualityContract):
 
     expected: tuple[tuple[str, Any], ...]
 
-    async def verify(self, mcp: ClientSession, tool_name: str,
-                     args: dict[str, Any], result: Any) -> None:
+    async def verify(
+        self, mcp: ClientSession, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
         data = assert_result_ok(result)
-        assert isinstance(data, dict), (
-            f"{tool_name}: content contract requires an object result"
-        )
+        assert isinstance(data, dict), f"{tool_name}: content contract requires an object result"
         assert_content(data, **dict(self.expected))
 
 
@@ -79,11 +78,10 @@ class FormatsEquivalent(QualityContract):
 
     skip_values: bool = False
 
-    async def verify(self, mcp: ClientSession, tool_name: str,
-                     args: dict[str, Any], result: Any) -> None:
-        await assert_formats_equivalent(
-            mcp, tool_name, args, skip_values=self.skip_values
-        )
+    async def verify(
+        self, mcp: ClientSession, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
+        await assert_formats_equivalent(mcp, tool_name, args, skip_values=self.skip_values)
 
 
 @dataclass(frozen=True)
@@ -92,15 +90,14 @@ class ErrorContent(QualityContract):
 
     fragments: tuple[str, ...]
 
-    async def verify(self, mcp: ClientSession, tool_name: str,
-                     args: dict[str, Any], result: Any) -> None:
+    async def verify(
+        self, mcp: ClientSession, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
         assert result.isError, f"{tool_name}: expected an error result"
         text = extract_text_content(result.content).lower()
-        missing = [fragment for fragment in self.fragments
-                   if fragment.lower() not in text]
+        missing = [fragment for fragment in self.fragments if fragment.lower() not in text]
         assert not missing, (
-            f"{tool_name}: error omitted expected fragments {missing}; "
-            f"received {text[:500]!r}"
+            f"{tool_name}: error omitted expected fragments {missing}; received {text[:500]!r}"
         )
 
 
@@ -110,17 +107,16 @@ class TextContains(QualityContract):
 
     fragments: tuple[str, ...]
 
-    async def verify(self, mcp: ClientSession, tool_name: str,
-                     args: dict[str, Any], result: Any) -> None:
+    async def verify(
+        self, mcp: ClientSession, tool_name: str, args: dict[str, Any], result: Any
+    ) -> None:
         assert not result.isError, (
-            f"{tool_name}: tool call failed: "
-            f"{extract_text_content(result.content)[:500]}"
+            f"{tool_name}: tool call failed: {extract_text_content(result.content)[:500]}"
         )
         text = extract_text_content(result.content)
         missing = [fragment for fragment in self.fragments if fragment not in text]
         assert not missing, (
-            f"{tool_name}: output omitted expected fragments {missing}; "
-            f"received {text[:500]!r}"
+            f"{tool_name}: output omitted expected fragments {missing}; received {text[:500]!r}"
         )
 
 

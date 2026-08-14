@@ -115,8 +115,11 @@ For a local test Gitea instance: `docker compose -f docker-compose.gitea.yml up 
 # Tests
 uv run pytest tests/unit/ -x -q
 
-# Lint & type-check
+# Lint & format
 uv run ruff check gitea_mcp_server/
+uv run ruff format --check .
+
+# Type-check
 uv run mypy gitea_mcp_server/
 
 # Coverage

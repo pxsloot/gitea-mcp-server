@@ -21,7 +21,8 @@ def _tool_dict(tools: Sequence[Any]) -> dict[str, Any]:
 @pytest.fixture
 def minimal_spec() -> OpenAPISpec:
     """Minimal OpenAPI spec with two operations."""
-    return make_openapi_spec(paths={
+    return make_openapi_spec(
+        paths={
             "/repos/{owner}/{repo}/issues": {
                 "post": {
                     "operationId": "issue_create_issue",
@@ -67,7 +68,9 @@ def minimal_spec() -> OpenAPISpec:
 
 
 @pytest.mark.asyncio
-async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(minimal_spec: OpenAPISpec) -> None:
+async def test_parameter_extensions_apply_to_spec_and_are_visible_in_tools(
+    minimal_spec: OpenAPISpec,
+) -> None:
     """Test that mcp_extensions.yaml parameter customizations propagate through spec to tools.
 
     Note: Tool-level metadata overrides (title, description, tags, hints) are handled

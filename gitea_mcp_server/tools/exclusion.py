@@ -33,7 +33,7 @@ def _is_tag_pattern(pattern: str) -> bool:
 
 def matches_pattern(name: str, tags: set[str], pattern: str, tool_prefix: str = "") -> bool:
     if _is_tag_pattern(pattern):
-        tag_name = pattern[len(_TAG_PREFIX):]
+        tag_name = pattern[len(_TAG_PREFIX) :]
         return tag_name in tags
     if tool_prefix and fnmatch(f"{tool_prefix}{name}", pattern):
         return True

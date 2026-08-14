@@ -161,8 +161,13 @@ def register_unified_search(
 
         # Get all ranked results (no pre-slicing).
         all_ranked, total_count = search_and_slice(
-            all_items, all_texts, query, 1, len(all_items) or 1,
-            min_score=min_score, tool_prefix=tool_prefix,
+            all_items,
+            all_texts,
+            query,
+            1,
+            len(all_items) or 1,
+            min_score=min_score,
+            tool_prefix=tool_prefix,
         )
 
         if total_count == 0:
@@ -198,67 +203,75 @@ def register_unified_search(
             )
 
         return format_paginated_result(
-            all_ranked, total_count, format, page, limit, fetch_all,
+            all_ranked,
+            total_count,
+            format,
+            page,
+            limit,
+            fetch_all,
             markdown_extras=extras or None,
             detail=detail,
         )
 
-    register_all_synthetic_tools(mcp, [
-        SyntheticToolSpec(
-            impl=search,
-            name="search",
-            description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
-            tags={"synthetic"},
-            annotations=synthetic_annotations(read_only=True, open_world=False),
-            output_schema={
-                "type": "object",
-                "properties": {
-                    "result": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "description": "One of: tool, doc, resource",
+    register_all_synthetic_tools(
+        mcp,
+        [
+            SyntheticToolSpec(
+                impl=search,
+                name="search",
+                description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
+                tags={"synthetic"},
+                annotations=synthetic_annotations(read_only=True, open_world=False),
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "description": "One of: tool, doc, resource",
+                                    },
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "tags": {"type": "array", "items": {"type": "string"}},
+                                    "score": {
+                                        "type": "number",
+                                        "description": "Normalized relevance score (0.0-1.0). "
+                                        "1.0 is the top match for this query.",
+                                    },
+                                    "access_uri": {
+                                        "type": "string",
+                                        "description": "How to access this item",
+                                    },
+                                    "uri": {
+                                        "type": "string",
+                                        "description": "Resource URI (resource results only)",
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "description": "Doc title (doc results only)",
+                                    },
                                 },
-                                "name": {"type": "string"},
-                                "description": {"type": "string"},
-                                "tags": {"type": "array", "items": {"type": "string"}},
-                                "score": {
-                                    "type": "number",
-                                    "description": "Normalized relevance score (0.0-1.0). "
-                                    "1.0 is the top match for this query.",
-                                },
-                                "access_uri": {
-                                    "type": "string",
-                                    "description": "How to access this item",
-                                },
-                                "uri": {
-                                    "type": "string",
-                                    "description": "Resource URI (resource results only)",
-                                },
-                                "title": {
-                                    "type": "string",
-                                    "description": "Doc title (doc results only)",
+                                "example": {
+                                    "type": "tool",
+                                    "name": "gitea_issue_create_issue",
+                                    "description": "Create a new issue in a repository",
+                                    "tags": ["issue"],
+                                    "score": 1.0,
+                                    "access_uri": "gitea_issue_create_issue",
                                 },
                             },
-                            "example": {
-                                "type": "tool",
-                                "name": "gitea_issue_create_issue",
-                                "description": "Create a new issue in a repository",
-                                "tags": ["issue"],
-                                "score": 1.0,
-                                "access_uri": "gitea_issue_create_issue",
-                            },
+                            "description": "Merged results across tools, docs, and resources",
                         },
-                        "description": "Merged results across tools, docs, and resources",
                     },
                 },
-            },
-            paginated=True,
-        ),
-    ])
+                paginated=True,
+            ),
+        ],
+    )
 
     logger.info("Registered unified search tool")
 

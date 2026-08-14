@@ -411,8 +411,16 @@ class TestFlattenBodySchema:
         """required lists from all members are merged and de-duplicated."""
         schema: dict[str, Any] = {
             "allOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}}, "required": ["owner"]},
-                {"type": "object", "properties": {"repo": {"type": "string"}}, "required": ["repo", "owner"]},
+                {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}},
+                    "required": ["owner"],
+                },
+                {
+                    "type": "object",
+                    "properties": {"repo": {"type": "string"}},
+                    "required": ["repo", "owner"],
+                },
             ],
         }
         spec = make_openapi_spec()
@@ -426,7 +434,11 @@ class TestFlattenBodySchema:
             "properties": {"note": {"type": "string"}},
             "required": ["note"],
             "allOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}}, "required": ["owner", "note"]},
+                {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}},
+                    "required": ["owner", "note"],
+                },
             ],
         }
         spec = make_openapi_spec()
@@ -492,7 +504,10 @@ class TestFlattenBodySchema:
             "type": "object",
             "properties": {"owner": {"type": "integer"}},
             "allOf": [
-                {"type": "object", "properties": {"owner": {"type": "string"}, "note": {"type": "string"}}},
+                {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}, "note": {"type": "string"}},
+                },
             ],
         }
         spec = make_openapi_spec()
@@ -543,7 +558,10 @@ class TestFlattenBodySchema:
         schema: dict[str, Any] = {
             "oneOf": [
                 {"type": "object", "properties": {"owner": {"type": "string"}}},
-                {"type": "object", "properties": {"owner": {"type": "string"}, "url": {"type": "string"}}},
+                {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}, "url": {"type": "string"}},
+                },
             ],
         }
         spec = make_openapi_spec()
@@ -730,9 +748,7 @@ class TestRenameCollidingBodyProperties:
         )
 
         body_owner = cast("dict[str, Any]", schema["properties"]["body_owner"])
-        assert body_owner["description"] == (
-            "owner field of the request body resource"
-        )
+        assert body_owner["description"] == ("owner field of the request body resource")
 
     def test_preserves_existing_description(self) -> None:
         """Non-empty existing description is not overwritten."""
@@ -921,7 +937,9 @@ class TestResolveOperationCollisions:
 
         spec = make_openapi_spec()
         result = _resolve_operation_collisions(
-            op, {"owner", "repo"}, spec,
+            op,
+            {"owner", "repo"},
+            spec,
             path_item_params=[],
         )
         assert result == {"body_owner": "owner", "body_repo": "repo"}
@@ -1100,9 +1118,7 @@ class TestResolveOperationCollisions:
 
     # --- oneOf/anyOf body schemas: tripwire warning (issue #679) ---
 
-    def test_oneof_body_warns_and_is_not_renamed(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_oneof_body_warns_and_is_not_renamed(self, caplog: pytest.LogCaptureFixture) -> None:
         """oneOf bodies are not flattened; a tripwire warning is logged.
 
         FastMCP does not explode oneOf into parameters, so there is no
@@ -1121,8 +1137,20 @@ class TestResolveOperationCollisions:
                     "application/json": {
                         "schema": {
                             "oneOf": [
-                                {"type": "object", "properties": {"owner": {"type": "string"}, "url": {"type": "string"}}},
-                                {"type": "object", "properties": {"owner": {"type": "string"}, "content": {"type": "string"}}},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "owner": {"type": "string"},
+                                        "url": {"type": "string"},
+                                    },
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "owner": {"type": "string"},
+                                        "content": {"type": "string"},
+                                    },
+                                },
                             ],
                         },
                     },
@@ -1141,9 +1169,7 @@ class TestResolveOperationCollisions:
         assert "oneOf" in schema
         assert "properties" not in schema
 
-    def test_anyof_body_warns_and_is_not_renamed(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_anyof_body_warns_and_is_not_renamed(self, caplog: pytest.LogCaptureFixture) -> None:
         """anyOf bodies trigger the same tripwire warning as oneOf."""
         spec = make_openapi_spec()
         op: dict[str, Any] = {
@@ -1200,8 +1226,14 @@ class TestResolveOperationCollisions:
                             "allOf": [
                                 {
                                     "oneOf": [
-                                        {"type": "object", "properties": {"owner": {"type": "string"}}},
-                                        {"type": "object", "properties": {"note": {"type": "string"}}},
+                                        {
+                                            "type": "object",
+                                            "properties": {"owner": {"type": "string"}},
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {"note": {"type": "string"}},
+                                        },
                                     ],
                                 },
                                 {"type": "object", "properties": {"note": {"type": "string"}}},
@@ -1612,9 +1644,24 @@ class TestResolveParamCollisions:
                     "post": {
                         "operationId": "issueCreateIssueBlocking",
                         "parameters": [
-                            {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                            {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                            {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "index",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            },
                         ],
                         "requestBody": {
                             "content": {

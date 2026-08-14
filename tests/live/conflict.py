@@ -59,7 +59,11 @@ class BootstrapVerificationError(AssertionError):
     """
 
     def __init__(
-        self, entity: str, field: str, expected: object, observed: object,
+        self,
+        entity: str,
+        field: str,
+        expected: object,
+        observed: object,
     ) -> None:
         self.entity = entity
         self.field = field
@@ -90,7 +94,11 @@ class PostconditionError(AssertionError):
     """
 
     def __init__(
-        self, entity: str, field: str, expected: object, observed: object,
+        self,
+        entity: str,
+        field: str,
+        expected: object,
+        observed: object,
     ) -> None:
         self.entity = entity
         self.field = field
@@ -120,7 +128,11 @@ class IrreversibleTransitionError(AssertionError):
     """
 
     def __init__(
-        self, entity: str, field: str, expected: object, observed: object,
+        self,
+        entity: str,
+        field: str,
+        expected: object,
+        observed: object,
     ) -> None:
         self.entity = entity
         self.field = field
@@ -191,10 +203,7 @@ class RepoRequest:
             a = getattr(self, field_name)
             b = getattr(other, field_name)
             if a != b:
-                mismatches.append(
-                    f"  {field_name}: requested {b!r}, "
-                    f"already created with {a!r}"
-                )
+                mismatches.append(f"  {field_name}: requested {b!r}, already created with {a!r}")
         # description is NOT checked — cosmetic metadata, not structural.
         if mismatches:
             raise ConflictError(self.cache_key, "\n".join(mismatches))
@@ -231,8 +240,7 @@ def check_conflict(
             continue
         if requested_val != stored_val:
             mismatches.append(
-                f"  {key}: requested {requested_val!r}, "
-                f"already created with {stored_val!r}"
+                f"  {key}: requested {requested_val!r}, already created with {stored_val!r}"
             )
     # Also catch keys present in the new request but absent from stored.
     for key, requested_val in requested_options.items():
@@ -240,8 +248,7 @@ def check_conflict(
             continue
         if key not in stored_options:
             mismatches.append(
-                f"  {key}: requested {requested_val!r}, "
-                f"not present in stored options"
+                f"  {key}: requested {requested_val!r}, not present in stored options"
             )
     if mismatches:
         resource = f"{entity_type}({identity!r})"

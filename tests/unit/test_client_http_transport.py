@@ -47,7 +47,9 @@ class TestHTTPTransport:
         assert client is client2
 
     @pytest.mark.asyncio
-    async def test_ssl_configuration_with_cert_file(self, config: Config, mocker: MockerFixture) -> None:
+    async def test_ssl_configuration_with_cert_file(
+        self, config: Config, mocker: MockerFixture
+    ) -> None:
         """Test SSL configuration when ssl_cert_file is set."""
         config.ssl_cert_file = "/path/to/ca-bundle.crt"
         transport = HTTPTransport(config)

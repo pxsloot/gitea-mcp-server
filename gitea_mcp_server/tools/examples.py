@@ -256,7 +256,10 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         for prop_name_inner, prop_schema in properties.items():
             if isinstance(prop_schema, dict):
                 result[prop_name_inner] = schema_to_compact_example(
-                    prop_schema, depth + 1, max_depth, prop_name=prop_name_inner,
+                    prop_schema,
+                    depth + 1,
+                    max_depth,
+                    prop_name=prop_name_inner,
                     openapi_spec=openapi_spec,
                 )
         return result
@@ -304,9 +307,7 @@ def serialize_tool_schema(
         # directly — no unwrapping needed.
         raw = (tool.meta or {}).get("output_schema_raw")
         if raw is not None:
-            example = schema_to_compact_example(
-                raw, openapi_spec=openapi_spec
-            )
+            example = schema_to_compact_example(raw, openapi_spec=openapi_spec)
         else:
             # Fallback: generate from the resolved output schema.
             # The resolved schema has no $ref pointers, so openapi_spec
@@ -314,9 +315,7 @@ def serialize_tool_schema(
             # the code path consistent and future-proof.
             # Unwrap the result envelope to get the inner schema.
             inner = unwrap_result_schema(tool.output_schema) or {}
-            example = schema_to_compact_example(
-                inner, openapi_spec=openapi_spec
-            )
+            example = schema_to_compact_example(inner, openapi_spec=openapi_spec)
         # Guard against null results (e.g. empty-body endpoints where the
         # schema has ``type: null`` and ``schema_to_compact_example``
         # returns ``None``).  Silently omit the field — agents can infer

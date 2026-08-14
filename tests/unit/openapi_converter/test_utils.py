@@ -16,10 +16,13 @@ class TestCamelToSnake:
     def test_simple_pascalcase(self) -> None:
         assert camel_to_snake("CreateIssue") == "create_issue"
 
-    @pytest.mark.parametrize(("input_str", "expected"), [
-        ("issueCreateIssue", "issue_create_issue"),
-        ("repoGetBranch", "repo_get_branch"),
-    ])
+    @pytest.mark.parametrize(
+        ("input_str", "expected"),
+        [
+            ("issueCreateIssue", "issue_create_issue"),
+            ("repoGetBranch", "repo_get_branch"),
+        ],
+    )
     def test_multiple_camel_phrases(self, input_str: str, expected: Any) -> None:
         assert camel_to_snake(input_str) == expected
 

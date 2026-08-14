@@ -30,6 +30,9 @@ jobs:
       - name: Lint tests (ruff)
         run: uv run ruff check tests/
 
+      - name: Check formatting (ruff format)
+        run: uv run ruff format --check .
+
       - name: Type check (mypy)
         run: uv run mypy gitea_mcp_server/
 

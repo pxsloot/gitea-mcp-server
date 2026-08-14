@@ -893,6 +893,7 @@ class TestInjectEnumIntoDefs:
         _inject_enum_into_defs(existing_schema, resolved, defs)
         assert defs["Something"]["enum"] == ["a", "b"]
 
+
 class TestInferEnumFromDescription:
     """Tests for _infer_enum_from_description."""
 
@@ -1152,9 +1153,9 @@ class TestAugmentSchemaWithValidation:
         augment_schema_with_validation(component)
         state_schema = component.parameters["properties"]["state"]
         enum_vals = _collect_enum_values(state_schema)
-        assert enum_vals == [
-            "pending", "success", "error", "failure", "warning"
-        ], f"Expected commit status states, got {enum_vals}"
+        assert enum_vals == ["pending", "success", "error", "failure", "warning"], (
+            f"Expected commit status states, got {enum_vals}"
+        )
 
     def test_preserves_existing_enum_on_issue_state_param(self) -> None:
         """Issue tools' state param must keep its spec-defined enum.

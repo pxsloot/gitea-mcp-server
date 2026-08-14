@@ -93,6 +93,7 @@ class ResourceParamConfig:
     genuinely display-only.  The mechanism is kept as a clean abstraction
     for future use should a genuine display-only param ever appear.
     """
+
     query_params: list[str] | None = None
     query_param_validators: dict[str, list[str]] | None = None
     context_params: list[str] | None = None
@@ -158,16 +159,18 @@ def _validate_optional_param(
         ResourceError: If ``value`` is not in ``allowed_values``.
     """
     if value not in allowed_values:
-        raise ResourceError({
-            "code": "VALIDATION_ERROR",
-            "message": (
-                f"Invalid {key} parameter: '{value}'. "
-                f"Must be one of: {', '.join(allowed_values)}."
-            ),
-            "detail": f"The '{key}' parameter must be one of: {', '.join(allowed_values)}.",
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-        })
+        raise ResourceError(
+            {
+                "code": "VALIDATION_ERROR",
+                "message": (
+                    f"Invalid {key} parameter: '{value}'. "
+                    f"Must be one of: {', '.join(allowed_values)}."
+                ),
+                "detail": f"The '{key}' parameter must be one of: {', '.join(allowed_values)}.",
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+            }
+        )
 
 
 def _build_handler_meta(
@@ -261,54 +264,66 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
                 msg = error_message.format(**(error_kwargs or {}))
             except (KeyError, ValueError):
                 msg = error_message
-            raise ResourceError({
-                "code": "NOT_FOUND",
-                "message": msg,
-                "detail": str(e),
-                "resource_type": resource_type,
-                "resource_id": api_path,
-            }) from e
+            raise ResourceError(
+                {
+                    "code": "NOT_FOUND",
+                    "message": msg,
+                    "detail": str(e),
+                    "resource_type": resource_type,
+                    "resource_id": api_path,
+                }
+            ) from e
         if status:
-            raise ResourceError({
-                "code": "API_ERROR",
-                "message": f"API error {status} for {uri}",
+            raise ResourceError(
+                {
+                    "code": "API_ERROR",
+                    "message": f"API error {status} for {uri}",
+                    "detail": str(e),
+                    "resource_type": resource_type,
+                    "resource_id": api_path,
+                }
+            ) from e
+        raise ResourceError(
+            {
+                "code": "INTERNAL_ERROR",
+                "message": f"Unexpected error fetching resource: {uri}",
                 "detail": str(e),
                 "resource_type": resource_type,
                 "resource_id": api_path,
-            }) from e
-        raise ResourceError({
-            "code": "INTERNAL_ERROR",
-            "message": f"Unexpected error fetching resource: {uri}",
-            "detail": str(e),
-            "resource_type": resource_type,
-            "resource_id": api_path,
-        }) from e
+            }
+        ) from e
 
     # When a handler_hook is provided, pass the response through the hook
     # and return as text/plain.  This is used for resources that need
     # post-processing (e.g., base64 decoding of Gitea ContentsResponse).
     if handler_hook is not None:
         content = await handler_hook(data)
-        return ResourceResult(contents=[
-            ResourceContent(content=content, mime_type="text/plain"),
-        ])
+        return ResourceResult(
+            contents=[
+                ResourceContent(content=content, mime_type="text/plain"),
+            ]
+        )
 
     if isinstance(data, str):
-        return ResourceResult(contents=[
-            ResourceContent(content=data, mime_type="text/plain"),
-        ])
+        return ResourceResult(
+            contents=[
+                ResourceContent(content=data, mime_type="text/plain"),
+            ]
+        )
 
-    return ResourceResult(contents=[
-        ResourceContent(
-            content=json.dumps(data),
-            mime_type="application/json",
-            meta=_build_handler_meta(
-                response_schema=response_schema,
-                format_hint=format_hint,
-                **(handler_extra_meta or {}),
+    return ResourceResult(
+        contents=[
+            ResourceContent(
+                content=json.dumps(data),
+                mime_type="application/json",
+                meta=_build_handler_meta(
+                    response_schema=response_schema,
+                    format_hint=format_hint,
+                    **(handler_extra_meta or {}),
+                ),
             ),
-        ),
-    ])
+        ]
+    )
 
 
 def _set_handler_docstring(
@@ -338,7 +353,9 @@ def _set_handler_docstring(
                 else:
                     handler.__doc__ = f"Resource for {method} {api_path}"
 
-    if handler.__doc__ is None:  # pragma: no cover — handler closures in make_api_resource always have docstrings; kept as safety net for manual handler creation
+    if (
+        handler.__doc__ is None
+    ):  # pragma: no cover — handler closures in make_api_resource always have docstrings; kept as safety net for manual handler creation
         handler.__doc__ = f"Resource for {method} {api_path}"
 
 
@@ -494,10 +511,15 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             ``openapi_spec`` (when spec is available).
     """
     # Scope check.
-    if scope is not None and available_scopes is not None and not has_sufficient_scope(scope, available_scopes):
+    if (
+        scope is not None
+        and available_scopes is not None
+        and not has_sufficient_scope(scope, available_scopes)
+    ):
         logger.debug(
             "Skipping resource %s: requires scope %s",
-            uri, scope,
+            uri,
+            scope,
         )
         return None
 
@@ -534,10 +556,13 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         logger.warning(
             "make_api_resource: handler_hook set with format_hint=%r for %s -- "
             "format_hint is ignored when handler_hook is provided",
-            format_hint, uri,
+            format_hint,
+            uri,
         )
     method_lower = method.lower()
-    response_schema = None if handler_hook else _auto_derive_schema(openapi_spec, api_path, method_lower)
+    response_schema = (
+        None if handler_hook else _auto_derive_schema(openapi_spec, api_path, method_lower)
+    )
     if response_schema is None and openapi_spec is not None and handler_hook is None:
         paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         if paths:
@@ -585,18 +610,30 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             for key, value in kwargs.items():
                 if query_params and key in query_params and value is not None:
                     # Validate against allowed values if a validator is registered.
-                    if query_param_validators and key in query_param_validators and isinstance(value, str):
+                    if (
+                        query_param_validators
+                        and key in query_param_validators
+                        and isinstance(value, str)
+                    ):
                         _validate_optional_param(
-                            key, value, query_param_validators[key],
+                            key,
+                            value,
+                            query_param_validators[key],
                             resource_type=_resource_type,
                             resource_id=formatted_path,
                         )
                     query_kwargs[key] = value
                 elif context_params and key in context_params and value is not None:
                     # Context-only param: validate but do NOT forward to API.
-                    if context_param_validators and key in context_param_validators and isinstance(value, str):
+                    if (
+                        context_param_validators
+                        and key in context_param_validators
+                        and isinstance(value, str)
+                    ):
                         _validate_optional_param(
-                            key, value, context_param_validators[key],
+                            key,
+                            value,
+                            context_param_validators[key],
                             resource_type=_resource_type,
                             resource_id=formatted_path,
                         )
@@ -613,7 +650,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                         logger.warning(
                             "make_api_resource %s: unknown kwarg %r=%r "
                             "-- not a path, query, or context param; ignored",
-                            uri, key, value,
+                            uri,
+                            key,
+                            value,
                         )
 
             # Forward requested context keys as display metadata for
@@ -625,9 +664,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             handler_extra_meta: dict[str, Any] | None = None
             if context_meta_keys:
                 extra = {
-                    k: kwargs[k]
-                    for k in context_meta_keys
-                    if k in kwargs and kwargs[k] is not None
+                    k: kwargs[k] for k in context_meta_keys if k in kwargs and kwargs[k] is not None
                 }
                 if extra:
                     handler_extra_meta = extra
@@ -642,7 +679,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             )
 
             return await _request_and_wrap(
-                gitea_client, method, formatted_path,
+                gitea_client,
+                method,
+                formatted_path,
                 params=query_kwargs or None,
                 response_schema=response_schema,
                 format_hint=format_hint,
@@ -664,10 +703,13 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 logger.warning(
                     "make_api_resource: context_meta_keys=%r ignored for %s "
                     "(concrete URI — no handler kwargs to forward from)",
-                    context_meta_keys, uri,
+                    context_meta_keys,
+                    uri,
                 )
             return await _request_and_wrap(
-                gitea_client, method, api_path,
+                gitea_client,
+                method,
+                api_path,
                 response_schema=response_schema,
                 format_hint=format_hint,
                 resource_type=_resource_type,
@@ -696,7 +738,8 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         _optional_param_names.extend(context_params)
     if _optional_param_names:
         _sig = _build_optional_param_signature(
-            inspect.signature(handler), _optional_param_names,
+            inspect.signature(handler),
+            _optional_param_names,
         )
         if _sig != inspect.signature(handler):
             handler.__signature__ = _sig  # type: ignore[attr-defined]

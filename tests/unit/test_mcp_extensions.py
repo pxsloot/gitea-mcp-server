@@ -85,7 +85,9 @@ class TestApplyMcpExtensions:
 
         apply_mcp_extensions(spec, extensions)
 
-        param = cast("dict[str, Any]", spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0])
+        param = cast(
+            "dict[str, Any]", spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0]
+        )
         assert param["description"] == "Custom title parameter description"
         assert "examples" in param
         assert param["examples"] == ["Bug: Something broke", "Feature: Add something"]
@@ -271,10 +273,19 @@ class TestApplyMcpExtensions:
 
         assert spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["summary"] == "Original create"
         assert (
-            spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["summary"] == "Original edit"
+            spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["summary"]
+            == "Original edit"
         )
-        assert spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0]["description"] == "Custom title"
-        assert spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["parameters"][0]["description"] == "Custom body"
+        assert (
+            spec["paths"]["/repos/{owner}/{repo}/issues"]["post"]["parameters"][0]["description"]
+            == "Custom title"
+        )
+        assert (
+            spec["paths"]["/repos/{owner}/{repo}/issues/{index}"]["put"]["parameters"][0][
+                "description"
+            ]
+            == "Custom body"
+        )
 
 
 class TestLoadMcpExtensions:
@@ -352,6 +363,7 @@ class TestLoadMcpExtensionsEdgeCases:
             patch("pathlib.Path.exists", return_value=False),
         ):
             from gitea_mcp_server.server_setup.mcp_extensions import _find_project_root
+
             with pytest.raises(RuntimeError, match="Could not find project root"):
                 _find_project_root()
 
@@ -364,9 +376,9 @@ class TestLoadMcpExtensionsEdgeCases:
             patch.dict("os.environ", {"MCP_EXTENSIONS_PATH": str(yaml_file)}),
             patch("gitea_mcp_server.server_setup.mcp_extensions.Path.open") as mock_open,
         ):
-                mock_open.side_effect = OSError("Permission denied")
-                with pytest.raises(OSError, match="Permission denied"):
-                    load_mcp_extensions()
+            mock_open.side_effect = OSError("Permission denied")
+            with pytest.raises(OSError, match="Permission denied"):
+                load_mcp_extensions()
 
     def test_apply_parameter_extensions_skips_missing_name(self) -> None:
         """apply_mcp_extensions skips parameter extensions with no name."""

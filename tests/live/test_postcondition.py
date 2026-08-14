@@ -39,9 +39,12 @@ def _mock_result(
     if is_error:
         result.content = [TextContent(type="text", text=error_text)]
     else:
-        result.content = [TextContent(
-            type="text", text=json.dumps(data or {}),
-        )]
+        result.content = [
+            TextContent(
+                type="text",
+                text=json.dumps(data or {}),
+            )
+        ]
     return result
 
 
@@ -76,7 +79,10 @@ class TestPostconditionError:
 
     def test_all_fields_accessible(self) -> None:
         err = PostconditionError(
-            "issue #1 ('Bug')", "state", "closed", "open",
+            "issue #1 ('Bug')",
+            "state",
+            "closed",
+            "open",
         )
         assert err.entity == "issue #1 ('Bug')"
         assert err.field == "state"
@@ -86,7 +92,10 @@ class TestPostconditionError:
 
     def test_str_includes_all_context(self) -> None:
         err = PostconditionError(
-            "PR #2 ('Feature')", "state", "open", "closed",
+            "PR #2 ('Feature')",
+            "state",
+            "open",
+            "closed",
         )
         text = str(err)
         assert "PR #2 ('Feature')" in text
@@ -100,7 +109,10 @@ class TestIrreversibleTransitionError:
 
     def test_all_fields_accessible(self) -> None:
         err = IrreversibleTransitionError(
-            "PR #2 ('Fix')", "merged", False, True,
+            "PR #2 ('Fix')",
+            "merged",
+            False,
+            True,
         )
         assert err.entity == "PR #2 ('Fix')"
         assert err.field == "merged"
@@ -110,7 +122,10 @@ class TestIrreversibleTransitionError:
 
     def test_str_describes_permanence(self) -> None:
         err = IrreversibleTransitionError(
-            "PR #1 ('Feature')", "merged", False, True,
+            "PR #1 ('Feature')",
+            "merged",
+            False,
+            True,
         )
         text = str(err)
         assert "Irreversible" in text
@@ -251,9 +266,14 @@ class TestIssuePostcondition:
         state = _new_state()
         mock_s = await _mock_session(
             # list_issues with state=all returns a closed issue
-            _mock_result(data=cast("list[dict[str, object]]", [
-                {"number": 1, "title": "Old Bug", "state": "closed"},
-            ])),
+            _mock_result(
+                data=cast(
+                    "list[dict[str, object]]",
+                    [
+                        {"number": 1, "title": "Old Bug", "state": "closed"},
+                    ],
+                )
+            ),
             # create_issue — must NOT be called (adoption path wins)
             _mock_result(
                 data={"number": 2, "title": "Old Bug", "state": "open"},
@@ -286,22 +306,35 @@ class TestPRPostcondition:
         """Cache has ``open``; caller expects ``closed``; re-read confirms ``closed``."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "open", "merged": False,
+            "number": 1,
+            "title": "PR",
+            "state": "open",
+            "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._pr_postcondition[1] = "open"
 
         mock_s = await _mock_session(
-            _mock_result(data={
-                "number": 1, "title": "PR", "state": "closed", "merged": False,
-            }),
+            _mock_result(
+                data={
+                    "number": 1,
+                    "title": "PR",
+                    "state": "closed",
+                    "merged": False,
+                }
+            ),
         )
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         result = await state.need_pull_request(
-            "PR", head="feat", base="main", state="closed",
+            "PR",
+            head="feat",
+            base="main",
+            state="closed",
         )
         assert result["state"] == "closed"
 
@@ -310,23 +343,36 @@ class TestPRPostcondition:
         """Cache has ``open``; caller expects ``closed``; re-read still ``open``."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "open", "merged": False,
+            "number": 1,
+            "title": "PR",
+            "state": "open",
+            "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._pr_postcondition[1] = "open"
 
         mock_s = await _mock_session(
-            _mock_result(data={
-                "number": 1, "title": "PR", "state": "open", "merged": False,
-            }),
+            _mock_result(
+                data={
+                    "number": 1,
+                    "title": "PR",
+                    "state": "open",
+                    "merged": False,
+                }
+            ),
         )
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         with pytest.raises(PostconditionError) as exc:
             await state.need_pull_request(
-                "PR", head="feat", base="main", state="closed",
+                "PR",
+                head="feat",
+                base="main",
+                state="closed",
             )
         assert exc.value.expected == "closed"
         assert exc.value.observed == "open"
@@ -336,23 +382,36 @@ class TestPRPostcondition:
         """Cache has ``closed``; caller expects ``open``; PR is merged."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "closed", "merged": True,
+            "number": 1,
+            "title": "PR",
+            "state": "closed",
+            "merged": True,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._pr_postcondition[1] = "closed"
 
         mock_s = await _mock_session(
-            _mock_result(data={
-                "number": 1, "title": "PR", "state": "closed", "merged": True,
-            }),
+            _mock_result(
+                data={
+                    "number": 1,
+                    "title": "PR",
+                    "state": "closed",
+                    "merged": True,
+                }
+            ),
         )
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         with pytest.raises(IrreversibleTransitionError) as exc:
             await state.need_pull_request(
-                "PR", head="feat", base="main", state="open",
+                "PR",
+                head="feat",
+                base="main",
+                state="open",
             )
         assert exc.value.expected is False  # merged flag
         assert exc.value.observed is True
@@ -362,22 +421,35 @@ class TestPRPostcondition:
         """PR was closed without merging — reopening (open) is valid."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "closed", "merged": False,
+            "number": 1,
+            "title": "PR",
+            "state": "closed",
+            "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._pr_postcondition[1] = "closed"
 
         mock_s = await _mock_session(
-            _mock_result(data={
-                "number": 1, "title": "PR", "state": "open", "merged": False,
-            }),
+            _mock_result(
+                data={
+                    "number": 1,
+                    "title": "PR",
+                    "state": "open",
+                    "merged": False,
+                }
+            ),
         )
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         result = await state.need_pull_request(
-            "PR", head="feat", base="main", state="open",
+            "PR",
+            head="feat",
+            base="main",
+            state="open",
         )
         assert result["state"] == "open"
 
@@ -386,10 +458,15 @@ class TestPRPostcondition:
         """Re-read returns error for a PR — PostconditionError."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "open", "merged": False,
+            "number": 1,
+            "title": "PR",
+            "state": "open",
+            "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._pr_postcondition[1] = "open"
 
@@ -400,7 +477,10 @@ class TestPRPostcondition:
 
         with pytest.raises(PostconditionError) as exc:
             await state.need_pull_request(
-                "PR", head="feat", base="main", state="closed",
+                "PR",
+                head="feat",
+                base="main",
+                state="closed",
             )
         assert exc.value.field == "readable"
 
@@ -409,15 +489,22 @@ class TestPRPostcondition:
         """When state is None for PR, no postcondition check happens."""
         state = _new_state()
         state.pull_requests[1] = {
-            "number": 1, "title": "PR", "state": "open", "merged": False,
+            "number": 1,
+            "title": "PR",
+            "state": "open",
+            "merged": False,
         }
         state._pr_options[1] = {
-            "head": "feat", "base": "main", "body": "desc",
+            "head": "feat",
+            "base": "main",
+            "body": "desc",
         }
         state._server = AsyncMock()  # type: ignore[method-assign]
 
         result = await state.need_pull_request(
-            "PR", head="feat", base="main",
+            "PR",
+            head="feat",
+            base="main",
         )
         assert result["state"] == "open"
         state._server.assert_not_called()
@@ -430,15 +517,23 @@ class TestPRPostcondition:
             # list_pull_requests returns empty
             _mock_result(data=cast("list[dict[str, object]]", [])),
             # create_pull_request succeeds
-            _mock_result(data={
-                "number": 2, "title": "New PR",
-                "state": "open", "head": {"ref": "feat"}, "base": {"ref": "main"},
-            }),
+            _mock_result(
+                data={
+                    "number": 2,
+                    "title": "New PR",
+                    "state": "open",
+                    "head": {"ref": "feat"},
+                    "base": {"ref": "main"},
+                }
+            ),
         )
         state._server = AsyncMock(return_value=mock_s)  # type: ignore[method-assign]
 
         result = await state.need_pull_request(
-            "New PR", head="feat", base="main", state="closed",
+            "New PR",
+            head="feat",
+            base="main",
+            state="closed",
         )
         assert state._pr_postcondition[2] == "closed"
 
@@ -464,7 +559,8 @@ class TestImmutableConflictPreserved:
         # check_conflict raises synchronously for immutable fields
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "issue", "#1 ('Bug')",
+                "issue",
+                "#1 ('Bug')",
                 state._issue_options[1],
                 {"body": "changed", "labels": None, "milestone": None, "assignees": None},
             )
@@ -476,7 +572,8 @@ class TestImmutableConflictPreserved:
 
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "pull_request", "#1 ('PR')",
+                "pull_request",
+                "#1 ('PR')",
                 {"head": "feat", "base": "main", "body": "desc"},
                 {"head": "other", "base": "main", "body": "desc"},
             )
@@ -490,7 +587,8 @@ class TestImmutableConflictPreserved:
 
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "issue", "#1 ('Bug')",
+                "issue",
+                "#1 ('Bug')",
                 {"body": "original"},
                 {"body": "changed", "labels": None, "milestone": None, "assignees": None},
             )

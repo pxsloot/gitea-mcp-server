@@ -69,8 +69,18 @@ def _make_repo_spec() -> dict[str, Any]:
                     "operationId": "repoGet",
                     "summary": "Get a repository",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {
                         "200": {"description": "Success"},
@@ -118,8 +128,18 @@ def _make_delete_spec() -> dict[str, Any]:
                     "operationId": "repoDelete",
                     "summary": "Delete a repository",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {
                         "204": {"description": "Repository deleted successfully."},
@@ -153,9 +173,24 @@ def _make_diff_spec() -> dict[str, Any]:
                     "summary": "Download pull request diff or patch",
                     "produces": ["text/plain"],
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "index", "in": "path", "required": True, "schema": {"type": "integer"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "index",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        },
                         {
                             "name": "diffType",
                             "in": "path",
@@ -362,30 +397,39 @@ class TestEmptyBodyWrites:
     def base_spec(self) -> dict[str, Any]:
         return _make_delete_spec()
 
-    @pytest.mark.parametrize(("fmt", "expected"), [
-        ("markdown", "Operation completed successfully."),
-        ("json", "Operation completed successfully."),
-        ("raw", "Operation completed successfully."),
-    ])
+    @pytest.mark.parametrize(
+        ("fmt", "expected"),
+        [
+            ("markdown", "Operation completed successfully."),
+            ("json", "Operation completed successfully."),
+            ("raw", "Operation completed successfully."),
+        ],
+    )
     async def test_empty_body_produces_visible_text(
-        self, mcp_server: FastMCP, fmt: str, expected: str,
+        self,
+        mcp_server: FastMCP,
+        fmt: str,
+        expected: str,
     ) -> None:
         """All formats produce visible confirmation for 204 responses."""
         respx.delete(f"{BASE_TEST_URL}/api/v1/repos/test/repo").respond(204)
         result = await mcp_server.call_tool(
-            "gitea_repo_delete", {"owner": "test", "repo": "repo", "format": fmt},
+            "gitea_repo_delete",
+            {"owner": "test", "repo": "repo", "format": fmt},
         )
         assert result.structured_content == {"result": None}
         text = extract_text_content(result.content)
         assert text == expected
 
     async def test_empty_body_default_format_produces_visible_text(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Default (markdown) format produces visible confirmation for 204."""
         respx.delete(f"{BASE_TEST_URL}/api/v1/repos/test/repo").respond(204)
         result = await mcp_server.call_tool(
-            "gitea_repo_delete", {"owner": "test", "repo": "repo"},
+            "gitea_repo_delete",
+            {"owner": "test", "repo": "repo"},
         )
         assert result.structured_content == {"result": None}
         text = extract_text_content(result.content)
@@ -417,9 +461,7 @@ class TestResourceErrors:
             await mcp_server.read_resource("gitea://repos/nonexistent/missing")
         error_str = str(exc.value)
         assert "NOT_FOUND" in error_str, f"Expected NOT_FOUND code in {error_str}"
-        assert "nonexistent/missing" in error_str, (
-            f"Expected resource identifier in {error_str}"
-        )
+        assert "nonexistent/missing" in error_str, f"Expected resource identifier in {error_str}"
 
     async def test_resource_404_through_call_tool(self, mcp_server: FastMCP) -> None:
         """Calling the ``read_resource`` synthetic tool on a missing URI also returns error.
@@ -463,17 +505,18 @@ class TestNonJsonEndpoint:
         return _make_diff_spec()
 
     async def test_text_response_does_not_trigger_output_validation_error(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Non-JSON response does NOT raise an MCP SDK output validation error."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
             200,
             text="diff --git a/file.py b/file.py\n"
-                 "index abc..def 100644\n"
-                 "--- a/file.py\n"
-                 "+++ b/file.py\n"
-                 "@@ -1,3 +1,4 @@\n"
-                 "+new line\n",
+            "index abc..def 100644\n"
+            "--- a/file.py\n"
+            "+++ b/file.py\n"
+            "@@ -1,3 +1,4 @@\n"
+            "+new line\n",
         )
         # Must NOT raise ToolError or any other exception
         result = await mcp_server.call_tool(
@@ -483,7 +526,8 @@ class TestNonJsonEndpoint:
         assert result is not None
 
     async def test_text_response_wrapped_in_result_key(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Non-JSON response text is wrapped in ``{"result": text}``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
@@ -499,20 +543,14 @@ class TestNonJsonEndpoint:
         assert "diff --git" in result.structured_content["result"]
 
     async def test_text_response_content_is_not_empty(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Text content of the result is the raw diff text."""
-        diff = (
-            "diff --git a/f b/f\n"
-            "index abc..def\n"
-            "--- a/f\n"
-            "+++ b/f\n"
-            "@@ -1 +1 @@\n"
-            "-old\n"
-            "+new"
-        )
+        diff = "diff --git a/f b/f\nindex abc..def\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new"
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
-            200, text=diff,
+            200,
+            text=diff,
         )
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
@@ -523,7 +561,8 @@ class TestNonJsonEndpoint:
         assert text == diff, f"Expected raw diff, got: {text[:100]}"
 
     async def test_full_stack_text_validation_round_trip(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Full round-trip through MCP SDK validation for a text/plain endpoint.
 
@@ -552,7 +591,8 @@ class TestNonJsonEndpoint:
             "+new line\n"
         )
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
-            200, text=diff,
+            200,
+            text=diff,
         )
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
@@ -568,7 +608,8 @@ class TestNonJsonEndpoint:
         assert extract_text_content(result.content) == diff
 
     async def test_transport_level_text_output_validation(
-        self, mcp_server: FastMCP,
+        self,
+        mcp_server: FastMCP,
     ) -> None:
         """Drive a text/plain endpoint through real MCP transport to exercise
         the SDK ``LowLevelServer.call_tool`` output validation gate.
@@ -596,7 +637,8 @@ class TestNonJsonEndpoint:
             "+new line\n"
         )
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
-            200, text=diff,
+            200,
+            text=diff,
         )
 
         async with Client(mcp_server) as client:
@@ -613,6 +655,4 @@ class TestNonJsonEndpoint:
             f"{extract_text_content(result.content) if result.content else 'empty'}"
         )
         # The client automatically unwraps ``{"result": <diff>}``.
-        assert result.data == diff, (
-            f"Expected diff text in result.data, got: {result.data!r}"
-        )
+        assert result.data == diff, f"Expected diff text in result.data, got: {result.data!r}"

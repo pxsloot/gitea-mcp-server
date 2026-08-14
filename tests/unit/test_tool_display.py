@@ -151,6 +151,7 @@ class TestFormatToolResultErrorRecovery:
 
     def test_non_serializable_data_markdown_fallback(self) -> None:
         """Non-JSON-serializable data in markdown returns code fence fallback."""
+
         class NonSerializable:
             pass
 
@@ -165,6 +166,7 @@ class TestFormatToolResultErrorRecovery:
 
     def test_non_serializable_data_json_fallback(self) -> None:
         """Non-JSON-serializable data in json returns fallback result."""
+
         class NonSerializable:
             pass
 
@@ -179,6 +181,7 @@ class TestFormatToolResultErrorRecovery:
 
     def test_non_serializable_data_custom_str(self) -> None:
         """Non-serializable with __str__ uses it in fallback in json mode."""
+
         class Unserializable:
             def __str__(self) -> str:
                 return "custom_str_repr"
@@ -225,8 +228,7 @@ class TestFormatToolResultErrorRecovery:
         ):
             format_tool_result(data, "markdown")
             assert any(
-                "Display pipeline recovered from" in record.message
-                for record in caplog.records
+                "Display pipeline recovered from" in record.message for record in caplog.records
             )
 
     def test_logger_level_is_warning(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -238,10 +240,7 @@ class TestFormatToolResultErrorRecovery:
             side_effect=ValueError("bad value"),
         ):
             format_tool_result(data, "json")
-            assert any(
-                record.levelname == "WARNING"
-                for record in caplog.records
-            )
+            assert any(record.levelname == "WARNING" for record in caplog.records)
 
     # --- Happy path still works ---
 

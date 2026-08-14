@@ -44,23 +44,22 @@ class TestSearchTools:
         data = assert_result_ok(result)
         assert isinstance(data, list)
         assert len(data) > 0, "Expected at least one tool result"
-        assert_keys(data[0], "name", "description", "score",
-                    "annotations", "tags")
+        assert_keys(data[0], "name", "description", "score", "annotations", "tags")
         assert_key_types(data[0], name=str, description=str)
         assert isinstance(data[0]["score"], (int, float))
         names = [t["name"].lower() for t in data]
-        assert any("user" in n for n in names), (
-            f"No 'user' tool found in results: {names[:5]}"
-        )
+        assert any("user" in n for n in names), f"No 'user' tool found in results: {names[:5]}"
 
     @pytest.mark.live
     async def test_search_tools_has_annotations(self, world: World) -> None:
         """Each result has complete annotations."""
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
-        data = assert_result_ok(await mcp.call_tool(
-            "gitea_search_tools",
-            {"query": "user", "format": "json"},
-        ))
+        data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_search_tools",
+                {"query": "user", "format": "json"},
+            )
+        )
         for item in data:
             ann = item.get("annotations", {})
             assert "title" in ann, f"Missing title in annotations: {item['name']}"
@@ -72,14 +71,15 @@ class TestSearchTools:
     async def test_search_tools_with_category(self, world: World) -> None:
         """Filtering by category restricts results."""
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
-        data = assert_result_ok(await mcp.call_tool(
-            "gitea_search_tools",
-            {"query": "create", "category": "issue", "format": "json"},
-        ))
+        data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_search_tools",
+                {"query": "create", "category": "issue", "format": "json"},
+            )
+        )
         for item in data:
             assert "issue" in item.get("tags", []), (
-                f"Result '{item['name']}' should have 'issue' tag, "
-                f"got: {item.get('tags')}"
+                f"Result '{item['name']}' should have 'issue' tag, got: {item.get('tags')}"
             )
 
 
@@ -98,13 +98,13 @@ class TestToolInfo:
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
-            {"name": "gitea_tool_info",
-             "arguments": {"name": "gitea_repo_get", "format": "json"}},
+            {"name": "gitea_tool_info", "arguments": {"name": "gitea_repo_get", "format": "json"}},
         )
         data = assert_result_ok(result)
         assert isinstance(data, dict), f"Expected dict, got {type(data)}"
-        assert_keys(data, "name", "description", "parameters",
-                    "output_example", "annotations", "tags")
+        assert_keys(
+            data, "name", "description", "parameters", "output_example", "annotations", "tags"
+        )
         assert_key_types(data, name=str)
 
     @pytest.mark.live
@@ -112,22 +112,28 @@ class TestToolInfo:
         """Both detail levels return valid results with consistent shape."""
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         # Concise
-        concise = assert_result_ok(await mcp.call_tool(
-            "gitea_call_tool",
-            {"name": "gitea_tool_info",
-             "arguments": {"name": "gitea_repo_get",
-                           "format": "json", "detail": "concise"}},
-        ))
+        concise = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_call_tool",
+                {
+                    "name": "gitea_tool_info",
+                    "arguments": {"name": "gitea_repo_get", "format": "json", "detail": "concise"},
+                },
+            )
+        )
         assert isinstance(concise, dict)
         assert_keys(concise, "name", "annotations", "tags")
 
         # Full
-        full = assert_result_ok(await mcp.call_tool(
-            "gitea_call_tool",
-            {"name": "gitea_tool_info",
-             "arguments": {"name": "gitea_repo_get",
-                           "format": "json", "detail": "full"}},
-        ))
+        full = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_call_tool",
+                {
+                    "name": "gitea_tool_info",
+                    "arguments": {"name": "gitea_repo_get", "format": "json", "detail": "full"},
+                },
+            )
+        )
         assert isinstance(full, dict)
         assert_keys(full, "name", "annotations", "tags")
 
@@ -152,18 +158,18 @@ class TestUnifiedSearch:
         data = assert_result_ok(result)
         assert isinstance(data, list)
         types = {item.get("type") for item in data}
-        assert "tool" in types, (
-            f"Expected 'tool' type in results, got: {types}"
-        )
+        assert "tool" in types, f"Expected 'tool' type in results, got: {types}"
 
     @pytest.mark.live
     async def test_search_results_have_access_uris(self, world: World) -> None:
         """Each search result has an Access Uri for routing."""
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
-        data = assert_result_ok(await mcp.call_tool(
-            "gitea_search",
-            {"query": "user", "format": "json", "min_score": 0.1},
-        ))
+        data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_search",
+                {"query": "user", "format": "json", "min_score": 0.1},
+            )
+        )
         for item in data[:5]:
             assert "name" in item
             assert "type" in item
@@ -189,10 +195,10 @@ class TestReadDoc:
         )
         assert not result.isError
         from tests.helpers.mcp_results import extract_text_content
+
         text = extract_text_content(result.content)
         assert "token" in text.lower(), (
-            f"Expected token-scopes guide to mention 'token', "
-            f"got: {text[:200]!r}"
+            f"Expected token-scopes guide to mention 'token', got: {text[:200]!r}"
         )
 
     @pytest.mark.live
@@ -221,8 +227,7 @@ class TestResolveType:
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
-            {"name": "gitea_resolve_type",
-             "arguments": {"name": "User", "format": "json"}},
+            {"name": "gitea_resolve_type", "arguments": {"name": "User", "format": "json"}},
         )
         data = assert_result_ok(result)
         assert isinstance(data, dict), f"Expected dict, got {type(data)}"
@@ -235,7 +240,6 @@ class TestResolveType:
         mcp = await Workflow(world).client(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_call_tool",
-            {"name": "gitea_resolve_type",
-             "arguments": {"name": "NonExistentTypeXYZ"}},
+            {"name": "gitea_resolve_type", "arguments": {"name": "NonExistentTypeXYZ"}},
         )
         assert result.isError, "Expected error for non-existent type"

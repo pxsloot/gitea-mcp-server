@@ -52,9 +52,7 @@ def extract_text_content(content: list[Any]) -> str:
     """
     assert len(content) > 0, "Expected at least one content item"
     item = content[0]
-    assert isinstance(item, TextContent), (
-        f"Expected TextContent, got {type(item).__name__}"
-    )
+    assert isinstance(item, TextContent), f"Expected TextContent, got {type(item).__name__}"
     return item.text
 
 
@@ -71,9 +69,7 @@ def extract_text_from_content_items(content: list[Any]) -> str:
     """
     texts: list[str] = []
     for item in content:
-        assert isinstance(item, TextContent), (
-            f"Expected TextContent, got {type(item).__name__}"
-        )
+        assert isinstance(item, TextContent), f"Expected TextContent, got {type(item).__name__}"
         texts.append(item.text)
     return "".join(texts)
 
@@ -91,9 +87,7 @@ def assert_call_success(result: object) -> None:
     Raises:
         AssertionError: If ``isError`` is truthy, with the error content.
     """
-    assert hasattr(result, "isError"), (
-        f"Expected result with .isError, got {type(result).__name__}"
-    )
+    assert hasattr(result, "isError"), f"Expected result with .isError, got {type(result).__name__}"
     is_error = getattr(result, "isError", False)
     content = getattr(result, "content", [])
     assert not is_error, f"Tool call failed: {content}"
@@ -115,9 +109,7 @@ def get_structured(result: object) -> dict[str, Any]:
     """
     sc = getattr(result, "structured_content", None)
     assert sc is not None, "Expected structured_content to be present"
-    assert isinstance(sc, dict), (
-        f"Expected dict, got {type(sc).__name__}"
-    )
+    assert isinstance(sc, dict), f"Expected dict, got {type(sc).__name__}"
     return sc
 
 
@@ -174,10 +166,7 @@ def assert_low_level_success(result: object) -> None:
     """
     root = getattr(result, "root", None)
     assert root is not None, f"Expected result with .root, got {type(result).__name__}"
-    assert not root.isError, (
-        f"Low-level call failed: "
-        f"{_safe_extract_error_text(root)}"
-    )
+    assert not root.isError, f"Low-level call failed: {_safe_extract_error_text(root)}"
 
 
 def extract_low_level_text(result: object) -> str:
@@ -208,9 +197,7 @@ def get_low_level_structured(result: object) -> dict[str, Any]:
     assert root is not None, f"Expected result with .root, got {type(result).__name__}"
     sc = getattr(root, "structuredContent", None)
     assert sc is not None, "Expected .root.structuredContent to be present"
-    assert isinstance(sc, dict), (
-        f"Expected dict, got {type(sc).__name__}"
-    )
+    assert isinstance(sc, dict), f"Expected dict, got {type(sc).__name__}"
     return sc
 
 
@@ -244,7 +231,5 @@ def extract_resource_text(result: object) -> str:
     assert contents is not None, f"Expected result with .contents, got {type(result).__name__}"
     assert len(contents) > 0, "Expected at least one resource content"
     content = contents[0].content
-    assert isinstance(content, str), (
-        f"Expected str content, got {type(content).__name__}"
-    )
+    assert isinstance(content, str), f"Expected str content, got {type(content).__name__}"
     return content

@@ -85,7 +85,7 @@ def _normalize_for_match(text: str, tool_prefix: str) -> tuple[str, list[str]]:
     if tool_prefix:
         prefix_norm = tool_prefix.lower().replace("_", " ")
         if prefix_norm and t.startswith(prefix_norm):
-            t = t[len(prefix_norm):].strip()
+            t = t[len(prefix_norm) :].strip()
     return t, t.split()
 
 
@@ -214,15 +214,11 @@ def search_and_slice(  # noqa: PLR0913 - 7 params but all are independent config
     # BM25 on the non-name-match items only.
     engine = BM25SearchEngine()
     bm25_texts = [texts[i] for i in bm25_indices]
-    bm25_ranked = engine.search_with_scores(
-        bm25_texts, query, len(bm25_texts), min_score=min_score
-    )
+    bm25_ranked = engine.search_with_scores(bm25_texts, query, len(bm25_texts), min_score=min_score)
 
     # Build the combined ranked list: name matches first (score 1.0),
     # then BM25 results (scores 0.0-1.0, naturally below).
-    combined: list[tuple[int, float]] = [
-        (i, 1.0) for i in name_match_indices
-    ]
+    combined: list[tuple[int, float]] = [(i, 1.0) for i in name_match_indices]
     combined.extend((bm25_indices[i], score) for i, score in bm25_ranked)
 
     total_count = len(combined)
@@ -452,14 +448,9 @@ async def _call_tool_impl(
         # ctx.fastmcp.call_tool() that would trigger the middleware.
         filter_info = get_filtered_tool_info(name, filtered_tools_info, tool_prefix)
         if filter_info is not None:
-            msg = build_filtered_tools_message(
-                name, filter_info, filtered_tools_info
-            )
+            msg = build_filtered_tools_message(name, filter_info, filtered_tools_info)
         else:
-            msg = (
-                f"Tool '{name}' not found. "
-                "Use `search_tools()` to discover available tools."
-            )
+            msg = f"Tool '{name}' not found. Use `search_tools()` to discover available tools."
         raise_value_error(msg)
 
     return await ctx.fastmcp.call_tool(tool.name, arguments)
@@ -500,7 +491,8 @@ def _format_filtered_tools_note(filtered_tools_info: dict[str, Any] | None) -> s
     if not parts:
         return ""
     return (
-        "\n\n**Note:** " + ", ".join(parts)
+        "\n\n**Note:** "
+        + ", ".join(parts)
         + " tools are hidden from this listing "
         + "(use `tool_info(name)` to check a specific tool)."
     )
@@ -559,8 +551,13 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     # Get all ranked results (no pre-slicing — format_paginated_result
     # handles that conditionally based on fetch_all).
     all_items, total_count = search_and_slice(
-        serialized, texts, query, 1, len(serialized) or 1,
-        min_score=min_score, tool_prefix=tool_prefix,
+        serialized,
+        texts,
+        query,
+        1,
+        len(serialized) or 1,
+        min_score=min_score,
+        tool_prefix=tool_prefix,
     )
 
     cross_link_hints = {
@@ -598,7 +595,12 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
             extras.append(note)
 
     return format_paginated_result(
-        all_items, total_count, format, page, limit, fetch_all,
+        all_items,
+        total_count,
+        format,
+        page,
+        limit,
+        fetch_all,
         markdown_extras=extras or None,
         detail=detail,
     )
@@ -664,9 +666,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                     result_schema: dict[str, Any] = {
                         "description": result_obj.get("description", ""),
                         "type": "object",
-                        "properties": {
-                            k: result_props[k] for k in sliced_keys
-                        },
+                        "properties": {k: result_props[k] for k in sliced_keys},
                     }
                 elif schema_type_is_array(result_obj):
                     items_schema = result_obj.get("items", {})
@@ -678,9 +678,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                         end = start + limit
                         sliced_keys = prop_keys[start:end]
                         sliced_items = dict(items_schema)
-                        sliced_items["properties"] = {
-                            k: items_props[k] for k in sliced_keys
-                        }
+                        sliced_items["properties"] = {k: items_props[k] for k in sliced_keys}
                     else:
                         # Array of primitives or refs — no pagination.
                         sliced_items = items_schema
@@ -808,8 +806,13 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
 
     # Get all ranked results (no pre-slicing).
     all_items, total_count = search_and_slice(
-        resources, texts, query, 1, len(resources) or 1,
-        min_score=min_score, tool_prefix=tool_prefix,
+        resources,
+        texts,
+        query,
+        1,
+        len(resources) or 1,
+        min_score=min_score,
+        tool_prefix=tool_prefix,
     )
 
     cross_link_hints = {
@@ -842,7 +845,12 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
         extras.append(hints)
 
     return format_paginated_result(
-        all_items, total_count, format, page, limit, fetch_all,
+        all_items,
+        total_count,
+        format,
+        page,
+        limit,
+        fetch_all,
         markdown_extras=extras or None,
         detail=detail,
     )
@@ -905,9 +913,18 @@ def register_synthetic_tools(
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_tools_impl(
-            query, category, format, ctx, transform, page, limit,
-            min_score=min_score, filtered_tools_info=filtered_tools_info,
-            tool_prefix=tool_prefix, fetch_all=fetch_all, detail=detail,
+            query,
+            category,
+            format,
+            ctx,
+            transform,
+            page,
+            limit,
+            min_score=min_score,
+            filtered_tools_info=filtered_tools_info,
+            tool_prefix=tool_prefix,
+            fetch_all=fetch_all,
+            detail=detail,
         )
 
     search_tools_spec = SyntheticToolSpec(
@@ -979,7 +996,9 @@ def register_synthetic_tools(
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
-        return await _call_tool_impl(name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info)
+        return await _call_tool_impl(
+            name, arguments, ctx, tool_prefix, filtered_tools_info=filtered_tools_info
+        )
 
     call_tool_spec = SyntheticToolSpec(
         impl=call_tool_fn,
@@ -1026,8 +1045,14 @@ def register_synthetic_tools(
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _tool_info_impl(
-            name, format, ctx, transform, tool_prefix,
-            detail=detail, page=page, limit=limit,
+            name,
+            format,
+            ctx,
+            transform,
+            tool_prefix,
+            detail=detail,
+            page=page,
+            limit=limit,
             openapi_spec=openapi_spec,
             filtered_tools_info=filtered_tools_info,
         )
@@ -1153,8 +1178,14 @@ def register_synthetic_tools(
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
         return await _search_resources_impl(
-            query, format, ctx, page, limit,
-            min_score=min_score, tool_prefix=tool_prefix, fetch_all=fetch_all,
+            query,
+            format,
+            ctx,
+            page,
+            limit,
+            min_score=min_score,
+            tool_prefix=tool_prefix,
+            fetch_all=fetch_all,
             detail=detail,
         )
 
@@ -1172,12 +1203,15 @@ def register_synthetic_tools(
         paginated=True,
     )
 
-    register_all_synthetic_tools(mcp, [
-        search_tools_spec,
-        call_tool_spec,
-        tool_info_spec,
-        search_resources_spec,
-    ])
+    register_all_synthetic_tools(
+        mcp,
+        [
+            search_tools_spec,
+            call_tool_spec,
+            tool_info_spec,
+            search_resources_spec,
+        ],
+    )
 
 
 __all__ = [

@@ -63,7 +63,10 @@ class TestAPINotFound:
                 {"owner": "mcp-server", "repo": "gitea-mcp-server", "index": _BOGUS_INDEX},
             )
             await ErrorContent(("not found",)).verify(
-                mcp, "gitea_issue_get_issue", {}, result,
+                mcp,
+                "gitea_issue_get_issue",
+                {},
+                result,
             )
 
 
@@ -95,7 +98,10 @@ class TestAPIValidation:
                 },
             )
             await ErrorContent(("api request failed",)).verify(
-                mcp, "gitea_issue_create_issue", {}, result,
+                mcp,
+                "gitea_issue_create_issue",
+                {},
+                result,
             )
 
 
@@ -123,5 +129,8 @@ class TestUnknownTool:
                 {"name": "gitea_this_tool_does_not_exist_at_all", "arguments": {}},
             )
             await ErrorContent(("not found",)).verify(
-                mcp, "gitea_call_tool", {}, result,
+                mcp,
+                "gitea_call_tool",
+                {},
+                result,
             )

@@ -51,9 +51,12 @@ class TestRepoRequestCompatible:
 
     def test_identical_full_options(self) -> None:
         kwargs = {
-            "owner": "dev", "name": "repo",
-            "auto_init": True, "description": "a test repo",
-            "private": True, "branch": "feat",
+            "owner": "dev",
+            "name": "repo",
+            "auto_init": True,
+            "description": "a test repo",
+            "private": True,
+            "branch": "feat",
             "old_branch": "develop",
             "files": (("README.md", "# hello"),),
             "labels": (("bug", "#ff0000"),),
@@ -150,7 +153,8 @@ class TestCheckConflict:
     def test_different_value_conflict(self) -> None:
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "issue", "#1",
+                "issue",
+                "#1",
                 {"body": "original"},
                 {"body": "different"},
             )
@@ -161,7 +165,8 @@ class TestCheckConflict:
         """A key in the request but absent from stored options is a conflict."""
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "label", "bug",
+                "label",
+                "bug",
                 {"color": "#ff0000"},
                 {"color": "#ff0000", "description": "Crash reports"},
             )
@@ -171,7 +176,8 @@ class TestCheckConflict:
     def test_none_vs_explicit_match(self) -> None:
         """None vs None values match."""
         check_conflict(
-            "milestone", "v1",
+            "milestone",
+            "v1",
             {"description": None, "due_date": None},
             {"description": None, "due_date": None},
         )
@@ -179,7 +185,8 @@ class TestCheckConflict:
     def test_none_requested_means_skip(self) -> None:
         """None in requested means 'don't care' — no conflict."""
         check_conflict(
-            "milestone", "v1",
+            "milestone",
+            "v1",
             {"description": "Some text"},
             {"description": None},
         )
@@ -187,7 +194,8 @@ class TestCheckConflict:
     def test_multiple_mismatches(self) -> None:
         with pytest.raises(ConflictError) as exc:
             check_conflict(
-                "tag", "v1.0",
+                "tag",
+                "v1.0",
                 {"target": "main", "message": "release"},
                 {"target": "develop", "message": "prerelease"},
             )
@@ -226,8 +234,10 @@ class TestBootstrapVerificationError:
 
     def test_all_fields_accessible(self) -> None:
         err = BootstrapVerificationError(
-            "user dev-live", "email",
-            "dev@test.local", "wrong@test.local",
+            "user dev-live",
+            "email",
+            "dev@test.local",
+            "wrong@test.local",
         )
         assert err.entity == "user dev-live"
         assert err.field == "email"
@@ -237,8 +247,10 @@ class TestBootstrapVerificationError:
 
     def test_str_includes_all_context(self) -> None:
         err = BootstrapVerificationError(
-            "org live-org", "full_name",
-            "Expected", "Observed",
+            "org live-org",
+            "full_name",
+            "Expected",
+            "Observed",
         )
         text = str(err)
         assert "org live-org" in text
@@ -248,16 +260,20 @@ class TestBootstrapVerificationError:
 
     def test_bool_fields(self) -> None:
         err = BootstrapVerificationError(
-            "user dev-live", "active",
-            True, False,
+            "user dev-live",
+            "active",
+            True,
+            False,
         )
         assert err.expected is True
         assert err.observed is False
 
     def test_none_values(self) -> None:
         err = BootstrapVerificationError(
-            "team org/team", "units_map.repo.code",
-            "write", None,
+            "team org/team",
+            "units_map.repo.code",
+            "write",
+            None,
         )
         assert err.expected == "write"
         assert err.observed is None

@@ -46,12 +46,15 @@ class TestContextMetaKeysPipeline:
             def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
+
             return deco
 
         mcp.resource = resource_decorator
 
         make_api_resource(
-            mcp, mock_client, openapi_spec=None,
+            mcp,
+            mock_client,
+            openapi_spec=None,
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             method="GET",
@@ -68,7 +71,9 @@ class TestContextMetaKeysPipeline:
         return registered.get("gitea://repos/{owner}/{repo}/issues{?state,type}")
 
     @pytest.mark.asyncio
-    async def test_handler_meta_includes_forwarded_param(self, issues_resource: Callable[..., Any], mock_client: AsyncMock) -> None:
+    async def test_handler_meta_includes_forwarded_param(
+        self, issues_resource: Callable[..., Any], mock_client: AsyncMock
+    ) -> None:
         """Handler forwards context_meta_keys params (query or path) into ResourceContent.meta."""
         from fastmcp.resources import ResourceResult
 
@@ -85,7 +90,9 @@ class TestContextMetaKeysPipeline:
         assert meta.get("type") == "pulls"
 
     @pytest.mark.asyncio
-    async def test_handler_meta_omits_unmatched_context_param(self, issues_resource: Callable[..., Any], mock_client: AsyncMock) -> None:
+    async def test_handler_meta_omits_unmatched_context_param(
+        self, issues_resource: Callable[..., Any], mock_client: AsyncMock
+    ) -> None:
         """Handler does NOT forward params not listed in context_meta_keys."""
         from fastmcp.resources import ResourceResult
 
@@ -115,13 +122,16 @@ class TestContextMetaKeysPipeline:
             def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
+
             return deco
 
         mcp.resource = resource_decorator
 
         # Register WITHOUT context_meta_keys
         make_api_resource(
-            mcp, mock_client, openapi_spec=None,
+            mcp,
+            mock_client,
+            openapi_spec=None,
             uri="gitea://repos/{owner}/{repo}/test",
             api_path="/repos/{owner}/{repo}/test",
             method="GET",
@@ -154,7 +164,8 @@ class TestContextMetaKeysPipeline:
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
         result = format_resource_content(
-            data, "markdown",
+            data,
+            "markdown",
             format_hint="issues",
             extra={"type": "pulls"},
         )
@@ -166,7 +177,8 @@ class TestContextMetaKeysPipeline:
 
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
         result = format_resource_content(
-            data, "markdown",
+            data,
+            "markdown",
             format_hint="issues",
             extra={"type": "issues"},
         )
@@ -179,7 +191,8 @@ class TestContextMetaKeysPipeline:
         # Data has no pull_request field -> title is "Issues"
         data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
         result = format_resource_content(
-            data, "markdown",
+            data,
+            "markdown",
             format_hint="issues",
         )
         assert "Issues - 1 items" in result
@@ -190,7 +203,8 @@ class TestContextMetaKeysPipeline:
 
         data = json.dumps({"key": "value"})
         result = format_resource_content(
-            data, "markdown",
+            data,
+            "markdown",
             extra={"type": "pulls"},
         )
         # Generic markdown uses capitalized "Key" as header
@@ -211,12 +225,15 @@ class TestContextMetaKeysPipeline:
             def deco(func: Callable) -> Callable:
                 registered[uri] = func
                 return func
+
             return deco
 
         mcp.resource = resource_decorator
 
         make_api_resource(
-            mcp, mock_client, openapi_spec=None,
+            mcp,
+            mock_client,
+            openapi_spec=None,
             uri="gitea://repos/{owner}/{repo}/labels",
             api_path="/repos/{owner}/{repo}/labels",
             method="GET",
@@ -233,8 +250,13 @@ class TestContextMetaKeysPipeline:
 
         # Simulate Gitea returning label data.
         labels = [
-            {"id": 1, "name": "bug", "color": "ff0000",
-             "description": "Bug reports", "exclusive": False},
+            {
+                "id": 1,
+                "name": "bug",
+                "color": "ff0000",
+                "description": "Bug reports",
+                "exclusive": False,
+            },
         ]
         mock_client.request = AsyncMock(return_value=labels)
         result = await handler(owner="acmecorp", repo="widgets")
@@ -314,6 +336,8 @@ class TestFormatResourceContentEmptyFallback:
         mock_result = MagicMock()
         mock_result.content = content_value
 
-        with patch("gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result):
+        with patch(
+            "gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result
+        ):
             result = format_resource_content("{}", "markdown")
             assert result == ""

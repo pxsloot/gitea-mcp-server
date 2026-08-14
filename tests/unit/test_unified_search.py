@@ -15,7 +15,13 @@ from gitea_mcp_server.tools.unified_search import register_unified_search
 from tests.helpers.mcp_results import parse_json_content
 
 
-def _make_resource(uri: str, name: str, description: str, mime_type: str = "text/plain", tags: set[str] | None = None) -> SimpleNamespace:
+def _make_resource(
+    uri: str,
+    name: str,
+    description: str,
+    mime_type: str = "text/plain",
+    tags: set[str] | None = None,
+) -> SimpleNamespace:
     """Create a simple resource-like object. Avoids MagicMock name conflict."""
     return SimpleNamespace(
         uri=uri,
@@ -99,20 +105,31 @@ class TestUnifiedSearch:
     async def test_returns_results_with_type_discriminator(self) -> None:
         """All results should include a 'type' field: tool, doc, or resource."""
         ctx = MagicMock(spec=Context)
-        ctx.fastmcp.list_resources = AsyncMock(return_value=[
-            _make_resource("gitea://version", "Version", "Gitea server version"),
-        ])
+        ctx.fastmcp.list_resources = AsyncMock(
+            return_value=[
+                _make_resource("gitea://version", "Version", "Gitea server version"),
+            ]
+        )
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = [
-            {"name": "token-scopes", "title": "Token Scopes", "description": "How tokens work", "tags": ["auth"]},
+            {
+                "name": "token-scopes",
+                "title": "Token Scopes",
+                "description": "How tokens work",
+                "tags": ["auth"],
+            },
         ]
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues in a repository", ["issue", "list"]),
-            _make_tool("gitea_repo_list_pull_requests", "List pull requests", ["pr", "list"]),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool(
+                    "gitea_issue_list_issues", "List issues in a repository", ["issue", "list"]
+                ),
+                _make_tool("gitea_repo_list_pull_requests", "List pull requests", ["pr", "list"]),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -137,9 +154,11 @@ class TestUnifiedSearch:
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -157,9 +176,16 @@ class TestUnifiedSearch:
     async def test_resource_results_have_uri(self) -> None:
         """Resource results should include the original URI."""
         ctx = MagicMock(spec=Context)
-        ctx.fastmcp.list_resources = AsyncMock(return_value=[
-            _make_resource("gitea://repos/owner/repo", "Repository", "Repo metadata", tags={"wrapper", "repository"}),
-        ])
+        ctx.fastmcp.list_resources = AsyncMock(
+            return_value=[
+                _make_resource(
+                    "gitea://repos/owner/repo",
+                    "Repository",
+                    "Repo metadata",
+                    tags={"wrapper", "repository"},
+                ),
+            ]
+        )
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
         doc_manager = MagicMock(spec=DocManager)
@@ -188,7 +214,12 @@ class TestUnifiedSearch:
 
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = [
-            {"name": "token-scopes", "title": "Token Scopes", "description": "How tokens work", "tags": ["auth"]},
+            {
+                "name": "token-scopes",
+                "title": "Token Scopes",
+                "description": "How tokens work",
+                "tags": ["auth"],
+            },
         ]
 
         search_transform = _make_search_transform([])
@@ -208,17 +239,21 @@ class TestUnifiedSearch:
     async def test_format_markdown_returns_text_content(self) -> None:
         """format=markdown should return TextContent in content list."""
         ctx = MagicMock(spec=Context)
-        ctx.fastmcp.list_resources = AsyncMock(return_value=[
-            _make_resource("gitea://version", "Version", "Gitea version"),
-        ])
+        ctx.fastmcp.list_resources = AsyncMock(
+            return_value=[
+                _make_resource("gitea://version", "Version", "Gitea version"),
+            ]
+        )
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues"),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues"),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -243,9 +278,11 @@ class TestUnifiedSearch:
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues"),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues"),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -268,9 +305,11 @@ class TestUnifiedSearch:
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues"),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues"),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -325,10 +364,12 @@ class TestUnifiedSearch:
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
-            _make_tool("gitea_issue_get_issue", "Get issue", ["issue"]),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+                _make_tool("gitea_issue_get_issue", "Get issue", ["issue"]),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)
@@ -352,9 +393,11 @@ class TestUnifiedSearch:
         doc_manager = MagicMock(spec=DocManager)
         doc_manager.search.return_value = []
 
-        search_transform = _make_search_transform([
-            _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
-        ])
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+            ]
+        )
 
         mcp, decorator = _setup_mcp()
         register_unified_search(mcp, doc_manager, search_transform)

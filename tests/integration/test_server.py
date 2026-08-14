@@ -184,7 +184,9 @@ class TestSyntheticToolMetadata:
         return [f"{prefix}{base}" if prefix else base for base in self._synthetic_base_names()]
 
     @pytest.mark.asyncio
-    async def test_extension_metadata_transform_applies_yaml_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_extension_metadata_transform_applies_yaml_overrides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """ExtensionMetadataTransform should apply YAML description overrides to tools."""
         monkeypatch.setattr(
             "gitea_mcp_server.server_setup.spec_loader.load_mcp_extensions",
@@ -323,11 +325,18 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("https://git.example.com/api/v1/version").respond(200, json={"version": "1.99.0"})
+            mock.get("https://git.example.com/api/v1/version").respond(
+                200, json={"version": "1.99.0"}
+            )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://version")
             assert "1.99.0" in result.contents[0].content
@@ -342,18 +351,29 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/users/alice").respond(
-                200, json={
-                    "login": "alice", "full_name": "Alice",
+                200,
+                json={
+                    "login": "alice",
+                    "full_name": "Alice",
                     "html_url": "https://git.example.com/alice",
-                    "public_repos": 5, "followers_count": 10, "following_count": 3,
+                    "public_repos": 5,
+                    "followers_count": 10,
+                    "following_count": 3,
                     "created_at": "2023-01-01T00:00:00Z",
-                    "bio": "Developer", "location": "Earth", "website": "",
-                }
+                    "bio": "Developer",
+                    "location": "Earth",
+                    "website": "",
+                },
             )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://users/alice")
@@ -370,18 +390,29 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/repos/owner/repo").respond(
-                200, json={
-                    "full_name": "owner/repo", "description": "A test repo",
-                    "default_branch": "main", "html_url": "https://git.example.com/owner/repo",
+                200,
+                json={
+                    "full_name": "owner/repo",
+                    "description": "A test repo",
+                    "default_branch": "main",
+                    "html_url": "https://git.example.com/owner/repo",
                     "owner": {"login": "owner", "id": 1},
-                    "stargazers_count": 5, "forks_count": 2, "open_issues_count": 1,
-                    "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-06-01T00:00:00Z",
-                }
+                    "stargazers_count": 5,
+                    "forks_count": 2,
+                    "open_issues_count": 1,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-06-01T00:00:00Z",
+                },
             )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://repos/owner/repo")
@@ -397,16 +428,32 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/repos/owner/repo/releases").respond(
                 200,
                 json=[
-                    {"tag_name": "v1.0", "name": "First", "draft": False, "prerelease": False,
-                     "created_at": "2024-01-01T00:00:00Z", "published_at": "2024-01-02T00:00:00Z",
-                     "body": "Initial release", "author": {"login": "dev", "id": 1, "html_url": "https://git.example.com/dev"}},
+                    {
+                        "tag_name": "v1.0",
+                        "name": "First",
+                        "draft": False,
+                        "prerelease": False,
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "published_at": "2024-01-02T00:00:00Z",
+                        "body": "Initial release",
+                        "author": {
+                            "login": "dev",
+                            "id": 1,
+                            "html_url": "https://git.example.com/dev",
+                        },
+                    },
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
@@ -425,7 +472,12 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
         content = "# Hello"
         encoded = base64.b64encode(content.encode()).decode()
 
@@ -453,16 +505,28 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/repos/owner/repo/issues").respond(
                 200,
                 json=[
-                    {"number": 1, "title": "Bug", "state": "open", "user": {"login": "dev"},
-                     "created_at": "2024-01-01T00:00:00Z", "comments": 0, "labels": [],
-                     "html_url": "https://example.com/issue/1"},
+                    {
+                        "number": 1,
+                        "title": "Bug",
+                        "state": "open",
+                        "user": {"login": "dev"},
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "comments": 0,
+                        "labels": [],
+                        "html_url": "https://example.com/issue/1",
+                    },
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
@@ -479,7 +543,12 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
@@ -489,9 +558,16 @@ class TestCustomResources:
             ).respond(
                 200,
                 json=[
-                    {"number": 1, "title": "Bug", "state": "open", "user": {"login": "dev"},
-                     "created_at": "2024-01-01T00:00:00Z", "comments": 0, "labels": [],
-                     "html_url": "https://example.com/issue/1"},
+                    {
+                        "number": 1,
+                        "title": "Bug",
+                        "state": "open",
+                        "user": {"login": "dev"},
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "comments": 0,
+                        "labels": [],
+                        "html_url": "https://example.com/issue/1",
+                    },
                 ],
             )
             mcp = await create_mcp_server(gitea_client)
@@ -511,7 +587,12 @@ class TestCustomResources:
             tool_filtering_enabled=True,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
@@ -519,10 +600,17 @@ class TestCustomResources:
             mock.get("https://git.example.com/api/v1/users/dev2/tokens").respond(
                 200,
                 json=[
-                    {"id": 1, "name": "test", "token_last_eight": "ix_last8", "scopes": ["read:repository", "write:issue", "read:user"]},
+                    {
+                        "id": 1,
+                        "name": "test",
+                        "token_last_eight": "ix_last8",
+                        "scopes": ["read:repository", "write:issue", "read:user"],
+                    },
                 ],
             )
-            mock.get("https://git.example.com/api/v1/version").respond(200, json={"version": "1.0.0"})
+            mock.get("https://git.example.com/api/v1/version").respond(
+                200, json={"version": "1.0.0"}
+            )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://token/scopes")
             assert "read:repository" in result.contents[0].content
@@ -538,19 +626,30 @@ class TestCustomResources:
             tool_filtering_enabled=False,
         )
         gitea_client = GiteaClient(config)
-        swagger_spec = {"swagger": "2.0", "info": {"title": "T", "version": "1"}, "paths": {}, "definitions": {}}
+        swagger_spec = {
+            "swagger": "2.0",
+            "info": {"title": "T", "version": "1"},
+            "paths": {},
+            "definitions": {},
+        }
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock.get("https://git.example.com/api/v1/orgs/myorg").respond(
-                200, json={
-                    "login": "myorg", "full_name": "My Org",
+                200,
+                json={
+                    "login": "myorg",
+                    "full_name": "My Org",
                     "html_url": "https://git.example.com/myorg",
                     "type": "Organization",
-                    "public_repos": 10, "followers_count": 0, "following_count": 0,
+                    "public_repos": 10,
+                    "followers_count": 0,
+                    "following_count": 0,
                     "created_at": "2022-01-01T00:00:00Z",
-                    "bio": "", "location": "", "website": "",
-                }
+                    "bio": "",
+                    "location": "",
+                    "website": "",
+                },
             )
             mcp = await create_mcp_server(gitea_client)
             result = await mcp.read_resource("gitea://orgs/myorg")
@@ -602,7 +701,9 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "regularuser", "admin": False})
+            mock.get("https://git.example.com/api/v1/user").respond(
+                200, json={"login": "regularuser", "admin": False}
+            )
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -642,7 +743,9 @@ class TestToolFiltering:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "adminuser", "admin": True})
+            mock.get("https://git.example.com/api/v1/user").respond(
+                200, json={"login": "adminuser", "admin": True}
+            )
             mcp = await create_mcp_server(gitea_client)
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
@@ -805,9 +908,7 @@ class TestServerEdgeCases:
         ):
             mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
             # Should not raise - exception is caught and filtering fails open.
-            _, _, _, excluded_routes = await load_and_convert_spec(
-                gitea_client, config
-            )
+            _, _, _, excluded_routes = await load_and_convert_spec(gitea_client, config)
             assert excluded_routes == set()
 
     @pytest.mark.asyncio
@@ -842,9 +943,7 @@ class TestServerEdgeCases:
         ):
             mock.get(f"{config.url}/swagger.v1.json").respond(200, json=swagger_spec)
             # Scope fetch is called even when filtering is disabled.
-            _, _, _, excluded_routes = await load_and_convert_spec(
-                gitea_client, config
-            )
+            _, _, _, excluded_routes = await load_and_convert_spec(gitea_client, config)
             mock_fetch.assert_called_once()
             assert excluded_routes == set()
 
@@ -982,9 +1081,7 @@ class TestServerEdgeCases:
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
-        assert result.startswith("#"), (
-            f"Instructions must start with '#', got: {result[:50]}"
-        )
+        assert result.startswith("#"), f"Instructions must start with '#', got: {result[:50]}"
 
     @pytest.mark.asyncio
     async def test_served_instructions_line_budget(self) -> None:
@@ -1031,9 +1128,7 @@ class TestServerEdgeCases:
             "tool_info",
         ]
         for anchor in anchors:
-            assert anchor.lower() in result.lower(), (
-                f"Missing anchor phrase: '{anchor}'"
-            )
+            assert anchor.lower() in result.lower(), f"Missing anchor phrase: '{anchor}'"
 
     @pytest.mark.asyncio
     async def test_exclusion_noop_when_no_config(self) -> None:
@@ -1048,17 +1143,18 @@ class TestServerEdgeCases:
             "info": {"title": "Gitea API", "version": "1.0"},
             "paths": {
                 "/admin/settings": {
-                    "get": {"operationId": "admin_settings", "summary": "Get settings",
-                            "responses": {"200": {"description": "Success"}}},
+                    "get": {
+                        "operationId": "admin_settings",
+                        "summary": "Get settings",
+                        "responses": {"200": {"description": "Success"}},
+                    },
                 },
             },
             "definitions": {},
         }
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
-            _, _, _, excluded_routes = await load_and_convert_spec(
-                gitea_client, config
-            )
+            _, _, _, excluded_routes = await load_and_convert_spec(gitea_client, config)
             assert excluded_routes == set()
 
     @pytest.mark.asyncio
@@ -1068,9 +1164,7 @@ class TestServerEdgeCases:
 
         from gitea_mcp_server.server_setup.spec_loader import load_and_convert_spec
 
-        config = SimpleConfig(
-            exclude_config_path="/fake/path.yaml", tool_filtering_enabled=False
-        )
+        config = SimpleConfig(exclude_config_path="/fake/path.yaml", tool_filtering_enabled=False)
         gitea_client = GiteaClient(config)
 
         swagger_spec = {
@@ -1078,23 +1172,22 @@ class TestServerEdgeCases:
             "info": {"title": "Gitea API", "version": "1.0"},
             "paths": {
                 "/admin/settings": {
-                    "get": {"operationId": "admin_settings", "summary": "Get settings",
-                            "responses": {"200": {"description": "Success"}}},
+                    "get": {
+                        "operationId": "admin_settings",
+                        "summary": "Get settings",
+                        "responses": {"200": {"description": "Success"}},
+                    },
                 },
             },
             "definitions": {},
         }
         with respx.mock() as mock:
-            mock.get("https://git.example.com/swagger.v1.json").respond(
-                200, json=swagger_spec
-            )
+            mock.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             with patch(
                 "gitea_mcp_server.server_setup.spec_loader.load_exclusion_config",
                 return_value={"exclude": ["gitea_admin_*"], "include": []},
             ):
-                _, _, _, excluded_routes = await load_and_convert_spec(
-                    gitea_client, config
-                )
+                _, _, _, excluded_routes = await load_and_convert_spec(gitea_client, config)
                 assert ("/admin/settings", "GET") in excluded_routes
 
     @pytest.mark.asyncio
@@ -1111,9 +1204,7 @@ class TestServerEdgeCases:
         dm._guides = []
         dm._search_texts = []
 
-        with patch(
-            "gitea_mcp_server.server.register_synthetic_tools"
-        ) as mock_register:
+        with patch("gitea_mcp_server.server.register_synthetic_tools") as mock_register:
             _setup_tool_discovery(mcp, config, dm)
             # add_transform called for search + namespace
             assert mcp.add_transform.call_count == 2
@@ -1132,9 +1223,7 @@ class TestServerEdgeCases:
         dm = DocManager.__new__(DocManager)
         dm._guides = []
 
-        with patch(
-            "gitea_mcp_server.server.register_synthetic_tools"
-        ) as mock_register:
+        with patch("gitea_mcp_server.server.register_synthetic_tools") as mock_register:
             _setup_tool_discovery(mcp, config, dm)
             mock_register.assert_not_called()
 
@@ -1145,7 +1234,9 @@ class TestServerEdgeCases:
 
         from gitea_mcp_server.server import main_async
 
-        with patch("gitea_mcp_server.server.Config.get", side_effect=Exception("Config init failed")):
+        with patch(
+            "gitea_mcp_server.server.Config.get", side_effect=Exception("Config init failed")
+        ):
             with pytest.raises(SystemExit) as exc:
                 await main_async()
             assert exc.value.code == 1
@@ -1271,13 +1362,16 @@ class TestServerEdgeCases:
             task = asyncio.ensure_future(coro)
             return task
 
-        with patch("gitea_mcp_server.server.main_async") as mock_main_async, \
-             patch.object(asyncio, "run", _run_on_current_loop):
-                from gitea_mcp_server.server import main
-                main()
-                if task is not None:
-                    await task
-                mock_main_async.assert_called_once()
+        with (
+            patch("gitea_mcp_server.server.main_async") as mock_main_async,
+            patch.object(asyncio, "run", _run_on_current_loop),
+        ):
+            from gitea_mcp_server.server import main
+
+            main()
+            if task is not None:
+                await task
+            mock_main_async.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_main_async_create_server_exception_exits(self) -> None:
@@ -1292,11 +1386,12 @@ class TestServerEdgeCases:
                 patch("gitea_mcp_server.server.create_mcp_server", side_effect=Exception("boom")),
                 patch.object(GiteaClient, "close", new=AsyncMock()) as mock_close,
             ):
-                    from gitea_mcp_server.server import main_async
-                    with pytest.raises(SystemExit) as exc:
-                        await main_async()
-                    assert exc.value.code == 1
-                    mock_close.assert_awaited_once()
+                from gitea_mcp_server.server import main_async
+
+                with pytest.raises(SystemExit) as exc:
+                    await main_async()
+                assert exc.value.code == 1
+                mock_close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_main_async_stdio_transport(self) -> None:
@@ -1311,6 +1406,7 @@ class TestServerEdgeCases:
             mock_config.return_value = config
             with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
+
                 await main_async()
                 mock_mcp.run_stdio_async.assert_called_once()
 
@@ -1327,6 +1423,7 @@ class TestServerEdgeCases:
             mock_config.return_value = config
             with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
+
                 await main_async()  # Should not raise
 
     @pytest.mark.asyncio
@@ -1342,6 +1439,7 @@ class TestServerEdgeCases:
             mock_config.return_value = config
             with patch("gitea_mcp_server.server.create_mcp_server", return_value=mock_mcp):
                 from gitea_mcp_server.server import main_async
+
                 with pytest.raises(SystemExit) as exc:
                     await main_async()
                 assert exc.value.code == 1
@@ -1362,10 +1460,12 @@ class TestServerEdgeCases:
 
         # Mock load_and_convert_spec to raise a generic exception
         with (
-            patch("gitea_mcp_server.server.load_and_convert_spec", side_effect=ValueError("bad spec")),
+            patch(
+                "gitea_mcp_server.server.load_and_convert_spec", side_effect=ValueError("bad spec")
+            ),
             pytest.raises(SpecError, match="Failed to load or convert OpenAPI spec"),
         ):
-                await create_mcp_server(gitea_client)
+            await create_mcp_server(gitea_client)
 
     @pytest.mark.asyncio
     async def test_create_mcp_server_forgejo_server_type(self) -> None:
@@ -1413,9 +1513,7 @@ class TestServerEdgeCases:
                 },
             )
             # Mock version endpoint to return a plain string
-            mock_http.get("https://git.example.com/api/v1/version").respond(
-                200, text="1.22.0"
-            )
+            mock_http.get("https://git.example.com/api/v1/version").respond(200, text="1.22.0")
             mcp = await create_mcp_server(gitea_client)
             assert mcp is not None
 
@@ -1490,9 +1588,9 @@ class TestServerStartupFailures:
         with respx.mock() as mock_http:
             # Simulate a connection refusal (DNS failure / server down).
             # httpx.ConnectError is what the real httpx transport raises.
-            mock_http.get("https://git.example.com/swagger.v1.json").side_effect = (
-                httpx.ConnectError("Connection refused")
-            )
+            mock_http.get(
+                "https://git.example.com/swagger.v1.json"
+            ).side_effect = httpx.ConnectError("Connection refused")
             with pytest.raises(SpecError, match="Failed to fetch"):
                 await create_mcp_server(gitea_client)
 
@@ -1562,21 +1660,15 @@ class TestWrappingPipelineEdgeCases:
     @pytest.mark.asyncio
     async def test_raw_format_returns_raw_data(self, mcp_server: Any) -> None:
         """format=raw returns the API response without markdown formatting."""
-        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
-            200, json={"version": "1.0.0"}
-        )
-        result = await mcp_server.call_tool(
-            "gitea_get_version", {"format": "raw"}
-        )
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
+        result = await mcp_server.call_tool("gitea_get_version", {"format": "raw"})
         assert result.structured_content is not None
         assert result.structured_content["result"]["version"] == "1.0.0"
 
     @pytest.mark.asyncio
     async def test_non_empty_result_triggers_progress(self, mcp_server: Any) -> None:
         """Tool calls with dict results trigger ctx.report_progress."""
-        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
-            200, json={"version": "1.0.0"}
-        )
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
         result = await mcp_server.call_tool("gitea_get_version", {})
         assert result.structured_content is not None
         assert result.structured_content["result"]["version"] == "1.0.0"
@@ -1604,9 +1696,7 @@ class TestWrappingPipelineEdgeCases:
             async def __aexit__(self, *args: object) -> None:
                 pass
 
-        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(
-            200, json={"version": "1.0.0"}
-        )
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
         with patch(
             "gitea_mcp_server.context_utils.CurrentContext",
             return_value=_MockCurrentContext(),
@@ -1661,9 +1751,7 @@ class Test204NoContentWrapping:
     async def test_204_response_returns_none_result(self, mcp_server: Any) -> None:
         """204 No Content response yields structured_content with result=None."""
         respx.delete(f"{BASE_TEST_URL}/api/v1/repos/owner/repo").respond(204)
-        result = await mcp_server.call_tool(
-            "gitea_repo_delete", {"owner": "owner", "repo": "repo"}
-        )
+        result = await mcp_server.call_tool("gitea_repo_delete", {"owner": "owner", "repo": "repo"})
         assert result.structured_content is not None
         assert result.structured_content.get("result") is None
 
@@ -1686,7 +1774,9 @@ class TestServerLifecycle:
         mock_mcp = AsyncMock()
         mock_mcp.run_stdio_async = AsyncMock()
 
-        async def mock_create_mcp_server(gitea_client: Any, lifespan: Any = None, config: Any = None) -> Any:
+        async def mock_create_mcp_server(
+            gitea_client: Any, lifespan: Any = None, config: Any = None
+        ) -> Any:
             lifespan_captured.append(lifespan)
             return mock_mcp
 
@@ -1697,6 +1787,7 @@ class TestServerLifecycle:
             patch("gitea_mcp_server.server.create_mcp_server", side_effect=mock_create_mcp_server),
         ):
             from gitea_mcp_server.server import main_async
+
             await main_async()
 
         # The lifespan closure was captured — exercise it directly

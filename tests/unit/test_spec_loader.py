@@ -48,7 +48,13 @@ def valid_spec() -> dict[str, Any]:
 
 class TestLoadOpenAPISpec:
     @pytest.mark.asyncio
-    async def test_success_returns_json_dict(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any]) -> None:
+    async def test_success_returns_json_dict(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, json=valid_spec)
             result = await load_openapi_spec(gitea_client, test_config)
@@ -56,7 +62,13 @@ class TestLoadOpenAPISpec:
             assert result["swagger"] == "2.0"
 
     @pytest.mark.asyncio
-    async def test_string_response_parsed_as_json(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any]) -> None:
+    async def test_string_response_parsed_as_json(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+    ) -> None:
         async with respx.mock:
             text_body = json.dumps(valid_spec)
             respx.get(spec_url).respond(200, text=text_body)
@@ -64,7 +76,9 @@ class TestLoadOpenAPISpec:
             assert result == valid_spec
 
     @pytest.mark.asyncio
-    async def test_json_decode_error_raises_spec_error(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str) -> None:
+    async def test_json_decode_error_raises_spec_error(
+        self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, text="not valid json{")
             with pytest.raises(SpecError, match="Invalid JSON"):
@@ -72,7 +86,9 @@ class TestLoadOpenAPISpec:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_network_error_raises_spec_error(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str) -> None:
+    async def test_network_error_raises_spec_error(
+        self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).mock(side_effect=httpx.RequestError("connection refused"))
             with pytest.raises(SpecError, match="Failed to fetch or parse"):
@@ -80,7 +96,9 @@ class TestLoadOpenAPISpec:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_http_error_raises_spec_error(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str) -> None:
+    async def test_http_error_raises_spec_error(
+        self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(500)
             with pytest.raises(SpecError, match="Failed to fetch or parse"):
@@ -89,7 +107,14 @@ class TestLoadOpenAPISpec:
 
 class TestLoadAndConvertSpec:
     @pytest.mark.asyncio
-    async def test_success_path(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_success_path(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, json=valid_spec)
 
@@ -110,7 +135,14 @@ class TestLoadAndConvertSpec:
             assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
-    async def test_conversion_error_raises_spec_error(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_conversion_error_raises_spec_error(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, json=valid_spec)
 
@@ -126,7 +158,14 @@ class TestLoadAndConvertSpec:
                 await load_and_convert_spec(gitea_client, test_config)
 
     @pytest.mark.asyncio
-    async def test_extension_apply_error_logged_and_ignored(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_extension_apply_error_logged_and_ignored(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, json=valid_spec)
 
@@ -151,14 +190,23 @@ class TestLoadAndConvertSpec:
             assert spec["openapi"] == "3.1.0"
 
     @pytest.mark.asyncio
-    async def test_spec_error_from_load_passthrough(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str) -> None:
+    async def test_spec_error_from_load_passthrough(
+        self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, text="bad json{")
             with pytest.raises(SpecError, match="Invalid JSON"):
                 await load_and_convert_spec(gitea_client, test_config)
 
     @pytest.mark.asyncio
-    async def test_no_extensions_loaded(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str, valid_spec: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_no_extensions_loaded(
+        self,
+        gitea_client: AsyncMock,
+        test_config: SimpleConfig,
+        spec_url: str,
+        valid_spec: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).respond(200, json=valid_spec)
 
@@ -176,7 +224,9 @@ class TestLoadAndConvertSpec:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    async def test_http_error_during_load_propagates(self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str) -> None:
+    async def test_http_error_during_load_propagates(
+        self, gitea_client: AsyncMock, test_config: SimpleConfig, spec_url: str
+    ) -> None:
         async with respx.mock:
             respx.get(spec_url).mock(side_effect=httpx.RequestError("connection refused"))
             with pytest.raises(SpecError, match="Failed to fetch or parse"):
@@ -187,8 +237,11 @@ class TestLoadAndConvertSpec:
         """load_and_convert_spec wraps non-SpecError exceptions from load_openapi_spec."""
         mock_client = MagicMock()
 
-        with patch(
-            "gitea_mcp_server.server_setup.spec_loader.load_openapi_spec",
-            side_effect=ValueError("unexpected error"),
-        ), pytest.raises(SpecError, match="Failed to load OpenAPI spec"):
+        with (
+            patch(
+                "gitea_mcp_server.server_setup.spec_loader.load_openapi_spec",
+                side_effect=ValueError("unexpected error"),
+            ),
+            pytest.raises(SpecError, match="Failed to load OpenAPI spec"),
+        ):
             await load_and_convert_spec(mock_client, test_config)

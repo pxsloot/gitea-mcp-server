@@ -168,7 +168,6 @@ class TestSchemaToExample:
         """serialize_tool_schema should produce output_example instead of output_schema."""
         from fastmcp.tools.base import Tool
 
-
         tool = Tool(
             name="test_tool",
             description="Test",
@@ -195,7 +194,6 @@ class TestSchemaToExample:
     def test_serialize_tool_schema_no_output_schema(self) -> None:
         """serialize_tool_schema should not include output_example when output_schema is None."""
         from fastmcp.tools.base import Tool
-
 
         tool = Tool(
             name="test_tool",
@@ -264,7 +262,6 @@ class TestSchemaToExample:
         """serialize_tool_schema should include tags when present."""
         from fastmcp.tools.base import Tool
 
-
         tool = Tool(
             name="test_tool",
             description="Test",
@@ -279,7 +276,6 @@ class TestSchemaToExample:
         """serialize_tool_schema should include version when present."""
         from fastmcp.tools.base import Tool
 
-
         tool = Tool(
             name="test_tool",
             description="Test",
@@ -293,7 +289,6 @@ class TestSchemaToExample:
         """serialize_tool_schema should include openWorldHint when True."""
         from fastmcp.tools.base import Tool
         from mcp.types import ToolAnnotations
-
 
         tool = Tool(
             name="test_tool",
@@ -481,18 +476,20 @@ class TestSchemaToCompactExample:
                     },
                 },
             },
-            meta={"output_schema_raw": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "user": {
-                        "anyOf": [
-                            {"$ref": "#/components/schemas/User"},
-                            {"type": "null"},
-                        ],
+            meta={
+                "output_schema_raw": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "user": {
+                            "anyOf": [
+                                {"$ref": "#/components/schemas/User"},
+                                {"type": "null"},
+                            ],
+                        },
                     },
-                },
-            }},
+                }
+            },
         )
         result = serialize_tool_schema(tool)
         assert "output_example" in result
@@ -523,7 +520,6 @@ class TestSchemaToCompactExample:
         result = serialize_tool_schema(tool)
         assert "output_example" in result
         assert result["output_example"]["name"] == "example-name"
-
 
     # ── Bare $ref resolution tests (issue #446) ──────────────────────────
 

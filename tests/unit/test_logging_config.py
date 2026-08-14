@@ -31,27 +31,30 @@ class TestJSONFormatter:
         assert result["message"] == "hello world"
 
     @staticmethod
-    def _capture_exc_info() -> tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]:
+    def _capture_exc_info() -> (
+        tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]
+    ):
         """Capture exception info for testing."""
         try:
             msg = "test error"
             raise ValueError(msg)  # noqa: TRY301
         except ValueError:
             import sys
+
             return sys.exc_info()
 
     def test_format_with_exc_info(self) -> None:
         formatter = JSONFormatter()
         exc_info = self._capture_exc_info()
         record = logging.LogRecord(
-                name="test",
-                level=logging.ERROR,
-                pathname="test.py",
-                lineno=1,
-                msg="an error occurred",
-                args=(),
-                exc_info=exc_info,
-            )
+            name="test",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=1,
+            msg="an error occurred",
+            args=(),
+            exc_info=exc_info,
+        )
         result = json.loads(formatter.format(record))
         assert "exception" in result
         assert "ValueError" in result["exception"]
@@ -103,10 +106,24 @@ class TestJSONFormatter:
         )
         result = json.loads(formatter.format(record))
         standard_keys = {
-            "name", "msg", "args", "levelname", "levelno", "pathname",
-            "filename", "module", "lineno", "funcName", "created",
-            "msecs", "relativeCreated", "thread", "threadName",
-            "processName", "process", "getMessage",
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "getMessage",
         }
         for key in standard_keys:
             assert key not in result, f"Standard key '{key}' leaked into extra fields"
@@ -130,9 +147,7 @@ class TestSetupLogging:
     def test_json_format_sets_json_formatter(self) -> None:
         setup_logging(level="ERROR", log_format="json")
         root = logging.getLogger()
-        found = any(
-            isinstance(h.formatter, JSONFormatter) for h in root.handlers
-        )
+        found = any(isinstance(h.formatter, JSONFormatter) for h in root.handlers)
         assert found, "Expected JSONFormatter on at least one handler"
 
     def test_text_format_sets_standard_formatter(self) -> None:

@@ -217,9 +217,7 @@ def _merge_allof_members(
     return schema
 
 
-def _get_body_schema(
-    operation: dict[str, Any], spec: OpenAPISpec
-) -> dict[str, Any] | None:
+def _get_body_schema(operation: dict[str, Any], spec: OpenAPISpec) -> dict[str, Any] | None:
     """Extract the request body schema from an operation.
 
     Resolves ``$ref`` references to shared components (e.g. ``IssueMeta``)
@@ -304,17 +302,12 @@ def _rename_colliding_body_properties(
         rename_map[new_name] = prop_name
 
         # Inject description if the body property has none
-        if (
-            path_param_descriptions is not None
-            and not prop_data.get("description")
-        ):
+        if path_param_descriptions is not None and not prop_data.get("description"):
             path_desc = path_param_descriptions.get(prop_name)
             if path_desc:
                 prop_data["description"] = f"(Request body) {path_desc}"
             else:
-                prop_data["description"] = (
-                    f"{prop_name} field of the request body resource"
-                )
+                prop_data["description"] = f"{prop_name} field of the request body resource"
 
         # Update required list if needed
         if prop_name in required:
@@ -389,11 +382,13 @@ def _resolve_operation_collisions(
     path_param_descriptions: dict[str, str] | None = None
     if path_item_params is not None:
         path_param_descriptions = _collect_path_param_descriptions(
-            operation, path_item_params,
+            operation,
+            path_item_params,
         )
 
     rename_map = _rename_colliding_body_properties(
-        body_schema, colliding,
+        body_schema,
+        colliding,
         path_param_descriptions=path_param_descriptions,
     )
     if rename_map:
@@ -540,7 +535,9 @@ def resolve_param_collisions(openapi_spec: OpenAPISpec) -> None:
                 )
 
                 rename_map = _resolve_operation_collisions(
-                    operation, op_path_params, openapi_spec,
+                    operation,
+                    op_path_params,
+                    openapi_spec,
                     path_item_params=path_item_params,
                 )
                 if rename_map:

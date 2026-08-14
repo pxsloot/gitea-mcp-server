@@ -1,0 +1,9 @@
+# Git blame ignore list.
+#
+# Commits listed here are large mechanical reformats with no logic
+# changes; `git blame --ignore-revs-file .git-blame-ignore-revs <file>`
+# skips them when hunting for the commit that introduced a line.
+# To enable globally:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Standardize on `ruff format` (issue #695) — pure formatting, no logic.
+f7614cb

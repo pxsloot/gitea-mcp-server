@@ -55,9 +55,7 @@ async def _convert_labels(
     if gitea_client is None:
         return
 
-    converted = await label_service.validate_and_convert(
-        labels, owner, repo, gitea_client
-    )
+    converted = await label_service.validate_and_convert(labels, owner, repo, gitea_client)
     kwargs["labels"] = converted
 
 

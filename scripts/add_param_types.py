@@ -38,17 +38,16 @@ PARAM_TYPE_MAP: dict[str, tuple[str, str, str | None]] = {
     "tmp_path": ("Path", "yes", "pathlib"),
     "request": ("pytest.FixtureRequest", "pytest", None),
     # OpenTelemetry
-    "trace_exporter": ("InMemorySpanExporter", "yes",
-                       "opentelemetry.sdk.trace.export.in_memory_span_exporter"),
+    "trace_exporter": (
+        "InMemorySpanExporter",
+        "yes",
+        "opentelemetry.sdk.trace.export.in_memory_span_exporter",
+    ),
     # Domain objects
-    "label_service": ("LabelService", "yes",
-                      "gitea_mcp_server.label_service"),
-    "_label_service": ("LabelService", "yes",
-                       "gitea_mcp_server.label_service"),
-    "transform": ("LabelTransform", "yes",
-                  "gitea_mcp_server.tools.label_transform"),
-    "ns": ("GiteaNamespace", "yes",
-           "gitea_mcp_server.tools.namespace"),
+    "label_service": ("LabelService", "yes", "gitea_mcp_server.label_service"),
+    "_label_service": ("LabelService", "yes", "gitea_mcp_server.label_service"),
+    "transform": ("LabelTransform", "yes", "gitea_mcp_server.tools.label_transform"),
+    "ns": ("GiteaNamespace", "yes", "gitea_mcp_server.tools.namespace"),
     "api": ("GiteaAPI", "yes", "gitea_mcp_server.client"),
     "transport": ("HTTPTransport", "yes", "gitea_mcp_server.client"),
     "test_config": ("SimpleConfig", "yes", "tests.conftest"),
@@ -105,11 +104,17 @@ def find_untyped_params(filepath: str) -> dict[int, list[str]]:
     parameters, using mypy + ast."""
     result = subprocess.run(
         [
-            "mypy", "--no-error-summary",
-            "--disallow-untyped-defs", "--disallow-incomplete-defs",
-            "--config-file", "/dev/null", filepath,
+            "mypy",
+            "--no-error-summary",
+            "--disallow-untyped-defs",
+            "--disallow-incomplete-defs",
+            "--config-file",
+            "/dev/null",
+            filepath,
         ],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
     line_params: dict[int, list[str]] = {}
@@ -224,7 +229,7 @@ def add_annotations_to_file(filepath: str) -> int:
                 # non-builtin components (e.g., "Any" from "typing").
                 if ann_str.startswith("dict[str,") or ann_str.startswith("list["):
                     # Extract types inside brackets, import those
-                    inner = ann_str[ann_str.index("[")+1:ann_str.rindex("]")]
+                    inner = ann_str[ann_str.index("[") + 1 : ann_str.rindex("]")]
                     parts = [p.strip() for p in inner.split(",")]
                     for p in parts:
                         if p not in BUILTIN_TYPES:
@@ -285,11 +290,17 @@ def add_annotations_to_file(filepath: str) -> int:
 def main():
     result = subprocess.run(
         [
-            "mypy", "--no-error-summary",
-            "--disallow-untyped-defs", "--disallow-incomplete-defs",
-            "--config-file", "/dev/null", "tests/",
+            "mypy",
+            "--no-error-summary",
+            "--disallow-untyped-defs",
+            "--disallow-incomplete-defs",
+            "--config-file",
+            "/dev/null",
+            "tests/",
         ],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
     files: dict[str, int] = {}
@@ -327,11 +338,17 @@ def main():
     print(f"\nAnnotated {total_added} parameters in this pass.")
     result2 = subprocess.run(
         [
-            "mypy", "--no-error-summary",
-            "--disallow-untyped-defs", "--disallow-incomplete-defs",
-            "--config-file", "/dev/null", "tests/",
+            "mypy",
+            "--no-error-summary",
+            "--disallow-untyped-defs",
+            "--disallow-incomplete-defs",
+            "--config-file",
+            "/dev/null",
+            "tests/",
         ],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     remaining = 0
     for line in result2.stdout.split("\n"):

@@ -1,6 +1,5 @@
 """Tests for exception hierarchy and message formatting."""
 
-
 import pytest
 
 from gitea_mcp_server.exceptions import (

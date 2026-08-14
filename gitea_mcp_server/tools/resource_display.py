@@ -143,7 +143,8 @@ def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display a
     # double-collapse — the formatter already sees flat strings.
     try:
         result = apply_format(
-            data, fmt,
+            data,
+            fmt,
             markdown_formatter=markdown_formatter,
             detail="full" if detail == "concise" else detail,
             schema=schema,
@@ -155,7 +156,10 @@ def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display a
         # rather than letting the error propagate to the agent.
         logger.warning(
             "Display pipeline recovered from %s: %s. fmt=%s, format_hint=%s",
-            type(exc).__name__, exc, fmt, format_hint,
+            type(exc).__name__,
+            exc,
+            fmt,
+            format_hint,
         )
         if fmt == "json":
             return json.dumps({"result": raw}, indent=2)

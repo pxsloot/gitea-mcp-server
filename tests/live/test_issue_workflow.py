@@ -44,7 +44,10 @@ async def _ensure_closed_search_issue(world: World) -> None:
     """Materialize the closed Safari issue independently of test order."""
     workflow = Workflow(world)
     repo = await workflow.ensure_repo(
-        DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
+        DEV.username,
+        _REPO,
+        user=DEV,
+        scopes=SCOPE_WRITE,
     )
     issue = await workflow.ensure_issue(
         repo,
@@ -52,18 +55,23 @@ async def _ensure_closed_search_issue(world: World) -> None:
         body="Steps to reproduce: 1. Open Safari 2. Try login",
     )
     mcp = await workflow.client(DEV, SCOPE_WRITE)
-    current = assert_result_ok(await mcp.call_tool(
-        "gitea_issue_get_issue",
-        {"owner": DEV.username, "repo": _REPO,
-         "index": issue["number"], "format": "json"},
-    ))
+    current = assert_result_ok(
+        await mcp.call_tool(
+            "gitea_issue_get_issue",
+            {"owner": DEV.username, "repo": _REPO, "index": issue["number"], "format": "json"},
+        )
+    )
     if current.get("state") != "closed":
         result = await mcp.call_tool(
             "gitea_issue_edit_issue",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": issue["number"],
-             "title": "Bug: login fails on Safari (all versions)",
-             "state": "closed", "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "index": issue["number"],
+                "title": "Bug: login fails on Safari (all versions)",
+                "state": "closed",
+                "format": "json",
+            },
         )
         assert not result.isError, "Failed to establish closed issue search state"
 
@@ -82,8 +90,13 @@ class TestSetup:
         """Create the issue-workflow test repo."""
         workflow = Workflow(world)
         repo = await workflow.ensure_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            auto_init=True, description="Issue workflow test repo")
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            auto_init=True,
+            description="Issue workflow test repo",
+        )
         assert_content(repo.data, name=_REPO)
 
     @pytest.mark.live
@@ -91,9 +104,7 @@ class TestSetup:
         """Create labels for issue categorization."""
         workflow = Workflow(world)
         repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        bug = await workflow.ensure_label(
-            repo, _LABEL_BUG, "#ff0000", description="Bug report"
-        )
+        bug = await workflow.ensure_label(repo, _LABEL_BUG, "#ff0000", description="Bug report")
         assert_keys(bug, "id", "name", "color")
         assert_content(bug, name=_LABEL_BUG)
         assert_key_types(bug, id=int, name=str)
@@ -108,9 +119,7 @@ class TestSetup:
         """Create a milestone for issue tracking."""
         workflow = Workflow(world)
         repo = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
-        ms = await workflow.ensure_milestone(
-            repo, _MILESTONE, description="First milestone"
-        )
+        ms = await workflow.ensure_milestone(repo, _MILESTONE, description="First milestone")
         assert_keys(ms, "id", "title", "description")
         assert_content(ms, title=_MILESTONE)
 
@@ -155,13 +164,13 @@ class TestIssues:
             body="Steps to reproduce: 1. Open Safari 2. Try login",
             labels=[_LABEL_BUG],
         )
-        assert_keys(issue, "number", "title", "body", "state",
-                    "labels", "created_at", "user")
+        assert_keys(issue, "number", "title", "body", "state", "labels", "created_at", "user")
         assert_key_types(issue, number=int, title=str, state=str)
         assert_content(issue, title="Bug: login fails on Safari", state="open")
         label_names = [lb["name"] for lb in issue.get("labels", [])]
         assert _LABEL_BUG in label_names, (
-            f"Label '{_LABEL_BUG}' not attached. Labels: {label_names}")
+            f"Label '{_LABEL_BUG}' not attached. Labels: {label_names}"
+        )
 
     @pytest.mark.live
     async def test_get_issue_shape(self, world: World) -> None:
@@ -171,14 +180,25 @@ class TestIssues:
         # Retrieve the cached issue by title
         issue = await workflow.ensure_issue(repo, "Bug: login fails on Safari")
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        data = assert_result_ok(await mcp.call_tool(
-            "gitea_issue_get_issue",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": issue["number"], "format": "json"},
-        ))
-        assert_keys(data, "number", "title", "body", "state",
-                    "user", "labels", "created_at", "updated_at",
-                    "comments", "html_url")
+        data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_issue_get_issue",
+                {"owner": DEV.username, "repo": _REPO, "index": issue["number"], "format": "json"},
+            )
+        )
+        assert_keys(
+            data,
+            "number",
+            "title",
+            "body",
+            "state",
+            "user",
+            "labels",
+            "created_at",
+            "updated_at",
+            "comments",
+            "html_url",
+        )
         assert_content(data, number=issue["number"])
 
     @pytest.mark.live
@@ -190,10 +210,13 @@ class TestIssues:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_create_comment",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": issue["number"],
-             "body": "I can reproduce this on v1.0.",
-             "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "index": issue["number"],
+                "body": "I can reproduce this on v1.0.",
+                "format": "json",
+            },
         )
         comment = assert_result_ok(result)
         assert_keys(comment, "body", "user", "created_at")
@@ -208,10 +231,14 @@ class TestIssues:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_edit_issue",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": issue["number"],
-             "title": "Bug: login fails on Safari (all versions)",
-             "state": "closed", "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "index": issue["number"],
+                "title": "Bug: login fails on Safari (all versions)",
+                "state": "closed",
+                "format": "json",
+            },
         )
         assert not result.isError
 
@@ -272,5 +299,4 @@ class TestIssueSearch:
         data = assert_result_ok(result)
         assert isinstance(data, list)
         assert len(data) > 0
-        assert_keys(data[0], "number", "title", "state",
-                    "user", "created_at", "html_url")
+        assert_keys(data[0], "number", "title", "state", "user", "created_at", "html_url")

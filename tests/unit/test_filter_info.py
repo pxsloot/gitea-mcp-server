@@ -162,7 +162,9 @@ class TestComputeFilteredToolsInfo:
         assert result["filtered"] == {}
         assert result["available_scopes"] == []
 
-    def test_no_scope_data_no_exclusions_no_filtering(self, spec_with_one_endpoint: OpenAPISpec) -> None:
+    def test_no_scope_data_no_exclusions_no_filtering(
+        self, spec_with_one_endpoint: OpenAPISpec
+    ) -> None:
         """available_scopes=None → no scope-based filtering."""
         result = compute_filtered_tools_info(spec_with_one_endpoint, available_scopes=None)
         assert result["filtered"] == {}
@@ -175,7 +177,9 @@ class TestComputeFilteredToolsInfo:
         )
         assert result["filtered"] == {}
 
-    def test_insufficient_scope_filters_endpoint(self, spec_with_admin_endpoint: OpenAPISpec) -> None:
+    def test_insufficient_scope_filters_endpoint(
+        self, spec_with_admin_endpoint: OpenAPISpec
+    ) -> None:
         """Token lacks sudo → admin_list_users is scope-restricted."""
         result = compute_filtered_tools_info(
             spec_with_admin_endpoint,
@@ -255,7 +259,12 @@ class TestComputeFilteredToolsInfo:
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
-            "paths": {"/bad": cast("OpenAPIPathItem", "not_a_dict"), "/good": {"get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}}},
+            "paths": {
+                "/bad": cast("OpenAPIPathItem", "not_a_dict"),
+                "/good": {
+                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}
+                },
+            },
         }
         result = compute_filtered_tools_info(spec)
         assert "test_get" not in result["filtered"]
@@ -265,7 +274,12 @@ class TestComputeFilteredToolsInfo:
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
-            "paths": {"/endpoint": {"parameters": [{"name": "id"}], "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}}},
+            "paths": {
+                "/endpoint": {
+                    "parameters": [{"name": "id"}],
+                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}},
+                }
+            },
         }
         result = compute_filtered_tools_info(spec)
         # 'parameters' is not an HTTP method — should be skipped, get is fine
@@ -276,7 +290,11 @@ class TestComputeFilteredToolsInfo:
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
-            "paths": {"/endpoint": {"get": {"operationId": "", "responses": {"200": {"description": "OK"}}}}},
+            "paths": {
+                "/endpoint": {
+                    "get": {"operationId": "", "responses": {"200": {"description": "OK"}}}
+                }
+            },
         }
         result = compute_filtered_tools_info(spec)
         assert result["filtered"] == {}
@@ -307,17 +325,13 @@ class TestComputeFilteredToolsInfo:
             },
         }
         # Token has read-only → write operation is filtered
-        result = compute_filtered_tools_info(
-            spec, available_scopes={"read:issue"}
-        )
+        result = compute_filtered_tools_info(spec, available_scopes={"read:issue"})
         assert "issue_create_issue" in result["filtered"]
         assert result["filtered"]["issue_create_issue"]["reason"] == "scope"
         assert result["filtered"]["issue_create_issue"]["required_scope"] == "write:issue"
 
         # Token has write → visible
-        result2 = compute_filtered_tools_info(
-            spec, available_scopes={"write:issue"}
-        )
+        result2 = compute_filtered_tools_info(spec, available_scopes={"write:issue"})
         assert result2["filtered"] == {}
 
 
@@ -357,7 +371,9 @@ class TestGetFilteredToolInfo:
         assert result is not None
         assert result["reason"] == "scope"
 
-    def test_prefix_not_stripped_if_no_match(self,) -> None:
+    def test_prefix_not_stripped_if_no_match(
+        self,
+    ) -> None:
         """If prefix is not present, look up with the bare name."""
         info = {"filtered": {"repo_get": {"reason": "deprecated"}}}
         result = get_filtered_tool_info("repo_get", info, tool_prefix="gitea_")
@@ -376,7 +392,10 @@ class TestIsExcluded:
     def test_empty_exclusion_config_returns_false(self) -> None:
         """Empty exclude/include lists return False (no filtering)."""
         assert _is_excluded("any_tool", set(), {"exclude": [], "include": []}) is False
-        assert _is_excluded("any_tool", set(), {"exclude": [], "include": []}, tool_prefix="gitea_") is False
+        assert (
+            _is_excluded("any_tool", set(), {"exclude": [], "include": []}, tool_prefix="gitea_")
+            is False
+        )
 
     def test_config_without_exclude_include_returns_false(self) -> None:
         """Config dict without exclude/include keys returns False."""
@@ -515,7 +534,9 @@ class TestFilteredToolMiddleware:
         call_next.assert_called_once_with(ctx)
 
     @pytest.mark.asyncio
-    async def test_scope_filtered_raises_tool_error(self, scope_filter_info: dict[str, Any]) -> None:
+    async def test_scope_filtered_raises_tool_error(
+        self, scope_filter_info: dict[str, Any]
+    ) -> None:
         """Scope-restricted tool should raise ToolError with scope message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=scope_filter_info,
@@ -529,7 +550,9 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_exclude_filtered_raises_tool_error(self, exclude_filter_info: dict[str, Any]) -> None:
+    async def test_exclude_filtered_raises_tool_error(
+        self, exclude_filter_info: dict[str, Any]
+    ) -> None:
         """Config-excluded tool should raise ToolError with exclusion message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=exclude_filter_info,
@@ -543,7 +566,9 @@ class TestFilteredToolMiddleware:
         call_next.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_deprecated_filtered_raises_tool_error(self, deprecated_filter_info: dict[str, Any]) -> None:
+    async def test_deprecated_filtered_raises_tool_error(
+        self, deprecated_filter_info: dict[str, Any]
+    ) -> None:
         """Deprecated tool should raise ToolError with deprecation message."""
         middleware = FilteredToolMiddleware(
             filtered_tools_info=deprecated_filter_info,

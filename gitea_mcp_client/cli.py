@@ -105,10 +105,7 @@ def _safe_index(items: list[str], idx: int) -> str | None:
 
 
 class MCPCli(cmd.Cmd):
-    intro = (
-        "gitea-mcp-client -- interactive MCP client\n"
-        "Type help or ? to list commands.\n"
-    )
+    intro = "gitea-mcp-client -- interactive MCP client\nType help or ? to list commands.\n"
     prompt = "(gitea-mcp) "
 
     def __init__(self, session: Session, raw: bool = False) -> None:
@@ -157,7 +154,9 @@ class MCPCli(cmd.Cmd):
             candidates = [
                 str(res["uri"])
                 for res in resources
-                if str(res.get("uri", "")).startswith((text, text.replace("{", "").replace("}", "")))
+                if str(res.get("uri", "")).startswith(
+                    (text, text.replace("{", "").replace("}", ""))
+                )
             ]
             if not candidates:
                 candidates = [str(res.get("uri", "")) for res in resources]

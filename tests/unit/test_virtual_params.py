@@ -166,9 +166,7 @@ class TestApplyPreHooks:
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
-                "my_param": VirtualParam(
-                    schema={}, default=None, description="", pre_hook=None
-                ),
+                "my_param": VirtualParam(schema={}, default=None, description="", pre_hook=None),
             },
         ):
             # Should not raise
@@ -188,12 +186,8 @@ class TestApplyPreHooks:
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
-                "a": VirtualParam(
-                    schema={}, default=None, description="", pre_hook=hook_a
-                ),
-                "b": VirtualParam(
-                    schema={}, default=None, description="", pre_hook=hook_b
-                ),
+                "a": VirtualParam(schema={}, default=None, description="", pre_hook=hook_a),
+                "b": VirtualParam(schema={}, default=None, description="", pre_hook=hook_b),
             },
         ):
             apply_pre_hooks(extracted)
@@ -331,9 +325,7 @@ class TestRequiredScope:
 
     def test_can_be_set(self) -> None:
         """required_scope can be set to a scope string."""
-        vp = VirtualParam(
-            schema={}, default=None, description="test", required_scope="sudo"
-        )
+        vp = VirtualParam(schema={}, default=None, description="test", required_scope="sudo")
         assert vp.required_scope == "sudo"
 
     def test_sudo_in_registry_has_required_scope(self) -> None:
@@ -485,18 +477,14 @@ class TestApplyTo:
     def test_runs_post_hook_with_value(self) -> None:
         """Calls the post_hook with (result, value, all_extracted)."""
         result = ToolResult(content=[TextContent(type="text", text="hello")])
-        transformed = ToolResult(
-            content=[TextContent(type="text", text="transformed")]
-        )
+        transformed = ToolResult(content=[TextContent(type="text", text="transformed")])
 
         hook = MagicMock(return_value=transformed)
         extracted = {"format": "markdown"}
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
-                "format": VirtualParam(
-                    schema={}, default="json", description="", post_hook=hook
-                ),
+                "format": VirtualParam(schema={}, default="json", description="", post_hook=hook),
             },
         ):
             output = apply_to(result, extracted)
@@ -516,9 +504,7 @@ class TestApplyTo:
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
-                "format": VirtualParam(
-                    schema={}, default="json", description="", post_hook=None
-                ),
+                "format": VirtualParam(schema={}, default="json", description="", post_hook=None),
             },
         ):
             assert apply_to(result, extracted) is result
@@ -588,9 +574,9 @@ class TestGetLoopHooks:
         """Returns (value, hook) for each param with a registered loop_hook."""
         from gitea_mcp_server.tools.virtual_params import get_loop_hooks
 
-        loop_hook = AsyncMock(return_value=ToolResult(
-            content=[TextContent(type="text", text="looped")]
-        ))
+        loop_hook = AsyncMock(
+            return_value=ToolResult(content=[TextContent(type="text", text="looped")])
+        )
 
         extracted = {"fetch_all": True}
         with patch.dict(
@@ -622,15 +608,9 @@ class TestGetLoopHooks:
         with patch.dict(
             "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
             {
-                "a": VirtualParam(
-                    schema={}, default=None, description="", loop_hook=hook_a
-                ),
-                "b": VirtualParam(
-                    schema={}, default=None, description="", loop_hook=hook_b
-                ),
-                "c": VirtualParam(
-                    schema={}, default=None, description="", loop_hook=None
-                ),
+                "a": VirtualParam(schema={}, default=None, description="", loop_hook=hook_a),
+                "b": VirtualParam(schema={}, default=None, description="", loop_hook=hook_b),
+                "c": VirtualParam(schema={}, default=None, description="", loop_hook=None),
             },
         ):
             hooks = get_loop_hooks(extracted)
@@ -654,9 +634,7 @@ class TestVirtualParamLoopHookField:
     def test_can_set_loop_hook(self) -> None:
         """loop_hook can be set to a callable."""
         hook = AsyncMock()
-        vp = VirtualParam(
-            schema={}, default=None, description="test", loop_hook=hook
-        )
+        vp = VirtualParam(schema={}, default=None, description="test", loop_hook=hook)
         assert vp.loop_hook is hook
 
     def test_loop_hook_none_is_noop(self) -> None:
@@ -836,7 +814,10 @@ class TestFetchAllLoop:
 
         output = await _fetch_all_loop(result, True, {"page": 1, "limit": 2}, _fetch_page)
         assert get_structured(output)["result"] == [
-            {"id": 1}, {"id": 2}, {"id": 3}, {"id": 4},
+            {"id": 1},
+            {"id": 2},
+            {"id": 3},
+            {"id": 4},
         ]
         assert get_structured(output)["has_more"] is False
         assert get_structured(output)["next_offset"] is None

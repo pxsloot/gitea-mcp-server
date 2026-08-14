@@ -18,7 +18,10 @@ RESPONSE_PREVIEW_LIMIT = 100
 
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
-    "enum": ["concise", "full"],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
+    "enum": [
+        "concise",
+        "full",
+    ],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
     "default": "full",
     "description": (
         "Output detail level.  "
@@ -202,9 +205,18 @@ HTTP_METHODS_DESTRUCTIVE = {"DELETE"}
 HTTP_METHODS_IDEMPOTENT = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
 """HTTP methods that are idempotent (can be repeated safely)."""
 
-HTTP_METHODS_ALL = frozenset({
-    "get", "post", "put", "delete", "patch", "options", "head", "trace",
-})
+HTTP_METHODS_ALL = frozenset(
+    {
+        "get",
+        "post",
+        "put",
+        "delete",
+        "patch",
+        "options",
+        "head",
+        "trace",
+    }
+)
 """All standard HTTP methods (lowercase) used for spec iteration."""
 
 

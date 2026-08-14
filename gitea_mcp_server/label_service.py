@@ -179,9 +179,7 @@ class LabelService:
 
         return converted
 
-    async def format_available(
-        self, owner: str, repo: str, client: GiteaClient
-    ) -> str:
+    async def format_available(self, owner: str, repo: str, client: GiteaClient) -> str:
         """Return a human-readable, grouped listing of available labels.
 
         Labels with a ``/`` prefix (e.g. ``Kind/Bug``) are grouped by their
@@ -255,9 +253,7 @@ class LabelService:
             async with CurrentContext() as ctx:
                 await safe_ctx_info(ctx, msg, extra=extra)
 
-    async def _get_or_fetch(
-        self, owner: str, repo: str, client: GiteaClient
-    ) -> _LabelCacheEntry:
+    async def _get_or_fetch(self, owner: str, repo: str, client: GiteaClient) -> _LabelCacheEntry:
         """Return a cached entry or fetch + cache from the API."""
         cache_key = (owner, repo)
         now: datetime = datetime.now(UTC)

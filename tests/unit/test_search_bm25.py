@@ -130,11 +130,13 @@ class TestBM25Index:
     def test_relevance_ranking(self) -> None:
         """Documents with more matches rank higher."""
         index = _BM25Index()
-        index.build([
-            "apple banana cherry",
-            "apple apple banana",
-            "orange grape",
-        ])
+        index.build(
+            [
+                "apple banana cherry",
+                "apple apple banana",
+                "orange grape",
+            ]
+        )
         results = index.query("apple banana", 10)
         # doc 1 (apple x2 + banana) should rank higher than doc 0 (apple x1 + banana)
         # doc 2 has neither, should be last or excluded

@@ -195,7 +195,14 @@ class TestFetchTokenScopes:
         mock_client.request = AsyncMock(
             side_effect=[
                 {"login": "testuser"},
-                [{"id": 1, "name": "t1", "token_last_eight": last_eight, "scopes": ["read:repo", "write:issue"]}],
+                [
+                    {
+                        "id": 1,
+                        "name": "t1",
+                        "token_last_eight": last_eight,
+                        "scopes": ["read:repo", "write:issue"],
+                    }
+                ],
             ]
         )
         result = await fetch_token_scopes(mock_client, token_val)
@@ -340,7 +347,9 @@ class TestComputeExcludedRoutes:
             "info": {"title": "Test", "version": "1"},
             "paths": {
                 "/bad": cast("OpenAPIPathItem", "not_a_dict"),
-                "/good": {"get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}},
+                "/good": {
+                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}
+                },
             },
         }
         filtered = compute_filtered_tools_info(
@@ -379,7 +388,9 @@ class TestComputeExcludedRoutes:
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
             "paths": {
-                "/endpoint": {"get": {"operationId": "", "responses": {"200": {"description": "OK"}}}},
+                "/endpoint": {
+                    "get": {"operationId": "", "responses": {"200": {"description": "OK"}}}
+                },
             },
         }
         excluded = _compute_excluded_routes(spec, {"filtered": {"": {"reason": "deprecated"}}})
@@ -391,7 +402,13 @@ class TestComputeExcludedRoutes:
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
             "paths": {
-                "/admin/users": {"get": {"operationId": "admin_list_users", "tags": ["admin"], "responses": {"200": {"description": "OK"}}}},
+                "/admin/users": {
+                    "get": {
+                        "operationId": "admin_list_users",
+                        "tags": ["admin"],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
             },
         }
         filtered = compute_filtered_tools_info(
@@ -410,7 +427,13 @@ class TestComputeExcludedRoutes:
             "openapi": "3.1.0",
             "info": {"title": "Test", "version": "1"},
             "paths": {
-                "/admin/users": {"get": {"operationId": "admin_list_users", "tags": ["admin"], "responses": {"200": {"description": "OK"}}}},
+                "/admin/users": {
+                    "get": {
+                        "operationId": "admin_list_users",
+                        "tags": ["admin"],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
             },
         }
         filtered = compute_filtered_tools_info(

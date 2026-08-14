@@ -348,7 +348,12 @@ def register_doc_tools(
             )
 
         return format_paginated_result(
-            all_results, total_count, format, page, limit, fetch_all,
+            all_results,
+            total_count,
+            format,
+            page,
+            limit,
+            fetch_all,
             markdown_extras=extras or None,
             detail=detail,
         )

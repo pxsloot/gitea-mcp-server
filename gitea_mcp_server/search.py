@@ -144,9 +144,6 @@ class _BM25Index:
         ]
 
 
-
-
-
 def _texts_hash(texts: list[str]) -> str:
     """SHA256 hash of sorted texts for staleness detection."""
     key = "|".join(sorted(texts))

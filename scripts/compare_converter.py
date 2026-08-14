@@ -24,7 +24,10 @@ from typing import Any
 from gitea_mcp_server.openapi_converter import (
     convert_swagger_to_openapi_v3,
 )
-from gitea_mcp_server.openapi_converter.core import _add_nullable_for_optional_refs, _wrap_success_response_schemas
+from gitea_mcp_server.openapi_converter.core import (
+    _add_nullable_for_optional_refs,
+    _wrap_success_response_schemas,
+)
 from gitea_mcp_server.server_setup.spec_loader import load_openapi_spec
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -117,7 +120,9 @@ def _convert_without_wrapping(spec: dict[str, Any]) -> dict[str, Any]:
     return spec
 
 
-def fetch_official_conversion(spec_url: str | None = None, spec_data: dict | None = None) -> dict[str, Any] | None:
+def fetch_official_conversion(
+    spec_url: str | None = None, spec_data: dict | None = None
+) -> dict[str, Any] | None:
     """Fetch the official conversion from converter.swagger.io.
 
     Can either pass a URL (publicly accessible) or POST the raw spec data.
@@ -139,8 +144,10 @@ def fetch_official_conversion(spec_url: str | None = None, spec_data: dict | Non
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode())
-        logger.info("Fetched official conversion: %s version",
-                     result.get("openapi", result.get("swagger", "unknown")))
+        logger.info(
+            "Fetched official conversion: %s version",
+            result.get("openapi", result.get("swagger", "unknown")),
+        )
         return result
     except Exception as e:
         logger.warning("Could not fetch official conversion: %s", e)
@@ -196,14 +203,20 @@ def compare_paths(our_spec: dict, official_spec: dict) -> dict:
     for path in sorted(common):
         our_item = our_paths[path]
         off_item = official_paths[path]
-        our_methods = set(k for k in our_item if k in ("get", "post", "put", "delete", "patch", "options", "head"))
-        off_methods = set(k for k in off_item if k in ("get", "post", "put", "delete", "patch", "options", "head"))
+        our_methods = set(
+            k for k in our_item if k in ("get", "post", "put", "delete", "patch", "options", "head")
+        )
+        off_methods = set(
+            k for k in off_item if k in ("get", "post", "put", "delete", "patch", "options", "head")
+        )
         if our_methods != off_methods:
-            method_diffs.append({
-                "path": path,
-                "our_methods": sorted(our_methods),
-                "official_methods": sorted(off_methods),
-            })
+            method_diffs.append(
+                {
+                    "path": path,
+                    "our_methods": sorted(our_methods),
+                    "official_methods": sorted(off_methods),
+                }
+            )
 
     return {
         "total_our": len(our_paths),
@@ -257,15 +270,21 @@ def compare_content_types(our_spec: dict, official_spec: dict) -> list[dict]:
                 continue
             our_resp = our_op.get("responses", {}).get("200", {})
             off_resp = off_op.get("responses", {}).get("200", {})
-            our_cts = set(our_resp.get("content", {}).keys()) if isinstance(our_resp, dict) else set()
-            off_cts = set(off_resp.get("content", {}).keys()) if isinstance(off_resp, dict) else set()
+            our_cts = (
+                set(our_resp.get("content", {}).keys()) if isinstance(our_resp, dict) else set()
+            )
+            off_cts = (
+                set(off_resp.get("content", {}).keys()) if isinstance(off_resp, dict) else set()
+            )
             if our_cts != off_cts:
-                diffs.append({
-                    "path": path,
-                    "method": method,
-                    "our_content_types": sorted(our_cts),
-                    "official_content_types": sorted(off_cts),
-                })
+                diffs.append(
+                    {
+                        "path": path,
+                        "method": method,
+                        "our_content_types": sorted(our_cts),
+                        "official_content_types": sorted(off_cts),
+                    }
+                )
     return diffs
 
 
@@ -288,13 +307,15 @@ def summarize_schema_diffs(our_spec: dict, official_spec: dict, limit: int = 10)
         our_props = set((our.get("properties") or {}).keys()) if isinstance(our, dict) else set()
         off_props = set((off.get("properties") or {}).keys()) if isinstance(off, dict) else set()
         if our_props != off_props:
-            diffs.append({
-                "schema": name,
-                "our_props": sorted(our_props),
-                "official_props": sorted(off_props),
-                "missing_in_our": sorted(off_props - our_props),
-                "extra_in_our": sorted(our_props - off_props),
-            })
+            diffs.append(
+                {
+                    "schema": name,
+                    "our_props": sorted(our_props),
+                    "official_props": sorted(off_props),
+                    "missing_in_our": sorted(off_props - our_props),
+                    "extra_in_our": sorted(our_props - off_props),
+                }
+            )
     return diffs
 
 
@@ -457,8 +478,12 @@ async def main() -> None:
 
         result["paths"] = compare_paths(our_full_normalized, official_normalized)
         result["definitions"] = compare_definitions(our_full_normalized, official_normalized)
-        result["content_type_diffs"] = compare_content_types(our_full_normalized, official_normalized)
-        result["schema_diffs"] = summarize_schema_diffs(our_full_normalized, official_normalized, limit=20)
+        result["content_type_diffs"] = compare_content_types(
+            our_full_normalized, official_normalized
+        )
+        result["schema_diffs"] = summarize_schema_diffs(
+            our_full_normalized, official_normalized, limit=20
+        )
 
         has_diffs = bool(
             result["paths"].get("missing_in_our")
@@ -485,4 +510,5 @@ def _save_spec(spec: dict[str, Any], filename: str) -> Path:
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

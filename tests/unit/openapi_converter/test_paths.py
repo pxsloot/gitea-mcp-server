@@ -11,7 +11,12 @@ class TestRequestBodyBuilder:
         """FormData param with description and no schema field uses description."""
         builder = RequestBodyBuilder()
         form_params = [
-            {"name": "file", "in": "formData", "type": "string", "description": "The file to upload"},
+            {
+                "name": "file",
+                "in": "formData",
+                "type": "string",
+                "description": "The file to upload",
+            },
         ]
         result = builder.build_from_form_data(form_params)
         assert result is not None
@@ -102,7 +107,7 @@ class TestConvertPaths:
     def test_delete_with_body_params_has_request_body(self) -> None:
         """DELETE operations with ``in: body`` or ``in: formData`` parameters must
         produce requestBody.
-        
+
         Gitea's Swagger declares request bodies on some DELETE endpoints
         (e.g. DELETE /repos/{owner}/{repo}/issues/{index}/blocks carries
         an IssueMeta body).  The converter builds requestBody whenever
@@ -157,8 +162,7 @@ class TestConvertPaths:
         op = result["/items/{id}"]["delete"]
         assert any(p["name"] == "id" for p in op["parameters"])
         assert "requestBody" not in op, (
-            f"DELETE without body params must not have requestBody. "
-            f"Keys: {list(op.keys())}"
+            f"DELETE without body params must not have requestBody. Keys: {list(op.keys())}"
         )
 
     def test_delete_with_formdata_produces_request_body(self) -> None:
@@ -204,7 +208,12 @@ class TestConvertPaths:
         paths = {
             "/users": {
                 "parameters": [
-                    {"name": "X-Request-Id", "in": "header", "type": "string", "description": "Request ID"},
+                    {
+                        "name": "X-Request-Id",
+                        "in": "header",
+                        "type": "string",
+                        "description": "Request ID",
+                    },
                 ],
                 "get": {
                     "parameters": [],
@@ -216,7 +225,9 @@ class TestConvertPaths:
         assert "parameters" in result["/users"]
         param_names = [p["name"] for p in result["/users"]["parameters"]]
         assert "X-Request-Id" in param_names
-        assert any(p.get("schema", {}).get("type") == "string" for p in result["/users"]["parameters"])
+        assert any(
+            p.get("schema", {}).get("type") == "string" for p in result["/users"]["parameters"]
+        )
 
     def test_non_http_method_key_preserved(self) -> None:
         """Non-HTTP-method keys in path_item are preserved (e.g., summary, description)."""

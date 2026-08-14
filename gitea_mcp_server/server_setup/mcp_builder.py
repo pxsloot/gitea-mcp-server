@@ -73,7 +73,6 @@ from gitea_mcp_server.tools.virtual_params import get_loop_hooks, inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
-
     from gitea_mcp_server.client import GiteaClient
 
 logger = logging.getLogger(__name__)
@@ -132,10 +131,7 @@ def _response_is_binary(openapi_spec: OpenAPISpec, path: str, method: str) -> bo
     if not isinstance(content_types, list):
         return False
     binary_types = {"application/zip", "application/octet-stream", "application/x-zip-compressed"}
-    return any(
-        ct.lower().strip() in binary_types
-        for ct in content_types
-    )
+    return any(ct.lower().strip() in binary_types for ct in content_types)
 
 
 def _detect_contents_response(
@@ -219,22 +215,34 @@ def _compute_tool_schema(
     raw_schema: dict[str, Any] | None = None
     if output_schema is not None:
         raw_schema = get_success_schema(
-            openapi_spec, path, method.lower(), resolve=False,
+            openapi_spec,
+            path,
+            method.lower(),
+            resolve=False,
         )
 
     is_text = is_text_response(openapi_spec, path, method)
     response_transform = _read_response_transform(
-        openapi_spec, path, method,
+        openapi_spec,
+        path,
+        method,
     )
     is_text, response_transform = _detect_contents_response(
-        output_schema, is_text, response_transform,
+        output_schema,
+        is_text,
+        response_transform,
     )
 
     is_binary_response = _response_is_binary(openapi_spec, path, method)
 
     return _ComputedSchema(
-        output_schema, raw_schema, is_text, is_binary_response,
-        response_transform, path, method,
+        output_schema,
+        raw_schema,
+        is_text,
+        is_binary_response,
+        response_transform,
+        path,
+        method,
     )
 
 
@@ -268,7 +276,9 @@ def _apply_fallback_schemas(
         return False
 
     has_no_content = response_has_no_content(
-        openapi_spec, schema.route_path, schema.route_method,
+        openapi_spec,
+        schema.route_path,
+        schema.route_method,
     )
     if has_no_content:
         component.output_schema = {
@@ -537,13 +547,16 @@ def _customize_metadata(
 
     schema = _compute_tool_schema(route, openapi_spec)
     has_no_content = _apply_schema_postprocessing(
-        component, schema,
+        component,
+        schema,
         has_labels=has_labels,
         openapi_spec=openapi_spec,
     )
 
     _build_customization_meta(
-        component, required_scope, schema,
+        component,
+        required_scope,
+        schema,
         has_labels=has_labels,
         has_no_content=has_no_content,
     )
@@ -641,6 +654,7 @@ class _ToolWrappingTransform(Transform):
         execution, error translation, response-class wrapping, pagination
         metadata, loop hooks) to this tool's ``customization``.
         """
+
         async def executor(
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
@@ -965,10 +979,12 @@ class _ToolWrappingTransform(Transform):
         )
         size = len(text.encode("utf-8")) if text else 0
         return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=f"Binary content ({size} bytes). Use format='raw' to access directly.",
-            )],
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Binary content ({size} bytes). Use format='raw' to access directly.",
+                )
+            ],
             structured_content={
                 "result": None,
                 "content_info": {
@@ -1083,7 +1099,12 @@ class _ToolWrappingTransform(Transform):
             handled = await self._try_handle_text_response(result, tool)
             if handled is not None:
                 return await self._apply_loop_hooks(
-                    handled, kwargs, extracted, tool, route_path, route_method,
+                    handled,
+                    kwargs,
+                    extracted,
+                    tool,
+                    route_path,
+                    route_method,
                 )
 
         # Binary response (application/zip, application/octet-stream):
@@ -1107,7 +1128,12 @@ class _ToolWrappingTransform(Transform):
                 structured_content={"result": None},
             )
             return await self._apply_loop_hooks(
-                result, kwargs, extracted, tool, route_path, route_method,
+                result,
+                kwargs,
+                extracted,
+                tool,
+                route_path,
+                route_method,
             )
 
         if (
@@ -1135,13 +1161,23 @@ class _ToolWrappingTransform(Transform):
                     structured_content=enhanced,
                 )
                 return await self._apply_loop_hooks(
-                    result, kwargs, extracted, tool, route_path, route_method,
+                    result,
+                    kwargs,
+                    extracted,
+                    tool,
+                    route_path,
+                    route_method,
                 )
 
         await safe_ctx_report_progress(ctx, progress=1.0)
 
         return await self._apply_loop_hooks(
-            result, kwargs, extracted, tool, route_path, route_method,
+            result,
+            kwargs,
+            extracted,
+            tool,
+            route_path,
+            route_method,
         )
 
 

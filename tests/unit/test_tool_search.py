@@ -169,7 +169,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -188,7 +190,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -207,7 +211,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
 
@@ -225,7 +231,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -248,7 +256,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_test_tool", {"arg": "val"}, mock_ctx)
         assert result is inner_result
@@ -282,7 +292,9 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": {}})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         await _call_tool_impl("gitea_test_tool", '{"key": "val", "num": 42}', mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with(
@@ -320,7 +332,9 @@ class TestCallToolRuntimeBehavior:
         inner_result = ToolResult(content=[], structured_content={"result": []})
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         await _call_tool_impl("gitea_test_tool", None, mock_ctx)
         mock_ctx.fastmcp.call_tool.assert_called_once_with("gitea_test_tool", None)
@@ -337,7 +351,9 @@ class TestCallToolRuntimeBehavior:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         final = await _call_tool_impl("gitea_array_tool", None, mock_ctx)
         assert final is inner_result
@@ -559,7 +575,9 @@ class TestCallToolRuntimeBehaviorExtended:
         )
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.call_tool = AsyncMock(return_value=inner_result)
-        mock_ctx.fastmcp.get_tool = AsyncMock(side_effect=lambda name: Tool(name=name, parameters={"properties": {}}))
+        mock_ctx.fastmcp.get_tool = AsyncMock(
+            side_effect=lambda name: Tool(name=name, parameters={"properties": {}})
+        )
 
         result = await _call_tool_impl("gitea_schema_tool", {"arg": 1}, mock_ctx)
         assert result is inner_result
@@ -697,7 +715,10 @@ class TestToolInfo:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
         result = await _tool_info_impl(
-            "gitea_tool_with_array_result", "json", mock_ctx, transform,
+            "gitea_tool_with_array_result",
+            "json",
+            mock_ctx,
+            transform,
             detail="full",
         )
         assert result.structured_content is not None
@@ -749,7 +770,10 @@ class TestToolInfo:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
         result = await _tool_info_impl(
-            "gitea_tool_with_string_result", "json", mock_ctx, transform,
+            "gitea_tool_with_string_result",
+            "json",
+            mock_ctx,
+            transform,
             detail="full",
         )
         assert result.structured_content is not None
@@ -797,8 +821,14 @@ class TestToolInfo:
                         },
                     },
                     "has_more": {"type": "boolean", "description": "Whether more pages exist"},
-                    "next_offset": {"type": "integer", "description": "Page number for next page, if any"},
-                    "total_count": {"type": "integer", "description": "Total item count from server, if available"},
+                    "next_offset": {
+                        "type": "integer",
+                        "description": "Page number for next page, if any",
+                    },
+                    "total_count": {
+                        "type": "integer",
+                        "description": "Total item count from server, if available",
+                    },
                 },
             },
         )
@@ -848,9 +878,7 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_doc_tool", "json", mock_ctx, transform, detail="full"
-        )
+        result = await _tool_info_impl("gitea_doc_tool", "json", mock_ctx, transform, detail="full")
         assert result.structured_content is not None
         schema = result.structured_content["result"]
         props = schema["output_schema"]["properties"]
@@ -889,7 +917,10 @@ class TestToolInfo:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
         result = await _tool_info_impl(
-            "gitea_tool_array_of_strings", "json", mock_ctx, transform,
+            "gitea_tool_array_of_strings",
+            "json",
+            mock_ctx,
+            transform,
             detail="full",
         )
         assert result.structured_content is not None
@@ -974,8 +1005,12 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="restricted by your token scopes"):
             await _tool_info_impl(
-                "gitea_admin_create_user", "markdown", mock_ctx, transform,
-                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+                "gitea_admin_create_user",
+                "markdown",
+                mock_ctx,
+                transform,
+                tool_prefix="gitea_",
+                filtered_tools_info=scope_filter_info,
             )
 
     @pytest.mark.asyncio
@@ -989,12 +1024,18 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="excluded by server configuration"):
             await _tool_info_impl(
-                "gitea_admin_create_user", "markdown", mock_ctx, transform,
-                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+                "gitea_admin_create_user",
+                "markdown",
+                mock_ctx,
+                transform,
+                tool_prefix="gitea_",
+                filtered_tools_info=exclude_filter_info,
             )
 
     @pytest.mark.asyncio
-    async def test_tool_info_deprecated_filtered(self, deprecated_filter_info: dict[str, Any]) -> None:
+    async def test_tool_info_deprecated_filtered(
+        self, deprecated_filter_info: dict[str, Any]
+    ) -> None:
         """tool_info for deprecated tool returns deprecation message."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
 
@@ -1004,8 +1045,12 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="has been deprecated"):
             await _tool_info_impl(
-                "gitea_some_deprecated_tool", "markdown", mock_ctx, transform,
-                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+                "gitea_some_deprecated_tool",
+                "markdown",
+                mock_ctx,
+                transform,
+                tool_prefix="gitea_",
+                filtered_tools_info=deprecated_filter_info,
             )
 
     @pytest.mark.asyncio
@@ -1019,8 +1064,12 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="not found"):
             await _tool_info_impl(
-                "gitea_admin_create_user", "markdown", mock_ctx, transform,
-                tool_prefix="gitea_", filtered_tools_info=None,
+                "gitea_admin_create_user",
+                "markdown",
+                mock_ctx,
+                transform,
+                tool_prefix="gitea_",
+                filtered_tools_info=None,
             )
 
     # ── call_tool → filter_info ──────────────────────────────────────────
@@ -1034,8 +1083,11 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="restricted by your token scopes"):
             await _call_tool_impl(
-                "gitea_admin_create_user", {}, mock_ctx,
-                tool_prefix="gitea_", filtered_tools_info=scope_filter_info,
+                "gitea_admin_create_user",
+                {},
+                mock_ctx,
+                tool_prefix="gitea_",
+                filtered_tools_info=scope_filter_info,
             )
 
     @pytest.mark.asyncio
@@ -1047,12 +1099,17 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="excluded by server configuration"):
             await _call_tool_impl(
-                "gitea_admin_create_user", {}, mock_ctx,
-                tool_prefix="gitea_", filtered_tools_info=exclude_filter_info,
+                "gitea_admin_create_user",
+                {},
+                mock_ctx,
+                tool_prefix="gitea_",
+                filtered_tools_info=exclude_filter_info,
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_deprecated_filtered(self, deprecated_filter_info: dict[str, Any]) -> None:
+    async def test_call_tool_deprecated_filtered(
+        self, deprecated_filter_info: dict[str, Any]
+    ) -> None:
         """call_tool for deprecated tool raises deprecation error."""
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.get_tool = AsyncMock(return_value=None)
@@ -1060,8 +1117,11 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="has been deprecated"):
             await _call_tool_impl(
-                "gitea_some_deprecated_tool", {}, mock_ctx,
-                tool_prefix="gitea_", filtered_tools_info=deprecated_filter_info,
+                "gitea_some_deprecated_tool",
+                {},
+                mock_ctx,
+                tool_prefix="gitea_",
+                filtered_tools_info=deprecated_filter_info,
             )
 
     @pytest.mark.asyncio
@@ -1073,8 +1133,11 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="not found"):
             await _call_tool_impl(
-                "gitea_admin_create_user", {}, mock_ctx,
-                tool_prefix="gitea_", filtered_tools_info=None,
+                "gitea_admin_create_user",
+                {},
+                mock_ctx,
+                tool_prefix="gitea_",
+                filtered_tools_info=None,
             )
 
     @pytest.mark.asyncio
@@ -1086,7 +1149,9 @@ class TestFilterInfoIntegration:
 
         with pytest.raises(ValueError, match="not found"):
             await _call_tool_impl(
-                "gitea_unknown_tool", {}, mock_ctx,
+                "gitea_unknown_tool",
+                {},
+                mock_ctx,
                 tool_prefix="",
             )
 
@@ -1341,7 +1406,13 @@ class TestSyntheticToolAnnotations:
         assert ann["openWorldHint"] is True
         assert ann["title"] == "Foo Tool"
         # All 5 fields present
-        assert set(ann) == {"title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
+        assert set(ann) == {
+            "title",
+            "readOnlyHint",
+            "destructiveHint",
+            "idempotentHint",
+            "openWorldHint",
+        }
 
     def test_compact_serializer_no_annotations(self) -> None:
         """compact_search_serializer handles tools with annotations=None gracefully."""
@@ -1707,9 +1778,7 @@ class TestNameMatches:
 
     def test_sliding_window_domain_prefix_no_spurious_match(self) -> None:
         """Sliding window does not spuriously match unrelated tokens."""
-        assert not _name_matches(
-            "create pull request", "gitea_repo_create_pull_review", "gitea_"
-        )
+        assert not _name_matches("create pull request", "gitea_repo_create_pull_review", "gitea_")
 
     def test_sliding_window_domain_prefix_verb_first(self) -> None:
         """Sliding window with swapped ordering handles verb-first queries."""
@@ -1736,15 +1805,21 @@ class TestSearchAndSliceNameMatch:
 
     def test_exact_match_ranks_first(self) -> None:
         """Exact name match ranks above BM25 results."""
-        items = self._make_items([
-            "gitea_user_current_check_following",
-            "gitea_user_current_list_following",
-            "gitea_user_get_current",
-            "gitea_user_current_list_followers",
-        ])
+        items = self._make_items(
+            [
+                "gitea_user_current_check_following",
+                "gitea_user_current_list_following",
+                "gitea_user_get_current",
+                "gitea_user_current_list_followers",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "user get current", page=1, limit=10,
+            items,
+            texts,
+            "user get current",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         assert page_items[0]["name"] == "gitea_user_get_current"
@@ -1752,15 +1827,21 @@ class TestSearchAndSliceNameMatch:
 
     def test_verb_first_ranks_among_name_matches(self) -> None:
         """Verb-first query ('create issue') puts exact tool among name-match results."""
-        items = self._make_items([
-            "gitea_issue_create_issue_attachment",
-            "gitea_issue_create_issue_comment_attachment",
-            "gitea_issue_create_issue",
-            "gitea_issue_create_issue_blocking",
-        ])
+        items = self._make_items(
+            [
+                "gitea_issue_create_issue_attachment",
+                "gitea_issue_create_issue_comment_attachment",
+                "gitea_issue_create_issue",
+                "gitea_issue_create_issue_blocking",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "create issue", page=1, limit=10,
+            items,
+            texts,
+            "create issue",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         # Multiple tools share the "issue create" prefix (via swap), so all
@@ -1772,13 +1853,19 @@ class TestSearchAndSliceNameMatch:
 
     def test_prefix_match_ranks_first(self) -> None:
         """Token-boundary prefix match ranks above BM25 results."""
-        items = self._make_items([
-            "gitea_user_current_check_following",
-            "gitea_user_get_current",
-        ])
+        items = self._make_items(
+            [
+                "gitea_user_current_check_following",
+                "gitea_user_get_current",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "user get", page=1, limit=10,
+            items,
+            texts,
+            "user get",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         assert page_items[0]["name"] == "gitea_user_get_current"
@@ -1791,13 +1878,19 @@ class TestSearchAndSliceNameMatch:
         ``gitea_repo_create_pull_request`` above similarly-named tools
         that share the same prefix window (e.g. ``_pull_review``).
         """
-        items = self._make_items([
-            "gitea_repo_create_pull_review",
-            "gitea_repo_create_pull_request",
-        ])
+        items = self._make_items(
+            [
+                "gitea_repo_create_pull_review",
+                "gitea_repo_create_pull_request",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "create pull request", page=1, limit=10,
+            items,
+            texts,
+            "create pull request",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         assert page_items[0]["name"] == "gitea_repo_create_pull_request"
@@ -1805,41 +1898,59 @@ class TestSearchAndSliceNameMatch:
 
     def test_no_prefix_configured(self) -> None:
         """Without prefix, unprefixed names match."""
-        items = self._make_items([
-            "user_current_check_following",
-            "user_get_current",
-        ])
+        items = self._make_items(
+            [
+                "user_current_check_following",
+                "user_get_current",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "user get current", page=1, limit=10,
+            items,
+            texts,
+            "user get current",
+            page=1,
+            limit=10,
             tool_prefix="",
         )
         assert page_items[0]["name"] == "user_get_current"
 
     def test_custom_prefix(self) -> None:
         """Non-default prefix is handled correctly."""
-        items = self._make_items([
-            "forgejo_user_current_check_following",
-            "forgejo_user_get_current",
-        ])
+        items = self._make_items(
+            [
+                "forgejo_user_current_check_following",
+                "forgejo_user_get_current",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, _ = search_and_slice(
-            items, texts, "user get current", page=1, limit=10,
+            items,
+            texts,
+            "user get current",
+            page=1,
+            limit=10,
             tool_prefix="forgejo_",
         )
         assert page_items[0]["name"] == "forgejo_user_get_current"
 
     def test_broad_query_returns_only_single_token(self) -> None:
         """Single-token query like 'user' is NOT boosted (BM25 handles it)."""
-        items = self._make_items([
-            "gitea_user_get_current",
-            "gitea_user_current_list_following",
-            "gitea_repo_create",
-            "gitea_issue_create",
-        ])
+        items = self._make_items(
+            [
+                "gitea_user_get_current",
+                "gitea_user_current_list_following",
+                "gitea_repo_create",
+                "gitea_issue_create",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, total = search_and_slice(
-            items, texts, "user", page=1, limit=10,
+            items,
+            texts,
+            "user",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         # No name matches (single token not boosted), so BM25 ranks purely
@@ -1852,14 +1963,20 @@ class TestSearchAndSliceNameMatch:
 
     def test_no_name_match_falls_back_to_bm25(self) -> None:
         """When no name matches, BM25 handles ranking (regression test)."""
-        items = self._make_items([
-            "gitea_repo_create",
-            "gitea_issue_create",
-            "gitea_pull_create",
-        ])
+        items = self._make_items(
+            [
+                "gitea_repo_create",
+                "gitea_issue_create",
+                "gitea_pull_create",
+            ]
+        )
         texts = self._make_texts(items)
         page_items, total = search_and_slice(
-            items, texts, "create", page=1, limit=10,
+            items,
+            texts,
+            "create",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         # No name matches (single token), so all items come from BM25.
@@ -1872,14 +1989,20 @@ class TestSearchAndSliceNameMatch:
 
     def test_mixed_name_match_and_bm25(self) -> None:
         """Name matches come first, BM25 results follow."""
-        items = self._make_items([
-            "gitea_user_get_current",      # name match
-            "gitea_user_current_list_repos",  # BM25 match (shares "user current")
-            "gitea_user_current_list_following",  # BM25 match
-        ])
+        items = self._make_items(
+            [
+                "gitea_user_get_current",  # name match
+                "gitea_user_current_list_repos",  # BM25 match (shares "user current")
+                "gitea_user_current_list_following",  # BM25 match
+            ]
+        )
         texts = self._make_texts(items)
         page_items, total = search_and_slice(
-            items, texts, "user get current", page=1, limit=10,
+            items,
+            texts,
+            "user get current",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         assert page_items[0]["name"] == "gitea_user_get_current"
@@ -1890,15 +2013,21 @@ class TestSearchAndSliceNameMatch:
 
     def test_total_count_includes_name_matches(self) -> None:
         """total_count includes both name matches and BM25 results."""
-        items = self._make_items([
-            "gitea_user_get_current",      # name match
-            "gitea_user_current_list_repos",  # BM25 match (shares "user current")
-            "gitea_user_current_list_following",  # BM25 match
-            "gitea_admin_delete",         # no match
-        ])
+        items = self._make_items(
+            [
+                "gitea_user_get_current",  # name match
+                "gitea_user_current_list_repos",  # BM25 match (shares "user current")
+                "gitea_user_current_list_following",  # BM25 match
+                "gitea_admin_delete",  # no match
+            ]
+        )
         texts = self._make_texts(items)
         _, total = search_and_slice(
-            items, texts, "user get current", page=1, limit=10,
+            items,
+            texts,
+            "user get current",
+            page=1,
+            limit=10,
             tool_prefix="gitea_",
         )
         # 1 name match + 2 BM25 matches = 3 total
@@ -1915,13 +2044,17 @@ class TestSearchToolsPagination:
 
         transform = TolerantSearchTransform()
         mock_tools = [
-            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            Tool(
+                name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}}
+            )
             for i in range(25)
         ]
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=1, limit=10)
+        result = await _search_tools_impl(
+            "test", None, "raw", mock_ctx, transform, page=1, limit=10
+        )
         sc = result.structured_content
         assert sc is not None
         assert "has_more" in sc
@@ -1938,13 +2071,17 @@ class TestSearchToolsPagination:
 
         transform = TolerantSearchTransform()
         mock_tools = [
-            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            Tool(
+                name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}}
+            )
             for i in range(25)
         ]
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl("test", None, "raw", mock_ctx, transform, page=3, limit=10)
+        result = await _search_tools_impl(
+            "test", None, "raw", mock_ctx, transform, page=3, limit=10
+        )
         sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
@@ -1957,13 +2094,17 @@ class TestSearchToolsPagination:
 
         transform = TolerantSearchTransform()
         mock_tools = [
-            Tool(name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}})
+            Tool(
+                name=f"gitea_test_{i}", description=f"Test tool {i}", parameters={"properties": {}}
+            )
             for i in range(5)
         ]
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl("test", None, "markdown", mock_ctx, transform, page=10, limit=10)
+        result = await _search_tools_impl(
+            "test", None, "markdown", mock_ctx, transform, page=10, limit=10
+        )
         assert result.content is not None
         text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
@@ -2046,7 +2187,9 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="test", format="markdown", ctx=ctx, page=10, limit=10)
+        result = await _search_resources_impl(
+            query="test", format="markdown", ctx=ctx, page=10, limit=10
+        )
         assert result.content is not None
         text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
@@ -2060,10 +2203,13 @@ class TestEmptyResultsMessage:
         """Empty results message includes cross-linking hints."""
         from gitea_mcp_server.tools.search import _empty_results_message
 
-        result = _empty_results_message("test query", {
-            "workflow guides": "search_docs",
-            "data resources": "search_resources",
-        })
+        result = _empty_results_message(
+            "test query",
+            {
+                "workflow guides": "search_docs",
+                "data resources": "search_resources",
+            },
+        )
         assert "No results found for 'test query'" in result
         assert "search_docs" in result
         assert "search_resources" in result
@@ -2143,53 +2289,63 @@ class TestFormatFilteredToolsNote:
 
     def test_scope_restricted_count(self) -> None:
         """Scope-restricted tools are counted."""
-        result = _format_filtered_tools_note({
-            "filtered": {
-                "tool1": {"reason": "scope"},
-                "tool2": {"reason": "scope"},
-            },
-        })
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "tool1": {"reason": "scope"},
+                    "tool2": {"reason": "scope"},
+                },
+            }
+        )
         assert "2 scope-restricted" in result
 
     def test_excluded_count(self) -> None:
         """Config-excluded tools are counted."""
-        result = _format_filtered_tools_note({
-            "filtered": {
-                "tool1": {"reason": "excluded"},
-            },
-        })
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "tool1": {"reason": "excluded"},
+                },
+            }
+        )
         assert "1 config-excluded" in result
 
     def test_deprecated_count(self) -> None:
         """Deprecated tools are counted."""
-        result = _format_filtered_tools_note({
-            "filtered": {
-                "tool1": {"reason": "deprecated"},
-            },
-        })
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "tool1": {"reason": "deprecated"},
+                },
+            }
+        )
         assert "1 deprecated" in result
 
     def test_combined_counts(self) -> None:
         """Multiple reason types are combined in the note."""
-        result = _format_filtered_tools_note({
-            "filtered": {
-                "t1": {"reason": "scope"},
-                "t2": {"reason": "excluded"},
-                "t3": {"reason": "deprecated"},
-                "t4": {"reason": "scope"},
-            },
-        })
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "t1": {"reason": "scope"},
+                    "t2": {"reason": "excluded"},
+                    "t3": {"reason": "deprecated"},
+                    "t4": {"reason": "scope"},
+                },
+            }
+        )
         assert "2 scope-restricted" in result
         assert "1 config-excluded" in result
         assert "1 deprecated" in result
 
     def test_unknown_reason_not_counted(self) -> None:
         """Unknown reason type is not counted."""
-        result = _format_filtered_tools_note({
-            "filtered": {
-                "tool1": {"reason": "mystery"},
-            },
-        })
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "tool1": {"reason": "mystery"},
+                },
+            }
+        )
         # Unknown reason should produce no parts and return empty
         assert result == ""
 
@@ -2217,7 +2373,11 @@ class TestToolInfoImplPrefixFallback:
         transform.get_tool_catalog = AsyncMock(return_value=[tool])
 
         result = await _tool_info_impl(
-            "test_tool", "markdown", ctx, transform, tool_prefix="gitea_",
+            "test_tool",
+            "markdown",
+            ctx,
+            transform,
+            tool_prefix="gitea_",
         )
         assert result is not None
 
@@ -2250,9 +2410,16 @@ class TestSearchToolsWithFilteredInfo:
         }
 
         result = await _search_tools_impl(
-            "issue", None, "markdown", ctx, transform,
-            page=1, limit=10, min_score=0.0,
-            filtered_tools_info=filtered_info, tool_prefix="gitea_",
+            "issue",
+            None,
+            "markdown",
+            ctx,
+            transform,
+            page=1,
+            limit=10,
+            min_score=0.0,
+            filtered_tools_info=filtered_info,
+            tool_prefix="gitea_",
         )
         assert result is not None
         text = extract_text_content(result.content) if result.content else ""

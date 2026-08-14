@@ -233,7 +233,9 @@ class TestSchemaWalker:
         """Walker should invoke the callback for every schema node."""
         calls = []
 
-        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+        def callback(
+            schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+        ) -> None:
             calls.append((schema.get("type"), key))
 
         schema = {
@@ -257,7 +259,9 @@ class TestSchemaWalker:
         """Walker should skip non-dict property values."""
         calls = []
 
-        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+        def callback(
+            schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+        ) -> None:
             calls.append(1)
 
         schema = {
@@ -274,7 +278,9 @@ class TestSchemaWalker:
         """Walker should skip non-list combinator values."""
         calls = []
 
-        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+        def callback(
+            schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+        ) -> None:
             calls.append(key)
 
         schema = {
@@ -291,7 +297,9 @@ class TestSchemaWalker:
         """Walker should visit patternProperties entries."""
         calls = []
 
-        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+        def callback(
+            schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+        ) -> None:
             calls.append(key)
 
         schema = {
@@ -307,7 +315,9 @@ class TestSchemaWalker:
         """Walker should visit additionalProperties."""
         calls = []
 
-        def callback(schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None) -> None:
+        def callback(
+            schema: dict[str, Any], parent: dict[str, Any] | None, key: str | None
+        ) -> None:
             calls.append(key)
 
         schema = {
@@ -473,10 +483,16 @@ class TestVendorExtensionStripping:
 
         schema = {
             "allOf": [
-                {"type": "object", "x-go-package": "forgejo.org/modules/structs",
-                 "properties": {"id": {"type": "integer", "x-go-name": "Id"}}},
-                {"type": "object", "x-go-package": "forgejo.org/modules/structs",
-                 "properties": {"name": {"type": "string", "x-go-name": "Name"}}},
+                {
+                    "type": "object",
+                    "x-go-package": "forgejo.org/modules/structs",
+                    "properties": {"id": {"type": "integer", "x-go-name": "Id"}},
+                },
+                {
+                    "type": "object",
+                    "x-go-package": "forgejo.org/modules/structs",
+                    "properties": {"name": {"type": "string", "x-go-name": "Name"}},
+                },
             ],
         }
         result = convert_schema(schema)
@@ -768,9 +784,7 @@ class TestPatchMissingStateDescriptions:
 
     # ── logging side-effect ─────────────────────────────────────────────
 
-    def test_logs_warning_when_patching(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_logs_warning_when_patching(self, caplog: pytest.LogCaptureFixture) -> None:
         """Patching bare state definitions emits a warning log."""
         schemas = {
             "EditIssueOption": {

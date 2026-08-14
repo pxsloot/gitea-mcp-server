@@ -53,7 +53,15 @@ class TestConvertParameters:
 
     def test_collection_format_removed(self) -> None:
         """collectionFormat should be stripped from converted parameters."""
-        params = [{"name": "ids", "in": "query", "type": "array", "items": {"type": "integer"}, "collectionFormat": "csv"}]
+        params = [
+            {
+                "name": "ids",
+                "in": "query",
+                "type": "array",
+                "items": {"type": "integer"},
+                "collectionFormat": "csv",
+            }
+        ]
         result = convert_parameters(params)
         assert "collectionFormat" not in result[0]
         assert result[0]["name"] == "ids"

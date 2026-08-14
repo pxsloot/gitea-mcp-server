@@ -34,6 +34,32 @@ Enforcement:
 - ``make test`` runs ``ruff check tests/`` before pytest
 - CI runs a dedicated ``lint-tests`` job
 
+## Code Formatting
+
+The project's formatter is ``ruff format`` (line length 100, matching the
+``[tool.ruff]`` config). All production and test code must be
+``ruff format``-clean — the whole tree, not just new files. Code examples
+inside docstrings are formatted too (``format.docstring-code-format``).
+
+Markdown is deliberately **not** formatted: ruff's markdown support is
+preview-only and would rewrite hand-written docs on every ruff upgrade.
+Follow-up tracked in issue #699.
+
+Enforcement:
+- ``make test`` runs ``ruff format --check .`` before pytest
+- CI runs a dedicated ``format-check`` job/step
+
+To apply or verify formatting:
+
+```bash
+make format        # ruff format . — reformat the whole tree
+make format-check  # ruff format --check . — verify only (fails if dirty)
+```
+
+Run ``make format`` before committing when ``make format-check`` (or
+``make test``) reports unformatted files. The baseline reformat is
+excluded from ``git blame`` via ``.git-blame-ignore-revs``.
+
 ## Test Code Type Checking
 
 Test code is type-checked with the same strict ``pyproject.toml`` mypy

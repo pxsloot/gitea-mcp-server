@@ -65,8 +65,18 @@ def _make_annotation_spec() -> dict:
                     "operationId": "repoGet",
                     "summary": "Get a repository",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
@@ -75,8 +85,18 @@ def _make_annotation_spec() -> dict:
                     "operationId": "repoUpdate",
                     "summary": "Update a repository",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
@@ -85,8 +105,18 @@ def _make_annotation_spec() -> dict:
                     "operationId": "repoDelete",
                     "summary": "Delete a repository",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"204": {"description": "No Content"}},
                 },
@@ -97,8 +127,18 @@ def _make_annotation_spec() -> dict:
                     "operationId": "issueCreateIssue",
                     "summary": "Create an issue",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"201": {"description": "Created"}},
                 },
@@ -117,7 +157,12 @@ def _make_annotation_spec() -> dict:
                     "operationId": "orgGet",
                     "summary": "Get an organization",
                     "parameters": [
-                        {"name": "org", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "org",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
@@ -136,8 +181,18 @@ def _make_annotation_spec() -> dict:
                     "operationId": "repoListPullRequests",
                     "summary": "List pull requests",
                     "parameters": [
-                        {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                        {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                     ],
                     "responses": {"200": {"description": "Success"}},
                 },
@@ -391,7 +446,10 @@ class TestCategoryTags:
 
     @pytest.mark.parametrize(("tool_name", "expected_category"), _CATEGORY_CASES)
     async def test_category_tag(
-        self, mcp_server: FastMCP, tool_name: str, expected_category: str,
+        self,
+        mcp_server: FastMCP,
+        tool_name: str,
+        expected_category: str,
     ) -> None:
         """``{tool_name}`` has category tag ``{expected_category}``."""
         tools = _tool_map(await mcp_server.list_tools())
@@ -458,7 +516,6 @@ class TestAnnotationsSurviveExclusion:
             assert "issue" in (issue_create.tags or set())
 
 
-
 # ===================================================================
 # Scenario 9b - tool_info returns correct annotations
 # ===================================================================
@@ -503,7 +560,9 @@ class TestToolInfoAnnotations:
         )
         return cast("dict[str, Any]", annotations)
 
-    async def test_synthetic_local_tool_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
+    async def test_synthetic_local_tool_annotations_via_tool_info(
+        self, search_mcp_server: FastMCP
+    ) -> None:
         """Local synthetic tool (search_tools): read_only=True, open_world=False."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_search_tools", read_only=True, open_world=False
@@ -515,13 +574,17 @@ class TestToolInfoAnnotations:
             search_mcp_server, "gitea_call_tool", read_only=False, open_world=True
         )
 
-    async def test_read_resource_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
+    async def test_read_resource_annotations_via_tool_info(
+        self, search_mcp_server: FastMCP
+    ) -> None:
         """read_resource: read_only=True, open_world=True."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_read_resource", read_only=True, open_world=True
         )
 
-    async def test_list_resources_annotations_via_tool_info(self, search_mcp_server: FastMCP) -> None:
+    async def test_list_resources_annotations_via_tool_info(
+        self, search_mcp_server: FastMCP
+    ) -> None:
         """list_resources: read_only=True, open_world=False."""
         await self._assert_tool_annotations(
             search_mcp_server, "gitea_list_resources", read_only=True, open_world=False

@@ -85,7 +85,10 @@ class TestGenerateToolTitle:
 
     def test_with_summary_ignored(self) -> None:
         """The summary field is no longer used for the title."""
-        route = MagicMock(summary="This is a long summary that would have been truncated before", operation_id="issue_create_issue")
+        route = MagicMock(
+            summary="This is a long summary that would have been truncated before",
+            operation_id="issue_create_issue",
+        )
         title = _generate_tool_title(route)
         assert title == "Create Issue"
 
@@ -131,7 +134,9 @@ class TestGenerateToolTitle:
         title = _generate_tool_title(route)
         assert title == "Unnamed Tool"
 
-    def test_unknown_domain_logs_warning_via_generate_tool_title(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_unknown_domain_logs_warning_via_generate_tool_title(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Warning is emitted through the generate_tool_title → _snake_to_title path."""
         import logging
 
@@ -165,7 +170,10 @@ class TestSnakeToTitle:
 
     def test_activitypub_kept(self) -> None:
         assert _snake_to_title("activitypub_person") == "Activitypub Person"
-        assert _snake_to_title("activitypub_instance_actor_inbox") == "Activitypub Instance Actor Inbox"
+        assert (
+            _snake_to_title("activitypub_instance_actor_inbox")
+            == "Activitypub Instance Actor Inbox"
+        )
 
     def test_single_word(self) -> None:
         assert _snake_to_title("version") == "Version"
@@ -339,7 +347,9 @@ class TestInferredHints:
 
     def test_all_hints_added_when_annotations_empty(self) -> None:
         """Mini-integration check: _customize_metadata sets all hints and title when annotations are empty."""
-        route = MagicMock(path="/test", method="POST", summary="Test POST", operation_id="test_post")
+        route = MagicMock(
+            path="/test", method="POST", summary="Test POST", operation_id="test_post"
+        )
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "test_post"
         tool.annotations = ToolAnnotations()  # All fields None

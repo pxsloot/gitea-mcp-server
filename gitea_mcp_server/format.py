@@ -807,7 +807,8 @@ def empty_paginated_result(
     ``total_count`` is the known total when the page is out of range (0 for
     an empty result set, or the real match count for an out-of-range page);
     when ``None``, ``add_pagination_metadata`` falls back to its heuristic
-    (a non-list ``result`` yields ``has_more=False``).
+    and the empty ``result`` list (0 items < ``limit``) yields
+    ``has_more=False``.
 
     Args:
         content: The agent-facing message (e.g. "No results found for 'x'."

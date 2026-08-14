@@ -269,7 +269,7 @@ trip of confusion:
 - **Empty list is `[]`, not an error.** A list/search tool that matches nothing
   returns an empty JSON array (or an empty Markdown section) — still carrying
   the pagination envelope (`has_more=False`, `total_count=0`). That means *no
-  matching items*; don't treat `[]` as "I'm filtered out."
+  matching items* — not a scope-hidden tool. Don't treat `[]` as "I'm filtered out."
 
 - **`APINotFound` means the target doesn't exist -- or is out of scope.**
   Example:

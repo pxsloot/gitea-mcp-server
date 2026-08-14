@@ -41,6 +41,10 @@ The project's formatter is ``ruff format`` (line length 100, matching the
 ``ruff format``-clean — the whole tree, not just new files. Code examples
 inside docstrings are formatted too (``format.docstring-code-format``).
 
+Markdown is deliberately **not** formatted: ruff's markdown support is
+preview-only and would rewrite hand-written docs on every ruff upgrade.
+Follow-up tracked in issue #699.
+
 Enforcement:
 - ``make test`` runs ``ruff format --check .`` before pytest
 - CI runs a dedicated ``format-check`` job/step

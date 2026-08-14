@@ -41,14 +41,14 @@ Examples: `feature/42-add-milestone-resource`, `fix/99-handle-empty-body`
 ### 3. Make your changes
 
 - Keep changes focused on the issue — one PR, one concern.
-- Follow the project's code conventions (ruff and mypy enforce these).
+- Follow the project's code conventions (`ruff check` and `ruff format` enforce style; mypy enforces types).
 - Add or update tests. The project aims for 85%+ coverage.
 - Update documentation if your change affects user-visible behaviour.
 
 ### 4. Run the checks locally
 
 ```bash
-make test           # ruff → mypy → pytest with coverage
+make test           # ruff (check + format) → mypy → pytest with coverage
 ```
 
 All checks must pass before a PR is accepted.

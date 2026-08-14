@@ -1,7 +1,7 @@
 # Default to false for local dev with self-signed certs (can override via env)
 GITEA_VERIFY_SSL ?= false
 
-.PHONY: help docker-build docker-build-ci docker-push docker-run docker-run-http docker-test docker-shell clean test-live
+.PHONY: help docker-build docker-build-ci docker-push docker-run docker-run-http docker-test docker-shell clean test-live format format-check
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -10,6 +10,7 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 test:
+	ruff format --check .
 	ruff check gitea_mcp_server
 	ruff check tests/
 	mypy gitea_mcp_server
@@ -21,6 +22,14 @@ test:
 test-types:
 	mypy gitea_mcp_server
 	mypy tests/
+
+# Apply ruff format to the whole tree (Python files only).
+format:
+	ruff format .
+
+# Verify the tree is ruff-formatted; fails if any file would change.
+format-check:
+	ruff format --check .
 
 # Verify every production module has a matching test file per the naming convention.
 check-test-coverage:
@@ -34,6 +43,7 @@ test-live:
 
 docker-test:
 	docker run --rm localhost/gitea-mcp-server:ci sh -c "\
+		ruff format --check . && \
 		ruff check gitea_mcp_server && \
 		ruff check tests/ && \
 		mypy gitea_mcp_server && \

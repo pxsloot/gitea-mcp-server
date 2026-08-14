@@ -82,6 +82,13 @@ uv run pytest tests/live/
 # Type-check test code (included in `make test`)
 make test-types
 
+# Lint + format (included in `make test`)
+uv run ruff check gitea_mcp_server/
+uv run ruff format --check .
+
+# Apply ruff format to the whole tree
+make format
+
 See `docs/TESTING_STANDARDS.md` for full details.
 
 ---

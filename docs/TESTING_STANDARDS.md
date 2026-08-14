@@ -36,7 +36,7 @@ This doc covers testing principles and quality standards. If you need:
 | `testing/ASSERTIONS.md` | reference | Assertion best practices — general principles, examples, validation testing |
 | `testing/INTEGRATION.md` | how-to | Integration testing, running tests, markers, parallel/sequential design, timeout safety |
 | `testing/LIVE.md` | reference | Zone 5: World, dependency graph, Workflow, RepoState need_* design, quality contracts |
-| `testing/LINTING.md` | reference | Test linting, type checking, anti-patterns, coverage enforcement |
+| `testing/LINTING.md` | reference | Test linting, code formatting, type checking, anti-patterns, coverage enforcement |
 | `testing/CI.md` | how-to | CI live tests — Forgejo service container, admin provisioning, test execution, cleanup |
 
 ## Coverage Policy

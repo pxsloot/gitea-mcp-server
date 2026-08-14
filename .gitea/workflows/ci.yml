@@ -43,6 +43,17 @@ jobs:
           cd /app
           ruff check tests/
 
+  format-check:
+    needs: [build]
+    runs-on: self-hosted
+    container:
+      image: gitea-mcp-server:ci
+    steps:
+      - name: Check formatting (ruff format)
+        run: |
+          cd /app
+          ruff format --check .
+
   typecheck:
     needs: [build]
     runs-on: self-hosted

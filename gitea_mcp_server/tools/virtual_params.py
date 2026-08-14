@@ -33,8 +33,6 @@ from typing import Any
 
 from fastmcp.tools.base import ToolResult
 
-from gitea_mcp_server.constants import FETCH_ALL_MAX_PAGES
-
 logger = logging.getLogger(__name__)
 
 _ExecuteFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
@@ -223,13 +221,17 @@ async def _fetch_all_loop(
 
 
 # Register the fetch_all virtual param so it appears in every tool's schema.
+# The description is deliberately family-agnostic: for API tools it paginates
+# through every page (capped at FETCH_ALL_MAX_PAGES — documented in
+# agent_instructions.md), for synthetic tools it returns all in-memory
+# results without a loop.  One shared text covers both.
 _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     schema={"type": "boolean"},
     default=False,
     description=(
-        "When true, automatically fetch all pages of paginated results. "
-        "Merges results into a single response. "
-        f"Capped at {FETCH_ALL_MAX_PAGES} pages to prevent abuse."
+        "When true, automatically fetch all matching results and merge "
+        "them into a single response.  For API tools this paginates "
+        "through every page of the endpoint."
     ),
     loop_hook=_fetch_all_loop,
 )
@@ -288,8 +290,15 @@ def _format_post_hook(
     are read from ``all_extracted`` — ``detail`` is a companion
     VirtualParam, ``_raw_schema`` is pipeline metadata attached by
     the transform_fn before ``apply_to`` runs.
+
+    Results already rendered by their executor (marked ``_formatted`` in
+    ``result.meta``) pass through unchanged — synthetic executors render
+    inline when the output shape is bespoke (markdown extras, custom
+    formatters), so the shared post-hook must not re-render them.
     """
     if value == "raw":
+        return result
+    if (result.meta or {}).get("_formatted"):
         return result
 
     detail: str = all_extracted.get("detail", "full")
@@ -379,8 +388,9 @@ def inject_into(
     parameters: dict[str, Any],
     tool: Any | None = None,
     default_overrides: dict[str, Any] | None = None,
+    only: set[str] | None = None,
 ) -> None:
-    """Add every virtual parameter to *parameters* (a tool's parameter schema).
+    """Add virtual parameters to *parameters* (a tool's parameter schema).
 
     Idempotent - skips any parameter name that already exists, which also
     guards against shadowing a real API parameter.
@@ -393,6 +403,16 @@ def inject_into(
     injected into tools where the predicate returns ``True``.  Pass the
     :class:`~fastmcp.tools.base.Tool` object as *tool* to enable this.
 
+    Per-tool allowlist via *only*: when set, only the named params are
+    considered.  Autogen tools pass ``None`` (inject every visible param,
+    skipping names that already exist — never shadowing a real API
+    parameter).  Synthetic tools stamp their allowlist in
+    ``tool.meta["_virtual_params"]``; allowlisted names are **overwritten**
+    with the registry's schema so the agent-facing description/enum/default
+    come from the single registry source rather than hand-written signature
+    annotations (e.g. ``read_doc`` opts into ``format`` only, and ``sudo``
+    is opt-in).
+
     Args:
         parameters: Tool parameter schema dict (mutated in place).
         tool: The Tool being wrapped, for ``tool_predicate`` gating.
@@ -400,21 +420,28 @@ def inject_into(
             defaults to overwrite after injection.  Use for params whose
             default is dynamic (e.g. ``format``'s default comes from
             server config, not the registry).
+        only: Optional allowlist of param names to inject/overwrite.
+            ``None`` injects every visible param, skipping existing names
+            (autogen behavior).
     """
     props = parameters.setdefault("properties", {})
     for name, vp in _VIRTUAL_PARAMS.items():
-        if name not in props:
-            # Skip params whose scope is not available (e.g. ``sudo``
-            # when the active token lacks the ``sudo`` or ``all`` scope).
-            if not vp.visible:
-                continue
-            if vp.tool_predicate and tool is not None and not vp.tool_predicate(tool):
-                continue
-            props[name] = {
-                **vp.schema,
-                "default": vp.default,
-                "description": vp.description,
-            }
+        if only is not None and name not in only:
+            continue
+        # Skip params whose scope is not available (e.g. ``sudo`` when the
+        # active token lacks the ``sudo`` or ``all`` scope).
+        if not vp.visible:
+            continue
+        if vp.tool_predicate and tool is not None and not vp.tool_predicate(tool):
+            continue
+        if name in props and only is None:
+            # Autogen: never shadow a real API parameter.
+            continue
+        props[name] = {
+            **vp.schema,
+            "default": vp.default,
+            "description": vp.description,
+        }
 
     # Apply caller-specified default overrides (e.g. format's default
     # comes from server config, not the static registry default).
@@ -424,8 +451,19 @@ def inject_into(
                 props[name]["default"] = value
 
 
-def extract_from(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Pop every virtual parameter from *kwargs*.
+def extract_from(
+    kwargs: dict[str, Any],
+    only: set[str] | None = None,
+) -> dict[str, Any]:
+    """Pop virtual parameters from *kwargs*.
+
+    With *only* (a per-tool allowlist, e.g. synthetic tools' ``_virtual_params``
+    from ``tool.meta``), only the named parameters are popped; other
+    registry-name keys stay in *kwargs* so the validation layer rejects them
+    as unknown (they are neither allowlisted nor declared in the tool's
+    schema — the value would otherwise be silently dropped).  Without *only*
+    (autogenerated tools, which inject every visible parameter), every
+    virtual parameter is popped.
 
     Returns a ``{name: value}`` dict suitable for passing to :func:`apply_to`.
 
@@ -435,6 +473,12 @@ def extract_from(kwargs: dict[str, Any]) -> dict[str, Any]:
         API parameters.  Call this **before** passing kwargs to the HTTP
         execution path.
     """
+    if only is not None:
+        return {
+            n: kwargs.pop(n)
+            for n in list(kwargs)
+            if n in _VIRTUAL_PARAMS and n in only
+        }
     return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS}
 
 

@@ -496,10 +496,11 @@ class TestRegisterMcpResourceTools:
 class TestMcpReadResourceTool:
     """Tests for read_resource tool function.
 
-    The tool always returns both content (TextContent with raw text) and
-    structured_content (for schema compliance). The key property is that
-    content[0].text delivers the resource content as-is without JSON escaping.
-    structured_content wraps it in {"result": ...} for tool validation.
+    The tool returns both content (TextContent with the rendered
+    presentation) and structured_content (schema compliance + programmatic
+    extraction). content[0].text delivers the resource content as-is without
+    JSON escaping; structured_content wraps the raw resource payload in
+    {"result": ...} — data, not the rendered text.
     """
 
     def _capture_read_resource(self) -> Callable[..., Any]:
@@ -541,7 +542,7 @@ class TestMcpReadResourceTool:
 
     @pytest.mark.asyncio
     async def test_json_returns_structured_content(self) -> None:
-        """JSON content should return structured_content with formatted result."""
+        """JSON content: content is the rendered markdown, structured carries raw data."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -554,16 +555,14 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert tool_result.structured_content is not None
-        assert "result" in tool_result.structured_content
-        result_text = tool_result.structured_content["result"]
-        assert "|" in result_text
-        assert "Key" in result_text
-        assert "val" in result_text
-        assert "Num" in result_text
-        assert "42" in result_text
-        # content is present with text for display
+        # structured_content carries the raw payload (data), not the rendering.
+        assert tool_result.structured_content["result"] == '{"key": "val", "num": 42}'
+        # content is the rendered presentation for display.
         assert len(tool_result.content) == 1
-        assert "|" in extract_text_content(tool_result.content)
+        rendered = extract_text_content(tool_result.content)
+        assert "|" in rendered
+        assert "Key" in rendered
+        assert "val" in rendered
 
     @pytest.mark.asyncio
     async def test_raw_format_has_raw_text(self) -> None:
@@ -621,8 +620,8 @@ class TestMcpReadResourceTool:
         parsed = parse_json_content(tool_result)
         assert parsed == {"result": "plain text"}
         assert tool_result.structured_content is not None
-        parsed_result = json_module.loads(tool_result.structured_content["result"])
-        assert parsed_result == {"result": "plain text"}
+        # structured_content carries the raw payload, not the json rendering.
+        assert tool_result.structured_content["result"] == "plain text"
 
 
 class TestFormatResourceContent:

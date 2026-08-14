@@ -43,7 +43,10 @@ from gitea_mcp_server.tools.resource_display import (
     extract_resource_content,
     format_resource_content,
 )
-from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
+from gitea_mcp_server.tools.synthetic_contract import (
+    SyntheticToolSpec,
+    register_all_synthetic_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -597,9 +600,13 @@ async def _read_resource_tool(
         schema=schema, format_hint=format_hint, extra=extra,
     )
 
+    # ``content`` carries the rendered presentation; ``structured_content``
+    # carries the raw resource payload (data, not text) for programmatic
+    # extraction — matching the autogen tool contract.  The format post-hook
+    # is skipped (the executor marks the result ``_formatted``).
     return ToolResult(
         content=[TextContent(type="text", text=formatted)],
-        structured_content={"result": formatted},
+        structured_content={"result": raw},
     )
 
 
@@ -680,21 +687,23 @@ def register_mcp_resource_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve bare
             ``$ref`` in tool output examples.
     """
-    register_synthetic_tool(
-        mcp,
-        paginated=True,
-        name="list_resources",
-        tags={"synthetic"},
-        annotations=synthetic_annotations(read_only=True, open_world=False),
-        output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
-    )(_list_resources_tool)
-
-    mcp.tool(
-        name="read_resource",
-        tags={"synthetic"},
-        annotations=synthetic_annotations(read_only=True, open_world=True),
-        output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
-    )(_read_resource_tool)
+    register_all_synthetic_tools(mcp, [
+        SyntheticToolSpec(
+            impl=_list_resources_tool,
+            name="list_resources",
+            tags={"synthetic"},
+            annotations=synthetic_annotations(read_only=True, open_world=False),
+            output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
+            paginated=True,
+        ),
+        SyntheticToolSpec(
+            impl=_read_resource_tool,
+            name="read_resource",
+            tags={"synthetic"},
+            annotations=synthetic_annotations(read_only=True, open_world=True),
+            output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
+        ),
+    ])
 
     mcp.resource(
         uri="gitea://tool/{name}/schema",

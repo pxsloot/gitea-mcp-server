@@ -533,7 +533,7 @@ class TestPaginationMetadata:
             parameters={"properties": props},
             output_schema=output_schema or self.ARRAY_OUTPUT_SCHEMA,
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
@@ -759,7 +759,7 @@ class TestCustomizeComponentTextResponse:
             parameters={"properties": {}},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=False,
                     is_text_response=True,

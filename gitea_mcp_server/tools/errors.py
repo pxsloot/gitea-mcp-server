@@ -208,7 +208,11 @@ def run_validation(
                 msg = f"Validation error for {name}: {e}"
                 _raise_validation_error(msg, name, e)
     if "page" in kwargs or "per_page" in kwargs:
-        validate_pagination(kwargs.get("page"), kwargs.get("per_page"))
+        validate_pagination(
+            kwargs.get("page"),
+            kwargs.get("per_page"),
+            page_size_name="per_page",
+        )
 
 
 async def run_with_error_handling(

@@ -77,7 +77,7 @@ class TestLabelTransform:
             parameters={"properties": {}, "required": []},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=has_labels,
                     route_path="/test",
@@ -320,7 +320,7 @@ class TestLabelTransformTelemetry:
             parameters={"properties": {}, "required": []},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             meta={
-                "_customization_applied": True,
+                "_contract_wrap": True,
                 "_customization": ToolCustomization(
                     has_labels=has_labels,
                     route_path="/test",

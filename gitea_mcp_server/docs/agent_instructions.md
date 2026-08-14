@@ -62,10 +62,11 @@ All search tools accept `min_score` (0.0-1.0, default 0.1) to tune relevance.
 
 Call any tool via `call_tool(name, args)`. Both the prefixed name
 (`{{TOOL_PREFIX}}call_tool`) and the bare name (`call_tool`) reach the same proxy, and
-it resolves unprefixed tool names too (e.g. `search_tools`). The one exception
-is `call_tool` calling itself, which is blocked. Do not take my word for the
-mechanics -- run `tool_info("{{TOOL_PREFIX}}call_tool")` and try both forms; the schema
-and behavior are right there for you to read.
+it resolves unprefixed tool names too (e.g. `search_tools`). `name` is always
+the **target** tool — never `call_tool` itself: the proxy is a normal tool
+like any other and is invoked directly, not through itself. Do not take my
+word for the mechanics -- run `tool_info("{{TOOL_PREFIX}}call_tool")` and try both forms; the
+schema and behavior are right there for you to read.
 
 ```
 call_tool("{{TOOL_PREFIX}}user_get_current")
@@ -307,6 +308,7 @@ trip of confusion:
 ## Troubleshooting
 
 - **"Unknown tool"** -> the name is wrong; `search_tools(...)` to find it.
+- **"'call_tool' cannot call itself"** -> you passed `name='call_tool'`; `name` must be the *target* tool (e.g. `{{TOOL_PREFIX}}issue_get_issue`). The proxy is invoked directly, never through itself — there is no nested form.
 - **No search results** -> simplify to one keyword; or the tool is scope-filtered out.
 - **Tool/resource not visible** -> expected if your token lacks the scope; it is filtered, not missing.
 - **Empty resource** -> reflects permissions; use `{{TOOL_PREFIX}}user_current_list_repos` for private repos.

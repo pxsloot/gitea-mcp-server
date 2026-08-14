@@ -22,7 +22,10 @@ from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.synthetic_contract import register_synthetic_tool
+from gitea_mcp_server.tools.synthetic_contract import (
+    SyntheticToolSpec,
+    register_all_synthetic_tools,
+)
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -254,13 +257,6 @@ def register_doc_tools(
         doc_manager: Initialized DocManager with loaded guides
     """
 
-    @register_synthetic_tool(
-        mcp,
-        paginated=True,
-        tags={"synthetic"},
-        annotations=synthetic_annotations(read_only=True, open_world=False),
-        output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
-    )
     async def search_docs(  # noqa: PLR0913 - query + pagination (page/limit/fetch_all) + display (format/min_score/detail) are independent concerns
         query: str,
         format: str = "markdown",
@@ -357,28 +353,14 @@ def register_doc_tools(
             detail=detail,
         )
 
-    @register_synthetic_tool(
-        mcp,
-        paginated=True,
-        limit_max=200,
+    search_docs_spec = SyntheticToolSpec(
+        impl=search_docs,
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
-        output_schema={
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "object",
-                    "properties": {
-                        "content": {
-                            "type": "string",
-                            "description": "The full guide content",
-                        },
-                    },
-                    "description": "Guide content with pagination metadata in structured_content",
-                },
-            },
-        },
+        output_schema=_SEARCH_DOCS_OUTPUT_SCHEMA,
+        paginated=True,
     )
+
     async def read_doc(
         topic: str,
         format: str = "markdown",
@@ -455,6 +437,32 @@ def register_doc_tools(
             markdown_formatter=lambda d: d["content"],
         )
         return apply_pagination(result, page, limit, total_lines)
+
+    read_doc_spec = SyntheticToolSpec(
+        impl=read_doc,
+        limit_max=200,
+        virtual_params={"format"},
+        tags={"synthetic"},
+        annotations=synthetic_annotations(read_only=True, open_world=False),
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The full guide content",
+                        },
+                    },
+                    "description": "Guide content with pagination metadata in structured_content",
+                },
+            },
+        },
+        paginated=True,
+    )
+
+    register_all_synthetic_tools(mcp, [search_docs_spec, read_doc_spec])
 
     # Compute dynamic tags and description from all loaded guides
     # so resource discovery aligns with guide frontmatter content

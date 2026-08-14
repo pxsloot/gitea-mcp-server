@@ -64,6 +64,7 @@ ALL_MODULES: list[str] = [
     "gitea_mcp_server.server_setup.resource_setup",
     "gitea_mcp_server.server_setup.spec_loader",
     "gitea_mcp_server.tools",
+    "gitea_mcp_server.tools.contract",
     "gitea_mcp_server.tools.customize",
     "gitea_mcp_server.tools.display",
     "gitea_mcp_server.tools.docs_tools",

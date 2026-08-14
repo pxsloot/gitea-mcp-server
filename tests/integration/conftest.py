@@ -99,8 +99,7 @@ def simple_config() -> SimpleConfig:
 
         @pytest.fixture
         def simple_config(self):
-            return SimpleConfig(BASE_TEST_URL, "test_token",
-                                tool_filtering_enabled=True)
+            return SimpleConfig(BASE_TEST_URL, "test_token", tool_filtering_enabled=True)
     """
     return SimpleConfig(url=BASE_TEST_URL, token="test_token")
 

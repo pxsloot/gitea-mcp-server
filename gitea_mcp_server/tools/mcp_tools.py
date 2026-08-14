@@ -362,11 +362,11 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     # Agent pattern: discover then read
     result = await list_resources(fetch_all=True)
 
-    for resource in result['result']:
+    for resource in result["result"]:
         print(f"- {resource['uri']} ({resource['mimeType']})")
 
         # Example: read a repository resource
-        if 'repos/{owner}/{repo}' in resource['uri']:
+        if "repos/{owner}/{repo}" in resource["uri"]:
             content = await read_resource(uri="gitea://repos/owner/repo")
             print(content)
     ```
@@ -533,10 +533,10 @@ async def _read_resource_tool(
     ```python
     # Discover available templates first
     resources = await list_resources(fetch_all=True)
-    repo_template = next(r for r in resources['result'] if r['uri'].endswith('repos/{owner}/{repo}'))
+    repo_template = next(r for r in resources["result"] if r["uri"].endswith("repos/{owner}/{repo}"))
 
     # Substitute parameters
-    uri = repo_template['uri'].format(owner='mcp-server', repo='gitea-mcp-server')
+    uri = repo_template["uri"].format(owner="mcp-server", repo="gitea-mcp-server")
     content = await read_resource(uri)
 
     # Content is Markdown for wrapper resources

@@ -38,7 +38,8 @@ Enforcement:
 
 The project's formatter is ``ruff format`` (line length 100, matching the
 ``[tool.ruff]`` config). All production and test code must be
-``ruff format``-clean — the whole tree, not just new files.
+``ruff format``-clean — the whole tree, not just new files. Code examples
+inside docstrings are formatted too (``format.docstring-code-format``).
 
 Enforcement:
 - ``make test`` runs ``ruff format --check .`` before pytest

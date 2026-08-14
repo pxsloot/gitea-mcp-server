@@ -38,8 +38,7 @@ def register_formatter(
     Usage::
 
         @register_formatter("repository")
-        def _format_repo_markdown(data, *, detail="full"):
-            ...
+        def _format_repo_markdown(data, *, detail="full"): ...
     """
 
     def deco(fn: Callable[..., str]) -> Callable[..., str]:

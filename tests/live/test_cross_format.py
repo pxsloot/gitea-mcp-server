@@ -44,7 +44,8 @@ class TestSetup:
     async def test_create_repo(self, world: World) -> None:
         """Create a minimal repo."""
         repo = await Workflow(world).ensure_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE, auto_init=True)
+            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE, auto_init=True
+        )
         assert repo.data["name"] == _REPO
 
 
@@ -64,7 +65,8 @@ class TestJsonMarkdownEquivalence:
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
-            mcp, "gitea_repo_get",
+            mcp,
+            "gitea_repo_get",
             {"owner": DEV.username, "repo": _REPO},
         )
 
@@ -75,7 +77,8 @@ class TestJsonMarkdownEquivalence:
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
-            mcp, "gitea_issue_list_labels",
+            mcp,
+            "gitea_issue_list_labels",
             {"owner": DEV.username, "repo": _REPO},
         )
 
@@ -86,7 +89,8 @@ class TestJsonMarkdownEquivalence:
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
-            mcp, "gitea_issue_search_issues",
+            mcp,
+            "gitea_issue_search_issues",
             {"q": "zzzzthisdoesnotexist9999", "owner": DEV.username},
             skip_values=True,  # empty is just []
         )
@@ -113,6 +117,7 @@ class TestRawFormat:
         )
         assert not result.isError
         import json
+
         text = extract_text_content(result.content)
         data = json.loads(text)
         if isinstance(data, dict) and list(data.keys()) == ["result"]:
@@ -133,6 +138,7 @@ class TestRawFormat:
         assert not result.isError
         text = extract_text_content(result.content)
         import json
+
         try:
             data = json.loads(text)
             assert isinstance(data, (dict, list))
@@ -157,8 +163,7 @@ class TestDetailLevels:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get",
-            {"owner": DEV.username, "repo": _REPO,
-             "format": "json", "detail": "concise"},
+            {"owner": DEV.username, "repo": _REPO, "format": "json", "detail": "concise"},
         )
         data = assert_result_ok(result)
         owner = data.get("owner")
@@ -166,9 +171,7 @@ class TestDetailLevels:
             f"Concise detail should collapse 'owner' to $ref:Type, "
             f"got {type(owner).__name__}: {owner!r}"
         )
-        assert "$ref:" in owner, (
-            f"Expected $ref: prefix, got {owner!r}"
-        )
+        assert "$ref:" in owner, f"Expected $ref: prefix, got {owner!r}"
 
     @pytest.mark.live
     async def test_full_detail_expands_all(self, world: World) -> None:
@@ -178,13 +181,11 @@ class TestDetailLevels:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get",
-            {"owner": DEV.username, "repo": _REPO,
-             "format": "json", "detail": "full"},
+            {"owner": DEV.username, "repo": _REPO, "format": "json", "detail": "full"},
         )
         data = assert_result_ok(result)
         owner = data.get("owner")
         assert isinstance(owner, dict), (
-            f"Full detail should expand 'owner' to dict, "
-            f"got {type(owner).__name__}: {owner!r}"
+            f"Full detail should expand 'owner' to dict, got {type(owner).__name__}: {owner!r}"
         )
         assert "login" in owner

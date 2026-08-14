@@ -70,6 +70,7 @@ class SimpleConfig:
         """Get the API base URL."""
         return f"{self.url}/api/v1"
 
+
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -139,9 +140,7 @@ def swagger_spec_fixture() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
-def isolate_from_project_dotenv(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def isolate_from_project_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Prevent any test from picking up the project's .env file via CWD isolation.
 
     The project root has a gitignored .env for development convenience.

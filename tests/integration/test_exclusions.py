@@ -71,9 +71,7 @@ class TestExclusionIntegration:
     async def test_include_overrides_exclude(self, tmp_path: Path) -> None:
         """Include patterns override exclude, restoring a subset of excluded tools."""
         cfg = tmp_path / "override.yaml"
-        cfg.write_text(
-            "exclude:\n  - gitea_admin_*\ninclude:\n  - gitea_admin_get_users"
-        )
+        cfg.write_text("exclude:\n  - gitea_admin_*\ninclude:\n  - gitea_admin_get_users")
         config = SimpleConfig(exclude_config_path=str(cfg))
         gitea_client = GiteaClient(config)
 
@@ -112,9 +110,7 @@ class TestExclusionIntegration:
         ``*`` must be quoted in YAML to avoid alias parsing.
         """
         cfg = tmp_path / "whitelist.yaml"
-        cfg.write_text(
-            'exclude:\n  - "*"\ninclude:\n  - gitea_admin_get_users'
-        )
+        cfg.write_text('exclude:\n  - "*"\ninclude:\n  - gitea_admin_get_users')
         config = SimpleConfig(exclude_config_path=str(cfg))
         gitea_client = GiteaClient(config)
 
@@ -278,13 +274,12 @@ class TestExclusionIntegration:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=spec)
-            mock.get("https://git.example.com/api/v1/user").respond(
-                200, json={"login": "testuser"}
-            )
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "testuser"})
             # Token has read:repository but NOT sudo — admin tools should be
             # scope-filtered, which must also hide their auto resources.
             mock.get("https://git.example.com/api/v1/users/testuser/tokens").respond(
-                200, json=[
+                200,
+                json=[
                     {
                         "id": 1,
                         "name": "limited",
@@ -299,8 +294,7 @@ class TestExclusionIntegration:
             tools = await mcp.list_tools()
             tool_names = extract_tool_names(tools)
             assert not any("admin" in t for t in tool_names), (
-                f"Expected no admin tools but found: "
-                f"{[t for t in tool_names if 'admin' in t]}"
+                f"Expected no admin tools but found: {[t for t in tool_names if 'admin' in t]}"
             )
 
             # The admin auto-generated resource template should also be absent
@@ -346,13 +340,12 @@ class TestExclusionIntegration:
 
         with respx.mock() as mock:
             mock.get("https://git.example.com/swagger.v1.json").respond(200, json=spec)
-            mock.get("https://git.example.com/api/v1/user").respond(
-                200, json={"login": "testuser"}
-            )
+            mock.get("https://git.example.com/api/v1/user").respond(200, json={"login": "testuser"})
             # Token has read:issue only — custom resources requiring
             # read:user or read:repository should be skipped.
             mock.get("https://git.example.com/api/v1/users/testuser/tokens").respond(
-                200, json=[
+                200,
+                json=[
                     {
                         "id": 1,
                         "name": "iss-only",
@@ -368,14 +361,12 @@ class TestExclusionIntegration:
 
             # gitea://repos/{owner}/{repo}/labels requires read:issue → present
             assert "gitea://repos/{owner}/{repo}/labels" in template_uris, (
-                f"Expected labels resource (needs read:issue) to be present, "
-                f"got: {template_uris}"
+                f"Expected labels resource (needs read:issue) to be present, got: {template_uris}"
             )
 
             # gitea://users/{username} requires read:user → absent
             assert "gitea://users/{username}" not in template_uris, (
-                f"Expected user resource (needs read:user) to be filtered, "
-                f"got: {template_uris}"
+                f"Expected user resource (needs read:user) to be filtered, got: {template_uris}"
             )
 
             # gitea://repos/{owner}/{repo} requires read:repository → absent

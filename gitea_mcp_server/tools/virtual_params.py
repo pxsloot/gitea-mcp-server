@@ -21,7 +21,6 @@ Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
 ``tool_predicate`` — then the injection call site must pass ``tool``)."""
 
-
 from __future__ import annotations
 
 import base64
@@ -118,8 +117,7 @@ class VirtualParam:
         can read other virtual params (e.g. ``format`` reads ``detail``).
     """
     loop_hook: (
-        Callable[[ToolResult, Any, dict[str, Any], _ExecuteFn], Awaitable[ToolResult]]
-        | None
+        Callable[[ToolResult, Any, dict[str, Any], _ExecuteFn], Awaitable[ToolResult]] | None
     ) = None
 
 
@@ -346,6 +344,7 @@ _VIRTUAL_PARAMS["format"] = VirtualParam(
 # Scope-based visibility control
 # ---------------------------------------------------------------------------
 
+
 def apply_scope_filter(available_scopes: set[str]) -> None:
     """Set visibility on every virtual param based on the active token's scopes.
 
@@ -367,10 +366,7 @@ def apply_scope_filter(available_scopes: set[str]) -> None:
     for name, vp in _VIRTUAL_PARAMS.items():
         if vp.required_scope is None:
             continue
-        vp.visible = (
-            vp.required_scope in available_scopes
-            or "all" in available_scopes
-        )
+        vp.visible = vp.required_scope in available_scopes or "all" in available_scopes
         logger.info(
             "Scope filter: param '%s' %s (required_scope=%s)",
             name,
@@ -474,11 +470,7 @@ def extract_from(
         execution path.
     """
     if only is not None:
-        return {
-            n: kwargs.pop(n)
-            for n in list(kwargs)
-            if n in _VIRTUAL_PARAMS and n in only
-        }
+        return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS and n in only}
     return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS}
 
 
@@ -547,7 +539,6 @@ def get_loop_hooks(
 
 __all__ = [
     "VirtualParam",
-
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",

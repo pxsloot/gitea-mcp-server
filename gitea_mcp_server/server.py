@@ -60,6 +60,7 @@ from gitea_mcp_server.tools.virtual_params import apply_scope_filter
 
 logger = logging.getLogger(__name__)
 
+
 def load_instructions() -> str:
     """Load agent instructions from package resource or fallback."""
     try:
@@ -142,10 +143,12 @@ def _setup_middleware(
         tool_prefix: Namespace prefix (e.g. ``"gitea_"``).
     """
     logger.info("Adding filtered-tool middleware...")
-    mcp.add_middleware(FilteredToolMiddleware(
-        filtered_tools_info=filtered_tools_info,
-        tool_prefix=tool_prefix,
-    ))
+    mcp.add_middleware(
+        FilteredToolMiddleware(
+            filtered_tools_info=filtered_tools_info,
+            tool_prefix=tool_prefix,
+        )
+    )
 
     logger.info("Adding response caching middleware...")
     caching_middleware = ResponseCachingMiddleware(
@@ -201,7 +204,8 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
         mcp.add_transform(search_transform)
         logger.info("Registering synthetic tools (call_tool, search_tools, tool_info)...")
         register_synthetic_tools(
-            mcp, search_transform,
+            mcp,
+            search_transform,
             tool_prefix=config.tool_prefix,
             openapi_spec=openapi_spec,
             filtered_tools_info=filtered_tools_info,
@@ -212,7 +216,9 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
     if search_transform is not None:
         logger.info("Registering unified search tool...")
         register_unified_search(
-            mcp, doc_manager, search_transform,
+            mcp,
+            doc_manager,
+            search_transform,
             tool_prefix=config.tool_prefix,
         )
 
@@ -288,9 +294,12 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     logger.info("Starting Gitea MCP Server initialization")
 
     try:
-        openapi_spec, extensions, filtered_tools_info, excluded_routes = (
-            await load_and_convert_spec(gitea_client, config)
-        )
+        (
+            openapi_spec,
+            extensions,
+            filtered_tools_info,
+            excluded_routes,
+        ) = await load_and_convert_spec(gitea_client, config)
     except SpecError:
         raise
     except Exception as e:
@@ -308,9 +317,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # sets would otherwise enable scope gating with no scopes and filter
     # out every gated resource.
     all_scopes: set[str] | None = (
-        set(filtered_tools_info.get("available_scopes", []))
-        if filtered_tools_info
-        else None
+        set(filtered_tools_info.get("available_scopes", [])) if filtered_tools_info else None
     ) or None
     available_scopes = all_scopes if config.tool_filtering_enabled else None
 
@@ -346,17 +353,11 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # Token scopes — already computed in filtered_tools_info.
     scopes: list[str] = filtered_tools_info.get("available_scopes", [])
     if scopes:
-        placeholder_values["TOKEN_SCOPES"] = ", ".join(
-            f"`{s}`" for s in scopes
-        )
+        placeholder_values["TOKEN_SCOPES"] = ", ".join(f"`{s}`" for s in scopes)
 
     # Server type (Gitea vs Forgejo) — detectable from the already-loaded
     # OpenAPI spec info block; no extra API call needed.
-    server_title: str = (
-        str(openapi_spec.get("info", {}).get("title", ""))
-        if openapi_spec
-        else ""
-    )
+    server_title: str = str(openapi_spec.get("info", {}).get("title", "")) if openapi_spec else ""
     if "forgejo" in server_title.lower():
         placeholder_values["SERVER_TYPE"] = "Forgejo"
     elif "gitea" in server_title.lower():
@@ -426,7 +427,10 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
         tool_prefix=config.tool_prefix,
     )
     _setup_tool_discovery(
-        mcp, config, doc_manager, extensions,
+        mcp,
+        config,
+        doc_manager,
+        extensions,
         openapi_spec=openapi_spec,
         filtered_tools_info=filtered_tools_info,
     )

@@ -70,7 +70,9 @@ class Transport:
     def _drain_stderr(self) -> None:
         stderr_output = self._process.stderr.read() if self._process.stderr else b""
         if stderr_output:
-            print("Server stderr:", stderr_output.decode("utf-8", errors="replace"), file=sys.stderr)
+            print(
+                "Server stderr:", stderr_output.decode("utf-8", errors="replace"), file=sys.stderr
+            )
 
     def close(self) -> None:
         if self._process.poll() is None:

@@ -35,9 +35,12 @@ def _mock_result(
     if is_error:
         result.content = [TextContent(type="text", text=error_text)]
     else:
-        result.content = [TextContent(
-            type="text", text=json.dumps(data or {}),
-        )]
+        result.content = [
+            TextContent(
+                type="text",
+                text=json.dumps(data or {}),
+            )
+        ]
     return result
 
 
@@ -78,11 +81,16 @@ class TestNeedUserBootstrap:
             # admin_create_user → "already exists"
             _mock_result(is_error=True, error_text="user already exists"),
             # user_get → success, but wrong email
-            _mock_result(data={
-                "id": 1, "login": user.username, "username": user.username,
-                "email": "wrong@test.local", "active": True,
-                "prohibit_login": False,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": user.username,
+                    "username": user.username,
+                    "email": "wrong@test.local",
+                    "active": True,
+                    "prohibit_login": False,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -100,11 +108,16 @@ class TestNeedUserBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="user already exists"),
-            _mock_result(data={
-                "id": 1, "login": user.username, "username": user.username,
-                "email": user.email, "active": False,
-                "prohibit_login": False,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": user.username,
+                    "username": user.username,
+                    "email": user.email,
+                    "active": False,
+                    "prohibit_login": False,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -122,11 +135,16 @@ class TestNeedUserBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="user already exists"),
-            _mock_result(data={
-                "id": 1, "login": user.username, "username": user.username,
-                "email": user.email, "active": True,
-                "prohibit_login": True,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": user.username,
+                    "username": user.username,
+                    "email": user.email,
+                    "active": True,
+                    "prohibit_login": True,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -144,11 +162,16 @@ class TestNeedUserBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="user already exists"),
-            _mock_result(data={
-                "id": 1, "login": "wrong-login", "username": user.username,
-                "email": user.email, "active": True,
-                "prohibit_login": False,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": "wrong-login",
+                    "username": user.username,
+                    "email": user.email,
+                    "active": True,
+                    "prohibit_login": False,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -179,11 +202,16 @@ class TestNeedUserBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="user already exists"),
-            _mock_result(data={
-                "id": 1, "login": user.username, "username": user.username,
-                "email": user.email, "active": True,
-                "prohibit_login": False,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": user.username,
+                    "username": user.username,
+                    "email": user.email,
+                    "active": True,
+                    "prohibit_login": False,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -200,11 +228,16 @@ class TestNeedUserBootstrap:
 
         # First call — create user
         mock_admin = await _mock_admin_session(
-            _mock_result(data={
-                "id": 1, "login": user.username, "username": user.username,
-                "email": user.email, "active": True,
-                "prohibit_login": False,
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "login": user.username,
+                    "username": user.username,
+                    "email": user.email,
+                    "active": True,
+                    "prohibit_login": False,
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
         first = await world.need_user(user)
@@ -232,10 +265,14 @@ class TestNeedOrgBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="org already exists"),
-            _mock_result(data={
-                "id": 1, "username": "live-org", "visibility": "public",
-                "full_name": "Wrong Name",
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "username": "live-org",
+                    "visibility": "public",
+                    "full_name": "Wrong Name",
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -252,10 +289,14 @@ class TestNeedOrgBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="org already exists"),
-            _mock_result(data={
-                "id": 1, "username": "wrong-org", "visibility": "public",
-                "full_name": "Live Org",
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "username": "wrong-org",
+                    "visibility": "public",
+                    "full_name": "Live Org",
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -284,10 +325,14 @@ class TestNeedOrgBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="org already exists"),
-            _mock_result(data={
-                "id": 1, "username": "live-org", "visibility": "public",
-                "full_name": "Whatever Name",
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "username": "live-org",
+                    "visibility": "public",
+                    "full_name": "Whatever Name",
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -302,10 +347,14 @@ class TestNeedOrgBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="org already exists"),
-            _mock_result(data={
-                "id": 1, "username": "live-org", "visibility": "public",
-                "full_name": "Live Org",
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "username": "live-org",
+                    "visibility": "public",
+                    "full_name": "Live Org",
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -320,10 +369,14 @@ class TestNeedOrgBootstrap:
         world = _new_world()
 
         mock_admin = await _mock_admin_session(
-            _mock_result(data={
-                "id": 1, "username": "live-org", "visibility": "public",
-                "full_name": "Live Org",
-            }),
+            _mock_result(
+                data={
+                    "id": 1,
+                    "username": "live-org",
+                    "visibility": "public",
+                    "full_name": "Live Org",
+                }
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -352,16 +405,24 @@ class TestNeedTeamBootstrap:
             # org_create_team → "already exists"
             _mock_result(is_error=True, error_text="team name already exists"),
             # org_list_teams → team with wrong permission
-            _mock_result(data=[
-                {"id": 42, "name": "dev-team", "permission": "read",
-                 "units_map": {"repo.code": "write", "repo.issues": "write"}},
-            ]),
+            _mock_result(
+                data=[
+                    {
+                        "id": 42,
+                        "name": "dev-team",
+                        "permission": "read",
+                        "units_map": {"repo.code": "write", "repo.issues": "write"},
+                    },
+                ]
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
         with pytest.raises(BootstrapVerificationError) as exc:
             await world.need_team(
-                "live-org", "dev-team", permission="write",
+                "live-org",
+                "dev-team",
+                permission="write",
                 units_map={"repo.code": "write", "repo.issues": "write"},
             )
         assert exc.value.field == "permission"
@@ -375,16 +436,24 @@ class TestNeedTeamBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="conflict"),
-            _mock_result(data=[
-                {"id": 42, "name": "dev-team", "permission": "write",
-                 "units_map": {"repo.code": "read", "repo.issues": "write"}},
-            ]),
+            _mock_result(
+                data=[
+                    {
+                        "id": 42,
+                        "name": "dev-team",
+                        "permission": "write",
+                        "units_map": {"repo.code": "read", "repo.issues": "write"},
+                    },
+                ]
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
         with pytest.raises(BootstrapVerificationError) as exc:
             await world.need_team(
-                "live-org", "dev-team", permission="write",
+                "live-org",
+                "dev-team",
+                permission="write",
                 units_map={"repo.code": "write", "repo.issues": "write"},
             )
         assert exc.value.field == "units_map.repo.code"
@@ -398,16 +467,24 @@ class TestNeedTeamBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="conflict"),
-            _mock_result(data=[
-                {"id": 42, "name": "dev-team", "permission": "write",
-                 "units_map": {"repo.code": "write", "repo.issues": "read"}},
-            ]),
+            _mock_result(
+                data=[
+                    {
+                        "id": 42,
+                        "name": "dev-team",
+                        "permission": "write",
+                        "units_map": {"repo.code": "write", "repo.issues": "read"},
+                    },
+                ]
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
         with pytest.raises(BootstrapVerificationError) as exc:
             await world.need_team(
-                "live-org", "dev-team", permission="write",
+                "live-org",
+                "dev-team",
+                permission="write",
                 units_map={"repo.code": "write", "repo.issues": "write"},
             )
         assert exc.value.field == "units_map.repo.issues"
@@ -437,10 +514,11 @@ class TestNeedTeamBootstrap:
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="already exists"),
             # List returns teams but not the one we're looking for
-            _mock_result(data=[
-                {"id": 1, "name": "other-team", "permission": "read",
-                 "units_map": {}},
-            ]),
+            _mock_result(
+                data=[
+                    {"id": 1, "name": "other-team", "permission": "read", "units_map": {}},
+                ]
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
@@ -455,15 +533,23 @@ class TestNeedTeamBootstrap:
 
         mock_admin = await _mock_admin_session(
             _mock_result(is_error=True, error_text="conflict"),
-            _mock_result(data=[
-                {"id": 42, "name": "dev-team", "permission": "write",
-                 "units_map": {"repo.code": "write", "repo.issues": "write"}},
-            ]),
+            _mock_result(
+                data=[
+                    {
+                        "id": 42,
+                        "name": "dev-team",
+                        "permission": "write",
+                        "units_map": {"repo.code": "write", "repo.issues": "write"},
+                    },
+                ]
+            ),
         )
         world._servers["__admin__"] = mock_admin
 
         result = await world.need_team(
-            "live-org", "dev-team", permission="write",
+            "live-org",
+            "dev-team",
+            permission="write",
             units_map={"repo.code": "write", "repo.issues": "write"},
         )
         assert result["id"] == 42
@@ -480,13 +566,17 @@ class TestNeedTeamBootstrap:
         world._servers["__admin__"] = mock_admin
 
         first = await world.need_team(
-            "live-org", "dev-team", permission="write",
+            "live-org",
+            "dev-team",
+            permission="write",
             units_map={"repo.code": "write", "repo.issues": "write"},
         )
         assert first["id"] == 42
 
         second = await world.need_team(
-            "live-org", "dev-team", permission="write",
+            "live-org",
+            "dev-team",
+            permission="write",
             units_map={"repo.code": "write", "repo.issues": "write"},
         )
         assert second is first

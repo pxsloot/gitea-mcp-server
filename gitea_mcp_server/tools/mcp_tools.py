@@ -111,9 +111,7 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
                     description=resource.description or "",
                     mimeType=resource.mime_type or "text/plain",
                     type="resource",
-                    tags=list(resource.tags)
-                    if hasattr(resource, "tags") and resource.tags
-                    else [],
+                    tags=list(resource.tags) if hasattr(resource, "tags") and resource.tags else [],
                 ),
                 getattr(resource, "meta", None),
             )
@@ -128,9 +126,7 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
                     description=template.description or "",
                     mimeType=template.mime_type or "text/plain",
                     type="template",
-                    tags=list(template.tags)
-                    if hasattr(template, "tags") and template.tags
-                    else [],
+                    tags=list(template.tags) if hasattr(template, "tags") and template.tags else [],
                 ),
                 getattr(template, "meta", None),
             )
@@ -166,7 +162,8 @@ def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _mcp_read_resource_impl(
-    ctx: Context, uri: str,
+    ctx: Context,
+    uri: str,
 ) -> tuple[Any, dict[str, Any] | None, str | None, dict[str, Any] | None]:
     """Read a resource and return (content, schema, format_hint, extra).
 
@@ -434,7 +431,12 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
         )
 
     return format_paginated_result(
-        all_resources, total_count, format, page, limit, fetch_all,
+        all_resources,
+        total_count,
+        format,
+        page,
+        limit,
+        fetch_all,
         detail=detail,
     )
 
@@ -596,8 +598,12 @@ async def _read_resource_tool(
     if format != "raw":
         raw = await _maybe_decode_base64(raw)
     formatted = format_resource_content(
-        raw, format, detail=detail,
-        schema=schema, format_hint=format_hint, extra=extra,
+        raw,
+        format,
+        detail=detail,
+        schema=schema,
+        format_hint=format_hint,
+        extra=extra,
     )
 
     # ``content`` carries the rendered presentation; ``structured_content``
@@ -630,6 +636,7 @@ def _make_tool_schema_resource_handler(
     Returns:
         Async resource handler callable ``(name, ctx) -> str``.
     """
+
     async def _tool_schema_resource(name: str, ctx: Context = CurrentContext()) -> str:
         """Get the full tool schema for a registered tool by name.
 
@@ -687,23 +694,26 @@ def register_mcp_resource_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve bare
             ``$ref`` in tool output examples.
     """
-    register_all_synthetic_tools(mcp, [
-        SyntheticToolSpec(
-            impl=_list_resources_tool,
-            name="list_resources",
-            tags={"synthetic"},
-            annotations=synthetic_annotations(read_only=True, open_world=False),
-            output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
-            paginated=True,
-        ),
-        SyntheticToolSpec(
-            impl=_read_resource_tool,
-            name="read_resource",
-            tags={"synthetic"},
-            annotations=synthetic_annotations(read_only=True, open_world=True),
-            output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
-        ),
-    ])
+    register_all_synthetic_tools(
+        mcp,
+        [
+            SyntheticToolSpec(
+                impl=_list_resources_tool,
+                name="list_resources",
+                tags={"synthetic"},
+                annotations=synthetic_annotations(read_only=True, open_world=False),
+                output_schema=_LIST_RESOURCES_OUTPUT_SCHEMA,
+                paginated=True,
+            ),
+            SyntheticToolSpec(
+                impl=_read_resource_tool,
+                name="read_resource",
+                tags={"synthetic"},
+                annotations=synthetic_annotations(read_only=True, open_world=True),
+                output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
+            ),
+        ],
+    )
 
     mcp.resource(
         uri="gitea://tool/{name}/schema",

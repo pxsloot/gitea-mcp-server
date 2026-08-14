@@ -50,8 +50,12 @@ class TestSetup:
     async def test_create_repo(self, world: World) -> None:
         """Create the PR workflow test repo with branch + file in one call."""
         repo = await world.need_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            auto_init=True, description="PR workflow test repo",
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            auto_init=True,
+            description="PR workflow test repo",
             branch=_BRANCH,
             files={_PR_FILE: _PR_BODY},
         )
@@ -77,17 +81,32 @@ class TestPullRequest:
     async def test_create_pull_request(self, world: World) -> None:
         """Open a PR from the feature branch to main — verify shape."""
         repo = await world.need_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            branch=_BRANCH, files={_PR_FILE: _PR_BODY},
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            branch=_BRANCH,
+            files={_PR_FILE: _PR_BODY},
         )
         pr = await repo.need_pull_request(
             "Feature: add hello script",
             head=_BRANCH,
             body="This PR adds a simple hello script for testing.",
         )
-        assert_keys(pr, "number", "title", "state", "head", "base",
-                    "body", "user", "created_at", "html_url",
-                    "mergeable", "merged")
+        assert_keys(
+            pr,
+            "number",
+            "title",
+            "state",
+            "head",
+            "base",
+            "body",
+            "user",
+            "created_at",
+            "html_url",
+            "mergeable",
+            "merged",
+        )
         assert_key_types(pr, number=int, title=str, state=str)
         assert_content(pr, title="Feature: add hello script", state="open")
 
@@ -95,49 +114,57 @@ class TestPullRequest:
     async def test_download_pull_diff(self, world: World) -> None:
         """Download the PR diff — verify raw diff markers."""
         repo = await world.need_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            branch=_BRANCH, files={_PR_FILE: _PR_BODY},
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            branch=_BRANCH,
+            files={_PR_FILE: _PR_BODY},
         )
         pr = await repo.need_pull_request(
-            "Feature: add hello script", head=_BRANCH,
+            "Feature: add hello script",
+            head=_BRANCH,
             body="This PR adds a simple hello script for testing.",
         )
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": pr["number"],
-             "diffType": "diff"},
+            {"owner": DEV.username, "repo": _REPO, "index": pr["number"], "diffType": "diff"},
         )
         assert not result.isError, "Failed to download PR diff"
         text = extract_text_content(result.content)
-        assert "diff --git" in text, (
-            f"Expected raw diff output, got: {text[:200]!r}"
-        )
-        assert _PR_FILE in text, (
-            f"Expected {_PR_FILE} in diff, got: {text[:200]!r}"
-        )
+        assert "diff --git" in text, f"Expected raw diff output, got: {text[:200]!r}"
+        assert _PR_FILE in text, f"Expected {_PR_FILE} in diff, got: {text[:200]!r}"
 
     @pytest.mark.live
     async def test_comment_on_pr(self, world: World) -> None:
         """Add a review comment to the PR — verify content."""
         repo = await world.need_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            branch=_BRANCH, files={_PR_FILE: _PR_BODY},
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            branch=_BRANCH,
+            files={_PR_FILE: _PR_BODY},
         )
         pr = await repo.need_pull_request(
-            "Feature: add hello script", head=_BRANCH,
+            "Feature: add hello script",
+            head=_BRANCH,
             body="This PR adds a simple hello script for testing.",
         )
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_issue_create_comment",
-            {"owner": DEV.username, "repo": _REPO,
-             "index": pr["number"],
-             "body": "Looks good to me! +1",
-             "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "index": pr["number"],
+                "body": "Looks good to me! +1",
+                "format": "json",
+            },
         )
         from tests.live.assertions import assert_result_ok
+
         comment = assert_result_ok(result)
         assert_keys(comment, "body", "user", "created_at")
         assert_content(comment, body="Looks good to me! +1")

@@ -163,7 +163,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="repository",
@@ -182,7 +184,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://user",
             api_path="/user",
             format_hint="user",
@@ -198,7 +202,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             scope="read:admin",
@@ -208,8 +214,7 @@ class TestMakeApiResourceRegistration:
         assert handler is None
         # Should not call mcp.resource
         assert not any(
-            "gitea://repos/{owner}/{repo}" in str(c)
-            for c in mcp.resource.call_args_list
+            "gitea://repos/{owner}/{repo}" in str(c) for c in mcp.resource.call_args_list
         )
 
     def test_tracks_uri_in_tracking_set(self) -> None:
@@ -219,7 +224,9 @@ class TestMakeApiResourceRegistration:
         tracking_set: set[str] = set()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             tracking_set=tracking_set,
@@ -242,7 +249,9 @@ class TestMakeApiResourceRegistration:
         tracking_set: set[str] = set()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             tracking_set=tracking_set,
@@ -258,7 +267,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             tags={"wrapper", "custom"},
@@ -278,7 +289,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             tags={"api", "raw"},
@@ -296,7 +309,9 @@ class TestMakeApiResourceRegistration:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             cache_ttl=300,
@@ -324,7 +339,9 @@ class TestMakeApiResourceHandler:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="repository",
@@ -347,7 +364,9 @@ class TestMakeApiResourceHandler:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
@@ -368,7 +387,9 @@ class TestMakeApiResourceHandler:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://user",
             api_path="/user",
         )
@@ -387,7 +408,9 @@ class TestMakeApiResourceHandler:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="repository",
@@ -422,7 +445,9 @@ class TestMakeApiResourceErrorHandling:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             error_message="Repository '{owner}/{repo}' not found.",
@@ -451,7 +476,9 @@ class TestMakeApiResourceErrorHandling:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
@@ -472,7 +499,9 @@ class TestMakeApiResourceErrorHandling:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
@@ -499,7 +528,9 @@ class TestMakeApiResourceErrorHandling:
 
         client.request = AsyncMock(side_effect=Mock404())
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
@@ -532,7 +563,9 @@ class TestMakeApiResourceErrorHandling:
 
         client.request = AsyncMock(side_effect=Mock404())
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
@@ -565,7 +598,9 @@ class TestMakeApiResourceErrorHandling:
 
         client.request = AsyncMock(side_effect=Mock404())
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
             api_path="/repos/{owner}/{repo}/issues",
             resource_type="issues",
@@ -600,7 +635,9 @@ class TestMakeApiResourceMissingEndpoint:
 
         # This endpoint is NOT in the spec -- should warn but proceed
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://orgs/{orgname}",
             api_path="/orgs/{orgname}",
             format_hint="user",
@@ -617,7 +654,9 @@ class TestMakeApiResourceMissingEndpoint:
         client = _make_mock_client()
 
         handler = make_api_resource(
-            mcp, client, None,
+            mcp,
+            client,
+            None,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
@@ -636,7 +675,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -660,7 +701,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -683,7 +726,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -706,7 +751,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -734,7 +781,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -756,7 +805,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
             param_config=ResourceParamConfig(
@@ -778,7 +829,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
             param_config=ResourceParamConfig(
@@ -800,7 +853,9 @@ class TestMakeApiResourceQueryParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/releases",
             api_path="/repos/{owner}/{repo}/releases",
             param_config=ResourceParamConfig(
@@ -832,7 +887,9 @@ class TestMakeApiResourceContextMetaKeys:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/labels",
             api_path="/repos/{owner}/{repo}/labels",
             format_hint="labels",
@@ -858,7 +915,9 @@ class TestMakeApiResourceContextMetaKeys:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -890,7 +949,9 @@ class TestMakeApiResourceContextMetaKeys:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="repository",
@@ -917,7 +978,9 @@ class TestMakeApiResourceContextMetaKeys:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -961,7 +1024,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -989,7 +1054,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1016,7 +1083,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1045,7 +1114,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1070,7 +1141,9 @@ class TestMakeApiResourceContextParams:
         # Use a URI without {?display_hint} — the context param is not in the
         # template but should still be validated (via _build_optional_param_signature).
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1094,7 +1167,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1121,7 +1196,9 @@ class TestMakeApiResourceContextParams:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues{?state,display_hint}",
             api_path="/repos/{owner}/{repo}/issues",
             format_hint="issues",
@@ -1147,7 +1224,9 @@ class TestMakeApiResourceContextParams:
 
         with pytest.raises(ValueError, match="appear in both"):
             make_api_resource(
-                mcp, client, spec,
+                mcp,
+                client,
+                spec,
                 uri="gitea://repos/{owner}/{repo}/issues",
                 api_path="/repos/{owner}/{repo}/issues",
                 param_config=ResourceParamConfig(
@@ -1167,7 +1246,9 @@ class TestMakeApiResourceOptionalParams:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/issues",
             api_path="/repos/{owner}/{repo}/issues",
             param_config=ResourceParamConfig(
@@ -1191,7 +1272,9 @@ class TestMakeApiResourceOptionalParams:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
         )
@@ -1224,7 +1307,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             handler_hook=self._hook,
@@ -1243,7 +1328,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             format_hint="readme",
@@ -1264,7 +1351,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             handler_hook=self._hook,
@@ -1285,7 +1374,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             handler_hook=self._hook,
@@ -1305,7 +1396,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             handler_hook=self._hook,
@@ -1331,7 +1424,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/readme",
             api_path="/repos/{owner}/{repo}/contents/README.md",
             error_message="README not found for '{owner}/{repo}'.",
@@ -1357,7 +1452,7 @@ class TestMakeApiResourceHandlerHook:
     @pytest.mark.asyncio
     async def test_handler_hook_called_with_list_response(self) -> None:
         """handler_hook meaningfully processes a list API response (non-dict, non-str).
-        
+
         Uses a hook that returns different output for list vs dict responses,
         proving the hook receives the correct data type.
         """
@@ -1366,7 +1461,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/items",
             api_path="/repos/{owner}/{repo}/items",
             handler_hook=self._list_item_count_hook,
@@ -1387,7 +1484,9 @@ class TestMakeApiResourceHandlerHook:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/files/{path*}",
             api_path="/repos/{owner}/{repo}/contents/{path}",
             param_config=ResourceParamConfig(
@@ -1428,17 +1527,13 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_base64_dict_decoding(self) -> None:
         """Dict with encoding='base64' decodes the content field."""
-        result = await decode_base64_content(
-            {"content": "SGVsbG8gV29ybGQ=", "encoding": "base64"}
-        )
+        result = await decode_base64_content({"content": "SGVsbG8gV29ybGQ=", "encoding": "base64"})
         assert result == "Hello World"
 
     @pytest.mark.asyncio
     async def test_non_base64_dict_returns_content_field(self) -> None:
         """Dict without base64 encoding returns the content field as-is."""
-        result = await decode_base64_content(
-            {"content": "raw text content"}
-        )
+        result = await decode_base64_content({"content": "raw text content"})
         assert result == "raw text content"
 
     @pytest.mark.asyncio
@@ -1450,9 +1545,7 @@ class TestDecodeBase64Content:
     @pytest.mark.asyncio
     async def test_base64_dict_none_content_returns_empty_string(self) -> None:
         """Dict with encoding='base64' and content=None returns ''."""
-        result = await decode_base64_content(
-            {"content": None, "encoding": "base64"}
-        )
+        result = await decode_base64_content({"content": None, "encoding": "base64"})
         assert result == ""
 
     @pytest.mark.asyncio
@@ -1489,7 +1582,9 @@ class TestMakeApiResourceUnregisteredFormatHint:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             format_hint="nonexistent-formatter",
@@ -1507,7 +1602,9 @@ class TestMakeApiResourceUnregisteredFormatHint:
         spec = _make_mock_openapi_spec()
 
         make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}/unknown_fmt",
             api_path="/repos/{owner}/{repo}",
             format_hint="does-not-exist",
@@ -1560,9 +1657,12 @@ class TestMakeApiResourceConcreteUriContextMeta:
     """Tests for context_meta_keys on concrete URI handlers."""
 
     @pytest.mark.asyncio
-    async def test_concrete_uri_with_context_meta_keys_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_concrete_uri_with_context_meta_keys_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """context_meta_keys on a concrete URI handler should log a warning but work."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         mcp = _make_mock_mcp()
@@ -1570,7 +1670,9 @@ class TestMakeApiResourceConcreteUriContextMeta:
         spec = _make_mock_openapi_spec()
 
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://version",
             api_path="/version",
             param_config=ResourceParamConfig(
@@ -1583,7 +1685,9 @@ class TestMakeApiResourceConcreteUriContextMeta:
         assert isinstance(result, ResourceResult)
 
         # The log should contain the warning
-        assert any("context_meta_keys" in r.message and "concrete" in r.message for r in caplog.records)
+        assert any(
+            "context_meta_keys" in r.message and "concrete" in r.message for r in caplog.records
+        )
 
 
 class TestMakeApiResourceErrorMessageFormat:
@@ -1603,7 +1707,9 @@ class TestMakeApiResourceErrorMessageFormat:
 
         client.request = AsyncMock(side_effect=Mock404())
         handler = make_api_resource(
-            mcp, client, spec,
+            mcp,
+            client,
+            spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
             error_message="Resource '{badkey}' not found.",

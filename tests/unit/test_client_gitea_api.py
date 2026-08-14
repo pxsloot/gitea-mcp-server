@@ -91,7 +91,9 @@ class TestGiteaAPI:
             assert result["name"] == "test-repo"
 
     @pytest.mark.asyncio
-    async def test_delegation_to_transport(self, transport: HTTPTransport, mocker: MockerFixture) -> None:
+    async def test_delegation_to_transport(
+        self, transport: HTTPTransport, mocker: MockerFixture
+    ) -> None:
         """Test that GiteaAPI correctly delegates to transport."""
         api = GiteaAPI(transport, "https://git.example.com/api/v1")
 

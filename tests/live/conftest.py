@@ -59,6 +59,7 @@ def _task_coroutine_name(task: asyncio.Task[Any]) -> str:
     code = getattr(coroutine, "cr_code", None)
     return cast("str", getattr(code, "co_name", ""))
 
+
 # ---------------------------------------------------------------------------
 # Load credentials
 # ---------------------------------------------------------------------------
@@ -135,7 +136,9 @@ def server_args() -> list[str]:
 
 @pytest.fixture(scope="session")
 async def world(
-    gitea_url: str, admin_token: str, server_args: list[str],
+    gitea_url: str,
+    admin_token: str,
+    server_args: list[str],
 ) -> AsyncIterator[World]:
     """Session-scoped World with pooled MCP servers and lazy state graph.
 
@@ -151,8 +154,7 @@ async def world(
 
     logger.info("World — bootstrapping users, org, team (per session)")
     await w.start()
-    logger.info("World ready — %d users, %d orgs bootstrapped",
-                 len(w._users), len(w._orgs))
+    logger.info("World ready — %d users, %d orgs bootstrapped", len(w._users), len(w._orgs))
 
     try:
         yield w
@@ -197,21 +199,16 @@ async def _detect_async_leaks(request: pytest.FixtureRequest) -> Any:
     yield
     post = asyncio.all_tasks(loop)
     leaked = [
-        t for t in post - pre
+        t
+        for t in post - pre
         if not t.done()
         and not t.get_name().startswith("world-server-")  # server pool
-        and not t.get_name().startswith("mcp.")         # MCP library internals
+        and not t.get_name().startswith("mcp.")  # MCP library internals
         and _task_coroutine_name(t) not in _ALLOWED_FRAMEWORK_COROUTINES
     ]
     if leaked:
-        names = ", ".join(
-            f"{t.get_name()} ({_task_coroutine_name(t)})"
-            for t in leaked
-        )
-        pytest.fail(
-            f"Leaked {len(leaked)} user task(s) after "
-            f"{request.node.name}: {names}"
-        )
+        names = ", ".join(f"{t.get_name()} ({_task_coroutine_name(t)})" for t in leaked)
+        pytest.fail(f"Leaked {len(leaked)} user task(s) after {request.node.name}: {names}")
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +231,7 @@ def _suppress_anyio_cleanup() -> Any:
         yield
     except BaseExceptionGroup as beg:
         # Filter out anyio cancel-scope errors, re-raise everything else
-        others = [e for e in beg.exceptions
-                  if "Attempted to exit cancel scope" not in str(e)]
+        others = [e for e in beg.exceptions if "Attempted to exit cancel scope" not in str(e)]
         if others:
             msg = f"{len(others)} non-cleanup exception(s)"
             raise BaseExceptionGroup(msg, others)

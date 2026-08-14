@@ -62,8 +62,12 @@ class TestLazyLoading:
             prefix = config.tool_prefix or ""
 
             # Should have synthetic tools
-            assert f"{prefix}search_tools" in tool_names, f"Expected {prefix}search_tools, got: {tool_names}"
-            assert f"{prefix}call_tool" in tool_names, f"Expected {prefix}call_tool, got: {tool_names}"
+            assert f"{prefix}search_tools" in tool_names, (
+                f"Expected {prefix}search_tools, got: {tool_names}"
+            )
+            assert f"{prefix}call_tool" in tool_names, (
+                f"Expected {prefix}call_tool, got: {tool_names}"
+            )
 
             # Should have pinned resource tools
             assert f"{prefix}list_resources" in tool_names
@@ -192,14 +196,20 @@ class TestLazyLoading:
 
             # Should find repo-related tools that contain the token "repo"
             # At minimum, the list operations should appear
-            assert f"{prefix}user_current_list_repos" in repo_names, f"Expected {prefix}user_current_list_repos in {repo_names}"
-            assert f"{prefix}repo_list_pull_requests" in repo_names, f"Expected {prefix}repo_list_pull_requests in {repo_names}"
+            assert f"{prefix}user_current_list_repos" in repo_names, (
+                f"Expected {prefix}user_current_list_repos in {repo_names}"
+            )
+            assert f"{prefix}repo_list_pull_requests" in repo_names, (
+                f"Expected {prefix}repo_list_pull_requests in {repo_names}"
+            )
 
             # Additionally, search for "repos" should find list_user_repos
             search_repos = await mcp.call_tool(f"{prefix}search_tools", {"query": "repos"})
             repos_tools = get_structured(search_repos).get("result", [])
             repos_names = [t["name"] for t in repos_tools if isinstance(t, dict)]
-            assert f"{prefix}user_current_list_repos" in repos_names, f"Expected {prefix}user_current_list_repos in {repos_names}"
+            assert f"{prefix}user_current_list_repos" in repos_names, (
+                f"Expected {prefix}user_current_list_repos in {repos_names}"
+            )
 
     @pytest.mark.asyncio
     async def test_search_works_after_list_tools_cache_priming(self) -> None:
@@ -338,7 +348,9 @@ class TestLazyLoading:
             )
 
             # Test 4: Query "pull request create" should find the tool
-            search_pr_create = await mcp.call_tool(f"{prefix}search_tools", {"query": "pull request create"})
+            search_pr_create = await mcp.call_tool(
+                f"{prefix}search_tools", {"query": "pull request create"}
+            )
             pr_create_tools = get_structured(search_pr_create).get("result", [])
             pr_create_names = [t["name"] for t in pr_create_tools if isinstance(t, dict)]
 
@@ -509,9 +521,7 @@ class TestLowLevelProtocolValidation:
         with respx.mock() as mock_http:
             mock_http.get(f"{config.url}/swagger.v1.json").respond(200, json=spec)
             # Mock the Gitea API endpoint used by the version resource
-            mock_http.get(f"{config.url}/api/v1/version").respond(
-                200, json={"version": "1.22.0"}
-            )
+            mock_http.get(f"{config.url}/api/v1/version").respond(200, json={"version": "1.22.0"})
             mcp = await create_mcp_server(gitea_client)
 
             # Access the low-level MCP server (private, but needed for protocol-level tests)
@@ -635,21 +645,20 @@ class TestFilteredToolMiddleware:
         }
 
         with respx.mock() as mock_http:
-            mock_http.get("https://git.example.com/swagger.v1.json").respond(
-                200, json=swagger_spec
-            )
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock_http.get("https://git.example.com/api/v1/user").respond(
                 200, json={"login": "user", "admin": False}
             )
             mock_http.get("https://git.example.com/api/v1/users/user/tokens").respond(
-                200, json=[
+                200,
+                json=[
                     {
                         "id": 1,
                         "name": "test",
                         "token_last_eight": "st_token",
                         "scopes": ["read:repository", "write:issue"],
                     }
-                ]
+                ],
             )
             mcp = await create_mcp_server(gitea_client)
             prefix = config.tool_prefix or ""
@@ -680,21 +689,20 @@ class TestFilteredToolMiddleware:
         }
 
         with respx.mock() as mock_http:
-            mock_http.get("https://git.example.com/swagger.v1.json").respond(
-                200, json=swagger_spec
-            )
+            mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
             mock_http.get("https://git.example.com/api/v1/user").respond(
                 200, json={"login": "user", "admin": False}
             )
             mock_http.get("https://git.example.com/api/v1/users/user/tokens").respond(
-                200, json=[
+                200,
+                json=[
                     {
                         "id": 1,
                         "name": "test",
                         "token_last_eight": "st_token",
                         "scopes": ["read:repository", "write:issue"],
                     }
-                ]
+                ],
             )
             mcp = await create_mcp_server(gitea_client)
             prefix = config.tool_prefix or ""

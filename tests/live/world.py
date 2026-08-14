@@ -173,15 +173,17 @@ class OwnershipLedger:
         self._owned: dict[str, list[tuple[str, str]]] = {}
 
     def record(
-        self, entity_type: str, identifier: str, delete_key: str,
+        self,
+        entity_type: str,
+        identifier: str,
+        delete_key: str,
     ) -> None:
         """Record that this run created an entity."""
-        self._owned.setdefault(entity_type, []).append(
-            (identifier, delete_key)
-        )
+        self._owned.setdefault(entity_type, []).append((identifier, delete_key))
 
     def owned(
-        self, entity_type: str,
+        self,
+        entity_type: str,
     ) -> list[tuple[str, str]]:
         """Return ``[(identifier, delete_key), ...]`` for *entity_type*."""
         return list(self._owned.get(entity_type, []))
@@ -221,9 +223,7 @@ class World:
             ...
     """
 
-    def __init__(
-        self, gitea_url: str, admin_token: str, server_args: list[str]
-    ) -> None:
+    def __init__(self, gitea_url: str, admin_token: str, server_args: list[str]) -> None:
         self._url = gitea_url
         self._admin_token = admin_token
         self._server_args = server_args
@@ -268,34 +268,44 @@ class World:
             await self.need_user(user)
 
         # ── Step 3: Create org ────────────────────────────────────────
-        await self.need_org(ORG_NAME,
-                            full_name="Live Test Organization",
-                            description="Bootstrap org for live integration tests")
-        result = await admin.call_tool(
-            "gitea_org_get", {"org": ORG_NAME, "format": "json"}
+        await self.need_org(
+            ORG_NAME,
+            full_name="Live Test Organization",
+            description="Bootstrap org for live integration tests",
         )
+        result = await admin.call_tool("gitea_org_get", {"org": ORG_NAME, "format": "json"})
         if _is_error(result):
             msg = f"Bootstrap: failed to read org '{ORG_NAME}': {_error_text(result)[:300]}"
             raise AssertionError(msg)
         org_data = _unwrap(result)
-        _assert_keys(org_data,
-            "id", "username", "name", "full_name", "description",
-            "avatar_url", "location", "website", "visibility",
+        _assert_keys(
+            org_data,
+            "id",
+            "username",
+            "name",
+            "full_name",
+            "description",
+            "avatar_url",
+            "location",
+            "website",
+            "visibility",
             "repo_admin_change_team_access",
         )
         _assert_key_types(org_data, id=int, username=str, name=str, visibility=str)
         _assert_content(org_data, username=ORG_NAME)
 
         # ── Step 4: Create team ───────────────────────────────────────
-        team = await self.need_team(ORG_NAME, TEAM_NAME, permission="write",
-                                    units_map={
-                                        "repo.code": "write",
-                                        "repo.issues": "write",
-                                        "repo.pulls": "write",
-                                    })
-        assert "name" in team, (
-            f"Bootstrap: team response missing 'name' key: {sorted(team.keys())}"
+        team = await self.need_team(
+            ORG_NAME,
+            TEAM_NAME,
+            permission="write",
+            units_map={
+                "repo.code": "write",
+                "repo.issues": "write",
+                "repo.pulls": "write",
+            },
         )
+        assert "name" in team, f"Bootstrap: team response missing 'name' key: {sorted(team.keys())}"
         assert team["name"] == TEAM_NAME, (
             f"Bootstrap: expected team name {TEAM_NAME!r}, got {team.get('name')!r}"
         )
@@ -337,28 +347,32 @@ class World:
 
         # ── Phase 1: Repositories ───────────────────────────────────
         await self._delete_owned(
-            "repo", "gitea_repo_delete",
+            "repo",
+            "gitea_repo_delete",
             id_key="repo",  # repo identifier is "owner/name" → owner, repo
             failures=failures,
         )
 
         # ── Phase 2: Teams ──────────────────────────────────────────
         await self._delete_owned(
-            "team", "gitea_org_delete_team",
+            "team",
+            "gitea_org_delete_team",
             id_key="team_id",
             failures=failures,
         )
 
         # ── Phase 3: Organizations ──────────────────────────────────
         await self._delete_owned(
-            "org", "gitea_org_delete",
+            "org",
+            "gitea_org_delete",
             id_key="org",
             failures=failures,
         )
 
         # ── Phase 4: Users ──────────────────────────────────────────
         await self._delete_owned(
-            "user", "gitea_admin_delete_user",
+            "user",
+            "gitea_admin_delete_user",
             id_key="username",
             failures=failures,
         )
@@ -397,14 +411,15 @@ class World:
                 text = _error_text(result)
                 if "not found" in text.lower() or "404" in text:
                     continue
-                failures.append(
-                    (identifier, RuntimeError(text[:200]))
-                )
+                failures.append((identifier, RuntimeError(text[:200])))
             except BaseException as exc:
                 failures.append((identifier, exc))
 
     def _delete_args(
-        self, entity_type: str, identifier: str, delete_key: str,
+        self,
+        entity_type: str,
+        identifier: str,
+        delete_key: str,
     ) -> dict[str, Any]:
         """Build tool arguments for deleting an owned entity."""
         if entity_type == "repo":
@@ -427,9 +442,7 @@ class World:
             await self._start_server(key, self._admin_token)
         return self._servers[key]
 
-    async def server_for(
-        self, user: User, scopes: list[str]
-    ) -> ClientSession:
+    async def server_for(self, user: User, scopes: list[str]) -> ClientSession:
         """Get (or start) a pooled MCP server for *user* with *scopes*.
 
         The server is keyed by the token string — two (user, scopes)
@@ -441,9 +454,7 @@ class World:
             await self._start_server(key, token)
         return self._servers[key]
 
-    async def _start_server(
-        self, key: str, token: str
-    ) -> ClientSession:
+    async def _start_server(self, key: str, token: str) -> ClientSession:
         """Start an MCP server process over stdio and keep it alive."""
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -459,9 +470,7 @@ class World:
             },
         )
 
-        read, write = await self._exit_stack.enter_async_context(
-            stdio_client(params)
-        )
+        read, write = await self._exit_stack.enter_async_context(stdio_client(params))
         session: ClientSession = await self._exit_stack.enter_async_context(
             ClientSession(read, write)
         )
@@ -497,13 +506,16 @@ class World:
             return self._users[user.username]
 
         admin = await self.admin_server()
-        result = await admin.call_tool("gitea_admin_create_user", {
-            "username": user.username,
-            "password": user.password,
-            "email": user.email,
-            "must_change_password": False,
-            "format": "json",
-        })
+        result = await admin.call_tool(
+            "gitea_admin_create_user",
+            {
+                "username": user.username,
+                "password": user.password,
+                "email": user.email,
+                "must_change_password": False,
+                "format": "json",
+            },
+        )
         if _is_error(result):
             text = _error_text(result)
             if "already exists" in text.lower():
@@ -515,24 +527,38 @@ class World:
                 )
                 if _is_error(verify):
                     raise BootstrapVerificationError(
-                        entity, "readable", True, False,
+                        entity,
+                        "readable",
+                        True,
+                        False,
                     ) from None
                 data = _unwrap(verify)
                 _assert_keys(data, "id", "login", "username", "email", "active")
                 _assert_content(
-                    data, login=user.username, username=user.username,
+                    data,
+                    login=user.username,
+                    username=user.username,
                 )
                 if data.get("email") != user.email:
                     raise BootstrapVerificationError(
-                        entity, "email", user.email, data.get("email"),
+                        entity,
+                        "email",
+                        user.email,
+                        data.get("email"),
                     )
                 if not data.get("active", True):
                     raise BootstrapVerificationError(
-                        entity, "active", True, False,
+                        entity,
+                        "active",
+                        True,
+                        False,
                     )
                 if data.get("prohibit_login", False):
                     raise BootstrapVerificationError(
-                        entity, "prohibit_login", False, True,
+                        entity,
+                        "prohibit_login",
+                        False,
+                        True,
                     )
                 self._users[user.username] = data
                 return data
@@ -573,14 +599,20 @@ class World:
                 )
                 if _is_error(verify):
                     raise BootstrapVerificationError(
-                        entity, "readable", True, False,
+                        entity,
+                        "readable",
+                        True,
+                        False,
                     ) from None
                 data = _unwrap(verify)
                 _assert_keys(data, "id", "username", "visibility")
                 _assert_content(data, username=username)
                 if full_name is not None and data.get("full_name") != full_name:
                     raise BootstrapVerificationError(
-                        entity, "full_name", full_name, data.get("full_name"),
+                        entity,
+                        "full_name",
+                        full_name,
+                        data.get("full_name"),
                     )
                 self._orgs[username] = data
                 return data
@@ -632,11 +664,12 @@ class World:
                 )
                 if _is_error(list_result):
                     raise BootstrapVerificationError(
-                        entity, "listable", True, False,
+                        entity,
+                        "listable",
+                        True,
+                        False,
                     ) from None
-                teams_data = json.loads(
-                    extract_text_content(list_result.content)
-                )
+                teams_data = json.loads(extract_text_content(list_result.content))
                 team_data: dict[str, Any] | None = None
                 if isinstance(teams_data, list):
                     for item in teams_data:
@@ -645,13 +678,18 @@ class World:
                             break
                 if team_data is None:
                     raise BootstrapVerificationError(
-                        entity, "found", True, False,
+                        entity,
+                        "found",
+                        True,
+                        False,
                     ) from None
                 # Verify permission
                 if team_data.get("permission") != permission:
                     raise BootstrapVerificationError(
-                        entity, "permission",
-                        permission, team_data.get("permission"),
+                        entity,
+                        "permission",
+                        permission,
+                        team_data.get("permission"),
                     )
                 # Verify units_map entries
                 required_units = units_map or {
@@ -665,8 +703,10 @@ class World:
                     actual_level = actual_units.get(unit_key)
                     if actual_level != expected_level:
                         raise BootstrapVerificationError(
-                            entity, f"units_map.{unit_key}",
-                            expected_level, actual_level,
+                            entity,
+                            f"units_map.{unit_key}",
+                            expected_level,
+                            actual_level,
                         )
                 self._teams[key] = team_data
                 return team_data
@@ -776,23 +816,27 @@ class World:
 
         # Create the repo
         kwargs: dict[str, Any] = {
-            "name": name, "auto_init": auto_init,
-            "private": private, "format": "json",
+            "name": name,
+            "auto_init": auto_init,
+            "private": private,
+            "format": "json",
         }
         if description:
             kwargs["description"] = description
 
-        result = await mcp.call_tool(
-            "gitea_create_current_user_repo", kwargs
-        )
+        result = await mcp.call_tool("gitea_create_current_user_repo", kwargs)
         if _is_error(result):
             msg = f"need_repo({key!r}) failed: {_error_text(result)[:300]}"
             raise AssertionError(msg)
         repo_data = _unwrap(result)
 
         state = RepoState(
-            owner=owner, name=name, data=repo_data,
-            _world=self, _user=_user, _scopes=_scopes,
+            owner=owner,
+            name=name,
+            data=repo_data,
+            _world=self,
+            _user=_user,
+            _scopes=_scopes,
         )
         self._repos[key] = (request, state)
         self.ledger.record("repo", key, key)
@@ -804,7 +848,8 @@ class World:
         if files is not None:
             for path, content in files.items():
                 await state.need_file(
-                    path, content,
+                    path,
+                    content,
                     branch=branch if branch is not None else "main",
                 )
 

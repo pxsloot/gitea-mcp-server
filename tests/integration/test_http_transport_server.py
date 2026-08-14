@@ -36,7 +36,9 @@ def _patch_spec_loader() -> Generator[None, None, None]:
     """
     mp = pytest.MonkeyPatch()
 
-    async def mock_load_and_convert_spec(gitea_client: Any, config: Any = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], set[Any]]:
+    async def mock_load_and_convert_spec(
+        gitea_client: Any, config: Any = None
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], set[Any]]:
         return (
             {
                 "swagger": "2.0",
@@ -87,7 +89,10 @@ async def _start_server(config: SimpleConfig, *, health_path: str = "/health") -
 
     server = uvicorn.Server(
         uvicorn.Config(
-            app=app, host=config.http_host, port=config.http_port, log_level="error",
+            app=app,
+            host=config.http_host,
+            port=config.http_port,
+            log_level="error",
         )
     )
     server_task = asyncio.create_task(server.serve())

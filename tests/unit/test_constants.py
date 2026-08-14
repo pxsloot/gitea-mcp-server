@@ -54,7 +54,12 @@ class TestHTTPClientConfig:
     """Tests for HTTP client timeout and connection constants."""
 
     def test_timeouts_are_reasonable(self) -> None:
-        for timeout in (HTTP_TIMEOUT_CONNECT, HTTP_TIMEOUT_READ, HTTP_TIMEOUT_WRITE, HTTP_TIMEOUT_POOL):
+        for timeout in (
+            HTTP_TIMEOUT_CONNECT,
+            HTTP_TIMEOUT_READ,
+            HTTP_TIMEOUT_WRITE,
+            HTTP_TIMEOUT_POOL,
+        ):
             assert 1 <= timeout <= 300
 
     def test_connection_limits_are_reasonable(self) -> None:
@@ -77,7 +82,14 @@ class TestCacheConfig:
     """Tests for cache TTL and size constants."""
 
     def test_cache_ttls_are_non_negative(self) -> None:
-        for ttl in (CACHE_TTL_DEFAULT, CACHE_TTL_RESOURCE_LIST, CACHE_TTL_REPOSITORY, CACHE_TTL_README, CACHE_TTL_RELEASES, CACHE_TTL_USERS):
+        for ttl in (
+            CACHE_TTL_DEFAULT,
+            CACHE_TTL_RESOURCE_LIST,
+            CACHE_TTL_REPOSITORY,
+            CACHE_TTL_README,
+            CACHE_TTL_RELEASES,
+            CACHE_TTL_USERS,
+        ):
             assert ttl >= 0
 
     def test_resource_list_ttl_higher_than_default(self) -> None:

@@ -50,9 +50,7 @@ def _error_text(result: Any) -> str:
 
 def _assert_ok(result: Any) -> None:
     """Assert a tool call did not error."""
-    assert not is_error(result), (
-        f"Tool call failed: {_error_text(result)}"
-    )
+    assert not is_error(result), f"Tool call failed: {_error_text(result)}"
 
 
 def _unwrap(result: Any) -> dict[str, Any]:
@@ -95,9 +93,7 @@ async def create_user_token(
             json={"name": unique_name, "scopes": scopes},
             auth=(username, password),
         )
-    assert r.status_code == 201, (
-        f"User token creation failed ({r.status_code}): {r.text}"
-    )
+    assert r.status_code == 201, f"User token creation failed ({r.status_code}): {r.text}"
     data = r.json()
     token: str = data["sha1"]
     assert len(token) > 10, f"Unexpected short token: {token!r}"

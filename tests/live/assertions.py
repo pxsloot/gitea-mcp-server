@@ -35,8 +35,7 @@ def assert_keys(data: dict[str, Any], *keys: str, msg: str = "") -> None:
     """
     missing = [k for k in keys if k not in data]
     assert not missing, (
-        f"{msg}Missing required keys in response: {missing}. "
-        f"Available: {sorted(data.keys())}"
+        f"{msg}Missing required keys in response: {missing}. Available: {sorted(data.keys())}"
     )
 
 
@@ -64,9 +63,7 @@ def assert_content(data: dict[str, Any], **expected: Any) -> None:
     """
     for key, expected_val in expected.items():
         actual = data.get(key)
-        assert actual == expected_val, (
-            f"Key {key!r}: expected {expected_val!r}, got {actual!r}"
-        )
+        assert actual == expected_val, f"Key {key!r}: expected {expected_val!r}, got {actual!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +185,7 @@ def assert_result_ok(result: Any) -> Any:
 
     Returns the parsed value for further inspection.
     """
-    assert not result.isError, (
-        f"Tool call failed: {extract_text_content(result.content)}"
-    )
+    assert not result.isError, f"Tool call failed: {extract_text_content(result.content)}"
     text = extract_text_content(result.content)
     try:
         data = json.loads(text)

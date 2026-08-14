@@ -93,9 +93,7 @@ class TestComputeUrisToInvalidate:
 
     def test_issue_edit_invalidates_issues(self) -> None:
         """issue_edit_issue invalidates issues list."""
-        register_tool_invalidation(
-            "issue_edit_issue", ["issues_list"]
-        )
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
         arguments = {"owner": "myorg", "repo": "myrepo", "index": 42}
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
         expected = [
@@ -151,9 +149,7 @@ class TestComputeUrisToInvalidate:
 
     def test_missing_parameters_skipped(self) -> None:
         """If required parameters are missing, pattern is skipped gracefully."""
-        register_tool_invalidation(
-            "issue_edit_issue", ["issues_list"]
-        )
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
         # issue_edit_issue needs owner, repo, index
         arguments = {"owner": "org"}  # missing repo and index
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
@@ -163,6 +159,7 @@ class TestComputeUrisToInvalidate:
     def test_unknown_pattern_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Unknown pattern name logs a warning."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         register_tool_invalidation("some_tool", ["unknown_pattern"])
@@ -184,6 +181,7 @@ class TestComputeUrisToInvalidate:
     async def test_cache_delete_key_error_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """KeyError during cache delete is caught and logged."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         mock_cache = AsyncMock()
@@ -194,7 +192,9 @@ class TestComputeUrisToInvalidate:
         mock_caching._read_resource_cache = mock_cache
 
         register_tool_invalidation("issue_edit_issue", ["issues_list"])
-        uris = compute_uris_to_invalidate("issue_edit_issue", {"owner": "org", "repo": "repo", "index": 1})
+        uris = compute_uris_to_invalidate(
+            "issue_edit_issue", {"owner": "org", "repo": "repo", "index": 1}
+        )
 
         await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
         assert "Failed to invalidate cache" in caplog.text
@@ -217,9 +217,7 @@ class TestCacheInvalidationMiddleware:
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        register_tool_invalidation(
-            "issue_edit_issue", ["issues_list"]
-        )
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
 
         async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
@@ -403,9 +401,7 @@ class TestIntegration:
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
         mock_caching._read_resource_cache = mock_cache
 
-        register_tool_invalidation(
-            "issue_edit_issue", ["issues_list"]
-        )
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
 
         middleware = CacheInvalidationMiddleware(mock_caching)
 
@@ -531,7 +527,9 @@ class TestClearLabelServiceCache:
         mock_caching._read_resource_cache = mock_cache
         return CacheInvalidationMiddleware(mock_caching, label_service=label_service)
 
-    def _make_context_and_call_next(self, tool_name: str = "test_label_tool", arguments: dict[str, Any] | None = None) -> tuple[MagicMock, Any]:
+    def _make_context_and_call_next(
+        self, tool_name: str = "test_label_tool", arguments: dict[str, Any] | None = None
+    ) -> tuple[MagicMock, Any]:
         """Helper: create mock context and call_next for on_call_tool tests."""
         from unittest.mock import MagicMock
 

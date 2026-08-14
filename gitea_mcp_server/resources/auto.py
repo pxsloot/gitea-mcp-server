@@ -143,7 +143,9 @@ def register_auto_generated_resources(
                 # producers.  Only custom resources track their URIs.
                 try:
                     make_api_resource(
-                        mcp, gitea_client, openapi_spec,
+                        mcp,
+                        gitea_client,
+                        openapi_spec,
                         uri=uri_template,
                         api_path=path,
                         method="GET",

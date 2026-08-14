@@ -1086,6 +1086,7 @@ class TestToolWrappingTransform:
         Unknown parameters are rejected with the friendly ValueError surface
         (matching autogen tools), not silently dropped.
         """
+
         async def executor(
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
@@ -1317,11 +1318,13 @@ class TestToolWrappingTransform:
         # Should reject the unknown key 'typo_parm'.
 
         with pytest.raises(ValueError, match="Unknown parameter"):
-            await wrapped.run(arguments={
-                "owner": "valid-owner",
-                "repo": "valid-repo",
-                "typo_parm": 42,
-            })
+            await wrapped.run(
+                arguments={
+                    "owner": "valid-owner",
+                    "repo": "valid-repo",
+                    "typo_parm": 42,
+                }
+            )
 
     @pytest.mark.asyncio
     async def test_text_response_wrapping(self) -> None:

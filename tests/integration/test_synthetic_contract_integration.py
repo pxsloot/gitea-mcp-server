@@ -71,9 +71,7 @@ class TestDirectVsProxiedParity:
 
         args = {"query": "issue", "format": "json", "page": 1, "limit": 5}
 
-        direct = get_structured(
-            await mcp.call_tool(f"{prefix}search_tools", args)
-        )
+        direct = get_structured(await mcp.call_tool(f"{prefix}search_tools", args))
         proxied = get_structured(
             await mcp.call_tool(
                 f"{prefix}call_tool",

@@ -56,7 +56,10 @@ def format_tool_result(
     except (TypeError, AttributeError, ValueError) as exc:
         logger.warning(
             "Display pipeline recovered from %s: %s. fmt=%s, detail=%s",
-            type(exc).__name__, exc, fmt, detail,
+            type(exc).__name__,
+            exc,
+            fmt,
+            detail,
         )
         # Best-effort string representation for fallback text.
         try:

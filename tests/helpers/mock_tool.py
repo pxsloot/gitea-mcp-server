@@ -106,7 +106,9 @@ def make_mock_tool(
     return tool
 
 
-def make_mock_route(path: str = "/test", method: str = "GET", summary: str = "Test", operation_id: str = "test_op") -> MagicMock:
+def make_mock_route(
+    path: str = "/test", method: str = "GET", summary: str = "Test", operation_id: str = "test_op"
+) -> MagicMock:
     """Create a MagicMock route for unit tests.
 
     Parameters

@@ -75,14 +75,19 @@ class TestEmailFormatHandling:
 
     def test_optional_email_field_includes_null(self) -> None:
         """Test that optional email fields include null branch."""
-        schema: dict[str, Any] = {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {"email": {"type": "string", "format": "email"}},
+        }
         spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
         _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         assert "anyOf" in email_schema
         # Should have email, empty string, and null branches
         assert len(email_schema["anyOf"]) == 3
-        null_branch = next((b for b in email_schema["anyOf"] if schema_type_matches(b, "null")), None)
+        null_branch = next(
+            (b for b in email_schema["anyOf"] if schema_type_matches(b, "null")), None
+        )
         assert null_branch is not None
 
     def test_email_preserves_other_constraints(self) -> None:
@@ -257,7 +262,8 @@ class TestDateFormatHandling:
             },
             "paths": {
                 "/events": {
-                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Event"}}}}}
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Event"}}}}
+                }
             },
         }
         result = convert_swagger_to_openapi_v3(spec)
@@ -334,7 +340,8 @@ class TestUuidFormatHandling:
             },
             "paths": {
                 "/tokens/{id}": {
-                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Token"}}}}}
+                    "get": {"responses": {"200": {"schema": {"$ref": "#/definitions/Token"}}}}
+                }
             },
         }
         result = convert_swagger_to_openapi_v3(spec)

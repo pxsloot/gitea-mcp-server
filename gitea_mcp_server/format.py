@@ -517,7 +517,12 @@ def format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, tit
 
     if isinstance(data, dict):
         result = _format_dict_as_markdown(
-            data, schema, indent, _depth, field_filter=field_filter, detail=detail,
+            data,
+            schema,
+            indent,
+            _depth,
+            field_filter=field_filter,
+            detail=detail,
         )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
@@ -719,7 +724,6 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
     )
 
 
-
 def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent display axes (items + pagination state + output config)
     items: list,
     total_count: int,
@@ -777,7 +781,9 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
         page_items = items[start : start + limit]
 
     return apply_pagination(
-        apply_format(page_items, fmt, markdown_extras=markdown_extras, detail=detail, schema=schema),
+        apply_format(
+            page_items, fmt, markdown_extras=markdown_extras, detail=detail, schema=schema
+        ),
         page,
         limit,
         total_count,

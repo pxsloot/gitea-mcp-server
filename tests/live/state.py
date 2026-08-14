@@ -201,9 +201,7 @@ class RepoState:
 
     # ── need_* — idempotent create-or-return ──────────────────────────
 
-    async def need_branch(
-        self, name: str, *, old: str = "main"
-    ) -> dict[str, Any]:
+    async def need_branch(self, name: str, *, old: str = "main") -> dict[str, Any]:
         """Ensure a branch exists.  Creates from *old* if not cached.
 
         Raises:
@@ -212,7 +210,8 @@ class RepoState:
         """
         if name in self.branches:
             check_conflict(
-                "branch", name,
+                "branch",
+                name,
                 self._branch_options.get(name, {}),
                 {"old": old},
             )
@@ -253,7 +252,8 @@ class RepoState:
         file_key = f"{branch}:{path}"
         if file_key in self._files:
             check_conflict(
-                "file", f"{file_key!r}",
+                "file",
+                f"{file_key!r}",
                 self._file_options.get(file_key, {}),
                 {"content": content},
             )
@@ -300,7 +300,8 @@ class RepoState:
         """
         if name in self.labels:
             check_conflict(
-                "label", name,
+                "label",
+                name,
                 self._label_options.get(name, {}),
                 {"color": color, "exclusive": exclusive},
             )
@@ -325,7 +326,8 @@ class RepoState:
         data = _unwrap(result)
         self.labels[name] = data
         self._label_options[name] = {
-            "color": color, "exclusive": exclusive,
+            "color": color,
+            "exclusive": exclusive,
         }
         return data
 
@@ -344,7 +346,8 @@ class RepoState:
         """
         if title in self.milestones:
             check_conflict(
-                "milestone", title,
+                "milestone",
+                title,
                 self._milestone_options.get(title, {}),
                 {"description": description, "due_date": due_date},
             )
@@ -369,7 +372,8 @@ class RepoState:
         data = _unwrap(result)
         self.milestones[title] = data
         self._milestone_options[title] = {
-            "description": description, "due_date": due_date,
+            "description": description,
+            "due_date": due_date,
         }
         return data
 
@@ -413,8 +417,10 @@ class RepoState:
                         number = item["number"]
                         self.issues[number] = item
                         self._issue_options[number] = {
-                            "body": body, "labels": labels,
-                            "milestone": milestone, "assignees": assignees,
+                            "body": body,
+                            "labels": labels,
+                            "milestone": milestone,
+                            "assignees": assignees,
                         }
                         self._issue_postcondition[number] = state
                         return cast("dict[str, Any]", item)
@@ -462,17 +468,22 @@ class RepoState:
         for number, cached in self.issues.items():
             if cached.get("title") == title:
                 check_conflict(
-                    "issue", f"#{number} ({title!r})",
+                    "issue",
+                    f"#{number} ({title!r})",
                     self._issue_options.get(number, {}),
                     {
-                        "body": body, "labels": labels,
-                        "milestone": milestone, "assignees": assignees,
+                        "body": body,
+                        "labels": labels,
+                        "milestone": milestone,
+                        "assignees": assignees,
                     },
                 )
                 # Postcondition: if caller expects a specific state, verify
                 if state is not None and cached.get("state") != state:
                     return await self._verify_issue_postcondition(
-                        number, title, state,
+                        number,
+                        title,
+                        state,
                     )
                 # Update the stored postcondition state for next cache hit
                 if state is not None:
@@ -481,8 +492,12 @@ class RepoState:
 
         # Check if it exists in Gitea (created by a previous run)
         adopted = await self._adopt_and_cache_issue(
-            title, body=body, labels=labels,
-            milestone=milestone, assignees=assignees, state=state,
+            title,
+            body=body,
+            labels=labels,
+            milestone=milestone,
+            assignees=assignees,
+            state=state,
         )
         if adopted is not None:
             return adopted
@@ -511,14 +526,19 @@ class RepoState:
         data = _unwrap(result)
         self.issues[data["number"]] = data
         self._issue_options[data["number"]] = {
-            "body": body, "labels": labels,
-            "milestone": milestone, "assignees": assignees,
+            "body": body,
+            "labels": labels,
+            "milestone": milestone,
+            "assignees": assignees,
         }
         self._issue_postcondition[data["number"]] = state
         return data
 
     async def _verify_issue_postcondition(
-        self, number: int, title: str, expected_state: str,
+        self,
+        number: int,
+        title: str,
+        expected_state: str,
     ) -> dict[str, Any]:
         """Re-read an issue from Gitea and assert its state matches *expected_state*.
 
@@ -540,18 +560,27 @@ class RepoState:
         )
         if _is_error(result):
             raise PostconditionError(
-                entity_label, "readable", True, False,
+                entity_label,
+                "readable",
+                True,
+                False,
             ) from None
         try:
             data = _unwrap(result)
         except (json.JSONDecodeError, TypeError):
             raise PostconditionError(
-                entity_label, "readable", True, False,
+                entity_label,
+                "readable",
+                True,
+                False,
             ) from None
         actual_state = data.get("state")
         if actual_state != expected_state:
             raise PostconditionError(
-                entity_label, "state", expected_state, actual_state,
+                entity_label,
+                "state",
+                expected_state,
+                actual_state,
             )
         # Update cache with fresh data
         self.issues[number] = data
@@ -600,7 +629,9 @@ class RepoState:
                         number = item["number"]
                         self.pull_requests[number] = item
                         self._pr_options[number] = {
-                            "head": head, "base": base, "body": body,
+                            "head": head,
+                            "base": base,
+                            "body": body,
                         }
                         self._pr_postcondition[number] = state
                         return cast("dict[str, Any]", item)
@@ -641,14 +672,17 @@ class RepoState:
         for number, cached in self.pull_requests.items():
             if cached.get("title") == title:
                 check_conflict(
-                    "pull_request", f"#{number} ({title!r})",
+                    "pull_request",
+                    f"#{number} ({title!r})",
                     self._pr_options.get(number, {}),
                     {"head": head, "base": base, "body": body},
                 )
                 # Postcondition: if caller expects a specific state, verify
                 if state is not None and cached.get("state") != state:
                     return await self._verify_pr_postcondition(
-                        number, title, state,
+                        number,
+                        title,
+                        state,
                     )
                 # Update stored postcondition state
                 if state is not None:
@@ -657,7 +691,11 @@ class RepoState:
 
         # Check if it exists in Gitea (created by a previous run)
         adopted = await self._adopt_and_cache_pr(
-            title, head=head, base=base, body=body, state=state,
+            title,
+            head=head,
+            base=base,
+            body=body,
+            state=state,
         )
         if adopted is not None:
             return adopted
@@ -683,13 +721,18 @@ class RepoState:
         _assert_content(data, title=title, state="open")
         self.pull_requests[data["number"]] = data
         self._pr_options[data["number"]] = {
-            "head": head, "base": base, "body": body,
+            "head": head,
+            "base": base,
+            "body": body,
         }
         self._pr_postcondition[data["number"]] = state
         return data
 
     async def _verify_pr_postcondition(
-        self, number: int, title: str, expected_state: str,
+        self,
+        number: int,
+        title: str,
+        expected_state: str,
     ) -> dict[str, Any]:
         """Re-read a PR from Gitea and assert its state matches *expected_state*.
 
@@ -713,25 +756,37 @@ class RepoState:
         )
         if _is_error(result):
             raise PostconditionError(
-                entity_label, "readable", True, False,
+                entity_label,
+                "readable",
+                True,
+                False,
             ) from None
         try:
             data = _unwrap(result)
         except (json.JSONDecodeError, TypeError):
             raise PostconditionError(
-                entity_label, "readable", True, False,
+                entity_label,
+                "readable",
+                True,
+                False,
             ) from None
 
         # Irreversible: merged PR cannot go back to "open"
         if expected_state == "open" and data.get("merged", False):
             raise IrreversibleTransitionError(
-                entity_label, "merged", False, True,
+                entity_label,
+                "merged",
+                False,
+                True,
             )
 
         actual_state = data.get("state")
         if actual_state != expected_state:
             raise PostconditionError(
-                entity_label, "state", expected_state, actual_state,
+                entity_label,
+                "state",
+                expected_state,
+                actual_state,
             )
         # Update cache with fresh data
         self.pull_requests[number] = data
@@ -756,7 +811,8 @@ class RepoState:
         """
         if name in self.tags:
             check_conflict(
-                "tag", name,
+                "tag",
+                name,
                 self._tag_options.get(name, {}),
                 {"target": target},
             )

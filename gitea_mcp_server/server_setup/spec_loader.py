@@ -102,9 +102,7 @@ def _match_active_token(tokens_data: list[Any], raw_token: str) -> set[str] | No
     last_eight = raw_token[-8:]
     for token in tokens_data:
         if not isinstance(token, dict):
-            logger.debug(
-                "Skipping non-dict token entry", extra={"type": type(token).__name__}
-            )
+            logger.debug("Skipping non-dict token entry", extra={"type": type(token).__name__})
             continue
         logt = token.get("token_last_eight")
         logger.debug("Testing token match", extra={"token_last_eight": logt})
@@ -358,7 +356,9 @@ def _compute_excluded_routes(
             # Match both prefixed and bare operationId (filtered_tools_info
             # stores the bare operationId, but be tolerant of either).
             reason = filtered.get(op_id) or (
-                filtered.get(op_id[len(tool_prefix):]) if tool_prefix and op_id.startswith(tool_prefix) else None
+                filtered.get(op_id[len(tool_prefix) :])
+                if tool_prefix and op_id.startswith(tool_prefix)
+                else None
             )
             if reason is None:
                 continue

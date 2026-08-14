@@ -26,9 +26,7 @@ class TestCacheInvalidationIntegration:
         # Manually register for this test (server does this automatically on startup)
         from gitea_mcp_server.cache_invalidation import register_tool_invalidation
 
-        register_tool_invalidation(
-            "issue_edit_issue", ["issues_list"]
-        )
+        register_tool_invalidation("issue_edit_issue", ["issues_list"])
 
         arguments = {"owner": "org", "repo": "repo", "index": 1}
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)

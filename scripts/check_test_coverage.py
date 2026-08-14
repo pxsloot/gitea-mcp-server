@@ -39,7 +39,10 @@ SUBPACKAGE_PREFIXES: dict[str, list[str]] = {
 # Value: test file basenames that cover it.
 INTEGRATION_ONLY_MODULES: dict[str, list[str]] = {
     "gitea_mcp_server/server.py": ["test_server.py", "test_server_http.py"],
-    "gitea_mcp_server/server_setup/http_server.py": ["test_http_transport_server.py", "test_server_http.py"],
+    "gitea_mcp_server/server_setup/http_server.py": [
+        "test_http_transport_server.py",
+        "test_server_http.py",
+    ],
     "gitea_mcp_server/server_setup/resource_setup.py": ["test_resources_integration.py"],
 }
 
@@ -143,8 +146,7 @@ def main() -> int:
         # Integration-only modules: check explicit test file names
         if rel in INTEGRATION_ONLY_MODULES:
             found = any(
-                (TEST_INTEGRATION_DIR / name).exists()
-                for name in INTEGRATION_ONLY_MODULES[rel]
+                (TEST_INTEGRATION_DIR / name).exists() for name in INTEGRATION_ONLY_MODULES[rel]
             )
             if not found:
                 gaps.append(rel)

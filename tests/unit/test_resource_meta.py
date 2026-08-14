@@ -199,7 +199,9 @@ class TestResourceMeta:
             "type": "object",
             "properties": {str(i): {"type": "string"} for i in range(6)},
         }
-        meta = ResourceMeta.for_schema(schema, required_scope="read:repository", size_hint=SIZE_TINY)
+        meta = ResourceMeta.for_schema(
+            schema, required_scope="read:repository", size_hint=SIZE_TINY
+        )
         assert meta.size_hint == SIZE_TINY
         assert meta.required_scope == "read:repository"
 
@@ -247,11 +249,13 @@ class TestCountSchemaProperties:
     def test_none_returns_zero(self) -> None:
         """None input returns 0."""
         from gitea_mcp_server.resources.meta import _count_schema_properties
+
         assert _count_schema_properties(None) == 0
 
     def test_non_dict_returns_zero(self) -> None:
         """Non-dict input (a string) returns 0."""
         from gitea_mcp_server.resources.meta import _count_schema_properties
+
         assert _count_schema_properties(cast("dict[str, Any] | None", "not_a_dict")) == 0
 
 
@@ -261,11 +265,13 @@ class TestEstimateNestingDepth:
     def test_none_returns_zero(self) -> None:
         """None input returns depth 0."""
         from gitea_mcp_server.resources.meta import _estimate_nesting_depth
+
         assert _estimate_nesting_depth(None) == 0
 
     def test_additional_properties_dict_adds_depth(self) -> None:
         """additionalProperties as a dict adds to nesting depth."""
         from gitea_mcp_server.resources.meta import _estimate_nesting_depth
+
         schema = {
             "type": "object",
             "properties": {

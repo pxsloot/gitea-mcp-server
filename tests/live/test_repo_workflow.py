@@ -57,8 +57,13 @@ class TestRepoCreate:
         """Create a repo — verify shape, content."""
         workflow = Workflow(world)
         repo = await workflow.ensure_repo(
-            DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-            auto_init=True, description="Workflow test playground")
+            DEV.username,
+            _REPO,
+            user=DEV,
+            scopes=SCOPE_WRITE,
+            auto_init=True,
+            description="Workflow test playground",
+        )
         assert_content(repo.data, name=_REPO)
 
     @pytest.mark.live
@@ -67,13 +72,26 @@ class TestRepoCreate:
         workflow = Workflow(world)
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        data = assert_result_ok(await mcp.call_tool(
-            "gitea_repo_get",
-            {"owner": DEV.username, "repo": _REPO, "format": "json"},
-        ))
-        assert_keys(data, "id", "name", "full_name", "owner",
-                    "description", "private", "fork", "html_url",
-                    "default_branch", "created_at", "updated_at")
+        data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_repo_get",
+                {"owner": DEV.username, "repo": _REPO, "format": "json"},
+            )
+        )
+        assert_keys(
+            data,
+            "id",
+            "name",
+            "full_name",
+            "owner",
+            "description",
+            "private",
+            "fork",
+            "html_url",
+            "default_branch",
+            "created_at",
+            "updated_at",
+        )
         assert_key_types(data, id=int, name=str, private=bool, fork=bool)
         assert_content(data, name=_REPO, full_name=f"{DEV.username}/{_REPO}")
 
@@ -84,7 +102,8 @@ class TestRepoCreate:
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         await assert_formats_equivalent(
-            mcp, "gitea_repo_get",
+            mcp,
+            "gitea_repo_get",
             {"owner": DEV.username, "repo": _REPO},
         )
 
@@ -139,15 +158,14 @@ class TestBranchAndFiles:
             {"owner": DEV.username, "repo": _REPO, "format": "json"},
         )
         data = assert_result_ok(result)
-        assert isinstance(data, list), (
-            f"Expected list, got {type(data).__name__}"
-        )
+        assert isinstance(data, list), f"Expected list, got {type(data).__name__}"
         assert len(data) > 0, "Expected at least one file in root"
         assert_keys(data[0], "name", "path", "type", "size")
 
         # Cross-format
         await assert_formats_equivalent(
-            mcp, "gitea_repo_get_contents_list",
+            mcp,
+            "gitea_repo_get_contents_list",
             {"owner": DEV.username, "repo": _REPO},
         )
 
@@ -165,17 +183,18 @@ class TestBranchAndFiles:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_get_contents",
-            {"owner": DEV.username, "repo": _REPO,
-             "filepath": _FILE, "ref": _BRANCH, "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE,
+                "ref": _BRANCH,
+                "format": "json",
+            },
         )
-        assert not result.isError, (
-            f"Tool call failed: {result.content}"
-        )
+        assert not result.isError, f"Tool call failed: {result.content}"
         # After base64 decode: plain text in structuredContent.result
         data = result.structuredContent.get("result") if result.structuredContent else None
-        assert isinstance(data, str), (
-            f"Expected decoded text, got {type(data).__name__}: {data!r}"
-        )
+        assert isinstance(data, str), f"Expected decoded text, got {type(data).__name__}: {data!r}"
         assert "# Generated Info" in data
 
 
@@ -212,12 +231,11 @@ class TestTags:
         data = assert_result_ok(result)
         assert isinstance(data, list)
         tag_names = [t.get("name") for t in data]
-        assert _TAG in tag_names, (
-            f"Tag {_TAG} not in list: {tag_names}"
-        )
+        assert _TAG in tag_names, f"Tag {_TAG} not in list: {tag_names}"
 
         await assert_formats_equivalent(
-            mcp, "gitea_repo_list_tags",
+            mcp,
+            "gitea_repo_list_tags",
             {"owner": DEV.username, "repo": _REPO},
         )
 
@@ -240,19 +258,26 @@ class TestCommitStatus:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
 
         # Get the latest commit SHA on the feature branch
-        branch_data = assert_result_ok(await mcp.call_tool(
-            "gitea_repo_get_branch",
-            {"owner": DEV.username, "repo": _REPO,
-             "branch": _BRANCH, "format": "json"},
-        ))
+        branch_data = assert_result_ok(
+            await mcp.call_tool(
+                "gitea_repo_get_branch",
+                {"owner": DEV.username, "repo": _REPO, "branch": _BRANCH, "format": "json"},
+            )
+        )
         sha = branch_data["commit"]["id"]
 
         # Set pending status
         result = await mcp.call_tool(
             "gitea_repo_create_status",
-            {"owner": DEV.username, "repo": _REPO, "sha": sha,
-             "state": "pending", "context": "ci/workflow-test",
-             "description": "Workflow CI check", "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "sha": sha,
+                "state": "pending",
+                "context": "ci/workflow-test",
+                "description": "Workflow CI check",
+                "format": "json",
+            },
         )
         data = assert_result_ok(result)
         # API returns 'status' not 'state' for commit status
@@ -277,14 +302,16 @@ class TestBranchProtection:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_create_branch_protection",
-            {"owner": DEV.username, "repo": _REPO,
-             "rule_name": "main", "required_approvals": 1,
-             "enable_push": False,
-             "format": "json"},
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "rule_name": "main",
+                "required_approvals": 1,
+                "enable_push": False,
+                "format": "json",
+            },
         )
-        assert not result.isError, (
-            "Branch protection creation failed. Check param names."
-        )
+        assert not result.isError, "Branch protection creation failed. Check param names."
 
     @pytest.mark.live
     async def test_list_branch_protection(self, world: World) -> None:
@@ -302,18 +329,22 @@ class TestBranchProtection:
         if "main" not in rule_names:
             create_result = await mcp.call_tool(
                 "gitea_repo_create_branch_protection",
-                {"owner": DEV.username, "repo": _REPO,
-                 "rule_name": "main", "required_approvals": 1,
-                 "enable_push": False,
-                 "format": "json"},
+                {
+                    "owner": DEV.username,
+                    "repo": _REPO,
+                    "rule_name": "main",
+                    "required_approvals": 1,
+                    "enable_push": False,
+                    "format": "json",
+                },
             )
             assert not create_result.isError, "Failed to establish main protection rule"
-            data = assert_result_ok(await mcp.call_tool(
-                "gitea_repo_list_branch_protection",
-                {"owner": DEV.username, "repo": _REPO, "format": "json"},
-            ))
+            data = assert_result_ok(
+                await mcp.call_tool(
+                    "gitea_repo_list_branch_protection",
+                    {"owner": DEV.username, "repo": _REPO, "format": "json"},
+                )
+            )
             assert isinstance(data, list)
             rule_names = [r.get("rule_name") for r in data]
-        assert "main" in rule_names, (
-            f"Branch protection 'main' not found: {rule_names}"
-        )
+        assert "main" in rule_names, f"Branch protection 'main' not found: {rule_names}"

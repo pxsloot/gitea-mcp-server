@@ -86,7 +86,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     # ======================================================================
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}",
         api_path="/repos/{owner}/{repo}",
         method="GET",
@@ -100,7 +102,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://users/{username}",
         api_path="/users/{username}",
         method="GET",
@@ -114,7 +118,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://user",
         api_path="/user",
         method="GET",
@@ -128,7 +134,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://orgs/{orgname}",
         api_path="/orgs/{orgname}",
         method="GET",
@@ -142,7 +150,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/releases{?draft,q}",
         api_path="/repos/{owner}/{repo}/releases",
         method="GET",
@@ -154,10 +164,12 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         param_config=ResourceParamConfig(
             query_params=["draft", "q"],
             optional_params=[
-                {"name": "draft", "type": "boolean",
-                 "description": "Filter (exclude/include) drafts"},
-                {"name": "q", "type": "string",
-                 "description": "Search string"},
+                {
+                    "name": "draft",
+                    "type": "boolean",
+                    "description": "Filter (exclude/include) drafts",
+                },
+                {"name": "q", "type": "string", "description": "Search string"},
             ],
         ),
         tracking_set=registered_uris,
@@ -165,7 +177,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/labels",
         api_path="/repos/{owner}/{repo}/labels",
         method="GET",
@@ -185,7 +199,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     # ======================================================================
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
         api_path="/repos/{owner}/{repo}/issues",
         method="GET",
@@ -199,8 +215,12 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             query_param_validators={"state": ["open", "closed"], "type": ["issues", "pulls"]},
             optional_params=[
                 {"name": "state", "type": "string", "values": ["open", "closed"]},
-                {"name": "type", "type": "string", "values": ["issues", "pulls"],
-                 "description": "Filter by type (issues / pulls)"},
+                {
+                    "name": "type",
+                    "type": "string",
+                    "values": ["issues", "pulls"],
+                    "description": "Filter by type (issues / pulls)",
+                },
             ],
             context_meta_keys=["type"],
         ),
@@ -209,7 +229,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/pulls{?state}",
         api_path="/repos/{owner}/{repo}/pulls",
         method="GET",
@@ -236,7 +258,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     # ======================================================================
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/readme",
         api_path="/repos/{owner}/{repo}/contents/README.md",
         method="GET",
@@ -246,15 +270,22 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         error_message="README not found for repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
             query_params=["ref"],
-            optional_params=[{"name": "ref", "type": "string",
-                              "description": "The name of the commit/branch/tag"}],
+            optional_params=[
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "description": "The name of the commit/branch/tag",
+                }
+            ],
         ),
         tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
 
     make_api_resource(
-        mcp, gitea_client, openapi_spec,
+        mcp,
+        gitea_client,
+        openapi_spec,
         uri="gitea://repos/{owner}/{repo}/files/{path*}",
         api_path="/repos/{owner}/{repo}/contents/{path}",
         method="GET",
@@ -263,8 +294,13 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         error_message="File '{path}' not found in repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
             query_params=["ref"],
-            optional_params=[{"name": "ref", "type": "string",
-                              "description": "The name of the commit/branch/tag"}],
+            optional_params=[
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "description": "The name of the commit/branch/tag",
+                }
+            ],
         ),
         tracking_set=registered_uris,
         available_scopes=available_scopes,
@@ -281,10 +317,14 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     async def get_version() -> ResourceResult:
         """Get server application version."""
-        return ResourceResult(contents=[ResourceContent(content=version_str, mime_type="text/plain")])
+        return ResourceResult(
+            contents=[ResourceContent(content=version_str, mime_type="text/plain")]
+        )
 
     mcp.resource(
-        "gitea://version", mime_type="text/plain", tags={"wrapper", "server"},
+        "gitea://version",
+        mime_type="text/plain",
+        tags={"wrapper", "server"},
         meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
     )(get_version)
 
@@ -297,16 +337,24 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         scope-based tool filtering -- no API calls are made on read.
         """
         scopes: list[str] | None = sorted(available_scopes) if available_scopes else None
-        return ResourceResult(contents=[ResourceContent(
-            content=json.dumps({"scopes": scopes}),
-            mime_type="application/json",
-        )])
+        return ResourceResult(
+            contents=[
+                ResourceContent(
+                    content=json.dumps({"scopes": scopes}),
+                    mime_type="application/json",
+                )
+            ]
+        )
 
-    _meta_scopes = ResourceMeta(required_scope="read:user", size_hint="tiny", default_detail="full").to_dict()
+    _meta_scopes = ResourceMeta(
+        required_scope="read:user", size_hint="tiny", default_detail="full"
+    ).to_dict()
     if available_scopes is None or has_sufficient_scope("read:user", available_scopes):
         mcp.resource(
-            "gitea://token/scopes", mime_type="application/json",
-            tags={"wrapper", "server"}, meta=_meta_scopes,
+            "gitea://token/scopes",
+            mime_type="application/json",
+            tags={"wrapper", "server"},
+            meta=_meta_scopes,
         )(get_active_token_scopes)
     else:
         logger.debug("Skipping gitea://token/scopes: requires read:user")
@@ -314,17 +362,25 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     # ── server info (only when pre-built markdown is available) ───────────
 
     if server_info_md is not None:
+
         async def get_server_info() -> ResourceResult:
             """Get server metadata from OpenAPI info block."""
-            return ResourceResult(contents=[ResourceContent(
-                content=server_info_md,
-                mime_type="text/markdown",
-            )])
+            return ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=server_info_md,
+                        mime_type="text/markdown",
+                    )
+                ]
+            )
 
         mcp.resource(
-            "gitea://server/info", mime_type="text/markdown",
+            "gitea://server/info",
+            mime_type="text/markdown",
             tags={"wrapper", "server"},
-            meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
+            meta=ResourceMeta(
+                required_scope=None, size_hint="small", default_detail="full"
+            ).to_dict(),
         )(get_server_info)
 
     # Return the URIs registered via make_api_resource()

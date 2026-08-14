@@ -44,11 +44,14 @@ class TestResourcesIntegration:
             mock_http.get("https://git.example.com/swagger.v1.json").respond(200, json=swagger_spec)
 
             # Patch the resource registration to track calls
-            with patch(
-                "gitea_mcp_server.server_setup.resource_setup.register_auto_generated_resources"
-            ) as mock_auto, patch(
-                "gitea_mcp_server.server_setup.resource_setup.register_custom_resources"
-            ) as mock_custom:
+            with (
+                patch(
+                    "gitea_mcp_server.server_setup.resource_setup.register_auto_generated_resources"
+                ) as mock_auto,
+                patch(
+                    "gitea_mcp_server.server_setup.resource_setup.register_custom_resources"
+                ) as mock_custom,
+            ):
                 mcp = await create_mcp_server(gitea_client)
 
                 # Verify both registration functions were called
@@ -75,40 +78,38 @@ class TestResourcesIntegration:
         config = SimpleConfig()
         mock_client = AsyncMock(_config=config, config=config)
 
-        spec = make_openapi_spec(paths={
-            "/repos/{owner}/{repo}": {
-                "get": {
-                    "summary": "Get repo details",
-                    "operationId": "getRepoDetails",
-                    "parameters": [
-                        {
-                            "name": "owner",
-                            "in": "path",
-                            "required": True,
-                            "schema": {"type": "string"},
-                        },
-                        {
-                            "name": "repo",
-                            "in": "path",
-                            "required": True,
-                            "schema": {"type": "string"},
-                        },
-                    ],
-                    "responses": {"200": {"description": "Success"}},
-                }
-            },
-        })
-
-        resources_pkg.register_auto_generated_resources(
-            mcp, mock_client, spec, skip_uris=set()
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "summary": "Get repo details",
+                        "operationId": "getRepoDetails",
+                        "parameters": [
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            }
         )
+
+        resources_pkg.register_auto_generated_resources(mcp, mock_client, spec, skip_uris=set())
 
         # Check that the URI is gitea:// -- no double-gitea
         mcp.resource.assert_called()
         uris = [call[0][0] for call in mcp.resource.call_args_list]
-        assert "gitea://repos/{owner}/{repo}" in uris, (
-            f"Expected gitea://repos/... in {uris}"
-        )
+        assert "gitea://repos/{owner}/{repo}" in uris, f"Expected gitea://repos/... in {uris}"
         # Ensure no double-gitea URIs remain
         assert not any("gitea://gitea/" in uri for uri in uris), (
             f"Unexpected double-gitea URIs: {uris}"

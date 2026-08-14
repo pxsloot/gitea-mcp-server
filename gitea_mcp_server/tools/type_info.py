@@ -355,82 +355,85 @@ def register_type_tools(
 
         return apply_format(info, format, detail=detail)
 
-    register_all_synthetic_tools(mcp, [
-        SyntheticToolSpec(
-            impl=_resolve_type_impl,
-            name="resolve_type",
-            description=(
-                "Resolve a ``$ref`` type name to its schema and cross-references. "
-                "When ``tool_info`` shows ``$ref:TypeName`` in its output_example, "
-                "use this tool to discover what fields that type contains. "
-                "Returns a compact type summary (with ``$ref`` placeholders for "
-                "nested types) and cross-references showing which tools return "
-                "or accept this type.\n\n"
-                '**Resource**: ``read_resource("gitea://types/{TypeName}")`` '
-                "for a cached JSON read."
-            ),
-            tags={"synthetic", "type-schema"},
-            annotations=synthetic_annotations(read_only=True, open_world=False),
-        output_schema={
-            "type": "object",
-            "properties": {
-                "result": {
+    register_all_synthetic_tools(
+        mcp,
+        [
+            SyntheticToolSpec(
+                impl=_resolve_type_impl,
+                name="resolve_type",
+                description=(
+                    "Resolve a ``$ref`` type name to its schema and cross-references. "
+                    "When ``tool_info`` shows ``$ref:TypeName`` in its output_example, "
+                    "use this tool to discover what fields that type contains. "
+                    "Returns a compact type summary (with ``$ref`` placeholders for "
+                    "nested types) and cross-references showing which tools return "
+                    "or accept this type.\n\n"
+                    '**Resource**: ``read_resource("gitea://types/{TypeName}")`` '
+                    "for a cached JSON read."
+                ),
+                tags={"synthetic", "type-schema"},
+                annotations=synthetic_annotations(read_only=True, open_world=False),
+                output_schema={
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Type name"},
-                        "description": {
-                            "type": "string",
-                            "description": "Type description from the spec",
-                        },
-                        "schema": {
-                            "type": "object",
-                            "description": "Compact type summary with $ref placeholders",
-                        },
-                        "resolved_schema": {
-                            "type": "object",
-                            "description": "Fully-resolved JSON Schema (included only when detail='full')",
-                        },
-                        "cross_references": {
+                        "result": {
                             "type": "object",
                             "properties": {
-                                "returned_by": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Tools that return this type",
+                                "name": {"type": "string", "description": "Type name"},
+                                "description": {
+                                    "type": "string",
+                                    "description": "Type description from the spec",
                                 },
-                                "accepted_by": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Tools that accept this type as input",
+                                "schema": {
+                                    "type": "object",
+                                    "description": "Compact type summary with $ref placeholders",
                                 },
-                                "referenced_types": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Types this type references via $ref",
+                                "resolved_schema": {
+                                    "type": "object",
+                                    "description": "Fully-resolved JSON Schema (included only when detail='full')",
+                                },
+                                "cross_references": {
+                                    "type": "object",
+                                    "properties": {
+                                        "returned_by": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "Tools that return this type",
+                                        },
+                                        "accepted_by": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "Tools that accept this type as input",
+                                        },
+                                        "referenced_types": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "Types this type references via $ref",
+                                        },
+                                    },
+                                },
+                            },
+                            "example": {
+                                "name": "User",
+                                "description": "User represents a user",
+                                "schema": {
+                                    "id": 0,
+                                    "login": "user",
+                                    "full_name": "Full Name",
+                                    "avatar_url": {"$ref": "string|null"},
+                                },
+                                "cross_references": {
+                                    "returned_by": ["issue_get_issue", "user_get_current"],
+                                    "accepted_by": ["admin_create_user"],
+                                    "referenced_types": [],
                                 },
                             },
                         },
                     },
-                    "example": {
-                        "name": "User",
-                        "description": "User represents a user",
-                        "schema": {
-                            "id": 0,
-                            "login": "user",
-                            "full_name": "Full Name",
-                            "avatar_url": {"$ref": "string|null"},
-                        },
-                        "cross_references": {
-                            "returned_by": ["issue_get_issue", "user_get_current"],
-                            "accepted_by": ["admin_create_user"],
-                            "referenced_types": [],
-                        },
-                    },
                 },
-            },
-        },
-        ),
-    ])
+            ),
+        ],
+    )
 
     # ── gitea://types/{typeName} resource ──────────────────────────────
 
@@ -480,7 +483,9 @@ def register_type_tools(
     # Tools and resources outside the agent's token scope are filtered at
     # spec-prep time (route_map_fn), so the type index cannot leak data
     # from unreachable endpoints.
-    _type_meta = ResourceMeta(required_scope=None, size_hint="medium", default_detail="full").to_dict()
+    _type_meta = ResourceMeta(
+        required_scope=None, size_hint="medium", default_detail="full"
+    ).to_dict()
 
     mcp.resource(
         uri="gitea://types/{typeName}",

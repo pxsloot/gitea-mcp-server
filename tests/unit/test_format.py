@@ -638,9 +638,7 @@ class TestFormatAsMarkdown:
         data = {"created_at": "2024-01-01T12:00:00Z"}
         schema = {
             "type": "object",
-            "properties": {
-                "created_at": {"type": "string", "format": "date-time"}
-            },
+            "properties": {"created_at": {"type": "string", "format": "date-time"}},
         }
         result = format_as_markdown(data, schema)
         assert "2024-01-01" in result
@@ -1159,7 +1157,10 @@ class TestFormatParameterTable:
             },
         }
         result = _format_parameter_table(props, ["files"])
-        assert "| files | array of {operation, path, content} | yes | list of file operations |" in result
+        assert (
+            "| files | array of {operation, path, content} | yes | list of file operations |"
+            in result
+        )
 
     def test_optional_param(self) -> None:
         """Non-required param gets 'no' in Required column."""
@@ -1207,7 +1208,11 @@ class TestFormatPaginatedResult:
     def test_returns_paginated_toolresult(self) -> None:
         """Returns a ToolResult with structured_content containing result."""
         result = format_paginated_result(
-            [{"id": 1}, {"id": 2}], 2, "raw", page=1, limit=10,
+            [{"id": 1}, {"id": 2}],
+            2,
+            "raw",
+            page=1,
+            limit=10,
         )
         assert isinstance(result, ToolResult)
         assert result.structured_content is not None
@@ -1239,7 +1244,12 @@ class TestFormatPaginatedResult:
         """When fetch_all=True, all items are returned without slicing."""
         items = [{"id": i} for i in range(50)]
         result = format_paginated_result(
-            items, 50, "raw", page=1, limit=10, fetch_all=True,
+            items,
+            50,
+            "raw",
+            page=1,
+            limit=10,
+            fetch_all=True,
         )
         sc = get_structured(result)
         assert len(sc["result"]) == 50
@@ -1250,7 +1260,12 @@ class TestFormatPaginatedResult:
     def test_fetch_all_empty_list(self) -> None:
         """When fetch_all=True and items is empty, returns empty."""
         result = format_paginated_result(
-            [], 0, "raw", page=1, limit=10, fetch_all=True,
+            [],
+            0,
+            "raw",
+            page=1,
+            limit=10,
+            fetch_all=True,
         )
         sc = get_structured(result)
         assert sc["result"] == []
@@ -1261,7 +1276,11 @@ class TestFormatPaginatedResult:
         """Markdown format produces text content."""
         items = [{"id": 1, "name": "test"}]
         result = format_paginated_result(
-            items, 1, "markdown", page=1, limit=10,
+            items,
+            1,
+            "markdown",
+            page=1,
+            limit=10,
         )
         assert result.content is not None
         assert len(result.content) > 0
@@ -1275,7 +1294,11 @@ class TestFormatPaginatedResult:
         """JSON format produces JSON text content."""
         items = [{"id": 1, "name": "test"}]
         result = format_paginated_result(
-            items, 1, "json", page=1, limit=10,
+            items,
+            1,
+            "json",
+            page=1,
+            limit=10,
         )
         assert result.content is not None
         text = extract_text_content(result.content)
@@ -1295,7 +1318,11 @@ class TestFormatPaginatedResult:
     def test_empty_items_list(self) -> None:
         """Empty items list returns empty result."""
         result = format_paginated_result(
-            [], 0, "raw", page=1, limit=10,
+            [],
+            0,
+            "raw",
+            page=1,
+            limit=10,
         )
         sc = get_structured(result)
         assert sc["result"] == []
@@ -1305,7 +1332,11 @@ class TestFormatPaginatedResult:
         """markdown_extras appear as additional sections in markdown output."""
         items = [{"id": 1}]
         result = format_paginated_result(
-            items, 1, "markdown", page=1, limit=10,
+            items,
+            1,
+            "markdown",
+            page=1,
+            limit=10,
             markdown_extras=["**Extra section:** content"],
         )
         text = extract_text_content(result.content)

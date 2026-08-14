@@ -219,15 +219,17 @@ class TestExtensionMetadataTransformNewFields:
     @pytest.mark.asyncio
     async def test_combined_component_and_annotation_overrides(self) -> None:
         """title, description, tags, and hints can all be overridden in one entry."""
-        transform = ExtensionMetadataTransform({
-            "search": {
-                "title": "New Title",
-                "description": "New description",
-                "tags": ["a", "b"],
-                "readOnlyHint": True,
-                "idempotentHint": True,
+        transform = ExtensionMetadataTransform(
+            {
+                "search": {
+                    "title": "New Title",
+                    "description": "New description",
+                    "tags": ["a", "b"],
+                    "readOnlyHint": True,
+                    "idempotentHint": True,
+                }
             }
-        })
+        )
         tool = _make_tool("search", description="Old", tags={"x"}, title="Old Title")
         result = await transform.list_tools([tool])
         assert result[0].title == "New Title"
@@ -246,4 +248,3 @@ class TestExtensionMetadataTransformNewFields:
         assert result[0].title == "Only Title"
         assert result[0].description == "Keep me"
         assert result[0].tags == {"keep"}
-

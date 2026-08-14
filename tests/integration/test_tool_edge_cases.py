@@ -86,7 +86,10 @@ def _make_pagination_spec() -> dict[str, Any]:
                             "description": "Success",
                             "schema": {
                                 "type": "array",
-                                "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                "items": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}},
+                                },
                             },
                         }
                     },
@@ -139,7 +142,10 @@ def _make_cache_spec() -> dict[str, Any]:
                             "name": "body",
                             "in": "body",
                             "required": True,
-                            "schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+                            "schema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}},
+                            },
                         },
                     ],
                     "responses": {"200": {"description": "Success"}},
@@ -204,7 +210,8 @@ class TestLabelConversion:
             ],
         )
         api_route = respx.post(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/issues").respond(
-            201, json={"id": 1, "title": "Fixed bug"},
+            201,
+            json={"id": 1, "title": "Fixed bug"},
         )
 
         await mcp_server.call_tool(
@@ -232,7 +239,8 @@ class TestLabelConversion:
             ],
         )
         api_route = respx.post(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/issues").respond(
-            201, json={"id": 1, "title": "Test"},
+            201,
+            json={"id": 1, "title": "Test"},
         )
 
         await mcp_server.call_tool(
@@ -247,7 +255,8 @@ class TestLabelConversion:
     async def test_unknown_integer_raises_validation_error(self, mcp_server: FastMCP) -> None:
         """Unknown integer IDs produce a human-readable ValidationError."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
-            200, json=[{"id": 1, "name": "type/bug"}],
+            200,
+            json=[{"id": 1, "name": "type/bug"}],
         )
 
         with pytest.raises(ToolError, match="Unknown label ID"):
@@ -259,7 +268,8 @@ class TestLabelConversion:
     async def test_unknown_label_raises_validation_error(self, mcp_server: FastMCP) -> None:
         """Unknown label names produce a human-readable ValidationError."""
         respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/labels").respond(
-            200, json=[{"id": 1, "name": "type/bug"}],
+            200,
+            json=[{"id": 1, "name": "type/bug"}],
         )
 
         with pytest.raises(ToolError, match="Unknown label"):
@@ -289,7 +299,8 @@ class TestPaginationMetadata:
     async def test_paginated_result_has_metadata(self, mcp_server: FastMCP) -> None:
         """Array response includes ``has_more``, ``next_offset``, ``total_count``."""
         respx.get(f"{BASE_TEST_URL}/api/v1/items?page=1&limit=2").respond(
-            200, json=[{"id": 1}, {"id": 2}],
+            200,
+            json=[{"id": 1}, {"id": 2}],
         )
         result = await mcp_server.call_tool(
             "gitea_list_items",
@@ -305,7 +316,8 @@ class TestPaginationMetadata:
     async def test_paginated_result_no_more_when_partial_page(self, mcp_server: FastMCP) -> None:
         """When result length is less than limit, ``has_more`` is False."""
         respx.get(f"{BASE_TEST_URL}/api/v1/items").respond(
-            200, json=[{"id": 1}],
+            200,
+            json=[{"id": 1}],
         )
         result = await mcp_server.call_tool(
             "gitea_list_items",
@@ -342,7 +354,8 @@ class TestCacheInvalidationEndToEnd:
             httpx.Response(200, json={"name": "repo-v2", "owner": "owner"}),
         ]
         respx.put(f"{BASE_TEST_URL}/api/v1/repos/owner/repo").respond(
-            200, json={"name": "updated", "owner": "owner"},
+            200,
+            json={"name": "updated", "owner": "owner"},
         )
 
         # First read - should hit API (cache miss) → v1

@@ -281,10 +281,7 @@ def build_filtered_tools_message(
         )
 
     if reason == "deprecated":
-        return (
-            f"Tool '{name}' has been deprecated by the Gitea API and is "
-            "no longer available."
-        )
+        return f"Tool '{name}' has been deprecated by the Gitea API and is no longer available."
 
     return (
         f"Tool '{name}' is not available (filter reason: {reason}). "
@@ -334,9 +331,7 @@ class FilteredToolMiddleware(Middleware):
             tool_name, self._filtered_tools_info, self._tool_prefix
         )
         if filter_info is not None:
-            msg = build_filtered_tools_message(
-                tool_name, filter_info, self._filtered_tools_info
-            )
+            msg = build_filtered_tools_message(tool_name, filter_info, self._filtered_tools_info)
             raise ToolError(msg)
 
         return await call_next(context)

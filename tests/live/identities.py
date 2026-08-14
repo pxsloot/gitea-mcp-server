@@ -22,10 +22,14 @@ import uuid
 _WORKER: str = os.getenv("PYTEST_XDIST_WORKER", "local")
 """The xdist worker id, or ``local`` outside xdist."""
 
-_RUN_ID: str = re.sub(
-    r"[^a-z0-9-]", "-",
-    os.getenv("GITEA_LIVE_RUN_ID", uuid.uuid4().hex[:8]).lower(),
-).strip("-")[:16] or uuid.uuid4().hex[:8]
+_RUN_ID: str = (
+    re.sub(
+        r"[^a-z0-9-]",
+        "-",
+        os.getenv("GITEA_LIVE_RUN_ID", uuid.uuid4().hex[:8]).lower(),
+    ).strip("-")[:16]
+    or uuid.uuid4().hex[:8]
+)
 """Run namespace; override with ``GITEA_LIVE_RUN_ID`` in CI."""
 
 _NAMESPACE: str = f"{_RUN_ID}-{_WORKER}"

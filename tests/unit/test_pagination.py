@@ -127,7 +127,9 @@ class TestAddPaginationMetadata:
 
     def test_no_total_count_heuristic_true(self) -> None:
         """Without total_count, has_more=True when len(result) == limit."""
-        result = add_pagination_metadata({"result": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}, page=1, limit=10)
+        result = add_pagination_metadata(
+            {"result": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}, page=1, limit=10
+        )
         assert result["has_more"] is True
         assert result["next_offset"] == 2
         assert result["total_count"] is None
@@ -148,7 +150,9 @@ class TestAddPaginationMetadata:
 
     def test_preserves_existing_keys(self) -> None:
         """Existing keys in structured_content should be preserved."""
-        result = add_pagination_metadata({"result": [1], "foo": "bar"}, page=1, limit=10, total_count=1)
+        result = add_pagination_metadata(
+            {"result": [1], "foo": "bar"}, page=1, limit=10, total_count=1
+        )
         assert result["foo"] == "bar"
         assert result["has_more"] is False
 
@@ -327,6 +331,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_heuristic_when_has_more_missing(self) -> None:
         """Fall back to heuristic when response has no has_more."""
+
         async def _short_page(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
@@ -351,6 +356,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_total_count_carried_forward(self) -> None:
         """total_count from server response is preserved in merged result."""
+
         async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 structured_content={
@@ -397,6 +403,7 @@ class TestPaginationRunner:
     @pytest.mark.asyncio
     async def test_preserves_meta(self) -> None:
         """PaginationRunner preserves meta from the original ToolResult."""
+
         async def _fetch(_kwargs: dict[str, Any]) -> ToolResult:
             return ToolResult(structured_content={"result": [{"id": 2}], "has_more": False})
 

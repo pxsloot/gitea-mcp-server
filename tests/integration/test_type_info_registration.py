@@ -112,7 +112,7 @@ class TestRegisterTypeToolsTool:
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
         result = await mcp.call_tool("resolve_type", {"name": "User"})
-        data =         get_structured(result)["result"]
+        data = get_structured(result)["result"]
         assert data["name"] == "User"
         assert "cross_references" in data
 
@@ -186,7 +186,7 @@ class TestRegisterTypeToolsCrossReferences:
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
 
         result = await mcp.call_tool("resolve_type", {"name": "User"})
-        data =         get_structured(result)["result"]
+        data = get_structured(result)["result"]
         refs = data["cross_references"]
         assert "issue_get_issue" in refs["returned_by"]
 

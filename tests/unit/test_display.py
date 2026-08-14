@@ -67,7 +67,7 @@ class TestCallFormatter:
         """Known formatter is called and returns expected output."""
 
         @register_formatter("test_formatter")
-        def _test_fmt(data: Any, *, detail: str ="full") -> str:
+        def _test_fmt(data: Any, *, detail: str = "full") -> str:
             return f"formatted: {data}"
 
         result = call_formatter("test_formatter", {"hello": "world"})
@@ -77,13 +77,13 @@ class TestCallFormatter:
         """Formatter registered with need_extra=True receives extra dict."""
 
         @register_formatter("test_extra", need_extra=True)
-        def _test_extra(data: Any, *, detail: str = "full", extra: dict[str, Any] | None = None) -> str:
+        def _test_extra(
+            data: Any, *, detail: str = "full", extra: dict[str, Any] | None = None
+        ) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 
-        result = call_formatter(
-            "test_extra", "val", extra={"ctx": "my_context"}
-        )
+        result = call_formatter("test_extra", "val", extra={"ctx": "my_context"})
         assert "ctx=my_context" in result
 
     def test_formatter_without_detail(self) -> None:
@@ -355,15 +355,17 @@ class TestFormatterGaps:
         assert "_(empty)_" in result
 
     def test_format_release_markdown_full(self) -> None:
-        releases = [{
-            "tag_name": "v1.0.0",
-            "name": "Version 1.0.0",
-            "draft": False,
-            "prerelease": False,
-            "created_at": "2024-01-01T00:00:00Z",
-            "published_at": "2024-01-02T00:00:00Z",
-            "body": "Release notes here",
-        }]
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "name": "Version 1.0.0",
+                "draft": False,
+                "prerelease": False,
+                "created_at": "2024-01-01T00:00:00Z",
+                "published_at": "2024-01-02T00:00:00Z",
+                "body": "Release notes here",
+            }
+        ]
         result = _format_release_markdown(releases)
 
         assert "# v1.0.0" in result
@@ -373,42 +375,48 @@ class TestFormatterGaps:
         assert "| Body | Release notes here |" in result
 
     def test_format_release_markdown_missing_name(self) -> None:
-        releases = [{
-            "tag_name": "v1.0.0",
-            "draft": False,
-            "prerelease": False,
-            "created_at": "2024-01-01T00:00:00Z",
-            "published_at": "2024-01-02T00:00:00Z",
-            "body": "Body",
-        }]
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "draft": False,
+                "prerelease": False,
+                "created_at": "2024-01-01T00:00:00Z",
+                "published_at": "2024-01-02T00:00:00Z",
+                "body": "Body",
+            }
+        ]
         result = _format_release_markdown(releases)
 
         assert "| Tag Name | v1.0.0 |" in result
 
     def test_format_release_markdown_missing_body(self) -> None:
-        releases = [{
-            "tag_name": "v1.0.0",
-            "name": "Version 1.0.0",
-            "draft": False,
-            "prerelease": False,
-            "created_at": "2024-01-01T00:00:00Z",
-            "published_at": "2024-01-02T00:00:00Z",
-        }]
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "name": "Version 1.0.0",
+                "draft": False,
+                "prerelease": False,
+                "created_at": "2024-01-01T00:00:00Z",
+                "published_at": "2024-01-02T00:00:00Z",
+            }
+        ]
         result = _format_release_markdown(releases)
 
         assert "# v1.0.0" in result
         assert "| Name | Version 1.0.0 |" in result
 
     def test_format_release_markdown_draft_prerelease(self) -> None:
-        releases = [{
-            "tag_name": "v2.0.0-beta",
-            "name": "Beta",
-            "draft": True,
-            "prerelease": True,
-            "created_at": "2024-06-01T00:00:00Z",
-            "published_at": "2024-06-02T00:00:00Z",
-            "body": "Beta release",
-        }]
+        releases = [
+            {
+                "tag_name": "v2.0.0-beta",
+                "name": "Beta",
+                "draft": True,
+                "prerelease": True,
+                "created_at": "2024-06-01T00:00:00Z",
+                "published_at": "2024-06-02T00:00:00Z",
+                "body": "Beta release",
+            }
+        ]
         result = _format_release_markdown(releases)
 
         assert "| Draft | True |" in result
@@ -576,15 +584,17 @@ class TestToolResourceConsistency:
     def test_release_format_consistent_with_shared_formatter(self) -> None:
         """_format_release_markdown delegates to format_as_markdown with field_filter."""
 
-        releases = [{
-            "tag_name": "v1.0.0",
-            "name": "Version 1.0.0",
-            "draft": False,
-            "prerelease": False,
-            "created_at": "2024-01-01T00:00:00Z",
-            "published_at": "2024-01-02T00:00:00Z",
-            "body": "Notes",
-        }]
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "name": "Version 1.0.0",
+                "draft": False,
+                "prerelease": False,
+                "created_at": "2024-01-01T00:00:00Z",
+                "published_at": "2024-01-02T00:00:00Z",
+                "body": "Notes",
+            }
+        ]
         resource_result = _format_release_markdown(releases)
         assert "# v1.0.0" in resource_result
         assert "| Tag Name | v1.0.0 |" in resource_result

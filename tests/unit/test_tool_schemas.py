@@ -154,9 +154,7 @@ class TestDeriveOutputSchema:
                 "Repository": {
                     "description": "Repository",
                     "content": {
-                        "application/json": {
-                            "schema": {"$ref": "#/components/schemas/Repository"}
-                        }
+                        "application/json": {"schema": {"$ref": "#/components/schemas/Repository"}}
                     },
                 }
             },
@@ -195,11 +193,7 @@ class TestDeriveOutputSchema:
             "openapi": "3.1.0",
             "paths": {
                 "/repos/{owner}/{repo}": {
-                    "get": {
-                        "responses": {
-                            "200": {"$ref": "#/components/responses/Repository"}
-                        }
-                    }
+                    "get": {"responses": {"200": {"$ref": "#/components/responses/Repository"}}}
                 }
             },
             "components": {
@@ -274,7 +268,10 @@ class TestDeriveOutputSchema:
                                 "description": "OK",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"from_200": {"type": "string"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"from_200": {"type": "string"}},
+                                        }
                                     }
                                 },
                             },
@@ -282,7 +279,10 @@ class TestDeriveOutputSchema:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"from_201": {"type": "string"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"from_201": {"type": "string"}},
+                                        }
                                     }
                                 },
                             },
@@ -311,7 +311,10 @@ class TestDeriveOutputSchema:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        }
                                     }
                                 },
                             }
@@ -501,7 +504,9 @@ class TestDeriveOutputSchema:
         tool.name = "issue_list_issues"
         tool.annotations = None
         tool.tags = {"issue"}
-        tool.parameters = {"properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}}
+        tool.parameters = {
+            "properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}
+        }
         tool.output_schema = None
         tool.description = ""
         tool.meta = {}
@@ -539,7 +544,9 @@ class TestIsTextResponse:
 
     @pytest.fixture
     def text_spec(self) -> OpenAPISpec:
-        return make_openapi_spec(openapi="3.1.1", paths={
+        return make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
                     "get": {
                         "x-original-content-types": ["text/plain"],
@@ -584,7 +591,10 @@ class TestIsTextResponse:
         )
 
     def test_text_plain_endpoint_detected(self, text_spec: OpenAPISpec) -> None:
-        assert is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get") is True
+        assert (
+            is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "get")
+            is True
+        )
 
     def test_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
         assert is_text_response(text_spec, "/repos/{owner}/{repo}/issues", "get") is False
@@ -600,7 +610,10 @@ class TestIsTextResponse:
 
     def test_uppercase_method_normalized(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
-        assert is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET") is True
+        assert (
+            is_text_response(text_spec, "/repos/{owner}/{repo}/pulls/{index}.{diffType}", "GET")
+            is True
+        )
 
     def test_uppercase_json_endpoint_not_text(self, text_spec: OpenAPISpec) -> None:
         """Uppercase method on JSON endpoint should still return False."""
@@ -723,35 +736,57 @@ class TestResponseHasNoContent:
     def test_204_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """204 No Content response should return True."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete") is True
+
+        assert (
+            response_has_no_content(
+                empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "delete"
+            )
+            is True
+        )
 
     def test_202_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """202 Accepted with no body should return True."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete") is True
+
+        assert (
+            response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-202", "delete")
+            is True
+        )
 
     def test_205_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """205 Reset Content should return True."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete") is True
+
+        assert (
+            response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/no-205", "delete")
+            is True
+        )
 
     def test_200_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """200 with $ref to empty response should return True (merge endpoint scenario)."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(
-            empty_body_spec,
-            "/repos/{owner}/{repo}/pulls/{index}/merge",
-            "put",
-        ) is True
+
+        assert (
+            response_has_no_content(
+                empty_body_spec,
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+                "put",
+            )
+            is True
+        )
 
     def test_201_with_ref_to_empty_response(self, empty_body_spec: OpenAPISpec) -> None:
         """201 with $ref to empty response should return True."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(
-            empty_body_spec,
-            "/repos/{owner}/{repo}/pulls/{index}/merge-201",
-            "put",
-        ) is True
+
+        assert (
+            response_has_no_content(
+                empty_body_spec,
+                "/repos/{owner}/{repo}/pulls/{index}/merge-201",
+                "put",
+            )
+            is True
+        )
 
     def test_200_inline_empty_not_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """200 inline with no content key should NOT be flagged (spec gap, not empty body).
@@ -761,105 +796,148 @@ class TestResponseHasNoContent:
         treated as incomplete specs, not genuine empty-body endpoints.
         """
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(
-            empty_body_spec,
-            "/repos/{owner}/{repo}/200-inline-empty",
-            "post",
-        ) is False
+
+        assert (
+            response_has_no_content(
+                empty_body_spec,
+                "/repos/{owner}/{repo}/200-inline-empty",
+                "post",
+            )
+            is False
+        )
 
     def test_201_inline_empty_not_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """201 inline with no content key should NOT be flagged (spec gap, not empty body)."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(
-            empty_body_spec,
-            "/repos/{owner}/{repo}/201-inline-empty",
-            "post",
-        ) is False
+
+        assert (
+            response_has_no_content(
+                empty_body_spec,
+                "/repos/{owner}/{repo}/201-inline-empty",
+                "post",
+            )
+            is False
+        )
 
     def test_json_endpoint_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """JSON endpoint with 200 should return False."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post") is False
+
+        assert (
+            response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/json-endpoint", "post")
+            is False
+        )
 
     def test_get_with_200_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """GET endpoint with 200 response should return False."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get") is False
+
+        assert (
+            response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "get")
+            is False
+        )
 
     def test_response_with_content_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """204 with content body should NOT be flagged as empty."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete") is False
+
+        assert (
+            response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/has-content", "delete")
+            is False
+        )
 
     def test_missing_path_returns_false(self, empty_body_spec: OpenAPISpec) -> None:
         """Nonexistent path should return False."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
+
         assert response_has_no_content(empty_body_spec, "/nonexistent", "delete") is False
 
     def test_uppercase_method_normalized(self, empty_body_spec: OpenAPISpec) -> None:
         """Uppercase method should be normalized to lowercase internally."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        assert response_has_no_content(empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE") is True
+
+        assert (
+            response_has_no_content(
+                empty_body_spec, "/repos/{owner}/{repo}/issues/{index}", "DELETE"
+            )
+            is True
+        )
 
     def test_non_dict_responses_returns_false(self) -> None:
         """When responses is not a dict, should return False."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "delete": {
-                        "responses": "not a dict",
+
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "delete": {
+                            "responses": "not a dict",
+                        }
                     }
-                }
+                },
             },
-        })
+        )
         assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_non_dict_path_item_returns_false(self) -> None:
         """When path_item is not a dict, should return False."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": "not a dict",
+
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": "not a dict",
+                },
             },
-        })
+        )
         assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_non_dict_operation_returns_false(self) -> None:
         """When operation is not a dict, should return False (line 175)."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "delete": "not a dict",
+
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "delete": "not a dict",
+                    },
                 },
             },
-        })
+        )
         assert response_has_no_content(spec, "/test", "delete") is False
 
     def test_ref_resolved_not_a_dict_continues(self) -> None:
         """When a $ref resolves to a non-dict, the loop continues (line 199)."""
         from gitea_mcp_server.tools.schemas import response_has_no_content
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "delete": {
-                        "responses": {
-                            "202": {"$ref": "#/components/responses/EmptyString"},
+
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "delete": {
+                            "responses": {
+                                "202": {"$ref": "#/components/responses/EmptyString"},
+                            },
                         },
                     },
                 },
-            },
-            "components": {
-                "responses": {
-                    "EmptyString": "just a string, not a dict",
+                "components": {
+                    "responses": {
+                        "EmptyString": "just a string, not a dict",
+                    },
                 },
             },
-        })
+        )
         # The ref resolves to a non-dict string, so the loop continues
         # and no response has no content, so it should return False
         assert response_has_no_content(spec, "/test", "delete") is False
@@ -868,7 +946,9 @@ class TestResponseHasNoContent:
 class TestTextResponseOutputSchema:
     """Tests that text/plain endpoints get no output_schema."""
 
-    TEXT_SPEC: OpenAPISpec = make_openapi_spec(openapi="3.1.1", paths={
+    TEXT_SPEC: OpenAPISpec = make_openapi_spec(
+        openapi="3.1.1",
+        paths={
             "/repos/{owner}/{repo}/pulls/{index}.{diffType}": {
                 "get": {
                     "x-original-content-types": ["text/plain"],
@@ -893,7 +973,10 @@ class TestTextResponseOutputSchema:
                                 "application/json": {
                                     "schema": {
                                         "type": "array",
-                                        "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        },
                                     }
                                 }
                             },
@@ -1022,7 +1105,10 @@ class TestDeepResolveSchema:
         assert resolved["type"] == "object"
         assert resolved["properties"]["repo"]["type"] == "object"
         assert resolved["properties"]["repo"]["properties"]["owner"]["type"] == "object"
-        assert resolved["properties"]["repo"]["properties"]["owner"]["properties"]["login"]["type"] == "string"
+        assert (
+            resolved["properties"]["repo"]["properties"]["owner"]["properties"]["login"]["type"]
+            == "string"
+        )
 
     def test_resolves_allOf_entries(self) -> None:
         """Recursively resolves $ref inside allOf entries."""
@@ -1153,16 +1239,19 @@ class TestGetSuccessSchema:
         """When responses is not a dict, should return None."""
         from gitea_mcp_server.tools.schemas import get_success_schema
 
-        spec = cast("OpenAPISpec", {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "get": {
-                        "responses": "not a dict",
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "get": {
+                            "responses": "not a dict",
+                        }
                     }
-                }
+                },
             },
-        })
+        )
         assert get_success_schema(spec, "/test", "get") is None
 
     def test_ref_resolves_to_non_dict(self) -> None:
@@ -1180,7 +1269,10 @@ class TestGetSuccessSchema:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        }
                                     }
                                 },
                             },
@@ -1211,9 +1303,7 @@ class TestGetSuccessSchema:
                             "200": {"description": "OK", "content": "not a dict"},
                             "201": {
                                 "description": "Created",
-                                "content": {
-                                    "application/json": {"schema": {"type": "string"}}
-                                },
+                                "content": {"application/json": {"schema": {"type": "string"}}},
                             },
                         }
                     }
@@ -1241,9 +1331,7 @@ class TestGetSuccessSchema:
                             },
                             "201": {
                                 "description": "Created",
-                                "content": {
-                                    "application/json": {"schema": {"type": "string"}}
-                                },
+                                "content": {"application/json": {"schema": {"type": "string"}}},
                             },
                         }
                     }
@@ -1271,9 +1359,7 @@ class TestGetSuccessSchema:
                             },
                             "201": {
                                 "description": "Created",
-                                "content": {
-                                    "application/json": {"schema": {"type": "string"}}
-                                },
+                                "content": {"application/json": {"schema": {"type": "string"}}},
                             },
                         }
                     }
@@ -1384,21 +1470,24 @@ class TestGetRawSuccessSchema:
         """Text responses should return None regardless of resolve flag."""
         from gitea_mcp_server.tools.schemas import get_success_schema
 
-        spec = make_openapi_spec(openapi="3.1.0", paths={
-            "/test": {
-                "get": {
-                    "responses": {
-                        "200": {
-                            "description": "OK",
-                            "content": {
-                                "text/plain": {"schema": {"type": "string"}},
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "text/plain": {"schema": {"type": "string"}},
+                                },
                             },
                         },
+                        "x-original-content-types": ["text/plain"],
                     },
-                    "x-original-content-types": ["text/plain"],
                 },
             },
-        })
+        )
         assert get_success_schema(spec, "/test", "get", resolve=False) is None
         assert get_success_schema(spec, "/test", "get", resolve=True) is None
 
@@ -1446,7 +1535,10 @@ class TestGetRawSuccessSchema:
                                 "description": "OK",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"from_200": {"type": "string"}}},
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"from_200": {"type": "string"}},
+                                        },
                                     },
                                 },
                             },
@@ -1454,7 +1546,10 @@ class TestGetRawSuccessSchema:
                                 "description": "Created",
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"from_201": {"type": "string"}}},
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"from_201": {"type": "string"}},
+                                        },
                                     },
                                 },
                             },

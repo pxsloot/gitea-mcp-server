@@ -428,7 +428,9 @@ class TestRunValidation:
 
     def test_validation_passes(self) -> None:
         """When all validators pass, should not raise."""
-        run_validation({"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"])
+        run_validation(
+            {"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"]
+        )
 
     def test_pagination_validation_passes(self) -> None:
         """When page/per_page are present with valid values, should not raise."""
@@ -439,7 +441,9 @@ class TestRunValidation:
         with pytest.raises(ValidationError, match="page|per_page"):
             run_validation({"page": 1, "per_page": 99999})
 
-    def test_validator_raises_type_error_wraps_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validator_raises_type_error_wraps_cleanly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When a SINGLE_VALIDATOR raises TypeError, it should be wrapped as ValidationError."""
         from gitea_mcp_server.validation import SINGLE_VALIDATORS
 
@@ -701,7 +705,9 @@ class TestCatchAllErrorHandler:
             pytest.param(RuntimeError("boom"), "RuntimeError", id="RuntimeError"),
         ],
     )
-    async def test_all_exception_types_are_caught(self, exception: Exception, exc_name: str, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_all_exception_types_are_caught(
+        self, exception: Exception, exc_name: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """All four exception types produce a user-friendly ValueError."""
         caplog.set_level(logging.ERROR)
 
@@ -729,7 +735,9 @@ class TestCatchAllErrorHandler:
         assert exc_name not in error_msg
 
     @pytest.mark.parametrize("exc_type", [KeyError, TypeError, AttributeError, RuntimeError])
-    async def test_log_contains_tool_context(self, exc_type: type[Exception], caplog: pytest.LogCaptureFixture) -> None:
+    async def test_log_contains_tool_context(
+        self, exc_type: type[Exception], caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Log message includes tool name, HTTP method, route, and arg keys."""
         caplog.set_level(logging.ERROR)
 
@@ -757,7 +765,9 @@ class TestCatchAllErrorHandler:
         assert any("/repos/{owner}/{repo}" in r.message for r in caplog.records)
         assert any("owner" in r.message for r in caplog.records)
 
-    async def test_component_without_name_falls_back(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_component_without_name_falls_back(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """When component has no ``name`` attribute, logs 'unknown'."""
         caplog.set_level(logging.ERROR)
 

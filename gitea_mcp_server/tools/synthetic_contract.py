@@ -234,10 +234,7 @@ def _annotation_with_bounds(annotation: Any, extra: dict[str, Any]) -> Any:
     if get_origin(annotation) is not Annotated:
         return Annotated[annotation, Field(json_schema_extra=dict(extra))]
     base, *metadata = get_args(annotation)
-    promoted = [
-        Field(description=item) if isinstance(item, str) else item
-        for item in metadata
-    ]
+    promoted = [Field(description=item) if isinstance(item, str) else item for item in metadata]
     return Annotated[base, *promoted, Field(json_schema_extra=dict(extra))]
 
 
@@ -386,14 +383,10 @@ def register_synthetic_tool(  # noqa: PLR0913 - six explicit contract knobs are 
             tags, annotations, output_schema, ...).
     """
     if paginated and "output_schema" in tool_options:
-        tool_options["output_schema"] = paginated_output_schema(
-            tool_options["output_schema"]
-        )
+        tool_options["output_schema"] = paginated_output_schema(tool_options["output_schema"])
 
     effective_limit_max = limit_max if limit_max is not None else PAGE_SIZE_MAX
-    default_virtual = (
-        {"format", "detail", "fetch_all"} if paginated else {"format", "detail"}
-    )
+    default_virtual = {"format", "detail", "fetch_all"} if paginated else {"format", "detail"}
     effective_virtual = virtual_params if virtual_params is not None else default_virtual
 
     def decorator(function: Callable[..., Any]) -> Callable[..., Any]:

@@ -41,11 +41,13 @@ def register_formatter(
         def _format_repo_markdown(data, *, detail="full"):
             ...
     """
+
     def deco(fn: Callable[..., str]) -> Callable[..., str]:
         _FORMATTERS[name] = fn
         if meta:
             _FORMATTER_META[name] = meta
         return fn
+
     return deco
 
 
@@ -198,8 +200,10 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
     else:
         # Guard against non-dict items (unexpected data shape).
         has_prs = (
-            any(isinstance(item, dict) and item.get("pull_request") for item in data)
-        ) if data else False
+            (any(isinstance(item, dict) and item.get("pull_request") for item in data))
+            if data
+            else False
+        )
         title_label = "Issues and Pull Requests" if has_prs else "Issues"
     title = f"{title_label} - {len(data)} items" if data else title_label
     return format_as_markdown(

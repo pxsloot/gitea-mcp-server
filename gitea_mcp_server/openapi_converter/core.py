@@ -333,9 +333,7 @@ class OperationTransformer:
         # gating on method would silently drop those bodies.  Gate
         # on data presence, the same behaviour-driven approach used
         # in param_collision.py.
-        form_params = [
-            p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"
-        ]
+        form_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "formData"]
         body_params = [p for p in raw_params if isinstance(p, dict) and p.get("in") == "body"]
         # body params (application/json) take precedence over formData
         # (multipart/form-data, url-encoded) when both are present on the
@@ -651,10 +649,7 @@ def convert_schema(schema: dict[str, Any]) -> dict[str, Any]:
 # there as "a query parameter filter value, not a valid object state"
 # — it belongs to list/filter query params (which already carry their
 # own ``enum`` in the spec), not mutation endpoints.
-_STATE_DEFINITION_DESC = (
-    'State of the target item.\n'
-    'Valid values: "open", "closed"'
-)
+_STATE_DEFINITION_DESC = 'State of the target item.\nValid values: "open", "closed"'
 
 
 def _patch_missing_state_descriptions(schemas: dict[str, Any]) -> None:

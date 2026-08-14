@@ -109,16 +109,28 @@ class TestFunctionToolResultWrapping:
         )
 
         raw = [
-            {"uri": "gitea://version", "name": "Version", "description": "Server version",
-             "mimeType": "text/plain", "type": "resource", "tags": ["wrapper", "server"]},
+            {
+                "uri": "gitea://version",
+                "name": "Version",
+                "description": "Server version",
+                "mimeType": "text/plain",
+                "type": "resource",
+                "tags": ["wrapper", "server"],
+            },
         ]
         result = tool.convert_result(raw)
 
         assert isinstance(result, ToolResult)
         assert result.structured_content == {
             "result": [
-                {"uri": "gitea://version", "name": "Version", "description": "Server version",
-                 "mimeType": "text/plain", "type": "resource", "tags": ["wrapper", "server"]},
+                {
+                    "uri": "gitea://version",
+                    "name": "Version",
+                    "description": "Server version",
+                    "mimeType": "text/plain",
+                    "type": "resource",
+                    "tags": ["wrapper", "server"],
+                },
             ],
         }
 

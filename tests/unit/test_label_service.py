@@ -39,7 +39,9 @@ class TestLabelService:
         assert stats["total_fetches"] == 0
 
     @pytest.mark.asyncio
-    async def test_stats_tracks_hits(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_stats_tracks_hits(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """stats() hit_ratio reflects cache hits."""
         # First call: fetch from API (miss)
         await label_service.get_label_map("owner", "repo", gitea_client)
@@ -59,7 +61,9 @@ class TestLabelService:
         assert stats["hit_ratio"] == 0.5
 
     @pytest.mark.asyncio
-    async def test_stats_entry_count(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_stats_entry_count(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """stats() entry_count reflects number of cached repos."""
         await label_service.get_label_map("owner1", "repo1", gitea_client)
         await label_service.get_label_map("owner2", "repo2", gitea_client)
@@ -67,7 +71,9 @@ class TestLabelService:
         assert stats["entry_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_stats_oldest_entry(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_stats_oldest_entry(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """stats() oldest_entry_age_seconds is set when cache is populated."""
         await label_service.get_label_map("owner", "repo", gitea_client)
         stats = label_service.stats()
@@ -79,7 +85,9 @@ class TestLabelService:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_clear_cache_for_removes_entry(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_clear_cache_for_removes_entry(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """clear_cache_for removes only the specified repo from cache."""
         # Populate cache with two repos
         await label_service.get_label_map("owner1", "repo1", gitea_client)
@@ -103,7 +111,9 @@ class TestLabelService:
         label_service.clear_cache_for("nonexistent", "repo")
 
     @pytest.mark.asyncio
-    async def test_clear_cache_for_triggers_refetch(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_clear_cache_for_triggers_refetch(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """After clear_cache_for, the next access fetches from API."""
         await label_service.get_label_map("owner", "repo", gitea_client)
         gitea_client.request.reset_mock()
@@ -117,14 +127,18 @@ class TestLabelService:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_context_logging_on_cache_miss(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_context_logging_on_cache_miss(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """Context logging is called on cache miss (outside request scope, no crash)."""
         # Should not raise even though no CurrentContext is active
         await label_service.get_label_map("owner", "repo", gitea_client)
         # No assertion needed - we just verify no exception occurs
 
     @pytest.mark.asyncio
-    async def test_context_logging_on_cache_hit(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_context_logging_on_cache_hit(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """Context logging is called on cache hit (outside request scope, no crash)."""
         await label_service.get_label_map("owner", "repo", gitea_client)
         # Second call: cache hit
@@ -132,7 +146,9 @@ class TestLabelService:
         # No assertion needed - verify no exception
 
     @pytest.mark.asyncio
-    async def test_context_logging_on_expiry(self, label_service: LabelService, gitea_client: AsyncMock) -> None:
+    async def test_context_logging_on_expiry(
+        self, label_service: LabelService, gitea_client: AsyncMock
+    ) -> None:
         """Context logging on cache expiry does not crash."""
         service = LabelService(cache_ttl=0)  # immediate expiry
         await service.get_label_map("owner", "repo", gitea_client)

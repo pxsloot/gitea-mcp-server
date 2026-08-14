@@ -33,21 +33,24 @@ class TestRegisterAllSyntheticTools:
         async def proxy_impl(name: str) -> ToolResult:
             return ToolResult(structured_content={"result": name})
 
-        register_all_synthetic_tools(mcp, [
-            SyntheticToolSpec(
-                impl=wrapped_impl,
-                name="wrapped_tool",
-                paginated=True,
-                tags={"synthetic"},
-                output_schema={"type": "object", "properties": {"result": {"type": "array"}}},
-            ),
-            SyntheticToolSpec(
-                impl=proxy_impl,
-                name="proxy_tool",
-                wrap=False,
-                tags={"synthetic"},
-            ),
-        ])
+        register_all_synthetic_tools(
+            mcp,
+            [
+                SyntheticToolSpec(
+                    impl=wrapped_impl,
+                    name="wrapped_tool",
+                    paginated=True,
+                    tags={"synthetic"},
+                    output_schema={"type": "object", "properties": {"result": {"type": "array"}}},
+                ),
+                SyntheticToolSpec(
+                    impl=proxy_impl,
+                    name="proxy_tool",
+                    wrap=False,
+                    tags={"synthetic"},
+                ),
+            ],
+        )
 
         tools = await mcp.list_tools()
         by_name = {t.name: t for t in tools}
@@ -324,10 +327,7 @@ class TestSyntheticToolRegistration:
         props = schema["properties"]
         # Descriptions survive the additive bounds declaration.
         assert props["page"]["description"] == "Page number (1-based, default 1)"
-        assert (
-            props["limit"]["description"]
-            == "Maximum results per page (1-100, default 10)"
-        )
+        assert props["limit"]["description"] == "Maximum results per page (1-100, default 10)"
         # page gains the autogen-style minimum; limit keeps both bounds.
         assert props["page"]["minimum"] == 1
         assert props["limit"]["minimum"] == 1

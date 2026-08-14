@@ -50,6 +50,7 @@ class ConfigProtocol(Protocol):
     @property
     def base_url(self) -> str: ...
 
+
 logger = logging.getLogger(__name__)
 
 # Constants for HTTP transport validation

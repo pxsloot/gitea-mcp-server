@@ -149,7 +149,9 @@ class TestDocManager:
         assert mgr.get_manifest_markdown() == ""
 
     def test_manifest_markdown_lists_guides(self) -> None:
-        guide = DocGuide("test-guide", "Test Guide", "A test guide description", ["tag1"], "# content", "body")
+        guide = DocGuide(
+            "test-guide", "Test Guide", "A test guide description", ["tag1"], "# content", "body"
+        )
         mgr = self._make_manager([guide])
         manifest = mgr.get_manifest_markdown()
         assert "Workflow Guides" in manifest
@@ -172,10 +174,12 @@ class TestDocManagerLoadEdgeCases:
     def test_guides_dir_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
         """When guides directory doesn't exist, warning is logged and no guides loaded."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         # Patch pkg_files to return a path that doesn't exist
         from unittest.mock import patch
+
         fake_path = "/nonexistent/guides/path"
         with patch("gitea_mcp_server.tools.docs_tools.pkg_files") as mock_pkg_files:
             mock_path = __import__("pathlib").Path(fake_path)
@@ -187,10 +191,15 @@ class TestDocManagerLoadEdgeCases:
     def test_load_exception_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Exception during _load is caught and logged."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         from unittest.mock import patch
-        with patch("gitea_mcp_server.tools.docs_tools.pkg_files", side_effect=PermissionError("Access denied")):
+
+        with patch(
+            "gitea_mcp_server.tools.docs_tools.pkg_files",
+            side_effect=PermissionError("Access denied"),
+        ):
             mgr = DocManager()
             assert len(mgr._guides) == 0
             assert "Failed to load workflow guides" in caplog.text
@@ -198,6 +207,7 @@ class TestDocManagerLoadEdgeCases:
     def test_non_md_files_skipped(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Non-.md files in the guides directory are skipped."""
         import logging
+
         caplog.set_level(logging.DEBUG)
 
         from unittest.mock import patch
@@ -248,7 +258,9 @@ class TestRegisterDocTools:
     def _make_manager() -> DocManager:
         mgr = DocManager.__new__(DocManager)
         guides = [
-            DocGuide("test", "Test Guide", "A test guide", ["tag1"], "# Test\n\nContent", "Content"),
+            DocGuide(
+                "test", "Test Guide", "A test guide", ["tag1"], "# Test\n\nContent", "Content"
+            ),
         ]
         mgr._guides = guides
         mgr._search_texts = [g.search_text() for g in guides]
@@ -264,6 +276,7 @@ class TestRegisterDocTools:
             def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.tool = tool_decorator
@@ -290,7 +303,9 @@ class TestRegisterDocTools:
             kwargs = call_args[1]
             annotations = kwargs.get("annotations")
             assert annotations is not None, f"{kwargs.get('name', 'unnamed')} missing annotations"
-            assert annotations.openWorldHint is False, f"{kwargs.get('name', 'unnamed')}.openWorldHint should be False"
+            assert annotations.openWorldHint is False, (
+                f"{kwargs.get('name', 'unnamed')}.openWorldHint should be False"
+            )
 
     def test_registers_one_resource(self) -> None:
         mcp = MagicMock()
@@ -490,8 +505,17 @@ class TestRegisterDocTools:
         mcp.resource = MagicMock(return_value=lambda f: f)
         mgr = DocManager.__new__(DocManager)
         guides = [
-            DocGuide("wiki", "Wiki Guide", "Wiki docs", ["wiki", "documentation"], "# Wiki", "Wiki body"),
-            DocGuide("labels", "Labels Guide", "Labels docs", ["labels", "issue"], "# Labels", "Labels body"),
+            DocGuide(
+                "wiki", "Wiki Guide", "Wiki docs", ["wiki", "documentation"], "# Wiki", "Wiki body"
+            ),
+            DocGuide(
+                "labels",
+                "Labels Guide",
+                "Labels docs",
+                ["labels", "issue"],
+                "# Labels",
+                "Labels body",
+            ),
         ]
         mgr._guides = guides
         mgr._search_texts = [g.search_text() for g in guides]
@@ -538,6 +562,7 @@ class TestDocResource:
             def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.tool = tool_decorator
@@ -547,6 +572,7 @@ class TestDocResource:
             def deco(fn: Callable) -> Callable:
                 resource_registry[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.resource = resource_decorator
@@ -564,6 +590,7 @@ class TestDocResource:
     async def test_resource_raises_for_unknown(self) -> None:
         fn = self._capture_resource()
         from fastmcp.exceptions import ResourceError
+
         with pytest.raises(ResourceError):
             await fn(topic="unknown")
 
@@ -578,7 +605,14 @@ class TestSearchDocsPagination:
 
         mgr = DocManager.__new__(DocManager)
         guides = [
-            DocGuide(f"guide-{i}", f"Guide {i}", f"Test guide number {i}", ["test"], f"# {i}", f"Body {i}")
+            DocGuide(
+                f"guide-{i}",
+                f"Guide {i}",
+                f"Test guide number {i}",
+                ["test"],
+                f"# {i}",
+                f"Body {i}",
+            )
             for i in range(25)
         ]
         mgr._guides = guides
@@ -592,6 +626,7 @@ class TestSearchDocsPagination:
             def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.tool = tool_decorator
@@ -616,7 +651,14 @@ class TestSearchDocsPagination:
 
         mgr = DocManager.__new__(DocManager)
         guides = [
-            DocGuide(f"guide-{i}", f"Guide {i}", f"Test guide number {i}", ["test"], f"# {i}", f"Body {i}")
+            DocGuide(
+                f"guide-{i}",
+                f"Guide {i}",
+                f"Test guide number {i}",
+                ["test"],
+                f"# {i}",
+                f"Body {i}",
+            )
             for i in range(5)
         ]
         mgr._guides = guides
@@ -630,6 +672,7 @@ class TestSearchDocsPagination:
             def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.tool = tool_decorator

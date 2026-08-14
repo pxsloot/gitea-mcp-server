@@ -328,7 +328,9 @@ class CacheInvalidationMiddleware(Middleware):
         # where ToolResult does not have an is_error attribute.
         if result and not getattr(result, "is_error", False):
             uris_to_invalidate = compute_uris_to_invalidate(
-                tool_name, arguments, tool_prefix=self._tool_prefix,
+                tool_name,
+                arguments,
+                tool_prefix=self._tool_prefix,
             )
             if uris_to_invalidate:
                 await invalidate_cached_resources(
@@ -342,7 +344,9 @@ class CacheInvalidationMiddleware(Middleware):
         return result
 
     def _clear_label_service_cache(
-        self, uris: list[str], arguments: dict[str, Any]  # noqa: ARG002
+        self,
+        uris: list[str],
+        arguments: dict[str, Any],  # noqa: ARG002
     ) -> None:
         """Clear LabelService cache for any label resource URIs in the list.
 

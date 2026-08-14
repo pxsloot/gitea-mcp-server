@@ -51,7 +51,8 @@ class TestWorldBootstrapOnce:
         # Admin server should always be available
         admin = await world.admin_server()
         result = await admin.call_tool(
-            "gitea_user_get_current", {"format": "json"},
+            "gitea_user_get_current",
+            {"format": "json"},
         )
         assert not getattr(result, "isError", False), (
             "Admin server unreachable at session end — "

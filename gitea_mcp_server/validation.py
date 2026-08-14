@@ -204,9 +204,7 @@ def validate_pagination(
             _raise_validation_error("page must be >= 1", "page")
     if page_size is not None:
         if not isinstance(page_size, int):
-            _raise_validation_error(
-                f"{page_size_name} must be an integer", page_size_name
-            )
+            _raise_validation_error(f"{page_size_name} must be an integer", page_size_name)
         if page_size < 1:
             _raise_validation_error(f"{page_size_name} must be >= 1", page_size_name)
         if page_size > page_size_max:
@@ -490,7 +488,7 @@ def _resolve_local_refs(
     # Top-level $ref (no anyOf/oneOf wrapper)
     top_ref = schema.get("$ref")
     if isinstance(top_ref, str) and top_ref.startswith("#/$defs/"):
-        type_name = top_ref[len("#/$defs/"):]
+        type_name = top_ref[len("#/$defs/") :]
         resolved_def = defs.get(type_name)
         if isinstance(resolved_def, dict):
             return dict(resolved_def)
@@ -511,7 +509,7 @@ def _resolve_local_refs(
 
             ref = branch.get("$ref")
             if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                type_name = ref[len("#/$defs/"):]
+                type_name = ref[len("#/$defs/") :]
                 resolved = defs.get(type_name)
                 if isinstance(resolved, dict):
                     resolved_branches.append(dict(resolved))
@@ -562,7 +560,7 @@ def _inject_enum_into_defs(
                 continue
             ref = branch.get("$ref")
             if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                type_name = ref[len("#/$defs/"):]
+                type_name = ref[len("#/$defs/") :]
                 if defs and type_name in defs and "enum" not in defs[type_name]:
                     defs[type_name]["enum"] = list(source_enum)
 

@@ -345,7 +345,7 @@ class TestConfigEdgeCases:
             patch.object(Config, "__init__", side_effect=ConfigError("init failed")),
             pytest.raises(ConfigError, match="init failed"),
         ):
-                    Config.get()
+            Config.get()
 
     def test_empty_token_after_strip_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Token that is only whitespace raises ConfigError."""

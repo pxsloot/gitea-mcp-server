@@ -27,7 +27,9 @@ class TestCreateTestServer:
     """Smoke tests for the ``create_test_server`` factory function."""
 
     @pytest.mark.asyncio
-    async def test_create_minimal_server(self, simple_config: SimpleConfig, base_spec: dict) -> None:
+    async def test_create_minimal_server(
+        self, simple_config: SimpleConfig, base_spec: dict
+    ) -> None:
         """Creating a server with an empty spec should succeed."""
         async with respx.mock() as mock:
             mock.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
@@ -36,7 +38,9 @@ class TestCreateTestServer:
             assert server.name == "Gitea MCP Server"
 
     @pytest.mark.asyncio
-    async def test_server_has_synthetic_tools_when_lazy_loading_disabled(self, simple_config: SimpleConfig, base_spec: dict) -> None:
+    async def test_server_has_synthetic_tools_when_lazy_loading_disabled(
+        self, simple_config: SimpleConfig, base_spec: dict
+    ) -> None:
         """Without lazy loading, the default tool set should include synthetic and resource tools."""
         async with respx.mock() as mock:
             mock.get(f"{simple_config.url}/swagger.v1.json").respond(200, json=base_spec)
@@ -83,18 +87,14 @@ class TestSearchMcpServerFixture:
     async def test_lazy_loading_active(self, search_mcp_server: FastMCP) -> None:
         """With lazy loading enabled, visible tool count should be small."""
         tools = await search_mcp_server.list_tools()
-        assert len(tools) <= 12, (
-            f"Expected ≤12 tools with lazy loading, got {len(tools)}"
-        )
+        assert len(tools) <= 12, f"Expected ≤12 tools with lazy loading, got {len(tools)}"
 
     @pytest.mark.asyncio
     async def test_search_tool_present(self, search_mcp_server: FastMCP) -> None:
         """With lazy loading, the ``search_tools`` synthetic tool should be visible."""
         tools = await search_mcp_server.list_tools()
         tool_names = [t.name for t in tools]
-        assert "gitea_search_tools" in tool_names, (
-            f"Expected gitea_search_tools in {tool_names}"
-        )
+        assert "gitea_search_tools" in tool_names, f"Expected gitea_search_tools in {tool_names}"
 
 
 class TestLazyConfigFixture:

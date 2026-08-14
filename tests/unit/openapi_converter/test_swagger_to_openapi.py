@@ -162,7 +162,10 @@ class TestConvertSwaggerToOpenAPI:
                         "responses": {
                             "200": {
                                 "description": "OK",
-                                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}},
+                                },
                             },
                         },
                     }
@@ -207,7 +210,10 @@ class TestConvertSwaggerToOpenAPI:
                                 "description": "OK",
                                 "schema": {
                                     "type": "array",
-                                    "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "integer"}},
+                                    },
                                 },
                             }
                         }
@@ -216,7 +222,9 @@ class TestConvertSwaggerToOpenAPI:
             },
         }
         result = convert_swagger_to_openapi_v3(spec)
-        schema = result["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = result["paths"]["/items"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "array"
@@ -235,7 +243,10 @@ class TestConvertSwaggerToOpenAPI:
                                 "description": "OK",
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"id": {"type": "integer"}, "name": {"type": "string"}},
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "name": {"type": "string"},
+                                    },
                                 },
                             }
                         }
@@ -244,7 +255,9 @@ class TestConvertSwaggerToOpenAPI:
             },
         }
         result = convert_swagger_to_openapi_v3(spec)
-        schema = result["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = result["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "object"
@@ -268,8 +281,20 @@ class TestConvertSwaggerToOpenAPI:
                         "parameters": [
                             {"type": "string", "name": "owner", "in": "path", "required": True},
                             {"type": "string", "name": "repo", "in": "path", "required": True},
-                            {"type": "integer", "format": "int64", "name": "index", "in": "path", "required": True},
-                            {"enum": ["diff", "patch"], "type": "string", "name": "diffType", "in": "path", "required": True},
+                            {
+                                "type": "integer",
+                                "format": "int64",
+                                "name": "index",
+                                "in": "path",
+                                "required": True,
+                            },
+                            {
+                                "enum": ["diff", "patch"],
+                                "type": "string",
+                                "name": "diffType",
+                                "in": "path",
+                                "required": True,
+                            },
                         ],
                         "responses": {
                             "200": {
@@ -318,7 +343,10 @@ class TestConvertSwaggerToOpenAPI:
                         "responses": {
                             "200": {
                                 "description": "OK",
-                                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}},
+                                },
                             },
                         },
                     }
@@ -363,7 +391,13 @@ class TestEnrichResponseSchemas:
                             "200": {
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {"id": {"type": "integer"}},
+                                            },
+                                        }
                                     }
                                 }
                             }
@@ -373,7 +407,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "array"
@@ -388,7 +424,10 @@ class TestEnrichResponseSchemas:
                             "200": {
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        }
                                     }
                                 }
                             }
@@ -398,7 +437,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
@@ -423,7 +464,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert "$ref" in schema
 
     def test_wraps_ref_schema(self) -> None:
@@ -454,7 +497,9 @@ class TestEnrichResponseSchemas:
             },
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
@@ -505,7 +550,9 @@ class TestEnrichResponseSchemas:
         path_response = spec["paths"]["/version"]["get"]["responses"]["200"]
         assert "$ref" in path_response
         # Component-level schema is wrapped.
-        schema = spec["components"]["responses"]["ServerVersion"]["content"]["application/json"]["schema"]
+        schema = spec["components"]["responses"]["ServerVersion"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "version" in schema["properties"]["result"]["properties"]
@@ -517,20 +564,16 @@ class TestEnrichResponseSchemas:
                 "/health": {
                     "get": {
                         "responses": {
-                            "200": {
-                                "content": {
-                                    "application/json": {
-                                        "schema": {"type": "string"}
-                                    }
-                                }
-                            }
+                            "200": {"content": {"application/json": {"schema": {"type": "string"}}}}
                         }
                     }
                 }
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert schema["properties"]["result"]["type"] == "string"
@@ -543,7 +586,13 @@ class TestEnrichResponseSchemas:
                     "ItemList": {
                         "content": {
                             "application/json": {
-                                "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "integer"}},
+                                    },
+                                }
                             }
                         }
                     }
@@ -551,7 +600,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["components"]["responses"]["ItemList"]["content"]["application/json"]["schema"]
+        schema = spec["components"]["responses"]["ItemList"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
 
@@ -562,9 +613,7 @@ class TestEnrichResponseSchemas:
                 "responses": {
                     "ItemDetail": {
                         "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/Item"}
-                            }
+                            "application/json": {"schema": {"$ref": "#/components/schemas/Item"}}
                         }
                     }
                 },
@@ -577,7 +626,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["components"]["responses"]["ItemDetail"]["content"]["application/json"]["schema"]
+        schema = spec["components"]["responses"]["ItemDetail"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
@@ -586,13 +637,7 @@ class TestEnrichResponseSchemas:
         """204 No Content responses should be skipped (no content to wrap)."""
         spec: OpenAPISpec = {
             "paths": {
-                "/item/{id}": {
-                    "delete": {
-                        "responses": {
-                            "204": {"description": "No Content"}
-                        }
-                    }
-                }
+                "/item/{id}": {"delete": {"responses": {"204": {"description": "No Content"}}}}
             }
         }
         _wrap_success_response_schemas(spec)
@@ -614,7 +659,13 @@ class TestEnrichResponseSchemas:
                             "201": {
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {"id": {"type": "integer"}},
+                                            },
+                                        }
                                     }
                                 }
                             }
@@ -624,7 +675,9 @@ class TestEnrichResponseSchemas:
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
+        schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"][
+            "schema"
+        ]
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
 
@@ -649,20 +702,27 @@ class TestEnrichResponseSchemas:
                             "201": {
                                 "content": {
                                     "application/json": {
-                                        "schema": {"type": "object", "properties": {"id": {"type": "integer"}}}
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "integer"}},
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
         }
         _wrap_success_response_schemas(spec)
-        get_schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        get_schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
         assert get_schema["type"] == "object"
         assert "result" in get_schema["properties"]
-        post_schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
+        post_schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"][
+            "application/json"
+        ]["schema"]
         assert post_schema["type"] == "object"
         assert "result" in post_schema["properties"]
         assert "id" in post_schema["properties"]["result"]["properties"]
@@ -674,20 +734,16 @@ class TestEnrichResponseSchemas:
                 "/diff": {
                     "get": {
                         "responses": {
-                            "200": {
-                                "content": {
-                                    "text/plain": {
-                                        "schema": {"type": "string"}
-                                    }
-                                }
-                            }
+                            "200": {"content": {"text/plain": {"schema": {"type": "string"}}}}
                         }
                     }
                 }
             }
         }
         _wrap_success_response_schemas(spec)
-        schema = spec["paths"]["/diff"]["get"]["responses"]["200"]["content"]["text/plain"]["schema"]
+        schema = spec["paths"]["/diff"]["get"]["responses"]["200"]["content"]["text/plain"][
+            "schema"
+        ]
         # text/plain schemas should remain unwrapped
         assert schema["type"] == "string"
         assert "properties" not in schema
@@ -828,7 +884,10 @@ class TestSecuritySchemeConverter:
             }
         }
         result = self._converter().convert(sec_defs)
-        assert result["token"]["description"] == "API tokens must be prepended with 'token' followed by a space."
+        assert (
+            result["token"]["description"]
+            == "API tokens must be prepended with 'token' followed by a space."
+        )
 
     def test_description_preserved_for_basic_auth(self) -> None:
         """Description should be preserved for basic auth type."""
@@ -958,10 +1017,9 @@ class TestDeleteRequestBody:
         rb = op["requestBody"]
         schema = rb["content"]["application/json"]["schema"]
         # $ref should be converted to components/schemas/IssueMeta
-        assert (
-            "$ref" in schema
-            or "properties" in schema
-        ), f"Body schema missing expected content: {schema}"
+        assert "$ref" in schema or "properties" in schema, (
+            f"Body schema missing expected content: {schema}"
+        )
 
     def test_delete_without_body_param_has_no_request_body(self) -> None:
         """DELETE without body params must not produce a spurious requestBody."""

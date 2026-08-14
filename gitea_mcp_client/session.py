@@ -44,14 +44,17 @@ class Session:
         self._transport.send(msg)
 
     def initialize(self) -> dict[str, Any]:
-        result = self._request("initialize", {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "gitea-mcp-client",
-                "version": "0.1.0",
+        result = self._request(
+            "initialize",
+            {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "gitea-mcp-client",
+                    "version": "0.1.0",
+                },
             },
-        })
+        )
         self._notify("notifications/initialized")
         return result
 

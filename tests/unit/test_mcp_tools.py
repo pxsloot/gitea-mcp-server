@@ -28,9 +28,10 @@ class TestCleanResourceUri:
 
     def test_strips_query_param_suffix(self) -> None:
         """Should strip {?param} suffix from URI."""
-        assert clean_resource_uri(
-            "gitea://repos/{owner}/{repo}/issues{?state}"
-        ) == "gitea://repos/{owner}/{repo}/issues"
+        assert (
+            clean_resource_uri("gitea://repos/{owner}/{repo}/issues{?state}")
+            == "gitea://repos/{owner}/{repo}/issues"
+        )
 
     def test_preserves_uri_without_query_params(self) -> None:
         """Should return URI unchanged if no query params suffix."""
@@ -44,15 +45,14 @@ class TestCleanResourceUri:
 
     def test_strips_multiple_query_params(self) -> None:
         """Should strip multi-param {?a,b} suffix."""
-        assert clean_resource_uri(
-            "search://{query}{?page,limit}"
-        ) == "search://{query}"
+        assert clean_resource_uri("search://{query}{?page,limit}") == "search://{query}"
 
     def test_preserves_wildcard_path_params(self) -> None:
         """Should preserve {path*} and other non-query params."""
-        assert clean_resource_uri(
-            "gitea://repos/{owner}/{repo}/files/{path*}"
-        ) == "gitea://repos/{owner}/{repo}/files/{path*}"
+        assert (
+            clean_resource_uri("gitea://repos/{owner}/{repo}/files/{path*}")
+            == "gitea://repos/{owner}/{repo}/files/{path*}"
+        )
 
 
 class TestMcpListResourcesImpl:
@@ -513,7 +513,9 @@ class TestMcpReadResourceTool:
             def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
+
             return deco
+
         mcp.tool = tool_decorator
         register_mcp_resource_tools(mcp)
         fn = captured["read_resource"]
@@ -820,9 +822,7 @@ class TestMakeResourceFormatter:
         """Formatter registered with need_extra=True receives extra dict."""
         from gitea_mcp_server.tools.resource_display import _make_resource_formatter
 
-        fn = _make_resource_formatter(
-            "labels", "full", {"owner": "myorg", "repo": "myrepo"}
-        )
+        fn = _make_resource_formatter("labels", "full", {"owner": "myorg", "repo": "myrepo"})
         assert callable(fn)
         result = fn([{"id": 1, "name": "bug"}])
         assert "myorg/myrepo" in result
@@ -837,7 +837,9 @@ class TestFormatResourceContentEdgeCases:
 
         # Non-JSON input -> not parsed as dict/list -> passes through
         result = format_resource_content(
-            "plain text", "markdown", detail="concise",
+            "plain text",
+            "markdown",
+            detail="concise",
             schema={"type": "object"},
         )
         assert result == "plain text"
@@ -847,7 +849,9 @@ class TestFormatResourceContentEdgeCases:
         from gitea_mcp_server.tools.resource_display import format_resource_content
 
         result = format_resource_content(
-            "42", "json", detail="concise",
+            "42",
+            "json",
+            detail="concise",
             schema={"type": "integer"},
         )
         parsed = json_module.loads(result)
@@ -883,7 +887,9 @@ class TestMcpListResourcesFormat:
             def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
+
             return deco
+
         mcp.tool = tool_decorator
         register_mcp_resource_tools(mcp)
         fn = captured[name]
@@ -955,7 +961,9 @@ class TestMcpListResourcesTagTypeFilter:
             def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
+
             return deco
+
         mcp.tool = tool_decorator
         register_mcp_resource_tools(mcp)
         fn = captured[name]
@@ -1128,7 +1136,9 @@ class TestExtractResourceContent:
             def __str__(self) -> str:
                 return "custom content"
 
-        result = extract_resource_content([type("Obj", (), {"content": CustomContent()})()], "gitea://test")
+        result = extract_resource_content(
+            [type("Obj", (), {"content": CustomContent()})()], "gitea://test"
+        )
         assert result == "custom content"
 
     @pytest.mark.asyncio
@@ -1157,12 +1167,14 @@ class TestToolSchemaResource:
             def deco(fn: Callable) -> Callable:
                 captured[fn.__name__] = fn
                 return fn
+
             return deco
 
         def resource_decorator(**kwargs: Any) -> Callable:
             def deco(fn: Callable) -> Callable:
                 resource_registry[fn.__name__] = fn
                 return fn
+
             return deco
 
         mcp.tool = tool_decorator
@@ -1195,6 +1207,7 @@ class TestToolSchemaResource:
         ctx.fastmcp.get_tool = AsyncMock(return_value=tool)
 
         import json
+
         result = await fn(name="gitea_issue_list", ctx=ctx)
         data = json.loads(result)
         assert data["name"] == "gitea_issue_list"
@@ -1235,6 +1248,7 @@ class TestToolSchemaResource:
         ctx.fastmcp.get_tool = AsyncMock(return_value=tool)
 
         import json
+
         result = await fn(name="text_tool", ctx=ctx)
         data = json.loads(result)
         assert data["name"] == "text_tool"
@@ -1255,7 +1269,9 @@ class TestMcpListResourcesRawFormat:
             def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
+
             return deco
+
         mcp.tool = tool_decorator
         register_mcp_resource_tools(mcp)
         return captured["list_resources"]
@@ -1294,7 +1310,9 @@ class TestMcpListResourcesFetchAll:
             def deco(fn: Callable) -> Callable:
                 captured[kwargs.get("name", fn.__name__)] = fn
                 return fn
+
             return deco
+
         mcp.tool = tool_decorator
         register_mcp_resource_tools(mcp)
         return captured["list_resources"]
@@ -1369,6 +1387,7 @@ class TestMaybeDecodeBase64:
     async def test_decodes_base64_content(self) -> None:
         """A valid base64-encoded ContentsResponse is decoded to plain text."""
         import base64
+
         plaintext = "file content here\nline two"
         encoded = base64.b64encode(plaintext.encode()).decode()
         raw = json_module.dumps({"content": encoded, "encoding": "base64"})
@@ -1393,6 +1412,7 @@ class TestMaybeDecodeBase64:
     async def test_decodes_with_other_fields(self) -> None:
         """A ContentsResponse with extra metadata fields still decodes."""
         import base64
+
         plaintext = "content with metadata"
         encoded = base64.b64encode(plaintext.encode()).decode()
         raw = json_module.dumps(

@@ -57,7 +57,9 @@ class TestFormatLabelsMarkdownGuard:
         """Non-dict items in full detail mode produce output, not AttributeError."""
         data = ["bug", "feature"]
         result = _format_labels_markdown(
-            data, detail="full", extra={"owner": "test", "repo": "test"},
+            data,
+            detail="full",
+            extra={"owner": "test", "repo": "test"},
         )
         assert result.strip() != ""
         assert "Labels for test/test" in result
@@ -68,7 +70,9 @@ class TestFormatLabelsMarkdownGuard:
         """Non-dict items in concise mode is already safe."""
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
-            data, detail="concise", extra={"owner": "o", "repo": "r"},
+            data,
+            detail="concise",
+            extra={"owner": "o", "repo": "r"},
         )
         assert "Labels for o/r" in result
         assert "$ref:Label[2]" in result
@@ -164,6 +168,7 @@ class TestApplyFormatRaiseOnNonSerializable:
 
     def test_json_output_non_serializable_raises(self) -> None:
         """Non-serializable data in JSON mode raises TypeError."""
+
         class Unserializable:
             pass
 
@@ -198,12 +203,14 @@ class TestFormatPullsMarkdownGuard:
     def test_empty_list(self) -> None:
         """Empty list produces output, not crash."""
         from gitea_mcp_server.tools.display import _format_pulls_markdown
+
         result = _format_pulls_markdown([])
         assert "Pull Requests" in result
 
     def test_non_dict_items_safe(self) -> None:
         """Non-dict items render through generic fallback, no crash."""
         from gitea_mcp_server.tools.display import _format_pulls_markdown
+
         result = _format_pulls_markdown(["just", "strings"])
         assert result.strip() != ""
 
@@ -214,12 +221,14 @@ class TestFormatReleaseMarkdownGuard:
     def test_empty_list(self) -> None:
         """Empty list produces output, not crash."""
         from gitea_mcp_server.tools.display import _format_release_markdown
+
         result = _format_release_markdown([])
         assert "Releases" in result
 
     def test_non_dict_items_safe(self) -> None:
         """Non-dict items render through generic fallback, no crash."""
         from gitea_mcp_server.tools.display import _format_release_markdown
+
         result = _format_release_markdown(["tag1", "tag2"])
         assert result.strip() != ""
 

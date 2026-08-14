@@ -41,6 +41,7 @@ _CONTENT = "Hello from content_type=text param\nLine two.\n"
 # Shared repo bootstrap — reuse across test classes
 # ---------------------------------------------------------------------------
 
+
 async def _ensure_repo_with_text_file(world: World) -> None:
     """Create repo via the World graph.  Returns ``None``.
 
@@ -50,8 +51,12 @@ async def _ensure_repo_with_text_file(world: World) -> None:
     workflow = Workflow(world)
     # This creates user, repo, and caches — subsequent calls reuse.
     await workflow.ensure_repo(
-        DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE,
-        auto_init=True, description="content_type test repo",
+        DEV.username,
+        _REPO,
+        user=DEV,
+        scopes=SCOPE_WRITE,
+        auto_init=True,
+        description="content_type test repo",
     )
 
 
@@ -74,15 +79,18 @@ class TestContentTypeText:
         await _ensure_repo_with_text_file(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
 
-        result = await mcp.call_tool("gitea_repo_create_file", {
-            "owner": DEV.username,
-            "repo": _REPO,
-            "filepath": _FILE,
-            "content": _CONTENT,
-            "content_type": "text",
-            "message": "test content_type=text param",
-            "format": "json",
-        })
+        result = await mcp.call_tool(
+            "gitea_repo_create_file",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE,
+                "content": _CONTENT,
+                "content_type": "text",
+                "message": "test content_type=text param",
+                "format": "json",
+            },
+        )
         data = assert_result_ok(result)
         assert_keys(data, "commit", "content")
         assert_content(data["content"], name=_FILE)
@@ -97,16 +105,20 @@ class TestContentTypeText:
         await _ensure_repo_with_text_file(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         import base64
+
         encoded = base64.b64encode(b"backward-compat test\n").decode()
 
-        result = await mcp.call_tool("gitea_repo_create_file", {
-            "owner": DEV.username,
-            "repo": _REPO,
-            "filepath": _FILE_COMPAT,
-            "content": encoded,
-            "message": "test default base64",
-            "format": "json",
-        })
+        result = await mcp.call_tool(
+            "gitea_repo_create_file",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE_COMPAT,
+                "content": encoded,
+                "message": "test default base64",
+                "format": "json",
+            },
+        )
         data = assert_result_ok(result)
         assert_content(data["content"], name=_FILE_COMPAT)
 
@@ -132,34 +144,37 @@ class TestBase64Decode:
         await _ensure_repo_with_text_file(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         # Ensure the test file exists
-        result = await mcp.call_tool("gitea_repo_create_file", {
-            "owner": DEV.username, "repo": _REPO,
-            "filepath": _FILE_DECODE, "content": _CONTENT,
-            "content_type": "text",
-            "message": "file for decode test",
-            "format": "json",
-        })
+        result = await mcp.call_tool(
+            "gitea_repo_create_file",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE_DECODE,
+                "content": _CONTENT,
+                "content_type": "text",
+                "message": "file for decode test",
+                "format": "json",
+            },
+        )
         assert_result_ok(result)
 
-        result = await mcp.call_tool("gitea_repo_get_contents", {
-            "owner": DEV.username,
-            "repo": _REPO,
-            "filepath": _FILE_DECODE,
-            "format": "json",
-        })
-        assert not result.isError, (
-            f"Tool call failed: {result.content}"
+        result = await mcp.call_tool(
+            "gitea_repo_get_contents",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE_DECODE,
+                "format": "json",
+            },
         )
+        assert not result.isError, f"Tool call failed: {result.content}"
         # After base64 decode: plain text in structuredContent.result
         data = result.structuredContent.get("result") if result.structuredContent else None
         assert isinstance(data, str), (
-            f"Expected decoded plain text (str), "
-            f"got {type(data).__name__}: {data!r}"
+            f"Expected decoded plain text (str), got {type(data).__name__}: {data!r}"
         )
         assert data == _CONTENT, (
-            f"Decoded content mismatch.\n"
-            f"Expected: {_CONTENT!r}\n"
-            f"Got:      {data!r}"
+            f"Decoded content mismatch.\nExpected: {_CONTENT!r}\nGot:      {data!r}"
         )
 
     @pytest.mark.live
@@ -173,21 +188,29 @@ class TestBase64Decode:
         await _ensure_repo_with_text_file(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         # Ensure the test file exists
-        result = await mcp.call_tool("gitea_repo_create_file", {
-            "owner": DEV.username, "repo": _REPO,
-            "filepath": _FILE_DECODE_RAW, "content": _CONTENT,
-            "content_type": "text",
-            "message": "file for raw test",
-            "format": "json",
-        })
+        result = await mcp.call_tool(
+            "gitea_repo_create_file",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE_DECODE_RAW,
+                "content": _CONTENT,
+                "content_type": "text",
+                "message": "file for raw test",
+                "format": "json",
+            },
+        )
         assert_result_ok(result)
 
-        result = await mcp.call_tool("gitea_repo_get_contents", {
-            "owner": DEV.username,
-            "repo": _REPO,
-            "filepath": _FILE_DECODE_RAW,
-            "format": "raw",
-        })
+        result = await mcp.call_tool(
+            "gitea_repo_get_contents",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "filepath": _FILE_DECODE_RAW,
+                "format": "raw",
+            },
+        )
         # Raw format returns decoded text directly
         assert not result.isError, f"Tool call failed: {result.content}"
         data = result.structuredContent.get("result") if result.structuredContent else None
@@ -217,13 +240,14 @@ class TestBinaryArchive:
         await _ensure_repo_with_text_file(world)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
 
-        result = await mcp.call_tool("gitea_repo_get_archive", {
-            "owner": DEV.username,
-            "repo": _REPO,
-            "archive": "main.zip",
-            "format": "raw",
-        })
-        # raw format should not crash — it bypasses formatting
-        assert not result.isError, (
-            f"Raw archive fetch failed: {result.content}"
+        result = await mcp.call_tool(
+            "gitea_repo_get_archive",
+            {
+                "owner": DEV.username,
+                "repo": _REPO,
+                "archive": "main.zip",
+                "format": "raw",
+            },
         )
+        # raw format should not crash — it bypasses formatting
+        assert not result.isError, f"Raw archive fetch failed: {result.content}"

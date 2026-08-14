@@ -14,9 +14,15 @@ class TestCleanResourceUri:
             # Single param
             ("gitea://repos/{owner}/{repo}/pulls{?state}", "gitea://repos/{owner}/{repo}/pulls"),
             # Multiple params
-            ("gitea://repos/{owner}/{repo}/issues{?state,type}", "gitea://repos/{owner}/{repo}/issues"),
+            (
+                "gitea://repos/{owner}/{repo}/issues{?state,type}",
+                "gitea://repos/{owner}/{repo}/issues",
+            ),
             # Mixed with draft
-            ("gitea://repos/{owner}/{repo}/releases{?draft,q}", "gitea://repos/{owner}/{repo}/releases"),
+            (
+                "gitea://repos/{owner}/{repo}/releases{?draft,q}",
+                "gitea://repos/{owner}/{repo}/releases",
+            ),
             # No query suffix — pass through unchanged
             ("gitea://repos/{owner}/{repo}", "gitea://repos/{owner}/{repo}"),
             ("gitea://repos/{owner}/{repo}/labels", "gitea://repos/{owner}/{repo}/labels"),

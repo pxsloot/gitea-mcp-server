@@ -116,12 +116,14 @@ def _has_result_wrapper(schema: dict[str, Any]) -> bool:
 _SCHEMA_TYPES = st.sampled_from(["string", "integer", "number", "boolean"])
 
 # Non-JSON content-type combinations for wrapping tests
-_NON_JSON_TYPES = st.sampled_from([
-    ["text/plain"],
-    ["text/html"],
-    ["application/octet-stream"],
-    ["text/plain", "application/json"],  # multiple — non-JSON priority
-])
+_NON_JSON_TYPES = st.sampled_from(
+    [
+        ["text/plain"],
+        ["text/html"],
+        ["application/octet-stream"],
+        ["text/plain", "application/json"],  # multiple — non-JSON priority
+    ]
+)
 
 # Build a simple leaf schema (no nesting).
 _leaf_schema = st.builds(
@@ -158,9 +160,15 @@ def swagger_schema(draw: st.DrawFn, max_depth: int = 3) -> dict[str, Any]:
     n_props = draw(st.integers(min_value=0, max_value=3))
     properties: dict[str, Any] = {}
     for _ in range(n_props):
-        name = draw(st.text(min_size=1, max_size=6, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd"],
-        )))
+        name = draw(
+            st.text(
+                min_size=1,
+                max_size=6,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd"],
+                ),
+            )
+        )
         properties[name] = draw(swagger_schema(max_depth=depth - 1))
     return {"type": "object", "properties": properties} if properties else {"type": "object"}
 
@@ -172,9 +180,15 @@ def swagger_schema_with_x(draw: st.DrawFn) -> dict[str, Any]:
     # Sprinkle x-* keys into the result — one or two at various levels.
     n_x = draw(st.integers(min_value=0, max_value=2))
     for _ in range(n_x):
-        name = draw(st.text(min_size=3, max_size=12, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd", "Pd"],
-        )))
+        name = draw(
+            st.text(
+                min_size=3,
+                max_size=12,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd", "Pd"],
+                ),
+            )
+        )
         schema[f"x-{name}"] = draw(st.text(max_size=10))
     return schema
 
@@ -208,20 +222,32 @@ def swagger_schema_with_nested_refs(
     if kind == "array":
         return {
             "type": "array",
-            "items": draw(swagger_schema_with_nested_refs(
-                definition_names, max_depth=depth - 1,
-            )),
+            "items": draw(
+                swagger_schema_with_nested_refs(
+                    definition_names,
+                    max_depth=depth - 1,
+                )
+            ),
         }
     # kind == "object"
     n_props = draw(st.integers(min_value=0, max_value=3))
     properties: dict[str, Any] = {}
     for _ in range(n_props):
-        name = draw(st.text(min_size=1, max_size=6, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd"],
-        )))
-        properties[name] = draw(swagger_schema_with_nested_refs(
-            definition_names, max_depth=depth - 1,
-        ))
+        name = draw(
+            st.text(
+                min_size=1,
+                max_size=6,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd"],
+                ),
+            )
+        )
+        properties[name] = draw(
+            swagger_schema_with_nested_refs(
+                definition_names,
+                max_depth=depth - 1,
+            )
+        )
     return {"type": "object", "properties": properties} if properties else {"type": "object"}
 
 
@@ -260,9 +286,20 @@ def _make_spec(
 class TestNoUnresolvedRefs:
     """Every ``$ref`` in the converted spec must point to an existing target."""
 
-    @given(st.lists(st.text(min_size=1, max_size=10, alphabet=st.characters(
-        whitelist_categories=["Ll", "Lu", "Nd"],
-    )), min_size=0, max_size=5, unique=True))
+    @given(
+        st.lists(
+            st.text(
+                min_size=1,
+                max_size=10,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd"],
+                ),
+            ),
+            min_size=0,
+            max_size=5,
+            unique=True,
+        )
+    )
     def test_refs_point_to_existing_definitions(self, def_names: list[str]) -> None:
         """When definitions exist, all $ref values must resolve."""
         assume(len(def_names) >= 1)
@@ -302,13 +339,24 @@ class TestNoUnresolvedRefs:
                 pytest.fail(f"Unresolved $ref: {ref}")
 
     @given(
-        def_names=st.lists(st.text(min_size=1, max_size=10, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd"],
-        )), min_size=1, max_size=5, unique=True),
+        def_names=st.lists(
+            st.text(
+                min_size=1,
+                max_size=10,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd"],
+                ),
+            ),
+            min_size=1,
+            max_size=5,
+            unique=True,
+        ),
         data=st.data(),
     )
     def test_nested_refs_resolve_across_schema_tree(
-        self, def_names: list[str], data: st.DataObject,
+        self,
+        def_names: list[str],
+        data: st.DataObject,
     ) -> None:
         """``$ref`` inside object properties and array items must resolve.
 
@@ -318,16 +366,24 @@ class TestNoUnresolvedRefs:
         ``convert_schema`` on nested structures.
         """
         definitions: dict[str, Any] = {n: {"type": "object"} for n in def_names}
-        schema = data.draw(swagger_schema_with_nested_refs(
-            def_names, max_depth=2,
-        ))
+        schema = data.draw(
+            swagger_schema_with_nested_refs(
+                def_names,
+                max_depth=2,
+            )
+        )
 
-        spec = _make_spec(paths={
-            "/r": {"get": {
-                "operationId": "getR",
-                "responses": {"200": {"description": "OK", "schema": schema}},
-            }},
-        }, definitions=definitions)
+        spec = _make_spec(
+            paths={
+                "/r": {
+                    "get": {
+                        "operationId": "getR",
+                        "responses": {"200": {"description": "OK", "schema": schema}},
+                    }
+                },
+            },
+            definitions=definitions,
+        )
         result = convert_swagger_to_openapi_v3(spec)
         refs = collect_refs(result)
 
@@ -338,10 +394,7 @@ class TestNoUnresolvedRefs:
                 for part in parts:
                     target = target[part]
             except (KeyError, TypeError):
-                pytest.fail(
-                    f"Nested $ref not resolved: {ref} "
-                    f"(defs={def_names}, schema={schema})"
-                )
+                pytest.fail(f"Nested $ref not resolved: {ref} (defs={def_names}, schema={schema})")
 
 
 # ===========================================================================
@@ -352,27 +405,35 @@ class TestNoUnresolvedRefs:
 class TestNoVendorExtensionsInSchemas:
     """Vendor extensions (``x-*``) must be stripped from schemas during conversion."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=3, max_size=15, alphabet=st.characters(
-            whitelist_categories=["Ll", "Lu", "Nd", "Pd"],
-        )).map(lambda k: f"x-{k}" if not k.startswith("x-") else k),
-        values=st.text(max_size=20),
-        min_size=1,
-        max_size=3,
-    ))
+    @given(
+        st.dictionaries(
+            keys=st.text(
+                min_size=3,
+                max_size=15,
+                alphabet=st.characters(
+                    whitelist_categories=["Ll", "Lu", "Nd", "Pd"],
+                ),
+            ).map(lambda k: f"x-{k}" if not k.startswith("x-") else k),
+            values=st.text(max_size=20),
+            min_size=1,
+            max_size=3,
+        )
+    )
     def test_x_keys_stripped_from_top_level_schema(self, x_fields: dict[str, str]) -> None:
         """``x-*`` keys placed on a response schema must be removed after conversion."""
         schema: dict[str, Any] = {"type": "object", "properties": {"id": {"type": "integer"}}}
         schema.update(x_fields)
 
-        spec = _make_spec(paths={
-            "/item": {
-                "get": {
-                    "operationId": "getItem",
-                    "responses": {"200": {"description": "OK", "schema": schema}},
+        spec = _make_spec(
+            paths={
+                "/item": {
+                    "get": {
+                        "operationId": "getItem",
+                        "responses": {"200": {"description": "OK", "schema": schema}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
 
         # Walk all schemas in the output — none should have x-* keys
@@ -380,8 +441,7 @@ class TestNoVendorExtensionsInSchemas:
         for s in all_schemas:
             x_keys = [k for k in s if isinstance(k, str) and k.startswith("x-")]
             assert not x_keys, (
-                f"Found x-* keys in output schema: {x_keys} "
-                f"(expected stripped by convert_schema)"
+                f"Found x-* keys in output schema: {x_keys} (expected stripped by convert_schema)"
             )
 
     def test_real_spec_x_go_fields_stripped(self) -> None:
@@ -401,13 +461,8 @@ class TestNoVendorExtensionsInSchemas:
 
         # Operation-level x-* (x-original-content-types, x-mcp) should survive
         allowed_prefixes = ("x-original-content-types", "x-mcp", "x-fastmcp-")
-        schema_x_keys = [
-            k for k in x_keys
-            if not any(k.startswith(p) for p in allowed_prefixes)
-        ]
-        assert not schema_x_keys, (
-            f"Found unexpected x-* keys in converted spec: {schema_x_keys}"
-        )
+        schema_x_keys = [k for k in x_keys if not any(k.startswith(p) for p in allowed_prefixes)]
+        assert not schema_x_keys, f"Found unexpected x-* keys in converted spec: {schema_x_keys}"
 
 
 # ===========================================================================
@@ -421,14 +476,16 @@ class TestJsonResponsesWrapped:
     @given(schema=swagger_schema(max_depth=2))
     def test_every_json_200_response_wrapped(self, schema: dict[str, Any]) -> None:
         """Every 200 response with application/json must have a result wrapper."""
-        spec = _make_spec(paths={
-            "/resource": {
-                "get": {
-                    "operationId": "getResource",
-                    "responses": {"200": {"description": "OK", "schema": schema}},
+        spec = _make_spec(
+            paths={
+                "/resource": {
+                    "get": {
+                        "operationId": "getResource",
+                        "responses": {"200": {"description": "OK", "schema": schema}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
 
         # Find the converted response schema
@@ -446,14 +503,16 @@ class TestJsonResponsesWrapped:
     @given(schema=swagger_schema(max_depth=2))
     def test_every_json_201_response_wrapped(self, schema: dict[str, Any]) -> None:
         """Every 201 response with application/json must have a result wrapper."""
-        spec = _make_spec(paths={
-            "/resource": {
-                "post": {
-                    "operationId": "createResource",
-                    "responses": {"201": {"description": "Created", "schema": schema}},
+        spec = _make_spec(
+            paths={
+                "/resource": {
+                    "post": {
+                        "operationId": "createResource",
+                        "responses": {"201": {"description": "Created", "schema": schema}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
 
         resp = result["paths"]["/resource"]["post"]["responses"]["201"]
@@ -479,17 +538,19 @@ class TestNonJsonResponsesNotWrapped:
     @given(produces=_NON_JSON_TYPES)
     def test_text_plain_response_not_wrapped(self, produces: list[str]) -> None:
         """A response with ``produces: ['text/plain']`` must NOT have a result wrapper."""
-        spec = _make_spec(paths={
-            "/download": {
-                "get": {
-                    "produces": produces,
-                    "operationId": "downloadFile",
-                    "responses": {
-                        "200": {"description": "OK", "schema": {"type": "string"}},
+        spec = _make_spec(
+            paths={
+                "/download": {
+                    "get": {
+                        "produces": produces,
+                        "operationId": "downloadFile",
+                        "responses": {
+                            "200": {"description": "OK", "schema": {"type": "string"}},
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
 
         resp = result["paths"]["/download"]["get"]["responses"]["200"]
@@ -500,8 +561,7 @@ class TestNonJsonResponsesNotWrapped:
         for ct in non_json_cts:
             ct_schema = content[ct]["schema"]
             assert not _has_result_wrapper(ct_schema), (
-                f"Non-JSON content type '{ct}' has result wrapper. "
-                f"Produces: {produces}"
+                f"Non-JSON content type '{ct}' has result wrapper. Produces: {produces}"
             )
 
         # If there is an application/json entry too, it SHOULD be wrapped
@@ -514,19 +574,24 @@ class TestNonJsonResponsesNotWrapped:
 
     def test_no_produces_defaults_to_json_and_is_wrapped(self) -> None:
         """Endpoints without ``produces`` default to JSON and are wrapped."""
-        spec = _make_spec(paths={
-            "/item": {
-                "get": {
-                    "operationId": "getItem",
-                    "responses": {
-                        "200": {
-                            "description": "OK",
-                            "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+        spec = _make_spec(
+            paths={
+                "/item": {
+                    "get": {
+                        "operationId": "getItem",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}},
+                                },
+                            },
                         },
                     },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
 
         resp = result["paths"]["/item"]["get"]["responses"]["200"]
@@ -536,9 +601,7 @@ class TestNonJsonResponsesNotWrapped:
             f"Got content types: {list(content.keys())}"
         )
         json_schema = content["application/json"]["schema"]
-        assert _has_result_wrapper(json_schema), (
-            "Default JSON response missing result wrapper."
-        )
+        assert _has_result_wrapper(json_schema), "Default JSON response missing result wrapper."
 
 
 # ===========================================================================
@@ -553,11 +616,15 @@ class TestRoundTripCompleteness:
         path_count=st.integers(min_value=0, max_value=5),
         methods_per_path=st.lists(
             st.sampled_from(["get", "post", "put", "patch", "delete"]),
-            min_size=0, max_size=4, unique=True,
+            min_size=0,
+            max_size=4,
+            unique=True,
         ),
     )
     def test_all_input_paths_preserved(
-        self, path_count: int, methods_per_path: list[str],
+        self,
+        path_count: int,
+        methods_per_path: list[str],
     ) -> None:
         """All input paths must exist in the output."""
         paths: dict[str, Any] = {}
@@ -582,8 +649,14 @@ class TestRoundTripCompleteness:
                 f"Output paths: {list(result_paths.keys())}"
             )
             # At least one operation from this path must survive
-            input_ops = [m for m in input_ops_dict if m in ("get", "post", "put", "patch", "delete")]
-            output_ops = [m for m in result_paths[input_path] if m in ("get", "post", "put", "patch", "delete")]
+            input_ops = [
+                m for m in input_ops_dict if m in ("get", "post", "put", "patch", "delete")
+            ]
+            output_ops = [
+                m
+                for m in result_paths[input_path]
+                if m in ("get", "post", "put", "patch", "delete")
+            ]
             assert len(output_ops) == len(input_ops), (
                 f"Path '{input_path}': expected {len(input_ops)} operation(s), "
                 f"got {len(output_ops)}. Missing: {set(input_ops) - set(output_ops)}"
@@ -606,9 +679,15 @@ class TestRoundTripCompleteness:
 def _param_strategy(draw: st.DrawFn) -> dict[str, Any]:
     """Generate a single Swagger parameter dict."""
     param_in = draw(st.sampled_from(["path", "query", "header"]))
-    param_name = draw(st.text(min_size=1, max_size=8, alphabet=st.characters(
-        whitelist_categories=["Ll", "Lu", "Nd"],
-    )))
+    param_name = draw(
+        st.text(
+            min_size=1,
+            max_size=8,
+            alphabet=st.characters(
+                whitelist_categories=["Ll", "Lu", "Nd"],
+            ),
+        )
+    )
     param_type = draw(st.sampled_from(["string", "integer", "boolean"]))
     param = {
         "in": param_in,
@@ -627,18 +706,27 @@ def _param_strategy(draw: st.DrawFn) -> dict[str, Any]:
 class TestParameterConversionPreserved:
     """Path, query, and header parameters must survive with correct fields."""
 
-    @given(params=st.lists(_param_strategy(), min_size=1, max_size=5, unique_by=lambda p: (p.get("in"), p.get("name"))))
+    @given(
+        params=st.lists(
+            _param_strategy(),
+            min_size=1,
+            max_size=5,
+            unique_by=lambda p: (p.get("in"), p.get("name")),
+        )
+    )
     def test_parameters_preserve_in_and_name(self, params: list[dict[str, Any]]) -> None:
         """Each parameter must survive with the correct ``in`` and ``name`` fields."""
-        spec = _make_spec(paths={
-            "/resource/{param}": {
-                "get": {
-                    "operationId": "getResource",
-                    "parameters": params,
-                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+        spec = _make_spec(
+            paths={
+                "/resource/{param}": {
+                    "get": {
+                        "operationId": "getResource",
+                        "parameters": params,
+                        "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
         output_params = result["paths"]["/resource/{param}"]["get"].get("parameters", [])
 
@@ -664,40 +752,40 @@ class TestParameterConversionPreserved:
             {"in": "query", "name": "limit", "type": "integer"},
             {"in": "header", "name": "X-Custom", "type": "string"},
         ]
-        spec = _make_spec(paths={
-            "/repos/{owner}": {
-                "get": {
-                    "operationId": "getRepo",
-                    "parameters": params,
-                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+        spec = _make_spec(
+            paths={
+                "/repos/{owner}": {
+                    "get": {
+                        "operationId": "getRepo",
+                        "parameters": params,
+                        "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
         output_params = result["paths"]["/repos/{owner}"]["get"]["parameters"]
 
         for p in output_params:
-            assert "schema" in p, (
-                f"Parameter '{p.get('name')}' missing 'schema' field. "
-                f"Output: {p}"
-            )
+            assert "schema" in p, f"Parameter '{p.get('name')}' missing 'schema' field. Output: {p}"
             assert "type" in p["schema"], (
-                f"Parameter '{p.get('name')}' schema missing 'type'. "
-                f"Output schema: {p['schema']}"
+                f"Parameter '{p.get('name')}' schema missing 'type'. Output schema: {p['schema']}"
             )
 
     def test_path_required_flag_preserved(self) -> None:
         """Path parameters must have ``required: true`` after conversion."""
         params = [{"in": "path", "name": "id", "type": "integer", "required": True}]
-        spec = _make_spec(paths={
-            "/items/{id}": {
-                "get": {
-                    "operationId": "getItem",
-                    "parameters": params,
-                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+        spec = _make_spec(
+            paths={
+                "/items/{id}": {
+                    "get": {
+                        "operationId": "getItem",
+                        "parameters": params,
+                        "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
         output_params = result["paths"]["/items/{id}"]["get"]["parameters"]
         assert len(output_params) == 1
@@ -807,10 +895,16 @@ class TestEdgeCases:
         - The first occurrence keeps its original ``operationId``
         - The second occurrence gets a ``_1`` suffix appended
         """
-        spec = _make_spec(paths={
-            "/a": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
-            "/b": {"get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}},
-        })
+        spec = _make_spec(
+            paths={
+                "/a": {
+                    "get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}
+                },
+                "/b": {
+                    "get": {"operationId": "getThing", "responses": {"200": {"description": "OK"}}}
+                },
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
         assert result["openapi"] == "3.1.1"
         assert "/a" in result["paths"]
@@ -851,15 +945,17 @@ class TestEdgeCases:
           path item types beyond the dict check
         - Real path items with operations are converted normally
         """
-        spec = _make_spec(paths={
-            "/empty": "not a dict",
-            "/real": {
-                "get": {
-                    "operationId": "getReal",
-                    "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+        spec = _make_spec(
+            paths={
+                "/empty": "not a dict",
+                "/real": {
+                    "get": {
+                        "operationId": "getReal",
+                        "responses": {"200": {"description": "OK", "schema": {"type": "object"}}},
+                    },
                 },
-            },
-        })
+            }
+        )
         result = convert_swagger_to_openapi_v3(spec)
         assert result["paths"]["/empty"] == "not a dict"
         assert "/real" in result["paths"]

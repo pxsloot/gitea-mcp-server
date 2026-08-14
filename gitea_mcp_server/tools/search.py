@@ -424,7 +424,12 @@ async def _call_tool_impl(
     at the MCP protocol level for direct calls.
     """
     if name == "call_tool" or (tool_prefix and name == f"{tool_prefix}call_tool"):
-        msg = "'call_tool' cannot call itself - call it directly instead"
+        msg = (
+            "'call_tool' cannot call itself. Pass the *target* tool's name as "
+            "`name` (e.g. call_tool(name='gitea_issue_get_issue', ...)). The "
+            "proxy is invoked directly, never through itself — do not set "
+            "name='call_tool'."
+        )
         raise_value_error(msg)
     if isinstance(arguments, str):
         try:
@@ -966,7 +971,11 @@ def register_synthetic_tools(
     )
 
     async def call_tool_fn(
-        name: Annotated[str, "The name of the tool to call"],
+        name: Annotated[
+            str,
+            "The name of the tool to call. Never 'call_tool' itself — the "
+            "proxy cannot invoke itself; call it directly instead.",
+        ],
         arguments: Annotated[Any, "Arguments to pass to the tool (dict or JSON string)"] = None,
         ctx: Context = CurrentContext(),
     ) -> ToolResult:
@@ -976,7 +985,12 @@ def register_synthetic_tools(
         impl=call_tool_fn,
         wrap=False,
         name="call_tool",
-        description="Call a tool by name with arguments. Acts as a proxy to invoke any registered tool. Use this when you know the tool name and have the arguments ready.",
+        description=(
+            "Call a tool by name with arguments. Acts as a proxy to invoke any "
+            "registered tool (never itself): pass the target tool's name as "
+            "`name` — not 'call_tool'. Use this when you know the tool name and "
+            "have the arguments ready."
+        ),
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=False, open_world=True),
         output_schema={

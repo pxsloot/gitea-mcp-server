@@ -32,6 +32,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.format import (
     decode_base64_content,
+    empty_paginated_result,
     format_paginated_result,
 )
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
@@ -425,10 +426,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     total_count = len(all_resources)
 
     if total_count == 0:
-        return ToolResult(
-            content=[TextContent(type="text", text="No resources found.")],
-            structured_content={"result": [], "total_count": 0},
-        )
+        return empty_paginated_result("No resources found.", page, limit, total_count)
 
     return format_paginated_result(
         all_resources,

@@ -675,6 +675,45 @@ class TestToolInfo:
         assert "output_schema" not in schema
 
     @pytest.mark.asyncio
+    async def test_tool_info_concise_path_emits_pagination_envelope(self) -> None:
+        """tool_info concise (default) path emits the envelope (issue #694).
+
+        The declared schema (paginated=True) always declares
+        has_more/next_offset/total_count; the concise path must match, with
+        total_count=None since no schema properties are paginated there.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_concise_envelope",
+            description="A tool",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = await _tool_info_impl("gitea_tool_concise_envelope", "json", mock_ctx, transform)
+        sc = get_structured(result)
+        assert sc["result"]["name"] == "gitea_tool_concise_envelope"
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] is None
+
+    @pytest.mark.asyncio
     async def test_tool_info_detail_full_preserves_array_result_type(self) -> None:
         """tool_info detail=full must preserve array result type, not collapse to object.
 
@@ -1183,6 +1222,12 @@ class TestSearchToolsSyntheticTool:
         assert result.structured_content is not None
         text = extract_text_content(result.content) if result.content else ""
         assert "No tools found" in text or "search_docs" in text
+        # Empty results still carry the full pagination envelope (issue #694).
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
 
     @pytest.mark.asyncio
     async def test_search_tools_with_results_and_cross_links(self) -> None:
@@ -1585,6 +1630,11 @@ class TestSearchResourcesSyntheticTool:
         assert "search_tools" in text
         assert result.structured_content is not None
         assert result.structured_content["result"] == []
+        # Empty results still carry the full pagination envelope (issue #694).
+        sc = get_structured(result)
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
 
     @pytest.mark.asyncio
     async def test_raw_format(self) -> None:
@@ -2109,6 +2159,12 @@ class TestSearchToolsPagination:
         text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
         assert "total results: 5" in text
+        # Out-of-range pages still carry the full pagination envelope (issue #694).
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5
 
 
 class TestSearchResourcesPagination:
@@ -2194,6 +2250,12 @@ class TestSearchResourcesPagination:
         text = extract_text_content(result.content)
         assert "Page 10 is out of range" in text
         assert "total results: 5" in text
+        # Out-of-range pages still carry the full pagination envelope (issue #694).
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5
 
 
 class TestEmptyResultsMessage:

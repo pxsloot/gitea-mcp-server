@@ -267,9 +267,9 @@ These are the real shapes returned by this server. Knowing them saves a round-
 trip of confusion:
 
 - **Empty list is `[]`, not an error.** A list/search tool that matches nothing
-  returns an empty JSON array (or an empty Markdown section). That means *no
-  matching items* -- it is different from a tool being hidden by scope. Don't
-  treat `[]` as "I'm filtered out."
+  returns an empty JSON array (or an empty Markdown section) — still carrying
+  the pagination envelope (`has_more=False`, `total_count=0`). That means *no
+  matching items* — not a scope-hidden tool. Don't treat `[]` as "I'm filtered out."
 
 - **`APINotFound` means the target doesn't exist -- or is out of scope.**
   Example:

@@ -18,11 +18,10 @@ if TYPE_CHECKING:
     from gitea_mcp_server.tools.docs_tools import DocManager
 
 from fastmcp.server.context import Context  # noqa: TC002 - runtime use via get_type_hints
-from fastmcp.tools.base import Tool, ToolResult
-from mcp.types import TextContent
+from fastmcp.tools.base import Tool, ToolResult  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import format_paginated_result
+from gitea_mcp_server.format import empty_paginated_result, format_paginated_result
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
@@ -178,20 +177,14 @@ def register_unified_search(
                 "- For workflow guides: `search_docs(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            return ToolResult(
-                content=[TextContent(type="text", text=hint)],
-                structured_content={"result": [], "_hint": hint},
-            )
+            return empty_paginated_result(hint, page, limit, total_count)
 
         # Check page range before formatting (only when paginating, not fetch_all).
         if not fetch_all:
             start = (page - 1) * limit
             if start >= total_count:
                 hint = f"Page {page} is out of range (total results: {total_count})."
-                return ToolResult(
-                    content=[TextContent(type="text", text=hint)],
-                    structured_content={"result": [], "_hint": hint},
-                )
+                return empty_paginated_result(hint, page, limit, total_count)
 
         extras: list[str] = []
         if format == "markdown":

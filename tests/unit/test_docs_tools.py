@@ -497,6 +497,11 @@ class TestRegisterDocTools:
         assert "search_resources" in text
         assert result.structured_content is not None
         assert get_structured(result)["result"] == []
+        # Empty results still carry the full pagination envelope (issue #694).
+        sc = get_structured(result)
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
 
     def test_resource_tags_aggregated_across_multiple_guides(self) -> None:
         """Tags from multiple guides should all appear in resource template tags."""
@@ -686,3 +691,7 @@ class TestSearchDocsPagination:
         assert sc is not None
         assert "Page 10 is out of range" in str(sc.get("_hint", ""))
         assert sc.get("result") == []
+        # Out-of-range pages still carry the full pagination envelope (issue #694).
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5

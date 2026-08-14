@@ -318,6 +318,11 @@ class TestUnifiedSearch:
         result = await registered_fn(query="xyznonexistent123", format="raw", ctx=ctx)
         items = result.structured_content["result"]
         assert items == []
+        # Empty results still carry the full pagination envelope (issue #694).
+        sc = result.structured_content
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
 
     @pytest.mark.asyncio
     async def test_ctx_none_raises_value_error(self) -> None:
@@ -353,6 +358,11 @@ class TestUnifiedSearch:
         result = await registered_fn(query="anything", format="raw", ctx=ctx)
         items = result.structured_content["result"]
         assert items == []
+        # Empty results still carry the full pagination envelope (issue #694).
+        sc = result.structured_content
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
 
     @pytest.mark.asyncio
     async def test_pagination_metadata_present(self) -> None:
@@ -409,6 +419,10 @@ class TestUnifiedSearch:
         hint = result.structured_content.get("_hint", "")
         assert "Page 10 is out of range" in hint
         assert result.structured_content["result"] == []
+        # Out-of-range pages still carry the full pagination envelope (issue #694).
+        assert result.structured_content["has_more"] is False
+        assert result.structured_content["next_offset"] is None
+        assert result.structured_content["total_count"] == 1  # the one matching tool
 
 
 __all__ = []

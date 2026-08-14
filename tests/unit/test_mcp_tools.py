@@ -1089,6 +1089,9 @@ class TestMcpListResourcesTagTypeFilter:
         sc = get_structured(result)
         assert sc["total_count"] == 0
         assert sc["result"] == []
+        # Empty results still carry the full pagination envelope (issue #694).
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
         # Text content should indicate no resources found
         assert result.content is not None
         text = extract_text_content(result.content)

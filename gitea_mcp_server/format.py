@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, cast
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
+from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.schema_utils import get_schema_type
 
 if TYPE_CHECKING:
@@ -771,10 +772,6 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
         A ``ToolResult`` with formatted content and pagination metadata
         in ``structured_content``.
     """
-    # Deferred import to avoid module-level coupling — apply_pagination is
-    # only needed here (not by other formatting functions).
-    from gitea_mcp_server.pagination import apply_pagination  # noqa: PLC0415
-
     if fetch_all:
         # Skip slicing — return everything.
         page, limit = 1, total_count or len(items)
@@ -825,10 +822,6 @@ def empty_paginated_result(
         full pagination envelope (``has_more=False``, ``next_offset=None``,
         ``total_count``).
     """
-    # Deferred import to avoid module-level coupling — apply_pagination is
-    # only needed here (not by other formatting functions).
-    from gitea_mcp_server.pagination import apply_pagination  # noqa: PLC0415
-
     return apply_pagination(
         ToolResult(
             content=[TextContent(type="text", text=content)],

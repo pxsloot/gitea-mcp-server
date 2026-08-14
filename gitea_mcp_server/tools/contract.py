@@ -10,8 +10,11 @@ parameterized by an executor.
 The spine produced by :func:`build_transform_fn` is the single code path
 for both tool families:
 
-    1. ``extract_from(kwargs)`` — pop virtual params (format, detail,
-       fetch_all, sudo, content_type, ...).
+    1. ``extract_from(kwargs, only=...)`` — pop virtual params (format,
+       detail, fetch_all, sudo, content_type, ...).  Autogen tools pop every
+       visible param; synthetic tools pop only their ``_virtual_params``
+       allowlist so off-profile registry-name keys are rejected as unknown
+       rather than silently dropped.
     2. ``apply_pre_hooks(...)`` — run pre-hooks (may mutate kwargs, e.g.
        content_type base64-encodes ``content``).
     3. Resolve the MCP ``Context`` via
@@ -75,6 +78,10 @@ def build_transform_fn(
         tool: The ``Tool`` being wrapped.  ``tool.meta["output_schema_raw"]``
             is attached to the extracted dict as ``_raw_schema`` so the
             ``format`` post-hook can render schema-aware output.
+            ``tool.meta["_virtual_params"]`` (synthetic tools only) is the
+            per-tool extraction allowlist — only those registry virtual
+            params are popped from kwargs; off-allowlist registry-name keys
+            remain in kwargs for validation to reject as unknown.
         executor: Backend-specific execution callable (see :data:`Executor`).
             Autogen tools pass the HTTP pipeline; synthetic tools pass their
             local implementation.
@@ -86,9 +93,16 @@ def build_transform_fn(
     """
 
     async def transform_fn(**kwargs: Any) -> ToolResult:
-        # Pop all virtual params (format, detail, sudo, fetch_all,
-        # content_type, etc.) — unified extraction, no special cases.
-        virtual_values = extract_from(kwargs)
+        # Pop virtual params (format, detail, sudo, fetch_all, content_type,
+        # etc.).  Synthetic tools declare a per-tool allowlist
+        # (tool.meta["_virtual_params"]): only allowlisted params are popped,
+        # so an off-profile registry-name key (e.g. ``fetch_all`` on a
+        # format-only tool) stays in kwargs and is rejected as unknown by
+        # validation instead of being silently dropped.
+        virtual_values = extract_from(
+            kwargs,
+            only=(tool.meta or {}).get("_virtual_params"),
+        )
 
         # Run pre-hooks.  Hooks may mutate kwargs (e.g. content_type
         # base64-encodes ``content``).

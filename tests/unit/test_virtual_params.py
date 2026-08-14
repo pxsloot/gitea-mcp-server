@@ -446,6 +446,33 @@ class TestExtractFrom:
         assert len(kwargs) == 1
         assert "owner" in kwargs
 
+    def test_only_allowlist_pops_only_allowlisted_params(self) -> None:
+        """With ``only``, off-allowlist registry keys stay in kwargs."""
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"format": _FORMAT_VP, "detail": _FORMAT_VP},
+        ):
+            kwargs = {"owner": "test", "format": "json", "detail": "concise"}
+            extracted = extract_from(kwargs, only={"format"})
+
+        # format is allowlisted → popped; detail is not → left for
+        # validation to reject as unknown (never silently dropped).
+        assert extracted == {"format": "json"}
+        assert "format" not in kwargs
+        assert kwargs == {"owner": "test", "detail": "concise"}
+
+    def test_only_none_pops_every_virtual_param(self) -> None:
+        """``only=None`` (autogen) pops all virtual params regardless of allowlist."""
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"format": _FORMAT_VP, "detail": _FORMAT_VP},
+        ):
+            kwargs = {"owner": "test", "format": "json", "detail": "concise"}
+            extracted = extract_from(kwargs, only=None)
+
+        assert extracted == {"format": "json", "detail": "concise"}
+        assert kwargs == {"owner": "test"}
+
 
 # ---------------------------------------------------------------------------
 # apply_to

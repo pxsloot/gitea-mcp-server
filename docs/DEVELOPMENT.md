@@ -331,15 +331,24 @@ and merge results.  The hook should update the ``ToolResult``'s
     (tool catalog, doc index, resource list), ``fetch_all`` simply skips the
     page/limit slice and returns all results through the shared
     :func:`~gitea_mcp_server.format.format_paginated_result` utility — no
-    loop needed.  These tools are registered through
-    :func:`~gitea_mcp_server.tools.synthetic_contract.register_synthetic_tool`,
-    which stamps the wrap-me marker + executor registry entry, injects the
+    loop needed.  These tools are registered declaratively via
+    :func:`~gitea_mcp_server.tools.synthetic_contract.register_all_synthetic_tools`
+    (``SyntheticToolSpec`` lists); the underlying primitive
+    :func:`~gitea_mcp_server.tools.synthetic_contract.register_synthetic_tool`
+    stamps the wrap-me marker + executor registry entry, injects the
     virtual-param allowlist, validates ``page``/``limit`` (in the executor),
     and declares the pagination metadata in their output schemas.  Pass
     ``limit_max`` to raise the ``limit`` upper bound beyond the default
     ``PAGE_SIZE_MAX`` (e.g. ``read_doc`` paginates guide lines and allows
     200); the bound is declared as a JSON Schema ``maximum`` on the
     ``limit`` parameter so agents discover it via ``tool_info``.
+
+    Virtual-param **extraction respects each tool's allowlist**: only
+    allowlisted registry params are popped from kwargs before validation.
+    An off-profile registry-name key (e.g. ``detail`` or ``fetch_all`` on a
+    format-only tool like ``read_doc``) stays in kwargs and is rejected with
+    the shared "Unknown parameter(s)" error rather than being silently
+    dropped.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single
@@ -870,7 +879,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
 | Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, required_scope, wrap). The loop builds the executor, stamps the wrap marker, and registers |
-| Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}``; ``sudo`` is opt-in). The executor re-supplies the popped values to the impl and marks results ``_formatted`` |
+| Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}``; ``sudo`` is opt-in). Only allowlisted params are popped from kwargs — an off-profile registry-name key stays in kwargs and is rejected with "Unknown parameter(s)" rather than silently dropped. The executor re-supplies the popped values to the impl and marks results ``_formatted`` |
 | ``format`` param | Accept it with default ``"markdown"``, dispatch via ``apply_format()``. For paginated list results, prefer ``format_paginated_result()`` which handles slicing, ``fetch_all``, and pagination metadata in one call. |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |

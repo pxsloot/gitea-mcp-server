@@ -164,6 +164,25 @@ class TestSyntheticValidationSurface:
             await mcp.call_tool(f"{prefix}search_tools", {"query": "issue", "limit": 101})
         assert "limit must be <= 100" in str(exc.value)
 
+    @pytest.mark.asyncio
+    async def test_declared_off_allowlist_param_reaches_impl(self) -> None:
+        """tool_info's detail (declared, not allowlisted) still flows through.
+
+        ``detail`` is a registry virtual-param name, but tool_info's allowlist
+        is ``{"format"}``.  The impl declares ``detail``, so it must survive
+        extraction (stay in kwargs, pass validation, reach the impl) —
+        driving output_schema inclusion instead of being dropped.
+        """
+        mcp, prefix = await _make_server()
+
+        result = get_structured(
+            await mcp.call_tool(
+                f"{prefix}tool_info",
+                {"name": f"{prefix}search_tools", "format": "json", "detail": "full"},
+            )
+        )
+        assert "output_schema" in result["result"]
+
 
 class TestReadDocContract:
     """read_doc rides the transform with its format-only profile + limit_max."""
@@ -186,3 +205,18 @@ class TestReadDocContract:
         with pytest.raises(ToolError) as exc:
             await mcp.call_tool(f"{prefix}read_doc", {"topic": "labels", "limit": 201})
         assert "limit must be <= 200" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_off_profile_virtual_params_rejected(self) -> None:
+        """read_doc (format-only allowlist) rejects detail/fetch_all as unknown.
+
+        Off-allowlist registry virtual params must not be silently dropped —
+        they stay in kwargs and hit the shared unknown-parameter validation.
+        """
+        mcp, prefix = await _make_server()
+
+        for bad_arg in ({"detail": "concise"}, {"fetch_all": True}):
+            with pytest.raises(ToolError) as exc:
+                await mcp.call_tool(f"{prefix}read_doc", {"topic": "labels", **bad_arg})
+            param = next(iter(bad_arg))
+            assert f"Unknown parameter(s): '{param}'" in str(exc.value)

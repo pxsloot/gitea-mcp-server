@@ -11,13 +11,19 @@ import logging
 from importlib.resources import files as pkg_files
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
+
 import yaml
 from fastmcp.exceptions import ResourceError
-from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
+from fastmcp.tools.base import ToolResult  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import apply_format, format_paginated_result
+from gitea_mcp_server.format import (
+    apply_format,
+    empty_paginated_result,
+    format_paginated_result,
+)
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
@@ -26,9 +32,6 @@ from gitea_mcp_server.tools.synthetic_contract import (
     SyntheticToolSpec,
     register_all_synthetic_tools,
 )
-
-if TYPE_CHECKING:
-    from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -323,20 +326,14 @@ def register_doc_tools(
                 "- For API tools: `search_tools(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            return ToolResult(
-                content=[TextContent(type="text", text=content)],
-                structured_content={"result": [], "_hint": content},
-            )
+            return empty_paginated_result(content, page, limit, total_count)
 
         # Check page range before formatting (only when paginating, not fetch_all).
         if not fetch_all:
             start = (page - 1) * limit
             if start >= total_count:
                 content = f"Page {page} is out of range (total results: {total_count})."
-                return ToolResult(
-                    content=[TextContent(type="text", text=content)],
-                    structured_content={"result": [], "_hint": content},
-                )
+                return empty_paginated_result(content, page, limit, total_count)
 
         extras: list[str] = []
         if format == "markdown":

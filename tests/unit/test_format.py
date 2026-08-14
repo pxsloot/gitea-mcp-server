@@ -22,6 +22,7 @@ from gitea_mcp_server.format import (
     _snake_to_title,
     apply_format,
     collapse_data,
+    empty_paginated_result,
     format_as_markdown,
     format_paginated_result,
 )
@@ -1341,6 +1342,43 @@ class TestFormatPaginatedResult:
         )
         text = extract_text_content(result.content)
         assert "**Extra section:** content" in text
+
+    def test_empty_paginated_result_zero_total(self) -> None:
+        """Empty result (total 0) carries the full envelope with has_more=False."""
+        result = empty_paginated_result(
+            "No results found for 'x'.", page=1, limit=10, total_count=0
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["_hint"] == "No results found for 'x'."
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
+        assert result.content is not None
+        assert extract_text_content(result.content) == "No results found for 'x'."
+
+    def test_empty_paginated_result_out_of_range(self) -> None:
+        """Out-of-range page carries the envelope with the known total."""
+        result = empty_paginated_result(
+            "Page 3 is out of range (total results: 5).", page=3, limit=10, total_count=5
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["_hint"] == "Page 3 is out of range (total results: 5)."
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5
+
+    def test_empty_paginated_result_unknown_total(self) -> None:
+        """Unknown total yields total_count=None with has_more=False (non-list result)."""
+        result = empty_paginated_result("No data.", page=1, limit=10)
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] is None
+        for key in PAGINATION_KEYS:
+            assert key in sc
 
 
 # ============================================================================

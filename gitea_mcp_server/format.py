@@ -16,6 +16,9 @@ Public functions:
         Separates display from data creation: handles page slicing (or
         ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
         over manual ``apply_format()`` + ``apply_pagination()`` composition.
+    empty_paginated_result - build an empty page result (empty/out-of-range
+        early returns of paginated synthetic tools) that still carries the
+        full pagination envelope, keeping schema and runtime in agreement.
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
@@ -790,6 +793,53 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
     )
 
 
+def empty_paginated_result(
+    content: str,
+    page: int,
+    limit: int,
+    total_count: int | None = None,
+) -> ToolResult:
+    """Build an empty page result that still carries the full pagination envelope.
+
+    Edge-path companion to :func:`format_paginated_result`: the empty-result
+    and out-of-range-page branches of paginated synthetic tools return early,
+    before ``format_paginated_result`` runs.  This helper produces the same
+    ``structured_content`` shape (``result``, ``_hint``, and the pagination
+    envelope) so the declared output schema and runtime never disagree.
+
+    ``total_count`` is the known total when the page is out of range (0 for
+    an empty result set, or the real match count for an out-of-range page);
+    when ``None``, ``add_pagination_metadata`` falls back to its heuristic
+    (a non-list ``result`` yields ``has_more=False``).
+
+    Args:
+        content: The agent-facing message (e.g. "No results found for 'x'."
+            or "Page 3 is out of range (total results: 5).").  Also stored
+            as ``_hint`` in ``structured_content``.
+        page: The requested page number (1-based).
+        limit: Items per page.
+        total_count: Total number of matching items, if known.
+
+    Returns:
+        A ``ToolResult`` with ``result=[]``, ``_hint=content``, and the
+        full pagination envelope (``has_more=False``, ``next_offset=None``,
+        ``total_count``).
+    """
+    # Deferred import to avoid module-level coupling — apply_pagination is
+    # only needed here (not by other formatting functions).
+    from gitea_mcp_server.pagination import apply_pagination  # noqa: PLC0415
+
+    return apply_pagination(
+        ToolResult(
+            content=[TextContent(type="text", text=content)],
+            structured_content={"result": [], "_hint": content},
+        ),
+        page,
+        limit,
+        total_count,
+    )
+
+
 def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
@@ -823,6 +873,7 @@ __all__ = [
     "build_server_info_markdown",
     "collapse_data",
     "decode_base64_content",
+    "empty_paginated_result",
     "format_as_markdown",
     "format_paginated_result",
 ]

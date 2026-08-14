@@ -18,7 +18,6 @@ from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.search import BM25SearchTransform
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
-from mcp.types import TextContent
 
 from gitea_mcp_server.constants import (
     DETAIL_PARAM_SCHEMA_CONCISE,
@@ -28,6 +27,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.format import (
     apply_format,
+    empty_paginated_result,
     format_paginated_result,
     format_tool_info_markdown,
 )
@@ -567,20 +567,14 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
 
     if total_count == 0:
         text = _empty_results_message(query, cross_link_hints)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
+        return empty_paginated_result(text, page, limit, total_count)
 
     # Check page range before formatting (only when paginating, not fetch_all).
     if not fetch_all:
         start = (page - 1) * limit
         if start >= total_count:
             text = f"Page {page} is out of range (total results: {total_count})."
-            return ToolResult(
-                content=[TextContent(type="text", text=text)],
-                structured_content={"result": [], "_hint": text},
-            )
+            return empty_paginated_result(text, page, limit, total_count)
 
     extras: list[str] = []
     if format == "markdown" and cross_link_hints:
@@ -711,7 +705,14 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                 # discover total property count and navigate pages.
                 result = apply_pagination(result, page, limit, total_props)
             else:
-                result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
+                # Concise path returns the full schema unpaginated — still
+                # emit the envelope (total_count=None, has_more=False) so the
+                # runtime matches the declared schema on every path.
+                result = apply_pagination(
+                    apply_format(schema, format, markdown_formatter=format_tool_info_markdown),
+                    page,
+                    limit,
+                )
 
             return result
 
@@ -822,20 +823,14 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
 
     if total_count == 0:
         text = _empty_results_message(query, cross_link_hints)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": [], "_hint": text},
-        )
+        return empty_paginated_result(text, page, limit, total_count)
 
     # Check page range before formatting (only when paginating, not fetch_all).
     if not fetch_all:
         start = (page - 1) * limit
         if start >= total_count:
             text = f"Page {page} is out of range (total results: {total_count})."
-            return ToolResult(
-                content=[TextContent(type="text", text=text)],
-                structured_content={"result": [], "_hint": text},
-            )
+            return empty_paginated_result(text, page, limit, total_count)
 
     extras: list[str] = []
     if format == "markdown" and cross_link_hints:

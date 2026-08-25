@@ -1910,11 +1910,6 @@ class TestContentTypeVirtualParam:
             parameters={
                 "properties": {
                     "content": {"type": "string"},
-                    "content_type": {
-                        "type": "string",
-                        "enum": ["base64", "text"],
-                        "default": "base64",
-                    },
                 },
             },
             output_schema={
@@ -1978,11 +1973,6 @@ class TestContentTypeVirtualParam:
             parameters={
                 "properties": {
                     "content": {"type": "string"},
-                    "content_type": {
-                        "type": "string",
-                        "enum": ["base64", "text"],
-                        "default": "base64",
-                    },
                 },
             },
             output_schema={
@@ -2032,3 +2022,4 @@ class TestContentTypeVirtualParam:
 
         call_kwargs = mock_run.call_args[0][0]
         assert call_kwargs["content"] == raw_content
+        assert "content_type" not in call_kwargs

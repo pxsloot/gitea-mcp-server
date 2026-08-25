@@ -8,13 +8,14 @@ may mutate the remaining kwargs.
 
 Lifecycle for every tool call::
 
-    1. inject_into(tool.parameters, tool=tool)  ← adds to schema at startup
-    2. extract_from(kwargs)                     ← pops before HTTP call
+    1. inject_into(tool.parameters, tool=tool)  ← adds to schema at startup;
+       returns the injected set, which the caller stamps into
+       ``tool.meta["_virtual_params"]`` so extraction matches injection
+    2. extract_from(kwargs, only=tool.meta["_virtual_params"])  ← pops before
+       HTTP call; params not injected (e.g. ``fetch_all`` on autogen tools)
+       stay in kwargs and are rejected as unknown by validation
     3. apply_pre_hooks(extracted, kwargs)       ← runs pre-hooks (may mutate kwargs)
-    4. _pipeline_with_context(...)      ← HTTP call, pagination metadata,
-       │                                   then loop hooks (re-execution
-       │                                   with ``execute_fn``)
-       └─ _apply_loop_hooks(...)
+    4. executor(kwargs, extracted, ctx)         ← backend execution (HTTP or local)
     5. apply_to(result, extracted)      ← runs post-hooks after call
 
 Adding a new virtual parameter is a single registry entry -
@@ -25,21 +26,16 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
-
-from fastmcp.tools.base import ToolResult
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-_ExecuteFn = Callable[[dict[str, Any]], Awaitable[ToolResult]]
-"""Type alias for the re-execution callable passed to loop_hooks.
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-An async function that accepts tool kwargs (with updated ``page``)
-and returns a ``ToolResult`` from a fresh HTTP call.
-"""
+    from fastmcp.tools.base import ToolResult
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -73,29 +69,6 @@ class VirtualParam:
             ``ToolResult``, (2) the extracted value, and (3) the full
             extracted dict — hooks can read other virtual params (e.g.
             ``format`` reads ``detail`` from the dict).
-        loop_hook: Optional ``(result, value, kwargs, execute_fn) → ToolResult``
-            callback invoked inside the execution pipeline **after** the
-            HTTP call and pagination metadata have been produced, but
-            **before** ``post_hook`` runs.
-
-            ``result`` is the current ``ToolResult`` (with ``has_more``
-            already set in ``structured_content``).  ``value`` is the
-            extracted param value.  ``kwargs`` is the mutable tool
-            arguments dict (unchanged since extraction).  ``execute_fn``
-            is an async ``(dict) → ToolResult`` callable that re-invokes
-            the HTTP execution path with updated kwargs — useful for
-            auto-pagination loops.
-
-            A loop_hook returns a new ``ToolResult``, typically with
-            merged data and ``has_more=False``.
-
-            .. important::
-
-                The hook is responsible for its own termination (e.g. stop
-                when a page returns fewer items than ``limit``).  There is
-                no built-in iteration limit — a buggy hook could loop
-                indefinitely.  Future consumers should document their
-                termination strategy.
     """
 
     schema: dict[str, Any]
@@ -116,9 +89,6 @@ class VirtualParam:
         (2) the extracted value, and (3) the full extracted dict so hooks
         can read other virtual params (e.g. ``format`` reads ``detail``).
     """
-    loop_hook: (
-        Callable[[ToolResult, Any, dict[str, Any], _ExecuteFn], Awaitable[ToolResult]] | None
-    ) = None
 
 
 # Single source of truth for every virtual parameter.
@@ -169,69 +139,22 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 )
 
 # ---------------------------------------------------------------------------
-# fetch_all — auto-pagination for list/search tools
+# fetch_all — in-memory skip-slice for synthetic list/search tools
 # ---------------------------------------------------------------------------
-
-
-async def _fetch_all_loop(
-    result: ToolResult,
-    value: Any,
-    kwargs: dict[str, Any],
-    execute_fn: _ExecuteFn,
-) -> ToolResult:
-    """Loop hook for ``fetch_all``: automatically fetch all pages.
-
-    Thin wrapper around :class:`~gitea_mcp_server.pagination.PaginationRunner`.
-
-    Called by ``_pipeline_with_context`` after the initial page has been
-    fetched and pagination metadata added.  When ``fetch_all=true``, delegates
-    to ``PaginationRunner`` which handles the loop, merge, and termination.
-
-    Termination (via ``PaginationRunner``, first wins):
-
-    1. ``has_more`` is ``false`` on the most recent page.
-    2. The most recent page returned fewer items than the page size (heuristic
-       when ``total_count`` is unknown).
-    3. ``FETCH_ALL_MAX_PAGES`` pages have been fetched (safety cap).
-
-    Args:
-        result: ``ToolResult`` from the first page (already has pagination
-            metadata in ``structured_content``).
-        value: The extracted ``fetch_all`` value — ``True`` to auto-paginate,
-            ``False`` to passthrough.
-        kwargs: Tool arguments (mutable; ``page`` is updated in-place when
-            re-invoking ``execute_fn``).
-        execute_fn: Async ``(dict) → ToolResult`` that re-invokes the HTTP
-            execution path with updated kwargs.
-
-    Returns:
-        A ``ToolResult`` with merged ``result`` array, ``has_more=False``,
-        ``next_offset=None``, and the most recent ``total_count``.
-    """
-    # Passthrough when fetch_all is not enabled.
-    if not value:
-        return result
-
-    from gitea_mcp_server.pagination import PaginationRunner  # noqa: PLC0415
-
-    runner = PaginationRunner(execute_fn)
-    return await runner.run(result, kwargs)
-
-
-# Register the fetch_all virtual param so it appears in every tool's schema.
-# The description is deliberately family-agnostic: for API tools it paginates
-# through every page (capped at FETCH_ALL_MAX_PAGES — documented in
-# agent_instructions.md), for synthetic tools it returns all in-memory
-# results without a loop.  One shared text covers both.
+# Synthetic-only: the API (autogen) loop machinery was removed (#724); the
+# executor-internal loop is a post-milestone follow-up.  The param is
+# injected only into synthetic tools (tool_predicate on the ``_synthetic``
+# meta marker) — autogen tools no longer expose it.  For synthetic tools it
+# is an in-memory skip-slice: ``format_paginated_result`` returns all items
+# without page slicing.
 _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     schema={"type": "boolean"},
     default=False,
     description=(
-        "When true, automatically fetch all matching results and merge "
-        "them into a single response.  For API tools this paginates "
-        "through every page of the endpoint."
+        "When true, return all matching results without page slicing "
+        "(in-memory; no HTTP loop).  Default false — single page only."
     ),
-    loop_hook=_fetch_all_loop,
+    tool_predicate=lambda t: bool((t.meta or {}).get("_synthetic")),
 )
 
 
@@ -385,7 +308,7 @@ def inject_into(
     tool: Any | None = None,
     default_overrides: dict[str, Any] | None = None,
     only: set[str] | None = None,
-) -> None:
+) -> set[str]:
     """Add virtual parameters to *parameters* (a tool's parameter schema).
 
     Idempotent - skips any parameter name that already exists, which also
@@ -409,6 +332,15 @@ def inject_into(
     annotations (e.g. ``read_doc`` opts into ``format`` only, and ``sudo``
     is opt-in).
 
+    Returns:
+        The set of param names actually written to *parameters* — the
+        params that passed every gate (scope visibility, ``tool_predicate``,
+        no shadowing).  Callers stamp this into ``tool.meta["_virtual_params"]``
+        so extraction (:func:`extract_from`) matches injection exactly:
+        a registry param that was *not* injected (e.g. ``fetch_all`` on an
+        autogen tool) stays in kwargs and is rejected as unknown rather than
+        silently dropped.
+
     Args:
         parameters: Tool parameter schema dict (mutated in place).
         tool: The Tool being wrapped, for ``tool_predicate`` gating.
@@ -421,6 +353,7 @@ def inject_into(
             (autogen behavior).
     """
     props = parameters.setdefault("properties", {})
+    injected: set[str] = set()
     for name, vp in _VIRTUAL_PARAMS.items():
         if only is not None and name not in only:
             continue
@@ -438,6 +371,7 @@ def inject_into(
             "default": vp.default,
             "description": vp.description,
         }
+        injected.add(name)
 
     # Apply caller-specified default overrides (e.g. format's default
     # comes from server config, not the static registry default).
@@ -446,6 +380,8 @@ def inject_into(
             if name in props:
                 props[name]["default"] = value
 
+    return injected
+
 
 def extract_from(
     kwargs: dict[str, Any],
@@ -453,12 +389,16 @@ def extract_from(
 ) -> dict[str, Any]:
     """Pop virtual parameters from *kwargs*.
 
-    With *only* (a per-tool allowlist, e.g. synthetic tools' ``_virtual_params``
-    from ``tool.meta``), only the named parameters are popped; other
-    registry-name keys stay in *kwargs* so the validation layer rejects them
-    as unknown (they are neither allowlisted nor declared in the tool's
-    schema — the value would otherwise be silently dropped).  Without *only*
-    (autogenerated tools, which inject every visible parameter), every
+    With *only* (a per-tool allowlist from ``tool.meta["_virtual_params"]``),
+    only the named parameters are popped; other registry-name keys stay in
+    *kwargs* so the validation layer rejects them as unknown (they are
+    neither allowlisted nor declared in the tool's schema — the value would
+    otherwise be silently dropped).  Both tool families carry this allowlist:
+    synthetic tools stamp it at registration, autogen tools have it stamped
+    by :func:`inject_into`'s caller with the actually-injected set — so
+    extraction matches injection exactly (a predicate-gated param such as
+    ``fetch_all`` on an autogen tool is not popped and is rejected as
+    unknown).  Without *only* (no allowlist stamped — the fallback), every
     virtual parameter is popped.
 
     Returns a ``{name: value}`` dict suitable for passing to :func:`apply_to`.
@@ -512,38 +452,12 @@ def apply_to(
     return result
 
 
-def get_loop_hooks(
-    extracted: dict[str, Any],
-) -> dict[str, tuple[Any, Any]]:
-    """Resolve loop hooks from extracted virtual param values.
-
-    Returns a ``{param_name: (value, loop_hook_callable)}`` dict for every
-    extracted virtual parameter that has a ``loop_hook`` registered.
-    Used by the execution pipeline (:func:`_pipeline_with_context`) to
-    invoke re-execution hooks after the initial HTTP call.
-
-    Args:
-        extracted: The dict returned by :func:`extract_from`.
-
-    Returns:
-        Dict mapping param names to ``(extracted_value, callable)`` for
-        params with a registered ``loop_hook``.  Empty dict if none.
-    """
-    hooks: dict[str, tuple[Any, Any]] = {}
-    for name, value in extracted.items():
-        vp = _VIRTUAL_PARAMS.get(name)
-        if vp is not None and vp.loop_hook is not None:
-            hooks[name] = (value, vp.loop_hook)
-    return hooks
-
-
 __all__ = [
     "VirtualParam",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",
     "extract_from",
-    "get_loop_hooks",
     "inject_into",
     "sudo_context",
 ]

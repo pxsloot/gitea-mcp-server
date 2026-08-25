@@ -652,7 +652,7 @@ class _ToolWrappingTransform(Transform):
 
         Binds :meth:`_run_transform_pipeline` (validation, route-aware HTTP
         execution, error translation, response-class wrapping, pagination
-        metadata, loop hooks) to this tool's ``customization``.
+        metadata) to this tool's ``customization``.
         """
 
         async def executor(
@@ -875,8 +875,7 @@ class _ToolWrappingTransform(Transform):
         """Return structured ``content_info`` metadata for binary responses.
 
         Returns a ``ToolResult`` with ``content_info`` (type, size, guidance)
-        or ``None`` when this handler does not apply.  Loop hooks are
-        intentionally absent — binary responses are never paginated.
+        or ``None`` when this handler does not apply.
         """
         if result.structured_content is not None:
             return None

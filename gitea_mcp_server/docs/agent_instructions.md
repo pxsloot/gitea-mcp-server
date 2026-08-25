@@ -106,7 +106,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `index`/`id`| integer | the resource id (int64) -- `index` for issues/PRs, `id` elsewhere |
 | `page`      | integer | 1-based page number for list/search tools (minimum 1) |
 | `limit`     | integer | page size for list/search tools |
-| `fetch_all`   | boolean | When true, return all matching results without page slicing (search/list tools only). Default `false` — single page only. See Pagination edge case below. |
+| `fetch_all`   | boolean | When true, return all matching results without page slicing (synthetic search/list tools only). Default `false` — single page only. See Pagination edge case below. |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
 | `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` collapses nested objects to `$ref:TypeName` labels at depth >= 1 (affects both `json` and `markdown` output) |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
@@ -300,7 +300,7 @@ trip of confusion:
   path: `call_tool` for tools, `read_doc` for guides, `read_resource` for data.
 
 - **Pagination: explicit or automatic.** List/search tools take `page`
-  (1-based) and `limit`. On search/list tools, `fetch_all=true` returns all
+  (1-based) and `limit`. On synthetic search/list tools, `fetch_all=true` returns all
   matching results in one response (in-memory skip-slice — no HTTP loop).
   Without `fetch_all`, loop `page` upward until you get `[]`. A short page
   is not necessarily the last one unless the next page is empty.

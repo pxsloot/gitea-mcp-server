@@ -16,8 +16,9 @@ All tool-related runtime concerns live here:
 - unified_search: Unified ``search`` tool across tools, docs, and resources
 - mcp_tools: list_resources/read_resource tools + gitea://tool/{name}/schema resource
 - resource_display: Resource content formatting pipeline
-- tool_display: Tool result formatting entry point (mirrors resource_display)
-- display: Domain-specific formatter registry (shared by tool_display + resource_display)
+- result_pipeline: Single result pipeline (ExecutionResult + render) shared by
+  autogen and synthetic tools
+- display: Domain-specific formatter registry (shared by resource_display)
 """
 
 from gitea_mcp_server.scope import derive_required_scope

@@ -200,8 +200,8 @@ def _format(
 
     ``content`` is always set explicitly (deterministic raw — no reliance on
     FastMCP auto-populating it from ``structured_content``).  Formatting
-    errors are recovered with a readable fallback, mirroring the old
-    ``format_tool_result`` error-recovery layer.
+    errors are recovered with a readable fallback (the error-recovery layer
+    that used to live in ``format_tool_result``).
     """
     data = result.data
     shape = result.shape

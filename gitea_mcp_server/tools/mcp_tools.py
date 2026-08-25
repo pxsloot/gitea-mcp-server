@@ -616,8 +616,9 @@ async def _read_resource_tool(
 
     # ``content`` carries the rendered presentation; ``structured_content``
     # carries the raw resource payload (data, not text) for programmatic
-    # extraction — matching the autogen tool contract.  The format post-hook
-    # is skipped (the executor marks the result ``_formatted``).
+    # extraction — matching the autogen tool contract.  This ToolResult is
+    # returned directly (the resource display pipeline renders it); the
+    # single result pipeline only renders ExecutionResult results.
     return ToolResult(
         content=[TextContent(type="text", text=formatted)],
         structured_content={"result": raw},

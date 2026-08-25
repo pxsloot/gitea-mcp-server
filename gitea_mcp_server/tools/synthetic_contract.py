@@ -254,7 +254,7 @@ def _annotations_with_pagination_bounds(
     schema, so ``tool_info`` and the ``gitea://tool/{name}/schema`` resource
     surface the per-tool page-size maximum to agents instead of a hardcoded
     doc number — matching autogen tools whose ``SCHEMA_CONSTRAINTS`` declare
-    ``page.minimum`` / ``per_page.maximum``.
+    ``page.minimum`` / ``limit.maximum``.
 
     The bounds are declared via ``Field(json_schema_extra=...)`` —
     schema-only, so pydantic does not enforce them at the MCP boundary.

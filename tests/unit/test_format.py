@@ -1294,7 +1294,7 @@ class TestFormatPaginatedResult:
         assert sc["total_count"] == 1
 
     def test_json_format(self) -> None:
-        """JSON format produces JSON text content."""
+        """JSON format produces JSON text content carrying the envelope."""
         items = [{"id": 1, "name": "test"}]
         result = format_paginated_result(
             items,
@@ -1306,7 +1306,7 @@ class TestFormatPaginatedResult:
         assert result.content is not None
         text = extract_text_content(result.content)
         parsed = json.loads(text)
-        assert parsed[0]["name"] == "test"
+        assert parsed["result"][0]["name"] == "test"
         sc = get_structured(result)
         assert sc["total_count"] == 1
 
@@ -1480,8 +1480,8 @@ class TestApplyFormatConcise:
         result = apply_format(data, "json", detail="full", schema=schema)
         assert result.content is not None
         parsed = parse_json_content(result)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
+        assert isinstance(parsed["result"]["owner"], dict)
+        assert parsed["result"]["owner"]["login"] == "user1"
 
     def test_json_concise_collapses_ref_dict(self) -> None:
         """detail='concise' + json collapses $ref dicts to labels."""
@@ -1492,7 +1492,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["owner"] == "$ref:User"
+        assert parsed["result"]["owner"] == "$ref:User"
 
     def test_json_concise_collapses_ref_list(self) -> None:
         """detail='concise' + json collapses $ref lists to labels."""
@@ -1505,7 +1505,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["labels"] == "$ref:Label[2]"
+        assert parsed["result"]["labels"] == "$ref:Label[2]"
 
     def test_json_concise_inline_not_collapsed(self) -> None:
         """Inline schemas (no $ref) remain expanded even with detail='concise'."""
@@ -1521,8 +1521,8 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert isinstance(parsed["config"], dict)
-        assert parsed["config"]["host"] == "localhost"
+        assert isinstance(parsed["result"]["config"], dict)
+        assert parsed["result"]["config"]["host"] == "localhost"
 
     def test_json_concise_top_level_object_stays(self) -> None:
         """Top-level object is not collapsed."""
@@ -1533,8 +1533,8 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["name"] == "repo"
-        assert parsed["description"] == "a test repo"
+        assert parsed["result"]["name"] == "repo"
+        assert parsed["result"]["description"] == "a test repo"
 
     def test_markdown_concise_collapses_nested_ref(self) -> None:
         """detail='concise' collapses $ref objects at depth>=1 in markdown."""
@@ -1568,8 +1568,8 @@ class TestApplyFormatConcise:
         data = {"owner": {"id": 1, "login": "user1"}}
         result = apply_format(data, "json", detail="concise", schema=None)
         parsed = parse_json_content(result)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
+        assert isinstance(parsed["result"]["owner"], dict)
+        assert parsed["result"]["owner"]["login"] == "user1"
 
     def test_raw_passthrough(self) -> None:
         """format='raw' ignores detail — data is not collapsed.

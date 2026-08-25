@@ -648,17 +648,17 @@ class TestFormatResourceContent:
         assert format_resource_content(raw, "raw") is raw
 
     def test_json_reformats_json_dict(self) -> None:
-        """format=json with JSON dict input should pretty-print."""
+        """format=json with JSON dict input should pretty-print, wrapped in result."""
         result = format_resource_content('{"key": "val", "num": 42}', "json")
         parsed = json_module.loads(result)
-        assert parsed == {"key": "val", "num": 42}
+        assert parsed == {"result": {"key": "val", "num": 42}}
         assert '"key": "val"' in result
 
     def test_json_reformats_json_array(self) -> None:
-        """format=json with JSON array input should pretty-print."""
+        """format=json with JSON array input should pretty-print, wrapped in result."""
         result = format_resource_content('[{"id": 1}, {"id": 2}]', "json")
         parsed = json_module.loads(result)
-        assert parsed == [{"id": 1}, {"id": 2}]
+        assert parsed == {"result": [{"id": 1}, {"id": 2}]}
 
     def test_markdown_reformats_json_dict(self) -> None:
         """format=markdown with JSON dict input should produce markdown."""
@@ -705,8 +705,8 @@ class TestFormatResourceContent:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test"
-        assert parsed["owner"] == "$ref:User"
+        assert parsed["result"]["name"] == "test"
+        assert parsed["result"]["owner"] == "$ref:User"
 
     def test_concise_json_collapses_nested_list(self) -> None:
         """detail=concise with schema should collapse $ref list items."""
@@ -723,15 +723,15 @@ class TestFormatResourceContent:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test"
-        assert parsed["items"] == "$ref:Label[2]"
+        assert parsed["result"]["name"] == "test"
+        assert parsed["result"]["items"] == "$ref:Label[2]"
 
     def test_concise_full_detail_without_schema(self) -> None:
         """Without schema, concise should return data unchanged (no collapse)."""
         raw = '{"name": "test", "nested": {"a": 1}}'
         result = format_resource_content(raw, "json", detail="concise", schema=None)
         parsed = json_module.loads(result)
-        assert parsed == {"name": "test", "nested": {"a": 1}}
+        assert parsed == {"result": {"name": "test", "nested": {"a": 1}}}
 
     def test_concise_markdown_with_schema(self) -> None:
         """detail=concise with schema should collapse in markdown output too."""
@@ -771,9 +771,9 @@ class TestFormatResourceContentWrappedSchema:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test-repo"
-        assert parsed["owner"] == "$ref:User"
-        assert parsed["permissions"] == "$ref:Permission"
+        assert parsed["result"]["name"] == "test-repo"
+        assert parsed["result"]["owner"] == "$ref:User"
+        assert parsed["result"]["permissions"] == "$ref:Permission"
 
     def test_issues_list_style_concise_json(self) -> None:
         """Simulates an issue list resource: nested items get collapsed."""
@@ -791,10 +791,10 @@ class TestFormatResourceContentWrappedSchema:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert len(parsed) == 2
-        assert parsed[0]["title"] == "Fix bug"
-        assert parsed[0]["user"] == "$ref:User"
-        assert parsed[1]["user"] == "$ref:User"
+        assert len(parsed["result"]) == 2
+        assert parsed["result"][0]["title"] == "Fix bug"
+        assert parsed["result"][0]["user"] == "$ref:User"
+        assert parsed["result"][1]["user"] == "$ref:User"
 
 
 class TestMakeResourceFormatter:
@@ -860,7 +860,7 @@ class TestFormatResourceContentEdgeCases:
             schema={"type": "integer"},
         )
         parsed = json_module.loads(result)
-        assert parsed == 42
+        assert parsed == {"result": 42}
 
 
 class TestMcpListResourcesFormat:
@@ -918,7 +918,7 @@ class TestMcpListResourcesFormat:
 
     @pytest.mark.asyncio
     async def test_json_format(self, _mock_resource: MagicMock) -> None:
-        """format=json should produce pretty-printed JSON in content."""
+        """format=json should produce the envelope dict in content."""
         fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
@@ -931,8 +931,8 @@ class TestMcpListResourcesFormat:
         assert get_structured(result)["total_count"] == 1
         assert len(result.content) == 1
         parsed = parse_json_content(result)
-        assert isinstance(parsed, list)
-        assert parsed[0]["uri"] == "gitea://version"
+        assert isinstance(parsed["result"], list)
+        assert parsed["result"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
     async def test_markdown_format(self, _mock_resource: MagicMock) -> None:

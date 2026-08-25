@@ -363,8 +363,8 @@ class TestRegisterDocTools:
         assert result.content is not None
         text = extract_text_from_content_items(result.content)
         parsed = json_module.loads(text)
-        assert isinstance(parsed, list)
-        assert parsed[0]["name"] == "test"
+        assert isinstance(parsed["result"], list)
+        assert parsed["result"][0]["name"] == "test"
 
     @pytest.mark.asyncio
     async def test_read_doc_returns_content(self) -> None:
@@ -430,14 +430,19 @@ class TestRegisterDocTools:
 
     @pytest.mark.asyncio
     async def test_read_doc_json_format_returns_structured_dict_in_text(self) -> None:
-        """JSON format text content must be a structured dict, not a raw JSON string."""
+        """JSON format text content must be a structured dict, not a raw JSON string.
+
+        Transitional shape: the text wraps the data in ``{"result": ...}``
+        (dual-channel ``apply_format``); the envelope lives in
+        ``structured_content`` only until read_doc routes through the single
+        result pipeline (#719), which puts the envelope in the text too.
+        """
         fn = self._capture_tool("read_doc")
         result = await fn(topic="test", format="json", page=1, limit=50)
         text = extract_text_from_content_items(result.content)
         parsed = json_module.loads(text)
         assert isinstance(parsed, dict), "JSON content should be a dict, not a string literal"
-        # structured_content.result is the data dict, text is its JSON dump
-        assert parsed == result.structured_content["result"]
+        assert parsed == {"result": result.structured_content["result"]}
 
     @pytest.mark.asyncio
     async def test_read_doc_json_format_pagination_in_structured_content(self) -> None:

@@ -12,17 +12,19 @@ Public functions:
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
     apply_format - format data for output (raw/json/markdown), no pagination.
-    format_paginated_result - format paginated list results for display.
-        Separates display from data creation: handles page slicing (or
-        ``fetch_all`` skip), formatting, and pagination metadata.  Preferred
-        over manual ``apply_format()`` + ``apply_pagination()`` composition.
-    empty_paginated_result - build an empty page result (empty/out-of-range
-        early returns of paginated synthetic tools) that still carries the
-        full pagination envelope, keeping schema and runtime in agreement.
+        Dual-channel: ``content`` mirrors ``structured_content``.
+    format_paginated_result - thin wrapper over the single result pipeline
+        (``tools/result_pipeline.render``) for paginated list results.
+    empty_paginated_result - thin wrapper over the pipeline for empty/
+        out-of-range pages that still carry the full pagination envelope.
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
+
+The single result pipeline for tools lives in ``tools/result_pipeline.py``;
+this module provides the shared formatting primitives it (and the resource
+display pipeline) build on.
 """
 
 from __future__ import annotations
@@ -39,7 +41,6 @@ from typing import TYPE_CHECKING, Any, cast
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.pagination import apply_pagination
 from gitea_mcp_server.schema_utils import get_schema_type
 
 if TYPE_CHECKING:
@@ -678,9 +679,11 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
     optional mirror that duplicates it:
 
     - ``raw``: text = serialized JSON mirroring ``structured_content``
-      (``{"result": data}``).  FastMCP auto-populates the text from
-      ``structured_content`` when only the latter is set.
-    - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
+      (``{"result": data}``).  The text is set explicitly — deterministic
+      raw, not a reliance on FastMCP auto-populating ``content`` from
+      ``structured_content``.
+    - ``json``: text = JSON dump of ``{"result": data}``,
+      structured_content = ``{"result": data}``.
     - ``markdown``: text = ``markdown_formatter(data)`` or the generic
       ``format_as_markdown``.  ``markdown_extras`` are appended
       as additional sections after the main content.
@@ -710,12 +713,16 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
         raise ValueError(msg)
 
     if fmt == "raw":
-        return ToolResult(structured_content={"result": data})
+        text = json_module.dumps({"result": data}, indent=2)
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": data},
+        )
 
     if fmt == "json":
         if detail == "concise" and schema is not None:
             data = collapse_data(data, schema, _depth=0, detail="concise")
-        text = json_module.dumps(data, indent=2)
+        text = json_module.dumps({"result": data}, indent=2)
     else:
         text = (
             markdown_formatter(data)
@@ -744,10 +751,12 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
 ) -> ToolResult:
     """Format a paginated list result for display.
 
-    Separates **display** from **data creation**.  Synthetic tool handlers
-    produce data (items + total_count) and then call this utility to handle
-    the display layer: page slicing (or everything when ``fetch_all=True``),
-    formatting, and pagination metadata.
+    Thin wrapper over the single result pipeline
+    (:func:`~gitea_mcp_server.tools.result_pipeline.render`): builds a
+    ``list``-shaped :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
+    and lets the pipeline slice (or ``fetch_all`` skip-slice), envelope, and
+    format.  Kept as a public helper for callers that still produce raw
+    items + total_count; new executors return ``ExecutionResult`` directly.
 
     When ``fetch_all=True`` the page/limit slice is skipped — all items are
     returned with ``has_more=False``.  When ``fetch_all=False`` (default),
@@ -767,7 +776,7 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
             the main content (only used in markdown mode).
         detail: Output detail level — ``"full"`` (default) or
             ``"concise"`` (collapse nested ``$ref`` objects).  Passed
-            through to ``apply_format``.
+            through to the pipeline.
         schema: Optional JSON Schema describing *items* for
             schema-aware collapse when ``detail="concise"``.
 
@@ -777,21 +786,25 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
         ``next_offset``, ``total_count``) belongs in the text beside
         ``result``; ``structured_content`` mirrors the text.
     """
-    if fetch_all:
-        # Skip slicing — return everything.
-        page, limit = 1, total_count or len(items)
-        page_items = items
-    else:
-        start = (page - 1) * limit
-        page_items = items[start : start + limit]
+    from gitea_mcp_server.tools.result_pipeline import (  # noqa: PLC0415 - deferred to break format -> result_pipeline -> format cycle
+        ExecutionResult,
+        render,
+    )
 
-    return apply_pagination(
-        apply_format(
-            page_items, fmt, markdown_extras=markdown_extras, detail=detail, schema=schema
+    return render(
+        ExecutionResult(
+            data=items,
+            total_count=total_count,
+            shape="list",
+            paginated=True,
+            markdown_extras=markdown_extras,
         ),
-        page,
-        limit,
-        total_count,
+        fmt=fmt,
+        detail=detail,
+        page=page,
+        limit=limit,
+        fetch_all=fetch_all,
+        schema=schema,
     )
 
 
@@ -809,11 +822,16 @@ def empty_paginated_result(
     ``structured_content`` shape (``result``, ``message``, and the pagination
     envelope) so the declared output schema and runtime never disagree.
 
+    Thin wrapper over the single result pipeline
+    (:func:`~gitea_mcp_server.tools.result_pipeline.render`) with an
+    ``empty``-shaped :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`.
+    The text channel carries *content* (the agent-facing message); for
+    ``format=json`` the envelope (``result``, ``message``, ``has_more``,
+    ``next_offset``, ``total_count``) is serialized as JSON text.
+
     ``total_count`` is the known total when the page is out of range (0 for
     an empty result set, or the real match count for an out-of-range page);
-    when ``None``, ``add_pagination_metadata`` falls back to its heuristic
-    and the empty ``result`` list (0 items < ``limit``) yields
-    ``has_more=False``.
+    when ``None``, the envelope reports ``total_count=None``.
 
     Args:
         content: The agent-facing message (e.g. "No results found for 'x'."
@@ -828,14 +846,22 @@ def empty_paginated_result(
         full pagination envelope (``has_more=False``, ``next_offset=None``,
         ``total_count``).
     """
-    return apply_pagination(
-        ToolResult(
-            content=[TextContent(type="text", text=content)],
-            structured_content={"result": [], "message": content},
+    from gitea_mcp_server.tools.result_pipeline import (  # noqa: PLC0415 - deferred to break format -> result_pipeline -> format cycle
+        ExecutionResult,
+        render,
+    )
+
+    return render(
+        ExecutionResult(
+            data=[],
+            total_count=total_count,
+            shape="empty",
+            paginated=True,
+            message=content,
         ),
-        page,
-        limit,
-        total_count,
+        fmt="markdown",
+        page=page,
+        limit=limit,
     )
 
 

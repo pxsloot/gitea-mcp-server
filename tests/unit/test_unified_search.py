@@ -293,7 +293,7 @@ class TestUnifiedSearch:
         assert len(result.content) > 0
         assert isinstance(result.content[0], TextContent)
         parsed = parse_json_content(result)
-        assert isinstance(parsed, list)
+        assert isinstance(parsed["result"], list)
 
     @pytest.mark.asyncio
     async def test_no_results_returns_empty_list(self) -> None:

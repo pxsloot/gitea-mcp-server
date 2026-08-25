@@ -11,7 +11,14 @@ from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
+from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
 from tests.helpers.mcp_results import extract_text_from_content_items, get_structured
+
+
+def _render(exec_result: Any, fmt: str = "markdown", page: int = 1, limit: int = 10) -> ToolResult:
+    """Render an ExecutionResult through the single result pipeline."""
+    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit)
+
 
 # Sample guide content for testing
 SAMPLE_FRONTMATTER = """\
@@ -341,7 +348,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_returns_markdown_by_default(self) -> None:
         fn = self._capture_tool("search_docs")
-        result = await fn(query="test")
+        result = _render(await fn(query="test"))
         assert isinstance(result, ToolResult)
         assert get_structured(result)["result"] is not None
         assert result.content is not None
@@ -350,7 +357,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_raw_format(self) -> None:
         fn = self._capture_tool("search_docs")
-        result = await fn(query="test", format="raw")
+        result = _render(await fn(query="test"), fmt="raw")
         assert isinstance(result, ToolResult)
         assert isinstance(get_structured(result)["result"], list)
         # ToolResult copies structured_content to content when content is None
@@ -358,7 +365,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_json_format(self) -> None:
         fn = self._capture_tool("search_docs")
-        result = await fn(query="test", format="json")
+        result = _render(await fn(query="test"), fmt="json")
         assert isinstance(result, ToolResult)
         assert result.content is not None
         text = extract_text_from_content_items(result.content)
@@ -419,8 +426,9 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_invalid_format_raises(self) -> None:
         fn = self._capture_tool("search_docs")
+        exec_result = await fn(query="test")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
-            await fn(query="test", format="xml")
+            _render(exec_result, fmt="xml")
 
     @pytest.mark.asyncio
     async def test_read_doc_invalid_format_raises(self) -> None:
@@ -484,7 +492,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_markdown_includes_cross_link_footer(self) -> None:
         fn = self._capture_tool("search_docs")
-        result = await fn(query="test")
+        result = _render(await fn(query="test"))
         assert result.content is not None
         text = extract_text_from_content_items(result.content)
         assert "Cross-linking hints" in text
@@ -494,7 +502,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_search_docs_empty_result_has_helpful_hint(self) -> None:
         fn = self._capture_tool("search_docs")
-        result = await fn(query="zzz_nonexistent")
+        result = _render(await fn(query="zzz_nonexistent"))
         assert result.content is not None
         text = extract_text_from_content_items(result.content)
         assert "No workflow guides found" in text
@@ -644,7 +652,7 @@ class TestSearchDocsPagination:
         register_doc_tools(mcp, mgr)
         fn = captured["search_docs"]
 
-        result = await fn(query="test", format="raw", page=1, limit=10)  # type: ignore[operator]
+        result = _render(await fn(query="test", page=1, limit=10), fmt="raw", page=1, limit=10)  # type: ignore[operator]
         assert result is not None
         sc = result.structured_content
         assert sc is not None
@@ -690,7 +698,7 @@ class TestSearchDocsPagination:
         register_doc_tools(mcp, mgr)
         fn = captured["search_docs"]
 
-        result = await fn(query="test", format="raw", page=10, limit=10)  # type: ignore[operator]  # fn from dict[str, Callable] is narrowed; operator error is mypy false positive on dict-value callable
+        result = _render(await fn(query="test", page=10, limit=10), fmt="raw", page=10, limit=10)  # type: ignore[operator]  # fn from dict[str, Callable] is narrowed; operator error is mypy false positive on dict-value callable
         assert result is not None
         sc = result.structured_content
         assert sc is not None

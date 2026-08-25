@@ -10,6 +10,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
 
 from gitea_mcp_server.constants import SEARCH_NAME_BOOST
+from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _call_tool_impl,
@@ -24,6 +25,11 @@ from gitea_mcp_server.tools.search import (
     search_and_slice,
 )
 from tests.helpers.mcp_results import extract_text_content, get_structured
+
+
+def _render(exec_result: Any, fmt: str = "markdown", page: int = 1, limit: int = 10) -> ToolResult:
+    """Render an ExecutionResult through the single result pipeline."""
+    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit)
 
 
 class TestSearchableText:
@@ -1207,7 +1213,7 @@ class TestSearchToolsSyntheticTool:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
         with pytest.raises(ValueError, match="Invalid category"):
-            await _search_tools_impl("test query", "invalid", "markdown", mock_ctx, transform)
+            await _search_tools_impl("test query", "invalid", mock_ctx, transform)
 
     @pytest.mark.asyncio
     async def test_search_tools_with_no_results(self) -> None:
@@ -1218,7 +1224,7 @@ class TestSearchToolsSyntheticTool:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
 
-        result = await _search_tools_impl("nonexistent", None, "markdown", mock_ctx, transform)
+        result = _render(await _search_tools_impl("nonexistent", None, mock_ctx, transform))
         assert result.structured_content is not None
         text = extract_text_content(result.content) if result.content else ""
         assert "No tools found" in text or "search_docs" in text
@@ -1244,7 +1250,7 @@ class TestSearchToolsSyntheticTool:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[mock_tool])
 
-        result = await _search_tools_impl("issue", None, "markdown", mock_ctx, transform)
+        result = _render(await _search_tools_impl("issue", None, mock_ctx, transform))
         assert result.structured_content is not None
         text = extract_text_content(result.content) if result.content else ""
         assert "Cross-linking" in text or "search_docs" in text
@@ -1270,7 +1276,7 @@ class TestSearchToolsSyntheticTool:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[issue_tool, repo_tool])
 
-        result = await _search_tools_impl("list", "issue", "markdown", mock_ctx, transform)
+        result = _render(await _search_tools_impl("list", "issue", mock_ctx, transform))
         assert result.structured_content is not None
         text = extract_text_content(result.content) if result.content else ""
         assert "gitea_issue_list" in text or "Cross-linking" in text
@@ -1559,7 +1565,7 @@ class TestSearchResourcesSyntheticTool:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="wiki", format="markdown", ctx=ctx)
+        result = _render(await _search_resources_impl(query="wiki", ctx=ctx))
 
         assert result.structured_content is not None
         results = result.structured_content["result"]
@@ -1582,7 +1588,7 @@ class TestSearchResourcesSyntheticTool:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="version", format="markdown", ctx=ctx)
+        result = _render(await _search_resources_impl(query="version", ctx=ctx))
 
         assert result.structured_content is not None
         results = result.structured_content["result"]
@@ -1605,7 +1611,7 @@ class TestSearchResourcesSyntheticTool:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="version", format="markdown", ctx=ctx)
+        result = _render(await _search_resources_impl(query="version", ctx=ctx))
 
         assert result.content is not None
         text = extract_text_content(result.content)
@@ -1621,7 +1627,7 @@ class TestSearchResourcesSyntheticTool:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="nothing", format="markdown", ctx=ctx)
+        result = _render(await _search_resources_impl(query="nothing", ctx=ctx))
 
         assert result.content is not None
         text = extract_text_content(result.content)
@@ -1652,7 +1658,7 @@ class TestSearchResourcesSyntheticTool:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="version", format="raw", ctx=ctx)
+        result = _render(await _search_resources_impl(query="version", ctx=ctx), fmt="raw")
         assert result.structured_content is not None
         assert len(result.structured_content["result"]) == 1
         assert result.structured_content["result"][0]["uri"] == "gitea://version"
@@ -2102,8 +2108,11 @@ class TestSearchToolsPagination:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl(
-            "test", None, "raw", mock_ctx, transform, page=1, limit=10
+        result = _render(
+            await _search_tools_impl("test", None, mock_ctx, transform, page=1, limit=10),
+            fmt="raw",
+            page=1,
+            limit=10,
         )
         sc = result.structured_content
         assert sc is not None
@@ -2129,8 +2138,11 @@ class TestSearchToolsPagination:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl(
-            "test", None, "raw", mock_ctx, transform, page=3, limit=10
+        result = _render(
+            await _search_tools_impl("test", None, mock_ctx, transform, page=3, limit=10),
+            fmt="raw",
+            page=3,
+            limit=10,
         )
         sc = get_structured(result)
         assert sc["has_more"] is False
@@ -2152,8 +2164,11 @@ class TestSearchToolsPagination:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=mock_tools)
 
-        result = await _search_tools_impl(
-            "test", None, "markdown", mock_ctx, transform, page=10, limit=10
+        result = _render(
+            await _search_tools_impl("test", None, mock_ctx, transform, page=10, limit=10),
+            fmt="markdown",
+            page=10,
+            limit=10,
         )
         assert result.content is not None
         text = extract_text_content(result.content)
@@ -2189,7 +2204,12 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=1, limit=10)
+        result = _render(
+            await _search_resources_impl(query="test", ctx=ctx, page=1, limit=10),
+            fmt="raw",
+            page=1,
+            limit=10,
+        )
         sc = result.structured_content
         assert sc is not None
         assert "has_more" in sc
@@ -2218,7 +2238,12 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(query="test", format="raw", ctx=ctx, page=3, limit=10)
+        result = _render(
+            await _search_resources_impl(query="test", ctx=ctx, page=3, limit=10),
+            fmt="raw",
+            page=3,
+            limit=10,
+        )
         sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
@@ -2243,8 +2268,11 @@ class TestSearchResourcesPagination:
         ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await _search_resources_impl(
-            query="test", format="markdown", ctx=ctx, page=10, limit=10
+        result = _render(
+            await _search_resources_impl(query="test", ctx=ctx, page=10, limit=10),
+            fmt="markdown",
+            page=10,
+            limit=10,
         )
         assert result.content is not None
         text = extract_text_content(result.content)
@@ -2471,17 +2499,18 @@ class TestSearchToolsWithFilteredInfo:
             },
         }
 
-        result = await _search_tools_impl(
-            "issue",
-            None,
-            "markdown",
-            ctx,
-            transform,
-            page=1,
-            limit=10,
-            min_score=0.0,
-            filtered_tools_info=filtered_info,
-            tool_prefix="gitea_",
+        result = _render(
+            await _search_tools_impl(
+                "issue",
+                None,
+                ctx,
+                transform,
+                page=1,
+                limit=10,
+                min_score=0.0,
+                filtered_tools_info=filtered_info,
+                tool_prefix="gitea_",
+            )
         )
         assert result is not None
         text = extract_text_content(result.content) if result.content else ""

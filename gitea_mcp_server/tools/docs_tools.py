@@ -19,15 +19,12 @@ from fastmcp.exceptions import ResourceError
 from fastmcp.tools.base import ToolResult  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import (
-    apply_format,
-    empty_paginated_result,
-    format_paginated_result,
-)
+from gitea_mcp_server.format import apply_format
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
     SyntheticToolSpec,
     register_all_synthetic_tools,
@@ -261,15 +258,13 @@ def register_doc_tools(
         doc_manager: Initialized DocManager with loaded guides
     """
 
-    async def search_docs(  # noqa: PLR0913 - query + pagination (page/limit/fetch_all) + display (format/min_score/detail) are independent concerns
+    async def search_docs(
         query: str,
-        format: str = "markdown",
         page: int = 1,
         limit: int = 10,
         min_score: float = SEARCH_MIN_SCORE,
         fetch_all: bool = False,
-        detail: str = "full",
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         """Search workflow guides by natural language query.
 
         Finds guides explaining Forgejo workflows, concepts, and settings.
@@ -285,8 +280,6 @@ def register_doc_tools(
         ## Parameters
 
         - ``query``: Natural language query (e.g., "how do tokens work", "protect branches", "label scopes")
-        - ``format``: Output format -- ``markdown`` (default, human-readable table), ``json`` (structured data), or ``raw``.
-        - ``detail``: Output detail level -- ``"full"`` (default) or ``"concise"``.
         - ``min_score``: Minimum relevance score (0.0-1.0). 0.0 returns everything,
           0.1 requires at least 10% as relevant as the top result, 1.0 requires perfect match.
 
@@ -303,8 +296,6 @@ def register_doc_tools(
 
         Args:
             query: Natural language query to search for guides
-            format: Output format: markdown (default), json, or raw
-            detail: Output detail level: "full" (default) or "concise"
             page: Page number (1-based, default 1). Ignored when ``fetch_all`` is True.
             limit: Maximum results per page (1-100, default 10). Ignored when ``fetch_all`` is True.
             min_score: Minimum relevance score (0.0-1.0)
@@ -327,33 +318,41 @@ def register_doc_tools(
                 "- For API tools: `search_tools(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            return empty_paginated_result(content, page, limit, total_count)
+            return ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="empty",
+                paginated=True,
+                message=content,
+            )
 
         # Check page range before formatting (only when paginating, not fetch_all).
         if not fetch_all:
             start = (page - 1) * limit
             if start >= total_count:
                 content = f"Page {page} is out of range (total results: {total_count})."
-                return empty_paginated_result(content, page, limit, total_count)
+                return ExecutionResult(
+                    data=[],
+                    total_count=total_count,
+                    shape="empty",
+                    paginated=True,
+                    message=content,
+                )
 
         extras: list[str] = []
-        if format == "markdown":
-            extras.append(
-                "**Cross-linking hints:**\n"
-                "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
-                "- For API tools: `search_tools(query)`\n"
-                "- For data resources: `search_resources(query)`"
-            )
+        extras.append(
+            "**Cross-linking hints:**\n"
+            "- Guides are also available as resources at `gitea://docs/guide/{topic}`\n"
+            "- For API tools: `search_tools(query)`\n"
+            "- For data resources: `search_resources(query)`"
+        )
 
-        return format_paginated_result(
-            all_results,
-            total_count,
-            format,
-            page,
-            limit,
-            fetch_all,
-            markdown_extras=extras or None,
-            detail=detail,
+        return ExecutionResult(
+            data=all_results,
+            total_count=total_count,
+            shape="list",
+            paginated=True,
+            markdown_extras=extras,
         )
 
     search_docs_spec = SyntheticToolSpec(

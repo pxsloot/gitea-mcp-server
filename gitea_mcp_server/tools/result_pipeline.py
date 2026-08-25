@@ -41,18 +41,16 @@ from __future__ import annotations
 
 import json as json_module
 import logging
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass, field
+from typing import Any
 
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
+from pydantic import ConfigDict
 
 from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
 from gitea_mcp_server.format import collapse_data, format_as_markdown
 from gitea_mcp_server.pagination import add_pagination_metadata
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -66,26 +64,12 @@ class ExecutionResult:
     Executors (autogen HTTP pipeline and synthetic impls) return this instead
     of a ``ToolResult``; :func:`render` turns it into the agent-facing result.
 
-    Attributes:
-        data: The raw result data (list, dict, str, None, ...).
-        total_count: Known total for pagination (``X-Total-Count`` for
-            autogen, ``len(items)`` for synthetic lists).  ``None`` when
-            unknown.
-        shape: Result shape — ``"list"``, ``"object"``, ``"scalar"``,
-            ``"text"``, ``"empty"``, or ``"binary"``.
-        paginated: When True, the pipeline emits the pagination envelope
-            (``has_more``/``next_offset``/``total_count``) beside ``result``.
-            True for list tools and paginated synthetic tools; False for
-            unpaginated objects (e.g. ``resolve_type``) and non-list
-            responses.
-        message: Agent-facing message for empty/out-of-range results
-            (``shape="empty"``) or the no-content confirmation.
-        markdown_extras: Extra markdown sections appended after the main
-            content (markdown format only).
-        markdown_formatter: Bespoke markdown renderer for this result
-            (e.g. ``format_tool_info_markdown``, ``read_doc``'s content
-            passthrough).  Defaults to the generic ``format_as_markdown``.
+    ``markdown_formatter`` is a callable — pydantic cannot build a
+    ``TypeAdapter`` for it (FastMCP validates tool return annotations), so
+    the field is typed ``Any`` and excluded from serialization.
     """
+
+    __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
 
     data: Any
     total_count: int | None = None
@@ -93,7 +77,7 @@ class ExecutionResult:
     paginated: bool = False
     message: str | None = None
     markdown_extras: list[str] | None = None
-    markdown_formatter: Callable[[Any], str] | None = None
+    markdown_formatter: Any = field(default=None, repr=False)
 
 
 def render(  # noqa: PLR0913 - the pipeline is the single display path; every display axis must be a parameter because executors return raw data only and never render

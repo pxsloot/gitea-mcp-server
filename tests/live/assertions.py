@@ -183,6 +183,10 @@ def assert_result_ok(result: Any) -> Any:
     2. text content is parseable JSON
     3. returns a dict or list
 
+    The single result pipeline wraps every ``format=json`` text in the
+    envelope dict (``{"result": ...}`` plus pagination keys); the ``result``
+    payload is extracted when present.
+
     Returns the parsed value for further inspection.
     """
     assert not result.isError, f"Tool call failed: {extract_text_content(result.content)}"
@@ -192,6 +196,8 @@ def assert_result_ok(result: Any) -> Any:
     except json.JSONDecodeError as e:
         msg = f"Expected JSON response, got: {text[:200]!r}...\nError: {e}"
         raise AssertionError(msg) from e
+    if isinstance(data, dict) and "result" in data:
+        data = data["result"]
     assert isinstance(data, (dict, list)), (
         f"Expected JSON dict or list, got {type(data).__name__}: {text[:200]!r}"
     )

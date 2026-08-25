@@ -163,33 +163,38 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
 
     if shape == "list":
         items = data if isinstance(data, list) else []
-        total = result.total_count if result.total_count is not None else len(items)
-        if total == 0:
+        total = result.total_count
+        if total == 0 or (total is None and not items):
             # Empty result set — emit the empty envelope with the message.
             return {
                 "result": [],
                 "message": result.message or "No results found.",
                 "has_more": False,
                 "next_offset": None,
-                "total_count": 0,
+                "total_count": total,
             }
         if fetch_all:
-            page_items = items
-            eff_page, eff_limit = 1, total or len(items)
-        else:
-            start = (page - 1) * limit
-            if start >= total:
-                return {
-                    "result": [],
-                    "message": result.message
-                    or f"Page {page} is out of range (total results: {total}).",
-                    "has_more": False,
-                    "next_offset": None,
-                    "total_count": total,
-                }
-            page_items = items[start : start + limit]
-            eff_page, eff_limit = page, limit
-        return add_pagination_metadata({"result": page_items}, eff_page, eff_limit, total)
+            # In-memory skip-slice: everything, no more pages.
+            return {
+                "result": items,
+                "has_more": False,
+                "next_offset": None,
+                "total_count": total,
+            }
+        start = (page - 1) * limit
+        if total is not None and start >= total:
+            return {
+                "result": [],
+                "message": result.message
+                or f"Page {page} is out of range (total results: {total}).",
+                "has_more": False,
+                "next_offset": None,
+                "total_count": total,
+            }
+        page_items = items[start : start + limit]
+        # When the total is unknown, add_pagination_metadata falls back to
+        # the "full page means more" heuristic (len == limit).
+        return add_pagination_metadata({"result": page_items}, page, limit, total)
 
     # object / scalar / text — no slicing; envelope only when paginated.
     if result.paginated:

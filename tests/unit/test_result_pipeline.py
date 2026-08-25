@@ -102,16 +102,19 @@ class TestListShape:
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
 
-    def test_total_count_defaults_to_len(self) -> None:
+    def test_unknown_total_uses_full_page_heuristic(self) -> None:
+        """When total_count is unknown, has_more follows the full-page heuristic."""
         result = render(
-            ExecutionResult(data=_items(3), shape="list", paginated=True),
+            ExecutionResult(data=_items(10), shape="list", paginated=True),
             fmt="json",
             page=1,
             limit=10,
         )
         sc = get_structured(result)
-        assert sc["total_count"] == 3
-        assert sc["has_more"] is False
+        # A full page (len == limit) with unknown total implies more pages.
+        assert sc["total_count"] is None
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 2
 
 
 class TestObjectShape:

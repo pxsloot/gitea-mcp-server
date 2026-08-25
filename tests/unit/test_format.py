@@ -8,7 +8,6 @@ Covers all functions in __all__:
 import json
 from typing import Any
 
-import pytest
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (
@@ -31,6 +30,7 @@ from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
     extract_text_content,
@@ -1393,26 +1393,17 @@ class TestDualChannelContract:
 
     The MCP spec makes ``content`` the guaranteed channel of a tool result;
     ``structured_content`` is an optional mirror that duplicates it.  These
-    tests assert that contract via ``assert_dual_channel``.  The paths that
-    currently violate it are marked ``xfail`` with a reference to #719
-    (Build the single result pipeline), which flips them green when the
-    pipeline lands.
+    tests assert that contract via ``assert_dual_channel``.  The single
+    result pipeline (#719) is the single writer of both channels, so every
+    path holds the contract.
     """
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="json text is the bare array, envelope only in structured_content; fixed by #719",
-    )
     def test_paginated_json_envelope_in_text(self) -> None:
         """Paginated format=json must carry the envelope beside result in the text."""
         items = [{"id": i} for i in range(25)]
         result = format_paginated_result(items, 25, "json", page=1, limit=10)
         assert_dual_channel(result, fmt="json")
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="json text is the bare data, structured_content wraps in result; fixed by #719",
-    )
     def test_json_content_mirrors_structured(self) -> None:
         """Non-paginated format=json text must mirror structured_content (result wrapper)."""
         result = apply_format({"id": 1}, "json")
@@ -1452,6 +1443,35 @@ class TestDualChannelContract:
         assert sc["result"] == []
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
+
+    def test_empty_paginated_result_json_shape(self) -> None:
+        """Empty page format=json carries result/message/envelope as JSON text.
+
+        The empty-json shape is ``{"result": [], "message": "...",
+        "has_more": false, "next_offset": null, "total_count": N}`` — the
+        text is JSON, mirroring structured_content (issue #719 follow-up).
+        """
+        result = render(
+            ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="empty",
+                paginated=True,
+                message="No results found for 'x'.",
+            ),
+            fmt="json",
+            page=1,
+            limit=10,
+        )
+        assert_dual_channel(result, fmt="json")
+        parsed = parse_json_content(result)
+        assert parsed == {
+            "result": [],
+            "message": "No results found for 'x'.",
+            "has_more": False,
+            "next_offset": None,
+            "total_count": 0,
+        }
 
 
 # ============================================================================

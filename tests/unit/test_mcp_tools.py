@@ -1288,9 +1288,8 @@ class TestMcpListResourcesRawFormat:
     async def test_raw_format_has_structured_content(self) -> None:
         """format=raw carries the data in structured_content.
 
-        Current shape: the text mirrors the pre-envelope shape (see
-        test_raw_format_dual_channel, xfail until #719 puts the envelope
-        in the text).
+        The text mirrors the envelope (see test_raw_format_dual_channel —
+        the single result pipeline puts the envelope in the text).
         """
         fn = self._capture_tool()
         ctx = MagicMock(spec=Context)
@@ -1311,13 +1310,6 @@ class TestMcpListResourcesRawFormat:
         assert get_structured(result)["result"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "paginated raw content lacks the envelope: apply_pagination adds "
-            "has_more/next_offset/total_count to structured_content only; fixed by #719"
-        ),
-    )
     async def test_raw_format_dual_channel(self) -> None:
         """list_resources format=raw must carry the envelope in the text.
 

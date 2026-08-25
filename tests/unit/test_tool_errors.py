@@ -433,13 +433,13 @@ class TestRunValidation:
         )
 
     def test_pagination_validation_passes(self) -> None:
-        """When page/per_page are present with valid values, should not raise."""
-        run_validation({"page": 1, "per_page": 50})
+        """When page/limit are present with valid values, should not raise."""
+        run_validation({"page": 1, "limit": 50})
 
     def test_pagination_validation_rejects_invalid(self) -> None:
-        """When per_page is too high, should raise ValidationError."""
-        with pytest.raises(ValidationError, match="page|per_page"):
-            run_validation({"page": 1, "per_page": 99999})
+        """When limit is too high, should raise ValidationError."""
+        with pytest.raises(ValidationError, match="page|limit"):
+            run_validation({"page": 1, "limit": 99999})
 
     def test_validator_raises_type_error_wraps_cleanly(
         self, monkeypatch: pytest.MonkeyPatch

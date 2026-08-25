@@ -525,14 +525,11 @@ class TestPaginationMetadata:
         name: str = "issue_list_issues",
         output_schema: dict | None = None,
         page_param: bool = True,
-        per_page_param: bool = True,
-        limit_param: bool = False,
+        limit_param: bool = True,
     ) -> Tool:
         props: dict = {}
         if page_param:
             props["page"] = {"type": "integer"}
-        if per_page_param:
-            props["per_page"] = {"type": "integer"}
         if limit_param:
             props["limit"] = {"type": "integer"}
 
@@ -555,8 +552,8 @@ class TestPaginationMetadata:
         )
 
     @pytest.mark.asyncio
-    async def test_has_more_true_when_result_equals_per_page(self) -> None:
-        """has_more should be True when result length equals per_page."""
+    async def test_has_more_true_when_result_equals_limit(self) -> None:
+        """has_more should be True when result length equals limit."""
         transform = self._make_transform()
         tool = self._make_tool()
 
@@ -570,7 +567,7 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 30})
+            output = await wrapped.run(arguments={"page": 1, "limit": 30})
 
             assert get_structured(output)["has_more"] is True
             assert get_structured(output)["next_offset"] == 2
@@ -578,8 +575,8 @@ class TestPaginationMetadata:
             assert len(get_structured(output)["result"]) == 30
 
     @pytest.mark.asyncio
-    async def test_has_more_false_when_result_less_than_per_page(self) -> None:
-        """has_more should be False when result length is less than per_page."""
+    async def test_has_more_false_when_result_less_than_limit(self) -> None:
+        """has_more should be False when result length is less than limit."""
         transform = self._make_transform()
         tool = self._make_tool()
 
@@ -593,7 +590,7 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 30})
+            output = await wrapped.run(arguments={"page": 1, "limit": 30})
 
             assert get_structured(output)["has_more"] is False
             assert get_structured(output)["next_offset"] is None
@@ -623,9 +620,9 @@ class TestPaginationMetadata:
 
     @pytest.mark.asyncio
     async def test_uses_limit_parameter(self) -> None:
-        """Should use 'limit' parameter as fallback when 'per_page' is not present."""
+        """Should use the 'limit' parameter for the envelope."""
         transform = self._make_transform()
-        tool = self._make_tool(limit_param=True)
+        tool = self._make_tool()
 
         with patch(
             "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
@@ -682,7 +679,7 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 2, "per_page": 10})
+            output = await wrapped.run(arguments={"page": 2, "limit": 10})
 
             assert get_structured(output)["total_count"] is None
 
@@ -704,10 +701,10 @@ class TestPaginationMetadata:
 
                 result = await transform.list_tools([tool])
                 wrapped = result[0]
-                output = await wrapped.run(arguments={"page": 1, "per_page": 10})
+                output = await wrapped.run(arguments={"page": 1, "limit": 10})
 
                 assert get_structured(output)["total_count"] == 42
-                # total_count=42, page=1, per_page=10 → more pages exist
+                # total_count=42, page=1, limit=10 → more pages exist
                 assert get_structured(output)["has_more"] is True
                 assert get_structured(output)["next_offset"] == 2
         finally:
@@ -730,15 +727,11 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 10})
+            output = await wrapped.run(arguments={"page": 1, "limit": 10})
 
             assert get_structured(output)["result"] == original_data
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason="autogen list path sets content=str(enhanced) (Python repr, not JSON); fixed by #719",
-    )
     async def test_autogen_list_raw_content_is_serialized_json(self) -> None:
         """Autogen list format=raw content must be JSON, not a Python repr.
 
@@ -759,15 +752,11 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 10, "format": "raw"})
+            output = await wrapped.run(arguments={"page": 1, "limit": 10, "format": "raw"})
 
             assert_dual_channel(output, fmt="raw")
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason="autogen list json text is the bare array, missing result wrapper + envelope; fixed by #719",
-    )
     async def test_autogen_list_json_content_mirrors_structured(self) -> None:
         """Autogen list format=json text must mirror structured_content.
 
@@ -788,7 +777,7 @@ class TestPaginationMetadata:
 
             result = await transform.list_tools([tool])
             wrapped = result[0]
-            output = await wrapped.run(arguments={"page": 1, "per_page": 10, "format": "json"})
+            output = await wrapped.run(arguments={"page": 1, "limit": 10, "format": "json"})
 
             assert_dual_channel(output, fmt="json")
 

@@ -44,7 +44,6 @@ from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import (
     PAGINATION_SCHEMA_PROPERTIES,
-    add_pagination_metadata,
     pagination_ctx,
 )
 from gitea_mcp_server.scope import derive_required_scope
@@ -61,6 +60,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.errors import run_validation, run_with_error_handling
 from gitea_mcp_server.tools.label_transform import LabelTransform
 from gitea_mcp_server.tools.labels import update_labels_schema
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.schemas import (
     derive_output_schema,
     get_success_schema,
@@ -659,15 +659,16 @@ class _ToolWrappingTransform(Transform):
         """Build the autogen HTTP-pipeline executor for a tool.
 
         Binds :meth:`_run_transform_pipeline` (validation, route-aware HTTP
-        execution, error translation, response-class wrapping, pagination
-        metadata) to this tool's ``customization``.
+        execution, error translation, response-class classification) to this
+        tool's ``customization``.  Returns raw data (``ExecutionResult``);
+        the single result pipeline renders it.
         """
 
         async def executor(
             kwargs: dict[str, Any],
             _extracted: dict[str, Any] | None,
             ctx: Any | None,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             return await self._run_transform_pipeline(
                 kwargs,
                 tool,
@@ -796,8 +797,8 @@ class _ToolWrappingTransform(Transform):
         tool: Tool,
         customization: ToolCustomization | None,
         ctx: Any | None = None,
-    ) -> ToolResult:
-        """Run the full tool execution pipeline: validate, execute, wrap result.
+    ) -> ExecutionResult:
+        """Run the full tool execution pipeline: validate, execute, classify.
 
         Label conversion is handled by the inner :class:`LabelTransform`
         that runs before this method is invoked via ``tool.run()``.
@@ -806,6 +807,10 @@ class _ToolWrappingTransform(Transform):
         and passed down so progress reporting and structured logging work
         inside the pipeline.  When ``ctx`` is ``None`` (no active MCP session),
         progress reporting and context logging degrade gracefully.
+
+        Returns raw data only — an :class:`ExecutionResult` (data,
+        total_count, shape).  The single result pipeline renders it; no
+        display logic lives here.
 
         Args:
             kwargs: The tool arguments from the agent.
@@ -844,7 +849,7 @@ class _ToolWrappingTransform(Transform):
         self,
         result: ToolResult,
         tool: Tool,
-    ) -> ToolResult | None:
+    ) -> ExecutionResult | None:
         """Handle text/plain and base64-decode text responses.
 
         Two cases:
@@ -858,10 +863,7 @@ class _ToolWrappingTransform(Transform):
                 (c.text for c in result.content if isinstance(c, TextContent)),
                 "",
             )
-            return ToolResult(
-                content=[TextContent(type="text", text=text)],
-                structured_content={"result": text},
-            )
+            return ExecutionResult(data=text, shape="text")
         # structured_content is not None → check for base64-decode
         c: ToolCustomization | None = (tool.meta or {}).get("_customization")
         response_transform = c.response_transform if c is not None else None
@@ -871,19 +873,16 @@ class _ToolWrappingTransform(Transform):
         if not isinstance(data, dict) or data.get("encoding") != "base64":
             return None
         text = await decode_base64_content(data)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": text},
-        )
+        return ExecutionResult(data=text, shape="text")
 
     async def _try_handle_binary_response(
         self,
         result: ToolResult,
-    ) -> ToolResult | None:
+    ) -> ExecutionResult | None:
         """Return structured ``content_info`` metadata for binary responses.
 
-        Returns a ``ToolResult`` with ``content_info`` (type, size, guidance)
-        or ``None`` when this handler does not apply.
+        Returns an ``ExecutionResult`` with ``content_info`` (type, size,
+        guidance) or ``None`` when this handler does not apply.
         """
         if result.structured_content is not None:
             return None
@@ -892,24 +891,17 @@ class _ToolWrappingTransform(Transform):
             "",
         )
         size = len(text.encode("utf-8")) if text else 0
-        return ToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text=f"Binary content ({size} bytes). Use format='raw' to access directly.",
-                )
-            ],
-            structured_content={
-                "result": None,
-                "content_info": {
-                    "type": "binary",
-                    "size": size,
-                    "message": "Binary content returned. Use format='raw' to access the raw bytes.",
-                },
+        return ExecutionResult(
+            data={
+                "type": "binary",
+                "size": size,
+                "message": "Binary content returned. Use format='raw' to access the raw bytes.",
             },
+            shape="binary",
+            message=f"Binary content ({size} bytes). Use format='raw' to access directly.",
         )
 
-    async def _pipeline_with_context(  # noqa: PLR0913
+    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
         self,
         kwargs: dict[str, Any],
         tool: Tool,
@@ -920,7 +912,7 @@ class _ToolWrappingTransform(Transform):
         is_empty_response: bool,
         is_binary_response: bool,
         output_schema: dict[str, Any] | None,
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         """Run the tool execution pipeline with an optional Context.
 
         ``ctx`` is resolved by the caller (``transform_fn`` via
@@ -928,18 +920,21 @@ class _ToolWrappingTransform(Transform):
         passed through.  ``ctx`` is ``None`` when no request context is
         active (e.g. in-memory ``mcp.call_tool()``).
 
-        Handles four response classes (in order):
-        1. **JSON** — standard, passed through to output formatting.
-        2. **Text/plain** (diffs, patches) — wraps raw text in
-           ``{"result": text}``.
+        Returns raw data only — an :class:`ExecutionResult` (data,
+        total_count, shape).  The single result pipeline
+        (``tools/result_pipeline.render``) applies shape → paginate →
+        format afterwards; no display logic lives here.
+
+        Handles five response classes (in order):
+        1. **JSON** — standard; classified ``list`` (array) or ``object``.
+        2. **Text/plain** (diffs, patches) — ``shape="text"``.
         3. **Base64-decode** (ContentsResponse) — detours JSON with
            base64-encoded content to plain text via
-           ``decode_base64_content``.
-        4. **Binary** (zip, octet-stream) — returns structured
+           ``decode_base64_content`` (``shape="text"``).
+        4. **Binary** (zip, octet-stream) — ``shape="binary"`` with
            ``content_info`` metadata instead of raw bytes.
-        5. **Empty-body** (204/205) — returns ``{"result": None}`` with
-           the visible confirmation text ``Operation completed successfully.``
-           so agents receive an explicit success signal.
+        5. **Empty-body** (204/205) — ``shape="empty"`` with the visible
+           confirmation message so agents receive an explicit success signal.
         """
         tracer = get_tracer()
 
@@ -1023,39 +1018,44 @@ class _ToolWrappingTransform(Transform):
             and isinstance(result, ToolResult)
             and result.structured_content is None
         ):
-            return ToolResult(
-                content=[TextContent(type="text", text="Operation completed successfully.")],
-                structured_content={"result": None},
+            return ExecutionResult(
+                data=None,
+                shape="empty",
+                message="Operation completed successfully.",
             )
 
-        if (
-            _is_array_response(output_schema)
-            and isinstance(result, ToolResult)
-            and result.structured_content is not None
-        ):
-            result_data = result.structured_content.get("result")
-            if isinstance(result_data, list):
-                page = kwargs.get("page", 1)
-                per_page = kwargs.get("per_page") or kwargs.get("limit", 100)
-                total_count = pagination_ctx.get().get("total_count")
-                enhanced = add_pagination_metadata(
-                    result.structured_content,
-                    page,
-                    per_page,
-                    total_count=total_count,
-                )
+        if result.structured_content is None:
+            # Unwrapped response (no output_schema): the raw text is the data.
+            # FastMCP leaves structured_content None and puts the raw response
+            # text in content — treat it as a text-shaped result.
+            text = next(
+                (c.text for c in result.content if isinstance(c, TextContent)),
+                "",
+            )
+            return ExecutionResult(data=text, shape="text")
 
-                if len(result_data) > 0:
-                    await safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
+        result_data = result.structured_content.get("result")
+        if result_data is None and "result" not in result.structured_content:
+            # Unwrapped JSON object (no output_schema): FastMCP puts the raw
+            # response dict in structured_content without a "result" wrapper.
+            result_data = result.structured_content
 
-                return ToolResult(
-                    content=[TextContent(type="text", text=str(enhanced))],
-                    structured_content=enhanced,
-                )
+        # Array responses are paginated: the pipeline slices by page/limit
+        # and emits the envelope.  The total comes from the X-Total-Count
+        # header captured by the httpx event hook (pagination_ctx).
+        if _is_array_response(output_schema) and isinstance(result_data, list):
+            if len(result_data) > 0:
+                await safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
+            return ExecutionResult(
+                data=result_data,
+                total_count=pagination_ctx.get().get("total_count"),
+                shape="list",
+                paginated=True,
+            )
 
         await safe_ctx_report_progress(ctx, progress=1.0)
 
-        return result
+        return ExecutionResult(data=result_data, shape="object")
 
 
 # ---------------------------------------------------------------------------

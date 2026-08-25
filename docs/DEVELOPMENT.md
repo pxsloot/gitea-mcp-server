@@ -184,8 +184,8 @@ The customization pipeline has two phases:
    ``Context`` via ``context_utils.resolve_current_context()`` (which catches
    ``RuntimeError`` from ``CurrentContext()`` outside an active session),
    then threads the ``ToolCustomization`` explicitly through
-   ``_run_transform_pipeline(kwargs, tool, customization, extracted=...,
-   ctx=ctx)``, ultimately reaching ``_pipeline_with_context()``.  Runtime
+   ``_run_transform_pipeline(kwargs, tool, customization, ctx=ctx)``,
+   ultimately reaching ``_pipeline_with_context()``.  Runtime
    wrapping (validation, label conversion, error handling, text wrapping,
    pagination) all receive ``ctx`` for ``ctx.info()`` logging and
    ``ctx.report_progress()`` calls at key stages, gracefully degraded to
@@ -292,8 +292,12 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
 The lifecycle functions are called automatically in the transform pipeline:
 
 1. ``inject_into(tool.parameters, tool=tool)`` — adds the param to every tool's
-   schema.  The ``tool`` argument enables ``tool_predicate`` gating.
-2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
+   schema.  The ``tool`` argument enables ``tool_predicate`` gating.  Returns
+   the injected set, which the caller stamps into
+   ``tool.meta["_virtual_params"]`` so extraction matches injection.
+2. ``extract_from(kwargs, only=tool.meta["_virtual_params"])`` — pops it from
+   kwargs before the HTTP request; params not injected (e.g. ``fetch_all`` on
+   an autogen tool) stay in kwargs and are rejected as unknown
 3. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
    ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
 4. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
@@ -330,10 +334,13 @@ The lifecycle functions are called automatically in the transform pipeline:
 
     Virtual-param **extraction respects each tool's allowlist**: only
     allowlisted registry params are popped from kwargs before validation.
+    Both tool families carry the allowlist in ``tool.meta["_virtual_params"]``
+    — synthetic tools stamp it at registration, autogen tools have it
+    stamped with the actually-injected set (visible + predicate-passing).
     An off-profile registry-name key (e.g. ``detail`` or ``fetch_all`` on a
-    format-only tool like ``read_doc``) stays in kwargs and is rejected with
-    the shared "Unknown parameter(s)" error rather than being silently
-    dropped.
+    format-only tool like ``read_doc``, or ``fetch_all`` on an autogen tool)
+    stays in kwargs and is rejected with the shared "Unknown parameter(s)"
+    error rather than being silently dropped.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
 The mechanism (how `apply_scope_filter` toggles `.visible`, and how a single

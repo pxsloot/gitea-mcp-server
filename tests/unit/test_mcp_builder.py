@@ -1154,6 +1154,58 @@ class TestToolWrappingTransform:
         assert "format" in props
         assert "detail" in props
         assert "fetch_all" not in props
+        # The actually-injected set is stamped so extraction matches injection:
+        # fetch_all (predicate-gated) is absent, so passing it is rejected as
+        # unknown rather than silently dropped.
+        allowlist = (wrapped.meta or {}).get("_virtual_params")
+        assert allowlist is not None
+        assert "format" in allowlist
+        assert "detail" in allowlist
+        assert "fetch_all" not in allowlist
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_on_autogen_tool_rejected_as_unknown(self) -> None:
+        """Passing fetch_all to an autogen tool errors instead of silently dropping.
+
+        Regression for #724: fetch_all is synthetic-only, so an agent that
+        passes it to an autogen list tool must get a clear "Unknown
+        parameter(s)" error — not a silently truncated single page.
+        """
+        tool = Tool(
+            name="issue_list_issues",
+            description="Autogen list tool.",
+            parameters={
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["owner", "repo"],
+            },
+            meta={
+                "_contract_wrap": True,
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    route_path="/repos/{owner}/{repo}/issues",
+                    route_method="GET",
+                ),
+            },
+        )
+        transform = self.make_transform()
+        [wrapped] = await transform.list_tools([tool])
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                content=[], structured_content={"result": [{"id": 1}]}
+            )
+            with pytest.raises(ValueError, match="Unknown parameter"):
+                await wrapped.run({"owner": "o", "repo": "r", "fetch_all": True})
+            # The HTTP path must never be reached — fetch_all is rejected
+            # before execution.
+            mock_run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_run_transform_pipeline_no_customization(self) -> None:

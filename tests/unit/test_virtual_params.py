@@ -119,6 +119,57 @@ class TestInjectInto:
         assert "format" in params["properties"]
         assert "detail" in params["properties"]
 
+    def test_returns_injected_set(self) -> None:
+        """Returns the set of param names actually written to the schema."""
+        params: dict = {"properties": {}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "format": _FORMAT_VP,
+                "detail": _DETAIL_VP,
+            },
+            clear=True,
+        ):
+            injected = inject_into(params, only=None)
+        assert injected == {"format", "detail"}
+
+    def test_returns_injected_set_excludes_shadowed(self) -> None:
+        """Shadowed (pre-existing) params are not part of the injected set."""
+        params: dict = {"properties": {"format": {"type": "integer"}}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "format": _FORMAT_VP,
+                "detail": _DETAIL_VP,
+            },
+            clear=True,
+        ):
+            injected = inject_into(params, only=None)
+        # format already existed (never shadowed) — only detail was written.
+        assert injected == {"detail"}
+
+    def test_returns_injected_set_excludes_predicate_gated(self) -> None:
+        """Predicate-gated params (e.g. fetch_all on autogen) are excluded."""
+        params: dict = {"properties": {}}
+        gated = VirtualParam(
+            schema={"type": "boolean"},
+            default=False,
+            description="Synthetic-only.",
+            tool_predicate=lambda t: bool((t.meta or {}).get("_synthetic")),
+        )
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {
+                "format": _FORMAT_VP,
+                "fetch_all": gated,
+            },
+            clear=True,
+        ):
+            # Autogen tool: no _synthetic meta marker → predicate fails.
+            injected = inject_into(params, tool=Tool(name="t", description="", parameters={}))
+        assert injected == {"format"}
+        assert "fetch_all" not in params["properties"]
+
 
 # ---------------------------------------------------------------------------
 # apply_pre_hooks

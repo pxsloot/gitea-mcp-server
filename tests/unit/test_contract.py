@@ -172,7 +172,12 @@ class TestBuildTransformFn:
 
     @pytest.mark.asyncio
     async def test_no_allowlist_pops_all_virtual_params(self) -> None:
-        """Autogen tools (no _virtual_params) pop every registry param."""
+        """Fallback: a tool without a stamped _virtual_params pops every registry param.
+
+        Autogen tools normally get their allowlist stamped by ``_inject_params``
+        (extraction matches injection); this exercises the unstamped fallback
+        where ``extract_from(only=None)`` pops every registry param.
+        """
         received: dict[str, Any] = {}
 
         async def executor(
@@ -189,6 +194,36 @@ class TestBuildTransformFn:
 
         assert received["extracted"] == {"format": "json", "fetch_all": True}
         assert received["kwargs"] == {"query": "q"}
+
+    @pytest.mark.asyncio
+    async def test_autogen_allowlist_leaves_fetch_all_in_kwargs(self) -> None:
+        """Autogen tools' stamped allowlist excludes fetch_all → rejected as unknown.
+
+        ``_inject_params`` stamps ``tool.meta["_virtual_params"]`` with the
+        actually-injected set (fetch_all is predicate-gated to synthetic
+        tools), so extraction leaves it in kwargs for validation to reject
+        instead of silently dropping it.
+        """
+        received: dict[str, Any] = {}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ToolResult:
+            received["kwargs"] = dict(kwargs)
+            received["extracted"] = dict(extracted or {})
+            return ToolResult(structured_content={"result": "ok"})
+
+        tool = _make_tool()
+        # What _inject_params stamps for an autogen tool: visible params that
+        # passed injection (format/detail), fetch_all excluded by predicate.
+        tool.meta = {"_virtual_params": {"format", "detail"}}
+        transform_fn = build_transform_fn(tool, executor)
+        await transform_fn(query="q", format="json", fetch_all=True)
+
+        assert received["extracted"] == {"format": "json"}
+        assert received["kwargs"] == {"query": "q", "fetch_all": True}
 
     @pytest.mark.asyncio
     async def test_real_format_post_hook_renders_content(self) -> None:

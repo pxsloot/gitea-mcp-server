@@ -634,14 +634,22 @@ class _ToolWrappingTransform(Transform):
         ``format``'s default is dynamic — it comes from server config,
         not the registry.  Passed via ``default_overrides`` so the
         VirtualParam's ``.default`` stays accurate for the injection site.
+
+        Autogen tools (no explicit allowlist) get the actually-injected set
+        stamped into ``tool.meta["_virtual_params"]`` so extraction matches
+        injection: a registry param that was *not* injected (e.g. ``fetch_all``,
+        gated by its ``tool_predicate`` to synthetic tools) stays in kwargs
+        and is rejected as unknown instead of being silently dropped.
         """
         meta = tool.meta or {}
-        inject_into(
+        injected = inject_into(
             tool.parameters,
             tool=tool,
             default_overrides={"format": self._response_format},
             only=meta.get("_virtual_params"),
         )
+        if meta.get("_virtual_params") is None:
+            meta["_virtual_params"] = injected
 
     def _make_autogen_executor(
         self,

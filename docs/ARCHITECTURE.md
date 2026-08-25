@@ -343,7 +343,12 @@ allowlist (``_virtual_params``) so
 rather than hand-declared per signature.  ``fetch_all`` is synthetic-only
 (the API loop machinery was removed — see #724); it is gated by a
 ``tool_predicate`` on the ``_synthetic`` meta marker so autogen tools no
-longer expose it.  The executor registry is
+longer expose it.  Autogen tools (which pass ``only=None`` to
+``inject_into``) get the actually-injected set stamped into
+``tool.meta["_virtual_params"]`` the same way, so extraction matches
+injection: a registry param that was not injected (e.g. ``fetch_all`` on an
+autogen tool) stays in kwargs and is rejected as unknown rather than
+silently dropped.  The executor registry is
 **per-server** — keyed weakly by the server instance so a server's executors
 are released when the server is garbage-collected (tests, hot-reload) — and
 the same tool name on two servers never cross-resolves.  Registration is
@@ -572,7 +577,7 @@ for autogen, ``limit`` with a per-tool ``limit_max`` for synthetic.
       ``RuntimeError`` from ``CurrentContext()`` (raised outside an active
       session) and returns ``None``.  The resolved ``ctx`` is passed to the
       executor, which threads it through
-      ``_run_transform_pipeline(kwargs, tool, extracted=..., ctx=ctx)`` and
+      ``_run_transform_pipeline(kwargs, tool, customization, ctx=ctx)`` and
       ``_pipeline_with_context()``.  Context operations
       (``ctx.info()``, ``ctx.report_progress()``) are wrapped in
       ``safe_ctx_info()`` and ``safe_ctx_report_progress()`` helpers from

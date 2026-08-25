@@ -286,13 +286,6 @@ _VIRTUAL_PARAMS["verbose"] = VirtualParam(
     # Receives (result, value, all_extracted) — all_extracted lets the
     # hook read other virtual params (e.g. format reads detail).
     post_hook=_apply_verbose,
-    # Optional: loop-hook runs inside the execution pipeline, after the
-    # HTTP call and pagination metadata but before post_hook.  Receives
-    # an ``execute_fn`` callable to re-invoke the HTTP path with updated
-    # arguments (e.g. incremented ``page`` for auto-pagination).
-    # The ``_fetch_all_loop`` hook delegates to ``PaginationRunner``
-    # (see ``gitea_mcp_server/pagination.py``) for the actual loop logic.
-    loop_hook=None,  # e.g. _fetch_all_loop  (result, value, kwargs, execute_fn) -> result
 )
 ```
 
@@ -303,32 +296,17 @@ The lifecycle functions are called automatically in the transform pipeline:
 2. ``extract_from(kwargs)`` — pops it from kwargs before the HTTP request
 3. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
    ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
-4. ``_run_transform_pipeline(kwargs, tool, extracted=virtual_values, ctx=ctx)`` —
-   executes the HTTP call and pagination metadata (with ``ctx`` for progress
-   reporting and logging), then invokes every registered ``loop_hook`` with an
-   ``execute_fn`` that re-invokes ``run_with_error_handling`` for subsequent
-   pages
+4. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
+   synthetic impl) with ``ctx`` for progress reporting and logging
 5. ``apply_to(result, extracted)`` — runs post-hooks; hooks receive
    ``(result, value, all_extracted)`` for output formatting and cleanup
 
-A ``loop_hook`` is how you implement params that need to **re-execute** the
-HTTP call — for example auto-pagination (``fetch_all``).  Unlike pre/post hooks
-which are pure value transformers, a loop hook receives a callable
-``execute_fn(updated_kwargs) → ToolResult`` so it can fetch additional pages
-and merge results.  The hook should update the ``ToolResult``'s
-``structured_content`` (typically setting ``has_more=False``) and return it.
-
 .. note::
 
-    ``fetch_all`` has two implementations depending on tool type:
-
-    **API tools** (auto-generated from OpenAPI spec):
-    ``fetch_all`` is a virtual parameter registered in ``virtual_params.py``.
-    The ``_fetch_all_loop`` hook (a thin wrapper around
-    :class:`~gitea_mcp_server.pagination.PaginationRunner`) fetches all pages
-    via HTTP and merges them into a single result, capped at
-    ``FETCH_ALL_MAX_PAGES`` pages.  See ``gitea_mcp_server/constants.py`` for
-    the cap value.
+    ``fetch_all`` is **synthetic-only** (the API loop machinery was removed
+    in #724; an executor-internal loop is a post-milestone follow-up).  It is
+    injected only into synthetic tools via a ``tool_predicate`` on the
+    ``_synthetic`` meta marker — autogen tools no longer expose it.
 
     **Synthetic tools** (``search_tools``, ``search_resources``,
     ``search_docs``, ``search``, ``list_resources``):

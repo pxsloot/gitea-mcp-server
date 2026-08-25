@@ -69,7 +69,7 @@ from gitea_mcp_server.tools.schemas import (
     unwrap_result_schema,
 )
 from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
-from gitea_mcp_server.tools.virtual_params import get_loop_hooks, inject_into
+from gitea_mcp_server.tools.virtual_params import inject_into
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -657,14 +657,13 @@ class _ToolWrappingTransform(Transform):
 
         async def executor(
             kwargs: dict[str, Any],
-            extracted: dict[str, Any] | None,
+            _extracted: dict[str, Any] | None,
             ctx: Any | None,
         ) -> ToolResult:
             return await self._run_transform_pipeline(
                 kwargs,
                 tool,
                 customization,
-                extracted=extracted,
                 ctx=ctx,
             )
 
@@ -783,98 +782,11 @@ class _ToolWrappingTransform(Transform):
             meta=tool.meta,
         )
 
-    async def _apply_loop_hooks(  # noqa: PLR0913
-        self,
-        result: ToolResult,
-        kwargs: dict[str, Any],
-        extracted: dict[str, Any] | None,
-        tool: Tool,
-        route_path: str,
-        route_method: str,
-    ) -> ToolResult:
-        """Run registered loop hooks on a ToolResult.
-
-        Called after HTTP execution and pagination metadata have been
-        applied, **before** returning the result.  Loop hooks receive an
-        ``execute_fn`` callable so they can re-invoke the HTTP execution
-        path with updated arguments (e.g. incremented ``page``).
-
-        The ``execute_fn`` callable validates its kwargs (same as the
-        initial pipeline) so malformed re-execution arguments are caught
-        early rather than reaching the Gitea API.
-
-        .. note::
-
-            Each hook is responsible for its own termination (stop when
-            ``has_more`` is false or a page returns fewer items than the
-            page size).  No built-in iteration limit exists — that is
-            intentional; the loop logic belongs in the hook.
-
-        Returns the (potentially modified) ``ToolResult``.
-        """
-        if not extracted:
-            return result
-
-        async def _execute_fn(inner_kwargs: dict[str, Any]) -> ToolResult:
-            # Validate re-execution kwargs the same way the initial
-            # pipeline validates them (idempotent, catches errors
-            # early instead of relying on the Gitea API to reject them).
-            try:
-                run_validation(
-                    inner_kwargs,
-                    tool.parameters.get("required"),
-                    tool.parameters.get("properties"),
-                )
-            except ValidationError as e:
-                raise ValueError(str(e)) from e
-
-            result = await run_with_error_handling(
-                inner_kwargs,
-                tool,
-                self._openapi_spec,
-                route_path,
-                route_method,
-            )
-
-            # Add pagination metadata so loop hooks (e.g. _fetch_all_loop)
-            # can read has_more / next_offset / total_count on subsequent
-            # pages — same wrapping that _pipeline_with_context applies
-            # to the initial page.
-            if (
-                _is_array_response(tool.output_schema)
-                and isinstance(result, ToolResult)
-                and result.structured_content is not None
-            ):
-                data = result.structured_content.get("result")
-                if isinstance(data, list):
-                    page = inner_kwargs.get("page", 1)
-                    limit = inner_kwargs.get("per_page") or inner_kwargs.get("limit", 100)
-                    total_count = pagination_ctx.get().get("total_count")
-                    enhanced = add_pagination_metadata(
-                        result.structured_content,
-                        page,
-                        limit,
-                        total_count=total_count,
-                    )
-                    result = ToolResult(
-                        content=result.content,
-                        structured_content=enhanced,
-                        meta=result.meta,
-                    )
-
-            return result
-
-        for _name, (_value, hook) in get_loop_hooks(extracted).items():
-            result = await hook(result, _value, kwargs, _execute_fn)
-
-        return result
-
     async def _run_transform_pipeline(
         self,
         kwargs: dict[str, Any],
         tool: Tool,
         customization: ToolCustomization | None,
-        extracted: dict[str, Any] | None = None,
         ctx: Any | None = None,
     ) -> ToolResult:
         """Run the full tool execution pipeline: validate, execute, wrap result.
@@ -893,10 +805,6 @@ class _ToolWrappingTransform(Transform):
             customization: The ``ToolCustomization`` extracted once in
                 :meth:`_wrap` and threaded explicitly — avoids repeated
                 ``tool.meta`` lookups throughout the pipeline.
-            extracted: Extracted virtual parameter values (from
-                :func:`~tools.virtual_params.extract_from`), passed through
-                so the pipeline can invoke :ref:`loop_hooks <loop-hooks>`.
-                ``None`` or empty means no loop hooks to run.
             ctx: The MCP ``Context`` object, or ``None`` if no session is
                 active.  Resolved by the caller via
                 :func:`~gitea_mcp_server.context_utils.resolve_current_context`.
@@ -922,7 +830,6 @@ class _ToolWrappingTransform(Transform):
             is_empty_response,
             is_binary_response,
             output_schema,
-            extracted=extracted,
         )
 
     async def _try_handle_text_response(
@@ -1006,7 +913,6 @@ class _ToolWrappingTransform(Transform):
         is_empty_response: bool,
         is_binary_response: bool,
         output_schema: dict[str, Any] | None,
-        extracted: dict[str, Any] | None = None,
     ) -> ToolResult:
         """Run the tool execution pipeline with an optional Context.
 
@@ -1027,12 +933,6 @@ class _ToolWrappingTransform(Transform):
         5. **Empty-body** (204/205) — returns ``{"result": None}`` with
            the visible confirmation text ``Operation completed successfully.``
            so agents receive an explicit success signal.
-
-        Args:
-            extracted: Extracted virtual param values from
-                :func:`~tools.virtual_params.extract_from`.  Passed through
-                so that loop hooks (``VirtualParam.loop_hook``) can be
-                invoked after the HTTP call and pagination metadata.
         """
         tracer = get_tracer()
 
@@ -1098,14 +998,7 @@ class _ToolWrappingTransform(Transform):
         if is_text_response:
             handled = await self._try_handle_text_response(result, tool)
             if handled is not None:
-                return await self._apply_loop_hooks(
-                    handled,
-                    kwargs,
-                    extracted,
-                    tool,
-                    route_path,
-                    route_method,
-                )
+                return handled
 
         # Binary response (application/zip, application/octet-stream):
         # return structured content_info metadata instead of raw bytes.
@@ -1123,17 +1016,9 @@ class _ToolWrappingTransform(Transform):
             and isinstance(result, ToolResult)
             and result.structured_content is None
         ):
-            result = ToolResult(
+            return ToolResult(
                 content=[TextContent(type="text", text="Operation completed successfully.")],
                 structured_content={"result": None},
-            )
-            return await self._apply_loop_hooks(
-                result,
-                kwargs,
-                extracted,
-                tool,
-                route_path,
-                route_method,
             )
 
         if (
@@ -1156,29 +1041,14 @@ class _ToolWrappingTransform(Transform):
                 if len(result_data) > 0:
                     await safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
 
-                result = ToolResult(
+                return ToolResult(
                     content=[TextContent(type="text", text=str(enhanced))],
                     structured_content=enhanced,
-                )
-                return await self._apply_loop_hooks(
-                    result,
-                    kwargs,
-                    extracted,
-                    tool,
-                    route_path,
-                    route_method,
                 )
 
         await safe_ctx_report_progress(ctx, progress=1.0)
 
-        return await self._apply_loop_hooks(
-            result,
-            kwargs,
-            extracted,
-            tool,
-            route_path,
-            route_method,
-        )
+        return result
 
 
 # ---------------------------------------------------------------------------

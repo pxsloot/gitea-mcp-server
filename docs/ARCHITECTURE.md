@@ -325,10 +325,9 @@ The **per-call contract spine is shared** via ``tools/contract.py``:
 pre-hooks, context resolution, and post-hoc formatting for both tool
 families.  Autogen tools supply the autogen executor (the HTTP pipeline in
 ``server_setup/mcp_builder.py``: validation, route-aware HTTP execution,
-error translation, response-class wrapping, pagination metadata, loop
-hooks); synthetic tools supply a local in-memory executor.  Backend-specific
-behaviour (HTTP error translation, API ``fetch_all`` re-execution) stays
-inside the executor, never in the shared spine.
+error translation, response-class wrapping, pagination metadata); synthetic
+tools supply a local in-memory executor.  Backend-specific behaviour (HTTP
+error translation) stays inside the executor, never in the shared spine.
 
 The contract transform is **server-level**: registered via
 ``mcp.add_transform()`` (first in the chain) so it can wrap tools from every
@@ -341,7 +340,10 @@ pydantic-serializes meta — so only the id travels in meta and the executor
 itself lives in the registry), and declare a per-tool virtual-param
 allowlist (``_virtual_params``) so
 ``format``/``detail``/``fetch_all``/``sudo`` are injected from the registry
-rather than hand-declared per signature.  The executor registry is
+rather than hand-declared per signature.  ``fetch_all`` is synthetic-only
+(the API loop machinery was removed — see #724); it is gated by a
+``tool_predicate`` on the ``_synthetic`` meta marker so autogen tools no
+longer expose it.  The executor registry is
 **per-server** — keyed weakly by the server instance so a server's executors
 are released when the server is garbage-collected (tests, hot-reload) — and
 the same tool name on two servers never cross-resolves.  Registration is
@@ -391,7 +393,7 @@ for autogen, ``limit`` with a per-tool ``limit_max`` for synthetic.
 | `schema_utils.py` | Shared JSON Schema type utilities (circular-import breaker) |
 | `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
-| `pagination.py` | Pagination metadata, headers, ``PaginationRunner`` |
+| `pagination.py` | Pagination metadata, headers |
 | `uri_utils.py` | URI template helpers (``clean_resource_uri``) shared by resources, tools, and display layers |
 
 ---
@@ -888,8 +890,6 @@ Agent: call_tool("gitea_issue_create_issue", {...})
             │           └─▶ OpenAPITool.run() → httpx request to Gitea API
             ├─▶ log completion (ctx.info)
             ├─▶ wrap response in {"result": ...}
-        ├─▶ apply loop hooks with ``execute_fn`` for re-execution
-        │   (e.g. auto-pagination via VirtualParam.loop_hook)
         ├─▶ report progress for paginated fetches (ctx.report_progress)
         ├─▶ on error: translate httpx errors to agent-friendly messages
         └─▶ apply virtual param post-hooks to result (tools/virtual_params.py)

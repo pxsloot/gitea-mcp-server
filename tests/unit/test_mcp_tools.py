@@ -20,7 +20,12 @@ from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
     format_resource_content,
 )
-from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
+from tests.helpers.mcp_results import (
+    assert_dual_channel,
+    extract_text_content,
+    get_structured,
+    parse_json_content,
+)
 
 
 class TestCleanResourceUri:
@@ -1281,7 +1286,12 @@ class TestMcpListResourcesRawFormat:
 
     @pytest.mark.asyncio
     async def test_raw_format_has_structured_content(self) -> None:
-        """format=raw should return ToolResult with structured_content only."""
+        """format=raw carries the data in structured_content.
+
+        Current shape: the text mirrors the pre-envelope shape (see
+        test_raw_format_dual_channel, xfail until #719 puts the envelope
+        in the text).
+        """
         fn = self._capture_tool()
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
@@ -1299,6 +1309,38 @@ class TestMcpListResourcesRawFormat:
         assert result.structured_content is not None
         assert get_structured(result)["total_count"] == 1
         assert get_structured(result)["result"][0]["uri"] == "gitea://version"
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "paginated raw content lacks the envelope: apply_pagination adds "
+            "has_more/next_offset/total_count to structured_content only; fixed by #719"
+        ),
+    )
+    async def test_raw_format_dual_channel(self) -> None:
+        """list_resources format=raw must carry the envelope in the text.
+
+        ``apply_format`` auto-populates content from structured_content before
+        ``apply_pagination`` runs, so the text mirrors the pre-envelope shape
+        while structured_content carries the full envelope — the two channels
+        disagree.  #719 makes the envelope part of the text.
+        """
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        r = MagicMock()
+        r.uri = "gitea://version"
+        r.name = "Version"
+        r.description = "Server version"
+        r.mime_type = "text/plain"
+        r.tags = set()
+        r.meta = None
+        ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = await fn(ctx=ctx, format="raw")
+        assert_dual_channel(result, fmt="raw")
 
 
 class TestMcpListResourcesFetchAll:

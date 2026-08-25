@@ -33,7 +33,7 @@ from gitea_mcp_server.format import (
 )
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import apply_pagination
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -701,8 +701,9 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
 
                 result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
 
-                # Add pagination metadata to structured_content so agents can
-                # discover total property count and navigate pages.
+                # Add pagination metadata so agents can discover total
+                # property count and navigate pages (in the text for
+                # format=json, mirrored in structured_content).
                 result = apply_pagination(result, page, limit, total_props)
             else:
                 # Concise path returns the full schema unpaginated — still
@@ -761,6 +762,7 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
             },
             "description": "Matching resource definitions ranked by relevance",
         },
+        "message": MESSAGE_SCHEMA_PROPERTY,
     },
 }
 
@@ -977,6 +979,7 @@ def register_synthetic_tools(
                     },
                     "description": "Matching tool definitions with name, description, tags and annotations",
                 },
+                "message": MESSAGE_SCHEMA_PROPERTY,
             },
         },
         paginated=True,

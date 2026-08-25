@@ -23,6 +23,7 @@ from fastmcp.tools.base import Tool, ToolResult  # noqa: TC002 - runtime use via
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.format import empty_paginated_result, format_paginated_result
 from gitea_mcp_server.models import UnifiedSearchItem
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
 from gitea_mcp_server.tools.search import (
@@ -259,6 +260,7 @@ def register_unified_search(
                             },
                             "description": "Merged results across tools, docs, and resources",
                         },
+                        "message": MESSAGE_SCHEMA_PROPERTY,
                     },
                 },
                 paginated=True,

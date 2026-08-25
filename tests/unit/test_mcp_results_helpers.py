@@ -1,10 +1,11 @@
 """Tests for tests/helpers/mcp_results.py.
 
-Covers all 10 helpers: happy paths and error paths for each.
+Covers all 11 helpers: happy paths and error paths for each.
 """
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -13,6 +14,7 @@ from mcp.types import TextContent
 
 from tests.helpers.mcp_results import (
     assert_call_success,
+    assert_dual_channel,
     assert_low_level_success,
     assert_resource_success,
     extract_low_level_text,
@@ -181,6 +183,91 @@ class TestParseJsonContent:
         result = _make_result(content=[])
         with pytest.raises(AssertionError, match="at least one content"):
             parse_json_content(result)
+
+
+# ---------------------------------------------------------------------------
+# assert_dual_channel
+# ---------------------------------------------------------------------------
+
+
+class TestAssertDualChannel:
+    def test_json_happy_path(self) -> None:
+        """content JSON mirrors structured_content exactly."""
+        result = _make_result(
+            content=[TextContent(text='{"result": [1, 2]}', type="text")],
+            structured_content={"result": [1, 2]},
+        )
+        assert assert_dual_channel(result, fmt="json") == {"result": [1, 2]}
+
+    def test_json_with_envelope(self) -> None:
+        """Paginated json: envelope lives in the text beside result."""
+        sc = {"result": [1], "has_more": False, "next_offset": None, "total_count": 1}
+        result = _make_result(
+            content=[TextContent(text=json.dumps(sc), type="text")],
+            structured_content=sc,
+        )
+        assert assert_dual_channel(result, fmt="json") == sc
+
+    def test_markdown_happy_path(self) -> None:
+        """markdown: content is a rendering; structured carries the result."""
+        result = _make_result(
+            content=[TextContent(text="| Property | Value |", type="text")],
+            structured_content={"result": {"id": 1}},
+        )
+        assert assert_dual_channel(result, fmt="markdown") == {"result": {"id": 1}}
+
+    def test_structured_content_none_passes(self) -> None:
+        """structured_content is optional — content alone satisfies the contract."""
+        result = _make_result(content=[TextContent(text='{"result": 1}', type="text")])
+        assert assert_dual_channel(result, fmt="json") == {}
+
+    def test_missing_content_raises(self) -> None:
+        """No content channel violates the contract."""
+        result = SimpleNamespace(structured_content={"result": 1})  # no .content attr
+        with pytest.raises(AssertionError, match="Expected .content"):
+            assert_dual_channel(result, fmt="json")
+
+    def test_empty_content_raises(self) -> None:
+        """Empty content list violates the contract."""
+        result = _make_result(content=[], structured_content={"result": 1})
+        with pytest.raises(AssertionError, match="at least one content"):
+            assert_dual_channel(result, fmt="json")
+
+    def test_blank_text_raises(self) -> None:
+        """Whitespace-only text is not valid content."""
+        result = _make_result(
+            content=[TextContent(text="   ", type="text")],
+            structured_content={"result": 1},
+        )
+        with pytest.raises(AssertionError, match="must not be empty"):
+            assert_dual_channel(result, fmt="json")
+
+    def test_non_json_text_raises(self) -> None:
+        """Python repr (not JSON) in content violates the contract for json."""
+        result = _make_result(
+            content=[TextContent(text="{'result': [1, 2]}", type="text")],
+            structured_content={"result": [1, 2]},
+        )
+        with pytest.raises(json.JSONDecodeError):
+            assert_dual_channel(result, fmt="json")
+
+    def test_mirror_mismatch_raises(self) -> None:
+        """content and structured_content carrying different info violates the contract."""
+        result = _make_result(
+            content=[TextContent(text="[1, 2]", type="text")],
+            structured_content={"result": [1, 2], "has_more": False},
+        )
+        with pytest.raises(AssertionError, match="must mirror"):
+            assert_dual_channel(result, fmt="json")
+
+    def test_markdown_missing_result_raises(self) -> None:
+        """markdown: structured_content must carry the result payload."""
+        result = _make_result(
+            content=[TextContent(text="text", type="text")],
+            structured_content={"has_more": False},
+        )
+        with pytest.raises(AssertionError, match="result payload"):
+            assert_dual_channel(result, fmt="markdown")
 
 
 # ---------------------------------------------------------------------------

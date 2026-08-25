@@ -131,6 +131,51 @@ def parse_json_content(result: object) -> Any:
     return json.loads(text)
 
 
+def assert_dual_channel(result: object, *, fmt: str = "json") -> dict[str, Any]:
+    """Assert the dual-channel contract: content present+valid, structured mirrors it.
+
+    The MCP spec makes ``content`` the guaranteed channel of a tool result;
+    ``structured_content`` is an optional mirror that, when present, duplicates
+    ``content``.  This helper asserts that contract on a tool result:
+
+    - ``content`` is present and valid: at least one ``TextContent`` item with
+      non-empty text; for ``fmt`` in (``"json"``, ``"raw"``) the text must
+      parse as JSON.
+    - ``structured_content`` mirrors ``content``: for ``fmt="json"`` (and
+      ``"raw"``) the parsed text equals ``structured_content`` exactly — the
+      text is the serialized JSON of the structured payload.  For
+      ``fmt="markdown"`` the mirror is weaker (content is a rendering), so the
+      helper asserts ``result`` is present in ``structured_content``.
+
+    Args:
+        result: The tool result (``ToolResult`` or a duck-typed object with
+            ``.content`` and ``.structured_content``).
+        fmt: The output format the result was produced with — ``"json"``,
+            ``"raw"``, or ``"markdown"``.
+
+    Returns:
+        The ``structured_content`` dict (or ``{}`` when absent) for further
+        assertions.
+
+    Raises:
+        AssertionError: If any part of the contract is violated.
+    """
+    content = getattr(result, "content", None)
+    assert content is not None, "Expected .content to be present"
+    text = extract_text_content(list(content))
+    assert text.strip(), "content must not be empty"
+
+    sc = getattr(result, "structured_content", None)
+    if fmt in ("json", "raw"):
+        parsed = json.loads(text)
+        if sc is not None:
+            assert parsed == sc, "content JSON must mirror structured_content"
+    elif sc is not None:
+        # markdown: content is a rendering; structured carries the data
+        assert "result" in sc, "structured_content must carry the result payload"
+    return sc if isinstance(sc, dict) else {}
+
+
 # --- Low-level MCP protocol helpers (integration tests) ---
 
 

@@ -14,7 +14,7 @@ from fastmcp.exceptions import ToolError
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.server import create_mcp_server
 from tests.conftest import SimpleConfig
-from tests.helpers.mcp_results import get_structured
+from tests.helpers.mcp_results import assert_dual_channel, get_structured
 
 
 def _make_spec() -> dict:
@@ -218,3 +218,82 @@ class TestReadDocContract:
                 await mcp.call_tool(f"{prefix}read_doc", {"topic": "labels", **bad_arg})
             param = next(iter(bad_arg))
             assert f"Unknown parameter(s): '{param}'" in str(exc.value)
+
+
+class TestDualChannelContract:
+    """The dual-channel contract holds on real call_tool results (issue #718).
+
+    ``content`` is the guaranteed channel; ``structured_content`` is an
+    optional mirror that duplicates it.  Asserted at the protocol level on
+    actual tool calls, not only on unit-level ``ToolResult`` construction.
+    """
+
+    @pytest.mark.asyncio
+    async def test_markdown_dual_channel(self) -> None:
+        """format=markdown: content present, structured carries result + envelope."""
+        mcp, prefix = await _make_server()
+
+        result = await mcp.call_tool(
+            f"{prefix}search_tools",
+            {"query": "issue", "format": "markdown"},
+        )
+        sc = assert_dual_channel(result, fmt="markdown")
+        assert "has_more" in sc
+        assert "total_count" in sc
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=False,
+        reason="json text is the bare array, envelope only in structured_content; fixed by #719",
+    )
+    async def test_json_envelope_in_text(self) -> None:
+        """format=json: the envelope must be in the text beside result."""
+        mcp, prefix = await _make_server()
+
+        result = await mcp.call_tool(
+            f"{prefix}search_tools",
+            {"query": "issue", "format": "json", "page": 1, "limit": 5},
+        )
+        assert_dual_channel(result, fmt="json")
+
+
+class TestMessageSchemaDeclaration:
+    """The message key is declared only on tools that emit it (issue #718).
+
+    Schema and runtime must never disagree: every tool that emits ``message``
+    via ``empty_paginated_result`` declares it (nullable) in its output
+    schema, and tools that never emit it (``read_doc``) do not.
+    """
+
+    _EMITTING = (
+        "search",
+        "search_tools",
+        "search_resources",
+        "search_docs",
+        "list_resources",
+    )
+
+    @pytest.mark.asyncio
+    async def test_message_declared_on_emitting_tools(self) -> None:
+        """The five emitting tools declare message (nullable) in output_schema."""
+        mcp, prefix = await _make_server()
+        tools = await mcp.list_tools()
+        by_name = {t.name: t for t in tools}
+
+        for name in self._EMITTING:
+            tool = by_name[f"{prefix}{name}"]
+            assert tool.output_schema is not None
+            props = tool.output_schema["properties"]
+            assert "message" in props, f"{name} must declare message"
+            assert props["message"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
+
+    @pytest.mark.asyncio
+    async def test_message_not_declared_on_read_doc(self) -> None:
+        """read_doc never emits message, so its schema must not declare it."""
+        mcp, prefix = await _make_server()
+        tools = await mcp.list_tools()
+        by_name = {t.name: t for t in tools}
+
+        tool = by_name[f"{prefix}read_doc"]
+        assert tool.output_schema is not None
+        assert "message" not in tool.output_schema["properties"]

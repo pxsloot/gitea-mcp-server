@@ -37,6 +37,7 @@ from gitea_mcp_server.format import (
 )
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
@@ -278,6 +279,7 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                 },
             ],
         },
+        "message": MESSAGE_SCHEMA_PROPERTY,
     },
 }
 
@@ -336,9 +338,10 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     ## Return Structure
 
     Returns a flat list of resource metadata dictionaries, with pagination
-    metadata (``total_count``, ``has_more``, ``next_offset``) in
-    ``structured_content`` — the same contract as ``search_tools``,
-    ``search_resources``, ``search_docs``, and ``search``.
+    metadata (``total_count``, ``has_more``, ``next_offset``) carried in the
+    text for ``format=json`` and mirrored in ``structured_content`` — the
+    same contract as ``search_tools``, ``search_resources``, ``search_docs``,
+    and ``search``.
 
     Each resource dictionary contains:
     - `uri`: The resource URI (may be a template with `{param}` placeholders)
@@ -397,8 +400,8 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     Returns:
         A flat list of resource info dicts with pagination metadata
-        (``total_count``, ``has_more``, ``next_offset``) in
-        ``structured_content``:
+        (``total_count``, ``has_more``, ``next_offset``) carried in the
+        text for ``format=json`` and mirrored in ``structured_content``:
         [
             {
                 "uri": "gitea://repos/{owner}/{repo}",

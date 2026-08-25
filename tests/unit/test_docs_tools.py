@@ -689,7 +689,7 @@ class TestSearchDocsPagination:
         assert result is not None
         sc = result.structured_content
         assert sc is not None
-        assert "Page 10 is out of range" in str(sc.get("_hint", ""))
+        assert "Page 10 is out of range" in str(sc.get("message", ""))
         assert sc.get("result") == []
         # Out-of-range pages still carry the full pagination envelope (issue #694).
         assert sc["has_more"] is False

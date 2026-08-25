@@ -673,10 +673,13 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
 ) -> ToolResult:
     """Format data for output. No pagination involvement.
 
-    Produces a ``ToolResult`` with ``structured_content`` carrying the raw
-    data (``{"result": data}``) and ``content`` formatted per ``fmt``:
+    Produces a ``ToolResult`` whose ``content`` (the text channel) is
+    authoritative and always present, with ``structured_content`` as an
+    optional mirror that duplicates it:
 
-    - ``raw``: structured_content only, no text content.
+    - ``raw``: text = serialized JSON mirroring ``structured_content``
+      (``{"result": data}``).  FastMCP auto-populates the text from
+      ``structured_content`` when only the latter is set.
     - ``json``: text = JSON dump, structured_content = ``{"result": data}``.
     - ``markdown``: text = ``markdown_formatter(data)`` or the generic
       ``format_as_markdown``.  ``markdown_extras`` are appended
@@ -699,7 +702,7 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
             collapsing when ``detail="concise"``.
 
     Returns:
-        A ``ToolResult`` with formatted content and raw structured data.
+        A ``ToolResult`` with authoritative text content and structured data.
     """
     _VALID_FORMATS = frozenset({"raw", "json", "markdown"})
     if fmt not in _VALID_FORMATS:
@@ -769,8 +772,10 @@ def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent dis
             schema-aware collapse when ``detail="concise"``.
 
     Returns:
-        A ``ToolResult`` with formatted content and pagination metadata
-        in ``structured_content``.
+        A ``ToolResult`` with authoritative text content and pagination
+        metadata.  For ``format=json`` the envelope (``has_more``,
+        ``next_offset``, ``total_count``) belongs in the text beside
+        ``result``; ``structured_content`` mirrors the text.
     """
     if fetch_all:
         # Skip slicing — return everything.
@@ -801,7 +806,7 @@ def empty_paginated_result(
     Edge-path companion to :func:`format_paginated_result`: the empty-result
     and out-of-range-page branches of paginated synthetic tools return early,
     before ``format_paginated_result`` runs.  This helper produces the same
-    ``structured_content`` shape (``result``, ``_hint``, and the pagination
+    ``structured_content`` shape (``result``, ``message``, and the pagination
     envelope) so the declared output schema and runtime never disagree.
 
     ``total_count`` is the known total when the page is out of range (0 for
@@ -813,20 +818,20 @@ def empty_paginated_result(
     Args:
         content: The agent-facing message (e.g. "No results found for 'x'."
             or "Page 3 is out of range (total results: 5).").  Also stored
-            as ``_hint`` in ``structured_content``.
+            as ``message`` in ``structured_content``.
         page: The requested page number (1-based).
         limit: Items per page.
         total_count: Total number of matching items, if known.
 
     Returns:
-        A ``ToolResult`` with ``result=[]``, ``_hint=content``, and the
+        A ``ToolResult`` with ``result=[]``, ``message=content``, and the
         full pagination envelope (``has_more=False``, ``next_offset=None``,
         ``total_count``).
     """
     return apply_pagination(
         ToolResult(
             content=[TextContent(type="text", text=content)],
-            structured_content={"result": [], "_hint": content},
+            structured_content={"result": [], "message": content},
         ),
         page,
         limit,

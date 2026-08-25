@@ -25,7 +25,7 @@ from gitea_mcp_server.format import (
     format_paginated_result,
 )
 from gitea_mcp_server.models import DocEntry
-from gitea_mcp_server.pagination import apply_pagination
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.synthetic_contract import (
@@ -69,6 +69,7 @@ _SEARCH_DOCS_OUTPUT_SCHEMA: dict[str, Any] = {
             },
             "description": "Matching guide definitions ranked by relevance",
         },
+        "message": MESSAGE_SCHEMA_PROPERTY,
     },
 }
 
@@ -393,9 +394,9 @@ def register_doc_tools(
         ## Return Value
 
         The guide content (sliced by page/limit) in the requested format.
-        For ``json`` and ``raw`` formats, the response includes pagination
-        metadata (``has_more``, ``next_offset``, ``total_count``) alongside
-        the guide content.
+        For ``json`` format, the response includes the pagination envelope
+        (``has_more``, ``next_offset``, ``total_count``) in the text
+        alongside the guide content.
 
         ## Error Handling
 
@@ -457,7 +458,7 @@ def register_doc_tools(
                             "description": "The full guide content",
                         },
                     },
-                    "description": "Guide content with pagination metadata in structured_content",
+                    "description": "Guide content with pagination metadata in the text (format=json) and mirrored in structured_content",
                 },
             },
         },

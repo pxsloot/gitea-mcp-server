@@ -217,8 +217,7 @@ shape, then trust the compact example day to day.
 through long guides. Each page is `limit` lines (default 50; the accepted
 maximum is server-enforced — discover the exact bound with
 `tool_info("read_doc")`).
-For ``json`` and ``raw`` formats, pagination metadata (``has_more``,
-``next_offset``, ``total_count``) accompanies the guide content.
+For ``json`` format, the pagination envelope (``has_more``, ``next_offset``, ``total_count``) is included in the text alongside the guide content.
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These
@@ -268,8 +267,9 @@ trip of confusion:
 
 - **Empty list is `[]`, not an error.** A list/search tool that matches nothing
   returns an empty JSON array (or an empty Markdown section) — still carrying
-  the pagination envelope (`has_more=False`, `total_count=0`). That means *no
-  matching items* — not a scope-hidden tool. Don't treat `[]` as "I'm filtered out."
+  the pagination envelope (`has_more=False`, `total_count=0`) in the text for
+  `format=json`. That means *no matching items* — not a scope-hidden tool.
+  Don't treat `[]` as "I'm filtered out."
 
 - **`APINotFound` means the target doesn't exist -- or is out of scope.**
   Example:

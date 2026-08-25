@@ -8,6 +8,7 @@ Covers all functions in __all__:
 import json
 from typing import Any
 
+import pytest
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (
@@ -30,7 +31,12 @@ from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
-from tests.helpers.mcp_results import extract_text_content, get_structured, parse_json_content
+from tests.helpers.mcp_results import (
+    assert_dual_channel,
+    extract_text_content,
+    get_structured,
+    parse_json_content,
+)
 
 
 class TestSnakeToTitle:
@@ -1274,7 +1280,7 @@ class TestFormatPaginatedResult:
         assert sc["total_count"] == 0
 
     def test_markdown_format(self) -> None:
-        """Markdown format produces text content."""
+        """Markdown format produces text content satisfying the dual-channel contract."""
         items = [{"id": 1, "name": "test"}]
         result = format_paginated_result(
             items,
@@ -1283,12 +1289,8 @@ class TestFormatPaginatedResult:
             page=1,
             limit=10,
         )
-        assert result.content is not None
-        assert len(result.content) > 0
-        text = extract_text_content(result.content)
-        assert "test" in text
-        # Verify pagination metadata is in structured_content
-        sc = get_structured(result)
+        sc = assert_dual_channel(result, fmt="markdown")
+        assert "test" in extract_text_content(result.content)
         assert sc["total_count"] == 1
 
     def test_json_format(self) -> None:
@@ -1350,7 +1352,7 @@ class TestFormatPaginatedResult:
         )
         sc = get_structured(result)
         assert sc["result"] == []
-        assert sc["_hint"] == "No results found for 'x'."
+        assert sc["message"] == "No results found for 'x'."
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 0
@@ -1364,7 +1366,7 @@ class TestFormatPaginatedResult:
         )
         sc = get_structured(result)
         assert sc["result"] == []
-        assert sc["_hint"] == "Page 3 is out of range (total results: 5)."
+        assert sc["message"] == "Page 3 is out of range (total results: 5)."
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 5
@@ -1379,6 +1381,77 @@ class TestFormatPaginatedResult:
         assert sc["total_count"] is None
         for key in PAGINATION_KEYS:
             assert key in sc
+
+
+# ============================================================================
+# Dual-channel contract (issue #718)
+# ============================================================================
+
+
+class TestDualChannelContract:
+    """Contract tests for the dual-channel result shape.
+
+    The MCP spec makes ``content`` the guaranteed channel of a tool result;
+    ``structured_content`` is an optional mirror that duplicates it.  These
+    tests assert that contract via ``assert_dual_channel``.  The paths that
+    currently violate it are marked ``xfail`` with a reference to #719
+    (Build the single result pipeline), which flips them green when the
+    pipeline lands.
+    """
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason="json text is the bare array, envelope only in structured_content; fixed by #719",
+    )
+    def test_paginated_json_envelope_in_text(self) -> None:
+        """Paginated format=json must carry the envelope beside result in the text."""
+        items = [{"id": i} for i in range(25)]
+        result = format_paginated_result(items, 25, "json", page=1, limit=10)
+        assert_dual_channel(result, fmt="json")
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason="json text is the bare data, structured_content wraps in result; fixed by #719",
+    )
+    def test_json_content_mirrors_structured(self) -> None:
+        """Non-paginated format=json text must mirror structured_content (result wrapper)."""
+        result = apply_format({"id": 1}, "json")
+        assert_dual_channel(result, fmt="json")
+
+    def test_raw_dual_channel(self) -> None:
+        """format=raw returns JSON text content mirroring structured_content.
+
+        FastMCP auto-populates ``content`` from ``structured_content`` when
+        the caller sets only the latter, so the raw path already satisfies
+        the contract.  This test locks that compliance; #719 makes the
+        content explicit rather than relying on the implicit auto-population.
+
+        Caveat: this assertion is only as strong as FastMCP's auto-population
+        behavior.  If a future FastMCP stops mirroring ``structured_content``
+        into ``content``, this test will fail even though the raw path is
+        unchanged — a signal to make the content explicit in the result
+        pipeline.
+        """
+        result = apply_format({"id": 1}, "raw")
+        assert_dual_channel(result, fmt="raw")
+
+    def test_markdown_dual_channel(self) -> None:
+        """Markdown output satisfies the contract: content present, result in structured."""
+        result = format_paginated_result(
+            [{"id": 1, "name": "test"}], 1, "markdown", page=1, limit=10
+        )
+        sc = assert_dual_channel(result, fmt="markdown")
+        assert sc["total_count"] == 1
+
+    def test_empty_paginated_result_dual_channel(self) -> None:
+        """Empty/out-of-range pages satisfy the contract: content present, envelope in structured."""
+        result = empty_paginated_result(
+            "No results found for 'x'.", page=1, limit=10, total_count=0
+        )
+        sc = assert_dual_channel(result, fmt="markdown")
+        assert sc["result"] == []
+        assert sc["has_more"] is False
+        assert sc["total_count"] == 0
 
 
 # ============================================================================
@@ -1499,10 +1572,14 @@ class TestApplyFormatConcise:
         assert parsed["owner"]["login"] == "user1"
 
     def test_raw_passthrough(self) -> None:
-        """format='raw' ignores detail — data is not collapsed."""
+        """format='raw' ignores detail — data is not collapsed.
+
+        Current shape: structured_content carries the data; the text is
+        auto-populated by FastMCP (see
+        TestDualChannelContract.test_raw_dual_channel).
+        """
         data = {"owner": {"id": 1, "login": "user1"}}
         result = apply_format(data, "raw", detail="concise", schema=None)
-        # Raw returns structured_content only
         sc = get_structured(result)
         assert sc is not None
         assert isinstance(sc["result"], dict)

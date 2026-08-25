@@ -53,7 +53,12 @@ and returns a ``ToolResult`` from a fresh HTTP call.
 """
 
 PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
-"""Keys in structured_content that carry pagination metadata."""
+"""Keys that carry pagination metadata.
+
+They live in ``structured_content`` and, for ``format=json`` output, in the
+text channel beside ``result`` — ``content`` is the authoritative channel
+agents read, ``structured_content`` mirrors it.
+"""
 
 PAGINATION_SCHEMA_PROPERTIES: dict[str, dict[str, Any]] = {
     "has_more": {
@@ -74,10 +79,23 @@ PAGINATION_SCHEMA_PROPERTIES: dict[str, dict[str, Any]] = {
 Single source of truth for the agent-facing pagination contract.  Both the
 OpenAPI provider (``mcp_builder``, for generated API tools) and the synthetic
 tool contract (``synthetic_contract``) declare these keys next to ``result``
-in their output schemas, matching the runtime ``structured_content`` shape
-(see :data:`PAGINATION_KEYS`).  ``next_offset`` and ``total_count`` are
+in their output schemas, matching the runtime shape (see
+:data:`PAGINATION_KEYS`).  ``next_offset`` and ``total_count`` are
 nullable because the runtime emits ``null`` for them on the last page and
 when the total is unknown.
+"""
+
+MESSAGE_SCHEMA_PROPERTY: dict[str, Any] = {
+    "anyOf": [{"type": "string"}, {"type": "null"}],
+    "description": "Agent-facing message on empty or out-of-range pages.",
+}
+"""JSON Schema property for the ``message`` key on empty/out-of-range pages.
+
+Declared (nullable) in the output schemas of the paginated synthetic tools
+that emit it via ``format.empty_paginated_result`` — ``search``,
+``search_tools``, ``search_resources``, ``search_docs``, and
+``list_resources``.  Tools that never emit ``message`` (e.g. ``read_doc``)
+must not declare it, keeping schema and runtime in agreement.
 """
 
 PAGINATION_HEADERS = ("X-Total-Count", "X-Total")
@@ -282,9 +300,12 @@ def apply_pagination(
 ) -> ToolResult:
     """Add pagination metadata to a ``ToolResult``'s ``structured_content``.
 
-    Does **not** modify the ``content`` (markdown/json text).  Agents read
-    pagination state from ``structured_content`` (``has_more``,
-    ``next_offset``, ``total_count``).
+    ``content`` (the text channel) is authoritative and always present;
+    ``structured_content`` is an optional mirror that duplicates it.  For
+    ``format=json`` output the envelope (``has_more``, ``next_offset``,
+    ``total_count``) belongs in the text beside ``result`` — this helper
+    adds the keys to ``structured_content``; the pipeline that renders the
+    text is responsible for keeping the two channels in agreement.
 
     Args:
         result: A ``ToolResult`` with ``structured_content`` containing
@@ -308,6 +329,7 @@ def apply_pagination(
 
 
 __all__ = [
+    "MESSAGE_SCHEMA_PROPERTY",
     "PAGINATION_HEADERS",
     "PAGINATION_KEYS",
     "PAGINATION_SCHEMA_PROPERTIES",

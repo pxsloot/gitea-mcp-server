@@ -416,7 +416,7 @@ class TestUnifiedSearch:
         result = await registered_fn(query="issue", format="raw", ctx=ctx, page=10, limit=10)
 
         assert result.structured_content is not None
-        hint = result.structured_content.get("_hint", "")
+        hint = result.structured_content.get("message", "")
         assert "Page 10 is out of range" in hint
         assert result.structured_content["result"] == []
         # Out-of-range pages still carry the full pagination envelope (issue #694).

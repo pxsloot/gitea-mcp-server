@@ -12,6 +12,7 @@ Each module covers a specific domain:
 
 from tests.helpers.mcp_results import (
     assert_call_success,
+    assert_dual_channel,
     assert_low_level_success,
     assert_resource_success,
     extract_low_level_text,
@@ -31,6 +32,7 @@ from tests.helpers.mock_tool import (
 
 __all__ = [
     "assert_call_success",
+    "assert_dual_channel",
     "assert_low_level_success",
     "assert_resource_success",
     "extract_low_level_text",

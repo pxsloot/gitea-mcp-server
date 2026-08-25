@@ -27,7 +27,7 @@ from gitea_mcp_server.tools.customize import (
 from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
-from tests.helpers.mcp_results import extract_text_content, get_structured
+from tests.helpers.mcp_results import assert_dual_channel, extract_text_content, get_structured
 
 
 class TestCategorizeTool:
@@ -733,6 +733,64 @@ class TestPaginationMetadata:
             output = await wrapped.run(arguments={"page": 1, "per_page": 10})
 
             assert get_structured(output)["result"] == original_data
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=False,
+        reason="autogen list path sets content=str(enhanced) (Python repr, not JSON); fixed by #719",
+    )
+    async def test_autogen_list_raw_content_is_serialized_json(self) -> None:
+        """Autogen list format=raw content must be JSON, not a Python repr.
+
+        The repr surfaces on the raw path: ``_format_post_hook`` passes raw
+        results through unchanged, so ``content=str(enhanced)`` reaches the
+        agent as a Python repr instead of JSON.
+        """
+        transform = self._make_transform()
+        tool = self._make_tool()
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(5)]},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 10, "format": "raw"})
+
+            assert_dual_channel(output, fmt="raw")
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=False,
+        reason="autogen list json text is the bare array, missing result wrapper + envelope; fixed by #719",
+    )
+    async def test_autogen_list_json_content_mirrors_structured(self) -> None:
+        """Autogen list format=json text must mirror structured_content.
+
+        The format post-hook re-renders json content as the bare array, so
+        the text lacks the ``result`` wrapper and the pagination envelope
+        that ``structured_content`` carries — the two channels disagree.
+        """
+        transform = self._make_transform()
+        tool = self._make_tool()
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                structured_content={"result": [{"id": i} for i in range(5)]},
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={"page": 1, "per_page": 10, "format": "json"})
+
+            assert_dual_channel(output, fmt="json")
 
 
 class TestPrepareAnnotationsEdgeCases:

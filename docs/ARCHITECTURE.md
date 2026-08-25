@@ -744,6 +744,18 @@ The ``_pipeline_with_context`` method handles four response classes:
   `ToolResult(content=str(data), structured_content=data)` → MCP SDK validates
   against `output_schema` → passes.
 
+  **FastMCP auto-populates `content` from `structured_content`.**  When a
+  caller constructs `ToolResult(structured_content=...)` without `content`,
+  FastMCP serializes the structured payload into a `TextContent` block
+  (`content = structured_content`, then JSON-serialized).  This is why
+  `format.py:apply_format`'s raw path — which sets only
+  `structured_content={"result": data}` — still yields valid JSON text
+  content.  The behavior is implicit, however: the text is generated before
+  pagination runs, so a paginated raw result's text mirrors the pre-envelope
+  shape while `structured_content` carries the full envelope.  The single
+  result pipeline makes the text explicit rather than relying on this
+  auto-population.
+
 - **Non-JSON response** (text/plain, binary): `response.json()` raises
   `JSONDecodeError` → FastMCP falls back to
   `ToolResult(content=text, structured_content=None)`.

@@ -16,12 +16,10 @@ if TYPE_CHECKING:
 
 import yaml
 from fastmcp.exceptions import ResourceError
-from fastmcp.tools.base import ToolResult  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import apply_format
 from gitea_mcp_server.models import DocEntry
-from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
@@ -365,10 +363,9 @@ def register_doc_tools(
 
     async def read_doc(
         topic: str,
-        format: str = "markdown",
         page: int = 1,
         limit: int = 50,
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         """Read a workflow guide by topic name.
 
         Returns the full guide content explaining a Forgejo workflow or concept.
@@ -381,10 +378,6 @@ def register_doc_tools(
 
         - ``topic``: Topic name (e.g., "token-scopes", "branch-protection", "labels").
           Case-insensitive. Find available topics with ``search_docs``.
-        - ``format``: Output format -- ``markdown`` (default, full content with
-          YAML frontmatter), ``json`` (structured JSON with guide content in a
-          ``"content"`` key), or ``raw`` (structured JSON dict; same content
-          as markdown).
         - ``page``: Page number (1-based, default 1). Each page is ``limit`` lines.
         - ``limit``: Lines per page (default 50). The accepted maximum is
           enforced by the server; discover the exact bound with
@@ -403,7 +396,6 @@ def register_doc_tools(
 
         Args:
             topic: The guide topic name (case-insensitive)
-            format: Output format: markdown (default), json, or raw
             page: Page number (1-based, default 1)
             limit: Lines per page (default 50; the server-enforced maximum
                 is discoverable via ``tool_info("read_doc")``)
@@ -424,7 +416,7 @@ def register_doc_tools(
             )
             raise ValueError(msg)
 
-        # Slice guide content by lines for paginated reading
+        # Slice guide content by lines for paginated reading.
         all_lines = guide.full_content.splitlines(keepends=True)
         total_lines = len(all_lines)
         start = (page - 1) * limit
@@ -432,13 +424,13 @@ def register_doc_tools(
         page_lines = all_lines[start:end]
         page_content = "".join(page_lines)
 
-        data = {"content": page_content}
-        result = apply_format(
-            data,
-            format,
+        return ExecutionResult(
+            data={"content": page_content},
+            total_count=total_lines,
+            shape="object",
+            paginated=True,
             markdown_formatter=lambda d: d["content"],
         )
-        return apply_pagination(result, page, limit, total_lines)
 
     read_doc_spec = SyntheticToolSpec(
         impl=read_doc,

@@ -608,7 +608,9 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[known_tool])
 
-        result = await _tool_info_impl("gitea_known_tool", "markdown", mock_ctx, transform)
+        result = _render(
+            await _tool_info_impl("gitea_known_tool", mock_ctx, transform), fmt="markdown"
+        )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
         assert schema["name"] == "gitea_known_tool"
@@ -641,8 +643,9 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_with_schema", "json", mock_ctx, transform, detail="full"
+        result = _render(
+            await _tool_info_impl("gitea_tool_with_schema", mock_ctx, transform, detail="full"),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -672,8 +675,11 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_no_schema_included", "json", mock_ctx, transform, detail="concise"
+        result = _render(
+            await _tool_info_impl(
+                "gitea_tool_no_schema_included", mock_ctx, transform, detail="concise"
+            ),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -712,7 +718,9 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl("gitea_tool_concise_envelope", "json", mock_ctx, transform)
+        result = _render(
+            await _tool_info_impl("gitea_tool_concise_envelope", mock_ctx, transform), fmt="json"
+        )
         sc = get_structured(result)
         assert sc["result"]["name"] == "gitea_tool_concise_envelope"
         assert sc["has_more"] is False
@@ -759,12 +767,14 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_with_array_result",
-            "json",
-            mock_ctx,
-            transform,
-            detail="full",
+        result = _render(
+            await _tool_info_impl(
+                "gitea_tool_with_array_result",
+                mock_ctx,
+                transform,
+                detail="full",
+            ),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -814,12 +824,14 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_with_string_result",
-            "json",
-            mock_ctx,
-            transform,
-            detail="full",
+        result = _render(
+            await _tool_info_impl(
+                "gitea_tool_with_string_result",
+                mock_ctx,
+                transform,
+                detail="full",
+            ),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -880,8 +892,9 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_with_pagination", "json", mock_ctx, transform, detail="full"
+        result = _render(
+            await _tool_info_impl("gitea_tool_with_pagination", mock_ctx, transform, detail="full"),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -923,7 +936,9 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl("gitea_doc_tool", "json", mock_ctx, transform, detail="full")
+        result = _render(
+            await _tool_info_impl("gitea_doc_tool", mock_ctx, transform, detail="full"), fmt="json"
+        )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
         props = schema["output_schema"]["properties"]
@@ -961,12 +976,14 @@ class TestToolInfo:
         mock_ctx = MagicMock()
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "gitea_tool_array_of_strings",
-            "json",
-            mock_ctx,
-            transform,
-            detail="full",
+        result = _render(
+            await _tool_info_impl(
+                "gitea_tool_array_of_strings",
+                mock_ctx,
+                transform,
+                detail="full",
+            ),
+            fmt="json",
         )
         assert result.structured_content is not None
         schema = result.structured_content["result"]
@@ -986,7 +1003,7 @@ class TestToolInfo:
         mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[])
 
         with pytest.raises(ValueError, match="not found"):
-            await _tool_info_impl("gitea_nonexistent_tool", "markdown", mock_ctx, transform)
+            await _tool_info_impl("gitea_nonexistent_tool", mock_ctx, transform)
 
 
 class TestFilterInfoIntegration:
@@ -1051,7 +1068,6 @@ class TestFilterInfoIntegration:
         with pytest.raises(ValueError, match="restricted by your token scopes"):
             await _tool_info_impl(
                 "gitea_admin_create_user",
-                "markdown",
                 mock_ctx,
                 transform,
                 tool_prefix="gitea_",
@@ -1070,7 +1086,6 @@ class TestFilterInfoIntegration:
         with pytest.raises(ValueError, match="excluded by server configuration"):
             await _tool_info_impl(
                 "gitea_admin_create_user",
-                "markdown",
                 mock_ctx,
                 transform,
                 tool_prefix="gitea_",
@@ -1091,7 +1106,6 @@ class TestFilterInfoIntegration:
         with pytest.raises(ValueError, match="has been deprecated"):
             await _tool_info_impl(
                 "gitea_some_deprecated_tool",
-                "markdown",
                 mock_ctx,
                 transform,
                 tool_prefix="gitea_",
@@ -1110,7 +1124,6 @@ class TestFilterInfoIntegration:
         with pytest.raises(ValueError, match="not found"):
             await _tool_info_impl(
                 "gitea_admin_create_user",
-                "markdown",
                 mock_ctx,
                 transform,
                 tool_prefix="gitea_",
@@ -1533,7 +1546,6 @@ class TestSyntheticToolAnnotations:
         with contextlib.suppress(Exception):
             await _tool_info_impl(
                 name="nonexistent",
-                format="markdown",
                 ctx=MagicMock(spec=Context),
                 transform=transform,
                 tool_prefix="",
@@ -2462,12 +2474,13 @@ class TestToolInfoImplPrefixFallback:
         transform = MagicMock(spec=TolerantSearchTransform)
         transform.get_tool_catalog = AsyncMock(return_value=[tool])
 
-        result = await _tool_info_impl(
-            "test_tool",
-            "markdown",
-            ctx,
-            transform,
-            tool_prefix="gitea_",
+        result = _render(
+            await _tool_info_impl(
+                "test_tool",
+                ctx,
+                transform,
+                tool_prefix="gitea_",
+            )
         )
         assert result is not None
 

@@ -25,10 +25,10 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import apply_format, format_tool_info_markdown
+from gitea_mcp_server.format import format_tool_info_markdown
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -597,9 +597,8 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     )
 
 
-async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool_prefix, detail
+async def _tool_info_impl(  # noqa: PLR0913 - name, ctx, transform, tool_prefix, detail, page, limit, openapi_spec, filtered_tools_info
     name: str,
-    format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
@@ -609,7 +608,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
     filtered_tools_info: dict[str, Any] | None = None,
-) -> ToolResult:
+) -> ExecutionResult:
     """Core tool_info implementation.
 
     Accepts both prefixed (``gitea_search_tools``) and bare (``search_tools``)
@@ -624,6 +623,11 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
       objects; preserves the full array structure.
     * **String / other** results: return the full schema unpaginated
       (no meaningful property-level slicing for primitives).
+
+    Returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` with the
+    (pre-sliced) schema and the property count; the single result pipeline
+    envelopes and formats it.
 
     Args:
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
@@ -696,23 +700,23 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                 sliced_schema["properties"] = properties
                 schema["output_schema"] = sliced_schema
 
-                result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
-
-                # Add pagination metadata so agents can discover total
-                # property count and navigate pages (in the text for
-                # format=json, mirrored in structured_content).
-                result = apply_pagination(result, page, limit, total_props)
-            else:
-                # Concise path returns the full schema unpaginated — still
-                # emit the envelope (total_count=None, has_more=False) so the
-                # runtime matches the declared schema on every path.
-                result = apply_pagination(
-                    apply_format(schema, format, markdown_formatter=format_tool_info_markdown),
-                    page,
-                    limit,
+                return ExecutionResult(
+                    data=schema,
+                    total_count=total_props,
+                    shape="object",
+                    paginated=True,
+                    markdown_formatter=format_tool_info_markdown,
                 )
 
-            return result
+            # Concise path returns the full schema unpaginated — still
+            # emit the envelope (total_count=None, has_more=False) so the
+            # runtime matches the declared schema on every path.
+            return ExecutionResult(
+                data=schema,
+                shape="object",
+                paginated=True,
+                markdown_formatter=format_tool_info_markdown,
+            )
 
     # Tool not found in the post-filter catalog — check if it's a
     # filtered tool (scope-restricted, config-excluded, or deprecated).
@@ -1009,12 +1013,8 @@ def register_synthetic_tools(
         },
     )
 
-    async def tool_info_fn(  # noqa: PLR0913 - 6 params: name, format, detail, page, limit, ctx
+    async def tool_info_fn(
         name: Annotated[str, "The exact name of the tool to inspect"],
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
-        ] = "markdown",
         detail: Annotated[
             # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
             Literal["concise", "full"],
@@ -1029,10 +1029,9 @@ def register_synthetic_tools(
             "Properties per page for output_schema. Only used when detail=full.",
         ] = 10,
         ctx: Context = CurrentContext(),
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         return await _tool_info_impl(
             name,
-            format,
             ctx,
             transform,
             tool_prefix,

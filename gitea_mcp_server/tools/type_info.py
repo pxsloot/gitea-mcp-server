@@ -20,12 +20,12 @@ import logging
 from typing import Annotated, Any, Literal, cast
 
 from fastmcp.server.context import Context
-from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA_CONCISE
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.schemas import (
     collect_refs,
     deep_resolve_schema,
@@ -283,7 +283,6 @@ def register_type_tools(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None`` (tools
             will return a helpful error).
     """
-    from gitea_mcp_server.format import apply_format  # noqa: PLC0415
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
     from gitea_mcp_server.tools.errors import raise_value_error  # noqa: PLC0415
 
@@ -304,17 +303,12 @@ def register_type_tools(
             "that reference types.",
         ],
         ctx: Context,
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), "
-            "json (structured data), or raw (API response)",
-        ] = "markdown",
         detail: Annotated[
             # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
             Literal["concise", "full"],
             str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
         ] = "concise",
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:
             msg = "Type index is empty. The OpenAPI spec may not be available."
@@ -353,7 +347,7 @@ def register_type_tools(
             "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
         )
 
-        return apply_format(info, format, detail=detail)
+        return ExecutionResult(data=info, shape="object")
 
     register_all_synthetic_tools(
         mcp,

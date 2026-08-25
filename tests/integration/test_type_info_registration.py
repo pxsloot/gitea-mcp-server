@@ -13,6 +13,8 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError, ToolError
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
 from gitea_mcp_server.tools.type_info import register_type_tools
 from tests.helpers.mcp_results import get_structured
 
@@ -66,8 +68,20 @@ _MINIMAL_SPEC: OpenAPISpec = {
 
 @pytest.fixture
 def mcp() -> FastMCP:
-    """Return a fresh FastMCP instance for each test."""
-    return FastMCP(name="TestServer")
+    """Return a fresh FastMCP instance for each test.
+
+    The contract spine (``_ToolWrappingTransform``) is registered so
+    synthetic tools render their raw ``ExecutionResult`` through the single
+    result pipeline — matching the real server assembly.
+    """
+    server = FastMCP(name="TestServer")
+    contract_transform = _ToolWrappingTransform(
+        openapi_spec=_MINIMAL_SPEC,
+        response_format="markdown",
+        synthetic_executors=get_executor_registry(server),
+    )
+    server.add_transform(contract_transform)
+    return server
 
 
 class TestRegisterTypeToolsTool:

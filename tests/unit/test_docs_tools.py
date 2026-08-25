@@ -376,14 +376,14 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_read_doc_returns_content(self) -> None:
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test")
+        result = _render(await fn(topic="test"))
         assert isinstance(result, ToolResult)
         assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
     async def test_read_doc_case_insensitive(self) -> None:
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="TEST")
+        result = _render(await fn(topic="TEST"))
         assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
@@ -405,7 +405,7 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_read_doc_raw_format(self) -> None:
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test", format="raw")
+        result = _render(await fn(topic="test"), fmt="raw")
         assert "# Test" in get_structured(result)["result"]["content"]
         assert "Content" in get_structured(result)["result"]["content"]
 
@@ -413,14 +413,14 @@ class TestRegisterDocTools:
     async def test_read_doc_raw_and_markdown_match(self) -> None:
         """raw and markdown formats should return identical content (both with frontmatter)."""
         fn = self._capture_tool("read_doc")
-        raw = await fn(topic="test", format="raw")
-        md = await fn(topic="test", format="markdown")
-        assert raw.structured_content["result"] == md.structured_content["result"]
+        raw = _render(await fn(topic="test"), fmt="raw")
+        md = _render(await fn(topic="test"))
+        assert get_structured(raw)["result"] == get_structured(md)["result"]
 
     @pytest.mark.asyncio
     async def test_read_doc_markdown_includes_frontmatter(self) -> None:
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test", format="markdown")
+        result = _render(await fn(topic="test"))
         assert "# Test" in get_structured(result)["result"]["content"]
 
     @pytest.mark.asyncio
@@ -433,8 +433,9 @@ class TestRegisterDocTools:
     @pytest.mark.asyncio
     async def test_read_doc_invalid_format_raises(self) -> None:
         fn = self._capture_tool("read_doc")
+        exec_result = await fn(topic="test")
         with pytest.raises(ValueError, match="Unsupported format 'xml'"):
-            await fn(topic="test", format="xml")
+            _render(exec_result, fmt="xml")
 
     @pytest.mark.asyncio
     async def test_read_doc_json_format_returns_structured_dict_in_text(self) -> None:
@@ -446,17 +447,18 @@ class TestRegisterDocTools:
         result pipeline (#719), which puts the envelope in the text too.
         """
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test", format="json", page=1, limit=50)
+        result = _render(await fn(topic="test", page=1, limit=50), fmt="json", page=1, limit=50)
         text = extract_text_from_content_items(result.content)
         parsed = json_module.loads(text)
         assert isinstance(parsed, dict), "JSON content should be a dict, not a string literal"
-        assert parsed == {"result": result.structured_content["result"]}
+        # The text is the serialized envelope; structured_content mirrors it.
+        assert parsed == result.structured_content
 
     @pytest.mark.asyncio
     async def test_read_doc_json_format_pagination_in_structured_content(self) -> None:
         """Structured content must carry pagination metadata."""
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test", format="json", page=1, limit=50)
+        result = _render(await fn(topic="test", page=1, limit=50), fmt="json", page=1, limit=50)
         sc = result.structured_content
         assert sc is not None
         assert "has_more" in sc
@@ -468,8 +470,8 @@ class TestRegisterDocTools:
         """When page 1 doesn't contain all lines, pagination signals more pages."""
         fn = self._capture_tool("read_doc")
         # Use a guide short enough to need pagination at limit=2
-        result = await fn(topic="test", format="json", page=1, limit=1)
-        sc = result.structured_content
+        result = _render(await fn(topic="test", page=1, limit=1), fmt="json", page=1, limit=1)
+        sc = get_structured(result)
         assert sc["has_more"] is True
         assert sc["next_offset"] == 2
         assert sc["total_count"] == 3  # 3 lines in the test guide
@@ -483,7 +485,7 @@ class TestRegisterDocTools:
         long guides stay readable in fewer pages.
         """
         fn = self._capture_tool("read_doc")
-        result = await fn(topic="test", format="json", page=1, limit=200)
+        result = _render(await fn(topic="test", page=1, limit=200), fmt="json", page=1, limit=200)
         sc = result.structured_content
         assert sc is not None
         assert sc["total_count"] == 3  # all 3 lines fit in one page at limit=200

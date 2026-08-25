@@ -96,7 +96,7 @@ class ExecutionResult:
     markdown_formatter: Callable[[Any], str] | None = None
 
 
-def render(  # noqa: PLR0913 - result + 6 independent display axes (fmt, detail, page, limit, fetch_all, schema)
+def render(  # noqa: PLR0913 - the pipeline is the single display path; every display axis must be a parameter because executors return raw data only and never render
     result: ExecutionResult,
     *,
     fmt: str,
@@ -135,7 +135,7 @@ def render(  # noqa: PLR0913 - result + 6 independent display axes (fmt, detail,
     return _format(envelope, result, fmt=fmt, detail=detail, schema=schema)
 
 
-def _paginate(  # noqa: PLR0911 - 8 returns: 2 empty branches (list-empty, out-of-range), 1 fetch_all, 1 list slice, 1 paginated object, 1 binary, 1 plain object, 1 empty shape
+def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (list slices, object envelopes, empty/binary are special); extracting them would scatter the shape logic the pipeline exists to centralize
     result: ExecutionResult,
     *,
     page: int,

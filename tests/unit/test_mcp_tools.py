@@ -1321,10 +1321,11 @@ class TestMcpListResourcesRawFormat:
     async def test_raw_format_dual_channel(self) -> None:
         """list_resources format=raw must carry the envelope in the text.
 
-        ``apply_format`` auto-populates content from structured_content before
-        ``apply_pagination`` runs, so the text mirrors the pre-envelope shape
-        while structured_content carries the full envelope — the two channels
-        disagree.  #719 makes the envelope part of the text.
+        The single result pipeline renders the text as the serialized
+        envelope dict, so ``content`` mirrors ``structured_content`` —
+        including the pagination keys (``has_more``/``next_offset``/
+        ``total_count``) beside ``result``.  ``format=raw`` is deterministic
+        JSON text, not a Python repr and not a pre-envelope shape.
         """
         fn = self._capture_tool()
         ctx = MagicMock(spec=Context)

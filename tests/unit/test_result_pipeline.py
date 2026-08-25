@@ -241,6 +241,19 @@ class TestEmptyShape:
         )
         assert parse_json_content(result) == {"result": None}
 
+    def test_paginated_empty_markdown_uses_defaulted_message(self) -> None:
+        """Empty page without an executor message: the markdown text matches
+        the envelope's defaulted message instead of rendering the empty data."""
+        result = render(
+            ExecutionResult(data=[], total_count=0, shape="empty", paginated=True),
+            fmt="markdown",
+            page=1,
+            limit=10,
+        )
+        assert extract_text_content(result.content) == "No results found."
+        sc = get_structured(result)
+        assert sc["message"] == "No results found."
+
 
 class TestBinaryShape:
     """The binary shape: content_info metadata instead of bytes."""
@@ -393,6 +406,17 @@ class TestErrorRecovery:
         text = extract_text_content(result.content)
         assert "```json" in text
         assert "formatting failed" in text
+
+    def test_raw_recovers_with_valid_json(self) -> None:
+        """format=raw error recovery still emits valid JSON text content."""
+        data: dict[str, Any] = {}
+        data["self"] = data
+        result = render(
+            ExecutionResult(data=data, shape="object"),
+            fmt="raw",
+        )
+        parsed = parse_json_content(result)
+        assert "result" in parsed
 
 
 class TestDualChannelContract:

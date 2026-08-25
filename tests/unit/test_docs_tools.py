@@ -441,10 +441,9 @@ class TestRegisterDocTools:
     async def test_read_doc_json_format_returns_structured_dict_in_text(self) -> None:
         """JSON format text content must be a structured dict, not a raw JSON string.
 
-        Transitional shape: the text wraps the data in ``{"result": ...}``
-        (dual-channel ``apply_format``); the envelope lives in
-        ``structured_content`` only until read_doc routes through the single
-        result pipeline (#719), which puts the envelope in the text too.
+        The single result pipeline renders the text as the serialized
+        envelope dict — ``{"result": ...}`` plus the pagination keys — so
+        the text mirrors ``structured_content`` exactly.
         """
         fn = self._capture_tool("read_doc")
         result = _render(await fn(topic="test", page=1, limit=50), fmt="json", page=1, limit=50)

@@ -214,8 +214,11 @@ def _format(
                     envelope["result"], schema, _depth=0, detail="concise"
                 )
             text = json_module.dumps(envelope, indent=2)
-        elif shape in ("empty", "binary") and result.message:
-            text = result.message
+        elif shape in ("empty", "binary"):
+            # The envelope carries the defaulted message for paginated empty
+            # results; fall back to the executor's message for binary and
+            # non-paginated empty results.
+            text = result.message or envelope.get("message") or ""
         else:
             formatter = result.markdown_formatter or (
                 lambda d: format_as_markdown(d, schema, detail=detail)
@@ -235,7 +238,9 @@ def _format(
             data_str = json_module.dumps(envelope, indent=2, default=str)
         except (TypeError, ValueError):
             data_str = str(envelope)
-        if fmt == "json":
+        if fmt in ("json", "raw"):
+            # Deterministic raw: the recovered text is still valid JSON,
+            # mirroring structured_content.
             text = json_module.dumps({"result": data_str}, indent=2)
             envelope = {"result": data_str}
         else:

@@ -1101,7 +1101,7 @@ class TestServerEdgeCases:
           and optional_params metadata fields in the Resources section (#522).
         - 330 lines: raised 2026-08-26 to document the single result pipeline
           contract (envelope in the text, deterministic raw, empty-json shape)
-          in the Output format section (#719).
+          in the Output format section.
         """
         from gitea_mcp_server.server import _build_server_instructions
 

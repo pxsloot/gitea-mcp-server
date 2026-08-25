@@ -1394,7 +1394,7 @@ class TestDualChannelContract:
     The MCP spec makes ``content`` the guaranteed channel of a tool result;
     ``structured_content`` is an optional mirror that duplicates it.  These
     tests assert that contract via ``assert_dual_channel``.  The single
-    result pipeline (#719) is the single writer of both channels, so every
+    result pipeline is the single writer of both channels, so every
     path holds the contract.
     """
 
@@ -1414,7 +1414,7 @@ class TestDualChannelContract:
 
         FastMCP auto-populates ``content`` from ``structured_content`` when
         the caller sets only the latter, so the raw path already satisfies
-        the contract.  This test locks that compliance; #719 makes the
+        the contract.  This test locks that compliance; the display pipeline makes
         content explicit rather than relying on the implicit auto-population.
 
         Caveat: this assertion is only as strong as FastMCP's auto-population
@@ -1449,7 +1449,7 @@ class TestDualChannelContract:
 
         The empty-json shape is ``{"result": [], "message": "...",
         "has_more": false, "next_offset": null, "total_count": N}`` — the
-        text is JSON, mirroring structured_content (issue #719 follow-up).
+        text is JSON, mirroring structured_content.
         """
         result = render(
             ExecutionResult(

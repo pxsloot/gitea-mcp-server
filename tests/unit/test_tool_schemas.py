@@ -505,7 +505,7 @@ class TestDeriveOutputSchema:
         tool.annotations = None
         tool.tags = {"issue"}
         tool.parameters = {
-            "properties": {"page": {"type": "integer"}, "per_page": {"type": "integer"}}
+            "properties": {"page": {"type": "integer"}, "limit": {"type": "integer"}}
         }
         tool.output_schema = None
         tool.description = ""
@@ -534,7 +534,7 @@ class TestDeriveOutputSchema:
                 openapi_spec=spec,
             )
             [wrapped] = await transform.list_tools([tool])
-            actual = await wrapped.run(arguments={"page": 1, "per_page": 10})
+            actual = await wrapped.run(arguments={"page": 1, "limit": 10})
 
             assert get_structured(actual)["result"] == [{"id": 1}]
 

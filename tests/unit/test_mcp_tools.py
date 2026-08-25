@@ -1428,6 +1428,29 @@ class TestMcpListResourcesFetchAll:
         assert sc["has_more"] is False
         assert sc["total_count"] == 7
 
+    @pytest.mark.asyncio
+    async def test_page_out_of_range_emits_empty_envelope(self) -> None:
+        """An out-of-range page emits the empty envelope with a message."""
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        resources = [self._make_resource(i) for i in range(5)]
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = _render(
+            await fn(ctx=ctx, page=10, limit=10),
+            fmt="raw",
+            page=10,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert "Page 10 is out of range" in sc["message"]
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5
+
 
 # ---------------------------------------------------------------------------
 # Tests: _maybe_decode_base64

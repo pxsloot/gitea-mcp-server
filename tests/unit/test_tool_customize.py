@@ -842,3 +842,54 @@ class TestCustomizeComponentTextResponse:
 
             assert output.structured_content == {"result": "raw text output"}
             assert extract_text_content(output.content) == "raw text output"
+
+    @pytest.mark.asyncio
+    async def test_unwrapped_text_response_becomes_text_shape(self) -> None:
+        """Non-JSON response with no response class: the raw text is the data.
+
+        When no response class applies (not text/plain, binary, or
+        empty-body) and FastMCP leaves ``structured_content`` None, the raw
+        text in ``content`` is the data — classified ``shape="text"`` and
+        wrapped in ``{"result": text}`` by the pipeline.
+        """
+        from mcp.types import TextContent
+
+        transform = _ToolWrappingTransform(
+            openapi_spec={},
+        )
+
+        tool = Tool(
+            name="some_tool",
+            tags={"misc"},
+            description="",
+            parameters={"properties": {}},
+            output_schema=None,
+            meta={
+                "_contract_wrap": True,
+                "_customization": ToolCustomization(
+                    has_labels=False,
+                    is_text_response=False,
+                    is_empty_response=False,
+                    is_binary_response=False,
+                    route_path="",
+                    route_method="",
+                ),
+            },
+            annotations=ToolAnnotations(title="Some tool"),
+        )
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = ToolResult(
+                content=[TextContent(type="text", text="raw text output")],
+                structured_content=None,
+            )
+
+            result = await transform.list_tools([tool])
+            wrapped = result[0]
+            output = await wrapped.run(arguments={})
+
+            assert output.structured_content == {"result": "raw text output"}
+            assert extract_text_content(output.content) == "raw text output"

@@ -8,6 +8,7 @@ Covers all functions in __all__:
 import json
 from typing import Any
 
+import pytest
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (
@@ -1425,6 +1426,21 @@ class TestDualChannelContract:
         """
         result = apply_format({"id": 1}, "raw")
         assert_dual_channel(result, fmt="raw")
+
+    def test_apply_format_invalid_format_raises(self) -> None:
+        """apply_format rejects unsupported formats with a friendly error."""
+        with pytest.raises(ValueError, match="Unsupported format"):
+            apply_format({"id": 1}, "xml")
+
+    def test_apply_format_markdown_extras_appended(self) -> None:
+        """apply_format appends markdown_extras as additional sections."""
+        result = apply_format(
+            {"id": 1},
+            "markdown",
+            markdown_extras=["**Extra section:** content"],
+        )
+        text = extract_text_content(result.content)
+        assert "**Extra section:** content" in text
 
     def test_markdown_dual_channel(self) -> None:
         """Markdown output satisfies the contract: content present, result in structured."""

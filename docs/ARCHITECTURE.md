@@ -753,7 +753,7 @@ The ``_pipeline_with_context`` method handles four response classes:
   content.  The behavior is implicit, however: the text is generated before
   pagination runs, so a paginated raw result's text mirrors the pre-envelope
   shape while `structured_content` carries the full envelope.  The single
-  result pipeline (#719) makes the text explicit rather than relying on this
+  result pipeline makes the text explicit rather than relying on this
   auto-population.
 
 - **Non-JSON response** (text/plain, binary): `response.json()` raises

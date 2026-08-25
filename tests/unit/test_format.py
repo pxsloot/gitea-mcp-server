@@ -1425,6 +1425,12 @@ class TestDualChannelContract:
         the caller sets only the latter, so the raw path already satisfies
         the contract.  This test locks that compliance; #719 makes the
         content explicit rather than relying on the implicit auto-population.
+
+        Caveat: this assertion is only as strong as FastMCP's auto-population
+        behavior.  If a future FastMCP stops mirroring ``structured_content``
+        into ``content``, this test will fail even though the raw path is
+        unchanged — a signal to make the content explicit in the result
+        pipeline.
         """
         result = apply_format({"id": 1}, "raw")
         assert_dual_channel(result, fmt="raw")

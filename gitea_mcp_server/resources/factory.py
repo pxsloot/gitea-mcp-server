@@ -212,7 +212,7 @@ def _derive_resource_name_for(
     if uri_name:
         return uri_name
     logger.warning(
-        "Could not derive a resource name for %s (api_path=%s %s) — "
+        "Could not derive a resource name for %s (method=%s, api_path=%s) — "
         "using placeholder 'resource'. Register the resource with an explicit name.",
         uri,
         method,

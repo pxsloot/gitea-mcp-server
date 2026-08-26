@@ -267,8 +267,8 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
             "example": [
                 {
                     "uri": "gitea://repos/{owner}/{repo}",
-                    "name": "Repository",
-                    "description": "Get full repository metadata",
+                    "name": "repo_get",
+                    "description": "Get a repository",
                     "mimeType": "application/json",
                     "type": "template",
                     "tags": ["wrapper", "repository"],
@@ -287,7 +287,7 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
             "type": ["string", "object", "array", "number", "boolean", "null"],
             "description": "Resource content: parsed data for JSON resources, "
             "raw text for text/markdown resources",
-            "example": '{\n  "id": 1,\n  "name": "example-repo",\n  "description": "A sample repository"\n}',
+            "example": {"id": 1, "name": "example-repo", "description": "A sample repository"},
         },
     },
 }
@@ -398,14 +398,14 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
         [
             {
                 "uri": "gitea://repos/{owner}/{repo}",
-                "name": "Repository",
-                "description": "Get full repository metadata",
+                "name": "repo_get",
+                "description": "Get a repository",
                 "mimeType": "application/json",
                 "type": "template",
                 "tags": ["wrapper", "repository"],
                 "required_scope": "read:repository",
-                "size_hint": "medium",
-                "default_detail": "full"
+                "size_hint": "large",
+                "default_detail": "concise"
             },
             ...
         ]
@@ -522,10 +522,11 @@ async def _read_resource_tool(
     Returns a dual-channel ``ToolResult``: ``content`` (the text channel) is
     authoritative and always present; ``structured_content`` mirrors it.  For
     JSON resources the text is the serialized ``{"result": <data>}`` envelope
-    (``format=json``/``raw``) or a markdown rendering (``format=markdown``)
-    and ``structured_content`` carries the parsed envelope.  For text/markdown
-    resources the text is the raw content and ``structured_content`` is
-    ``{"result": <raw text>}``.
+    (``format=json``) or a markdown rendering (``format=markdown``), and
+    ``structured_content`` carries the parsed envelope.  For ``format=raw``
+    the text is the raw string and ``structured_content`` is
+    ``{"result": <raw string>}``.  For text/markdown resources the text is
+    the raw content and ``structured_content`` is ``{"result": <raw text>}``.
 
     ## Usage Examples
 

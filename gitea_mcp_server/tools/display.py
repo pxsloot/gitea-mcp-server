@@ -1,7 +1,7 @@
 """Domain-specific display formatters for resources.
 
 All resources return raw data.  This module provides the registered
-formatters that the unified display pipeline (``format_resource_content``
+formatters that the unified display pipeline (``format_resource_result``
 in ``tools/resource_display.py``) dispatches to when a ``format_hint`` is present.
 
 Each formatter has the signature ``(data, *, detail='full') -> str``.

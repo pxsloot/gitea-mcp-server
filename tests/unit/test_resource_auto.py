@@ -235,7 +235,7 @@ class TestDeriveResourceName:
 
     def test_uses_operation_id_camel_case(self) -> None:
         """Test camelCase operationId is converted to snake_case."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": "getRepo"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}")
@@ -243,7 +243,7 @@ class TestDeriveResourceName:
 
     def test_uses_operation_id_snake_case(self) -> None:
         """Test snake_case operationId is kept as-is."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": "issue_get_issue"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -251,7 +251,7 @@ class TestDeriveResourceName:
 
     def test_preserves_multi_word_snake_case(self) -> None:
         """Test multi-word snake_case is preserved."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": "org_list_members"}
         name = _derive_resource_name(operation, "/orgs/{org}/members")
@@ -259,7 +259,7 @@ class TestDeriveResourceName:
 
     def test_falls_back_to_path_when_no_operation_id(self) -> None:
         """Test fallback when operationId is missing."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"summary": "Get an issue"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -268,7 +268,7 @@ class TestDeriveResourceName:
 
     def test_handles_empty_operation_id(self) -> None:
         """Test fallback when operationId is empty string."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": ""}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}")
@@ -276,7 +276,7 @@ class TestDeriveResourceName:
 
     def test_handles_complex_camel_case(self) -> None:
         """Test complex camelCase with multiple words."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": "issueCreateIssueComment"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}/issues/{index}/comments")
@@ -284,7 +284,7 @@ class TestDeriveResourceName:
 
     def test_handles_leading_uppercase(self) -> None:
         """Test leading uppercase in camelCase like 'RepoGet'."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"operationId": "RepoGet"}
         name = _derive_resource_name(operation, "/repos/{owner}/{repo}")
@@ -292,7 +292,7 @@ class TestDeriveResourceName:
 
     def test_all_path_param_fallback(self) -> None:
         """When path has only param segments, use cleaned param names."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"summary": "Test"}
         name = _derive_resource_name(operation, "/{owner}/{repo}")
@@ -301,7 +301,7 @@ class TestDeriveResourceName:
 
     def test_empty_path_returns_resource(self) -> None:
         """When all segments filtered out, fallback to 'resource'."""
-        from gitea_mcp_server.resources.auto import _derive_resource_name
+        from gitea_mcp_server.resources.factory import _derive_resource_name
 
         operation = {"summary": "Test"}
         name = _derive_resource_name(operation, "/{param}")

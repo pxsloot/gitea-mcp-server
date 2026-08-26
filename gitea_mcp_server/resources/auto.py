@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import _derive_resource_name, make_api_resource
+from gitea_mcp_server.resources.factory import make_api_resource
 from gitea_mcp_server.resources.scope import derive_required_scope
 from gitea_mcp_server.uri_utils import clean_resource_uri
 
@@ -110,7 +110,11 @@ def register_auto_generated_resources(
                     )
                     continue
 
-                resource_name = _derive_resource_name(operation, path)
+                # Name derivation is owned by the factory: when ``name`` is
+                # omitted it derives snake_case from the spec operationId
+                # (operationId → URI template → placeholder with a warning),
+                # so auto resources and their custom siblings share one
+                # source of truth for naming.
                 swagger_tags = set(operation.get("tags", [])) or None
                 required_scope = derive_required_scope(swagger_tags, "GET")
 
@@ -125,7 +129,6 @@ def register_auto_generated_resources(
                         uri=uri_template,
                         api_path=path,
                         method="GET",
-                        name=resource_name,
                         scope=required_scope,
                         tags={"api", "raw", "auto"},
                     )

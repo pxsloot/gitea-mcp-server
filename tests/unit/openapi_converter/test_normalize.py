@@ -217,6 +217,41 @@ class TestNormalizeOperationBody:
         }
         assert _normalize_operation_body(operation) == {}
 
+    def test_overwrite_collision_warns_and_skips(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A body with both ``Do`` and ``do`` warns and skips, never overwrites.
+
+        Renaming ``Do`` → ``do`` would silently overwrite the existing ``do``
+        property.  The rule must warn loudly and skip instead of dropping data.
+        """
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "Do": {"type": "string"},
+                                "do": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        with caplog.at_level(logging.WARNING):
+            rename_map = _normalize_operation_body(operation)
+        assert rename_map == {}
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
+        # Both properties survive; nothing was overwritten.
+        assert set(schema["properties"].keys()) == {"Do", "do"}
+        assert "already exists" in caplog.text
+
 
 class TestIsBooleanCheckOperation:
     def test_boolean_check_shape(self) -> None:
@@ -434,3 +469,63 @@ class TestNormalizeSpec:
         with caplog.at_level(logging.ERROR):
             normalize_spec(spec)  # must not raise
         assert "Failed to normalize spec quirks" in caplog.text
+
+    def test_one_bad_operation_does_not_abort_the_pass(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A failure on one operation is logged and skipped; the rest normalize.
+
+        Without the per-operation guard, a single malformed operation would
+        abort normalization of the whole spec, leaving every later operation
+        unnormalized.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/good": {
+                    "post": {
+                        "operationId": "good",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"Do": {"type": "string"}},
+                                    },
+                                },
+                            },
+                        },
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+                "/bad": {
+                    "post": {
+                        "operationId": "bad",
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+        )
+
+        def _boom(operation: dict[str, Any]) -> dict[str, str]:
+            if operation.get("operationId") == "bad":
+                boom_msg = "boom"
+                raise RuntimeError(boom_msg)
+            return {}
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.openapi_converter.normalize._normalize_operation_parameters",
+            _boom,
+        )
+        with caplog.at_level(logging.ERROR):
+            normalize_spec(spec)  # must not raise
+
+        # The good operation still normalized.
+        good_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/good"]["post"],
+        )
+        assert good_op["x-param-rename"] == {"do": "Do"}
+        # The bad operation was skipped, not fatal.
+        assert "Failed to normalize operation POST /bad" in caplog.text

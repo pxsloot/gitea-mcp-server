@@ -305,6 +305,69 @@ def _make_merge_spec() -> dict[str, Any]:
     }
 
 
+def _make_collision_spec() -> dict[str, Any]:
+    """Return a Swagger spec with a path/body parameter collision.
+
+    Models ``POST /repos/{owner}/{repo}/issues/{index}/blocks`` where the
+    ``IssueMeta`` body carries ``owner``/``repo``/``index`` properties that
+    collide with the path parameters.  Collision resolution renames the body
+    properties to ``body_owner``/``body_repo``/``body_index`` while the path
+    parameters keep their names — the tool exposes both families.
+    """
+    return {
+        "swagger": "2.0",
+        "info": {"title": "Gitea API", "version": "1.0"},
+        "basePath": "/api/v1",
+        "paths": {
+            "/repos/{owner}/{repo}/issues/{index}/blocks": {
+                "post": {
+                    "operationId": "issueCreateIssueBlocking",
+                    "summary": "Block the issue given in the body by the issue in path",
+                    "parameters": [
+                        {
+                            "name": "owner",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "repo",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "index",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        },
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {"$ref": "#/definitions/IssueMeta"},
+                        },
+                    ],
+                    "responses": {
+                        "201": {"description": "Created"},
+                    },
+                }
+            },
+        },
+        "definitions": {
+            "IssueMeta": {
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "index": {"type": "integer"},
+                },
+            },
+        },
+    }
+
+
 def _make_diff_spec() -> dict[str, Any]:
     """Return a Swagger spec with the real text/plain diff/patch download endpoint.
 
@@ -656,11 +719,13 @@ class TestBooleanCheck:
 
 
 class TestParamNormalization:
-    """Scenario 4d: Non-snake_case params are normalized with a migration error.
+    """Scenario 4d: Non-snake_case params are normalized; old names are unknown.
 
     ``repoMergePullRequest`` body properties ``Do``/``MergeCommitID`` are
     renamed to ``do``/``merge_commit_id``.  The wire request still sends the
-    original names; passing the old name raises a clear migration message.
+    original names.  An agent that passes the old name gets the standard
+    "Unknown parameter(s)" error — agents discover the present names via
+    ``tool_info`` and have no reason to know or care about old names.
     """
 
     @pytest.fixture
@@ -690,13 +755,128 @@ class TestParamNormalization:
         assert body["MergeCommitID"] == "abc123"
         assert body["delete_branch_after_merge"] is True
 
-    async def test_old_name_raises_migration_error(self, mcp_server: FastMCP) -> None:
-        """Passing the old PascalCase name raises a clear migration message."""
-        with pytest.raises(ToolError, match="renamed to 'do'"):
+    async def test_old_name_is_unknown_parameter(self, mcp_server: FastMCP) -> None:
+        """Passing the old PascalCase name is an unknown-parameter error.
+
+        Agents discover the present parameter names via ``tool_info``; an old
+        name is simply a parameter that does not exist.
+        """
+        with pytest.raises(ToolError, match="Unknown parameter"):
+            await mcp_server.call_tool(
+                "gitea_repo_merge_pull_request",
+                {"owner": "org", "repo": "repo", "index": 1, "Do": "merge", "do": "merge"},
+            )
+
+    async def test_old_name_without_new_name_reports_missing_required(
+        self, mcp_server: FastMCP
+    ) -> None:
+        """Passing only the old name reports the present required param.
+
+        The required-param check fires before the unknown-param check, so an
+        agent that passes ``Do`` without ``do`` is told ``do`` is required —
+        which nudges toward the present name without mentioning renames.
+        """
+        with pytest.raises(ToolError, match="Missing required parameter"):
             await mcp_server.call_tool(
                 "gitea_repo_merge_pull_request",
                 {"owner": "org", "repo": "repo", "index": 1, "Do": "merge"},
             )
+
+
+def _make_query_rename_spec() -> dict[str, Any]:
+    """Return a Swagger spec with a non-snake_case query parameter.
+
+    Models ``GET /search`` with the ``includeDesc`` query param, which Rule A
+    renames to ``include_desc`` while the wire query string keeps the original
+    name.
+    """
+    return {
+        "swagger": "2.0",
+        "info": {"title": "Gitea API", "version": "1.0"},
+        "basePath": "/api/v1",
+        "paths": {
+            "/search": {
+                "get": {
+                    "operationId": "repoSearch",
+                    "summary": "Search repositories",
+                    "parameters": [
+                        {
+                            "name": "includeDesc",
+                            "in": "query",
+                            "schema": {"type": "boolean"},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "SearchResults"},
+                    },
+                }
+            },
+        },
+        "definitions": {},
+    }
+
+
+class TestQueryParamNormalization:
+    """Scenario 4f: Renamed query params keep their original wire name.
+
+    Rule A renames a non-snake_case query param (``includeDesc`` →
+    ``include_desc``) in the tool surface; the HTTP query string must still
+    carry the original name (``includeDesc``).
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        return _make_query_rename_spec()
+
+    async def test_query_param_original_name_on_wire(self, mcp_server: FastMCP) -> None:
+        """The snake_case param is sent; the wire query uses the original name."""
+        route = respx.get(f"{BASE_TEST_URL}/api/v1/search")
+        route.respond(200, json=[])
+        await mcp_server.call_tool(
+            "gitea_repo_search",
+            {"include_desc": True},
+        )
+        assert route.called
+        url = str(route.calls[0].request.url)
+        # Wire query string carries the ORIGINAL camelCase name.
+        assert "includeDesc=true" in url, f"Expected includeDesc=true in {url}"
+        assert "include_desc" not in url, f"Unexpected snake_case name in {url}"
+
+
+class TestCollisionToolFullPipeline:
+    """Scenario 4e: Collision-resolved tools work through the full pipeline.
+
+    Regression test for the ``_check_renamed_params`` false positive: a
+    collision tool's path params (``owner``/``repo``/``index``) share their
+    names with the *original* body-property names (``owner`` → ``body_owner``).
+    The migration check must not flag valid path params — only names that are
+    no longer valid parameters can be old names.
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        return _make_collision_spec()
+
+    async def test_valid_path_params_not_flagged(self, mcp_server: FastMCP) -> None:
+        """Valid path + body params pass; the wire body uses original names."""
+        route = respx.post(f"{BASE_TEST_URL}/api/v1/repos/org/repo/issues/1/blocks")
+        route.respond(201, json={})
+        await mcp_server.call_tool(
+            "gitea_issue_create_issue_blocking",
+            {
+                "owner": "org",
+                "repo": "repo",
+                "index": 1,
+                "body_owner": "bodyorg",
+                "body_repo": "bodyrepo",
+                "body_index": 2,
+            },
+        )
+        assert route.called
+        sent = route.calls[0].request.content
+        body = json.loads(sent)
+        # Wire body carries the ORIGINAL field names (owner/repo/index).
+        assert body == {"owner": "bodyorg", "repo": "bodyrepo", "index": 2}
 
 
 # ---------------------------------------------------------------------------

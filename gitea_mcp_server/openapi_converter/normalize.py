@@ -14,7 +14,9 @@ conventions: body properties like ``Do``/``MergeCommitID`` (on
 ``MergePullRequestOption``), query params like ``includeDesc``/``starredBy``,
 and path params like ``pageName``/``repository-id``.  Non-snake_case names
 read like sentence words or leak Go struct internals.  This rule renames any
-parameter or body property that is not snake_case, recording the mapping in
+parameter or body property that is not snake_case and that
+:func:`camel_to_snake` can convert (kebab-case names like ``repository-id``
+are already readable and are left alone), recording the mapping in
 an ``x-param-rename`` extension on the operation (merged with any collision
 map set by :func:`resolve_param_collisions`).  At runtime, the shim in
 ``mcp_builder._apply_param_rename`` corrects the ``parameter_map`` so the
@@ -195,6 +197,18 @@ def _normalize_operation_body(
         new_name = camel_to_snake(name)
         if new_name == name or not new_name:
             continue
+        if new_name in props:
+            # A body with both ``Do`` and ``do`` would silently overwrite the
+            # existing property.  No Gitea endpoint exhibits this today, but
+            # warn loudly so an evolving spec fails loudly rather than
+            # silently dropping a property.
+            logger.warning(
+                "Body property '%s' normalizes to '%s' which already exists; "
+                "skipping rename to avoid overwriting",
+                name,
+                new_name,
+            )
+            continue
         prop_data = props.pop(name)
         props[new_name] = prop_data
         rename_map[new_name] = name
@@ -295,8 +309,9 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     Applies two shape-driven rules:
 
     1. **snake_case parameters** — renames non-snake_case query/header/cookie
-       parameters and body properties, recording the mapping in
-       ``x-param-rename`` (merged with any collision map).
+       parameters and body properties (that :func:`camel_to_snake` can
+       convert), recording the mapping in ``x-param-rename`` (merged with any
+       collision map).
     2. **boolean-check responses** — annotates GET operations whose success
        response is a contentless 204 with a 404 declared, setting
        ``x-response-transform: "boolean-check"``.
@@ -304,8 +319,11 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     Mutates ``openapi_spec`` in-place.  Called after spec conversion and
     after :func:`resolve_param_collisions`, before FastMCP processes the spec.
 
-    This function is guaranteed not to raise: all internal errors are caught
-    and logged.  Callers do not need a try/except wrapper.
+    This function is guaranteed not to raise: each operation is normalized
+    inside its own try/except (a failure on one operation is logged and
+    skipped, so the rest of the spec still normalizes), and the outer
+    try/except catches anything unexpected.  Callers do not need a try/except
+    wrapper.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (mutated in-place).
@@ -323,19 +341,29 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
                 if not isinstance(operation, dict):
                     continue
 
-                rename_map: dict[str, str] = {}
-                rename_map.update(_normalize_operation_parameters(operation))
-                rename_map.update(_normalize_operation_body(operation))
-                if rename_map:
-                    _merge_rename_map(operation, rename_map)
-                    total_renames += len(rename_map)
-                    op_id = operation.get("operationId", f"{method} {path}")
-                    affected_ops.append(op_id)
-                    logger.debug(
-                        "Normalized %d parameter names for %s: %s",
-                        len(rename_map),
-                        op_id,
-                        rename_map,
+                try:
+                    rename_map: dict[str, str] = {}
+                    rename_map.update(_normalize_operation_parameters(operation))
+                    rename_map.update(_normalize_operation_body(operation))
+                    if rename_map:
+                        _merge_rename_map(operation, rename_map)
+                        total_renames += len(rename_map)
+                        op_id = operation.get("operationId", f"{method} {path}")
+                        affected_ops.append(op_id)
+                        logger.debug(
+                            "Normalized %d parameter names for %s: %s",
+                            len(rename_map),
+                            op_id,
+                            rename_map,
+                        )
+                except Exception:
+                    # One malformed operation must not abort normalization of
+                    # the whole spec.  Log and skip it; the raw quirks on that
+                    # operation remain, which is a degraded UX but not a crash.
+                    logger.exception(
+                        "Failed to normalize operation %s %s",
+                        method.upper(),
+                        path,
                     )
 
         boolean_checks = _annotate_boolean_checks(openapi_spec)

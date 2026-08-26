@@ -763,7 +763,10 @@ from the parameter schema.
      ``resolve_param_collisions`` — normalization is the final authority and
      merges, never clobbers).  At runtime, the shim in
      ``mcp_builder._apply_param_rename`` corrects the ``parameter_map`` so the
-     HTTP request still sends the original wire name.  Path parameters are
+     HTTP request still sends the original wire name.  An agent that passes an
+     old name gets the standard "Unknown parameter(s)" error — the present
+     names are what ``tool_info`` shows, and old names are simply parameters
+     that do not exist.  Path parameters are
      **deferred** to issue #734: renaming them additionally requires rewriting
      the ``{placeholder}`` in the route path template, a deeper FastMCP-IR
      mutation.

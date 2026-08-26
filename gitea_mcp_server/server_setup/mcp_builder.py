@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import httpx
+from fastmcp.exceptions import ResourceError
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
 from fastmcp.telemetry import get_tracer
@@ -505,40 +506,28 @@ def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
     return None
 
 
-def _check_renamed_params(
-    kwargs: dict[str, Any],
-    openapi_spec: OpenAPISpec,
-    route_path: str,
-    route_method: str,
-) -> None:
-    """Reject old (pre-rename) parameter names with a clear migration message.
+def _resource_error_code(exc: BaseException) -> str | None:
+    """Extract the structured error code from a FastMCP ``ResourceError``.
 
-    When a parameter or body property was renamed at spec level (collision
-    resolution or snake_case normalization), an agent that passes the *old*
-    name would otherwise hit the generic "Unknown parameter(s)" error.  This
-    check intercepts those and explains the rename.
-
-    The ``x-param-rename`` mapping is ``{new_name: original_name}``; an old
-    name is a kwarg key that appears among the original names.
+    The resource handlers raise ``ResourceError`` with a dict payload
+    (``{"code": "NOT_FOUND" | "API_ERROR" | "INTERNAL_ERROR", ...}`` — see
+    ``resources/factory.py``).  This helper reads the code so callers can
+    distinguish a definitive not-found from other read failures.
 
     Args:
-        kwargs: The tool arguments from the agent.
-        openapi_spec: The OpenAPI 3.1 spec.
-        route_path: The route path template.
-        route_method: The HTTP method (e.g. ``"POST"``).
+        exc: The exception to inspect.
 
-    Raises:
-        ValueError: If any kwarg key is an old (renamed) parameter name.
+    Returns:
+        The structured error code, or ``None`` if ``exc`` is not a
+        ``ResourceError`` or carries no dict payload.
     """
-    rename_map = _read_param_rename(openapi_spec, route_path, route_method)
-    if not rename_map:
-        return
-    original_to_new = {original: new for new, original in rename_map.items()}
-    for key in kwargs:
-        if key in original_to_new:
-            new_name = original_to_new[key]
-            msg = f"Parameter '{key}' has been renamed to '{new_name}'. Please use '{new_name}'."
-            raise ValueError(msg)
+    if not isinstance(exc, ResourceError):
+        return None
+    payload = exc.args[0] if exc.args else None
+    if isinstance(payload, dict):
+        code = payload.get("code")
+        return code if isinstance(code, str) else None
+    return None
 
 
 def _apply_param_rename(
@@ -1033,6 +1022,10 @@ class _ToolWrappingTransform(Transform):
         # Strip the trailing literal action segment.
         resource_path = "/" + "/".join(segments[:-1])
         # Substitute path parameters from kwargs to get a concrete URI.
+        # Values are substituted raw (no URL-encoding): Gitea owner/repo/user
+        # names are restricted to ``[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*`` and
+        # numeric ids, so no segment ever needs percent-encoding.  If the
+        # charset ever widens, quote each segment (see follow-up issue).
         for key, value in kwargs.items():
             placeholder = "{" + key + "}"
             if placeholder in resource_path:
@@ -1106,11 +1099,25 @@ class _ToolWrappingTransform(Transform):
 
         try:
             await ctx.read_resource(resource_uri)
-        except Exception:  # noqa: BLE001 — FastMCP wraps every handler error
-            # (not-found, network, etc.) in ResourceError; any failure to read
-            # the existence-check resource means we cannot confirm the resource
-            # exists, so surface a clear "not found" error rather than a wrong
-            # boolean.  Matches the broad-catch pattern in spec_loader.py.
+        except ResourceError as e:
+            code = _resource_error_code(e)
+            if code != "NOT_FOUND":
+                # The existence check failed for another reason (API error,
+                # network, internal).  We cannot confirm the resource exists,
+                # but we also cannot claim it does not — surface the ambiguity
+                # rather than a wrong boolean or a false "not found".
+                await safe_ctx_info(
+                    ctx,
+                    f"Boolean-check {route_path}: existence check failed ({code})",
+                    extra={"route": route_path, "resource_uri": resource_uri, "code": code},
+                )
+                msg = (
+                    f"Could not verify whether the resource exists: {resource_uri}. "
+                    "The checked condition returned 404, but the existence check "
+                    f"failed ({code or 'unknown error'})."
+                )
+                raise ValueError(msg) from exc
+            # NOT_FOUND — the resource genuinely does not exist.
             await safe_ctx_info(
                 ctx,
                 f"Boolean-check {route_path}: resource {resource_uri} not found",
@@ -1120,6 +1127,20 @@ class _ToolWrappingTransform(Transform):
                 f"Resource not found: {resource_uri}. "
                 "The checked condition cannot be evaluated because the "
                 "underlying resource does not exist."
+            )
+            raise ValueError(msg) from exc
+        except Exception:  # noqa: BLE001 — defensive: any other failure to read
+            # the existence-check resource (unregistered URI, unexpected error)
+            # means we cannot confirm the resource exists; surface the ambiguity
+            # rather than a wrong boolean or a false "not found".
+            await safe_ctx_info(
+                ctx,
+                f"Boolean-check {route_path}: existence check failed",
+                extra={"route": route_path, "resource_uri": resource_uri},
+            )
+            msg = (
+                f"Could not verify whether the resource exists: {resource_uri}. "
+                "The checked condition returned 404, but the existence check failed."
             )
             raise ValueError(msg) from exc
 
@@ -1169,12 +1190,6 @@ class _ToolWrappingTransform(Transform):
            confirmation message so agents receive an explicit success signal.
         """
         tracer = get_tracer()
-
-        # Reject old (pre-rename) parameter names with a clear migration
-        # message before generic validation runs.  This catches agents that
-        # pass a name that was renamed at spec level (collision resolution or
-        # snake_case normalization).
-        _check_renamed_params(kwargs, self._openapi_spec, route_path, route_method)
 
         try:
             with tracer.start_as_current_span(f"{tool.name}.validate") as span:

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastmcp.exceptions import ResourceError
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
@@ -17,7 +18,6 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _apply_schema_postprocessing,
     _apply_tool_identity,
     _build_customization_meta,
-    _check_renamed_params,
     _compute_tool_schema,
     _ComputedSchema,
     _customize_metadata,
@@ -25,6 +25,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _find_http_status_error,
     _inject_response_metadata,
     _read_response_transform,
+    _resource_error_code,
     _response_is_binary,
     _ToolWrappingTransform,
     create_openapi_provider,
@@ -2626,42 +2627,6 @@ class TestFindHttpStatusError:
         assert _find_http_status_error(ValueError("plain")) is None
 
 
-class TestCheckRenamedParams:
-    """Tests for _check_renamed_params."""
-
-    def test_old_name_raises_migration_error(self) -> None:
-        spec = make_openapi_spec(
-            paths={
-                "/test": {
-                    "post": {
-                        "operationId": "test",
-                        "x-param-rename": {"do": "Do"},
-                    },
-                },
-            },
-        )
-        with pytest.raises(ValueError, match="renamed to 'do'"):
-            _check_renamed_params({"Do": "merge"}, spec, "/test", "POST")
-
-    def test_new_name_passes(self) -> None:
-        spec = make_openapi_spec(
-            paths={
-                "/test": {
-                    "post": {
-                        "operationId": "test",
-                        "x-param-rename": {"do": "Do"},
-                    },
-                },
-            },
-        )
-        # Should not raise.
-        _check_renamed_params({"do": "merge"}, spec, "/test", "POST")
-
-    def test_no_rename_map_passes(self) -> None:
-        spec = make_openapi_spec()
-        _check_renamed_params({"owner": "x"}, spec, "/test", "POST")
-
-
 class TestBooleanCheckHandlers:
     """Direct unit tests for the boolean-check response handlers.
 
@@ -2734,3 +2699,85 @@ class TestBooleanCheckHandlers:
         assert handled is not None
         assert handled.data is False
         assert handled.shape == "scalar"
+
+    async def test_404_resource_not_found_raises_clear_error(self) -> None:
+        """A NOT_FOUND existence check raises a clear not-found error."""
+        transform = self.make_transform()
+
+        class _Ctx:
+            async def read_resource(self, uri: str) -> None:
+                raise ResourceError(
+                    {
+                        "code": "NOT_FOUND",
+                        "message": "Resource not found.",
+                        "detail": "404",
+                        "resource_type": "repo",
+                        "resource_id": uri,
+                    }
+                )
+
+            async def info(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+        with pytest.raises(ValueError, match="Resource not found"):
+            await transform._try_handle_boolean_check_404(
+                self._make_404_error(),
+                {"owner": "org", "repo": "repo", "index": 1},
+                _Ctx(),
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+            )
+
+    async def test_404_existence_check_api_error_raises_ambiguity(self) -> None:
+        """A non-NOT_FOUND existence check failure raises an ambiguity error.
+
+        An API/network error during the existence check means we cannot
+        confirm the resource exists — but we also cannot claim it does not.
+        The error must say "could not verify", not "not found".
+        """
+        transform = self.make_transform()
+
+        class _Ctx:
+            async def read_resource(self, uri: str) -> None:
+                raise ResourceError(
+                    {
+                        "code": "API_ERROR",
+                        "message": "API error 500",
+                        "detail": "boom",
+                        "resource_type": "repo",
+                        "resource_id": uri,
+                    }
+                )
+
+            async def info(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+        with pytest.raises(ValueError, match="Could not verify"):
+            await transform._try_handle_boolean_check_404(
+                self._make_404_error(),
+                {"owner": "org", "repo": "repo", "index": 1},
+                _Ctx(),
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+            )
+
+
+class TestResourceErrorCode:
+    """Tests for _resource_error_code."""
+
+    def test_not_found_code(self) -> None:
+        exc = ResourceError({"code": "NOT_FOUND", "message": "x"})
+        assert _resource_error_code(exc) == "NOT_FOUND"
+
+    def test_api_error_code(self) -> None:
+        exc = ResourceError({"code": "API_ERROR", "message": "x"})
+        assert _resource_error_code(exc) == "API_ERROR"
+
+    def test_non_resource_error_returns_none(self) -> None:
+        assert _resource_error_code(ValueError("x")) is None
+
+    def test_non_dict_payload_returns_none(self) -> None:
+        exc = ResourceError("plain message")
+        assert _resource_error_code(exc) is None
+
+    def test_missing_code_returns_none(self) -> None:
+        exc = ResourceError({"message": "x"})
+        assert _resource_error_code(exc) is None

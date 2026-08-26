@@ -267,11 +267,12 @@ class TestMessageSchemaDeclaration:
         "search_resources",
         "search_docs",
         "list_resources",
+        "list_hidden_tools",
     )
 
     @pytest.mark.asyncio
     async def test_message_declared_on_emitting_tools(self) -> None:
-        """The five emitting tools declare message (nullable) in output_schema."""
+        """The emitting tools declare message (nullable) in output_schema."""
         mcp, prefix = await _make_server()
         tools = await mcp.list_tools()
         by_name = {t.name: t for t in tools}
@@ -293,3 +294,42 @@ class TestMessageSchemaDeclaration:
         tool = by_name[f"{prefix}read_doc"]
         assert tool.output_schema is not None
         assert "message" not in tool.output_schema["properties"]
+
+
+class TestListHiddenToolsContract:
+    """list_hidden_tools rides the shared paginated-list contract.
+
+    Exercises the registered wrapper (not just the impl) through the server,
+    verifying the envelope shape and the reason filter surface.
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_hidden_tools_returns_envelope(self) -> None:
+        """Calling the registered tool returns a well-formed paginated envelope."""
+        mcp, prefix = await _make_server()
+
+        result = get_structured(
+            await mcp.call_tool(
+                f"{prefix}list_hidden_tools",
+                {"format": "json", "page": 1, "limit": 10},
+            )
+        )
+        # Envelope keys are always present, even for an empty hidden-tool set.
+        assert "result" in result
+        assert "has_more" in result
+        assert "next_offset" in result
+        assert "total_count" in result
+        assert isinstance(result["result"], list)
+
+    @pytest.mark.asyncio
+    async def test_list_hidden_tools_rejects_invalid_reason(self) -> None:
+        """An invalid reason is rejected with a friendly message."""
+        mcp, prefix = await _make_server()
+
+        with pytest.raises(ToolError) as exc:
+            await mcp.call_tool(
+                f"{prefix}list_hidden_tools",
+                {"reason": "bogus"},
+            )
+        assert "Invalid reason" in str(exc.value)
+        assert "scope, excluded, deprecated" in str(exc.value)

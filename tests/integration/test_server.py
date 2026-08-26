@@ -177,6 +177,7 @@ class TestSyntheticToolMetadata:
             "search_resources",
             "search_docs",
             "read_doc",
+            "list_hidden_tools",
         ]
 
     def _expected_synthetic_names(self, prefix: str) -> list[str]:

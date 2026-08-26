@@ -326,3 +326,64 @@ class TestListHiddenToolsContract:
             )
         assert "Invalid reason" in str(exc.value)
         assert "scope, excluded, deprecated" in str(exc.value)
+
+
+class TestOutOfRangeMessageEnvelope:
+    """Object-shaped executors emit the message envelope on out-of-range pages.
+
+    End-to-end through the registered tools (not just the pipeline unit
+    tests): ``read_doc`` (guide lines) and ``tool_info`` (schema properties)
+    pre-slice their object results, so an out-of-range page must carry the
+    message envelope — no silent empty content, in any format.
+    """
+
+    @pytest.mark.asyncio
+    async def test_read_doc_out_of_range_emits_message(self) -> None:
+        """read_doc page beyond the guide length emits the message envelope."""
+        mcp, prefix = await _make_server()
+
+        result = get_structured(
+            await mcp.call_tool(
+                f"{prefix}read_doc",
+                {"topic": "labels", "page": 999, "limit": 50, "format": "json"},
+            )
+        )
+        assert result["result"] == {"content": ""}
+        assert "out of range" in result["message"]
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] > 0
+
+    @pytest.mark.asyncio
+    async def test_read_doc_out_of_range_markdown_renders_message(self) -> None:
+        """Markdown renders the message, not empty content, on out-of-range."""
+        mcp, prefix = await _make_server()
+
+        result = await mcp.call_tool(
+            f"{prefix}read_doc",
+            {"topic": "labels", "page": 999, "limit": 50, "format": "markdown"},
+        )
+        text = "".join(c.text for c in result.content if c.type == "text")
+        assert "out of range" in text
+
+    @pytest.mark.asyncio
+    async def test_tool_info_out_of_range_emits_message(self) -> None:
+        """tool_info detail=full page beyond the property count emits the envelope."""
+        mcp, prefix = await _make_server()
+
+        result = get_structured(
+            await mcp.call_tool(
+                f"{prefix}tool_info",
+                {
+                    "name": f"{prefix}search_tools",
+                    "detail": "full",
+                    "page": 999,
+                    "limit": 10,
+                    "format": "json",
+                },
+            )
+        )
+        assert "out of range" in result["message"]
+        assert result["has_more"] is False
+        assert result["next_offset"] is None
+        assert result["total_count"] > 0

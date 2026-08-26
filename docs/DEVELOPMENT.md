@@ -480,6 +480,40 @@ Use ``_response_is_binary()`` to detect these and return structured
 ``content_info`` metadata instead of raw bytes.  Agents get guidance to use
 ``format="raw"`` for direct access.
 
+### 8. Add a spec normalization rule
+
+When a *class* of spec quirk misleads agents and recurs across many endpoints
+(e.g. non-snake_case parameter names, ambiguous boolean-check responses),
+add a **shape-driven** rule to ``openapi_converter/normalize.py`` rather than
+hand-fixing individual tools.  The rules run in ``normalize_spec()``, called
+from ``spec_loader.py`` after ``resolve_param_collisions()`` and before
+FastMCP sees the spec.
+
+The rules must be **shape-driven, not name-driven**: trigger on the shape of
+the spec (naming convention, response structure), never on a hardcoded list
+of operationIds.  This keeps normalization generic so it keeps working as the
+Gitea spec evolves.
+
+Two existing rules show the pattern:
+
+- **Rule A (snake_case parameters)** — renames non-snake_case body/query/
+  header/cookie parameters, recording the mapping in an ``x-param-rename``
+  extension on the operation.  The runtime shim
+  (``mcp_builder._apply_param_rename``) corrects the ``parameter_map`` so the
+  HTTP request still sends the original wire name.  Path-param renames are
+  deferred to issue #734 (they require rewriting the route path template).
+- **Rule B (boolean-check)** — detects a GET whose success response is a
+  contentless 204 and which declares a 404, then annotates the operation with
+  ``x-response-transform: "boolean-check"``.  The schema-time fallback
+  (``_apply_fallback_schemas``) sets a ``{"result": boolean}`` schema and the
+  runtime pipeline returns an unambiguous boolean, distinguishing "not
+  merged" from "not found" via ``_boolean_check_resource_uri``.
+
+When adding a rule, update the module docstring, the design decision #17 in
+``docs/ARCHITECTURE.md``, and add unit + integration tests (see
+``tests/unit/openapi_converter/test_normalize.py`` and
+``tests/integration/test_tool_behaviour.py``).
+
 ---
 
 ## How to Add a Custom Resource

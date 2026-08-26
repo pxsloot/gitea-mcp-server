@@ -443,7 +443,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
         version_str=version_str,
         server_info_md=server_info_md,
     )
-    register_type_tools(mcp, openapi_spec=openapi_spec)
+    register_type_tools(mcp, openapi_spec=openapi_spec, tool_prefix=config.tool_prefix or "")
     await _apply_virtual_param_scope_filter(available_scopes)
 
     logger.info("Gitea MCP Server initialized successfully")

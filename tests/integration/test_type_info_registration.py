@@ -214,3 +214,71 @@ class TestRegisterTypeToolsCrossReferences:
         data = json.loads(raw)
         refs = data["cross_references"]
         assert "issue_get_issue" in refs["returned_by"]
+
+
+class TestRegisterTypeToolsCaseInsensitive:
+    """Tests for case-insensitive type-name resolution."""
+
+    @pytest.mark.asyncio
+    async def test_tool_resolves_lowercase(self, mcp: FastMCP) -> None:
+        """resolve_type('user') resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "user"})
+        data = get_structured(result)["result"]
+        assert data["name"] == "User"
+
+    @pytest.mark.asyncio
+    async def test_tool_resolves_mixed_case(self, mcp: FastMCP) -> None:
+        """resolve_type('uSeR') resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "uSeR"})
+        data = get_structured(result)["result"]
+        assert data["name"] == "User"
+
+    @pytest.mark.asyncio
+    async def test_resource_resolves_lowercase(self, mcp: FastMCP) -> None:
+        """Reading gitea://types/user resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        content = await mcp.read_resource("gitea://types/user")
+        raw = content.contents[0].content
+        data = json.loads(raw)
+        assert data["name"] == "User"
+
+
+class TestRegisterTypeToolsPrefix:
+    """Tests for tool_prefix applied to cross-referenced tool names."""
+
+    @pytest.mark.asyncio
+    async def test_cross_refs_prefixed_in_tool(self, mcp: FastMCP) -> None:
+        """With a prefix, returned_by carries the gitea_ prefix."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        refs = data["cross_references"]
+        assert "gitea_issue_get_issue" in refs["returned_by"]
+        assert "issue_get_issue" not in refs["returned_by"]
+
+    @pytest.mark.asyncio
+    async def test_cross_refs_prefixed_in_resource(self, mcp: FastMCP) -> None:
+        """With a prefix, the resource cross-refs carry the gitea_ prefix."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        content = await mcp.read_resource("gitea://types/User")
+        raw = content.contents[0].content
+        data = json.loads(raw)
+        refs = data["cross_references"]
+        assert "gitea_issue_get_issue" in refs["returned_by"]
+
+    @pytest.mark.asyncio
+    async def test_no_prefix_leaves_cross_refs_bare(self, mcp: FastMCP) -> None:
+        """Without a prefix, cross-refs stay bare (backward compatible)."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        refs = data["cross_references"]
+        assert "issue_get_issue" in refs["returned_by"]

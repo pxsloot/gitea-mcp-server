@@ -54,6 +54,7 @@ This doc explains the server's architecture and design decisions. If you need:
 │  │ parse     │   │  Swagger 2.0 → OpenAPI 3.1  │  │
 │  └───────────┘   │  + wrap response schemas    │  │
 │                  │  + apply param extensions   │  │
+│                  │  + normalize spec quirks    │  │
 │                  └───────────┬─────────────────┘  │
 └──────────────────────────────┼────────────────────┘
                                │
@@ -257,7 +258,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); shape-driven spec normalization (``normalize.py``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -742,6 +743,47 @@ from the parameter schema.
      by the pipeline.  No ``_formatted`` marker exists — display is
      centralized, not opt-out.
 
+ 17. **Shape-driven spec normalization** (``openapi_converter/normalize.py``)
+     -- The server mirrors the OpenAPI spec one-to-one, but a few *classes* of
+     spec quirks actively mislead agents and recur across many endpoints.
+     Rather than hand-fix individual tools, ``normalize_spec()`` applies
+     **shape-driven** rules to the whole spec before FastMCP sees it.  The
+     rules trigger on the *shape* of the spec (naming convention, response
+     structure), never on a hardcoded list of operationIds, so they keep
+     working as the Gitea spec evolves.  Two rules live here:
+
+     **Rule A — snake_case parameter normalization.**  Gitea's spec mixes
+     naming conventions: body properties like ``Do``/``MergeCommitID`` (on
+     ``MergePullRequestOption``), query params like ``includeDesc``/``starredBy``,
+     and path params like ``pageName``/``repository-id``.  Non-snake_case
+     names read like sentence words or leak Go struct internals.  The rule
+     renames any body/query/header/cookie parameter or body property that is
+     not snake_case, recording the mapping in an ``x-param-rename`` extension
+     on the operation (merged with any collision map set by
+     ``resolve_param_collisions`` — normalization is the final authority and
+     merges, never clobbers).  At runtime, the shim in
+     ``mcp_builder._apply_param_rename`` corrects the ``parameter_map`` so the
+     HTTP request still sends the original wire name.  Path parameters are
+     **deferred** to issue #734: renaming them additionally requires rewriting
+     the ``{placeholder}`` in the route path template, a deeper FastMCP-IR
+     mutation.
+
+     **Rule B — boolean-check response normalization.**  Gitea models "is
+     this thing true?" endpoints as a GET that returns ``204 No Content`` on
+     success and ``404`` when the answer is "no" (e.g. ``repoPullRequestIsMerged``,
+     ``orgIsMember``, ``repoCheckCollaborator``).  The raw shape is ambiguous:
+     an agent cannot distinguish "exists but false" from "doesn't exist", and
+     a 204 carries no boolean.  The rule detects the shape — a GET whose
+     success response is a contentless 204 and which declares a 404 — and
+     annotates the operation with ``x-response-transform: "boolean-check"``.
+     The schema-time fallback (``_apply_fallback_schemas``) sets a
+     ``{"result": boolean}`` schema; at runtime the pipeline returns an
+     unambiguous boolean and distinguishes "not merged" from "not found" by
+     reading the existence-check resource (``_boolean_check_resource_uri``)
+     via ``ctx.read_resource`` when a 404 is returned.  The detection resolves
+     ``$ref`` responses so a false positive like ``issueGetComment`` (a GET
+     with a 204 *and* a 200 carrying content) is correctly excluded.
+
 ---
 ## Response Content-Type Handling
 
@@ -766,6 +808,12 @@ whose raw API response shape does not serve agents well:
 Detection is via ``_response_is_contents_base64`` which checks the 200
 response schema for a ``$ref`` ending in ``/ContentsResponse`` — a schema-
 driven check, not a hardcoded list of operationIds.
+
+A second ``x-response-transform`` value, ``"boolean-check"``, is set by
+``normalize_spec()`` (``openapi_converter/normalize.py``) on "is this thing
+true?" GET endpoints (see design decision #17).  It is consumed by the
+schema-time fallback and the runtime pipeline to return an unambiguous
+boolean instead of a bare 204/404.
 
 ### Stage 1 -- Spec Conversion (`openapi_converter/core.py`)
 

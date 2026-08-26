@@ -269,6 +269,7 @@ def resolve_type_info(
 def register_type_tools(
     mcp: Any,
     openapi_spec: OpenAPISpec | None = None,
+    tool_prefix: str = "",
 ) -> None:
     """Register the ``resolve_type`` tool and ``gitea://types/{typeName}`` resource.
 
@@ -278,10 +279,17 @@ def register_type_tools(
 
     Both are registration-time closures over the built type index.
 
+    Type-name lookup is **case-insensitive**: ``resolve_type("label")`` and
+    ``resolve_type("Label")`` resolve the same type.  Cross-references
+    (``returned_by``/``accepted_by``) carry the configured ``tool_prefix``
+    (e.g. ``gitea_``) so the listed tool names are directly callable.
+
     Args:
         mcp: The FastMCP server instance.
         openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None`` (tools
             will return a helpful error).
+        tool_prefix: Namespace prefix (e.g. ``"gitea_"``) applied to
+            cross-referenced tool names.
     """
     from gitea_mcp_server.tools.customize import synthetic_annotations  # noqa: PLC0415
     from gitea_mcp_server.tools.errors import raise_value_error  # noqa: PLC0415
@@ -291,15 +299,42 @@ def register_type_tools(
     # Build the type index once at registration time.
     type_index: dict[str, dict[str, Any]] = {}
     available_types: list[str] = []
+    # Case-insensitive lookup: lowercase name -> canonical type name.
+    type_index_lower: dict[str, str] = {}
     if openapi_spec is not None:
         type_index = build_type_index(openapi_spec)
         available_types = sorted(type_index.keys())
+        type_index_lower = {name.lower(): name for name in type_index}
+
+    def _resolve_canonical(name: str) -> str | None:
+        """Resolve a (possibly mixed-case) type name to its canonical form."""
+        return type_index_lower.get(name.lower())
+
+    def _prefix_cross_refs(info: dict[str, Any]) -> dict[str, Any]:
+        """Prefix cross-referenced tool names with ``tool_prefix``.
+
+        ``returned_by``/``accepted_by`` hold operationIds (e.g.
+        ``issue_get_issue``); the agent-facing tool names carry the
+        ``gitea_`` prefix.  Prefixing makes the listed names directly
+        callable.  ``referenced_types`` are type names, not tools — left
+        unchanged.
+        """
+        if not tool_prefix:
+            return info
+        cross = info.get("cross_references", {})
+        if not isinstance(cross, dict):
+            return info
+        for key in ("returned_by", "accepted_by"):
+            names = cross.get(key, [])
+            if isinstance(names, list):
+                cross[key] = [f"{tool_prefix}{n}" for n in names]
+        return info
 
     async def _resolve_type_impl(
         name: Annotated[
             str,
             "Type name to resolve (e.g. 'User', 'Milestone', 'Label'). "
-            "Case-sensitive. Use search_tools or list_resources to find tools "
+            "Case-insensitive. Use search_tools or list_resources to find tools "
             "that reference types.",
         ],
         ctx: Context,
@@ -321,12 +356,26 @@ def register_type_tools(
             extra={"type_name": name, "detail": detail},
         )
 
+        canonical = _resolve_canonical(name)
+        if canonical is None:
+            msg = (
+                f"Type '{name}' not found. "
+                "Use search_resources('type') or "
+                "call resolve_type with one of the tool's $ref:TypeName markers."
+            )
+            await safe_ctx_info(
+                ctx,
+                f"Type '{name}' not found",
+                extra={"type_name": name, "found": False},
+            )
+            raise_value_error(msg)
+
         # Guard above guarantees openapi_spec was available at registration.
         spec = cast("OpenAPISpec", openapi_spec)
         info = resolve_type_info(
             spec,
             type_index,
-            name,
+            canonical,
             detail=detail,
         )
         if info is None:
@@ -341,6 +390,8 @@ def register_type_tools(
                 extra={"type_name": name, "found": False},
             )
             raise_value_error(msg)
+
+        info = _prefix_cross_refs(info)
 
         await safe_ctx_report_progress(ctx, progress=1.0)
         logger.debug(
@@ -454,7 +505,8 @@ def register_type_tools(
             extra={"type_name": typeName},
         )
 
-        if not type_index or typeName not in type_index:
+        canonical = _resolve_canonical(typeName)
+        if not type_index or canonical is None:
             msg = (
                 f"Type '{typeName}' not found. "
                 "Use search_resources('type') to discover valid type names."
@@ -467,9 +519,10 @@ def register_type_tools(
         info = resolve_type_info(
             spec,
             type_index,
-            typeName,
+            canonical,
             detail="full",
         )
+        info = _prefix_cross_refs(info) if info else info
         return json.dumps(info, indent=2) if info else "{}"
 
     # No required_scope: the type index is built from the OpenAPI spec

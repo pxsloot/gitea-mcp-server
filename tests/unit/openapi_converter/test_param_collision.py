@@ -1841,17 +1841,21 @@ class TestApplyParamRename:
         _apply_param_rename(route, spec)  # Should not raise
 
     def test_non_body_params_not_affected(self) -> None:
-        """Only body-location params are affected by the rename."""
+        """Query/header/cookie params are renamed; path params are deferred (#734)."""
         parameter_map = {
             "owner": {"location": "path", "openapi_name": "owner"},
             "body_owner": {"location": "query", "openapi_name": "body_owner"},
+            "do": {"location": "header", "openapi_name": "do"},
         }
         spec = make_openapi_spec(
             paths={
                 "/test/{owner}": {
                     "post": {
                         "operationId": "test",
-                        "x-param-rename": {"body_owner": "owner"},
+                        "x-param-rename": {
+                            "body_owner": "owner",
+                            "do": "Do",
+                        },
                     },
                 },
             },
@@ -1862,5 +1866,8 @@ class TestApplyParamRename:
             parameter_map=parameter_map,
         )
         _apply_param_rename(route, spec)
-        # Query param should NOT be renamed (only body params are renamed)
-        assert route.parameter_map["body_owner"]["openapi_name"] == "body_owner"
+        # Query and header params ARE renamed (openapi_name -> original wire name).
+        assert route.parameter_map["body_owner"]["openapi_name"] == "owner"
+        assert route.parameter_map["do"]["openapi_name"] == "Do"
+        # Path params are deferred to issue #734 — not renamed.
+        assert route.parameter_map["owner"]["openapi_name"] == "owner"

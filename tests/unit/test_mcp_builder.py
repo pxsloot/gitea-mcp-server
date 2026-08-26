@@ -3,6 +3,7 @@
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
@@ -16,10 +17,12 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _apply_schema_postprocessing,
     _apply_tool_identity,
     _build_customization_meta,
+    _check_renamed_params,
     _compute_tool_schema,
     _ComputedSchema,
     _customize_metadata,
     _detect_contents_response,
+    _find_http_status_error,
     _inject_response_metadata,
     _read_response_transform,
     _response_is_binary,
@@ -2560,3 +2563,96 @@ class TestBuildCustomizationMeta:
         assert c.route_method == "GET"
         assert c.has_labels is True
         assert c.is_empty_response is True
+
+
+# ---------------------------------------------------------------------------
+# Boolean-check helpers
+# ---------------------------------------------------------------------------
+
+
+class TestBooleanCheckResourceUri:
+    """Tests for _boolean_check_resource_uri."""
+
+    def test_strips_trailing_action_segment(self) -> None:
+        """A trailing literal action segment is stripped and params substituted."""
+        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
+        )
+        assert uri == "gitea://repos/org/repo/pulls/1"
+
+    def test_path_ending_in_param_is_resource(self) -> None:
+        """A path ending in a {param} is itself the resource → None."""
+        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+            "/orgs/{org}/members/{username}",
+            {"org": "o", "username": "u"},
+        )
+        assert uri is None
+
+    def test_empty_path_returns_none(self) -> None:
+        assert _ToolWrappingTransform._boolean_check_resource_uri("", {}) is None
+
+
+class TestFindHttpStatusError:
+    """Tests for _find_http_status_error."""
+
+    def test_direct_http_status_error(self) -> None:
+        exc = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+        assert _find_http_status_error(exc) is exc
+
+    def test_nested_through_value_error_chain(self) -> None:
+        """The status error is found through the ValueError translation chain."""
+        status = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+
+        def _build_chain() -> None:
+            try:
+                raise ValueError("inner") from status
+            except ValueError as inner:
+                raise ValueError("outer") from inner
+
+        with pytest.raises(ValueError) as exc_info:
+            _build_chain()
+        assert _find_http_status_error(exc_info.value) is status
+
+    def test_no_status_error_returns_none(self) -> None:
+        assert _find_http_status_error(ValueError("plain")) is None
+
+
+class TestCheckRenamedParams:
+    """Tests for _check_renamed_params."""
+
+    def test_old_name_raises_migration_error(self) -> None:
+        spec = make_openapi_spec(
+            paths={
+                "/test": {
+                    "post": {
+                        "operationId": "test",
+                        "x-param-rename": {"do": "Do"},
+                    },
+                },
+            },
+        )
+        with pytest.raises(ValueError, match="renamed to 'do'"):
+            _check_renamed_params({"Do": "merge"}, spec, "/test", "POST")
+
+    def test_new_name_passes(self) -> None:
+        spec = make_openapi_spec(
+            paths={
+                "/test": {
+                    "post": {
+                        "operationId": "test",
+                        "x-param-rename": {"do": "Do"},
+                    },
+                },
+            },
+        )
+        # Should not raise.
+        _check_renamed_params({"do": "merge"}, spec, "/test", "POST")
+
+    def test_no_rename_map_passes(self) -> None:
+        spec = make_openapi_spec()
+        _check_renamed_params({"owner": "x"}, spec, "/test", "POST")

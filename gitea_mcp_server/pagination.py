@@ -77,10 +77,11 @@ MESSAGE_SCHEMA_PROPERTY: dict[str, Any] = {
 """JSON Schema property for the ``message`` key on empty/out-of-range pages.
 
 Declared (nullable) in the output schemas of the paginated synthetic tools
-that emit it via ``format.empty_paginated_result`` — ``search``,
-``search_tools``, ``search_resources``, ``search_docs``, and
-``list_resources``.  Tools that never emit ``message`` (e.g. ``read_doc``)
-must not declare it, keeping schema and runtime in agreement.
+that emit it via the result pipeline's ``empty`` shape
+(``tools/result_pipeline.py``) — ``search``, ``search_tools``,
+``search_resources``, ``search_docs``, and ``list_resources``.  Tools that
+never emit ``message`` (e.g. ``read_doc``) must not declare it, keeping
+schema and runtime in agreement.
 """
 
 PAGINATION_HEADERS = ("X-Total-Count", "X-Total")

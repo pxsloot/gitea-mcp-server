@@ -156,8 +156,8 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 # executor-internal loop is a post-milestone follow-up.  The param is
 # injected only into synthetic tools (tool_predicate on the ``_synthetic``
 # meta marker) — autogen tools no longer expose it.  For synthetic tools it
-# is an in-memory skip-slice: ``format_paginated_result`` returns all items
-# without page slicing.
+# is an in-memory skip-slice: the result pipeline
+# (``tools/result_pipeline.py``) returns all items without page slicing.
 _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     schema={"type": "boolean"},
     default=False,

@@ -1372,6 +1372,38 @@ class TestSearchToolsSyntheticTool:
         assert len(sc["result"]) == 1
         assert sc["result"][0]["name"] == "gitea_issue_list"
 
+    @pytest.mark.asyncio
+    async def test_search_tools_empty_query_out_of_range_page(self) -> None:
+        """Out-of-range page on a list-all query emits the empty envelope in
+        both channels (regression: markdown used to render the full catalog)."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tools = [
+            Tool(
+                name=f"gitea_tool_{i}",
+                description=f"Tool {i}",
+                parameters={"properties": {}},
+            )
+            for i in range(3)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=tools)
+
+        result = _render(
+            await _search_tools_impl("", None, mock_ctx, transform, page=10, limit=10),
+            page=10,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert "Page 10 is out of range" in sc.get("message", "")
+        assert sc["total_count"] == 3
+        # The text channel agrees with structured_content — no full-catalog dump.
+        text = extract_text_content(result.content) if result.content else ""
+        assert "Page 10 is out of range" in text
+        assert "gitea_tool_0" not in text
+
 
 class TestTolerantBM25Search:
     """Tests for TolerantBM25Search."""

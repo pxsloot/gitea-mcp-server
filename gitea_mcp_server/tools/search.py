@@ -120,9 +120,24 @@ def search_or_list_all(  # noqa: PLR0913 - all params are independent search axe
         extras.extend(extra_extras)
 
     if not query.strip():
+        total_count = len(items)
+        # Check page range before formatting (only when paginating, not
+        # fetch_all) — same short-circuit as the ranked branch below, so an
+        # out-of-range page on a list-all query emits the empty envelope in
+        # both channels instead of rendering the full catalog in markdown.
+        if not fetch_all:
+            start = (page - 1) * limit
+            if start >= total_count:
+                return ExecutionResult(
+                    data=[],
+                    total_count=total_count,
+                    shape="empty",
+                    paginated=True,
+                    message=f"Page {page} is out of range (total results: {total_count}).",
+                )
         return ExecutionResult(
             data=items,
-            total_count=len(items),
+            total_count=total_count,
             shape="list",
             paginated=True,
             markdown_extras=extras or None,
@@ -1340,7 +1355,7 @@ def register_synthetic_tools(
                                 "description": "Why the tool is hidden: scope, excluded, or deprecated",
                             },
                             "required_scope": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
+                                "oneOf": [{"type": "string"}, {"type": "null"}],
                                 "description": "Required scope (reason=scope only)",
                             },
                         },

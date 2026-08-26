@@ -784,6 +784,15 @@ from the parameter schema.
      ``$ref`` responses so a false positive like ``issueGetComment`` (a GET
      with a 204 *and* a 200 carrying content) is correctly excluded.
 
+     Everything else stays **intentionally mirrored** — the spec is the
+     source of truth and the one-to-one mapping is what makes the surface
+     predictable.  Quirks that are harmless to agents are deliberately left
+     alone: auto-generated resource names like ``Resource for GET {path}``
+     (``resources/factory.py``), spec descriptions that read awkwardly, and
+     response shapes that carry their meaning in the status code without
+     ambiguity.  Only quirks that *mislead* — ambiguous booleans, sentence-
+     word parameter names — are normalized.
+
 ---
 ## Response Content-Type Handling
 

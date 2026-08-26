@@ -30,6 +30,8 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
+import httpx
+from fastmcp.exceptions import ResourceError
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
 from fastmcp.telemetry import get_tracer
@@ -37,6 +39,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
@@ -254,11 +257,14 @@ def _apply_fallback_schemas(
 ) -> bool:
     """Apply fallback schemas for text/plain and no-content endpoints.
 
-    Two conditional cases, both triggered when ``output_schema`` is ``None``:
+    Three conditional cases, all triggered when ``output_schema`` is ``None``:
 
     1. **Text/plain** — sets a lightweight ``{"result": string}`` schema
        so agents get schema guidance matching the runtime shape.
-    2. **No-content** (204/205) — sets a ``{"result": null}`` schema so
+    2. **Boolean-check** — sets a ``{"result": boolean}`` schema for
+       "is this thing true?" endpoints (see :func:`normalize_spec`), so the
+       runtime returns an unambiguous boolean instead of a bare 204.
+    3. **No-content** (204/205) — sets a ``{"result": null}`` schema so
        the MCP transport layer has proper guidance.
 
     Returns:
@@ -272,6 +278,18 @@ def _apply_fallback_schemas(
         component.output_schema = {
             "type": "object",
             "properties": {"result": {"type": "string"}},
+        }
+        return False
+
+    if schema.response_transform == "boolean-check":
+        component.output_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "boolean",
+                    "description": "Whether the checked condition holds.",
+                },
+            },
         }
         return False
 
@@ -436,8 +454,9 @@ def _read_param_rename(
     """Read the ``x-param-rename`` mapping from a spec operation.
 
     This mapping is set by :func:`resolve_param_collisions` for operations
-    where path parameter names collide with body property names.  It maps
-    renamed body property names back to their original names.
+    where path parameter names collide with body property names, and by
+    :func:`normalize_spec` for non-snake_case parameter renames.  It maps
+    renamed names back to their original names.
 
     Args:
         openapi_spec: The OpenAPI 3.1 spec.
@@ -461,24 +480,83 @@ def _read_param_rename(
     return None
 
 
+def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
+    """Walk an exception's cause chain to find an ``httpx.HTTPStatusError``.
+
+    ``run_with_error_handling`` re-raises a ``ValueError`` whose ``__cause__``
+    is the original ``ValueError`` from ``component.run()``, whose own
+    ``__cause__`` is the ``httpx.HTTPStatusError``.  This helper walks the
+    chain (``__cause__`` then ``__context__``) to find the underlying HTTP
+    status error, so callers can inspect the status code regardless of how
+    many translation layers wrapped it.
+
+    Args:
+        exc: The exception to inspect.
+
+    Returns:
+        The first ``httpx.HTTPStatusError`` found in the chain, or ``None``.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, httpx.HTTPStatusError):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _resource_error_code(exc: BaseException) -> str | None:
+    """Extract the structured error code from a FastMCP ``ResourceError``.
+
+    The resource handlers raise ``ResourceError`` with a dict payload
+    (``{"code": "NOT_FOUND" | "API_ERROR" | "INTERNAL_ERROR", ...}`` — see
+    ``resources/factory.py``).  This helper reads the code so callers can
+    distinguish a definitive not-found from other read failures.
+
+    Args:
+        exc: The exception to inspect.
+
+    Returns:
+        The structured error code, or ``None`` if ``exc`` is not a
+        ``ResourceError`` or carries no dict payload.
+    """
+    if not isinstance(exc, ResourceError):
+        return None
+    payload = exc.args[0] if exc.args else None
+    if isinstance(payload, dict):
+        code = payload.get("code")
+        return code if isinstance(code, str) else None
+    return None
+
+
 def _apply_param_rename(
     route: Any,
     openapi_spec: OpenAPISpec,
 ) -> None:
     """Apply parameter rename mapping to ``route.parameter_map``.
 
-    When body properties were renamed with a ``body_`` prefix to avoid
-    collisions with path parameters (see :func:`resolve_param_collisions`),
-    the ``parameter_map`` generated by FastMCP maps the renamed name to
-    the body location with the renamed name as ``openapi_name``.  This
-    function corrects the ``openapi_name`` to the original name so the
-    ``RequestDirector`` emits the correct field names in the HTTP request
-    body.
+    When parameters or body properties were renamed at spec level (collision
+    resolution via :func:`resolve_param_collisions`, or snake_case
+    normalization via :func:`normalize_spec`), the ``parameter_map``
+    generated by FastMCP maps the renamed name to its location with the
+    renamed name as ``openapi_name``.  This function corrects the
+    ``openapi_name`` to the original name so the ``RequestDirector`` emits
+    the correct field names on the wire.
+
+    The ``RequestDirector`` uses ``openapi_name`` as the wire key for
+    ``body``, ``query``, ``header``, and ``cookie`` locations (director.py
+    ``_unflatten_arguments``), so correcting ``openapi_name`` is sufficient
+    for those.  Path parameters are **deferred** to issue #734: they are
+    substituted into the URL template by ``openapi_name``, so renaming them
+    additionally requires rewriting the ``{placeholder}`` in ``route.path``.
 
     For example, if ``x-param-rename`` is ``{"body_owner": "owner"}`` and
     ``route.parameter_map`` has ``{"body_owner": {"location": "body",
     "openapi_name": "body_owner"}}``, this function changes it to
     ``{"body_owner": {"location": "body", "openapi_name": "owner"}}``.
+    Likewise ``{"do": "Do"}`` with a query param maps ``openapi_name`` to
+    ``"Do"`` so the query string carries the original name.
 
     Mutates ``route.parameter_map`` in-place.
 
@@ -500,7 +578,7 @@ def _apply_param_rename(
     for new_name, original_name in rename_map.items():
         if new_name in parameter_map:
             mapping = parameter_map[new_name]
-            if isinstance(mapping, dict) and mapping.get("location") == "body":
+            if isinstance(mapping, dict) and mapping.get("location") != "path":
                 mapping["openapi_name"] = original_name
                 logger.debug(
                     "Fixed parameter_map for %s %s: %s → openapi_name=%s",
@@ -825,12 +903,14 @@ class _ToolWrappingTransform(Transform):
         if customization is None:
             route_path, route_method = "", ""
             is_text_response = is_empty_response = is_binary_response = False
+            response_transform = None
         else:
             route_path = customization.route_path
             route_method = customization.route_method
             is_text_response = customization.is_text_response
             is_empty_response = customization.is_empty_response
             is_binary_response = customization.is_binary_response
+            response_transform = customization.response_transform
         output_schema = tool.output_schema
 
         return await self._pipeline_with_context(
@@ -842,6 +922,7 @@ class _ToolWrappingTransform(Transform):
             is_text_response,
             is_empty_response,
             is_binary_response,
+            response_transform,
             output_schema,
         )
 
@@ -901,7 +982,176 @@ class _ToolWrappingTransform(Transform):
             message=f"Binary content ({size} bytes). Use format='raw' to access directly.",
         )
 
-    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
+    @staticmethod
+    def _boolean_check_resource_uri(
+        route_path: str,
+        kwargs: dict[str, Any],
+    ) -> str | None:
+        """Derive the existence-check resource URI for a boolean-check path.
+
+        A boolean-check endpoint (e.g. ``/repos/{owner}/{repo}/pulls/{index}/merge``)
+        tests a condition on a resource.  When the path ends in a literal
+        (non-``{param}``) action segment — like ``/merge`` — that segment is
+        the action, and the resource being checked is the path minus that
+        segment (``/repos/{owner}/{repo}/pulls/{index}``).  When the path ends
+        in a ``{param}`` placeholder, the path *is* the resource and no
+        distinct existence check is needed (the 404 genuinely means "the
+        answer is no").
+
+        The returned URI is concrete: path parameters are substituted from
+        ``kwargs`` so it can be read directly via ``ctx.read_resource``.
+
+        Returns the ``gitea://`` resource URI to check for existence, or
+        ``None`` when the path is itself the resource (no action to strip).
+
+        Args:
+            route_path: The route path template (e.g.
+                ``/repos/{owner}/{repo}/pulls/{index}/merge``).
+            kwargs: The tool arguments (used to substitute path parameters).
+
+        Returns:
+            The concrete ``gitea://`` resource URI, or ``None``.
+        """
+        segments = [s for s in route_path.split("/") if s]
+        if not segments:
+            return None
+        last = segments[-1]
+        if last.startswith("{") and last.endswith("}"):
+            # Path ends in a resource id — it IS the resource.
+            return None
+        # Strip the trailing literal action segment.
+        resource_path = "/" + "/".join(segments[:-1])
+        # Substitute path parameters from kwargs to get a concrete URI.
+        # Values are substituted raw (no URL-encoding): Gitea owner/repo/user
+        # names are restricted to ``[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*`` and
+        # numeric ids, so no segment ever needs percent-encoding.  If the
+        # charset ever widens, quote each segment (see follow-up issue).
+        for key, value in kwargs.items():
+            placeholder = "{" + key + "}"
+            if placeholder in resource_path:
+                resource_path = resource_path.replace(placeholder, str(value))
+        return f"gitea://{resource_path.lstrip('/')}"
+
+    async def _try_handle_boolean_check(
+        self,
+        result: ToolResult,
+        ctx: Any,
+        route_path: str,
+    ) -> ExecutionResult | None:
+        """Handle a successful (204) boolean-check response.
+
+        A 204 means the condition holds — return ``{"result": true}``.
+
+        Returns an ``ExecutionResult`` or ``None`` when this handler does not
+        apply (the response carried content, which a boolean-check never does).
+        """
+        if result.structured_content is not None:
+            return None
+        await safe_ctx_info(
+            ctx,
+            f"Boolean-check {route_path}: condition holds (204)",
+            extra={"route": route_path, "result": True},
+        )
+        return ExecutionResult(data=True, shape="scalar")
+
+    async def _try_handle_boolean_check_404(
+        self,
+        exc: ValueError,
+        kwargs: dict[str, Any],
+        ctx: Any,
+        route_path: str,
+    ) -> ExecutionResult | None:
+        """Handle a 404 on a boolean-check endpoint.
+
+        A 404 means the condition does *not* hold — but it may also mean the
+        underlying resource does not exist.  When the checker path has a
+        distinct resource (an action segment was stripped), read that resource
+        via the resource machinery to disambiguate:
+
+        - resource exists → the condition is simply false → ``{"result": false}``
+        - resource missing → raise a clear "not found" error
+
+        When the checker path *is* the resource (no action to strip), the 404
+        genuinely means "the answer is no" → ``{"result": false}``.
+
+        Returns an ``ExecutionResult``, or ``None`` when the exception is not
+        a 404 (re-raise upstream).
+        """
+        status_error = _find_http_status_error(exc)
+        if status_error is None or status_error.response.status_code != HTTP_STATUS_NOT_FOUND:
+            return None
+
+        resource_uri = self._boolean_check_resource_uri(route_path, kwargs)
+        if resource_uri is None:
+            # The path is itself the resource — 404 means "the answer is no".
+            await safe_ctx_info(
+                ctx,
+                f"Boolean-check {route_path}: condition false (404, no distinct resource)",
+                extra={"route": route_path, "result": False},
+            )
+            return ExecutionResult(data=False, shape="scalar")
+
+        # Disambiguate via the resource machinery: does the resource exist?
+        if ctx is None:
+            # No active context — cannot read a resource.  Fall back to the
+            # common case (condition false) rather than fabricating a result.
+            return ExecutionResult(data=False, shape="scalar")
+
+        try:
+            await ctx.read_resource(resource_uri)
+        except ResourceError as e:
+            code = _resource_error_code(e)
+            if code != "NOT_FOUND":
+                # The existence check failed for another reason (API error,
+                # network, internal).  We cannot confirm the resource exists,
+                # but we also cannot claim it does not — surface the ambiguity
+                # rather than a wrong boolean or a false "not found".
+                await safe_ctx_info(
+                    ctx,
+                    f"Boolean-check {route_path}: existence check failed ({code})",
+                    extra={"route": route_path, "resource_uri": resource_uri, "code": code},
+                )
+                msg = (
+                    f"Could not verify whether the resource exists: {resource_uri}. "
+                    "The checked condition returned 404, but the existence check "
+                    f"failed ({code or 'unknown error'})."
+                )
+                raise ValueError(msg) from exc
+            # NOT_FOUND — the resource genuinely does not exist.
+            await safe_ctx_info(
+                ctx,
+                f"Boolean-check {route_path}: resource {resource_uri} not found",
+                extra={"route": route_path, "resource_uri": resource_uri},
+            )
+            msg = (
+                f"Resource not found: {resource_uri}. "
+                "The checked condition cannot be evaluated because the "
+                "underlying resource does not exist."
+            )
+            raise ValueError(msg) from exc
+        except Exception:  # noqa: BLE001 — defensive: any other failure to read
+            # the existence-check resource (unregistered URI, unexpected error)
+            # means we cannot confirm the resource exists; surface the ambiguity
+            # rather than a wrong boolean or a false "not found".
+            await safe_ctx_info(
+                ctx,
+                f"Boolean-check {route_path}: existence check failed",
+                extra={"route": route_path, "resource_uri": resource_uri},
+            )
+            msg = (
+                f"Could not verify whether the resource exists: {resource_uri}. "
+                "The checked condition returned 404, but the existence check failed."
+            )
+            raise ValueError(msg) from exc
+
+        await safe_ctx_info(
+            ctx,
+            f"Boolean-check {route_path}: condition false (404, resource exists)",
+            extra={"route": route_path, "result": False},
+        )
+        return ExecutionResult(data=False, shape="scalar")
+
+    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912, PLR0911 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
         self,
         kwargs: dict[str, Any],
         tool: Tool,
@@ -911,6 +1161,7 @@ class _ToolWrappingTransform(Transform):
         is_text_response: bool,
         is_empty_response: bool,
         is_binary_response: bool,
+        response_transform: str | None,
         output_schema: dict[str, Any] | None,
     ) -> ExecutionResult:
         """Run the tool execution pipeline with an optional Context.
@@ -925,7 +1176,7 @@ class _ToolWrappingTransform(Transform):
         (``tools/result_pipeline.render``) applies shape → paginate →
         format afterwards; no display logic lives here.
 
-        Handles five response classes (in order):
+        Handles six response classes (in order):
         1. **JSON** — standard; classified ``list`` (array) or ``object``.
         2. **Text/plain** (diffs, patches) — ``shape="text"``.
         3. **Base64-decode** (ContentsResponse) — detours JSON with
@@ -933,7 +1184,9 @@ class _ToolWrappingTransform(Transform):
            ``decode_base64_content`` (``shape="text"``).
         4. **Binary** (zip, octet-stream) — ``shape="binary"`` with
            ``content_info`` metadata instead of raw bytes.
-        5. **Empty-body** (204/205) — ``shape="empty"`` with the visible
+        5. **Boolean-check** — "is this thing true?" endpoints return an
+           unambiguous boolean and distinguish "false" from "not found".
+        6. **Empty-body** (204/205) — ``shape="empty"`` with the visible
            confirmation message so agents receive an explicit success signal.
         """
         tracer = get_tracer()
@@ -979,6 +1232,8 @@ class _ToolWrappingTransform(Transform):
                 # Binary response — FastMCP's OpenAPITool.run() tries
                 # response.text which crashes on binary data.  Return nil
                 # structured_content so the binary branch below handles it.
+                # NOTE: UnicodeDecodeError subclasses ValueError, so this
+                # must be caught BEFORE the ValueError handler below.
                 if is_binary_response:
                     result = ToolResult(
                         content=[TextContent(type="text", text="")],
@@ -986,12 +1241,29 @@ class _ToolWrappingTransform(Transform):
                     )
                 else:
                     raise
+            except ValueError as e:
+                # Boolean-check endpoints: a 404 may mean "condition false" or
+                # "resource not found".  Disambiguate via the resource machinery
+                # before letting the generic error propagate.
+                if response_transform == "boolean-check":
+                    handled = await self._try_handle_boolean_check_404(e, kwargs, ctx, route_path)
+                    if handled is not None:
+                        return handled
+                raise
 
         await safe_ctx_info(
             ctx,
             f"Executed {tool.name}: {route_method} {route_path}",
             extra={"route": f"{route_method} {route_path}"},
         )
+
+        # Boolean-check endpoints: a 204 means the condition holds.  Handle
+        # before the generic empty-body/text branches (which would otherwise
+        # produce a bare 204 with no boolean).
+        if response_transform == "boolean-check":
+            handled = await self._try_handle_boolean_check(result, ctx, route_path)
+            if handled is not None:
+                return handled
 
         # Text/plain + base64-decode: both paths handled by one method.
         # Simple text wrapping when structured_content is None (diffs,

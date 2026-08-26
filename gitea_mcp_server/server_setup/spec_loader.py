@@ -29,6 +29,7 @@ import yaml
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter.normalize import normalize_spec
 from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.server_setup.mcp_extensions import apply_mcp_extensions, load_mcp_extensions
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
@@ -267,6 +268,13 @@ async def load_and_convert_spec(
     # This function is guaranteed not to raise (internal errors are caught
     # and logged), so no try/except wrapper is needed here.
     resolve_param_collisions(openapi_spec)
+
+    # Normalize agent-misleading spec quirks (design decision #17): rename
+    # non-snake_case parameters/body properties and annotate boolean-check
+    # responses.  Runs AFTER collision resolution so normalization is the
+    # final authority on ``x-param-rename`` (it merges, never clobbers).
+    # Guaranteed not to raise (internal errors are caught and logged).
+    normalize_spec(openapi_spec)
 
     # ── Compute spec-level filtering ───────────────────────────────────
     # Exclusion config is always honoured (it never required token scopes).

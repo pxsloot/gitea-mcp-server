@@ -214,3 +214,122 @@ class TestRegisterTypeToolsCrossReferences:
         data = json.loads(raw)
         refs = data["cross_references"]
         assert "issue_get_issue" in refs["returned_by"]
+
+
+class TestRegisterTypeToolsCaseInsensitive:
+    """Tests for case-insensitive type-name resolution."""
+
+    @pytest.mark.asyncio
+    async def test_tool_resolves_lowercase(self, mcp: FastMCP) -> None:
+        """resolve_type('user') resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "user"})
+        data = get_structured(result)["result"]
+        assert data["name"] == "User"
+
+    @pytest.mark.asyncio
+    async def test_tool_resolves_mixed_case(self, mcp: FastMCP) -> None:
+        """resolve_type('uSeR') resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "uSeR"})
+        data = get_structured(result)["result"]
+        assert data["name"] == "User"
+
+    @pytest.mark.asyncio
+    async def test_resource_resolves_lowercase(self, mcp: FastMCP) -> None:
+        """Reading gitea://types/user resolves the 'User' type."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        content = await mcp.read_resource("gitea://types/user")
+        raw = content.contents[0].content
+        data = json.loads(raw)
+        assert data["name"] == "User"
+
+
+class TestRegisterTypeToolsPrefix:
+    """Tests for tool_prefix applied to cross-referenced tool names."""
+
+    @pytest.mark.asyncio
+    async def test_cross_refs_prefixed_in_tool(self, mcp: FastMCP) -> None:
+        """With a prefix, returned_by carries the gitea_ prefix."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        refs = data["cross_references"]
+        assert "gitea_issue_get_issue" in refs["returned_by"]
+        assert "issue_get_issue" not in refs["returned_by"]
+
+    @pytest.mark.asyncio
+    async def test_cross_refs_prefixed_in_resource(self, mcp: FastMCP) -> None:
+        """With a prefix, the resource cross-refs carry the gitea_ prefix."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        content = await mcp.read_resource("gitea://types/User")
+        raw = content.contents[0].content
+        data = json.loads(raw)
+        refs = data["cross_references"]
+        assert "gitea_issue_get_issue" in refs["returned_by"]
+
+    @pytest.mark.asyncio
+    async def test_no_prefix_leaves_cross_refs_bare(self, mcp: FastMCP) -> None:
+        """Without a prefix, cross-refs stay bare (backward compatible)."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        refs = data["cross_references"]
+        assert "issue_get_issue" in refs["returned_by"]
+
+
+class TestRegisterTypeToolsDefensivePaths:
+    """Defensive branches in the type tool (resolve_type_info edge cases).
+
+    ``resolve_type_info`` always returns a dict with dict ``cross_references``
+    for a canonical-resolved type, so these branches are unreachable through
+    normal spec construction.  They are pinned here by patching
+    ``resolve_type_info`` to return the edge-case values.
+    """
+
+    @pytest.mark.asyncio
+    async def test_non_dict_cross_references_left_unchanged(
+        self,
+        mcp: FastMCP,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When cross_references is not a dict, prefixing leaves the info alone."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        def _fake_resolve(
+            spec: OpenAPISpec,
+            type_index: dict,
+            type_name: str,
+            detail: str = "concise",
+        ) -> dict:
+            return {"name": type_name, "cross_references": "not-a-dict"}
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.tools.type_info.resolve_type_info",
+            _fake_resolve,
+        )
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        assert data["cross_references"] == "not-a-dict"
+
+    @pytest.mark.asyncio
+    async def test_resolve_type_info_none_raises_not_found(
+        self,
+        mcp: FastMCP,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When resolve_type_info returns None, a clear not-found error is raised."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.tools.type_info.resolve_type_info",
+            lambda *args, **kwargs: None,
+        )
+        with pytest.raises(ToolError, match="not found"):
+            await mcp.call_tool("resolve_type", {"name": "User"})

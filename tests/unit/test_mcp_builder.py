@@ -3,7 +3,9 @@
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from fastmcp.exceptions import ResourceError
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
@@ -20,8 +22,10 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ComputedSchema,
     _customize_metadata,
     _detect_contents_response,
+    _find_http_status_error,
     _inject_response_metadata,
     _read_response_transform,
+    _resource_error_code,
     _response_is_binary,
     _ToolWrappingTransform,
     create_openapi_provider,
@@ -2560,3 +2564,220 @@ class TestBuildCustomizationMeta:
         assert c.route_method == "GET"
         assert c.has_labels is True
         assert c.is_empty_response is True
+
+
+# ---------------------------------------------------------------------------
+# Boolean-check helpers
+# ---------------------------------------------------------------------------
+
+
+class TestBooleanCheckResourceUri:
+    """Tests for _boolean_check_resource_uri."""
+
+    def test_strips_trailing_action_segment(self) -> None:
+        """A trailing literal action segment is stripped and params substituted."""
+        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
+        )
+        assert uri == "gitea://repos/org/repo/pulls/1"
+
+    def test_path_ending_in_param_is_resource(self) -> None:
+        """A path ending in a {param} is itself the resource → None."""
+        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+            "/orgs/{org}/members/{username}",
+            {"org": "o", "username": "u"},
+        )
+        assert uri is None
+
+    def test_empty_path_returns_none(self) -> None:
+        assert _ToolWrappingTransform._boolean_check_resource_uri("", {}) is None
+
+
+class TestFindHttpStatusError:
+    """Tests for _find_http_status_error."""
+
+    def test_direct_http_status_error(self) -> None:
+        exc = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+        assert _find_http_status_error(exc) is exc
+
+    def test_nested_through_value_error_chain(self) -> None:
+        """The status error is found through the ValueError translation chain."""
+        status = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+
+        def _build_chain() -> None:
+            # Deliberately raise inside try/except to build the __cause__ chain
+            # that run_with_error_handling produces in production.
+            inner_msg = "inner"
+            outer_msg = "outer"
+            try:
+                raise ValueError(inner_msg) from status  # noqa: TRY301
+            except ValueError as inner:
+                raise ValueError(outer_msg) from inner
+
+        with pytest.raises(ValueError, match="outer") as exc_info:
+            _build_chain()
+        assert _find_http_status_error(exc_info.value) is status
+
+    def test_no_status_error_returns_none(self) -> None:
+        assert _find_http_status_error(ValueError("plain")) is None
+
+
+class TestBooleanCheckHandlers:
+    """Direct unit tests for the boolean-check response handlers.
+
+    The integration suite (``tests/integration/test_tool_behaviour.py``)
+    covers the happy paths through the full pipeline; these tests pin the
+    defensive branches the pipeline cannot reach (content-bearing response,
+    non-404 error, path-is-resource, no active context).
+    """
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+
+    @staticmethod
+    def _make_404_error() -> ValueError:
+        status = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+        exc = ValueError("not merged")
+        exc.__cause__ = status
+        return exc
+
+    async def test_content_bearing_response_returns_none(self) -> None:
+        """A response that carried content is not a boolean-check 204."""
+        transform = self.make_transform()
+        result = ToolResult(
+            content=[TextContent(type="text", text="{}")],
+            structured_content={"result": {}},
+        )
+        handled = await transform._try_handle_boolean_check(result, None, "/pulls/1/merge")
+        assert handled is None
+
+    async def test_non_404_error_returns_none(self) -> None:
+        """A non-404 error is not handled by the boolean-check 404 path."""
+        transform = self.make_transform()
+        status = httpx.HTTPStatusError(
+            "500", request=httpx.Request("GET", "http://x"), response=httpx.Response(500)
+        )
+        exc = ValueError("server error")
+        exc.__cause__ = status
+        handled = await transform._try_handle_boolean_check_404(
+            exc,
+            {"owner": "org", "repo": "repo", "index": 1},
+            None,
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+        )
+        assert handled is None
+
+    async def test_404_path_is_resource_returns_false(self) -> None:
+        """A 404 on a path that IS the resource means the answer is no."""
+        transform = self.make_transform()
+        handled = await transform._try_handle_boolean_check_404(
+            self._make_404_error(),
+            {"org": "o", "username": "u"},
+            None,
+            "/orgs/{org}/members/{username}",
+        )
+        assert handled is not None
+        assert handled.data is False
+        assert handled.shape == "scalar"
+
+    async def test_404_no_context_returns_false(self) -> None:
+        """Without an active context, a 404 with a distinct resource → false."""
+        transform = self.make_transform()
+        handled = await transform._try_handle_boolean_check_404(
+            self._make_404_error(),
+            {"owner": "org", "repo": "repo", "index": 1},
+            None,
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+        )
+        assert handled is not None
+        assert handled.data is False
+        assert handled.shape == "scalar"
+
+    async def test_404_resource_not_found_raises_clear_error(self) -> None:
+        """A NOT_FOUND existence check raises a clear not-found error."""
+        transform = self.make_transform()
+
+        class _Ctx:
+            async def read_resource(self, uri: str) -> None:
+                raise ResourceError(
+                    {
+                        "code": "NOT_FOUND",
+                        "message": "Resource not found.",
+                        "detail": "404",
+                        "resource_type": "repo",
+                        "resource_id": uri,
+                    }
+                )
+
+            async def info(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+        with pytest.raises(ValueError, match="Resource not found"):
+            await transform._try_handle_boolean_check_404(
+                self._make_404_error(),
+                {"owner": "org", "repo": "repo", "index": 1},
+                _Ctx(),
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+            )
+
+    async def test_404_existence_check_api_error_raises_ambiguity(self) -> None:
+        """A non-NOT_FOUND existence check failure raises an ambiguity error.
+
+        An API/network error during the existence check means we cannot
+        confirm the resource exists — but we also cannot claim it does not.
+        The error must say "could not verify", not "not found".
+        """
+        transform = self.make_transform()
+
+        class _Ctx:
+            async def read_resource(self, uri: str) -> None:
+                raise ResourceError(
+                    {
+                        "code": "API_ERROR",
+                        "message": "API error 500",
+                        "detail": "boom",
+                        "resource_type": "repo",
+                        "resource_id": uri,
+                    }
+                )
+
+            async def info(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+        with pytest.raises(ValueError, match="Could not verify"):
+            await transform._try_handle_boolean_check_404(
+                self._make_404_error(),
+                {"owner": "org", "repo": "repo", "index": 1},
+                _Ctx(),
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+            )
+
+
+class TestResourceErrorCode:
+    """Tests for _resource_error_code."""
+
+    def test_not_found_code(self) -> None:
+        exc = ResourceError({"code": "NOT_FOUND", "message": "x"})
+        assert _resource_error_code(exc) == "NOT_FOUND"
+
+    def test_api_error_code(self) -> None:
+        exc = ResourceError({"code": "API_ERROR", "message": "x"})
+        assert _resource_error_code(exc) == "API_ERROR"
+
+    def test_non_resource_error_returns_none(self) -> None:
+        assert _resource_error_code(ValueError("x")) is None
+
+    def test_non_dict_payload_returns_none(self) -> None:
+        exc = ResourceError("plain message")
+        assert _resource_error_code(exc) is None
+
+    def test_missing_code_returns_none(self) -> None:
+        exc = ResourceError({"message": "x"})
+        assert _resource_error_code(exc) is None

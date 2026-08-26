@@ -752,8 +752,8 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                 },
                 "example": {
                     "uri": "gitea://repos/{owner}/{repo}",
-                    "name": "Repository",
-                    "description": "Get full repository metadata",
+                    "name": "repo_get",
+                    "description": "Get a repository",
                     "mimeType": "text/markdown",
                     "type": "template",
                     "tags": ["wrapper", "repository"],

@@ -505,6 +505,24 @@ class TestRegisterMcpResourceTools:
         assert annotations is not None
         assert annotations.openWorldHint is True
 
+    def test_tool_schema_resource_has_meta_and_tags(self) -> None:
+        """gitea://tool/{name}/schema carries ResourceMeta and a small tag set."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+
+        register_mcp_resource_tools(mcp)
+
+        call = mcp.resource.call_args
+        kwargs = call[1]
+        assert kwargs.get("uri") == "gitea://tool/{name}/schema"
+        assert kwargs.get("name") == "tool_schema"
+        assert kwargs.get("tags") == {"synthetic", "tool-schema", "schema"}
+        meta = kwargs.get("meta")
+        assert meta is not None, "tool schema resource should carry ResourceMeta"
+        assert meta.get("size_hint") == "large"
+        assert meta.get("default_detail") == "concise"
+
 
 class TestMcpReadResourceTool:
     """Tests for read_resource tool function.
@@ -557,7 +575,7 @@ class TestMcpReadResourceTool:
 
     @pytest.mark.asyncio
     async def test_json_returns_structured_content(self) -> None:
-        """JSON content: content is the rendered markdown, structured carries raw data."""
+        """JSON content: content is the rendered markdown, structured carries the parsed data."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -570,14 +588,33 @@ class TestMcpReadResourceTool:
 
         assert isinstance(tool_result, ToolResult)
         assert tool_result.structured_content is not None
-        # structured_content carries the raw payload (data), not the rendering.
-        assert tool_result.structured_content["result"] == '{"key": "val", "num": 42}'
+        # structured_content carries the parsed payload (data), not the raw string.
+        assert tool_result.structured_content["result"] == {"key": "val", "num": 42}
         # content is the rendered presentation for display.
         assert len(tool_result.content) == 1
         rendered = extract_text_content(tool_result.content)
         assert "|" in rendered
         assert "Key" in rendered
         assert "val" in rendered
+
+    @pytest.mark.asyncio
+    async def test_json_format_dual_channel_mirror(self) -> None:
+        """format=json on JSON content: content text mirrors structured_content."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val", "num": 42}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        tool_result = await fn(uri="gitea://test", format="json", ctx=ctx)
+
+        assert isinstance(tool_result, ToolResult)
+        # content is the serialized envelope; structured mirrors it exactly.
+        assert_dual_channel(tool_result, fmt="json")
+        parsed = parse_json_content(tool_result)
+        assert parsed == {"result": {"key": "val", "num": 42}}
 
     @pytest.mark.asyncio
     async def test_raw_format_has_raw_text(self) -> None:

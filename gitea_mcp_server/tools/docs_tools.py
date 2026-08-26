@@ -20,6 +20,7 @@ from fastmcp.exceptions import ResourceError
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
+from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
@@ -458,14 +459,11 @@ def register_doc_tools(
 
     register_all_synthetic_tools(mcp, [search_docs_spec, read_doc_spec])
 
-    # Compute dynamic tags and description from all loaded guides
-    # so resource discovery aligns with guide frontmatter content
-    all_tags: set[str] = {"docs", "guide", "workflow"}
-    topic_list: list[str] = []
-    for g in doc_manager.guides:
-        all_tags.update(g.tags)
-        all_tags.add(g.name)
-        topic_list.append(g.name)
+    # Compute the topic list for the description so resource discovery
+    # aligns with guide frontmatter content.  Tags stay a small fixed set —
+    # guide names and frontmatter tags must NOT accumulate into the
+    # resource's tag set (that pollutes list_resources with ~90 tags).
+    topic_list: list[str] = [g.name for g in doc_manager.guides]
     topic_str = ", ".join(sorted(topic_list))
     description = (
         "Read a workflow guide by topic name. "
@@ -476,10 +474,11 @@ def register_doc_tools(
     # Register the resource template for all guides
     @mcp.resource(
         uri="gitea://docs/guide/{topic}",
-        name="Workflow Guide",
+        name="workflow_guide",
         description=description,
         mime_type="text/markdown",
-        tags=all_tags,
+        tags={"docs", "guide", "workflow"},
+        meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
     )
     async def doc_resource(topic: str) -> str:
         """Get a workflow guide by topic name."""

@@ -65,6 +65,45 @@ class TestRegisterCustomResources:
         for template in expected:
             assert template in uri_templates
 
+    async def test_custom_resources_have_snake_case_names(
+        self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
+    ) -> None:
+        """No custom resource reports name='handler'; names are snake_case.
+
+        Wrapper resources derive from the spec operationId (or declare an
+        explicit name when the api_path doesn't match the spec); static
+        resources declare explicit snake_case names.
+        """
+        registered_names: dict[str, str] = {}
+
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            registered_names[uri] = kwargs.get("name", "MISSING")
+
+            def deco(func: Callable) -> Callable:
+                return func
+
+            return deco
+
+        mock_mcp.resource = MagicMock(side_effect=resource_decorator)
+
+        register_custom_resources(mock_mcp, mock_gitea_client)
+
+        assert registered_names, "expected custom resources to be registered"
+        assert "handler" not in registered_names.values(), (
+            f"no resource may be named 'handler', got: {registered_names}"
+        )
+        # Explicit names for the 3 wrappers whose api_path doesn't match the spec.
+        assert registered_names["gitea://orgs/{orgname}"] == "org_get"
+        assert registered_names["gitea://repos/{owner}/{repo}/readme"] == "repo_get_readme"
+        assert registered_names["gitea://repos/{owner}/{repo}/files/{path*}"] == "repo_get_contents"
+        # Static resources declare explicit snake_case names.
+        assert registered_names["gitea://version"] == "version"
+        assert registered_names["gitea://token/scopes"] == "token_scopes"
+        # All names are snake_case: no capitals, no spaces.
+        for uri, name in registered_names.items():
+            assert name == name.lower(), f"resource {uri} name {name!r} must be snake_case"
+            assert " " not in name, f"resource {uri} name {name!r} must not contain spaces"
+
     async def test_issues_pulls_resources_use_read_issue_scope(
         self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
     ) -> None:

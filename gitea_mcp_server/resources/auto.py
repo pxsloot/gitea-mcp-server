@@ -29,30 +29,6 @@ from gitea_mcp_server.uri_utils import clean_resource_uri
 logger = logging.getLogger(__name__)
 
 
-def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
-    """Derive a meaningful resource name from an OpenAPI operation."""
-    operation_id = operation.get("operationId")
-    if operation_id and operation_id.strip():
-        name = operation_id.strip()
-        result = ""
-        for i, char in enumerate(name):
-            if char.isupper():
-                if i > 0 and (
-                    name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())
-                ):
-                    result += "_"
-                result += char.lower()
-            else:
-                result += char
-        return result
-
-    clean_path = path.strip("/")
-    segments = [s for s in clean_path.split("/") if not (s.startswith("{") and s.endswith("}"))]
-    if not segments:
-        segments = [s.strip("{}") for s in clean_path.split("/") if s]
-    return "_".join(segments) if segments else "resource"
-
-
 def register_auto_generated_resources(
     mcp: FastMCP,
     gitea_client: GiteaClient,
@@ -134,7 +110,11 @@ def register_auto_generated_resources(
                     )
                     continue
 
-                resource_name = _derive_resource_name(operation, path)
+                # Name derivation is owned by the factory: when ``name`` is
+                # omitted it derives snake_case from the spec operationId
+                # (operationId → URI template → placeholder with a warning),
+                # so auto resources and their custom siblings share one
+                # source of truth for naming.
                 swagger_tags = set(operation.get("tags", [])) or None
                 required_scope = derive_required_scope(swagger_tags, "GET")
 
@@ -149,7 +129,6 @@ def register_auto_generated_resources(
                         uri=uri_template,
                         api_path=path,
                         method="GET",
-                        name=resource_name,
                         scope=required_scope,
                         tags={"api", "raw", "auto"},
                     )

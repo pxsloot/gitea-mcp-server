@@ -29,7 +29,13 @@ Parameter                         Default        Purpose
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
 ``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
-                                                 When ``None``, FastMCP auto-generates one.
+                                                 When ``None``, derived in snake_case from the spec
+                                                 operationId, then from the URI template, then a
+                                                 placeholder with a loud warning (never ``"handler"``).
+``description``                   ``None``       Explicit description used as the handler docstring.
+                                                 When ``None``, the OpenAPI operation summary/
+                                                 description is used; the fallback never leaks API
+                                                 plumbing (``Resource for GET {path}``).
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
                                                  Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
@@ -78,6 +84,141 @@ from gitea_mcp_server.tools.schemas import get_success_schema, unwrap_result_sch
 from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
+
+
+# ── Resource name derivation ────────────────────────────────────────────────
+#
+# Resource names are snake_case everywhere — derived from the endpoint
+# (operationId) for auto and wrapper resources, from the URI template as a
+# fallback, and a placeholder with a loud warning as the last resort.  A
+# resource must never surface FastMCP's function-name fallback ("handler").
+
+
+def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
+    """Derive a snake_case resource name from an OpenAPI operation.
+
+    Uses the ``operationId`` (camelCase → snake_case) when present; falls
+    back to the non-parameter path segments joined with ``_``.
+
+    Args:
+        operation: The OpenAPI operation dict.
+        path: The API path (e.g. ``/repos/{owner}/{repo}``).
+
+    Returns:
+        A snake_case name (e.g. ``"repo_get"``, ``"org_list_members"``).
+    """
+    operation_id = operation.get("operationId")
+    if operation_id and operation_id.strip():
+        name = operation_id.strip()
+        result = ""
+        for i, char in enumerate(name):
+            if char.isupper():
+                if i > 0 and (
+                    name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())
+                ):
+                    result += "_"
+                result += char.lower()
+            else:
+                result += char
+        return result
+
+    clean_path = path.strip("/")
+    segments = [s for s in clean_path.split("/") if not (s.startswith("{") and s.endswith("}"))]
+    if not segments:
+        segments = [s.strip("{}") for s in clean_path.split("/") if s]
+    return "_".join(segments) if segments else "resource"
+
+
+def _find_operation(
+    openapi_spec: OpenAPISpec | None,
+    api_path: str,
+    method: str,
+) -> dict[str, Any] | None:
+    """Return the spec operation dict for ``api_path`` + ``method``, or ``None``.
+
+    Used for name derivation (operationId) and description fallbacks.  The
+    lookup is exact — custom resources whose ``api_path`` uses different
+    parameter names than the spec (e.g. ``{orgname}`` vs ``{org}``) will not
+    match and fall back to URI-derived naming.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
+        api_path: API path to look up (e.g. ``/repos/{owner}/{repo}``).
+        method: HTTP method (e.g. ``"GET"``).
+
+    Returns:
+        The operation dict, or ``None`` if not found.
+    """
+    if openapi_spec is None:
+        return None
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    path_item = paths.get(api_path)
+    if isinstance(path_item, dict):
+        operation = path_item.get(method.lower())
+        if isinstance(operation, dict):
+            return operation
+    return None
+
+
+def _derive_name_from_uri(uri: str) -> str:
+    """Derive a snake_case resource name from a URI template (fallback).
+
+    Uses the last non-parameter path segment: ``gitea://orgs/{orgname}`` →
+    ``"orgs"``, ``gitea://repos/{owner}/{repo}/readme`` → ``"readme"``.
+    Returns ``""`` when no usable segment exists.
+
+    Args:
+        uri: The resource URI template (e.g. ``gitea://repos/{owner}/{repo}``).
+
+    Returns:
+        A snake_case name, or ``""`` if none can be derived.
+    """
+    path = uri.split("://", 1)[-1].strip("/")
+    segments = [s for s in path.split("/") if not (s.startswith("{") and s.endswith("}"))]
+    return segments[-1] if segments else ""
+
+
+def _derive_resource_name_for(
+    openapi_spec: OpenAPISpec | None,
+    api_path: str,
+    method: str,
+    uri: str,
+) -> str:
+    """Derive a snake_case resource name: operationId → URI → placeholder.
+
+    The derivation chain for resources registered without an explicit
+    ``name``:
+
+    1. Spec operationId (camelCase → snake_case) when ``api_path`` matches
+       a spec path — keeps wrapper names aligned with their auto siblings.
+    2. URI template (last non-parameter segment).
+    3. Placeholder ``"resource"`` with a loud warning — reaching this means
+       a registration bug in our own code (we own every resource), so it
+       must be audible, not silent.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
+        api_path: API path in spec (e.g. ``/repos/{owner}/{repo}``).
+        method: HTTP method (e.g. ``"GET"``).
+        uri: The resource URI template.
+
+    Returns:
+        A snake_case resource name — never ``"handler"``.
+    """
+    operation = _find_operation(openapi_spec, api_path, method)
+    if operation is not None:
+        return _derive_resource_name(operation, api_path)
+    uri_name = _derive_name_from_uri(uri)
+    if uri_name:
+        return uri_name
+    logger.warning(
+        "Could not derive a resource name for %s (method=%s, api_path=%s) — "
+        "using placeholder 'resource'. Register the resource with an explicit name.",
+        uri,
+        method,
+        api_path,
+    )
+    return "resource"
 
 
 @dataclass
@@ -326,17 +467,37 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     )
 
 
-def _set_handler_docstring(
+def _set_handler_docstring(  # noqa: PLR0913 - handler + spec + path + lower-method + name + description are all independent docstring inputs
     handler: Callable[..., Any],
     openapi_spec: OpenAPISpec | None,
     api_path: str,
-    method: str,
     method_lower: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
 ) -> None:
-    """Set the handler's docstring from the OpenAPI operation summary/description.
+    """Set the handler's docstring (the resource description agents see).
 
-    Falls back to ``Resource for {method} {api_path}`` when no spec info is found.
+    Priority order:
+
+    1. Explicit ``description`` (caller-curated, e.g. for wrapper resources
+       whose ``api_path`` does not match a spec path).
+    2. OpenAPI operation summary/description.
+    3. The derived resource ``name`` — never ``Resource for {method}
+       {api_path}``, which leaks API plumbing into the agent-facing surface.
+
+    Args:
+        handler: The resource handler callable.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
+        api_path: API path in spec (e.g. ``/repos/{owner}/{repo}``).
+        method_lower: Lowercased HTTP method.
+        name: The (derived or explicit) resource name, for the fallback.
+        description: Optional explicit description overriding spec-derived text.
     """
+    if description:
+        handler.__doc__ = description
+        return
+
     if openapi_spec is not None:
         paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         path_item = paths.get(api_path, {})
@@ -350,13 +511,10 @@ def _set_handler_docstring(
                     docstring += "\n\n" + description
                 if docstring:
                     handler.__doc__ = docstring
-                else:
-                    handler.__doc__ = f"Resource for {method} {api_path}"
+                    return
 
-    if (
-        handler.__doc__ is None
-    ):  # pragma: no cover — handler closures in make_api_resource always have docstrings; kept as safety net for manual handler creation
-        handler.__doc__ = f"Resource for {method} {api_path}"
+    # Fallback: the derived name is a stable, non-plumbing description.
+    handler.__doc__ = name or "Resource"
 
 
 def _build_optional_param_signature(
@@ -406,6 +564,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     api_path: str,
     method: str = "GET",
     name: str | None = None,
+    description: str | None = None,
     format_hint: str | None = None,
     handler_hook: Callable[[Any], Awaitable[str]] | None = None,
     resource_type: str | None = None,
@@ -453,6 +612,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         uri: Resource URI template (e.g. ``"gitea://repos/{owner}/{repo}"``).
         api_path: API path in spec (e.g. ``"/repos/{owner}/{repo}"``).
         method: HTTP method (default: ``"GET"``).
+        name: Resource name passed to ``mcp.resource(name=...)``.  When
+            ``None``, derived in snake_case from the spec operationId, then
+            from the URI template, then a placeholder with a loud warning —
+            never FastMCP's function-name fallback (``"handler"``).
+        description: Explicit description used as the handler docstring
+            (what agents see in ``list_resources``).  When ``None``, the
+            OpenAPI operation summary/description is used; the fallback
+            never leaks API plumbing (``Resource for GET {path}``).
         format_hint: Registered formatter name for markdown rendering.
             Not used when ``handler_hook`` is provided.
         handler_hook: Optional async callback for post-processing the API
@@ -522,6 +689,12 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             scope,
         )
         return None
+
+    # Derive the resource name when not declared: operationId → URI → placeholder.
+    # Never leaves ``name=None``, so FastMCP's function-name fallback
+    # ("handler") can never surface in list_resources.
+    if name is None:
+        name = _derive_resource_name_for(openapi_spec, api_path, method, uri)
 
     # Unwrap the param_config dataclass into local variables so the handler
     # closure can capture them normally (avoids changing all internal refs).
@@ -744,8 +917,16 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         if _sig != inspect.signature(handler):
             handler.__signature__ = _sig  # type: ignore[attr-defined]
 
-    # Set docstring from operation summary/description or fallback to path.
-    _set_handler_docstring(handler, openapi_spec, api_path, method, method_lower)
+    # Set docstring from explicit description, operation summary/description,
+    # or the derived name (never "Resource for GET {path}").
+    _set_handler_docstring(
+        handler,
+        openapi_spec,
+        api_path,
+        method_lower,
+        name=name,
+        description=description,
+    )
 
     # Register with FastMCP.
     # When handler_hook is provided, the resource returns text/plain --

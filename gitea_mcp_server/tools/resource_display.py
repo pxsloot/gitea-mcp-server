@@ -11,7 +11,10 @@ formatters.
 Public functions:
     clean_resource_uri - re-exported from ``uri_utils.py``; strip ``{?query}``
         from URI templates
-    format_resource_content - unified display pipeline (JSON parse → collapse → format)
+    format_resource_result - unified dual-channel display pipeline
+        (JSON parse → collapse → format → ToolResult); the single writer of
+        both channels (content authoritative, structured_content mirror)
+    format_resource_content - text-only wrapper over format_resource_result
     extract_resource_content - extract text content from ResourceResult
     _make_resource_formatter - resolve a format_hint to a callable formatter
 """
@@ -21,6 +24,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.format import apply_format, collapse_data
@@ -73,18 +77,24 @@ def _make_resource_formatter(
     return lambda data: fn(data, detail=detail)
 
 
-def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display axes, 7 return paths handle fmt fallback
+def format_resource_result(  # noqa: PLR0913 - 6 independent display axes
     raw: str,
     fmt: str,
     detail: str = "full",
     schema: dict[str, Any] | None = None,
     format_hint: str | None = None,
     extra: dict[str, Any] | None = None,
-) -> str:
-    """Unified display pipeline for resource content.
+) -> ToolResult:
+    """Unified dual-channel display pipeline for resource content.
 
     All resources (auto-generated and custom) return raw data.  This function
-    is the single point where that data is shaped and formatted for output.
+    is the single point where that data is shaped and formatted for output,
+    and the single writer of both channels:
+
+    - ``content`` (the text channel) is authoritative and always present.
+    - ``structured_content`` mirrors it: the parsed envelope
+      ``{"result": <data>}`` for JSON content, ``{"result": raw}`` for
+      non-JSON content and ``format=raw``.
 
     The pipeline:
       1. Parse JSON (non-JSON content passes through unchanged).
@@ -114,23 +124,32 @@ def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display a
             additional parameters (e.g. ``owner``/``repo`` for labels).
 
     Returns:
-        Formatted content string.
+        A dual-channel ``ToolResult`` whose ``content`` is authoritative and
+        always present, with ``structured_content`` mirroring it.
     """
     if fmt == "raw":
-        return raw
+        return ToolResult(
+            content=[TextContent(type="text", text=raw)],
+            structured_content={"result": raw},
+        )
 
     # Only json and markdown are valid beyond this point; some older
     # tests pass unknown formats expecting raw passthrough.
     if fmt not in ("json", "markdown"):
-        return raw
+        return ToolResult(
+            content=[TextContent(type="text", text=raw)],
+            structured_content={"result": raw},
+        )
 
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
         # Non-JSON content (plain text, markdown) -- pass through.
-        if fmt == "json":
-            return json.dumps({"result": raw}, indent=2)
-        return raw
+        text = json.dumps({"result": raw}, indent=2) if fmt == "json" else raw
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content={"result": raw},
+        )
 
     # Pre-collapse data for concise so the formatter sees flat strings.
     # This matches the original format_resource_content contract where
@@ -143,7 +162,7 @@ def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display a
     # When data has been pre-collapsed, pass detail="full" to avoid
     # double-collapse — the formatter already sees flat strings.
     try:
-        result = apply_format(
+        return apply_format(
             data,
             fmt,
             markdown_formatter=markdown_formatter,
@@ -163,15 +182,61 @@ def format_resource_content(  # noqa: PLR0913, PLR0911 - 6 independent display a
             format_hint,
         )
         if fmt == "json":
-            return json.dumps({"result": raw}, indent=2)
+            return ToolResult(
+                content=[TextContent(type="text", text=json.dumps({"result": raw}, indent=2))],
+                structured_content={"result": raw},
+            )
         # Markdown fallback: wrap in code fence to preserve readability.
-        return f"```json\n{raw}\n```\n\n*Note: formatting failed ({type(exc).__name__}), showing raw data.*\n"
+        return ToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=(
+                        f"```json\n{raw}\n```\n\n"
+                        f"*Note: formatting failed ({type(exc).__name__}), "
+                        "showing raw data.*\n"
+                    ),
+                )
+            ],
+            structured_content={"result": raw},
+        )
 
+
+def format_resource_content(  # noqa: PLR0913 - 6 independent display axes
+    raw: str,
+    fmt: str,
+    detail: str = "full",
+    schema: dict[str, Any] | None = None,
+    format_hint: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Text-only convenience wrapper over :func:`format_resource_result`.
+
+    Returns the ``content`` text of the dual-channel result.  Prefer
+    ``format_resource_result`` when you need the full contract (both
+    channels); this wrapper exists for callers that only render text.
+
+    Args:
+        raw: The raw resource content string (JSON or plain text).
+        fmt: Output format -- ``"raw"``, ``"json"``, or ``"markdown"``.
+        detail: Output detail -- ``"full"`` (default) or ``"concise"``.
+        schema: Optional unresolved response schema for ``$ref``-aware
+            collapse when ``detail=concise``.
+        format_hint: Optional registered formatter name for domain-specific
+            markdown rendering.
+        extra: Optional context dict passed to formatters that need
+            additional parameters.
+
+    Returns:
+        The formatted content text.
+    """
+    result = format_resource_result(
+        raw, fmt, detail=detail, schema=schema, format_hint=format_hint, extra=extra
+    )
     if result.content:
         for c in result.content:
             if isinstance(c, TextContent):
                 return c.text
-        return ""
     return ""
 
 
@@ -179,4 +244,5 @@ __all__ = [
     "clean_resource_uri",
     "extract_resource_content",
     "format_resource_content",
+    "format_resource_result",
 ]

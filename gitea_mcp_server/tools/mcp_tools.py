@@ -28,18 +28,18 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
 
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
+from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
     extract_resource_content,
-    format_resource_content,
+    format_resource_result,
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
@@ -267,8 +267,8 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
             "example": [
                 {
                     "uri": "gitea://repos/{owner}/{repo}",
-                    "name": "Repository",
-                    "description": "Get full repository metadata",
+                    "name": "repo_get",
+                    "description": "Get a repository",
                     "mimeType": "application/json",
                     "type": "template",
                     "tags": ["wrapper", "repository"],
@@ -284,9 +284,10 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "result": {
-            "type": "string",
-            "description": "Resource content as text (markdown, JSON, or plain text)",
-            "example": '{\n  "id": 1,\n  "name": "example-repo",\n  "description": "A sample repository"\n}',
+            "type": ["string", "object", "array", "number", "boolean", "null"],
+            "description": "Resource content: parsed data for JSON resources, "
+            "raw text for text/markdown resources",
+            "example": {"id": 1, "name": "example-repo", "description": "A sample repository"},
         },
     },
 }
@@ -397,14 +398,14 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
         [
             {
                 "uri": "gitea://repos/{owner}/{repo}",
-                "name": "Repository",
-                "description": "Get full repository metadata",
+                "name": "repo_get",
+                "description": "Get a repository",
                 "mimeType": "application/json",
                 "type": "template",
                 "tags": ["wrapper", "repository"],
                 "required_scope": "read:repository",
-                "size_hint": "medium",
-                "default_detail": "full"
+                "size_hint": "large",
+                "default_detail": "concise"
             },
             ...
         ]
@@ -518,9 +519,14 @@ async def _read_resource_tool(
 
     ## Return Value
 
-    For JSON resources (auto-generated, ``token/scopes``), returns structured content
-    wrapped in ``{"result": ...}``. For text/markdown resources, returns raw text
-    content directly without JSON wrapping.
+    Returns a dual-channel ``ToolResult``: ``content`` (the text channel) is
+    authoritative and always present; ``structured_content`` mirrors it.  For
+    JSON resources the text is the serialized ``{"result": <data>}`` envelope
+    (``format=json``) or a markdown rendering (``format=markdown``), and
+    ``structured_content`` carries the parsed envelope.  For ``format=raw``
+    the text is the raw string and ``structured_content`` is
+    ``{"result": <raw string>}``.  For text/markdown resources the text is
+    the raw content and ``structured_content`` is ``{"result": <raw text>}``.
 
     ## Usage Examples
 
@@ -591,8 +597,9 @@ async def _read_resource_tool(
         format: Output format -- ``markdown`` (default), ``raw``, or ``json``.
 
     Returns:
-        Raw text content for text/markdown resources, or structured content
-        for JSON resources.
+        A dual-channel ``ToolResult``: ``content`` authoritative and always
+        present, ``structured_content`` mirroring it (parsed envelope for
+        JSON resources, ``{"result": raw}`` for text/raw).
 
     Raises:
         ValueError: If the resource is not found or cannot be read
@@ -605,23 +612,19 @@ async def _read_resource_tool(
     # exact API response, not a transformed version.
     if format != "raw":
         raw = await _maybe_decode_base64(raw)
-    formatted = format_resource_content(
+    # The resource display pipeline is the single writer of both channels:
+    # ``content`` (the text) is authoritative and always present, and
+    # ``structured_content`` mirrors it — the parsed envelope for JSON
+    # content, ``{"result": raw}`` for non-JSON/raw.  This ToolResult is
+    # returned directly (the resource display pipeline renders it); the
+    # single result pipeline only renders ExecutionResult results.
+    return format_resource_result(
         raw,
         format,
         detail=detail,
         schema=schema,
         format_hint=format_hint,
         extra=extra,
-    )
-
-    # ``content`` carries the rendered presentation; ``structured_content``
-    # carries the raw resource payload (data, not text) for programmatic
-    # extraction — matching the autogen tool contract.  This ToolResult is
-    # returned directly (the resource display pipeline renders it); the
-    # single result pipeline only renders ExecutionResult results.
-    return ToolResult(
-        content=[TextContent(type="text", text=formatted)],
-        structured_content={"result": raw},
     )
 
 
@@ -726,10 +729,14 @@ def register_mcp_resource_tools(
 
     mcp.resource(
         uri="gitea://tool/{name}/schema",
-        name="Tool Schema",
+        name="tool_schema",
         description="Get the full tool schema for a registered tool by name. "
         "Use after search_tools to inspect parameter details and see an output example.",
         mime_type="application/json",
+        tags={"synthetic", "tool-schema", "schema"},
+        meta=ResourceMeta(
+            required_scope=None, size_hint="large", default_detail="concise"
+        ).to_dict(),
     )(_make_tool_schema_resource_handler(openapi_spec))
 
     logger.info(

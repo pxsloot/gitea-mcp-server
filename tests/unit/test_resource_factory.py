@@ -1,6 +1,7 @@
 """Tests for the resource factory (``make_api_resource``)."""
 
 import json
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -327,6 +328,162 @@ class TestMakeApiResourceRegistration:
 # ---------------------------------------------------------------------------
 # Tests: make_api_resource -- handler behavior
 # ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourceNameDerivation:
+    """Tests that make_api_resource derives snake_case names when name=None."""
+
+    def _registered_name(self, mcp: MagicMock, uri: str) -> str | None:
+        """Return the name kwarg passed to mcp.resource for a URI."""
+        for call in mcp.resource.call_args_list:
+            if call[0][0] == uri:
+                name = call[1].get("name")
+                return name if isinstance(name, str) else None
+        return None
+
+    def test_derives_name_from_operation_id(self) -> None:
+        """name=None + api_path in spec → name from operationId (snake_case)."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+        )
+
+        assert self._registered_name(mcp, "gitea://repos/{owner}/{repo}") == "get_repo"
+
+    def test_derives_name_from_uri_when_api_path_missing(self) -> None:
+        """name=None + api_path not in spec → name from URI last segment."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://orgs/{orgname}",
+            api_path="/orgs/{orgname}",  # not in spec (spec has /orgs/{org})
+        )
+
+        assert self._registered_name(mcp, "gitea://orgs/{orgname}") == "orgs"
+
+    def test_placeholder_name_with_warning_when_no_derivation(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """No operationId and no URI segment → placeholder + loud warning."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="gitea_mcp_server.resources.factory"):
+            # uri has no non-parameter segment; api_path not in spec.
+            make_api_resource(
+                mcp,
+                client,
+                spec,
+                uri="gitea://{id}",
+                api_path="/{id}",
+            )
+
+        assert any("placeholder" in r.message for r in caplog.records)
+        assert self._registered_name(mcp, "gitea://{id}") == "resource"
+
+    def test_explicit_name_wins(self) -> None:
+        """An explicit name is passed through unchanged."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            name="custom_name",
+        )
+
+        assert self._registered_name(mcp, "gitea://repos/{owner}/{repo}") == "custom_name"
+
+
+class TestMakeApiResourceDescription:
+    """Tests for the explicit description param and docstring fallbacks."""
+
+    @staticmethod
+    def _make_capturing_mcp() -> tuple[MagicMock, dict[str, Any]]:
+        """Create a mock mcp capturing uri → handler from decorator application."""
+        mcp = MagicMock(spec=FastMCP)
+        captured: dict[str, Any] = {}
+
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
+                captured[uri] = func
+                return func
+
+            return deco
+
+        mcp.resource = MagicMock(side_effect=resource_decorator)
+        return mcp, captured
+
+    def test_explicit_description_used_as_docstring(self) -> None:
+        """description param overrides spec-derived docstring."""
+        mcp, captured = self._make_capturing_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            description="Get full repository metadata",
+        )
+
+        assert captured["gitea://repos/{owner}/{repo}"].__doc__ == "Get full repository metadata"
+
+    def test_description_falls_back_to_spec_summary(self) -> None:
+        """No description → OpenAPI operation summary is used."""
+        mcp, captured = self._make_capturing_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+        )
+
+        assert captured["gitea://repos/{owner}/{repo}"].__doc__ == "Get a repository"
+
+    def test_description_falls_back_to_derived_name_not_api_path(self) -> None:
+        """No description and no spec summary → derived name, never API plumbing."""
+        mcp, captured = self._make_capturing_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://orgs/{orgname}",
+            api_path="/orgs/{orgname}",  # not in spec → no summary
+        )
+
+        doc = captured["gitea://orgs/{orgname}"].__doc__
+        assert doc == "orgs"
+        assert "GET" not in doc
+        assert "/orgs/{orgname}" not in doc
 
 
 class TestMakeApiResourceHandler:

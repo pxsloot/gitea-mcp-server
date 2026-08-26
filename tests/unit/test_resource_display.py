@@ -311,6 +311,66 @@ class TestContextMetaKeysPipeline:
         assert extra is None
 
 
+class TestFormatResourceResult:
+    """Tests for format_resource_result — the dual-channel display pipeline."""
+
+    def test_json_format_dual_channel_mirror(self) -> None:
+        """fmt=json on JSON content: content text mirrors structured_content."""
+        from gitea_mcp_server.tools.resource_display import format_resource_result
+        from tests.helpers.mcp_results import assert_dual_channel, parse_json_content
+
+        result = format_resource_result('{"key": "val", "num": 42}', "json")
+        assert_dual_channel(result, fmt="json")
+        assert parse_json_content(result) == {"result": {"key": "val", "num": 42}}
+
+    def test_raw_format_dual_channel(self) -> None:
+        """fmt=raw: content is the raw string, structured carries it in the envelope."""
+        from gitea_mcp_server.tools.resource_display import format_resource_result
+        from tests.helpers.mcp_results import extract_text_content, get_structured
+
+        result = format_resource_result('{"key": "val"}', "raw")
+        assert extract_text_content(result.content) == '{"key": "val"}'
+        assert get_structured(result) == {"result": '{"key": "val"}'}
+
+    def test_markdown_structured_carries_parsed_data(self) -> None:
+        """fmt=markdown: content is a rendering, structured carries the parsed data."""
+        from gitea_mcp_server.tools.resource_display import format_resource_result
+        from tests.helpers.mcp_results import extract_text_content, get_structured
+
+        result = format_resource_result('{"key": "val"}', "markdown")
+        rendered = extract_text_content(result.content)
+        assert "Key" in rendered
+        assert "val" in rendered
+        assert get_structured(result) == {"result": {"key": "val"}}
+
+    def test_non_json_json_format(self) -> None:
+        """Non-JSON content with fmt=json: content and structured both carry raw."""
+        from gitea_mcp_server.tools.resource_display import format_resource_result
+        from tests.helpers.mcp_results import assert_dual_channel
+
+        result = format_resource_result("plain text", "json")
+        assert_dual_channel(result, fmt="json")
+
+    def test_concise_collapses_structured_data(self) -> None:
+        """detail=concise with schema: structured carries the collapsed data."""
+        from gitea_mcp_server.tools.resource_display import format_resource_result
+        from tests.helpers.mcp_results import get_structured
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "owner": {"$ref": "#/components/schemas/User"},
+                "name": {"type": "string"},
+            },
+        }
+        raw = json.dumps({"owner": {"id": 1, "login": "alice"}, "name": "repo"})
+        result = format_resource_result(raw, "json", detail="concise", schema=schema)
+        structured = get_structured(result)
+        assert structured["result"]["name"] == "repo"
+        # Nested object collapsed to a $ref label at depth >= 1.
+        assert structured["result"]["owner"] == "$ref:User"
+
+
 class TestFormatResourceContentEmptyFallback:
     """Tests for format_resource_content empty-content fallback paths."""
 

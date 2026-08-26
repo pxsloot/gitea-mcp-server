@@ -234,11 +234,13 @@ Agent reads a resource:
     │     │                             format=raw)
     │     └─▶ decode_base64_content()
     │
-    └─▶ format_resource_content(raw, fmt, schema, format_hint, extra)
+    └─▶ format_resource_result(raw, fmt, schema, format_hint, extra)
           ├─ if detail=concise: collapse_data (schema-aware)
           ├─ if format_hint: call_formatter → registered formatter in tools/display.py
           └─ else: format_as_markdown (generic, in format.py)
-          → formatted content
+          → dual-channel ToolResult: content authoritative and always
+            present, structured_content mirroring it (parsed envelope for
+            JSON content, {"result": raw} for non-JSON/raw)
 ```
 
 ---
@@ -394,7 +396,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `tools/display.py` | Domain-specific display formatters with registry |
-| `tools/resource_display.py` | Resource content display pipeline (parse → collapse → format) |
+| `tools/resource_display.py` | Resource content display pipeline — `format_resource_result` (dual-channel ToolResult: content authoritative, structured mirror) + `format_resource_content` (text wrapper) |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
 
@@ -463,6 +465,16 @@ from the parameter schema.
    -- a fresh set owned by the caller, no defensive copy needed.
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
    already handled by custom resources.
+
+   **Resource names are snake_case, derived from the endpoint.**  The factory
+   derives a resource's name from the spec ``operationId`` (camelCase →
+   snake_case) when ``name`` is omitted, so wrapper names align with their
+   auto-generated siblings; the fallback is the URI template's last
+   non-parameter segment, then a placeholder with a loud warning.  A resource
+   never surfaces FastMCP's function-name fallback (``"handler"``).  Static
+   and synthetic resources declare explicit snake_case names.  Descriptions
+   never leak API plumbing: explicit ``description`` → operation
+   summary/description → derived name.
 
 5. **Response schema wrapping** -- FastMCP requires `output_schema` to be
    `type: object`.  All response schemas are wrapped in `{"result": ...}` to

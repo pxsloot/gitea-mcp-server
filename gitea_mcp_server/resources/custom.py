@@ -9,6 +9,12 @@ pipeline in ``tools/mcp_tools.py`` and ``tools/display.py``.
 (``make_api_resource()``).  The remaining 3 static resources (version,
 token/scopes, server/info) use direct ``mcp.resource()`` calls with inline
 scope guarding -- the legacy ``@_register`` decorator has been removed.
+
+**Naming**: every resource name is snake_case.  Factory resources derive
+their name from the spec operationId (or declare an explicit name when the
+``api_path`` does not match a spec path); static resources declare explicit
+snake_case names.  No resource may surface FastMCP's function-name fallback
+(``"handler"``).
 """
 
 import json
@@ -140,9 +146,12 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         uri="gitea://orgs/{orgname}",
         api_path="/orgs/{orgname}",
         method="GET",
+        name="org_get",
+        description="Get an organization by name",
         format_hint="user",
         scope="read:organization",
         cache_ttl=CACHE_TTL_USERS,
+        size_hint="medium",
         tags={"wrapper", "organization"},
         error_message="Organization '{orgname}' not found.",
         tracking_set=registered_uris,
@@ -264,8 +273,11 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         uri="gitea://repos/{owner}/{repo}/readme",
         api_path="/repos/{owner}/{repo}/contents/README.md",
         method="GET",
+        name="repo_get_readme",
+        description="Get a repository's README",
         scope="read:repository",
         cache_ttl=CACHE_TTL_README,
+        size_hint="small",
         tags={"wrapper", "readme"},
         error_message="README not found for repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
@@ -289,7 +301,10 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         uri="gitea://repos/{owner}/{repo}/files/{path*}",
         api_path="/repos/{owner}/{repo}/contents/{path}",
         method="GET",
+        name="repo_get_contents",
+        description="Get a file from a repository",
         scope="read:repository",
+        size_hint="small",
         tags={"wrapper", "files"},
         error_message="File '{path}' not found in repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
@@ -323,6 +338,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
     mcp.resource(
         "gitea://version",
+        name="version",
         mime_type="text/plain",
         tags={"wrapper", "server"},
         meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
@@ -352,6 +368,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     if available_scopes is None or has_sufficient_scope("read:user", available_scopes):
         mcp.resource(
             "gitea://token/scopes",
+            name="token_scopes",
             mime_type="application/json",
             tags={"wrapper", "server"},
             meta=_meta_scopes,
@@ -376,6 +393,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
 
         mcp.resource(
             "gitea://server/info",
+            name="server_info",
             mime_type="text/markdown",
             tags={"wrapper", "server"},
             meta=ResourceMeta(

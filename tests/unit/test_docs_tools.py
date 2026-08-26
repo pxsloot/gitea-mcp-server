@@ -321,17 +321,33 @@ class TestRegisterDocTools:
         register_doc_tools(mcp, self._make_manager())
         assert mcp.resource.call_count == 1
 
-    def test_resource_tags_include_guide_frontmatter_tags(self) -> None:
+    def test_resource_has_small_fixed_tag_set(self) -> None:
+        """Guide resource tags are a small fixed set — guide frontmatter tags
+        and topic names must NOT accumulate into the resource's tag set."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
         register_doc_tools(mcp, self._make_manager())
         kwargs = mcp.resource.call_args[1]
         tags = kwargs["tags"]
-        assert "tag1" in tags, "guide frontmatter tag should be in resource tags"
-        assert "test" in tags, "guide topic name should be in resource tags"
-        assert "docs" in tags, "base docs tag should be present"
-        assert "guide" in tags, "base guide tag should be present"
+        assert tags == {"docs", "guide", "workflow"}
+        # Guide frontmatter tags and topic names must not pollute the set.
+        assert "tag1" not in tags
+        assert "test" not in tags
+
+    def test_resource_has_meta_and_snake_case_name(self) -> None:
+        """Guide resource carries ResourceMeta (size_hint/default_detail) and
+        a snake_case name — uniform with every other resource."""
+        mcp = MagicMock()
+        mcp.tool = MagicMock(return_value=lambda f: f)
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        register_doc_tools(mcp, self._make_manager())
+        kwargs = mcp.resource.call_args[1]
+        assert kwargs["name"] == "workflow_guide"
+        meta = kwargs.get("meta")
+        assert meta is not None, "guide resource should carry ResourceMeta"
+        assert meta.get("size_hint") == "small"
+        assert meta.get("default_detail") == "full"
 
     def test_resource_description_includes_guide_topics(self) -> None:
         mcp = MagicMock()
@@ -517,8 +533,9 @@ class TestRegisterDocTools:
         assert sc["next_offset"] is None
         assert sc["total_count"] == 0
 
-    def test_resource_tags_aggregated_across_multiple_guides(self) -> None:
-        """Tags from multiple guides should all appear in resource template tags."""
+    def test_resource_tags_stay_fixed_across_multiple_guides(self) -> None:
+        """Tags stay the small fixed set even with multiple guides — no
+        aggregation of guide names or frontmatter tags."""
         mcp = MagicMock()
         mcp.tool = MagicMock(return_value=lambda f: f)
         mcp.resource = MagicMock(return_value=lambda f: f)
@@ -542,8 +559,10 @@ class TestRegisterDocTools:
         register_doc_tools(mcp, mgr)
         kwargs = mcp.resource.call_args[1]
         tags = kwargs["tags"]
-        for tag in ("wiki", "labels", "documentation", "issue", "docs", "guide", "workflow"):
-            assert tag in tags, f"Expected tag '{tag}' in aggregated resource tags"
+        assert tags == {"docs", "guide", "workflow"}
+        # Guide names and frontmatter tags must not leak into resource tags.
+        for leaked in ("wiki", "labels", "documentation", "issue"):
+            assert leaked not in tags, f"Tag '{leaked}' must not pollute resource tags"
         desc = kwargs["description"]
         assert "Topics:" in desc
         assert "wiki" in desc

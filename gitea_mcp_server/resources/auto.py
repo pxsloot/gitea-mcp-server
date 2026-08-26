@@ -22,35 +22,11 @@ from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import make_api_resource
+from gitea_mcp_server.resources.factory import _derive_resource_name, make_api_resource
 from gitea_mcp_server.resources.scope import derive_required_scope
 from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
-
-
-def _derive_resource_name(operation: dict[str, Any], path: str) -> str:
-    """Derive a meaningful resource name from an OpenAPI operation."""
-    operation_id = operation.get("operationId")
-    if operation_id and operation_id.strip():
-        name = operation_id.strip()
-        result = ""
-        for i, char in enumerate(name):
-            if char.isupper():
-                if i > 0 and (
-                    name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())
-                ):
-                    result += "_"
-                result += char.lower()
-            else:
-                result += char
-        return result
-
-    clean_path = path.strip("/")
-    segments = [s for s in clean_path.split("/") if not (s.startswith("{") and s.endswith("}"))]
-    if not segments:
-        segments = [s.strip("{}") for s in clean_path.split("/") if s]
-    return "_".join(segments) if segments else "resource"
 
 
 def register_auto_generated_resources(

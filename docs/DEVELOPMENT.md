@@ -530,6 +530,24 @@ The factory:
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
+**Resource names are snake_case, derived from the endpoint.** When ``name``
+is omitted, the factory derives it from the spec ``operationId``
+(camelCase → snake_case, e.g. ``getRepo`` → ``get_repo``) so wrapper names
+align with their auto-generated siblings.  When the ``api_path`` does not
+match a spec path (e.g. ``/orgs/{orgname}`` vs the spec's ``/orgs/{org}``),
+the name falls back to the URI template's last non-parameter segment, and
+finally to a placeholder with a loud warning — a resource must never
+surface FastMCP's function-name fallback (``"handler"``).  Pass an explicit
+``name`` when the derivation would be misleading (e.g. the readme wrapper
+declares ``repo_get_readme``).
+
+**Descriptions never leak API plumbing.** The handler docstring (what agents
+see as the resource description in ``list_resources``) comes from an
+explicit ``description`` param when provided, else the OpenAPI operation
+summary/description, else the derived name — never ``Resource for GET
+{path}``.  Pass an explicit ``description`` for wrapper resources whose
+``api_path`` does not match a spec path (no summary to inherit).
+
 **Text/plain resources via ``handler_hook``**: For resources that serve
 plain text derived from a JSON API response, pass a ``handler_hook`` callback.
 The hook receives the raw API response and returns a string; the factory
@@ -885,6 +903,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |
+| Resource names | Snake_case everywhere, derived from the endpoint (operationId) for auto and wrapper resources; explicit snake_case names for static/synthetic resources. Never Title Case, never spaces, never FastMCP's function-name fallback (``"handler"``). See "Preferred: Use the factory" above |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
 | URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``param_config``, the factory auto-adds param names to the handler's ``__signature__``. |
 | Import pattern | ``from fastmcp.server.context import Context`` (not ``from fastmcp import Context`` — triggers ruff TC002). Import ``OpenAPISpec`` at module level (no circular risk). **Never** use ``from __future__ import annotations`` in registration modules — FastMCP's pydantic introspection resolves type hints at registration time and will ``NameError`` on types under ``TYPE_CHECKING`` |

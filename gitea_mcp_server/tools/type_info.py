@@ -483,7 +483,7 @@ def register_type_tools(
 
     mcp.resource(
         uri="gitea://types/{typeName}",
-        name="Type Schema",
+        name="type_schema",
         description=(
             "Get the full schema (always detail='full') for a $ref type "
             "by name.  Use after tool_info when you see ``$ref:TypeName`` "

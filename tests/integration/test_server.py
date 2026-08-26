@@ -1105,13 +1105,15 @@ class TestServerEdgeCases:
           in the Output format section.
         - 335 lines: raised 2026-08-26 to document the empty-query list-all
           behaviour and list_hidden_tools in the Discovery section (#722).
+        - 337 lines: raised 2026-08-26 to document read_doc's out-of-range
+          message envelope in the Output format section (#727).
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 335, (
-            f"Instructions are {line_count} lines (budget: 335). "
+        assert line_count <= 337, (
+            f"Instructions are {line_count} lines (budget: 337). "
             "Increase the budget deliberately, not by trimming."
         )
 

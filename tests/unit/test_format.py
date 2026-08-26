@@ -5,11 +5,9 @@ Covers all functions in __all__:
 - _resolve_anyof_schema, format_as_markdown, _format_parameter_table, _format_type
 """
 
-import json
 from typing import Any
 
 import pytest
-from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import (
     _collapse_value,
@@ -23,14 +21,11 @@ from gitea_mcp_server.format import (
     _snake_to_title,
     apply_format,
     collapse_data,
-    empty_paginated_result,
     format_as_markdown,
-    format_paginated_result,
 )
 from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
-from gitea_mcp_server.pagination import PAGINATION_KEYS
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
@@ -1206,184 +1201,6 @@ class TestFormatParameterTable:
 
 
 # ============================================================================
-# format_paginated_result tests
-# ============================================================================
-
-
-class TestFormatPaginatedResult:
-    """Tests for format_paginated_result shared display utility."""
-
-    def test_returns_paginated_toolresult(self) -> None:
-        """Returns a ToolResult with structured_content containing result."""
-        result = format_paginated_result(
-            [{"id": 1}, {"id": 2}],
-            2,
-            "raw",
-            page=1,
-            limit=10,
-        )
-        assert isinstance(result, ToolResult)
-        assert result.structured_content is not None
-        assert "result" in result.structured_content
-
-    def test_respects_page_and_limit(self) -> None:
-        """When fetch_all=False, only returns the requested page."""
-        items = [{"id": i} for i in range(25)]
-        result = format_paginated_result(items, 25, "raw", page=2, limit=10)
-        sc = get_structured(result)
-        assert len(sc["result"]) == 10
-        assert sc["result"][0]["id"] == 10
-        assert sc["result"][-1]["id"] == 19
-        assert sc["has_more"] is True
-        assert sc["next_offset"] == 3
-        assert sc["total_count"] == 25
-
-    def test_last_page(self) -> None:
-        """Last page returns fewer items and has_more=False."""
-        items = [{"id": i} for i in range(25)]
-        result = format_paginated_result(items, 25, "raw", page=3, limit=10)
-        sc = get_structured(result)
-        assert len(sc["result"]) == 5
-        assert sc["has_more"] is False
-        assert sc["next_offset"] is None
-        assert sc["total_count"] == 25
-
-    def test_fetch_all_returns_all_items(self) -> None:
-        """When fetch_all=True, all items are returned without slicing."""
-        items = [{"id": i} for i in range(50)]
-        result = format_paginated_result(
-            items,
-            50,
-            "raw",
-            page=1,
-            limit=10,
-            fetch_all=True,
-        )
-        sc = get_structured(result)
-        assert len(sc["result"]) == 50
-        assert sc["has_more"] is False
-        assert sc["next_offset"] is None
-        assert sc["total_count"] == 50
-
-    def test_fetch_all_empty_list(self) -> None:
-        """When fetch_all=True and items is empty, returns empty."""
-        result = format_paginated_result(
-            [],
-            0,
-            "raw",
-            page=1,
-            limit=10,
-            fetch_all=True,
-        )
-        sc = get_structured(result)
-        assert sc["result"] == []
-        assert sc["has_more"] is False
-        assert sc["total_count"] == 0
-
-    def test_markdown_format(self) -> None:
-        """Markdown format produces text content satisfying the dual-channel contract."""
-        items = [{"id": 1, "name": "test"}]
-        result = format_paginated_result(
-            items,
-            1,
-            "markdown",
-            page=1,
-            limit=10,
-        )
-        sc = assert_dual_channel(result, fmt="markdown")
-        assert "test" in extract_text_content(result.content)
-        assert sc["total_count"] == 1
-
-    def test_json_format(self) -> None:
-        """JSON format produces JSON text content carrying the envelope."""
-        items = [{"id": 1, "name": "test"}]
-        result = format_paginated_result(
-            items,
-            1,
-            "json",
-            page=1,
-            limit=10,
-        )
-        assert result.content is not None
-        text = extract_text_content(result.content)
-        parsed = json.loads(text)
-        assert parsed["result"][0]["name"] == "test"
-        sc = get_structured(result)
-        assert sc["total_count"] == 1
-
-    def test_pagination_keys_in_structured_content(self) -> None:
-        """PAGINATION_KEYS keys appear in structured_content."""
-        items = [{"id": i} for i in range(25)]
-        result = format_paginated_result(items, 25, "raw", page=1, limit=10)
-        for key in PAGINATION_KEYS:
-            assert result.structured_content is not None
-            assert key in result.structured_content
-
-    def test_empty_items_list(self) -> None:
-        """Empty items list returns empty result."""
-        result = format_paginated_result(
-            [],
-            0,
-            "raw",
-            page=1,
-            limit=10,
-        )
-        sc = get_structured(result)
-        assert sc["result"] == []
-        assert sc["total_count"] == 0
-
-    def test_markdown_extras_appended(self) -> None:
-        """markdown_extras appear as additional sections in markdown output."""
-        items = [{"id": 1}]
-        result = format_paginated_result(
-            items,
-            1,
-            "markdown",
-            page=1,
-            limit=10,
-            markdown_extras=["**Extra section:** content"],
-        )
-        text = extract_text_content(result.content)
-        assert "**Extra section:** content" in text
-
-    def test_empty_paginated_result_zero_total(self) -> None:
-        """Empty result (total 0) carries the full envelope with has_more=False."""
-        result = empty_paginated_result(
-            "No results found for 'x'.", page=1, limit=10, total_count=0
-        )
-        sc = get_structured(result)
-        assert sc["result"] == []
-        assert sc["message"] == "No results found for 'x'."
-        assert sc["has_more"] is False
-        assert sc["next_offset"] is None
-        assert sc["total_count"] == 0
-        assert result.content is not None
-        assert extract_text_content(result.content) == "No results found for 'x'."
-
-    def test_empty_paginated_result_out_of_range(self) -> None:
-        """Out-of-range page carries the envelope with the known total."""
-        result = empty_paginated_result(
-            "Page 3 is out of range (total results: 5).", page=3, limit=10, total_count=5
-        )
-        sc = get_structured(result)
-        assert sc["result"] == []
-        assert sc["message"] == "Page 3 is out of range (total results: 5)."
-        assert sc["has_more"] is False
-        assert sc["next_offset"] is None
-        assert sc["total_count"] == 5
-
-    def test_empty_paginated_result_unknown_total(self) -> None:
-        """Unknown total yields total_count=None with has_more=False (non-list result)."""
-        result = empty_paginated_result("No data.", page=1, limit=10)
-        sc = get_structured(result)
-        assert sc["result"] == []
-        assert sc["has_more"] is False
-        assert sc["next_offset"] is None
-        assert sc["total_count"] is None
-        for key in PAGINATION_KEYS:
-            assert key in sc
-
-
 # ============================================================================
 # Dual-channel contract (issue #718)
 # ============================================================================
@@ -1402,7 +1219,12 @@ class TestDualChannelContract:
     def test_paginated_json_envelope_in_text(self) -> None:
         """Paginated format=json must carry the envelope beside result in the text."""
         items = [{"id": i} for i in range(25)]
-        result = format_paginated_result(items, 25, "json", page=1, limit=10)
+        result = render(
+            ExecutionResult(data=items, total_count=25, shape="list", paginated=True),
+            fmt="json",
+            page=1,
+            limit=10,
+        )
         assert_dual_channel(result, fmt="json")
 
     def test_json_content_mirrors_structured(self) -> None:
@@ -1444,23 +1266,40 @@ class TestDualChannelContract:
 
     def test_markdown_dual_channel(self) -> None:
         """Markdown output satisfies the contract: content present, result in structured."""
-        result = format_paginated_result(
-            [{"id": 1, "name": "test"}], 1, "markdown", page=1, limit=10
+        result = render(
+            ExecutionResult(
+                data=[{"id": 1, "name": "test"}],
+                total_count=1,
+                shape="list",
+                paginated=True,
+            ),
+            fmt="markdown",
+            page=1,
+            limit=10,
         )
         sc = assert_dual_channel(result, fmt="markdown")
         assert sc["total_count"] == 1
 
-    def test_empty_paginated_result_dual_channel(self) -> None:
+    def test_empty_page_dual_channel(self) -> None:
         """Empty/out-of-range pages satisfy the contract: content present, envelope in structured."""
-        result = empty_paginated_result(
-            "No results found for 'x'.", page=1, limit=10, total_count=0
+        result = render(
+            ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="empty",
+                paginated=True,
+                message="No results found for 'x'.",
+            ),
+            fmt="markdown",
+            page=1,
+            limit=10,
         )
         sc = assert_dual_channel(result, fmt="markdown")
         assert sc["result"] == []
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
 
-    def test_empty_paginated_result_json_shape(self) -> None:
+    def test_empty_page_json_shape(self) -> None:
         """Empty page format=json carries result/message/envelope as JSON text.
 
         The empty-json shape is ``{"result": [], "message": "...",

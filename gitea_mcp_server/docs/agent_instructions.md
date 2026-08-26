@@ -232,6 +232,8 @@ through long guides. Each page is `limit` lines (default 50; the accepted
 maximum is server-enforced — discover the exact bound with
 `tool_info("read_doc")`).
 For ``json`` format, the pagination envelope (``has_more``, ``next_offset``, ``total_count``) is included in the text alongside the guide content.
+An out-of-range page keeps the object-shaped `result` (empty `content`) and
+adds a `message` (e.g. "Page N is out of range (total results: M)").
 
 Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These

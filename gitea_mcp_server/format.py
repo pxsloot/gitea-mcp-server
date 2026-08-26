@@ -13,10 +13,6 @@ Public functions:
     ContentsResponse (shared by tools and resources).
     apply_format - format data for output (raw/json/markdown), no pagination.
         Dual-channel: ``content`` mirrors ``structured_content``.
-    format_paginated_result - thin wrapper over the single result pipeline
-        (``tools/result_pipeline.render``) for paginated list results.
-    empty_paginated_result - thin wrapper over the pipeline for empty/
-        out-of-range pages that still carry the full pagination envelope.
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
@@ -738,133 +734,6 @@ def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only dis
     )
 
 
-def format_paginated_result(  # noqa: PLR0913 - all 9 params are independent display axes (items + pagination state + output config)
-    items: list,
-    total_count: int,
-    fmt: str,
-    page: int,
-    limit: int,
-    fetch_all: bool = False,
-    markdown_extras: list[str] | None = None,
-    detail: str = "full",
-    schema: dict[str, Any] | None = None,
-) -> ToolResult:
-    """Format a paginated list result for display.
-
-    Thin wrapper over the single result pipeline
-    (:func:`~gitea_mcp_server.tools.result_pipeline.render`): builds a
-    ``list``-shaped :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
-    and lets the pipeline slice (or ``fetch_all`` skip-slice), envelope, and
-    format.  Kept as a public helper for callers that still produce raw
-    items + total_count; new executors return ``ExecutionResult`` directly.
-
-    When ``fetch_all=True`` the page/limit slice is skipped — all items are
-    returned with ``has_more=False``.  When ``fetch_all=False`` (default),
-    only the requested page of items is returned with proper pagination
-    metadata (``has_more``, ``next_offset``, ``total_count``).
-
-    Args:
-        items: All matching items (before page slicing).
-        total_count: Total number of matching items.
-        fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
-        page: Page number to display (1-based).  Ignored when ``fetch_all``
-            is True.
-        limit: Items per page.  Ignored when ``fetch_all`` is True.
-        fetch_all: When True, return all items without slicing (no loop
-            needed — data is in-memory).
-        markdown_extras: Optional extra markdown sections appended after
-            the main content (only used in markdown mode).
-        detail: Output detail level — ``"full"`` (default) or
-            ``"concise"`` (collapse nested ``$ref`` objects).  Passed
-            through to the pipeline.
-        schema: Optional JSON Schema describing *items* for
-            schema-aware collapse when ``detail="concise"``.
-
-    Returns:
-        A ``ToolResult`` with authoritative text content and pagination
-        metadata.  For ``format=json`` the envelope (``has_more``,
-        ``next_offset``, ``total_count``) belongs in the text beside
-        ``result``; ``structured_content`` mirrors the text.
-    """
-    from gitea_mcp_server.tools.result_pipeline import (  # noqa: PLC0415 - deferred to break format -> result_pipeline -> format cycle
-        ExecutionResult,
-        render,
-    )
-
-    return render(
-        ExecutionResult(
-            data=items,
-            total_count=total_count,
-            shape="list",
-            paginated=True,
-            markdown_extras=markdown_extras,
-        ),
-        fmt=fmt,
-        detail=detail,
-        page=page,
-        limit=limit,
-        fetch_all=fetch_all,
-        schema=schema,
-    )
-
-
-def empty_paginated_result(
-    content: str,
-    page: int,
-    limit: int,
-    total_count: int | None = None,
-) -> ToolResult:
-    """Build an empty page result that still carries the full pagination envelope.
-
-    Edge-path companion to :func:`format_paginated_result`: the empty-result
-    and out-of-range-page branches of paginated synthetic tools return early,
-    before ``format_paginated_result`` runs.  This helper produces the same
-    ``structured_content`` shape (``result``, ``message``, and the pagination
-    envelope) so the declared output schema and runtime never disagree.
-
-    Thin wrapper over the single result pipeline
-    (:func:`~gitea_mcp_server.tools.result_pipeline.render`) with an
-    ``empty``-shaped :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`.
-    The text channel carries *content* (the agent-facing message); for
-    ``format=json`` the envelope (``result``, ``message``, ``has_more``,
-    ``next_offset``, ``total_count``) is serialized as JSON text.
-
-    ``total_count`` is the known total when the page is out of range (0 for
-    an empty result set, or the real match count for an out-of-range page);
-    when ``None``, the envelope reports ``total_count=None``.
-
-    Args:
-        content: The agent-facing message (e.g. "No results found for 'x'."
-            or "Page 3 is out of range (total results: 5).").  Also stored
-            as ``message`` in ``structured_content``.
-        page: The requested page number (1-based).
-        limit: Items per page.
-        total_count: Total number of matching items, if known.
-
-    Returns:
-        A ``ToolResult`` with ``result=[]``, ``message=content``, and the
-        full pagination envelope (``has_more=False``, ``next_offset=None``,
-        ``total_count``).
-    """
-    from gitea_mcp_server.tools.result_pipeline import (  # noqa: PLC0415 - deferred to break format -> result_pipeline -> format cycle
-        ExecutionResult,
-        render,
-    )
-
-    return render(
-        ExecutionResult(
-            data=[],
-            total_count=total_count,
-            shape="empty",
-            paginated=True,
-            message=content,
-        ),
-        fmt="markdown",
-        page=page,
-        limit=limit,
-    )
-
-
 def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
@@ -898,7 +767,5 @@ __all__ = [
     "build_server_info_markdown",
     "collapse_data",
     "decode_base64_content",
-    "empty_paginated_result",
     "format_as_markdown",
-    "format_paginated_result",
 ]

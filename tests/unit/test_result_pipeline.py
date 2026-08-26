@@ -102,6 +102,41 @@ class TestListShape:
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
 
+    def test_out_of_range_markdown_renders_message(self) -> None:
+        """Markdown renders the message on out-of-range, not the empty data.
+
+        The text channel must never disagree with the envelope: an
+        out-of-range page carries the message in ``structured_content``, so
+        the markdown text renders it instead of the (empty) page data.
+        """
+        result = render(
+            ExecutionResult(data=_items(25), total_count=25, shape="list", paginated=True),
+            fmt="markdown",
+            page=5,
+            limit=10,
+        )
+        text = extract_text_content(result.content)
+        assert "out of range" in text
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["message"] is not None
+
+    def test_empty_total_markdown_renders_message(self) -> None:
+        """Markdown renders the message for an empty result set."""
+        result = render(
+            ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="list",
+                paginated=True,
+                message="No results found for 'x'.",
+            ),
+            fmt="markdown",
+            page=1,
+            limit=10,
+        )
+        assert extract_text_content(result.content) == "No results found for 'x'."
+
     def test_unknown_total_uses_full_page_heuristic(self) -> None:
         """When total_count is unknown, has_more follows the full-page heuristic."""
         result = render(
@@ -155,6 +190,49 @@ class TestObjectShape:
         sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["total_count"] is None
+
+    def test_paginated_object_out_of_range_emits_message(self) -> None:
+        """Pre-sliced object results (read_doc/tool_info) emit the message envelope.
+
+        The result keeps its object shape (the schema declares it); only the
+        message is added — no silent empty content.
+        """
+        result = render(
+            ExecutionResult(
+                data={"content": ""},
+                total_count=80,
+                shape="object",
+                paginated=True,
+            ),
+            fmt="json",
+            page=999,
+            limit=50,
+        )
+        sc = get_structured(result)
+        assert sc["result"] == {"content": ""}
+        assert "out of range" in sc["message"]
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 80
+
+    def test_paginated_object_out_of_range_markdown_renders_message(self) -> None:
+        """Markdown renders the message, not the empty data, on out-of-range."""
+        result = render(
+            ExecutionResult(
+                data={"content": ""},
+                total_count=80,
+                shape="object",
+                paginated=True,
+            ),
+            fmt="markdown",
+            page=999,
+            limit=50,
+        )
+        text = extract_text_content(result.content)
+        assert "out of range" in text
+        sc = get_structured(result)
+        assert sc["result"] == {"content": ""}
+        assert sc["message"] is not None
 
 
 class TestTextShape:

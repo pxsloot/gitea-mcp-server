@@ -79,13 +79,13 @@ def search_or_list_all(  # noqa: PLR0913 - all params are independent search axe
     items: list[Any],
     texts: list[str],
     query: str,
-    page: int,
-    limit: int,
+    page: int,  # noqa: ARG001 - accepted for the shared signature; the pipeline owns pagination
+    limit: int,  # noqa: ARG001 - accepted for the shared signature; the pipeline owns pagination
     min_score: float = SEARCH_MIN_SCORE,
     tool_prefix: str = "",
     cross_link_hints: dict[str, str] | None = None,
     extra_extras: list[str] | None = None,
-    fetch_all: bool = False,
+    fetch_all: bool = False,  # noqa: ARG001 - accepted for the shared signature; the pipeline owns pagination
 ) -> ExecutionResult:
     """Rank items by name-match + BM25, or list all when the query is empty.
 
@@ -95,24 +95,30 @@ def search_or_list_all(  # noqa: PLR0913 - all params are independent search axe
     matching ``search_docs``'s existing empty-query behaviour.  Otherwise
     items are ranked via :func:`search_and_slice`.
 
-    Builds the empty-result and out-of-range messages, and attaches the
+    Builds the empty-result message (with cross-link hints) and attaches the
     cross-link hints footer (plus any caller extras, e.g. the hidden-tools
-    note) to successful listings.  Returns raw data only — an
-    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
-    the single result pipeline slices, envelopes, and formats.
+    note) to successful listings.  Out-of-range pages are owned by the
+    single result pipeline: the impl returns the full item set and the
+    pipeline slices and emits the message envelope.  Returns raw data only —
+    an :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` —
+    which the single result pipeline slices, envelopes, and formats.
 
     Args:
         items: The items to search over (or list when ``query`` is empty).
         texts: Searchable text for each item.
         query: Natural language query.  Empty/whitespace lists all items.
-        page: Page number (1-based).
-        limit: Results per page.
+        page: Page number (1-based).  Accepted for the shared signature;
+            the single result pipeline owns pagination.
+        limit: Results per page.  Accepted for the shared signature; the
+            single result pipeline owns pagination.
         min_score: Minimum normalized BM25 score (0.0-1.0).
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
         cross_link_hints: ``{label: tool}`` pairs for the hints footer.
         extra_extras: Additional markdown footer sections (e.g. the
             hidden-tools note).
         fetch_all: When True, return all matching results without slicing.
+            Accepted for the shared signature; the single result pipeline
+            owns pagination.
     """
     hints = _format_cross_link_hints(cross_link_hints)
     extras: list[str] = [hints] if hints else []
@@ -120,24 +126,9 @@ def search_or_list_all(  # noqa: PLR0913 - all params are independent search axe
         extras.extend(extra_extras)
 
     if not query.strip():
-        total_count = len(items)
-        # Check page range before formatting (only when paginating, not
-        # fetch_all) — same short-circuit as the ranked branch below, so an
-        # out-of-range page on a list-all query emits the empty envelope in
-        # both channels instead of rendering the full catalog in markdown.
-        if not fetch_all:
-            start = (page - 1) * limit
-            if start >= total_count:
-                return ExecutionResult(
-                    data=[],
-                    total_count=total_count,
-                    shape="empty",
-                    paginated=True,
-                    message=f"Page {page} is out of range (total results: {total_count}).",
-                )
         return ExecutionResult(
             data=items,
-            total_count=total_count,
+            total_count=len(items),
             shape="list",
             paginated=True,
             markdown_extras=extras or None,
@@ -161,18 +152,6 @@ def search_or_list_all(  # noqa: PLR0913 - all params are independent search axe
             paginated=True,
             message=_empty_results_message(query, cross_link_hints),
         )
-
-    # Check page range before formatting (only when paginating, not fetch_all).
-    if not fetch_all:
-        start = (page - 1) * limit
-        if start >= total_count:
-            return ExecutionResult(
-                data=[],
-                total_count=total_count,
-                shape="empty",
-                paginated=True,
-                message=f"Page {page} is out of range (total results: {total_count}).",
-            )
 
     return ExecutionResult(
         data=all_items,
@@ -617,11 +596,11 @@ _HIDDEN_REASONS = ["scope", "excluded", "deprecated"]
 
 async def _list_hidden_tools_impl(  # noqa: PLR0913 - reason, page, limit, fetch_all are independent config axes
     reason: str | None,
-    page: int = 1,
-    limit: int = 10,
+    page: int = 1,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+    limit: int = 10,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
     filtered_tools_info: dict[str, Any] | None = None,
     tool_prefix: str = "",
-    fetch_all: bool = False,
+    fetch_all: bool = False,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
 ) -> ExecutionResult:
     """Enumerate tools hidden from this token's listing.
 
@@ -639,11 +618,14 @@ async def _list_hidden_tools_impl(  # noqa: PLR0913 - reason, page, limit, fetch
     Args:
         reason: Optional filter — one of ``scope``, ``excluded``,
             ``deprecated``.  ``None`` lists all hidden tools.
-        page: Page number (1-based).  Ignored when ``fetch_all`` is True.
-        limit: Results per page.  Ignored when ``fetch_all`` is True.
+        page: Page number (1-based).  Schema-declared; the single result
+            pipeline owns pagination.
+        limit: Results per page.  Schema-declared; the single result
+            pipeline owns pagination.
         filtered_tools_info: Filter-prediction data (hidden-tool catalog).
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
         fetch_all: When True, return all matching results without slicing.
+            Schema-declared; the single result pipeline owns pagination.
     """
     if reason is not None and reason not in _HIDDEN_REASONS:
         msg = f"Invalid reason '{reason}'. Valid reasons: {', '.join(_HIDDEN_REASONS)}"
@@ -665,18 +647,6 @@ async def _list_hidden_tools_impl(  # noqa: PLR0913 - reason, page, limit, fetch
     entries.sort(key=lambda e: e["name"])
 
     total_count = len(entries)
-
-    # Check page range before formatting (only when paginating, not fetch_all).
-    if not fetch_all:
-        start = (page - 1) * limit
-        if start >= total_count:
-            return ExecutionResult(
-                data=[],
-                total_count=total_count,
-                shape="empty",
-                paginated=True,
-                message=f"Page {page} is out of range (total results: {total_count}).",
-            )
 
     return ExecutionResult(
         data=entries,
@@ -1255,6 +1225,7 @@ def register_synthetic_tools(
                         "version": "1.0",
                     },
                 },
+                "message": MESSAGE_SCHEMA_PROPERTY,
             },
         },
         paginated=True,

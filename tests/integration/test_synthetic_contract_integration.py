@@ -254,11 +254,13 @@ class TestDualChannelContract:
 
 
 class TestMessageSchemaDeclaration:
-    """The message key is declared only on tools that emit it (issue #718).
+    """The message key is declared on every tool that can emit it (issue #718).
 
     Schema and runtime must never disagree: every tool that emits ``message``
-    via ``empty_paginated_result`` declares it (nullable) in its output
-    schema, and tools that never emit it (``read_doc``) do not.
+    (via the result pipeline's empty/out-of-range envelope) declares it
+    (nullable) in its output schema.  The pipeline owns out-of-range handling
+    for every shape, so all paginated tools — including the object-shaped
+    ``read_doc`` and ``tool_info`` — can emit ``message`` and declare it.
     """
 
     _EMITTING = (
@@ -268,6 +270,8 @@ class TestMessageSchemaDeclaration:
         "search_docs",
         "list_resources",
         "list_hidden_tools",
+        "tool_info",
+        "read_doc",
     )
 
     @pytest.mark.asyncio
@@ -283,17 +287,6 @@ class TestMessageSchemaDeclaration:
             props = tool.output_schema["properties"]
             assert "message" in props, f"{name} must declare message"
             assert props["message"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
-
-    @pytest.mark.asyncio
-    async def test_message_not_declared_on_read_doc(self) -> None:
-        """read_doc never emits message, so its schema must not declare it."""
-        mcp, prefix = await _make_server()
-        tools = await mcp.list_tools()
-        by_name = {t.name: t for t in tools}
-
-        tool = by_name[f"{prefix}read_doc"]
-        assert tool.output_schema is not None
-        assert "message" not in tool.output_schema["properties"]
 
 
 class TestListHiddenToolsContract:

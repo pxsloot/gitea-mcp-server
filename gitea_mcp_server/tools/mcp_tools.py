@@ -301,9 +301,9 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
 async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     tag: str = "",
     type: str = "",
-    page: int = 1,
-    limit: int = 10,
-    fetch_all: bool = False,
+    page: int = 1,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+    limit: int = 10,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+    fetch_all: bool = False,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
     ctx: Context = CurrentContext(),
 ) -> ExecutionResult:
     """List all available MCP resources.
@@ -429,18 +429,6 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
             paginated=True,
             message="No resources found.",
         )
-
-    # Check page range before formatting (only when paginating, not fetch_all).
-    if not fetch_all:
-        start = (page - 1) * limit
-        if start >= total_count:
-            return ExecutionResult(
-                data=[],
-                total_count=total_count,
-                shape="empty",
-                paginated=True,
-                message=f"Page {page} is out of range (total results: {total_count}).",
-            )
 
     return ExecutionResult(
         data=all_resources,

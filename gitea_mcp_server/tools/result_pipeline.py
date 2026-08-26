@@ -23,7 +23,9 @@ Result shapes (``ExecutionResult.shape``):
   ``fetch_all`` skip-slice) and emits the pagination envelope.
 - ``"object"`` — dict data; unpaginated, or pre-sliced by the executor (e.g.
   ``tool_info``'s schema-property pages).  When ``paginated`` the envelope is
-  emitted with the executor-supplied ``total_count``.
+  emitted with the executor-supplied ``total_count``.  An out-of-range page
+  on a pre-sliced object result emits the message envelope — the pipeline
+  owns out-of-range handling for every shape, not just ``list``.
 - ``"scalar"`` — primitive data; unpaginated.
 - ``"text"`` — text/plain response (diffs, patches, base64-decoded content);
   wrapped in ``{"result": text}``.
@@ -115,8 +117,15 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
         raise ValueError(msg)
 
-    envelope = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
-    return _format(envelope, result, fmt=fmt, detail=detail, schema=schema)
+    envelope, effective_shape = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
+    return _format(
+        envelope,
+        result,
+        fmt=fmt,
+        detail=detail,
+        schema=schema,
+        effective_shape=effective_shape,
+    )
 
 
 def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (list slices, object envelopes, empty/binary are special); extracting them would scatter the shape logic the pipeline exists to centralize
@@ -125,76 +134,110 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
     page: int,
     limit: int,
     fetch_all: bool,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
     """Shape + paginate: build the envelope dict for *result*.
 
-    Returns the ``{"result": ...}`` envelope with pagination keys added
-    according to the result's shape and pagination state.
+    Returns ``(envelope, effective_shape)`` — the ``{"result": ...}``
+    envelope with pagination keys added, plus the shape the formatter should
+    treat the result as.  ``effective_shape`` is ``"empty"`` whenever the
+    envelope represents an empty or out-of-range result (so the formatter
+    renders the message instead of the data) and ``result.shape`` otherwise.
     """
     data = result.data
     shape = result.shape
 
     if shape == "empty":
         if result.paginated:
-            return {
-                "result": data if isinstance(data, list) else [],
-                "message": result.message or "No results found.",
-                "has_more": False,
-                "next_offset": None,
-                "total_count": result.total_count,
-            }
-        return {"result": data}
+            return (
+                {
+                    "result": data if isinstance(data, list) else [],
+                    "message": result.message or "No results found.",
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": result.total_count,
+                },
+                "empty",
+            )
+        return {"result": data}, "empty"
 
     if shape == "list":
         items = data if isinstance(data, list) else []
         total = result.total_count
         if total == 0 or (total is None and not items):
             # Empty result set — emit the empty envelope with the message.
-            return {
-                "result": [],
-                "message": result.message or "No results found.",
-                "has_more": False,
-                "next_offset": None,
-                "total_count": total,
-            }
+            return (
+                {
+                    "result": [],
+                    "message": result.message or "No results found.",
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": total,
+                },
+                "empty",
+            )
         if fetch_all:
             # In-memory skip-slice: everything, no more pages.
-            return {
-                "result": items,
-                "has_more": False,
-                "next_offset": None,
-                "total_count": total,
-            }
+            return (
+                {
+                    "result": items,
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": total,
+                },
+                "list",
+            )
         start = (page - 1) * limit
         if total is not None and start >= total:
-            return {
-                "result": [],
-                "message": result.message
-                or f"Page {page} is out of range (total results: {total}).",
-                "has_more": False,
-                "next_offset": None,
-                "total_count": total,
-            }
+            return (
+                {
+                    "result": [],
+                    "message": result.message
+                    or f"Page {page} is out of range (total results: {total}).",
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": total,
+                },
+                "empty",
+            )
         page_items = items[start : start + limit]
         # When the total is unknown, add_pagination_metadata falls back to
         # the "full page means more" heuristic (len == limit).
-        return add_pagination_metadata({"result": page_items}, page, limit, total)
+        return add_pagination_metadata({"result": page_items}, page, limit, total), "list"
 
     # object / scalar / text — no slicing; envelope only when paginated.
     if result.paginated:
-        return add_pagination_metadata({"result": data}, page, limit, result.total_count)
+        # Pre-sliced object results (e.g. ``read_doc``'s guide lines,
+        # ``tool_info``'s schema properties): the executor sliced already, so
+        # an out-of-range page yields empty content — emit the message
+        # envelope instead of silent empty data.  The result keeps its object
+        # shape (the schema declares it); only the message is added.
+        total = result.total_count
+        if total is not None and (page - 1) * limit >= total:
+            return (
+                {
+                    "result": data,
+                    "message": result.message
+                    or f"Page {page} is out of range (total results: {total}).",
+                    "has_more": False,
+                    "next_offset": None,
+                    "total_count": total,
+                },
+                "empty",
+            )
+        return add_pagination_metadata({"result": data}, page, limit, total), shape
     if shape == "binary":
-        return {"result": None, "content_info": data}
-    return {"result": data}
+        return {"result": None, "content_info": data}, "binary"
+    return {"result": data}, shape
 
 
-def _format(
+def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, effective_shape) must be a parameter because executors return raw data only and never render
     envelope: dict[str, Any],
     result: ExecutionResult,
     *,
     fmt: str,
     detail: str,
     schema: dict[str, Any] | None,
+    effective_shape: str,
 ) -> ToolResult:
     """Format the envelope dict into a dual-channel ``ToolResult``.
 
@@ -202,9 +245,13 @@ def _format(
     FastMCP auto-populating it from ``structured_content``).  Formatting
     errors are recovered with a readable fallback (the error-recovery layer
     that used to live in ``format_tool_result``).
+
+    ``effective_shape`` (from :func:`_paginate`) is ``"empty"`` whenever the
+    envelope represents an empty or out-of-range result — the message is
+    rendered in every format, including markdown, instead of the (empty)
+    data, so the text channel never disagrees with the envelope.
     """
     data = result.data
-    shape = result.shape
     try:
         if fmt == "raw":
             text = json_module.dumps(envelope, indent=2)
@@ -214,8 +261,8 @@ def _format(
                     envelope["result"], schema, _depth=0, detail="concise"
                 )
             text = json_module.dumps(envelope, indent=2)
-        elif shape in ("empty", "binary"):
-            # The envelope carries the defaulted message for paginated empty
+        elif effective_shape in ("empty", "binary"):
+            # The envelope carries the defaulted message for empty/out-of-range
             # results; fall back to the executor's message for binary and
             # non-paginated empty results.
             text = result.message or envelope.get("message") or ""

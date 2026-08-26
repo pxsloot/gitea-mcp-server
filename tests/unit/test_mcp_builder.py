@@ -2609,12 +2609,16 @@ class TestFindHttpStatusError:
         )
 
         def _build_chain() -> None:
+            # Deliberately raise inside try/except to build the __cause__ chain
+            # that run_with_error_handling produces in production.
+            inner_msg = "inner"
+            outer_msg = "outer"
             try:
-                raise ValueError("inner") from status
+                raise ValueError(inner_msg) from status  # noqa: TRY301
             except ValueError as inner:
-                raise ValueError("outer") from inner
+                raise ValueError(outer_msg) from inner
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="outer") as exc_info:
             _build_chain()
         assert _find_http_status_error(exc_info.value) is status
 
@@ -2656,3 +2660,77 @@ class TestCheckRenamedParams:
     def test_no_rename_map_passes(self) -> None:
         spec = make_openapi_spec()
         _check_renamed_params({"owner": "x"}, spec, "/test", "POST")
+
+
+class TestBooleanCheckHandlers:
+    """Direct unit tests for the boolean-check response handlers.
+
+    The integration suite (``tests/integration/test_tool_behaviour.py``)
+    covers the happy paths through the full pipeline; these tests pin the
+    defensive branches the pipeline cannot reach (content-bearing response,
+    non-404 error, path-is-resource, no active context).
+    """
+
+    def make_transform(self) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+
+    @staticmethod
+    def _make_404_error() -> ValueError:
+        status = httpx.HTTPStatusError(
+            "404", request=httpx.Request("GET", "http://x"), response=httpx.Response(404)
+        )
+        exc = ValueError("not merged")
+        exc.__cause__ = status
+        return exc
+
+    async def test_content_bearing_response_returns_none(self) -> None:
+        """A response that carried content is not a boolean-check 204."""
+        transform = self.make_transform()
+        result = ToolResult(
+            content=[TextContent(type="text", text="{}")],
+            structured_content={"result": {}},
+        )
+        handled = await transform._try_handle_boolean_check(result, None, "/pulls/1/merge")
+        assert handled is None
+
+    async def test_non_404_error_returns_none(self) -> None:
+        """A non-404 error is not handled by the boolean-check 404 path."""
+        transform = self.make_transform()
+        status = httpx.HTTPStatusError(
+            "500", request=httpx.Request("GET", "http://x"), response=httpx.Response(500)
+        )
+        exc = ValueError("server error")
+        exc.__cause__ = status
+        handled = await transform._try_handle_boolean_check_404(
+            exc,
+            {"owner": "org", "repo": "repo", "index": 1},
+            None,
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+        )
+        assert handled is None
+
+    async def test_404_path_is_resource_returns_false(self) -> None:
+        """A 404 on a path that IS the resource means the answer is no."""
+        transform = self.make_transform()
+        handled = await transform._try_handle_boolean_check_404(
+            self._make_404_error(),
+            {"org": "o", "username": "u"},
+            None,
+            "/orgs/{org}/members/{username}",
+        )
+        assert handled is not None
+        assert handled.data is False
+        assert handled.shape == "scalar"
+
+    async def test_404_no_context_returns_false(self) -> None:
+        """Without an active context, a 404 with a distinct resource → false."""
+        transform = self.make_transform()
+        handled = await transform._try_handle_boolean_check_404(
+            self._make_404_error(),
+            {"owner": "org", "repo": "repo", "index": 1},
+            None,
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+        )
+        assert handled is not None
+        assert handled.data is False
+        assert handled.shape == "scalar"

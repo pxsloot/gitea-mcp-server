@@ -38,6 +38,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import register_tool_invalidation
+from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
@@ -1041,7 +1042,6 @@ class _ToolWrappingTransform(Transform):
     async def _try_handle_boolean_check(
         self,
         result: ToolResult,
-        kwargs: dict[str, Any],
         ctx: Any,
         route_path: str,
     ) -> ExecutionResult | None:
@@ -1085,7 +1085,7 @@ class _ToolWrappingTransform(Transform):
         a 404 (re-raise upstream).
         """
         status_error = _find_http_status_error(exc)
-        if status_error is None or status_error.response.status_code != 404:
+        if status_error is None or status_error.response.status_code != HTTP_STATUS_NOT_FOUND:
             return None
 
         resource_uri = self._boolean_check_resource_uri(route_path, kwargs)
@@ -1106,18 +1106,22 @@ class _ToolWrappingTransform(Transform):
 
         try:
             await ctx.read_resource(resource_uri)
-        except Exception:
-            # Resource read failed — the resource does not exist.
+        except Exception:  # noqa: BLE001 — FastMCP wraps every handler error
+            # (not-found, network, etc.) in ResourceError; any failure to read
+            # the existence-check resource means we cannot confirm the resource
+            # exists, so surface a clear "not found" error rather than a wrong
+            # boolean.  Matches the broad-catch pattern in spec_loader.py.
             await safe_ctx_info(
                 ctx,
                 f"Boolean-check {route_path}: resource {resource_uri} not found",
                 extra={"route": route_path, "resource_uri": resource_uri},
             )
-            raise ValueError(
+            msg = (
                 f"Resource not found: {resource_uri}. "
                 "The checked condition cannot be evaluated because the "
                 "underlying resource does not exist."
-            ) from exc
+            )
+            raise ValueError(msg) from exc
 
         await safe_ctx_info(
             ctx,
@@ -1126,7 +1130,7 @@ class _ToolWrappingTransform(Transform):
         )
         return ExecutionResult(data=False, shape="scalar")
 
-    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
+    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912, PLR0911 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
         self,
         kwargs: dict[str, Any],
         tool: Tool,
@@ -1242,7 +1246,7 @@ class _ToolWrappingTransform(Transform):
         # before the generic empty-body/text branches (which would otherwise
         # produce a bare 204 with no boolean).
         if response_transform == "boolean-check":
-            handled = await self._try_handle_boolean_check(result, kwargs, ctx, route_path)
+            handled = await self._try_handle_boolean_check(result, ctx, route_path)
             if handled is not None:
                 return handled
 

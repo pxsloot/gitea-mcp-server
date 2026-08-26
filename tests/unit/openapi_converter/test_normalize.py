@@ -7,19 +7,23 @@ Tests the shape-driven normalization rules:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    import pytest
+import logging
+from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.normalize import (
+    _annotate_boolean_checks,
+    _get_body_schema,
     _is_boolean_check_operation,
     _is_snake_case,
+    _merge_rename_map,
     _normalize_operation_body,
     _normalize_operation_parameters,
     normalize_spec,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class TestIsSnakeCase:
@@ -70,6 +74,59 @@ class TestNormalizeOperationParameters:
         assert rename_map == {}
         assert operation["parameters"][0]["name"] == "pageName"
 
+    def test_skips_non_dict_params(self) -> None:
+        """A non-dict entry in the parameters list is skipped."""
+        operation = {
+            "parameters": [
+                "not-a-dict",
+                {"name": "includeDesc", "in": "query", "schema": {"type": "boolean"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {"include_desc": "includeDesc"}
+
+    def test_skips_params_without_name(self) -> None:
+        """A param with a missing or empty name is skipped."""
+        operation = {
+            "parameters": [
+                {"in": "query", "schema": {"type": "string"}},
+                {"name": "", "in": "query", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {}
+
+    def test_skips_name_unchanged_by_camel_to_snake(self) -> None:
+        """A name camel_to_snake leaves unchanged (e.g. 'foo-bar') is not renamed."""
+        operation = {
+            "parameters": [
+                {"name": "foo-bar", "in": "query", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {}
+        assert operation["parameters"][0]["name"] == "foo-bar"
+
+
+class TestMergeRenameMap:
+    def test_empty_map_is_noop(self) -> None:
+        """An empty rename map leaves the operation untouched."""
+        operation: dict[str, Any] = {}
+        _merge_rename_map(operation, {})
+        assert "x-param-rename" not in operation
+
+
+class TestGetBodySchema:
+    def test_content_not_dict_returns_none(self) -> None:
+        """A requestBody whose content is not a dict yields no body schema."""
+        operation = {"requestBody": {"content": "not-a-dict"}}
+        assert _get_body_schema(operation) is None
+
+    def test_json_content_not_dict_returns_none(self) -> None:
+        """A requestBody whose application/json entry is not a dict yields None."""
+        operation = {"requestBody": {"content": {"application/json": "not-a-dict"}}}
+        assert _get_body_schema(operation) is None
+
 
 class TestNormalizeOperationBody:
     def test_renames_body_properties_and_required(self) -> None:
@@ -95,7 +152,10 @@ class TestNormalizeOperationBody:
             "do": "Do",
             "merge_commit_id": "MergeCommitID",
         }
-        schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
         assert set(schema["properties"].keys()) == {
             "do",
             "merge_commit_id",
@@ -121,6 +181,35 @@ class TestNormalizeOperationBody:
                                 "force_merge": {"type": "boolean"},
                                 "head_commit_id": {"type": "string"},
                             },
+                        },
+                    },
+                },
+            },
+        }
+        assert _normalize_operation_body(operation) == {}
+
+    def test_properties_not_dict_returns_empty(self) -> None:
+        """A body schema whose properties is not a dict yields no renames."""
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"type": "object", "properties": "not-a-dict"},
+                    },
+                },
+            },
+        }
+        assert _normalize_operation_body(operation) == {}
+
+    def test_skips_prop_unchanged_by_camel_to_snake(self) -> None:
+        """A body property camel_to_snake leaves unchanged is not renamed."""
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"foo-bar": {"type": "string"}},
                         },
                     },
                 },
@@ -203,6 +292,19 @@ class TestIsBooleanCheckOperation:
         spec = make_openapi_spec()
         assert _is_boolean_check_operation(operation, spec) is False
 
+    def test_responses_not_dict_is_not_boolean_check(self) -> None:
+        """A non-dict responses object is not a boolean check."""
+        operation = {"responses": "not-a-dict"}
+        spec = make_openapi_spec()
+        assert _is_boolean_check_operation(operation, spec) is False
+
+
+class TestAnnotateBooleanChecks:
+    def test_skips_non_dict_path_items(self) -> None:
+        """A non-dict path item is skipped without annotation."""
+        spec = make_openapi_spec(paths={"/weird": "not-a-dict"})
+        assert _annotate_boolean_checks(spec) == 0
+
 
 class TestNormalizeSpec:
     def test_renames_params_and_annotates_boolean_checks(self) -> None:
@@ -248,7 +350,10 @@ class TestNormalizeSpec:
         )
         normalize_spec(spec)
 
-        merge_op = spec["paths"]["/repos/{owner}/{repo}/pulls/{index}/merge"]["post"]
+        merge_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/pulls/{index}/merge"]["post"],
+        )
         assert merge_op["x-param-rename"] == {
             "do": "Do",
             "merge_commit_id": "MergeCommitID",
@@ -256,10 +361,13 @@ class TestNormalizeSpec:
         body_props = merge_op["requestBody"]["content"]["application/json"]["schema"]["properties"]
         assert set(body_props.keys()) == {"do", "merge_commit_id"}
 
-        is_merged_op = spec["paths"]["/repos/{owner}/{repo}/pulls/{index}/merge"]["get"]
+        is_merged_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/pulls/{index}/merge"]["get"],
+        )
         assert is_merged_op["x-response-transform"] == "boolean-check"
 
-        search_op = spec["paths"]["/search"]["get"]
+        search_op = cast("dict[str, Any]", spec["paths"]["/search"]["get"])
         assert search_op["x-param-rename"] == {"include_desc": "includeDesc"}
 
     def test_merges_with_existing_rename_map(self) -> None:
@@ -288,7 +396,7 @@ class TestNormalizeSpec:
             },
         )
         normalize_spec(spec)
-        op = spec["paths"]["/test/{owner}"]["post"]
+        op = cast("dict[str, Any]", spec["paths"]["/test/{owner}"]["post"])
         assert op["x-param-rename"] == {
             "body_owner": "owner",
             "do": "Do",
@@ -298,3 +406,31 @@ class TestNormalizeSpec:
         spec = make_openapi_spec()
         normalize_spec(spec)
         assert spec["paths"] == {}
+
+    def test_skips_non_dict_path_items(self) -> None:
+        """A non-dict path item is skipped without error."""
+        spec = make_openapi_spec(paths={"/weird": "not-a-dict"})
+        normalize_spec(spec)
+        assert spec["paths"]["/weird"] == "not-a-dict"
+
+    def test_internal_error_is_logged_not_raised(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An internal failure is logged and swallowed, never propagated."""
+        spec = make_openapi_spec(
+            paths={"/x": {"get": {"operationId": "x", "responses": {}}}},
+        )
+
+        def _boom(_spec: Any) -> int:
+            boom_msg = "boom"
+            raise RuntimeError(boom_msg)
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.openapi_converter.normalize._annotate_boolean_checks",
+            _boom,
+        )
+        with caplog.at_level(logging.ERROR):
+            normalize_spec(spec)  # must not raise
+        assert "Failed to normalize spec quirks" in caplog.text

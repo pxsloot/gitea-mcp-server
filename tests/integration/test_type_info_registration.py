@@ -282,3 +282,54 @@ class TestRegisterTypeToolsPrefix:
         data = get_structured(result)["result"]
         refs = data["cross_references"]
         assert "issue_get_issue" in refs["returned_by"]
+
+
+class TestRegisterTypeToolsDefensivePaths:
+    """Defensive branches in the type tool (resolve_type_info edge cases).
+
+    ``resolve_type_info`` always returns a dict with dict ``cross_references``
+    for a canonical-resolved type, so these branches are unreachable through
+    normal spec construction.  They are pinned here by patching
+    ``resolve_type_info`` to return the edge-case values.
+    """
+
+    @pytest.mark.asyncio
+    async def test_non_dict_cross_references_left_unchanged(
+        self,
+        mcp: FastMCP,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When cross_references is not a dict, prefixing leaves the info alone."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC, tool_prefix="gitea_")
+
+        def _fake_resolve(
+            spec: OpenAPISpec,
+            type_index: dict,
+            type_name: str,
+            detail: str = "concise",
+        ) -> dict:
+            return {"name": type_name, "cross_references": "not-a-dict"}
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.tools.type_info.resolve_type_info",
+            _fake_resolve,
+        )
+        result = await mcp.call_tool("resolve_type", {"name": "User"})
+        data = get_structured(result)["result"]
+        assert data["cross_references"] == "not-a-dict"
+
+    @pytest.mark.asyncio
+    async def test_resolve_type_info_none_raises_not_found(
+        self,
+        mcp: FastMCP,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When resolve_type_info returns None, a clear not-found error is raised."""
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        monkeypatch.setattr(
+            "gitea_mcp_server.tools.type_info.resolve_type_info",
+            lambda *args, **kwargs: None,
+        )
+        with pytest.raises(ToolError, match="not found"):
+            await mcp.call_tool("resolve_type", {"name": "User"})

@@ -266,7 +266,7 @@ def resolve_type_info(
 # ============================================================================
 
 
-def register_type_tools(
+def register_type_tools(  # noqa: PLR0915 - registration function: builds the type index, two nested closures (tool + resource), and the tool/resource specs; extracting would scatter the registration pattern
     mcp: Any,
     openapi_spec: OpenAPISpec | None = None,
     tool_prefix: str = "",

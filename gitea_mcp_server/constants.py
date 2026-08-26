@@ -129,6 +129,15 @@ LABEL_MAX_LENGTH = 100
 PAGE_SIZE_MAX = 100
 """Maximum number of items per page for paginated endpoints."""
 
+DEFAULT_PAGE_SIZE = 100
+"""Default page size when the agent omits ``limit``.
+
+Single source for the pagination default used by the result pipeline
+(``tools/result_pipeline.py``) when computing the envelope for a page whose
+``limit`` was not supplied.  Mirrors ``PAGE_SIZE_MAX`` today; kept as a
+separate constant so the default and the cap can diverge independently.
+"""
+
 LABEL_CACHE_TTL = 300
 """Cache TTL for repository label mappings (seconds, 5 minutes)."""
 

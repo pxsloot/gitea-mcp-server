@@ -17,12 +17,10 @@ Design decisions
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from tests.helpers.mcp_results import extract_text_content
-from tests.live.assertions import assert_keys
+from tests.live.assertions import assert_keys, assert_result_ok
 from tests.live.conftest import live_available
 from tests.live.workflows import Workflow
 from tests.live.world import DEV, LIMITED, SCOPE_LIMITED, SCOPE_WRITE, World
@@ -68,7 +66,7 @@ class TestListResources:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
         assert not result.isError
-        data = json.loads(extract_text_content(result.content))
+        data = assert_result_ok(result)
         assert isinstance(data, list)
         assert len(data) > 0
 
@@ -77,7 +75,7 @@ class TestListResources:
         """Each resource item has uri, name, description, mimeType, type, tags."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
-        data = json.loads(extract_text_content(result.content))
+        data = assert_result_ok(result)
         for res in data[:5]:
             assert_keys(
                 res,
@@ -95,7 +93,7 @@ class TestListResources:
         """Filtering by tag='wrapper' returns only wrapper resources."""
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool("gitea_list_resources", {"format": "json", "tag": "wrapper"})
-        data = json.loads(extract_text_content(result.content))
+        data = assert_result_ok(result)
         for res in data:
             assert "wrapper" in res.get("tags", []), (
                 f"Tag filter returned non-wrapper: {res['uri']}"
@@ -157,7 +155,7 @@ class TestReadResource:
             {"uri": f"gitea://repos/{DEV.username}/{_REPO}", "format": "json"},
         )
         assert not result.isError
-        data = json.loads(extract_text_content(result.content))
+        data = assert_result_ok(result)
         assert isinstance(data, dict), (
             f"Expected JSON dict, got {type(data)}: {extract_text_content(result.content)[:200]}"
         )
@@ -191,7 +189,7 @@ class TestResourceScope:
         counts: list[int] = []
         for mcp in (full_token_mcp, limited_token_mcp):
             result = await mcp.call_tool("gitea_list_resources", {"format": "json"})
-            data = json.loads(extract_text_content(result.content))
+            data = assert_result_ok(result)
             counts.append(len(data))
 
         assert counts[0] >= counts[1], (

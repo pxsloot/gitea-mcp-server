@@ -25,15 +25,10 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
 )
-from gitea_mcp_server.format import (
-    apply_format,
-    empty_paginated_result,
-    format_paginated_result,
-    format_tool_info_markdown,
-)
+from gitea_mcp_server.format import format_tool_info_markdown
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY, apply_pagination
+from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.errors import (
@@ -45,6 +40,7 @@ from gitea_mcp_server.tools.filter_info import (
     build_filtered_tools_message,
     get_filtered_tool_info,
 )
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.schemas import (
     is_object_type,
     schema_type_is_array,
@@ -501,7 +497,6 @@ def _format_filtered_tools_note(filtered_tools_info: dict[str, Any] | None) -> s
 async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are framework plumbing
     query: str,
     category: str | None,
-    format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
     page: int = 1,
@@ -510,21 +505,21 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     filtered_tools_info: dict[str, Any] | None = None,
     tool_prefix: str = "",
     fetch_all: bool = False,
-    detail: str = "full",
-) -> ToolResult:
+) -> ExecutionResult:
     """Core search_tools implementation.
 
     Fetches the tool catalog via the transform, optionally filters by
-    category, then ranks by name match + BM25 and returns a paginated,
-    formatted result.
+    category, then ranks by name match + BM25.  Returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
+    the single result pipeline slices, envelopes, and formats.
 
-    When ``fetch_all=True``, returns all matching results without page
-    slicing (in-memory search, no loop needed).
+    When ``fetch_all=True``, all matching results are returned (the pipeline
+    skip-slices); otherwise the out-of-range check here decides between a
+    ``list`` result and an ``empty`` result with a message.
 
     Args:
         query: Natural language query.
         category: Optional category filter.
-        format: Output format.
         ctx: FastMCP context.
         transform: Search transform for tool catalog access.
         page: Page number (1-based).  Ignored when ``fetch_all`` is True.
@@ -534,8 +529,6 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from tool names before name matching.
         fetch_all: When True, return all matching results without slicing.
-        detail: Output detail level — ``"full"`` (default) or
-            ``"concise"`` (collapse nested ``$ref`` objects).
     """
     tools = await transform.get_tool_catalog(ctx)
     if category is not None:
@@ -548,8 +541,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     texts = [extract_searchable_text_enhanced(t) for t in tools]
     serialized = compact_search_serializer(tools)
 
-    # Get all ranked results (no pre-slicing — format_paginated_result
-    # handles that conditionally based on fetch_all).
+    # Get all ranked results (no pre-slicing — the pipeline slices).
     all_items, total_count = search_and_slice(
         serialized,
         texts,
@@ -566,43 +558,47 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     }
 
     if total_count == 0:
-        text = _empty_results_message(query, cross_link_hints)
-        return empty_paginated_result(text, page, limit, total_count)
+        return ExecutionResult(
+            data=[],
+            total_count=0,
+            shape="empty",
+            paginated=True,
+            message=_empty_results_message(query, cross_link_hints),
+        )
 
     # Check page range before formatting (only when paginating, not fetch_all).
     if not fetch_all:
         start = (page - 1) * limit
         if start >= total_count:
-            text = f"Page {page} is out of range (total results: {total_count})."
-            return empty_paginated_result(text, page, limit, total_count)
+            return ExecutionResult(
+                data=[],
+                total_count=total_count,
+                shape="empty",
+                paginated=True,
+                message=f"Page {page} is out of range (total results: {total_count}).",
+            )
 
     extras: list[str] = []
-    if format == "markdown" and cross_link_hints:
-        hints = "**Cross-linking hints:**\n"
-        for label, tool in cross_link_hints.items():
-            hints += f"- For {label}: `{tool}(query)`\n"
-        extras.append(hints)
+    hints = "**Cross-linking hints:**\n"
+    for label, tool in cross_link_hints.items():
+        hints += f"- For {label}: `{tool}(query)`\n"
+    extras.append(hints)
 
-    if format == "markdown":
-        note = _format_filtered_tools_note(filtered_tools_info)
-        if note:
-            extras.append(note)
+    note = _format_filtered_tools_note(filtered_tools_info)
+    if note:
+        extras.append(note)
 
-    return format_paginated_result(
-        all_items,
-        total_count,
-        format,
-        page,
-        limit,
-        fetch_all,
-        markdown_extras=extras or None,
-        detail=detail,
+    return ExecutionResult(
+        data=all_items,
+        total_count=total_count,
+        shape="list",
+        paginated=True,
+        markdown_extras=extras,
     )
 
 
-async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool_prefix, detail
+async def _tool_info_impl(  # noqa: PLR0913 - name, ctx, transform, tool_prefix, detail, page, limit, openapi_spec, filtered_tools_info
     name: str,
-    format: str,
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
@@ -612,7 +608,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
     limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
     filtered_tools_info: dict[str, Any] | None = None,
-) -> ToolResult:
+) -> ExecutionResult:
     """Core tool_info implementation.
 
     Accepts both prefixed (``gitea_search_tools``) and bare (``search_tools``)
@@ -627,6 +623,11 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
       objects; preserves the full array structure.
     * **String / other** results: return the full schema unpaginated
       (no meaningful property-level slicing for primitives).
+
+    Returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` with the
+    (pre-sliced) schema and the property count; the single result pipeline
+    envelopes and formats it.
 
     Args:
         openapi_spec: The OpenAPI spec (for ``$ref`` resolution in schemas).
@@ -699,23 +700,23 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, format, ctx, transform, tool
                 sliced_schema["properties"] = properties
                 schema["output_schema"] = sliced_schema
 
-                result = apply_format(schema, format, markdown_formatter=format_tool_info_markdown)
-
-                # Add pagination metadata so agents can discover total
-                # property count and navigate pages (in the text for
-                # format=json, mirrored in structured_content).
-                result = apply_pagination(result, page, limit, total_props)
-            else:
-                # Concise path returns the full schema unpaginated — still
-                # emit the envelope (total_count=None, has_more=False) so the
-                # runtime matches the declared schema on every path.
-                result = apply_pagination(
-                    apply_format(schema, format, markdown_formatter=format_tool_info_markdown),
-                    page,
-                    limit,
+                return ExecutionResult(
+                    data=schema,
+                    total_count=total_props,
+                    shape="object",
+                    paginated=True,
+                    markdown_formatter=format_tool_info_markdown,
                 )
 
-            return result
+            # Concise path returns the full schema unpaginated — still
+            # emit the envelope (total_count=None, has_more=False) so the
+            # runtime matches the declared schema on every path.
+            return ExecutionResult(
+                data=schema,
+                shape="object",
+                paginated=True,
+                markdown_formatter=format_tool_info_markdown,
+            )
 
     # Tool not found in the post-filter catalog — check if it's a
     # filtered tool (scope-restricted, config-excluded, or deprecated).
@@ -769,26 +770,25 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
 
 async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are framework plumbing
     query: str,
-    format: str,
     ctx: Context,
     page: int = 1,
     limit: int = 10,
     min_score: float = SEARCH_MIN_SCORE,
     tool_prefix: str = "",
     fetch_all: bool = False,
-    detail: str = "full",
-) -> ToolResult:
+) -> ExecutionResult:
     """Core search_resources implementation.
 
     Fetches all registered MCP resources via ``mcp_list_resources_impl``,
-    runs name match + BM25 ranking, and returns a paginated, formatted result.
+    runs name match + BM25 ranking, and returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
+    the single result pipeline slices, envelopes, and formats.
 
     When ``fetch_all=True``, returns all matching results without page
     slicing (in-memory search, no loop needed).
 
     Args:
         query: Natural language query.
-        format: Output format.
         ctx: FastMCP context.
         page: Page number (1-based).  Ignored when ``fetch_all`` is True.
         limit: Results per page.  Ignored when ``fetch_all`` is True.
@@ -796,8 +796,6 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
         tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
             Used to strip the prefix from resource names before name matching.
         fetch_all: When True, return all matching results without slicing.
-        detail: Output detail level — ``"full"`` (default) or
-            ``"concise"`` (collapse nested ``$ref`` objects).
     """
     # Deferred import to avoid circular chain:
     # mcp_tools → tools.examples → tools.__init__ → tools.search → mcp_tools
@@ -824,32 +822,38 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     }
 
     if total_count == 0:
-        text = _empty_results_message(query, cross_link_hints)
-        return empty_paginated_result(text, page, limit, total_count)
+        return ExecutionResult(
+            data=[],
+            total_count=0,
+            shape="empty",
+            paginated=True,
+            message=_empty_results_message(query, cross_link_hints),
+        )
 
     # Check page range before formatting (only when paginating, not fetch_all).
     if not fetch_all:
         start = (page - 1) * limit
         if start >= total_count:
-            text = f"Page {page} is out of range (total results: {total_count})."
-            return empty_paginated_result(text, page, limit, total_count)
+            return ExecutionResult(
+                data=[],
+                total_count=total_count,
+                shape="empty",
+                paginated=True,
+                message=f"Page {page} is out of range (total results: {total_count}).",
+            )
 
     extras: list[str] = []
-    if format == "markdown" and cross_link_hints:
-        hints = "**Cross-linking hints:**\n"
-        for label, tool in cross_link_hints.items():
-            hints += f"- For {label}: `{tool}(query)`\n"
-        extras.append(hints)
+    hints = "**Cross-linking hints:**\n"
+    for label, tool in cross_link_hints.items():
+        hints += f"- For {label}: `{tool}(query)`\n"
+    extras.append(hints)
 
-    return format_paginated_result(
-        all_items,
-        total_count,
-        format,
-        page,
-        limit,
-        fetch_all,
-        markdown_extras=extras or None,
-        detail=detail,
+    return ExecutionResult(
+        data=all_items,
+        total_count=total_count,
+        shape="list",
+        paginated=True,
+        markdown_extras=extras,
     )
 
 
@@ -884,10 +888,6 @@ def register_synthetic_tools(
         category: Annotated[
             str | None, f"Optional category to filter by: {', '.join(_VALID_CATEGORIES)}"
         ] = None,
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
-        ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         min_score: Annotated[
@@ -901,18 +901,11 @@ def register_synthetic_tools(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
-        detail: Annotated[
-            str,
-            'Output detail level.  "full" (default) — complete information, '
-            'full object expansion.  "concise" — compact view: nested objects '
-            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
-        ] = "full",
         ctx: Context = CurrentContext(),
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         return await _search_tools_impl(
             query,
             category,
-            format,
             ctx,
             transform,
             page,
@@ -921,7 +914,6 @@ def register_synthetic_tools(
             filtered_tools_info=filtered_tools_info,
             tool_prefix=tool_prefix,
             fetch_all=fetch_all,
-            detail=detail,
         )
 
     search_tools_spec = SyntheticToolSpec(
@@ -1021,12 +1013,8 @@ def register_synthetic_tools(
         },
     )
 
-    async def tool_info_fn(  # noqa: PLR0913 - 6 params: name, format, detail, page, limit, ctx
+    async def tool_info_fn(
         name: Annotated[str, "The exact name of the tool to inspect"],
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), raw (raw API response), or json (structured data)",
-        ] = "markdown",
         detail: Annotated[
             # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
             Literal["concise", "full"],
@@ -1041,10 +1029,9 @@ def register_synthetic_tools(
             "Properties per page for output_schema. Only used when detail=full.",
         ] = 10,
         ctx: Context = CurrentContext(),
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         return await _tool_info_impl(
             name,
-            format,
             ctx,
             transform,
             tool_prefix,
@@ -1153,7 +1140,6 @@ def register_synthetic_tools(
 
     async def search_resources_fn(  # noqa: PLR0913 - min_score is a new config axis
         query: Annotated[str, "Natural language query to search for resources"],
-        format: Annotated[str, "Output format: markdown (default), json, or raw"] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         min_score: Annotated[
@@ -1167,24 +1153,16 @@ def register_synthetic_tools(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
-        detail: Annotated[
-            str,
-            'Output detail level.  "full" (default) — complete information, '
-            'full object expansion.  "concise" — compact view: nested objects '
-            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
-        ] = "full",
         ctx: Context = CurrentContext(),
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         return await _search_resources_impl(
             query,
-            format,
             ctx,
             page,
             limit,
             min_score=min_score,
             tool_prefix=tool_prefix,
             fetch_all=fetch_all,
-            detail=detail,
         )
 
     search_resources_spec = SyntheticToolSpec(

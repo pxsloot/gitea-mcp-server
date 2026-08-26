@@ -12,6 +12,7 @@ from typing import Any, NoReturn, cast
 import httpx
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.schemas import resolve_ref
 from gitea_mcp_server.validation import (
@@ -205,11 +206,22 @@ def run_validation(
             except (TypeError, ValueError, KeyError) as e:
                 msg = f"Validation error for {name}: {e}"
                 _raise_validation_error(msg, name, e)
-    if "page" in kwargs or "per_page" in kwargs:
+    if "page" in kwargs or "limit" in kwargs:
+        # The cap comes from the parameter schema — both tool families
+        # declare it there (autogen via SCHEMA_CONSTRAINTS, synthetic via
+        # the per-tool limit_max bound), so the per-tool limit is respected
+        # without hardcoding a family-specific default here.
+        limit_schema = (param_properties or {}).get("limit")
+        limit_max = (
+            limit_schema.get("maximum", PAGE_SIZE_MAX)
+            if isinstance(limit_schema, dict)
+            else PAGE_SIZE_MAX
+        )
         validate_pagination(
             kwargs.get("page"),
-            kwargs.get("per_page"),
-            page_size_name="per_page",
+            kwargs.get("limit"),
+            page_size_name="limit",
+            page_size_max=limit_max,
         )
 
 

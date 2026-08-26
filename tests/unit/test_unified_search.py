@@ -6,13 +6,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastmcp.server.context import Context
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
 from gitea_mcp_server.tools.docs_tools import DocManager
+from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
 from gitea_mcp_server.tools.search import TolerantSearchTransform
 from gitea_mcp_server.tools.unified_search import register_unified_search
-from tests.helpers.mcp_results import parse_json_content
+from tests.helpers.mcp_results import get_structured, parse_json_content
+
+
+def _render(exec_result: Any, fmt: str = "markdown", page: int = 1, limit: int = 10) -> ToolResult:
+    """Render an ExecutionResult through the single result pipeline."""
+    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit)
 
 
 def _make_resource(
@@ -135,9 +141,9 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="raw", ctx=ctx)
+        result = _render(await registered_fn(query="issue", ctx=ctx), fmt="raw")
 
-        results = result.structured_content["result"]
+        results = get_structured(result)["result"]
         assert len(results) > 0
 
         for item in results:
@@ -164,8 +170,8 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="raw", ctx=ctx)
-        items = result.structured_content["result"]
+        result = _render(await registered_fn(query="issue", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
         tool_items = [i for i in items if i["type"] == "tool"]
 
         assert len(tool_items) == 1
@@ -197,8 +203,8 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="repo", format="raw", ctx=ctx)
-        items = result.structured_content["result"]
+        result = _render(await registered_fn(query="repo", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
         resource_items = [i for i in items if i["type"] == "resource"]
 
         assert len(resource_items) == 1
@@ -228,8 +234,8 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="token", format="raw", ctx=ctx)
-        items = result.structured_content["result"]
+        result = _render(await registered_fn(query="token", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
         doc_items = [i for i in items if i["type"] == "doc"]
 
         assert len(doc_items) == 1
@@ -259,13 +265,13 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="markdown", ctx=ctx)
+        result = _render(await registered_fn(query="issue", ctx=ctx))
 
         assert len(result.content) > 0
         assert isinstance(result.content[0], TextContent)
         assert isinstance(result.content[0].text, str)
 
-        assert "result" in result.structured_content
+        assert "result" in get_structured(result)
 
     @pytest.mark.asyncio
     async def test_format_json_returns_json_string(self) -> None:
@@ -288,12 +294,12 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="json", ctx=ctx)
+        result = _render(await registered_fn(query="issue", ctx=ctx), fmt="json")
 
         assert len(result.content) > 0
         assert isinstance(result.content[0], TextContent)
         parsed = parse_json_content(result)
-        assert isinstance(parsed, list)
+        assert isinstance(parsed["result"], list)
 
     @pytest.mark.asyncio
     async def test_no_results_returns_empty_list(self) -> None:
@@ -315,11 +321,11 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="xyznonexistent123", format="raw", ctx=ctx)
-        items = result.structured_content["result"]
+        result = _render(await registered_fn(query="xyznonexistent123", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
         assert items == []
         # Empty results still carry the full pagination envelope (issue #694).
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 0
@@ -336,7 +342,7 @@ class TestUnifiedSearch:
 
         registered_fn = decorator.call_args[0][0]
         with pytest.raises(ValueError, match="Context is required"):
-            await registered_fn(query="test", format="raw", ctx=None)
+            await registered_fn(query="test", ctx=None)
 
     @pytest.mark.asyncio
     async def test_all_texts_empty_returns_empty_result(self) -> None:
@@ -355,11 +361,11 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="anything", format="raw", ctx=ctx)
-        items = result.structured_content["result"]
+        result = _render(await registered_fn(query="anything", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
         assert items == []
         # Empty results still carry the full pagination envelope (issue #694).
-        sc = result.structured_content
+        sc = get_structured(result)
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 0
@@ -385,13 +391,13 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="raw", ctx=ctx)
+        result = _render(await registered_fn(query="issue", ctx=ctx), fmt="raw")
 
-        assert result.structured_content is not None
-        assert "has_more" in result.structured_content
-        assert "next_offset" in result.structured_content
-        assert "total_count" in result.structured_content
-        assert result.structured_content["total_count"] >= 1
+        sc = get_structured(result)
+        assert "has_more" in sc
+        assert "next_offset" in sc
+        assert "total_count" in sc
+        assert sc["total_count"] >= 1
 
     @pytest.mark.asyncio
     async def test_page_out_of_range(self) -> None:
@@ -413,16 +419,21 @@ class TestUnifiedSearch:
         register_unified_search(mcp, doc_manager, search_transform)
 
         registered_fn = decorator.call_args[0][0]
-        result = await registered_fn(query="issue", format="raw", ctx=ctx, page=10, limit=10)
+        result = _render(
+            await registered_fn(query="issue", ctx=ctx, page=10, limit=10),
+            fmt="raw",
+            page=10,
+            limit=10,
+        )
 
-        assert result.structured_content is not None
-        hint = result.structured_content.get("message", "")
+        sc = get_structured(result)
+        hint = sc.get("message", "")
         assert "Page 10 is out of range" in hint
-        assert result.structured_content["result"] == []
+        assert sc["result"] == []
         # Out-of-range pages still carry the full pagination envelope (issue #694).
-        assert result.structured_content["has_more"] is False
-        assert result.structured_content["next_offset"] is None
-        assert result.structured_content["total_count"] == 1  # the one matching tool
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 1  # the one matching tool
 
 
 __all__ = []

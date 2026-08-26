@@ -8,6 +8,7 @@ See https://git.home.lan/mcp-server/gitea-mcp-server/issues/331
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -360,12 +361,15 @@ class TestResultWrapping:
         assert isinstance(result.structured_content["result"], list)
 
     async def test_object_response_is_json_in_text_content(self, mcp_server: FastMCP) -> None:
-        """Object responses appear as JSON in the text content."""
+        """Object responses appear as JSON in the text content for format=json."""
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.99.0"})
-        result = await mcp_server.call_tool("gitea_get_version", {})
+        result = await mcp_server.call_tool(
+            "gitea_get_version",
+            {"format": "json"},
+        )
         assert len(result.content) > 0
         text = extract_text_content(result.content)
-        assert '"version":"1.99.0"' in text, f"Expected version JSON in text: {text[:200]}"
+        assert '"version": "1.99.0"' in text, f"Expected version JSON in text: {text[:200]}"
 
     async def test_paginated_result_includes_metadata(self, mcp_server: FastMCP) -> None:
         """Paginated responses include ``has_more`` and ``next_offset`` metadata."""
@@ -397,21 +401,13 @@ class TestEmptyBodyWrites:
     def base_spec(self) -> dict[str, Any]:
         return _make_delete_spec()
 
-    @pytest.mark.parametrize(
-        ("fmt", "expected"),
-        [
-            ("markdown", "Operation completed successfully."),
-            ("json", "Operation completed successfully."),
-            ("raw", "Operation completed successfully."),
-        ],
-    )
+    @pytest.mark.parametrize("fmt", ["markdown", "json", "raw"])
     async def test_empty_body_produces_visible_text(
         self,
         mcp_server: FastMCP,
         fmt: str,
-        expected: str,
     ) -> None:
-        """All formats produce visible confirmation for 204 responses."""
+        """All formats produce a visible, contract-compliant result for 204 responses."""
         respx.delete(f"{BASE_TEST_URL}/api/v1/repos/test/repo").respond(204)
         result = await mcp_server.call_tool(
             "gitea_repo_delete",
@@ -419,7 +415,13 @@ class TestEmptyBodyWrites:
         )
         assert result.structured_content == {"result": None}
         text = extract_text_content(result.content)
-        assert text == expected
+        if fmt == "markdown":
+            # The visible confirmation is the text for markdown.
+            assert text == "Operation completed successfully."
+        else:
+            # json/raw: the text is the serialized envelope mirroring
+            # structured_content (deterministic dual-channel).
+            assert json.loads(text) == {"result": None}
 
     async def test_empty_body_default_format_produces_visible_text(
         self,

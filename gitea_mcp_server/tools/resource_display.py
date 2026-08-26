@@ -3,9 +3,10 @@
 All resources return raw data. This module provides the formatting
 pipeline that shapes and renders that data for agent consumption.
 
-The pipeline is the resource-side counterpart to ``tools/tool_display.py``:
-both delegate to ``format.py`` for shared formatting primitives and to
-``tools/display.py`` for domain-specific formatters.
+The pipeline is the resource-side counterpart to the tool result pipeline
+(``tools/result_pipeline.py``): both delegate to ``format.py`` for shared
+formatting primitives and to ``tools/display.py`` for domain-specific
+formatters.
 
 Public functions:
     clean_resource_uri - re-exported from ``uri_utils.py``; strip ``{?query}``

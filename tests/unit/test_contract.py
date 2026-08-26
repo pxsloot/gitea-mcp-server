@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 from fastmcp.tools.base import Tool, ToolResult
-from mcp.types import TextContent
 
 from gitea_mcp_server.tools.contract import build_transform_fn
 
@@ -226,8 +225,13 @@ class TestBuildTransformFn:
         assert received["kwargs"] == {"query": "q", "fetch_all": True}
 
     @pytest.mark.asyncio
-    async def test_real_format_post_hook_renders_content(self) -> None:
-        """End-to-end: the registered format post-hook renders structured data to text."""
+    async def test_toolresult_passes_through_unrendered(self) -> None:
+        """ToolResult-returning executors (read_resource) pass through the spine.
+
+        The single result pipeline renders ``ExecutionResult`` results only;
+        a ``ToolResult`` return (the resource-display path) is passed through
+        unchanged — no re-rendering, no envelope.
+        """
         raw_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
 
         async def executor(
@@ -240,7 +244,4 @@ class TestBuildTransformFn:
         transform_fn = build_transform_fn(_make_tool(raw_schema=raw_schema), executor)
         result = await transform_fn(query="q", format="json")
 
-        text = next(c.text for c in result.content if isinstance(c, TextContent))
-        assert '"name": "alpha"' in text
-        # structured_content carries the uncollapsed data for programmatic access.
         assert result.structured_content == {"result": {"name": "alpha"}}

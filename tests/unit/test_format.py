@@ -31,6 +31,7 @@ from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
 from gitea_mcp_server.pagination import PAGINATION_KEYS
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
     extract_text_content,
@@ -1294,7 +1295,7 @@ class TestFormatPaginatedResult:
         assert sc["total_count"] == 1
 
     def test_json_format(self) -> None:
-        """JSON format produces JSON text content."""
+        """JSON format produces JSON text content carrying the envelope."""
         items = [{"id": 1, "name": "test"}]
         result = format_paginated_result(
             items,
@@ -1306,7 +1307,7 @@ class TestFormatPaginatedResult:
         assert result.content is not None
         text = extract_text_content(result.content)
         parsed = json.loads(text)
-        assert parsed[0]["name"] == "test"
+        assert parsed["result"][0]["name"] == "test"
         sc = get_structured(result)
         assert sc["total_count"] == 1
 
@@ -1393,26 +1394,17 @@ class TestDualChannelContract:
 
     The MCP spec makes ``content`` the guaranteed channel of a tool result;
     ``structured_content`` is an optional mirror that duplicates it.  These
-    tests assert that contract via ``assert_dual_channel``.  The paths that
-    currently violate it are marked ``xfail`` with a reference to #719
-    (Build the single result pipeline), which flips them green when the
-    pipeline lands.
+    tests assert that contract via ``assert_dual_channel``.  The single
+    result pipeline is the single writer of both channels, so every
+    path holds the contract.
     """
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="json text is the bare array, envelope only in structured_content; fixed by #719",
-    )
     def test_paginated_json_envelope_in_text(self) -> None:
         """Paginated format=json must carry the envelope beside result in the text."""
         items = [{"id": i} for i in range(25)]
         result = format_paginated_result(items, 25, "json", page=1, limit=10)
         assert_dual_channel(result, fmt="json")
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="json text is the bare data, structured_content wraps in result; fixed by #719",
-    )
     def test_json_content_mirrors_structured(self) -> None:
         """Non-paginated format=json text must mirror structured_content (result wrapper)."""
         result = apply_format({"id": 1}, "json")
@@ -1423,7 +1415,7 @@ class TestDualChannelContract:
 
         FastMCP auto-populates ``content`` from ``structured_content`` when
         the caller sets only the latter, so the raw path already satisfies
-        the contract.  This test locks that compliance; #719 makes the
+        the contract.  This test locks that compliance; the display pipeline makes
         content explicit rather than relying on the implicit auto-population.
 
         Caveat: this assertion is only as strong as FastMCP's auto-population
@@ -1434,6 +1426,21 @@ class TestDualChannelContract:
         """
         result = apply_format({"id": 1}, "raw")
         assert_dual_channel(result, fmt="raw")
+
+    def test_apply_format_invalid_format_raises(self) -> None:
+        """apply_format rejects unsupported formats with a friendly error."""
+        with pytest.raises(ValueError, match="Unsupported format"):
+            apply_format({"id": 1}, "xml")
+
+    def test_apply_format_markdown_extras_appended(self) -> None:
+        """apply_format appends markdown_extras as additional sections."""
+        result = apply_format(
+            {"id": 1},
+            "markdown",
+            markdown_extras=["**Extra section:** content"],
+        )
+        text = extract_text_content(result.content)
+        assert "**Extra section:** content" in text
 
     def test_markdown_dual_channel(self) -> None:
         """Markdown output satisfies the contract: content present, result in structured."""
@@ -1452,6 +1459,35 @@ class TestDualChannelContract:
         assert sc["result"] == []
         assert sc["has_more"] is False
         assert sc["total_count"] == 0
+
+    def test_empty_paginated_result_json_shape(self) -> None:
+        """Empty page format=json carries result/message/envelope as JSON text.
+
+        The empty-json shape is ``{"result": [], "message": "...",
+        "has_more": false, "next_offset": null, "total_count": N}`` — the
+        text is JSON, mirroring structured_content.
+        """
+        result = render(
+            ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="empty",
+                paginated=True,
+                message="No results found for 'x'.",
+            ),
+            fmt="json",
+            page=1,
+            limit=10,
+        )
+        assert_dual_channel(result, fmt="json")
+        parsed = parse_json_content(result)
+        assert parsed == {
+            "result": [],
+            "message": "No results found for 'x'.",
+            "has_more": False,
+            "next_offset": None,
+            "total_count": 0,
+        }
 
 
 # ============================================================================
@@ -1480,8 +1516,8 @@ class TestApplyFormatConcise:
         result = apply_format(data, "json", detail="full", schema=schema)
         assert result.content is not None
         parsed = parse_json_content(result)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
+        assert isinstance(parsed["result"]["owner"], dict)
+        assert parsed["result"]["owner"]["login"] == "user1"
 
     def test_json_concise_collapses_ref_dict(self) -> None:
         """detail='concise' + json collapses $ref dicts to labels."""
@@ -1492,7 +1528,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["owner"] == "$ref:User"
+        assert parsed["result"]["owner"] == "$ref:User"
 
     def test_json_concise_collapses_ref_list(self) -> None:
         """detail='concise' + json collapses $ref lists to labels."""
@@ -1505,7 +1541,7 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["labels"] == "$ref:Label[2]"
+        assert parsed["result"]["labels"] == "$ref:Label[2]"
 
     def test_json_concise_inline_not_collapsed(self) -> None:
         """Inline schemas (no $ref) remain expanded even with detail='concise'."""
@@ -1521,8 +1557,8 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert isinstance(parsed["config"], dict)
-        assert parsed["config"]["host"] == "localhost"
+        assert isinstance(parsed["result"]["config"], dict)
+        assert parsed["result"]["config"]["host"] == "localhost"
 
     def test_json_concise_top_level_object_stays(self) -> None:
         """Top-level object is not collapsed."""
@@ -1533,8 +1569,8 @@ class TestApplyFormatConcise:
         }
         result = apply_format(data, "json", detail="concise", schema=schema)
         parsed = parse_json_content(result)
-        assert parsed["name"] == "repo"
-        assert parsed["description"] == "a test repo"
+        assert parsed["result"]["name"] == "repo"
+        assert parsed["result"]["description"] == "a test repo"
 
     def test_markdown_concise_collapses_nested_ref(self) -> None:
         """detail='concise' collapses $ref objects at depth>=1 in markdown."""
@@ -1568,8 +1604,8 @@ class TestApplyFormatConcise:
         data = {"owner": {"id": 1, "login": "user1"}}
         result = apply_format(data, "json", detail="concise", schema=None)
         parsed = parse_json_content(result)
-        assert isinstance(parsed["owner"], dict)
-        assert parsed["owner"]["login"] == "user1"
+        assert isinstance(parsed["result"]["owner"], dict)
+        assert parsed["result"]["owner"]["login"] == "user1"
 
     def test_raw_passthrough(self) -> None:
         """format='raw' ignores detail — data is not collapsed.

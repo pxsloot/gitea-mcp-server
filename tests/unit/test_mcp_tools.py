@@ -20,12 +20,20 @@ from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
     format_resource_content,
 )
+from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
     extract_text_content,
     get_structured,
     parse_json_content,
 )
+
+
+def _render(
+    exec_result: Any, fmt: str = "markdown", page: int = 1, limit: int = 10, fetch_all: bool = False
+) -> ToolResult:
+    """Render an ExecutionResult through the single result pipeline."""
+    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit, fetch_all=fetch_all)
 
 
 class TestCleanResourceUri:
@@ -648,17 +656,17 @@ class TestFormatResourceContent:
         assert format_resource_content(raw, "raw") is raw
 
     def test_json_reformats_json_dict(self) -> None:
-        """format=json with JSON dict input should pretty-print."""
+        """format=json with JSON dict input should pretty-print, wrapped in result."""
         result = format_resource_content('{"key": "val", "num": 42}', "json")
         parsed = json_module.loads(result)
-        assert parsed == {"key": "val", "num": 42}
+        assert parsed == {"result": {"key": "val", "num": 42}}
         assert '"key": "val"' in result
 
     def test_json_reformats_json_array(self) -> None:
-        """format=json with JSON array input should pretty-print."""
+        """format=json with JSON array input should pretty-print, wrapped in result."""
         result = format_resource_content('[{"id": 1}, {"id": 2}]', "json")
         parsed = json_module.loads(result)
-        assert parsed == [{"id": 1}, {"id": 2}]
+        assert parsed == {"result": [{"id": 1}, {"id": 2}]}
 
     def test_markdown_reformats_json_dict(self) -> None:
         """format=markdown with JSON dict input should produce markdown."""
@@ -705,8 +713,8 @@ class TestFormatResourceContent:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test"
-        assert parsed["owner"] == "$ref:User"
+        assert parsed["result"]["name"] == "test"
+        assert parsed["result"]["owner"] == "$ref:User"
 
     def test_concise_json_collapses_nested_list(self) -> None:
         """detail=concise with schema should collapse $ref list items."""
@@ -723,15 +731,15 @@ class TestFormatResourceContent:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test"
-        assert parsed["items"] == "$ref:Label[2]"
+        assert parsed["result"]["name"] == "test"
+        assert parsed["result"]["items"] == "$ref:Label[2]"
 
     def test_concise_full_detail_without_schema(self) -> None:
         """Without schema, concise should return data unchanged (no collapse)."""
         raw = '{"name": "test", "nested": {"a": 1}}'
         result = format_resource_content(raw, "json", detail="concise", schema=None)
         parsed = json_module.loads(result)
-        assert parsed == {"name": "test", "nested": {"a": 1}}
+        assert parsed == {"result": {"name": "test", "nested": {"a": 1}}}
 
     def test_concise_markdown_with_schema(self) -> None:
         """detail=concise with schema should collapse in markdown output too."""
@@ -771,9 +779,9 @@ class TestFormatResourceContentWrappedSchema:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert parsed["name"] == "test-repo"
-        assert parsed["owner"] == "$ref:User"
-        assert parsed["permissions"] == "$ref:Permission"
+        assert parsed["result"]["name"] == "test-repo"
+        assert parsed["result"]["owner"] == "$ref:User"
+        assert parsed["result"]["permissions"] == "$ref:Permission"
 
     def test_issues_list_style_concise_json(self) -> None:
         """Simulates an issue list resource: nested items get collapsed."""
@@ -791,10 +799,10 @@ class TestFormatResourceContentWrappedSchema:
         }
         result = format_resource_content(raw, "json", detail="concise", schema=schema)
         parsed = json_module.loads(result)
-        assert len(parsed) == 2
-        assert parsed[0]["title"] == "Fix bug"
-        assert parsed[0]["user"] == "$ref:User"
-        assert parsed[1]["user"] == "$ref:User"
+        assert len(parsed["result"]) == 2
+        assert parsed["result"][0]["title"] == "Fix bug"
+        assert parsed["result"][0]["user"] == "$ref:User"
+        assert parsed["result"][1]["user"] == "$ref:User"
 
 
 class TestMakeResourceFormatter:
@@ -860,7 +868,7 @@ class TestFormatResourceContentEdgeCases:
             schema={"type": "integer"},
         )
         parsed = json_module.loads(result)
-        assert parsed == 42
+        assert parsed == {"result": 42}
 
 
 class TestMcpListResourcesFormat:
@@ -910,7 +918,7 @@ class TestMcpListResourcesFormat:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="raw")
+        result = _render(await fn(ctx=ctx), fmt="raw")
 
         assert isinstance(result, ToolResult)
         assert get_structured(result)["total_count"] == 1
@@ -918,21 +926,21 @@ class TestMcpListResourcesFormat:
 
     @pytest.mark.asyncio
     async def test_json_format(self, _mock_resource: MagicMock) -> None:
-        """format=json should produce pretty-printed JSON in content."""
+        """format=json should produce the envelope dict in content."""
         fn = self._capture_tool("list_resources")
         ctx = MagicMock(spec=Context)
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="json")
+        result = _render(await fn(ctx=ctx), fmt="json")
 
         assert isinstance(result, ToolResult)
         assert get_structured(result)["total_count"] == 1
         assert len(result.content) == 1
         parsed = parse_json_content(result)
-        assert isinstance(parsed, list)
-        assert parsed[0]["uri"] == "gitea://version"
+        assert isinstance(parsed["result"], list)
+        assert parsed["result"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
     async def test_markdown_format(self, _mock_resource: MagicMock) -> None:
@@ -943,7 +951,7 @@ class TestMcpListResourcesFormat:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[_mock_resource])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="markdown")
+        result = _render(await fn(ctx=ctx))
 
         assert isinstance(result, ToolResult)
         assert get_structured(result)["total_count"] == 1
@@ -1001,7 +1009,7 @@ class TestMcpListResourcesTagTypeFilter:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[r1, r2])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, tag="user")
+        result = _render(await fn(ctx=ctx, tag="user"))
 
         assert result.structured_content is not None
         assert get_structured(result)["total_count"] == 1
@@ -1033,7 +1041,7 @@ class TestMcpListResourcesTagTypeFilter:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[res])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[tpl])
 
-        result = await fn(ctx=ctx, type="template")
+        result = _render(await fn(ctx=ctx, type="template"))
 
         assert get_structured(result)["total_count"] == 1
         assert get_structured(result)["result"][0]["type"] == "template"
@@ -1064,7 +1072,7 @@ class TestMcpListResourcesTagTypeFilter:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[tpl])
 
-        result = await fn(ctx=ctx, tag="wrapper", type="resource")
+        result = _render(await fn(ctx=ctx, tag="wrapper", type="resource"))
 
         assert get_structured(result)["total_count"] == 1
         assert get_structured(result)["result"][0]["uri"] == "gitea://version"
@@ -1088,7 +1096,7 @@ class TestMcpListResourcesTagTypeFilter:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, tag="nonexistent")
+        result = _render(await fn(ctx=ctx, tag="nonexistent"))
 
         assert result.structured_content is not None
         sc = get_structured(result)
@@ -1288,9 +1296,8 @@ class TestMcpListResourcesRawFormat:
     async def test_raw_format_has_structured_content(self) -> None:
         """format=raw carries the data in structured_content.
 
-        Current shape: the text mirrors the pre-envelope shape (see
-        test_raw_format_dual_channel, xfail until #719 puts the envelope
-        in the text).
+        The text mirrors the envelope (see test_raw_format_dual_channel —
+        the single result pipeline puts the envelope in the text).
         """
         fn = self._capture_tool()
         ctx = MagicMock(spec=Context)
@@ -1305,26 +1312,20 @@ class TestMcpListResourcesRawFormat:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="raw")
+        result = _render(await fn(ctx=ctx), fmt="raw")
         assert result.structured_content is not None
         assert get_structured(result)["total_count"] == 1
         assert get_structured(result)["result"][0]["uri"] == "gitea://version"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "paginated raw content lacks the envelope: apply_pagination adds "
-            "has_more/next_offset/total_count to structured_content only; fixed by #719"
-        ),
-    )
     async def test_raw_format_dual_channel(self) -> None:
         """list_resources format=raw must carry the envelope in the text.
 
-        ``apply_format`` auto-populates content from structured_content before
-        ``apply_pagination`` runs, so the text mirrors the pre-envelope shape
-        while structured_content carries the full envelope — the two channels
-        disagree.  #719 makes the envelope part of the text.
+        The single result pipeline renders the text as the serialized
+        envelope dict, so ``content`` mirrors ``structured_content`` —
+        including the pagination keys (``has_more``/``next_offset``/
+        ``total_count``) beside ``result``.  ``format=raw`` is deterministic
+        JSON text, not a Python repr and not a pre-envelope shape.
         """
         fn = self._capture_tool()
         ctx = MagicMock(spec=Context)
@@ -1339,7 +1340,7 @@ class TestMcpListResourcesRawFormat:
         ctx.fastmcp.list_resources = AsyncMock(return_value=[r])
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="raw")
+        result = _render(await fn(ctx=ctx), fmt="raw")
         assert_dual_channel(result, fmt="raw")
 
 
@@ -1389,7 +1390,13 @@ class TestMcpListResourcesFetchAll:
 
         # fetch_all=True with page=3 — a stale page value that would produce
         # incorrect has_more=True if page/limit weren't normalized.
-        result = await fn(ctx=ctx, format="raw", page=3, limit=5, fetch_all=True)
+        result = _render(
+            await fn(ctx=ctx, page=3, limit=5, fetch_all=True),
+            fmt="raw",
+            page=3,
+            limit=5,
+            fetch_all=True,
+        )
         sc = result.structured_content
         assert sc is not None
         assert len(sc["result"]) == 25
@@ -1409,11 +1416,40 @@ class TestMcpListResourcesFetchAll:
         ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
         ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
 
-        result = await fn(ctx=ctx, format="raw", page=1, limit=3, fetch_all=True)
-        sc = result.structured_content
+        result = _render(
+            await fn(ctx=ctx, page=1, limit=3, fetch_all=True),
+            fmt="raw",
+            page=1,
+            limit=3,
+            fetch_all=True,
+        )
+        sc = get_structured(result)
         assert len(sc["result"]) == 7
         assert sc["has_more"] is False
         assert sc["total_count"] == 7
+
+    @pytest.mark.asyncio
+    async def test_page_out_of_range_emits_empty_envelope(self) -> None:
+        """An out-of-range page emits the empty envelope with a message."""
+        fn = self._capture_tool()
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp = MagicMock()
+        resources = [self._make_resource(i) for i in range(5)]
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = _render(
+            await fn(ctx=ctx, page=10, limit=10),
+            fmt="raw",
+            page=10,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert "Page 10 is out of range" in sc["message"]
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 5
 
 
 # ---------------------------------------------------------------------------

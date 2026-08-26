@@ -68,12 +68,18 @@ def _is_error(result: Any) -> bool:
 
 
 def _unwrap(result: Any) -> dict[str, Any]:
-    """Extract and parse JSON from a tool call result.
+    """Extract and parse JSON from a tool call result, stripping the result wrapper.
+
+    The single result pipeline wraps every ``format=json`` text in the
+    envelope dict (``{"result": ...}`` plus pagination keys); callers want
+    the payload, so the ``result`` key is extracted when present.
 
     Raises ``TypeError`` if the parsed result is not a dict.
     """
     text = extract_text_content(result.content)
     parsed = json.loads(text)
+    if isinstance(parsed, dict) and "result" in parsed:
+        parsed = parsed["result"]
     if not isinstance(parsed, dict):
         msg = f"Expected dict result, got {type(parsed).__name__}"
         raise TypeError(msg)

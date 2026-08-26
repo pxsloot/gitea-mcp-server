@@ -207,6 +207,15 @@ parameter:
 | `"full"` (default) | Complete information, full object expansion. |
 | `"concise"` | Compact view: nested objects at depth >= 1 are collapsed to ``$ref:TypeName`` labels. Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
 
+**Content is the contract.** The text channel (`content`) is authoritative
+and always present; `structured_content` mirrors it. For `format=json` and
+`format=raw` the text is the serialized envelope dict — `{"result": ...}`
+plus, on paginated tools, `has_more` / `next_offset` / `total_count` — so
+the two channels never disagree. `format=raw` returns valid JSON text
+content (deterministic — not a Python repr). Empty or out-of-range pages
+emit `{"result": [], "message": "...", "has_more": false, "next_offset":
+null, "total_count": N}` as JSON text.
+
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
 large (hundreds of lines on big tools). Use `page` and `limit` to page through
@@ -266,10 +275,11 @@ These are the real shapes returned by this server. Knowing them saves a round-
 trip of confusion:
 
 - **Empty list is `[]`, not an error.** A list/search tool that matches nothing
-  returns an empty JSON array (or an empty Markdown section) — still carrying
-  the pagination envelope (`has_more=False`, `total_count=0`) in the text for
-  `format=json`. That means *no matching items* — not a scope-hidden tool.
-  Don't treat `[]` as "I'm filtered out."
+  returns `result: []` (an empty Markdown section, or for `format=json` the
+  envelope `{"result": [], "message": "...", "has_more": false,
+  "next_offset": null, "total_count": 0}` as JSON text). That means *no
+  matching items* — not a scope-hidden tool. Don't treat `[]` as "I'm
+  filtered out."
 
 - **`APINotFound` means the target doesn't exist -- or is out of scope.**
   Example:

@@ -30,11 +30,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.format import (
-    decode_base64_content,
-    empty_paginated_result,
-    format_paginated_result,
-)
+from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
@@ -45,6 +41,7 @@ from gitea_mcp_server.tools.resource_display import (
     extract_resource_content,
     format_resource_content,
 )
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
     SyntheticToolSpec,
     register_all_synthetic_tools,
@@ -301,15 +298,13 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
-    format: str = "markdown",
     tag: str = "",
     type: str = "",
     page: int = 1,
     limit: int = 10,
     fetch_all: bool = False,
-    detail: str = "full",
     ctx: Context = CurrentContext(),
-) -> ToolResult:
+) -> ExecutionResult:
     """List all available MCP resources.
 
     This tool discovers all registered MCP resources and resource templates (parameterized URIs)
@@ -325,15 +320,12 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     ## Parameters
 
-    - ``format``: Output format -- ``markdown`` (default), ``json``, or ``raw``.
     - ``tag``: Optional. Filter by tag name (e.g., ``"wrapper"``, ``"repository"``, ``"issue"``).
     - ``type``: Optional. Filter by resource type (``"resource"`` or ``"template"``).
     - ``page``: Page number (1-based, default 1).
     - ``limit``: Maximum results per page (1-100, default 10).
     - ``fetch_all``: When true, return all resources instead of a single page.
       Since data is in-memory, this simply skips the page/limit slice.
-    - ``detail``: Markdown rendering depth -- ``"full"`` (default) for complete
-      expansion, ``"concise"`` for compact summaries with collapsed nesting.
 
     ## Return Structure
 
@@ -429,16 +421,31 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     total_count = len(all_resources)
 
     if total_count == 0:
-        return empty_paginated_result("No resources found.", page, limit, total_count)
+        return ExecutionResult(
+            data=[],
+            total_count=0,
+            shape="empty",
+            paginated=True,
+            message="No resources found.",
+        )
 
-    return format_paginated_result(
-        all_resources,
-        total_count,
-        format,
-        page,
-        limit,
-        fetch_all,
-        detail=detail,
+    # Check page range before formatting (only when paginating, not fetch_all).
+    if not fetch_all:
+        start = (page - 1) * limit
+        if start >= total_count:
+            return ExecutionResult(
+                data=[],
+                total_count=total_count,
+                shape="empty",
+                paginated=True,
+                message=f"Page {page} is out of range (total results: {total_count}).",
+            )
+
+    return ExecutionResult(
+        data=all_resources,
+        total_count=total_count,
+        shape="list",
+        paginated=True,
     )
 
 
@@ -609,8 +616,9 @@ async def _read_resource_tool(
 
     # ``content`` carries the rendered presentation; ``structured_content``
     # carries the raw resource payload (data, not text) for programmatic
-    # extraction — matching the autogen tool contract.  The format post-hook
-    # is skipped (the executor marks the result ``_formatted``).
+    # extraction — matching the autogen tool contract.  This ToolResult is
+    # returned directly (the resource display pipeline renders it); the
+    # single result pipeline only renders ExecutionResult results.
     return ToolResult(
         content=[TextContent(type="text", text=formatted)],
         structured_content={"result": raw},

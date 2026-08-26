@@ -273,10 +273,11 @@ class TestIssueSearch:
             )
             if not result.isError:
                 text = extract_text_content(result.content)
-                if text != "[]":
-                    data = json.loads(text)
-                    if isinstance(data, list) and len(data) > 0:
-                        break
+                data = json.loads(text)
+                if isinstance(data, dict) and "result" in data:
+                    data = data["result"]
+                if isinstance(data, list) and len(data) > 0:
+                    break
             await asyncio.sleep(0.5)
         else:
             pytest.fail("Search did not find 'Safari' after 8s of polling")
@@ -284,6 +285,8 @@ class TestIssueSearch:
         assert not result.isError
         text = extract_text_content(result.content)
         data = json.loads(text)
+        if isinstance(data, dict) and "result" in data:
+            data = data["result"]
         assert isinstance(data, list), f"Expected JSON array, got {type(data)}"
         assert len(data) > 0, "Search returned zero results for 'Safari'"
 

@@ -6,6 +6,17 @@ the API call completes, a registered *post-hook* transforms the result.
 A registered *pre-hook* runs between extraction and the HTTP call and
 may mutate the remaining kwargs.
 
+The registry serves two roles:
+
+- **Pre-request virtual params** (``sudo``, ``content_type``) — params with
+  hooks that run before/after the HTTP call (context-var setup, argument
+  encoding).
+- **Pipeline options** (``format``, ``detail``, ``fetch_all``) — passive
+  schema + extraction entries with no hooks.  They are display concerns;
+  the single result pipeline (``tools/result_pipeline.py``) reads them from
+  the extracted dict and renders the executor's raw ``ExecutionResult``.
+  No display logic lives in this registry.
+
 Lifecycle for every tool call::
 
     1. inject_into(tool.parameters, tool=tool)  ← adds to schema at startup;
@@ -16,7 +27,7 @@ Lifecycle for every tool call::
        stay in kwargs and are rejected as unknown by validation
     3. apply_pre_hooks(extracted, kwargs)       ← runs pre-hooks (may mutate kwargs)
     4. executor(kwargs, extracted, ctx)         ← backend execution (HTTP or local)
-    5. apply_to(result, extracted)      ← runs post-hooks after call
+    5. apply_to(result, extracted)      ← runs post-hooks (sudo cleanup only)
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
@@ -145,8 +156,8 @@ _VIRTUAL_PARAMS["sudo"] = VirtualParam(
 # executor-internal loop is a post-milestone follow-up.  The param is
 # injected only into synthetic tools (tool_predicate on the ``_synthetic``
 # meta marker) — autogen tools no longer expose it.  For synthetic tools it
-# is an in-memory skip-slice: ``format_paginated_result`` returns all items
-# without page slicing.
+# is an in-memory skip-slice: the result pipeline
+# (``tools/result_pipeline.py``) returns all items without page slicing.
 _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     schema={"type": "boolean"},
     default=False,
@@ -196,51 +207,16 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 
 
 # ---------------------------------------------------------------------------
-# format / detail — output rendering control
+# format / detail / fetch_all — pipeline options (no hooks)
 # ---------------------------------------------------------------------------
+# Display concerns, not pre-request behaviour: the single result pipeline
+# (tools/result_pipeline.py) reads these from the extracted dict and renders
+# the executor's raw ExecutionResult.  They stay in the registry so the
+# schema injection + kwarg extraction machinery is shared — but they carry
+# no hooks, and no display logic lives here.
 
-
-def _format_post_hook(
-    result: ToolResult,
-    value: str,
-    all_extracted: dict[str, Any],
-) -> ToolResult:
-    """Apply response formatting (json/markdown/raw) with optional detail.
-
-    ``value`` is the ``format`` value.  ``detail`` and ``_raw_schema``
-    are read from ``all_extracted`` — ``detail`` is a companion
-    VirtualParam, ``_raw_schema`` is pipeline metadata attached by
-    the transform_fn before ``apply_to`` runs.
-
-    Results already rendered by their executor (marked ``_formatted`` in
-    ``result.meta``) pass through unchanged — synthetic executors render
-    inline when the output shape is bespoke (markdown extras, custom
-    formatters), so the shared post-hook must not re-render them.
-    """
-    if value == "raw":
-        return result
-    if (result.meta or {}).get("_formatted"):
-        return result
-
-    detail: str = all_extracted.get("detail", "full")
-    raw_schema = all_extracted.get("_raw_schema")
-    data = result.structured_content.get("result") if result.structured_content else None
-    if data is None:
-        return result
-
-    from gitea_mcp_server.format import apply_format  # noqa: PLC0415
-
-    formatted = apply_format(data, value, detail=detail, schema=raw_schema)
-    # Preserve original structured_content (carries pagination metadata
-    # and uncollapsed data for programmatic access).
-    formatted.structured_content = result.structured_content
-    formatted.meta = result.meta
-    return formatted
-
-
-# ``detail`` registered first so it's in the extracted dict before
-# ``format``'s post_hook runs.  No hooks — it just needs to be present
-# in ``all_extracted`` for ``_format_post_hook`` to read.
+# ``detail`` registered before ``format`` so both are present in the
+# extracted dict in a stable order.  No hooks — the pipeline reads them.
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
     schema={"type": "string", "enum": ["full", "concise"]},
     default="full",
@@ -259,7 +235,6 @@ _VIRTUAL_PARAMS["format"] = VirtualParam(
         '"markdown" — formatted tables for human/agent reading.  '
         '"raw" — unprocessed API response.'
     ),
-    post_hook=_format_post_hook,
 )
 
 

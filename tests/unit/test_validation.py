@@ -1016,7 +1016,7 @@ class TestAugmentSchemaWithValidation:
                 "username": {"type": "string"},
                 "state": {"type": "string"},
                 "page": {"type": "number"},
-                "per_page": {"type": "number"},
+                "limit": {"type": "number"},
             }
         }
         augment_schema_with_validation(component)
@@ -1050,9 +1050,9 @@ class TestAugmentSchemaWithValidation:
         assert "enum" not in props["state"]
         # Page
         assert props["page"]["minimum"] == 1
-        # Per page
-        assert props["per_page"]["minimum"] == 1
-        assert props["per_page"]["maximum"] == 100
+        # Limit
+        assert props["limit"]["minimum"] == 1
+        assert props["limit"]["maximum"] == 100
 
     def test_preserves_existing_constraints(self) -> None:
         component = MagicMock()

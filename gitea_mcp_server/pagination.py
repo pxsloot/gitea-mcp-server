@@ -36,7 +36,6 @@ import contextvars
 from typing import Any
 
 import httpx
-from fastmcp.tools.base import ToolResult
 
 PAGINATION_KEYS = ("has_more", "next_offset", "total_count")
 """Keys that carry pagination metadata.
@@ -78,10 +77,11 @@ MESSAGE_SCHEMA_PROPERTY: dict[str, Any] = {
 """JSON Schema property for the ``message`` key on empty/out-of-range pages.
 
 Declared (nullable) in the output schemas of the paginated synthetic tools
-that emit it via ``format.empty_paginated_result`` — ``search``,
-``search_tools``, ``search_resources``, ``search_docs``, and
-``list_resources``.  Tools that never emit ``message`` (e.g. ``read_doc``)
-must not declare it, keeping schema and runtime in agreement.
+that emit it via the result pipeline's ``empty`` shape
+(``tools/result_pipeline.py``) — ``search``, ``search_tools``,
+``search_resources``, ``search_docs``, and ``list_resources``.  Tools that
+never emit ``message`` (e.g. ``read_doc``) must not declare it, keeping
+schema and runtime in agreement.
 """
 
 PAGINATION_HEADERS = ("X-Total-Count", "X-Total")
@@ -152,49 +152,12 @@ def add_pagination_metadata(
     return enhanced
 
 
-def apply_pagination(
-    result: ToolResult,
-    page: int,
-    limit: int,
-    total_count: int | None = None,
-) -> ToolResult:
-    """Add pagination metadata to a ``ToolResult``'s ``structured_content``.
-
-    ``content`` (the text channel) is authoritative and always present;
-    ``structured_content`` is an optional mirror that duplicates it.  For
-    ``format=json`` output the envelope (``has_more``, ``next_offset``,
-    ``total_count``) belongs in the text beside ``result`` — this helper
-    adds the keys to ``structured_content``; the pipeline that renders the
-    text is responsible for keeping the two channels in agreement.
-
-    Args:
-        result: A ``ToolResult`` with ``structured_content`` containing
-            ``{"result": data}``.
-        page: Current page number (1-based).
-        limit: Items per page.
-        total_count: Total number of items, if known.  When ``None``, falls
-            back to a heuristic: ``has_more = len(result) == limit``.
-
-    Returns:
-        A new ``ToolResult`` with pagination keys added to
-        ``structured_content``.  ``content`` and ``meta`` are preserved.
-    """
-    structured = result.structured_content or {}
-    enhanced = add_pagination_metadata(structured, page, limit, total_count)
-    return ToolResult(
-        content=result.content,
-        structured_content=enhanced,
-        meta=result.meta,
-    )
-
-
 __all__ = [
     "MESSAGE_SCHEMA_PROPERTY",
     "PAGINATION_HEADERS",
     "PAGINATION_KEYS",
     "PAGINATION_SCHEMA_PROPERTIES",
     "add_pagination_metadata",
-    "apply_pagination",
     "capture_pagination_headers",
     "pagination_ctx",
 ]

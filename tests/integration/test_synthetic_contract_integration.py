@@ -242,10 +242,6 @@ class TestDualChannelContract:
         assert "total_count" in sc
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason="json text is the bare array, envelope only in structured_content; fixed by #719",
-    )
     async def test_json_envelope_in_text(self) -> None:
         """format=json: the envelope must be in the text beside result."""
         mcp, prefix = await _make_server()

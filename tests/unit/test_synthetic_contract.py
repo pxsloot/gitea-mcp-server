@@ -446,16 +446,21 @@ class TestSyntheticToolRegistration:
         # The executor must still run (validation skips absent params).
         executor = make_impl_executor(impl, paginated=True, limit_max=200)
         result = await executor({"query": "y"}, {}, None)
+        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": []}
 
     @pytest.mark.asyncio
-    async def test_executor_marks_result_formatted(self) -> None:
-        """The executor marks results _formatted so the post-hook skips them."""
+    async def test_executor_returns_impl_result_unmarked(self) -> None:
+        """The executor returns the impl's raw result with no _formatted marker.
+
+        Display is centralized in the single result pipeline — executors
+        return raw data and never mark results.
+        """
         mcp = FastMCP("test")
         _, executor = self._register_example(mcp)
 
         result = await executor({"page": 1, "limit": 10}, {}, None)
-        assert result.meta == {"_formatted": True}
+        assert "_formatted" not in (result.meta or {})
 
     @pytest.mark.asyncio
     async def test_executor_resupplies_declared_virtual_params(self) -> None:

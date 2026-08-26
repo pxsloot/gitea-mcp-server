@@ -18,14 +18,14 @@ if TYPE_CHECKING:
     from gitea_mcp_server.tools.docs_tools import DocManager
 
 from fastmcp.server.context import Context  # noqa: TC002 - runtime use via get_type_hints
-from fastmcp.tools.base import Tool, ToolResult  # noqa: TC002 - runtime use via get_type_hints
+from fastmcp.tools.base import Tool  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import SEARCH_MIN_SCORE
-from gitea_mcp_server.format import empty_paginated_result, format_paginated_result
 from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     compact_search_serializer,
@@ -71,10 +71,6 @@ def register_unified_search(
 
     async def search(  # noqa: PLR0913 - min_score is a new config axis
         query: Annotated[str, "Natural language query to search for tools, docs, and resources"],
-        format: Annotated[
-            str,
-            "Output format: markdown (default, human-readable), json (structured data), or raw",
-        ] = "markdown",
         page: Annotated[int, "Page number (1-based, default 1)"] = 1,
         limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
         min_score: Annotated[
@@ -88,14 +84,8 @@ def register_unified_search(
             "When true, return all matching results instead of a single page. "
             "Results are merged into one response (in-memory, no looping needed).",
         ] = False,
-        detail: Annotated[
-            str,
-            'Output detail level.  "full" (default) — complete information, '
-            'full object expansion.  "concise" — compact view: nested objects '
-            "are collapsed to type labels ($ref:TypeName) at depth > 0.",
-        ] = "full",
         ctx: Context | None = None,
-    ) -> ToolResult:
+    ) -> ExecutionResult:
         if ctx is None:
             msg = "Context is required"
             raise ValueError(msg)
@@ -178,33 +168,41 @@ def register_unified_search(
                 "- For workflow guides: `search_docs(query)`\n"
                 "- For data resources: `search_resources(query)`"
             )
-            return empty_paginated_result(hint, page, limit, total_count)
+            return ExecutionResult(
+                data=[],
+                total_count=0,
+                shape="empty",
+                paginated=True,
+                message=hint,
+            )
 
         # Check page range before formatting (only when paginating, not fetch_all).
         if not fetch_all:
             start = (page - 1) * limit
             if start >= total_count:
                 hint = f"Page {page} is out of range (total results: {total_count})."
-                return empty_paginated_result(hint, page, limit, total_count)
+                return ExecutionResult(
+                    data=[],
+                    total_count=total_count,
+                    shape="empty",
+                    paginated=True,
+                    message=hint,
+                )
 
         extras: list[str] = []
-        if format == "markdown":
-            extras.append(
-                "**Cross-linking hints:**\n"
-                "- For API tools: `search_tools(query)`\n"
-                "- For workflow guides: `search_docs(query)`\n"
-                "- For data resources: `search_resources(query)`"
-            )
+        extras.append(
+            "**Cross-linking hints:**\n"
+            "- For API tools: `search_tools(query)`\n"
+            "- For workflow guides: `search_docs(query)`\n"
+            "- For data resources: `search_resources(query)`"
+        )
 
-        return format_paginated_result(
-            all_ranked,
-            total_count,
-            format,
-            page,
-            limit,
-            fetch_all,
-            markdown_extras=extras or None,
-            detail=detail,
+        return ExecutionResult(
+            data=all_ranked,
+            total_count=total_count,
+            shape="list",
+            paginated=True,
+            markdown_extras=extras,
         )
 
     register_all_synthetic_tools(

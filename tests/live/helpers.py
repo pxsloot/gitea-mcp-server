@@ -8,19 +8,16 @@ Only two functions remain external:
 - ``purge_repo()`` — delete-before-create pre-cleanup
 - Repository cleanup is owned by the session-scoped ``World``.
 
-Internal helpers (``_unwrap``, ``_error_text``, ``_assert_ok``,
-``is_error``) are used only within this module.
+Internal helpers (``_error_text``, ``_assert_ok``, ``is_error``) are used
+only within this module.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
 import httpx
-
-from tests.helpers.mcp_results import extract_text_content
 
 
 def is_error(result: Any) -> bool:
@@ -51,16 +48,6 @@ def _error_text(result: Any) -> str:
 def _assert_ok(result: Any) -> None:
     """Assert a tool call did not error."""
     assert not is_error(result), f"Tool call failed: {_error_text(result)}"
-
-
-def _unwrap(result: Any) -> dict[str, Any]:
-    """Extract and parse JSON from a tool call result."""
-    text = extract_text_content(result.content)
-    parsed = json.loads(text)
-    if not isinstance(parsed, dict):
-        msg = f"Expected dict result, got {type(parsed).__name__}"
-        raise TypeError(msg)
-    return parsed
 
 
 # ---------------------------------------------------------------------------

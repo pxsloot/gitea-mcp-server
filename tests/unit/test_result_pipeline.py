@@ -234,6 +234,33 @@ class TestObjectShape:
         assert sc["result"] == {"content": ""}
         assert sc["message"] is not None
 
+    def test_paginated_object_zero_total_is_not_out_of_range(self) -> None:
+        """total=0 on an object result is in range — the data is the content.
+
+        Unlike a list, an object with zero paginated units (e.g. ``tool_info``
+        on a free-form object schema with no declared properties) still has
+        meaningful content: page 1 must return it, not an out-of-range
+        message.  Regression guard for the free-form-object ``tool_info``
+        case (issue #727 follow-up).
+        """
+        result = render(
+            ExecutionResult(
+                data={"name": "alpha", "output_schema": {"properties": {}}},
+                total_count=0,
+                shape="object",
+                paginated=True,
+            ),
+            fmt="json",
+            page=1,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert sc["result"]["name"] == "alpha"
+        assert "message" not in sc
+        assert sc["has_more"] is False
+        assert sc["next_offset"] is None
+        assert sc["total_count"] == 0
+
 
 class TestTextShape:
     """The text shape: wrapped in {"result": text}, no envelope."""

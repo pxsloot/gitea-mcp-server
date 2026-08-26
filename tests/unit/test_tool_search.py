@@ -656,6 +656,51 @@ class TestToolInfo:
         assert schema["output_schema"]["type"] == "object"
 
     @pytest.mark.asyncio
+    async def test_tool_info_free_form_object_page_one_returns_schema(self) -> None:
+        """tool_info detail=full on a free-form object (0 properties) returns the schema.
+
+        A free-form object output (e.g. the languages map) has zero declared
+        properties — ``total_count=0`` — but the schema is still meaningful
+        content.  Page 1 must return it, not an out-of-range message
+        (regression guard for the object-shape out-of-range check).
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_free_form_object_tool",
+            description="A tool",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {},
+                        "description": "Free-form map (language -> bytes)",
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        result = _render(
+            await _tool_info_impl(
+                "gitea_free_form_object_tool", mock_ctx, transform, detail="full", page=1
+            ),
+            fmt="json",
+            page=1,
+        )
+        assert result.structured_content is not None
+        sc = result.structured_content
+        assert sc["result"]["name"] == "gitea_free_form_object_tool"
+        assert "message" not in sc
+        assert sc["total_count"] == 0
+        assert sc["has_more"] is False
+
+    @pytest.mark.asyncio
     async def test_tool_info_detail_concise_excludes_output_schema(self) -> None:
         """tool_info with detail='concise' (default) should NOT include output_schema."""
         from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl

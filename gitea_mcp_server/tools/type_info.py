@@ -430,8 +430,15 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
                                     "description": "Type description from the spec",
                                 },
                                 "schema": {
-                                    "type": "object",
-                                    "description": "Compact type summary with $ref placeholders",
+                                    "anyOf": [
+                                        {"type": "object"},
+                                        {"type": "array"},
+                                        {"type": "string"},
+                                        {"type": "boolean"},
+                                        {"type": "number"},
+                                        {"type": "null"},
+                                    ],
+                                    "description": "Compact type summary with $ref placeholders (primitives for scalar types)",
                                 },
                                 "resolved_schema": {
                                     "type": "object",

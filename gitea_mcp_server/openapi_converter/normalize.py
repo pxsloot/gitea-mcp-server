@@ -147,7 +147,7 @@ def _get_body_schema(
 ) -> dict[str, Any] | None:
     """Extract the request body schema dict from an operation.
 
-    Resolves ``$ref`` chains to shared components (deep-copied so the
+    Resolves a ``$ref`` reference to a shared component (deep-copied so the
     original component definition is never mutated) and writes the resolved
     schema back into the operation.  Collision resolution
     (:func:`resolve_param_collisions`) already inlines ``$ref`` bodies for

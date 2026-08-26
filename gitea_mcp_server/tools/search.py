@@ -56,14 +56,131 @@ from gitea_mcp_server.tools.synthetic_contract import (
 # ============================================================================
 
 
+def _format_cross_link_hints(cross_link_hints: dict[str, str] | None) -> str:
+    """Build the cross-linking hints footer, or empty string when no hints."""
+    if not cross_link_hints:
+        return ""
+    hints = "**Cross-linking hints:**\n"
+    for label, tool in cross_link_hints.items():
+        hints += f"- For {label}: `{tool}(query)`\n"
+    return hints
+
+
 def _empty_results_message(query: str, cross_link_hints: dict[str, str] | None) -> str:
     """Build a helpful message when a search returns no results."""
     text = f"No results found for '{query}'."
-    if cross_link_hints:
-        text += "\n\n**Cross-linking hints:**\n"
-        for label, tool in cross_link_hints.items():
-            text += f"- For {label}: `{tool}(query)`\n"
+    hints = _format_cross_link_hints(cross_link_hints)
+    if hints:
+        text += f"\n\n{hints}"
     return text
+
+
+def search_or_list_all(  # noqa: PLR0913 - all params are independent search axes
+    items: list[Any],
+    texts: list[str],
+    query: str,
+    page: int,
+    limit: int,
+    min_score: float = SEARCH_MIN_SCORE,
+    tool_prefix: str = "",
+    cross_link_hints: dict[str, str] | None = None,
+    extra_extras: list[str] | None = None,
+    fetch_all: bool = False,
+) -> ExecutionResult:
+    """Rank items by name-match + BM25, or list all when the query is empty.
+
+    Shared envelope for the search tools (``search_tools``,
+    ``search_resources``, unified ``search``): an empty/whitespace query
+    lists the full catalog — no relevance ranking, no ``score`` field —
+    matching ``search_docs``'s existing empty-query behaviour.  Otherwise
+    items are ranked via :func:`search_and_slice`.
+
+    Builds the empty-result and out-of-range messages, and attaches the
+    cross-link hints footer (plus any caller extras, e.g. the hidden-tools
+    note) to successful listings.  Returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
+    the single result pipeline slices, envelopes, and formats.
+
+    Args:
+        items: The items to search over (or list when ``query`` is empty).
+        texts: Searchable text for each item.
+        query: Natural language query.  Empty/whitespace lists all items.
+        page: Page number (1-based).
+        limit: Results per page.
+        min_score: Minimum normalized BM25 score (0.0-1.0).
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+        cross_link_hints: ``{label: tool}`` pairs for the hints footer.
+        extra_extras: Additional markdown footer sections (e.g. the
+            hidden-tools note).
+        fetch_all: When True, return all matching results without slicing.
+    """
+    hints = _format_cross_link_hints(cross_link_hints)
+    extras: list[str] = [hints] if hints else []
+    if extra_extras:
+        extras.extend(extra_extras)
+
+    if not query.strip():
+        total_count = len(items)
+        # Check page range before formatting (only when paginating, not
+        # fetch_all) — same short-circuit as the ranked branch below, so an
+        # out-of-range page on a list-all query emits the empty envelope in
+        # both channels instead of rendering the full catalog in markdown.
+        if not fetch_all:
+            start = (page - 1) * limit
+            if start >= total_count:
+                return ExecutionResult(
+                    data=[],
+                    total_count=total_count,
+                    shape="empty",
+                    paginated=True,
+                    message=f"Page {page} is out of range (total results: {total_count}).",
+                )
+        return ExecutionResult(
+            data=items,
+            total_count=total_count,
+            shape="list",
+            paginated=True,
+            markdown_extras=extras or None,
+        )
+
+    all_items, total_count = search_and_slice(
+        items,
+        texts,
+        query,
+        1,
+        len(items) or 1,
+        min_score=min_score,
+        tool_prefix=tool_prefix,
+    )
+
+    if total_count == 0:
+        return ExecutionResult(
+            data=[],
+            total_count=0,
+            shape="empty",
+            paginated=True,
+            message=_empty_results_message(query, cross_link_hints),
+        )
+
+    # Check page range before formatting (only when paginating, not fetch_all).
+    if not fetch_all:
+        start = (page - 1) * limit
+        if start >= total_count:
+            return ExecutionResult(
+                data=[],
+                total_count=total_count,
+                shape="empty",
+                paginated=True,
+                message=f"Page {page} is out of range (total results: {total_count}).",
+            )
+
+    return ExecutionResult(
+        data=all_items,
+        total_count=total_count,
+        shape="list",
+        paginated=True,
+        markdown_extras=extras or None,
+    )
 
 
 _NAME_MATCH_MIN_TOKENS = 2
@@ -490,7 +607,82 @@ def _format_filtered_tools_note(filtered_tools_info: dict[str, Any] | None) -> s
         "\n\n**Note:** "
         + ", ".join(parts)
         + " tools are hidden from this listing "
-        + "(use `tool_info(name)` to check a specific tool)."
+        + "(use `list_hidden_tools` to enumerate, `tool_info(name)` to inspect a specific tool)."
+    )
+
+
+_HIDDEN_REASONS = ["scope", "excluded", "deprecated"]
+"""Valid filter reasons for ``list_hidden_tools``."""
+
+
+async def _list_hidden_tools_impl(  # noqa: PLR0913 - reason, page, limit, fetch_all are independent config axes
+    reason: str | None,
+    page: int = 1,
+    limit: int = 10,
+    filtered_tools_info: dict[str, Any] | None = None,
+    tool_prefix: str = "",
+    fetch_all: bool = False,
+) -> ExecutionResult:
+    """Enumerate tools hidden from this token's listing.
+
+    Returns every tool in ``filtered_tools_info`` (scope-restricted,
+    config-excluded, deprecated) with its filter reason, optionally narrowed
+    by ``reason``.  Names are prefixed so they can be passed straight to
+    ``tool_info``.  This is a maintenance/debugging convenience: it reveals
+    tools the token cannot reach — by design, for agents that really want to
+    know what the search footer's hidden-tool counts refer to.
+
+    Returns raw data only — an
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
+    the single result pipeline slices, envelopes, and formats.
+
+    Args:
+        reason: Optional filter — one of ``scope``, ``excluded``,
+            ``deprecated``.  ``None`` lists all hidden tools.
+        page: Page number (1-based).  Ignored when ``fetch_all`` is True.
+        limit: Results per page.  Ignored when ``fetch_all`` is True.
+        filtered_tools_info: Filter-prediction data (hidden-tool catalog).
+        tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
+        fetch_all: When True, return all matching results without slicing.
+    """
+    if reason is not None and reason not in _HIDDEN_REASONS:
+        msg = f"Invalid reason '{reason}'. Valid reasons: {', '.join(_HIDDEN_REASONS)}"
+        raise_value_error(msg)
+
+    filtered: dict[str, Any] = (filtered_tools_info or {}).get("filtered", {}) or {}
+    entries: list[dict[str, Any]] = []
+    for op_id, info in filtered.items():
+        r: str = info.get("reason", "unknown")
+        if reason is not None and r != reason:
+            continue
+        entry: dict[str, Any] = {
+            "name": f"{tool_prefix}{op_id}",
+            "reason": r,
+        }
+        if r == "scope" and info.get("required_scope"):
+            entry["required_scope"] = info["required_scope"]
+        entries.append(entry)
+    entries.sort(key=lambda e: e["name"])
+
+    total_count = len(entries)
+
+    # Check page range before formatting (only when paginating, not fetch_all).
+    if not fetch_all:
+        start = (page - 1) * limit
+        if start >= total_count:
+            return ExecutionResult(
+                data=[],
+                total_count=total_count,
+                shape="empty",
+                paginated=True,
+                message=f"Page {page} is out of range (total results: {total_count}).",
+            )
+
+    return ExecutionResult(
+        data=entries,
+        total_count=total_count,
+        shape="list",
+        paginated=True,
     )
 
 
@@ -509,7 +701,9 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     """Core search_tools implementation.
 
     Fetches the tool catalog via the transform, optionally filters by
-    category, then ranks by name match + BM25.  Returns raw data only — an
+    category, then ranks by name match + BM25 — or lists the full catalog
+    when ``query`` is empty/whitespace (the "list all" path).  Returns raw
+    data only — an
     :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
     the single result pipeline slices, envelopes, and formats.
 
@@ -518,7 +712,7 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     ``list`` result and an ``empty`` result with a message.
 
     Args:
-        query: Natural language query.
+        query: Natural language query.  Empty/whitespace lists all tools.
         category: Optional category filter.
         ctx: FastMCP context.
         transform: Search transform for tool catalog access.
@@ -541,59 +735,22 @@ async def _search_tools_impl(  # noqa: PLR0913 - ctx, transform, min_score are f
     texts = [extract_searchable_text_enhanced(t) for t in tools]
     serialized = compact_search_serializer(tools)
 
-    # Get all ranked results (no pre-slicing — the pipeline slices).
-    all_items, total_count = search_and_slice(
+    note = _format_filtered_tools_note(filtered_tools_info)
+
+    return search_or_list_all(
         serialized,
         texts,
         query,
-        1,
-        len(serialized) or 1,
+        page,
+        limit,
         min_score=min_score,
         tool_prefix=tool_prefix,
-    )
-
-    cross_link_hints = {
-        "workflow guides": "search_docs",
-        "data resources": "search_resources",
-    }
-
-    if total_count == 0:
-        return ExecutionResult(
-            data=[],
-            total_count=0,
-            shape="empty",
-            paginated=True,
-            message=_empty_results_message(query, cross_link_hints),
-        )
-
-    # Check page range before formatting (only when paginating, not fetch_all).
-    if not fetch_all:
-        start = (page - 1) * limit
-        if start >= total_count:
-            return ExecutionResult(
-                data=[],
-                total_count=total_count,
-                shape="empty",
-                paginated=True,
-                message=f"Page {page} is out of range (total results: {total_count}).",
-            )
-
-    extras: list[str] = []
-    hints = "**Cross-linking hints:**\n"
-    for label, tool in cross_link_hints.items():
-        hints += f"- For {label}: `{tool}(query)`\n"
-    extras.append(hints)
-
-    note = _format_filtered_tools_note(filtered_tools_info)
-    if note:
-        extras.append(note)
-
-    return ExecutionResult(
-        data=all_items,
-        total_count=total_count,
-        shape="list",
-        paginated=True,
-        markdown_extras=extras,
+        cross_link_hints={
+            "workflow guides": "search_docs",
+            "data resources": "search_resources",
+        },
+        extra_extras=[note] if note else None,
+        fetch_all=fetch_all,
     )
 
 
@@ -780,7 +937,9 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     """Core search_resources implementation.
 
     Fetches all registered MCP resources via ``mcp_list_resources_impl``,
-    runs name match + BM25 ranking, and returns raw data only — an
+    runs name match + BM25 ranking — or lists the full catalog when
+    ``query`` is empty/whitespace (the "list all" path).  Returns raw data
+    only — an
     :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` — which
     the single result pipeline slices, envelopes, and formats.
 
@@ -788,7 +947,7 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     slicing (in-memory search, no loop needed).
 
     Args:
-        query: Natural language query.
+        query: Natural language query.  Empty/whitespace lists all resources.
         ctx: FastMCP context.
         page: Page number (1-based).  Ignored when ``fetch_all`` is True.
         limit: Results per page.  Ignored when ``fetch_all`` is True.
@@ -805,55 +964,19 @@ async def _search_resources_impl(  # noqa: PLR0913 - ctx and min_score are frame
     resources = raw.get("resources", [])
     texts = [extract_resource_text(r) for r in resources]
 
-    # Get all ranked results (no pre-slicing).
-    all_items, total_count = search_and_slice(
+    return search_or_list_all(
         resources,
         texts,
         query,
-        1,
-        len(resources) or 1,
+        page,
+        limit,
         min_score=min_score,
         tool_prefix=tool_prefix,
-    )
-
-    cross_link_hints = {
-        "workflow guides": "search_docs",
-        "API tools": "search_tools",
-    }
-
-    if total_count == 0:
-        return ExecutionResult(
-            data=[],
-            total_count=0,
-            shape="empty",
-            paginated=True,
-            message=_empty_results_message(query, cross_link_hints),
-        )
-
-    # Check page range before formatting (only when paginating, not fetch_all).
-    if not fetch_all:
-        start = (page - 1) * limit
-        if start >= total_count:
-            return ExecutionResult(
-                data=[],
-                total_count=total_count,
-                shape="empty",
-                paginated=True,
-                message=f"Page {page} is out of range (total results: {total_count}).",
-            )
-
-    extras: list[str] = []
-    hints = "**Cross-linking hints:**\n"
-    for label, tool in cross_link_hints.items():
-        hints += f"- For {label}: `{tool}(query)`\n"
-    extras.append(hints)
-
-    return ExecutionResult(
-        data=all_items,
-        total_count=total_count,
-        shape="list",
-        paginated=True,
-        markdown_extras=extras,
+        cross_link_hints={
+            "workflow guides": "search_docs",
+            "API tools": "search_tools",
+        },
+        fetch_all=fetch_all,
     )
 
 
@@ -919,7 +1042,7 @@ def register_synthetic_tools(
     search_tools_spec = SyntheticToolSpec(
         impl=search_tools_fn,
         name="search_tools",
-        description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server.",
+        description="Search for tools by natural language query. Returns matching tool definitions with name, description, tags, and annotations. Use this to discover Gitea API tools available on this server. An empty query lists all tools (paginated).",
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema={
@@ -1172,10 +1295,81 @@ def register_synthetic_tools(
         "Uses name-match boosting then BM25 to find the most relevant resources matching your query. "
         "Searches across resource URI, name, description, and tags. "
         "Use this when you know what kind of information you want but not the "
-        "exact resource URI. For an exhaustive listing, use list_resources instead.",
+        "exact resource URI. For an exhaustive listing, use list_resources instead. "
+        "An empty query lists all resources (paginated).",
         tags={"synthetic"},
         annotations=synthetic_annotations(read_only=True, open_world=False),
         output_schema=_SEARCH_RESOURCES_OUTPUT_SCHEMA,
+        paginated=True,
+    )
+
+    async def list_hidden_tools_fn(
+        reason: Annotated[
+            str | None,
+            f"Optional filter by hidden reason: {', '.join(_HIDDEN_REASONS)}. "
+            "None lists all hidden tools.",
+        ] = None,
+        page: Annotated[int, "Page number (1-based, default 1)"] = 1,
+        limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
+        fetch_all: Annotated[
+            bool,
+            "When true, return all matching results instead of a single page. "
+            "Results are merged into one response (in-memory, no looping needed).",
+        ] = False,
+    ) -> ExecutionResult:
+        return await _list_hidden_tools_impl(
+            reason,
+            page,
+            limit,
+            filtered_tools_info=filtered_tools_info,
+            tool_prefix=tool_prefix,
+            fetch_all=fetch_all,
+        )
+
+    list_hidden_tools_spec = SyntheticToolSpec(
+        impl=list_hidden_tools_fn,
+        name="list_hidden_tools",
+        description=(
+            "List tools hidden from this token's listing (scope-restricted, "
+            "config-excluded, deprecated). Enumerates the tools behind the "
+            "search footer's hidden-tool counts. Maintenance/debugging "
+            "convenience: reveals tools the token cannot reach, by design. "
+            "Pass a returned name to tool_info to inspect why it is hidden."
+        ),
+        tags={"synthetic"},
+        annotations=synthetic_annotations(read_only=True, open_world=False),
+        output_schema={
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Prefixed tool name (pass to tool_info to inspect)",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Why the tool is hidden: scope, excluded, or deprecated",
+                            },
+                            "required_scope": {
+                                "oneOf": [{"type": "string"}, {"type": "null"}],
+                                "description": "Required scope (reason=scope only)",
+                            },
+                        },
+                        "example": {
+                            "name": "gitea_admin_create_user",
+                            "reason": "scope",
+                            "required_scope": "sudo",
+                        },
+                    },
+                    "description": "Hidden tools with their filter reason",
+                },
+                "message": MESSAGE_SCHEMA_PROPERTY,
+            },
+        },
         paginated=True,
     )
 
@@ -1186,6 +1380,7 @@ def register_synthetic_tools(
             call_tool_spec,
             tool_info_spec,
             search_resources_spec,
+            list_hidden_tools_spec,
         ],
     )
 
@@ -1198,4 +1393,5 @@ __all__ = [
     "extract_searchable_text_enhanced",
     "register_synthetic_tools",
     "search_and_slice",
+    "search_or_list_all",
 ]

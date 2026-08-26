@@ -800,7 +800,7 @@ Synthetic tools and resources are hand-written (not auto-generated from the
 OpenAPI spec). They live in the same codebase and register themselves via
 ``register_all_synthetic_tools`` (declarative ``SyntheticToolSpec`` lists) /
 ``mcp.resource()``. Examples: ``resolve_type``,
-``search_tools``, ``tool_info``, ``gitea://types/{typeName}{?detail}``.
+``search_tools``, ``tool_info``, ``list_hidden_tools``, ``gitea://types/{typeName}{?detail}``.
 
 ### Pattern
 

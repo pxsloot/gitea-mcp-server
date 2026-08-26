@@ -15,6 +15,7 @@ from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     _call_tool_impl,
     _format_filtered_tools_note,
+    _list_hidden_tools_impl,
     _name_matches,
     _search_resources_impl,
     _search_tools_impl,
@@ -1294,6 +1295,115 @@ class TestSearchToolsSyntheticTool:
         text = extract_text_content(result.content) if result.content else ""
         assert "gitea_issue_list" in text or "Cross-linking" in text
 
+    @pytest.mark.asyncio
+    async def test_search_tools_empty_query_lists_all(self) -> None:
+        """search_tools with an empty query lists the full catalog (no score)."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tools = [
+            Tool(
+                name=f"gitea_tool_{i}",
+                description=f"Tool {i}",
+                parameters={"properties": {}},
+                tags={"issue"},
+            )
+            for i in range(3)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=tools)
+
+        result = _render(await _search_tools_impl("", None, mock_ctx, transform))
+        sc = get_structured(result)
+        assert len(sc["result"]) == 3
+        assert sc["total_count"] == 3
+        # List-all has no relevance ranking — no score field.
+        assert all("score" not in item for item in sc["result"])
+        # Catalog order preserved.
+        assert [item["name"] for item in sc["result"]] == [
+            "gitea_tool_0",
+            "gitea_tool_1",
+            "gitea_tool_2",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_search_tools_whitespace_query_lists_all(self) -> None:
+        """Whitespace-only query behaves like an empty query (list all)."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        mock_tool = Tool(
+            name="gitea_issue_list",
+            description="List issues",
+            parameters={"properties": {}},
+            tags={"issue"},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[mock_tool])
+
+        result = _render(await _search_tools_impl("   ", None, mock_ctx, transform))
+        sc = get_structured(result)
+        assert len(sc["result"]) == 1
+        assert sc["result"][0]["name"] == "gitea_issue_list"
+
+    @pytest.mark.asyncio
+    async def test_search_tools_empty_query_respects_category(self) -> None:
+        """Empty query still applies the category filter."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        issue_tool = Tool(
+            name="gitea_issue_list",
+            description="List issues",
+            parameters={"properties": {}},
+            tags={"issue"},
+        )
+        repo_tool = Tool(
+            name="gitea_repo_list",
+            description="List repos",
+            parameters={"properties": {}},
+            tags={"repository"},
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[issue_tool, repo_tool])
+
+        result = _render(await _search_tools_impl("", "issue", mock_ctx, transform))
+        sc = get_structured(result)
+        assert len(sc["result"]) == 1
+        assert sc["result"][0]["name"] == "gitea_issue_list"
+
+    @pytest.mark.asyncio
+    async def test_search_tools_empty_query_out_of_range_page(self) -> None:
+        """Out-of-range page on a list-all query emits the empty envelope in
+        both channels (regression: markdown used to render the full catalog)."""
+        from gitea_mcp_server.tools.search import TolerantSearchTransform
+
+        transform = TolerantSearchTransform()
+        tools = [
+            Tool(
+                name=f"gitea_tool_{i}",
+                description=f"Tool {i}",
+                parameters={"properties": {}},
+            )
+            for i in range(3)
+        ]
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=tools)
+
+        result = _render(
+            await _search_tools_impl("", None, mock_ctx, transform, page=10, limit=10),
+            page=10,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert "Page 10 is out of range" in sc.get("message", "")
+        assert sc["total_count"] == 3
+        # The text channel agrees with structured_content — no full-catalog dump.
+        text = extract_text_content(result.content) if result.content else ""
+        assert "Page 10 is out of range" in text
+        assert "gitea_tool_0" not in text
+
 
 class TestTolerantBM25Search:
     """Tests for TolerantBM25Search."""
@@ -1674,6 +1784,135 @@ class TestSearchResourcesSyntheticTool:
         assert result.structured_content is not None
         assert len(result.structured_content["result"]) == 1
         assert result.structured_content["result"][0]["uri"] == "gitea://version"
+
+    @pytest.mark.asyncio
+    async def test_search_resources_empty_query_lists_all(self) -> None:
+        """search_resources with an empty query lists the full catalog (no score)."""
+        ctx = MagicMock(spec=Context)
+        resources = []
+        for i in range(3):
+            r = MagicMock()
+            r.uri = f"gitea://resource/{i}"
+            r.name = f"Resource {i}"
+            r.description = f"Resource {i} description"
+            r.mime_type = "text/plain"
+            r.tags = {"server"}
+            r.meta = None
+            resources.append(r)
+        ctx.fastmcp = MagicMock()
+        ctx.fastmcp.list_resources = AsyncMock(return_value=resources)
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        result = _render(await _search_resources_impl(query="", ctx=ctx))
+        sc = get_structured(result)
+        assert len(sc["result"]) == 3
+        assert sc["total_count"] == 3
+        assert all("score" not in item for item in sc["result"])
+
+
+class TestListHiddenTools:
+    """Tests for the list_hidden_tools synthetic tool via _list_hidden_tools_impl."""
+
+    _FILTERED = {
+        "filtered": {
+            "admin_create_user": {"reason": "scope", "required_scope": "sudo"},
+            "repo_old_endpoint": {"reason": "deprecated"},
+            "some_excluded": {"reason": "excluded"},
+            "admin_delete_user": {"reason": "scope", "required_scope": "sudo"},
+        }
+    }
+
+    @pytest.mark.asyncio
+    async def test_lists_all_hidden_tools_with_prefixed_names(self) -> None:
+        """All hidden tools are enumerated with prefixed names and reasons."""
+        result = _render(
+            await _list_hidden_tools_impl(
+                None, filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
+            )
+        )
+        sc = get_structured(result)
+        assert sc["total_count"] == 4
+        names = [item["name"] for item in sc["result"]]
+        assert names == [
+            "gitea_admin_create_user",
+            "gitea_admin_delete_user",
+            "gitea_repo_old_endpoint",
+            "gitea_some_excluded",
+        ]  # sorted by name
+        reasons = {item["name"]: item["reason"] for item in sc["result"]}
+        assert reasons["gitea_admin_create_user"] == "scope"
+        assert reasons["gitea_repo_old_endpoint"] == "deprecated"
+        assert reasons["gitea_some_excluded"] == "excluded"
+
+    @pytest.mark.asyncio
+    async def test_scope_entries_carry_required_scope(self) -> None:
+        """Scope-restricted entries include required_scope."""
+        result = _render(
+            await _list_hidden_tools_impl(
+                "scope", filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
+            )
+        )
+        sc = get_structured(result)
+        assert sc["total_count"] == 2
+        for item in sc["result"]:
+            assert item["reason"] == "scope"
+            assert item["required_scope"] == "sudo"
+
+    @pytest.mark.asyncio
+    async def test_reason_filter(self) -> None:
+        """reason filter narrows the enumeration."""
+        result = _render(
+            await _list_hidden_tools_impl(
+                "deprecated", filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
+            )
+        )
+        sc = get_structured(result)
+        assert sc["total_count"] == 1
+        assert sc["result"][0]["name"] == "gitea_repo_old_endpoint"
+
+    @pytest.mark.asyncio
+    async def test_invalid_reason_raises(self) -> None:
+        """Invalid reason raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid reason"):
+            await _list_hidden_tools_impl("mystery", filtered_tools_info=self._FILTERED)
+
+    @pytest.mark.asyncio
+    async def test_no_filtered_info_returns_empty(self) -> None:
+        """None/empty filtered_tools_info returns an empty listing."""
+        result = _render(await _list_hidden_tools_impl(None, filtered_tools_info=None))
+        sc = get_structured(result)
+        assert sc["result"] == []
+        assert sc["total_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_pagination(self) -> None:
+        """list_hidden_tools paginates like other synthetic list tools."""
+        result = _render(
+            await _list_hidden_tools_impl(
+                None, filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
+            ),
+            page=2,
+            limit=2,
+        )
+        sc = get_structured(result)
+        assert len(sc["result"]) == 2
+        assert sc["total_count"] == 4
+        assert sc["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_page_out_of_range_message(self) -> None:
+        """Out-of-range page returns a helpful message."""
+        result = _render(
+            await _list_hidden_tools_impl(
+                None, filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
+            ),
+            page=10,
+            limit=10,
+        )
+        sc = get_structured(result)
+        assert "Page 10 is out of range" in sc.get("message", "")
+        assert sc["result"] == []
+        assert sc["total_count"] == 4
 
 
 class TestSearchAndSlice:
@@ -2438,6 +2677,18 @@ class TestFormatFilteredToolsNote:
         assert "2 scope-restricted" in result
         assert "1 config-excluded" in result
         assert "1 deprecated" in result
+
+    def test_note_points_to_list_hidden_tools(self) -> None:
+        """The note points to list_hidden_tools for enumeration."""
+        result = _format_filtered_tools_note(
+            {
+                "filtered": {
+                    "tool1": {"reason": "excluded"},
+                },
+            }
+        )
+        assert "list_hidden_tools" in result
+        assert "tool_info" in result
 
     def test_unknown_reason_not_counted(self) -> None:
         """Unknown reason type is not counted."""

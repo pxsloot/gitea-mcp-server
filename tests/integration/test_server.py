@@ -177,6 +177,7 @@ class TestSyntheticToolMetadata:
             "search_resources",
             "search_docs",
             "read_doc",
+            "list_hidden_tools",
         ]
 
     def _expected_synthetic_names(self, prefix: str) -> list[str]:
@@ -1102,13 +1103,15 @@ class TestServerEdgeCases:
         - 330 lines: raised 2026-08-26 to document the single result pipeline
           contract (envelope in the text, deterministic raw, empty-json shape)
           in the Output format section.
+        - 335 lines: raised 2026-08-26 to document the empty-query list-all
+          behaviour and list_hidden_tools in the Discovery section (#722).
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 330, (
-            f"Instructions are {line_count} lines (budget: 330). "
+        assert line_count <= 335, (
+            f"Instructions are {line_count} lines (budget: 335). "
             "Increase the budget deliberately, not by trimming."
         )
 

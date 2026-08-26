@@ -435,5 +435,43 @@ class TestUnifiedSearch:
         assert sc["next_offset"] is None
         assert sc["total_count"] == 1  # the one matching tool
 
+    @pytest.mark.asyncio
+    async def test_empty_query_lists_all(self) -> None:
+        """An empty query lists the full merged catalog (no score)."""
+        ctx = MagicMock(spec=Context)
+        ctx.fastmcp.list_resources = AsyncMock(
+            return_value=[
+                _make_resource("gitea://version", "Version", "Gitea server version"),
+            ]
+        )
+        ctx.fastmcp.list_resource_templates = AsyncMock(return_value=[])
+
+        doc_manager = MagicMock(spec=DocManager)
+        doc_manager.search.return_value = [
+            {
+                "name": "token-scopes",
+                "title": "Token Scopes",
+                "description": "How tokens work",
+                "tags": ["auth"],
+            },
+        ]
+
+        search_transform = _make_search_transform(
+            [
+                _make_tool("gitea_issue_list_issues", "List issues", ["issue"]),
+            ]
+        )
+
+        mcp, decorator = _setup_mcp()
+        register_unified_search(mcp, doc_manager, search_transform)
+
+        registered_fn = decorator.call_args[0][0]
+        result = _render(await registered_fn(query="", ctx=ctx), fmt="raw")
+        items = get_structured(result)["result"]
+        # 1 tool + 1 resource + 1 doc
+        assert len(items) == 3
+        assert all("score" not in item for item in items)
+        assert {item["type"] for item in items} == {"tool", "resource", "doc"}
+
 
 __all__ = []

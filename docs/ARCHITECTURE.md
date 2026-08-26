@@ -285,7 +285,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/extensions_metadata.py` | ``ExtensionMetadataTransform`` — YAML metadata overrides at query time |
 | `tools/exclusion.py` | pattern matching helpers for config-based exclusion |
 | `tools/filter_info.py` | filter prediction data + ``FilteredToolMiddleware`` |
-| `tools/search.py` | BM25 search + ``TolerantSearchTransform``, synthetic discovery tools |
+| `tools/search.py` | BM25 search + ``TolerantSearchTransform``, synthetic discovery tools (``search_tools``, ``search_resources``, ``list_hidden_tools``); shared ``search_or_list_all`` envelope — empty query lists the full catalog |
 | `tools/synthetic_contract.py` | Synthetic registration contract — `SyntheticToolSpec` declarative specs + `register_all_synthetic_tools`, wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource |
 | `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + guide resources |
@@ -450,7 +450,11 @@ from the parameter schema.
 2. **Lazy loading** -- Tools are not listed by default. Agents discover them via
    `search_tools` (name-match + BM25). This prevents context pollution from ~400 tools being
    listed at once.  All tools tagged `synthetic` are always pinned in
-   `list_tools()` so agents can call them without searching.
+   `list_tools()` so agents can call them without searching.  An **empty query
+   on any search tool lists the full catalog** (paginated, no relevance
+   `score`) — `search_tools("")` is the browse path lazy loading otherwise
+   denies; `list_hidden_tools` enumerates the tools filtered out of that
+   listing (scope-restricted, config-excluded, deprecated).
 
 3. **Resources pass through namespace** -- Resources use the `gitea://` scheme
    directly.  FastMCP's built-in `Namespace` would double-namespace them to

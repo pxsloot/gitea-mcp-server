@@ -25,13 +25,15 @@ from gitea_mcp_server.models import UnifiedSearchItem
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.mcp_tools import mcp_list_resources_impl
-from gitea_mcp_server.tools.result_pipeline import ExecutionResult
+from gitea_mcp_server.tools.result_pipeline import (
+    ExecutionResult,  # noqa: TC001 - runtime use via get_type_hints
+)
 from gitea_mcp_server.tools.search import (
     TolerantSearchTransform,
     compact_search_serializer,
     extract_resource_text,
     extract_searchable_text_enhanced,
-    search_and_slice,
+    search_or_list_all,
 )
 from gitea_mcp_server.tools.synthetic_contract import (
     SyntheticToolSpec,
@@ -149,60 +151,23 @@ def register_unified_search(
             )
             all_texts.append(_extract_doc_search_text(d))
 
-        # Get all ranked results (no pre-slicing).
-        all_ranked, total_count = search_and_slice(
+        # Rank by name-match + BM25, or list all when the query is empty —
+        # the shared search envelope (empty/out-of-range messages, hints
+        # footer) lives in search_or_list_all.
+        return search_or_list_all(
             all_items,
             all_texts,
             query,
-            1,
-            len(all_items) or 1,
+            page,
+            limit,
             min_score=min_score,
             tool_prefix=tool_prefix,
-        )
-
-        if total_count == 0:
-            hint = (
-                f"No results found for '{query}'.\n\n"
-                "**Cross-linking hints:**\n"
-                "- For API tools: `search_tools(query)`\n"
-                "- For workflow guides: `search_docs(query)`\n"
-                "- For data resources: `search_resources(query)`"
-            )
-            return ExecutionResult(
-                data=[],
-                total_count=0,
-                shape="empty",
-                paginated=True,
-                message=hint,
-            )
-
-        # Check page range before formatting (only when paginating, not fetch_all).
-        if not fetch_all:
-            start = (page - 1) * limit
-            if start >= total_count:
-                hint = f"Page {page} is out of range (total results: {total_count})."
-                return ExecutionResult(
-                    data=[],
-                    total_count=total_count,
-                    shape="empty",
-                    paginated=True,
-                    message=hint,
-                )
-
-        extras: list[str] = []
-        extras.append(
-            "**Cross-linking hints:**\n"
-            "- For API tools: `search_tools(query)`\n"
-            "- For workflow guides: `search_docs(query)`\n"
-            "- For data resources: `search_resources(query)`"
-        )
-
-        return ExecutionResult(
-            data=all_ranked,
-            total_count=total_count,
-            shape="list",
-            paginated=True,
-            markdown_extras=extras,
+            cross_link_hints={
+                "API tools": "search_tools",
+                "workflow guides": "search_docs",
+                "data resources": "search_resources",
+            },
+            fetch_all=fetch_all,
         )
 
     register_all_synthetic_tools(
@@ -211,7 +176,7 @@ def register_unified_search(
             SyntheticToolSpec(
                 impl=search,
                 name="search",
-                description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path.",
+                description="Unified search across tools, workflow docs, and data resources. Returns merged results ranked by name-match then BM25 with a type discriminator (tool/doc/resource) so you can route each hit to the right access path. An empty query lists everything (paginated).",
                 tags={"synthetic"},
                 annotations=synthetic_annotations(read_only=True, open_world=False),
                 output_schema={

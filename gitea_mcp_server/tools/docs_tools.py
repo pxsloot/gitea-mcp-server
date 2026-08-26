@@ -276,6 +276,8 @@ def register_doc_tools(
         When ``fetch_all=True``, returns all matching results without page
         slicing (in-memory search, no loop needed).
 
+        An empty query lists all guides (paginated).
+
         ## Parameters
 
         - ``query``: Natural language query (e.g., "how do tokens work", "protect branches", "label scopes")

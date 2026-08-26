@@ -75,8 +75,8 @@ class TestLazyLoading:
             assert f"{prefix}search_resources" in tool_names
 
             # Total should be small (pinned + synthetic)
-            assert len(tool_names) <= 10, (
-                f"Lazy loading should return at most ~10 tools (pinned + synthetic), got {len(tool_names)}"
+            assert len(tool_names) <= 11, (
+                f"Lazy loading should return at most ~11 tools (pinned + synthetic), got {len(tool_names)}"
             )
 
     @pytest.mark.asyncio
@@ -133,7 +133,7 @@ class TestLazyLoading:
             # Admin tool should not appear
             assert "admin_settings" not in tool_names
             # Total should be small
-            assert len(tool_names) <= 10, f"Got {len(tool_names)} tools: {tool_names}"
+            assert len(tool_names) <= 11, f"Got {len(tool_names)} tools: {tool_names}"
 
     @pytest.mark.asyncio
     async def test_search_tools_returns_matching_tools(self) -> None:

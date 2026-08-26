@@ -413,6 +413,10 @@ class TestCustomizeMetadata:
                 assert any_of_types == {"integer", "null"}, (
                     f"{key} must be integer|null, got {props[key]}"
                 )
+            # Array responses can emit ``message`` on empty/out-of-range
+            # pages, so the schema declares it (schema/runtime agreement).
+            assert "message" in props
+            assert props["message"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
 
     def test_text_plain_fallback_schema(self) -> None:
         """Text/plain endpoints get string output_schema when derive_output_schema returns None."""
@@ -2468,6 +2472,10 @@ class TestInjectResponseMetadata:
         assert "has_more" in props
         assert "next_offset" in props
         assert "total_count" in props
+        # Array responses can emit ``message`` on empty/out-of-range pages,
+        # so the schema must declare it (schema/runtime agreement, #718).
+        assert "message" in props
+        assert props["message"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
 
 
 class TestApplySchemaPostprocessingDirect:

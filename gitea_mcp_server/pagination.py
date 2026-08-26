@@ -78,12 +78,14 @@ MESSAGE_SCHEMA_PROPERTY: dict[str, Any] = {
 
 Declared (nullable) in the output schemas of the paginated tools that emit
 it via the result pipeline's ``empty`` shape
-(``tools/result_pipeline.py``) — ``search``, ``search_tools``,
-``search_resources``, ``search_docs``, ``list_resources``,
-``list_hidden_tools``, ``tool_info``, and ``read_doc``.  The pipeline owns
-out-of-range handling for every shape, so any paginated tool can emit a
-``message``; tools that never paginate must not declare it, keeping schema
-and runtime in agreement.
+(``tools/result_pipeline.py``): the synthetic tools ``search``,
+``search_tools``, ``search_resources``, ``search_docs``,
+``list_resources``, ``list_hidden_tools``, ``tool_info``, and ``read_doc``,
+plus every autogen array-response tool (injected alongside the pagination
+envelope by ``server_setup/mcp_builder._inject_response_metadata``).  The
+pipeline owns out-of-range handling for every shape, so any paginated tool
+can emit a ``message``; tools that never paginate must not declare it,
+keeping schema and runtime in agreement.
 """
 
 PAGINATION_HEADERS = ("X-Total-Count", "X-Total")

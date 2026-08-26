@@ -46,6 +46,7 @@ from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import (
+    MESSAGE_SCHEMA_PROPERTY,
     PAGINATION_SCHEMA_PROPERTIES,
     pagination_ctx,
 )
@@ -329,8 +330,9 @@ def _inject_response_metadata(
     1. ``x-fastmcp-wrap-result`` — set on every non-``None`` schema so
        FastMCP wraps the response in ``{"result": ...}``.
     2. **Pagination metadata** (``has_more``, ``next_offset``,
-       ``total_count``) — injected into array-response schemas so
-       agents can discover pagination fields from the schema.
+       ``total_count``, ``message``) — injected into array-response
+       schemas so agents can discover pagination fields (and the
+       empty/out-of-range ``message``) from the schema.
     """
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
@@ -344,6 +346,10 @@ def _inject_response_metadata(
         # synthetic_contract.paginated_output_schema.
         for name, property_schema in PAGINATION_SCHEMA_PROPERTIES.items():
             props.setdefault(name, copy.deepcopy(property_schema))
+        # Array responses can also emit ``message`` on empty/out-of-range
+        # pages (the pipeline owns that handling), so declare it too —
+        # schema and runtime must never disagree (issue #718).
+        props.setdefault("message", copy.deepcopy(MESSAGE_SCHEMA_PROPERTY))
 
 
 def _apply_schema_postprocessing(

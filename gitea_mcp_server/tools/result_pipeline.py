@@ -111,7 +111,9 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         A ``ToolResult`` whose ``content`` (the text channel) is authoritative
         and always present, with ``structured_content`` mirroring it.  For
         ``format=json``/``raw`` the text is the serialized envelope dict; for
-        ``format=markdown`` the text is a rendering of the page data.
+        ``format=markdown`` the text is a rendering of the page data — or,
+        for empty/out-of-range results, the message (so the text channel
+        never disagrees with the envelope).
     """
     if fmt not in _VALID_FORMATS:
         msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
@@ -211,8 +213,13 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
         # an out-of-range page yields empty content — emit the message
         # envelope instead of silent empty data.  The result keeps its object
         # shape (the schema declares it); only the message is added.
+        #
+        # ``total == 0`` is *not* out of range for objects: unlike a list,
+        # the object data is the content itself (e.g. ``tool_info`` on a
+        # free-form object schema with no declared properties), so page 1
+        # must return it, not an out-of-range message.
         total = result.total_count
-        if total is not None and (page - 1) * limit >= total:
+        if total is not None and total > 0 and (page - 1) * limit >= total:
             return (
                 {
                     "result": data,

@@ -42,7 +42,7 @@ Domains: `issue`, `repo`/`repository`, `pull_request`, `user`, `org`,
 Synthetic (discovery) tools are prefixed the same way: `{{TOOL_PREFIX}}search`,
 `{{TOOL_PREFIX}}search_tools`, `{{TOOL_PREFIX}}tool_info`, `{{TOOL_PREFIX}}call_tool`, `{{TOOL_PREFIX}}list_resources`,
 `{{TOOL_PREFIX}}read_resource`, `{{TOOL_PREFIX}}search_resources`, `{{TOOL_PREFIX}}read_doc`, `{{TOOL_PREFIX}}search_docs`,
-`{{TOOL_PREFIX}}resolve_type`.
+`{{TOOL_PREFIX}}resolve_type`, `{{TOOL_PREFIX}}list_hidden_tools`.
 They carry the `synthetic` tag in search results.
 
 **Workflow**: form a guess from the grammar, then confirm with `search_tools`
@@ -59,6 +59,11 @@ Tools are lazy-loaded: `list_tools()` does not return them. Discover instead:
 - `search("create issue")`       -> unified search across tools, docs, resources
 
 All search tools accept `min_score` (0.0-1.0, default 0.1) to tune relevance.
+
+**Empty query = list all.** Every search tool treats an empty/whitespace query
+as a "list all" path (paginated, no relevance score); `{{TOOL_PREFIX}}list_hidden_tools`
+enumerates the tools hidden from your token (scope-restricted, config-excluded,
+deprecated).
 
 Call any tool via `call_tool(name, args)`. Both the prefixed name
 (`{{TOOL_PREFIX}}call_tool`) and the bare name (`call_tool`) reach the same proxy, and

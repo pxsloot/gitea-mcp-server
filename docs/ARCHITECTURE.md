@@ -732,6 +732,16 @@ from the parameter schema.
      synthetic tools (``tool_info``, ``resolve_type``, ``read_doc``) are
      result-shape variants, not exceptions.
 
+     The pipeline owns out-of-range handling for **every** shape, not just
+     ``list``: a pre-sliced object result (``read_doc``'s guide lines,
+     ``tool_info``'s schema properties) whose page is out of range keeps its
+     object-shaped ``result`` (with empty content) and adds the message
+     envelope — no silent empty data.  The formatter renders the message in
+     every format, including markdown, so the text channel never disagrees
+     with the envelope.  Synthetic list impls return the full item set and
+     let the pipeline slice; they set ``message`` only for custom
+     empty-result messages (e.g. cross-link hints).
+
      Pagination facts are single-source: ``page``/``limit`` naming (the spec
      uses ``limit``, not ``per_page``), the default page size
      (``constants.DEFAULT_PAGE_SIZE``), the cap (``constants.PAGE_SIZE_MAX``,

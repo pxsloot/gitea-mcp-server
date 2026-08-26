@@ -259,10 +259,10 @@ def register_doc_tools(
 
     async def search_docs(
         query: str,
-        page: int = 1,
-        limit: int = 10,
+        page: int = 1,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+        limit: int = 10,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
         min_score: float = SEARCH_MIN_SCORE,
-        fetch_all: bool = False,
+        fetch_all: bool = False,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
     ) -> ExecutionResult:
         """Search workflow guides by natural language query.
 
@@ -297,10 +297,14 @@ def register_doc_tools(
 
         Args:
             query: Natural language query to search for guides
-            page: Page number (1-based, default 1). Ignored when ``fetch_all`` is True.
-            limit: Maximum results per page (1-100, default 10). Ignored when ``fetch_all`` is True.
+            page: Page number (1-based, default 1).  Schema-declared; the
+                single result pipeline owns pagination.
+            limit: Maximum results per page (1-100, default 10).
+                Schema-declared; the single result pipeline owns pagination.
             min_score: Minimum relevance score (0.0-1.0)
-            fetch_all: When True, return all matching results without slicing.
+            fetch_all: When True, return all matching results without
+                slicing.  Schema-declared; the single result pipeline owns
+                pagination.
 
         Returns:
             Ranked list of matching guide metadata
@@ -326,19 +330,6 @@ def register_doc_tools(
                 paginated=True,
                 message=content,
             )
-
-        # Check page range before formatting (only when paginating, not fetch_all).
-        if not fetch_all:
-            start = (page - 1) * limit
-            if start >= total_count:
-                content = f"Page {page} is out of range (total results: {total_count})."
-                return ExecutionResult(
-                    data=[],
-                    total_count=total_count,
-                    shape="empty",
-                    paginated=True,
-                    message=content,
-                )
 
         extras: list[str] = []
         extras.append(
@@ -391,7 +382,9 @@ def register_doc_tools(
         The guide content (sliced by page/limit) in the requested format.
         For ``json`` format, the response includes the pagination envelope
         (``has_more``, ``next_offset``, ``total_count``) in the text
-        alongside the guide content.
+        alongside the guide content.  An out-of-range page keeps the
+        object-shaped ``result`` (with empty ``content``) and adds a
+        ``message`` (e.g. "Page N is out of range (total results: M)").
 
         ## Error Handling
 
@@ -454,6 +447,7 @@ def register_doc_tools(
                     },
                     "description": "Guide content with pagination metadata in the text (format=json) and mirrored in structured_content",
                 },
+                "message": MESSAGE_SCHEMA_PROPERTY,
             },
         },
         paginated=True,

@@ -121,6 +121,22 @@ class TestRegisterTypeToolsTool:
         assert "synthetic" in tool.tags
 
     @pytest.mark.asyncio
+    async def test_tool_detail_default_is_concise(self, mcp: FastMCP) -> None:
+        """The schema default for ``detail`` matches the impl default (issue #727).
+
+        ``detail`` is excluded from the registry allowlist (like
+        ``tool_info``), so the impl's own ``"concise"`` default is the single
+        source — the schema must not advertise the registry's ``"full"``.
+        """
+        register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)
+
+        tools = await mcp.list_tools()
+        tool = next(t for t in tools if t.name == "resolve_type")
+
+        detail_schema = tool.parameters["properties"]["detail"]
+        assert detail_schema["default"] == "concise"
+
+    @pytest.mark.asyncio
     async def test_tool_resolves_known_type(self, mcp: FastMCP) -> None:
         """resolve_type should return type info for a known type."""
         register_type_tools(mcp, openapi_spec=_MINIMAL_SPEC)

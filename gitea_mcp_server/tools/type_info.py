@@ -476,6 +476,11 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
                         },
                     },
                 },
+                # ``detail`` is excluded from the registry allowlist (like
+                # ``tool_info``): the impl's own signature default
+                # (``"concise"``) is the single source, so the schema and
+                # runtime agree when the agent omits ``detail``.
+                virtual_params={"format"},
             ),
         ],
     )

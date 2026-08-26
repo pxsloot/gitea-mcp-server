@@ -120,12 +120,65 @@ class TestGetBodySchema:
     def test_content_not_dict_returns_none(self) -> None:
         """A requestBody whose content is not a dict yields no body schema."""
         operation = {"requestBody": {"content": "not-a-dict"}}
-        assert _get_body_schema(operation) is None
+        assert _get_body_schema(operation, make_openapi_spec()) is None
 
     def test_json_content_not_dict_returns_none(self) -> None:
         """A requestBody whose application/json entry is not a dict yields None."""
         operation = {"requestBody": {"content": {"application/json": "not-a-dict"}}}
-        assert _get_body_schema(operation) is None
+        assert _get_body_schema(operation, make_openapi_spec()) is None
+
+    def test_resolves_ref_body_and_writes_back(self) -> None:
+        """A ``$ref`` body is resolved (deep-copied) and written back.
+
+        Rule A must be self-sufficient: operations without path parameters
+        (e.g. ``POST /markdown``) are never visited by collision resolution,
+        so ``_get_body_schema`` resolves the ``$ref`` itself.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "MarkdownOption": {
+                        "type": "object",
+                        "properties": {
+                            "Context": {"type": "string"},
+                            "Mode": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        )
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/MarkdownOption"},
+                    },
+                },
+            },
+        }
+        schema = _get_body_schema(operation, spec)
+        assert schema is not None
+        assert set(schema.get("properties", {}).keys()) == {"Context", "Mode"}
+        # Written back into the operation.
+        written = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert written is schema
+        # The shared component is NOT mutated (deep copy).
+        comp = spec["components"]["schemas"]["MarkdownOption"]
+        assert set(comp.get("properties", {}).keys()) == {"Context", "Mode"}
+
+    def test_unresolvable_ref_returns_ref_dict(self) -> None:
+        """An unresolvable ``$ref`` is left as-is (no crash)."""
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/DoesNotExist"},
+                    },
+                },
+            },
+        }
+        schema = _get_body_schema(operation, make_openapi_spec())
+        assert schema == {"$ref": "#/components/schemas/DoesNotExist"}
 
 
 class TestNormalizeOperationBody:
@@ -147,7 +200,7 @@ class TestNormalizeOperationBody:
                 },
             },
         }
-        rename_map = _normalize_operation_body(operation)
+        rename_map = _normalize_operation_body(operation, make_openapi_spec())
         assert rename_map == {
             "do": "Do",
             "merge_commit_id": "MergeCommitID",
@@ -168,7 +221,7 @@ class TestNormalizeOperationBody:
 
     def test_no_body_returns_empty(self) -> None:
         operation: dict[str, Any] = {}
-        assert _normalize_operation_body(operation) == {}
+        assert _normalize_operation_body(operation, make_openapi_spec()) == {}
 
     def test_leaves_snake_case_body_untouched(self) -> None:
         operation = {
@@ -186,7 +239,7 @@ class TestNormalizeOperationBody:
                 },
             },
         }
-        assert _normalize_operation_body(operation) == {}
+        assert _normalize_operation_body(operation, make_openapi_spec()) == {}
 
     def test_properties_not_dict_returns_empty(self) -> None:
         """A body schema whose properties is not a dict yields no renames."""
@@ -199,7 +252,7 @@ class TestNormalizeOperationBody:
                 },
             },
         }
-        assert _normalize_operation_body(operation) == {}
+        assert _normalize_operation_body(operation, make_openapi_spec()) == {}
 
     def test_skips_prop_unchanged_by_camel_to_snake(self) -> None:
         """A body property camel_to_snake leaves unchanged is not renamed."""
@@ -215,7 +268,7 @@ class TestNormalizeOperationBody:
                 },
             },
         }
-        assert _normalize_operation_body(operation) == {}
+        assert _normalize_operation_body(operation, make_openapi_spec()) == {}
 
     def test_overwrite_collision_warns_and_skips(
         self,
@@ -242,7 +295,7 @@ class TestNormalizeOperationBody:
             },
         }
         with caplog.at_level(logging.WARNING):
-            rename_map = _normalize_operation_body(operation)
+            rename_map = _normalize_operation_body(operation, make_openapi_spec())
         assert rename_map == {}
         schema = cast(
             "dict[str, Any]",
@@ -251,6 +304,84 @@ class TestNormalizeOperationBody:
         # Both properties survive; nothing was overwritten.
         assert set(schema["properties"].keys()) == {"Do", "do"}
         assert "already exists" in caplog.text
+
+    def test_no_required_key_not_fabricated(self) -> None:
+        """A body with renames but no ``required`` key stays without one.
+
+        The rule must not write an empty ``required: []`` onto a schema that
+        never declared ``required`` — that would fabricate schema structure
+        FastMCP and agents did not ask for.
+        """
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "Do": {"type": "string"},
+                                "MergeCommitID": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        rename_map = _normalize_operation_body(operation, make_openapi_spec())
+        assert rename_map == {"do": "Do", "merge_commit_id": "MergeCommitID"}
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
+        assert "required" not in schema
+
+    def test_ref_body_renamed_without_path_params(self) -> None:
+        """A ``$ref`` body on an operation without path params is normalized.
+
+        Regression: collision resolution only inlines ``$ref`` bodies for
+        operations *with* path parameters, so ``POST /markdown`` (no path
+        params) was skipped and exposed PascalCase params.  Rule A must be
+        self-sufficient.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "MarkdownOption": {
+                        "type": "object",
+                        "properties": {
+                            "Context": {"type": "string"},
+                            "Mode": {"type": "string"},
+                            "Text": {"type": "string"},
+                            "Wiki": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
+        )
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/MarkdownOption"},
+                    },
+                },
+            },
+        }
+        rename_map = _normalize_operation_body(operation, spec)
+        assert rename_map == {
+            "context": "Context",
+            "mode": "Mode",
+            "text": "Text",
+            "wiki": "Wiki",
+        }
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
+        assert set(schema["properties"].keys()) == {"context", "mode", "text", "wiki"}
+        # The shared component is untouched.
+        comp = spec["components"]["schemas"]["MarkdownOption"]
+        assert set(comp["properties"].keys()) == {"Context", "Mode", "Text", "Wiki"}
 
 
 class TestIsBooleanCheckOperation:
@@ -441,6 +572,63 @@ class TestNormalizeSpec:
         spec = make_openapi_spec()
         normalize_spec(spec)
         assert spec["paths"] == {}
+
+    def test_ref_body_without_path_params_normalized(self) -> None:
+        """``normalize_spec`` normalizes a ``$ref`` body with no path params.
+
+        Regression for ``POST /markdown``/``POST /markup``: collision
+        resolution never visits operations without path parameters, so the
+        ``$ref`` body stayed unresolved and Rule A skipped it — the tools
+        exposed PascalCase params (``Context``/``Mode``/``Text``/``Wiki``).
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/markdown": {
+                    "post": {
+                        "operationId": "renderMarkdown",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/MarkdownOption",
+                                    },
+                                },
+                            },
+                        },
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+            components={
+                "schemas": {
+                    "MarkdownOption": {
+                        "type": "object",
+                        "properties": {
+                            "Context": {"type": "string"},
+                            "Mode": {"type": "string"},
+                            "Text": {"type": "string"},
+                            "Wiki": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
+        )
+        normalize_spec(spec)
+        op = cast("dict[str, Any]", spec["paths"]["/markdown"]["post"])
+        assert op["x-param-rename"] == {
+            "context": "Context",
+            "mode": "Mode",
+            "text": "Text",
+            "wiki": "Wiki",
+        }
+        schema = cast(
+            "dict[str, Any]",
+            op["requestBody"]["content"]["application/json"]["schema"],
+        )
+        assert set(schema["properties"].keys()) == {"context", "mode", "text", "wiki"}
+        # The shared component is untouched.
+        comp = spec["components"]["schemas"]["MarkdownOption"]
+        assert set(comp["properties"].keys()) == {"Context", "Mode", "Text", "Wiki"}
 
     def test_skips_non_dict_path_items(self) -> None:
         """A non-dict path item is skipped without error."""

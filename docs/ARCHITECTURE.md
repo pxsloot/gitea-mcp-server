@@ -800,6 +800,25 @@ from the parameter schema.
      ``$ref`` responses so a false positive like ``issueGetComment`` (a GET
      with a 204 *and* a 200 carrying content) is correctly excluded.
 
+     The existence-check resource is derived **spec-driven, not shape-driven**:
+     it is the longest proper prefix of the check path that exists in the spec
+     as a fetch endpoint (GET with a content-bearing 200, not itself a boolean
+     check) and whose path parameters are a non-empty subset of the check's.
+     No path-shape assumptions (e.g. "a trailing literal segment is an action")
+     — the spec is the source of truth.  On the current Gitea spec this covers
+     five of the eight boolean-check endpoints: ``repoPullRequestIsMerged``
+     (→ the PR), ``orgIsMember``/``orgIsPublicMember`` (→ the member list,
+     which 404s when the org is missing), and ``repoCheckCollaborator``/
+     ``repoCheckFlag`` (→ the collaborator/flag list, which 404s when the repo
+     is missing).  ``userCheckFollowing`` disambiguates the source user only.
+     The remaining two — ``userCurrentCheckFollowing`` and
+     ``userCurrentCheckStarring`` — have no distinct resource prefix in the
+     spec (the checked entity lives at a different path, e.g. the repo at
+     ``/repos/{owner}/{repo}``), so a 404 falls back to ``{"result": false}``:
+     "you cannot follow/star a non-existent user/repo" is a defensible answer.
+     A curated path→resource map could cover those, but is deliberately
+     avoided to keep the rule shape-driven.
+
      Everything else stays **intentionally mirrored** — the spec is the
      source of truth and the one-to-one mapping is what makes the surface
      predictable.  Quirks that are harmless to agents are deliberately left

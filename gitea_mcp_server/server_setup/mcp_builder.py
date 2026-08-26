@@ -44,6 +44,7 @@ from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progre
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.models import ToolCustomization
+from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import (
     MESSAGE_SCHEMA_PROPERTY,
@@ -988,27 +989,71 @@ class _ToolWrappingTransform(Transform):
             message=f"Binary content ({size} bytes). Use format='raw' to access directly.",
         )
 
-    @staticmethod
+    def _is_fetch_resource_path(self, path: str) -> bool:
+        """Return ``True`` if ``path`` is a spec fetch endpoint (GET with content).
+
+        A fetch endpoint is a GET whose 200 response carries content (``$ref``
+        responses resolved) and which is not itself a boolean-check operation.
+        This is the spec's own definition of "a resource you can read" — the
+        existence-check disambiguation reads it to confirm the resource exists.
+
+        Args:
+            path: The route path template (e.g. ``/repos/{owner}/{repo}``).
+
+        Returns:
+            ``True`` if the path is a fetch endpoint in the spec.
+        """
+        paths: dict[str, Any] = self._openapi_spec.get("paths", {}) or {}
+        path_item = paths.get(path)
+        if not isinstance(path_item, dict):
+            return False
+        operation = path_item.get("get")
+        if not isinstance(operation, dict):
+            return False
+        if operation.get("x-response-transform") == "boolean-check":
+            return False
+        response = operation.get("responses", {}).get("200")
+        if not isinstance(response, dict):
+            return False
+        if "$ref" in response:
+            resolved = resolve_spec_ref(self._openapi_spec, response["$ref"])
+            if isinstance(resolved, dict):
+                response = resolved
+        return bool(response.get("content"))
+
     def _boolean_check_resource_uri(
+        self,
         route_path: str,
         kwargs: dict[str, Any],
     ) -> str | None:
         """Derive the existence-check resource URI for a boolean-check path.
 
-        A boolean-check endpoint (e.g. ``/repos/{owner}/{repo}/pulls/{index}/merge``)
-        tests a condition on a resource.  When the path ends in a literal
-        (non-``{param}``) action segment — like ``/merge`` — that segment is
-        the action, and the resource being checked is the path minus that
-        segment (``/repos/{owner}/{repo}/pulls/{index}``).  When the path ends
-        in a ``{param}`` placeholder, the path *is* the resource and no
-        distinct existence check is needed (the 404 genuinely means "the
-        answer is no").
+        **Spec-driven, not shape-driven.**  A boolean-check endpoint (e.g.
+        ``/repos/{owner}/{repo}/pulls/{index}/merge``) tests a condition on a
+        resource.  The resource is the **longest proper prefix** of the check
+        path that exists in the spec as a fetch endpoint
+        (:meth:`_is_fetch_resource_path`) and whose path parameters are a
+        non-empty subset of the check's path parameters.  No path-shape
+        assumptions (e.g. "a trailing literal segment is an action") — the
+        spec is the source of truth.
+
+        Examples:
+          - ``/repos/{owner}/{repo}/pulls/{index}/merge`` → the spec's
+            ``/repos/{owner}/{repo}/pulls/{index}`` (fetch) → the PR.
+          - ``/orgs/{org}/members/{username}`` → the spec's
+            ``/orgs/{org}/members`` (fetch) → the member list, which 404s
+            when the org is missing — a valid org-existence check.
+
+        When no such prefix exists (e.g. ``/user/starred/{owner}/{repo}`` —
+        the repo resource lives at ``/repos/{owner}/{repo}``, not under the
+        check path), the path itself is the resource and a 404 genuinely
+        means "the answer is no" → returns ``None``.
 
         The returned URI is concrete: path parameters are substituted from
         ``kwargs`` so it can be read directly via ``ctx.read_resource``.
 
         Returns the ``gitea://`` resource URI to check for existence, or
-        ``None`` when the path is itself the resource (no action to strip).
+        ``None`` when the spec provides no distinct resource prefix.
 
         Args:
             route_path: The route path template (e.g.
@@ -1021,17 +1066,30 @@ class _ToolWrappingTransform(Transform):
         segments = [s for s in route_path.split("/") if s]
         if not segments:
             return None
-        last = segments[-1]
-        if last.startswith("{") and last.endswith("}"):
-            # Path ends in a resource id — it IS the resource.
+        check_params = {s[1:-1] for s in segments if s.startswith("{") and s.endswith("}")}
+
+        # Longest proper prefix that is a spec fetch endpoint with a non-empty
+        # path-param subset of the check's params.  The non-empty subset guard
+        # excludes self-lists (e.g. ``/user/following`` for
+        # ``/user/following/{username}``) that always exist and would make the
+        # existence check meaningless.
+        resource_path: str | None = None
+        for i in range(len(segments) - 1, 0, -1):
+            prefix = "/" + "/".join(segments[:i])
+            if not self._is_fetch_resource_path(prefix):
+                continue
+            prefix_params = {s[1:-1] for s in segments[:i] if s.startswith("{") and s.endswith("}")}
+            if prefix_params and prefix_params <= check_params:
+                resource_path = prefix
+                break
+        if resource_path is None:
             return None
-        # Strip the trailing literal action segment.
-        resource_path = "/" + "/".join(segments[:-1])
+
         # Substitute path parameters from kwargs to get a concrete URI.
         # Values are substituted raw (no URL-encoding): Gitea owner/repo/user
         # names are restricted to ``[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*`` and
         # numeric ids, so no segment ever needs percent-encoding.  If the
-        # charset ever widens, quote each segment (see follow-up issue).
+        # charset ever widens, quote each segment (see follow-up issue #736).
         for key, value in kwargs.items():
             placeholder = "{" + key + "}"
             if placeholder in resource_path:
@@ -1070,14 +1128,17 @@ class _ToolWrappingTransform(Transform):
         """Handle a 404 on a boolean-check endpoint.
 
         A 404 means the condition does *not* hold — but it may also mean the
-        underlying resource does not exist.  When the checker path has a
-        distinct resource (an action segment was stripped), read that resource
+        underlying resource does not exist.  When the spec provides a distinct
+        resource for the check (see :meth:`_boolean_check_resource_uri` — the
+        longest fetch-endpoint prefix of the check path), read that resource
         via the resource machinery to disambiguate:
 
         - resource exists → the condition is simply false → ``{"result": false}``
         - resource missing → raise a clear "not found" error
 
-        When the checker path *is* the resource (no action to strip), the 404
+        When the spec provides no distinct resource prefix (e.g.
+        ``/user/starred/{owner}/{repo}`` — the repo lives at
+        ``/repos/{owner}/{repo}``, not under the check path), the 404
         genuinely means "the answer is no" → ``{"result": false}``.
 
         Returns an ``ExecutionResult``, or ``None`` when the exception is not

@@ -18,9 +18,11 @@ parameter or body property that is not snake_case and that
 :func:`camel_to_snake` can convert (kebab-case names like ``repository-id``
 are already readable and are left alone), recording the mapping in
 an ``x-param-rename`` extension on the operation (merged with any collision
-map set by :func:`resolve_param_collisions`).  At runtime, the shim in
-``mcp_builder._apply_param_rename`` corrects the ``parameter_map`` so the
-HTTP request still sends the original wire name.
+map set by :func:`resolve_param_collisions`).  ``$ref`` request bodies are
+resolved (deep-copied) by this module itself, so the rule is self-sufficient
+— it does not depend on collision resolution having inlined the body.  At
+runtime, the shim in ``mcp_builder._apply_param_rename`` corrects the
+``parameter_map`` so the HTTP request still sends the original wire name.
 
 Path parameters are **deferred** to issue #734: renaming them additionally
 requires rewriting the ``{placeholder}`` in the route path template, which is
@@ -46,6 +48,7 @@ working as the Gitea spec evolves.
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from typing import TYPE_CHECKING, Any
@@ -138,15 +141,23 @@ def _normalize_operation_parameters(
     return rename_map
 
 
-def _get_body_schema(operation: dict[str, Any]) -> dict[str, Any] | None:
+def _get_body_schema(
+    operation: dict[str, Any],
+    openapi_spec: OpenAPISpec,
+) -> dict[str, Any] | None:
     """Extract the request body schema dict from an operation.
 
-    Collision resolution (:func:`resolve_param_collisions`) runs before this
-    pass and inlines ``$ref`` bodies, so the schema here is a plain object
-    with ``properties``/``required``.
+    Resolves ``$ref`` chains to shared components (deep-copied so the
+    original component definition is never mutated) and writes the resolved
+    schema back into the operation.  Collision resolution
+    (:func:`resolve_param_collisions`) already inlines ``$ref`` bodies for
+    operations *with* path parameters; this resolution makes Rule A
+    self-sufficient for operations *without* path parameters (e.g.
+    ``POST /markdown``), which collision resolution never visits.
 
     Args:
         operation: The OpenAPI operation dict.
+        openapi_spec: The full OpenAPI spec for ``$ref`` resolution.
 
     Returns:
         The body schema dict, or ``None`` if no JSON request body exists.
@@ -161,11 +172,19 @@ def _get_body_schema(operation: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(json_content, dict):
         return None
     schema = json_content.get("schema")
-    return schema if isinstance(schema, dict) else None
+    if not isinstance(schema, dict):
+        return None
+    if "$ref" in schema:
+        resolved = resolve_spec_ref(openapi_spec, schema["$ref"])
+        if isinstance(resolved, dict):
+            schema = copy.deepcopy(resolved)
+            json_content["schema"] = schema
+    return schema
 
 
 def _normalize_operation_body(
     operation: dict[str, Any],
+    openapi_spec: OpenAPISpec,
 ) -> dict[str, str]:
     """Rename non-snake_case body properties in an operation.
 
@@ -174,11 +193,12 @@ def _normalize_operation_body(
 
     Args:
         operation: The OpenAPI operation dict (mutated in-place).
+        openapi_spec: The full OpenAPI spec for ``$ref`` resolution.
 
     Returns:
         Rename map (``{new_name: original_name}``), possibly empty.
     """
-    body_schema = _get_body_schema(operation)
+    body_schema = _get_body_schema(operation, openapi_spec)
     if body_schema is None:
         return {}
 
@@ -217,7 +237,10 @@ def _normalize_operation_body(
             required.append(new_name)
         logger.debug("Normalized body property '%s' -> '%s'", name, new_name)
 
-    if rename_map:
+    if rename_map and ("required" in body_schema or required):
+        # Only write ``required`` back when the schema already declared it or
+        # a rename touched it — never fabricate an empty ``required: []`` on
+        # a schema that had none.
         body_schema["required"] = required
 
     return rename_map
@@ -344,7 +367,7 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
                 try:
                     rename_map: dict[str, str] = {}
                     rename_map.update(_normalize_operation_parameters(operation))
-                    rename_map.update(_normalize_operation_body(operation))
+                    rename_map.update(_normalize_operation_body(operation, openapi_spec))
                     if rename_map:
                         _merge_rename_map(operation, rename_map)
                         total_renames += len(rename_map)

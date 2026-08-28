@@ -24,8 +24,10 @@ See the function's docstring for detailed prose descriptions of each.
 ================================  =============  ==========================================================
 Parameter                         Default        Purpose
 ================================  =============  ==========================================================
-``uri``                           (required)     MCP resource URI template with ``{param}`` path segments
-                                                 and optional ``{?a,b}`` query suffix.
+``uri``                           ``None``       MCP resource URI template with ``{param}`` path segments
+                                                 and optional ``{?a,b}`` query suffix.  When ``None``,
+                                                 derived from ``api_path`` + spec extensions (wildcard
+                                                 ``{param*}``, query suffix) via ``derive_resource_uri``.
 ``api_path``                      (required)     API path in spec (e.g. ``/repos/{owner}/{repo}/issues``).
 ``method``                        ``"GET"``      HTTP method.
 ``name``                          ``None``       Resource name passed to ``mcp.resource(name=...)``.
@@ -138,7 +140,7 @@ def _find_operation(
 
     Used for name derivation (operationId) and description fallbacks.  The
     lookup is exact — custom resources whose ``api_path`` uses different
-    parameter names than the spec (e.g. ``{orgname}`` vs ``{org}``) will not
+    parameter names than the spec (e.g. ``{widget_id}`` vs ``{id}``) will not
     match and fall back to URI-derived naming.
 
     Args:
@@ -163,8 +165,8 @@ def _find_operation(
 def _derive_name_from_uri(uri: str) -> str:
     """Derive a snake_case resource name from a URI template (fallback).
 
-    Uses the last non-parameter path segment: ``gitea://orgs/{orgname}`` →
-    ``"orgs"``, ``gitea://repos/{owner}/{repo}/readme`` → ``"readme"``.
+    Uses the last non-parameter path segment: ``gitea://widgets/{widget_id}`` →
+    ``"widgets"``, ``gitea://repos/{owner}/{repo}/readme`` → ``"readme"``.
     Returns ``""`` when no usable segment exists.
 
     Args:
@@ -219,6 +221,51 @@ def _derive_resource_name_for(
         api_path,
     )
     return "resource"
+
+
+def derive_resource_uri(
+    openapi_spec: OpenAPISpec | None,
+    api_path: str,
+    method: str,
+    query_params: list[str] | None = None,
+    context_params: list[str] | None = None,
+) -> str:
+    """Derive a resource URI template from the spec path + extensions.
+
+    Builds ``gitea://{api_path}`` and applies two spec-derived refinements:
+
+    1. **Wildcard path params** — when the operation carries
+       ``x-wildcard-path-param`` (stamped by the converter's Rule C), the
+       matching ``{param}`` segment is rendered ``{param*}`` so multi-segment
+       values (e.g. ``src/main.py``) route correctly.
+    2. **Query suffix** — ``query_params``/``context_params`` are appended as
+       an RFC 6570 ``{?a,b}`` suffix so FastMCP routes them to the handler.
+
+    This is the single source of truth for resource URI templates: the
+    factory uses it when ``uri`` is omitted, and ``auto.py`` uses it to build
+    the skip-check URI — so a custom wrapper and its auto sibling always
+    derive the same template from the same spec.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
+        api_path: API path in spec (e.g. ``/repos/{owner}/{repo}``).
+        method: HTTP method (e.g. ``"GET"``).
+        query_params: Optional query param names for the ``{?a,b}`` suffix.
+        context_params: Optional context param names for the suffix.
+
+    Returns:
+        The derived URI template (e.g. ``gitea://repos/{owner}/{repo}``).
+    """
+    uri = f"gitea://{api_path.lstrip('/')}"
+    operation = _find_operation(openapi_spec, api_path, method)
+    if operation is not None:
+        wildcard = operation.get("x-wildcard-path-param")
+        if isinstance(wildcard, str) and wildcard:
+            uri = uri.replace(f"{{{wildcard}}}", f"{{{wildcard}*}}")
+    optional = [p for p in (*(query_params or []), *(context_params or [])) if p]
+    if optional:
+        uri += "{?" + ",".join(optional) + "}"
+    return uri
 
 
 @dataclass
@@ -560,7 +607,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     gitea_client: GiteaClient,
     openapi_spec: OpenAPISpec | None,
     *,
-    uri: str,
+    uri: str | None = None,
     api_path: str,
     method: str = "GET",
     name: str | None = None,
@@ -610,6 +657,12 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         gitea_client: GiteaClient for API calls.
         openapi_spec: Post-conversion OpenAPI 3.1 spec.
         uri: Resource URI template (e.g. ``"gitea://repos/{owner}/{repo}"``).
+            When ``None`` (default), derived from ``api_path`` via
+            :func:`derive_resource_uri` — the spec path plus the
+            ``x-wildcard-path-param`` extension (rendered ``{param*}``) and
+            the ``{?a,b}`` query suffix from ``param_config``.  Pass an
+            explicit ``uri`` only for convenience resources whose URI is not
+            a spec mirror (e.g. ``gitea://repos/{owner}/{repo}/readme``).
         api_path: API path in spec (e.g. ``"/repos/{owner}/{repo}"``).
         method: HTTP method (default: ``"GET"``).
         name: Resource name passed to ``mcp.resource(name=...)``.  When
@@ -690,12 +743,6 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         )
         return None
 
-    # Derive the resource name when not declared: operationId → URI → placeholder.
-    # Never leaves ``name=None``, so FastMCP's function-name fallback
-    # ("handler") can never surface in list_resources.
-    if name is None:
-        name = _derive_resource_name_for(openapi_spec, api_path, method, uri)
-
     # Unwrap the param_config dataclass into local variables so the handler
     # closure can capture them normally (avoids changing all internal refs).
     _pc = param_config or ResourceParamConfig()
@@ -705,6 +752,26 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     context_param_validators = _pc.context_param_validators
     context_meta_keys = _pc.context_meta_keys
     optional_params = _pc.optional_params
+
+    # Derive the URI when not declared: spec path + wildcard extension +
+    # query suffix.  ``derive_resource_uri`` is the single source of truth
+    # shared with auto.py, so a custom wrapper and its auto sibling always
+    # derive the same template from the same spec — the override skip can
+    # never silently miss.
+    if uri is None:
+        uri = derive_resource_uri(
+            openapi_spec,
+            api_path,
+            method,
+            query_params=query_params,
+            context_params=context_params,
+        )
+
+    # Derive the resource name when not declared: operationId → URI → placeholder.
+    # Never leaves ``name=None``, so FastMCP's function-name fallback
+    # ("handler") can never surface in list_resources.
+    if name is None:
+        name = _derive_resource_name_for(openapi_spec, api_path, method, uri)
 
     # Cross-list invariant: query_params and context_params must not overlap.
     if query_params and context_params:
@@ -781,7 +848,15 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             formatted_path = api_path
             query_kwargs: dict[str, Any] = {}
             for key, value in kwargs.items():
-                if query_params and key in query_params and value is not None:
+                # None means "not provided" — FastMCP passes the declared
+                # default for optional {?param} template entries.  Skip
+                # silently: path params are required (never None), and an
+                # absent optional query/context param must not fall through
+                # to the path-substitution branch below (which would warn
+                # "unknown kwarg" on every read).
+                if value is None:
+                    continue
+                if query_params and key in query_params:
                     # Validate against allowed values if a validator is registered.
                     if (
                         query_param_validators
@@ -959,5 +1034,6 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
 
 __all__ = [
     "ResourceParamConfig",
+    "derive_resource_uri",
     "make_api_resource",
 ]

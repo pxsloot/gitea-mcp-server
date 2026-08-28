@@ -4,8 +4,10 @@ Issue: read_resource fails on dot-prefixed file paths like .forgejo/workflows/te
 AC-312: get_raw_file tool twins reject dotfiles at schema/validation layer.
 
 Root causes:
-  1. URI template ``gitea://repos/{owner}/{repo}/files/{path}`` uses ``{path}`` which
-     matches only one segment (RFC 6570). Multi-segment paths need ``{path*}``.
+  1. The files resource URI must use a wildcard path param (``{filepath*}``) so
+     multi-segment paths match.  The wildcard is derived from the spec's
+     ``x-wildcard-path-param`` extension (converter Rule C), which encodes the
+     Gitea router's ``contents/*`` wildcard that go-swagger erases.
   2. ``FILEPATH_PATTERN`` regex ``^[a-zA-Z0-9](?:[a-zA-Z0-9_./ -]*[a-zA-Z0-9])?$``
      rejects paths starting with a dot (``.gitignore``, ``.env``, ``.forgejo/...``).
   3. ``validate_filepath()`` applies the same regex, so every tool twin
@@ -24,6 +26,7 @@ from fastmcp import FastMCP
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.resources.custom import register_custom_resources
 from gitea_mcp_server.validation import FILEPATH_PATTERN, validate_filepath
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ============================================================================
 # Bug 1: URI template uses {path} instead of {path*}
@@ -31,7 +34,7 @@ from gitea_mcp_server.validation import FILEPATH_PATTERN, validate_filepath
 
 
 class TestFilesResourceUriTemplate:
-    """REG: files resource must use {path*} wildcard for multi-segment paths."""
+    """REG: files resource must use a wildcard for multi-segment paths."""
 
     @pytest.fixture
     def mock_mcp(self) -> MagicMock:
@@ -44,12 +47,26 @@ class TestFilesResourceUriTemplate:
     def test_files_uri_template_uses_wildcard_path(
         self, mock_mcp: MagicMock, mock_client: AsyncMock
     ) -> None:
-        """The files resource URI must use {path*} to match multi-segment paths."""
-        register_custom_resources(mock_mcp, mock_client)
+        """The files resource URI must use {filepath*} to match multi-segment paths.
+
+        The wildcard comes from the spec's ``x-wildcard-path-param`` extension
+        (converter Rule C), not a hardcoded ``{path*}`` in the wrapper.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+        register_custom_resources(mock_mcp, mock_client, openapi_spec=spec)
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
-        files_uri = next(u for u in uri_templates if "files" in u)
-        assert "{path*}" in files_uri, (
-            f"Expected {{path*}} wildcard for multi-segment support, got: {files_uri}"
+        files_uri = next(u for u in uri_templates if "contents" in u)
+        assert "{filepath*}" in files_uri, (
+            f"Expected {{filepath*}} wildcard for multi-segment support, got: {files_uri}"
         )
 
 

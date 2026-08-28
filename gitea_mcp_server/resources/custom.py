@@ -11,10 +11,13 @@ token/scopes, server/info) use direct ``mcp.resource()`` calls with inline
 scope guarding -- the legacy ``@_register`` decorator has been removed.
 
 **Naming**: every resource name is snake_case.  Factory resources derive
-their name from the spec operationId (or declare an explicit name when the
-``api_path`` does not match a spec path); static resources declare explicit
-snake_case names.  No resource may surface FastMCP's function-name fallback
-(``"handler"``).
+their URI, name, description, and size_hint from the spec (path +
+``x-wildcard-path-param`` extension, operationId, summary, response schema);
+only the readme wrapper declares an explicit name/description because it is a
+concrete convenience resource whose ``api_path``
+(``/repos/{owner}/{repo}/contents/README.md``) is not a spec mirror.  Static
+resources declare explicit snake_case names.  No resource may surface
+FastMCP's function-name fallback (``"handler"``).
 """
 
 import json
@@ -95,7 +98,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}",
         api_path="/repos/{owner}/{repo}",
         method="GET",
         format_hint="repository",
@@ -111,7 +113,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://users/{username}",
         api_path="/users/{username}",
         method="GET",
         format_hint="user",
@@ -127,7 +128,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://user",
         api_path="/user",
         method="GET",
         format_hint="user",
@@ -143,17 +143,13 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://orgs/{orgname}",
-        api_path="/orgs/{orgname}",
+        api_path="/orgs/{org}",
         method="GET",
-        name="org_get",
-        description="Get an organization by name",
         format_hint="user",
         scope="read:organization",
         cache_ttl=CACHE_TTL_USERS,
-        size_hint="medium",
         tags={"wrapper", "organization"},
-        error_message="Organization '{orgname}' not found.",
+        error_message="Organization '{org}' not found.",
         tracking_set=registered_uris,
         available_scopes=available_scopes,
     )
@@ -162,7 +158,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/releases{?draft,q}",
         api_path="/repos/{owner}/{repo}/releases",
         method="GET",
         format_hint="release",
@@ -189,7 +184,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/labels",
         api_path="/repos/{owner}/{repo}/labels",
         method="GET",
         format_hint="labels",
@@ -211,7 +205,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
         api_path="/repos/{owner}/{repo}/issues",
         method="GET",
         format_hint="issues",
@@ -241,7 +234,6 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/pulls{?state}",
         api_path="/repos/{owner}/{repo}/pulls",
         method="GET",
         format_hint="pull_requests",
@@ -270,6 +262,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
+        # Explicit URI: a concrete convenience resource, not a spec mirror.
+        # The api_path (/repos/{owner}/{repo}/contents/README.md) must not
+        # become the URI — the readme wrapper is a friendlier alias.
         uri="gitea://repos/{owner}/{repo}/readme",
         api_path="/repos/{owner}/{repo}/contents/README.md",
         method="GET",
@@ -298,15 +293,16 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp,
         gitea_client,
         openapi_spec,
-        uri="gitea://repos/{owner}/{repo}/files/{path*}",
-        api_path="/repos/{owner}/{repo}/contents/{path}",
+        # URI derived from the spec path + x-wildcard-path-param extension:
+        # gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}.  The
+        # wildcard (Rule C in the converter) lets multi-segment paths
+        # (files/src/main.py) route; the {?ref} suffix comes from
+        # query_params below.
+        api_path="/repos/{owner}/{repo}/contents/{filepath}",
         method="GET",
-        name="repo_get_contents",
-        description="Get a file from a repository",
         scope="read:repository",
-        size_hint="small",
         tags={"wrapper", "files"},
-        error_message="File '{path}' not found in repository '{owner}/{repo}'.",
+        error_message="File '{filepath}' not found in repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
             query_params=["ref"],
             optional_params=[

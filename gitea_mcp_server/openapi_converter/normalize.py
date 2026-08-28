@@ -4,10 +4,11 @@ The server mirrors the OpenAPI spec one-to-one (design decision #17) — the
 spec is the source of truth.  But a few *classes* of spec quirks actively
 mislead agents, and these are systemic: Gitea's spec mixes naming conventions
 and response shapes in ways that recur across many endpoints.  Rather than
-hand-fix individual tools, this module applies **shape-driven** normalization
-rules to the whole spec before FastMCP sees it.
+hand-fix individual tools, this module applies normalization rules to the
+whole spec before FastMCP sees it.
 
-Two rules live here:
+Three rules live here — two shape-driven, one source-driven (documented
+exception):
 
 **Rule A — snake_case parameter normalization.**  Gitea's spec mixes
 conventions: body properties like ``Do``/``MergeCommitID`` (on
@@ -40,7 +41,23 @@ operation with ``x-response-transform: "boolean-check"``.  The schema-time
 and runtime pipeline then return an unambiguous boolean and distinguish
 "not merged" from "not found".
 
-Both rules are **shape-driven, not name-driven**: they trigger on the shape
+**Rule C — wildcard path-param annotation (source-driven exception).**
+Gitea/Forgejo's router registers some repo paths as wildcards (values may
+contain ``/``), but go-swagger erases the wildcard when generating the spec:
+``contents/*`` becomes ``contents/{filepath}``.  The spec cannot express
+this — ``{filepath}`` is indistinguishable from ``{id}`` — so the knowledge
+is curated here from the router source (``routers/api/v1/api.go``, routes
+registered with ``/*``).  This rule stamps ``x-wildcard-path-param`` on the
+operation; the resource layer renders ``{param*}`` in URI templates so
+multi-segment values route correctly.
+
+Rule C is a **documented exception** to the module's shape-driven ideal: it
+is source-driven, not shape-driven, because the wildcard information is
+erased during spec generation and no spec shape can recover it.  The table
+must be re-verified against the router when upgrading Gitea/Forgejo; a table
+entry that no longer matches the fetched spec is logged loudly (drift guard).
+
+Rules A and B are **shape-driven, not name-driven**: they trigger on the shape
 of the spec (naming convention, response structure), never on a hardcoded
 list of operationIds.  This keeps the normalization generic so it keeps
 working as the Gitea spec evolves.
@@ -326,10 +343,79 @@ def _annotate_boolean_checks(openapi_spec: OpenAPISpec) -> int:
     return annotated
 
 
+# ── Rule C — wildcard path params (source-driven exception) ─────────────────
+#
+# Gitea/Forgejo's router registers these repo paths as wildcards (values may
+# contain '/'), but go-swagger erases the wildcard when generating the spec:
+# ``contents/*`` becomes ``contents/{filepath}``.  The spec cannot express
+# this — ``{filepath}`` is indistinguishable from ``{id}`` — so the knowledge
+# is curated here from the router source (``routers/api/v1/api.go``, routes
+# registered with ``/*``).  This is a documented exception to the module's
+# shape-driven ideal: the rule is source-driven, not shape-driven.
+#
+# Verify against the router when upgrading Gitea/Forgejo: a path that no
+# longer matches the fetched spec (or a new ``/*`` route) must be updated
+# here.  ``_annotate_wildcard_path_params`` warns loudly when a table entry
+# no longer exists in the spec (drift guard).
+
+_WILDCARD_PATH_PARAMS: dict[str, str] = {
+    "/repos/{owner}/{repo}/contents/{filepath}": "filepath",
+    "/repos/{owner}/{repo}/raw/{filepath}": "filepath",
+    "/repos/{owner}/{repo}/media/{filepath}": "filepath",
+    "/repos/{owner}/{repo}/compare/{basehead}": "basehead",
+    "/repos/{owner}/{repo}/git/refs/{ref}": "ref",
+    "/repos/{owner}/{repo}/branches/{branch}": "branch",
+    "/repos/{owner}/{repo}/tags/{tag}": "tag",
+}
+
+
+def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
+    """Annotate wildcard path params with ``x-wildcard-path-param``.
+
+    For each GET path in ``_WILDCARD_PATH_PARAMS``, stamp the wildcard param
+    name on the operation.  A table entry whose path no longer exists in the
+    fetched spec is logged loudly — the router/spec changed and the table
+    must be re-verified against ``routers/api/v1``.
+
+    Mutates ``openapi_spec`` in-place.  Returns the number of operations
+    annotated.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (mutated in-place).
+    """
+    annotated = 0
+    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
+    for path, param_name in _WILDCARD_PATH_PARAMS.items():
+        path_item = paths.get(path)
+        if not isinstance(path_item, dict):
+            logger.warning(
+                "Wildcard path table entry %s not found in fetched spec — "
+                "verify against routers/api/v1 (route may have changed)",
+                path,
+            )
+            continue
+        operation = path_item.get("get")
+        if not isinstance(operation, dict):
+            logger.warning(
+                "Wildcard path table entry %s has no GET operation in fetched "
+                "spec — verify against routers/api/v1 (route may have changed)",
+                path,
+            )
+            continue
+        operation["x-wildcard-path-param"] = param_name
+        annotated += 1
+        logger.debug(
+            "Annotated wildcard path param %s on %s",
+            param_name,
+            path,
+        )
+    return annotated
+
+
 def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     """Normalize agent-misleading spec quirks across all operations.
 
-    Applies two shape-driven rules:
+    Applies three rules:
 
     1. **snake_case parameters** — renames non-snake_case query/header/cookie
        parameters and body properties (that :func:`camel_to_snake` can
@@ -338,6 +424,9 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     2. **boolean-check responses** — annotates GET operations whose success
        response is a contentless 204 with a 404 declared, setting
        ``x-response-transform: "boolean-check"``.
+    3. **wildcard path params** — stamps ``x-wildcard-path-param`` on the
+       GET operations listed in ``_WILDCARD_PATH_PARAMS`` (source-driven
+       exception, curated from the Gitea/Forgejo router).
 
     Mutates ``openapi_spec`` in-place.  Called after spec conversion and
     after :func:`resolve_param_collisions`, before FastMCP processes the spec.
@@ -390,6 +479,7 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
                     )
 
         boolean_checks = _annotate_boolean_checks(openapi_spec)
+        wildcard_params = _annotate_wildcard_path_params(openapi_spec)
 
         if total_renames:
             logger.info(
@@ -402,6 +492,11 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
             logger.info(
                 "Annotated %d boolean-check operations",
                 boolean_checks,
+            )
+        if wildcard_params:
+            logger.info(
+                "Annotated %d wildcard path params",
+                wildcard_params,
             )
     except Exception:
         # Broad catch is intentional: this function is called during spec

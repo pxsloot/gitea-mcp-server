@@ -82,10 +82,10 @@ class TestSubstituteTemplate:
 
     def test_wildcard_parameter(self) -> None:
         """Wildcard parameters are handled."""
-        template = "gitea://repos/{owner}/{repo}/files/{path*}"
-        params = {"owner": "org", "repo": "repo", "path": "docs/guide/intro.md"}
+        template = "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        params = {"owner": "org", "repo": "repo", "filepath": "docs/guide/intro.md"}
         result = _substitute_template(template, params)
-        assert result == "gitea://repos/org/repo/files/docs/guide/intro.md"
+        assert result == "gitea://repos/org/repo/contents/docs/guide/intro.md"
 
 
 class TestComputeUrisToInvalidate:

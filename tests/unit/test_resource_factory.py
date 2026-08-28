@@ -17,6 +17,7 @@ from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
     _build_optional_param_signature,
+    derive_resource_uri,
     make_api_resource,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
@@ -367,11 +368,11 @@ class TestMakeApiResourceNameDerivation:
             mcp,
             client,
             spec,
-            uri="gitea://orgs/{orgname}",
-            api_path="/orgs/{orgname}",  # not in spec (spec has /orgs/{org})
+            uri="gitea://widgets/{widget_id}",
+            api_path="/widgets/{widget_id}",  # not in spec
         )
 
-        assert self._registered_name(mcp, "gitea://orgs/{orgname}") == "orgs"
+        assert self._registered_name(mcp, "gitea://widgets/{widget_id}") == "widgets"
 
     def test_placeholder_name_with_warning_when_no_derivation(
         self, caplog: pytest.LogCaptureFixture
@@ -412,6 +413,137 @@ class TestMakeApiResourceNameDerivation:
         )
 
         assert self._registered_name(mcp, "gitea://repos/{owner}/{repo}") == "custom_name"
+
+
+class TestDeriveResourceUri:
+    """Tests for derive_resource_uri — the shared URI-template derivation."""
+
+    def test_derives_from_api_path(self) -> None:
+        """No wildcard/query → gitea://{api_path}."""
+        spec = make_openapi_spec(
+            paths={"/orgs/{org}": {"get": {"operationId": "orgGet"}}},
+        )
+        assert derive_resource_uri(spec, "/orgs/{org}", "GET") == "gitea://orgs/{org}"
+
+    def test_applies_wildcard_extension(self) -> None:
+        """x-wildcard-path-param renders {param*} in the template."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+        uri = derive_resource_uri(spec, "/repos/{owner}/{repo}/contents/{filepath}", "GET")
+        assert uri == "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+
+    def test_appends_query_suffix(self) -> None:
+        """query_params become an RFC 6570 {?a,b} suffix."""
+        spec = make_openapi_spec(
+            paths={"/repos/{owner}/{repo}/issues": {"get": {"operationId": "listIssues"}}},
+        )
+        uri = derive_resource_uri(
+            spec,
+            "/repos/{owner}/{repo}/issues",
+            "GET",
+            query_params=["state", "type"],
+        )
+        assert uri == "gitea://repos/{owner}/{repo}/issues{?state,type}"
+
+    def test_wildcard_and_query_suffix_combine(self) -> None:
+        """Wildcard path param + query suffix compose in one template."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+        uri = derive_resource_uri(
+            spec,
+            "/repos/{owner}/{repo}/contents/{filepath}",
+            "GET",
+            query_params=["ref"],
+        )
+        assert uri == "gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"
+
+    def test_no_spec_derives_without_wildcard(self) -> None:
+        """Without a spec the wildcard extension is unknown — base path only."""
+        assert (
+            derive_resource_uri(None, "/repos/{owner}/{repo}", "GET")
+            == "gitea://repos/{owner}/{repo}"
+        )
+
+    def test_operation_not_in_spec_derives_without_wildcard(self) -> None:
+        """An api_path absent from the spec gets no wildcard (no extension)."""
+        spec = make_openapi_spec(paths={})
+        assert (
+            derive_resource_uri(spec, "/repos/{owner}/{repo}/contents/{filepath}", "GET")
+            == "gitea://repos/{owner}/{repo}/contents/{filepath}"
+        )
+
+
+class TestMakeApiResourceUriDerivation:
+    """Tests that make_api_resource derives the URI when uri is omitted."""
+
+    def test_derives_uri_when_omitted(self) -> None:
+        """uri=None + api_path in spec → derived URI registered."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = make_openapi_spec(
+            paths={
+                "/orgs/{org}": {"get": {"operationId": "orgGet"}},
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            api_path="/orgs/{org}",
+        )
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            api_path="/repos/{owner}/{repo}/contents/{filepath}",
+            param_config=ResourceParamConfig(query_params=["ref"]),
+        )
+
+        uris = [call[0][0] for call in mcp.resource.call_args_list]
+        assert "gitea://orgs/{org}" in uris
+        assert "gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}" in uris
+
+    def test_explicit_uri_still_wins(self) -> None:
+        """An explicit uri is used as-is (no derivation)."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = make_openapi_spec(
+            paths={"/orgs/{org}": {"get": {"operationId": "orgGet"}}},
+        )
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://orgs/{org_alias}",
+            api_path="/orgs/{org}",
+        )
+
+        uris = [call[0][0] for call in mcp.resource.call_args_list]
+        assert "gitea://orgs/{org_alias}" in uris
 
 
 class TestMakeApiResourceDescription:
@@ -476,14 +608,14 @@ class TestMakeApiResourceDescription:
             mcp,
             client,
             spec,
-            uri="gitea://orgs/{orgname}",
-            api_path="/orgs/{orgname}",  # not in spec → no summary
+            uri="gitea://widgets/{widget_id}",
+            api_path="/widgets/{widget_id}",  # not in spec → no summary
         )
 
-        doc = captured["gitea://orgs/{orgname}"].__doc__
-        assert doc == "orgs"
+        doc = captured["gitea://widgets/{widget_id}"].__doc__
+        assert doc == "widgets"
         assert "GET" not in doc
-        assert "/orgs/{orgname}" not in doc
+        assert "/widgets/{widget_id}" not in doc
 
 
 class TestMakeApiResourceHandler:
@@ -513,6 +645,43 @@ class TestMakeApiResourceHandler:
         assert content.mime_type == "application/json"
         data = json.loads(content.content)
         assert data == {"id": 1, "name": "test-repo"}
+
+    @pytest.mark.asyncio
+    async def test_optional_query_param_none_is_skipped_silently(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A None optional query param (FastMCP's {?param} default) is skipped.
+
+        Regression: FastMCP passes the declared default (None) for optional
+        ``{?param}`` template entries.  The handler must skip None silently —
+        not fall through to the path-substitution branch, which logged
+        "unknown kwarg 'state'=None" on every read of issues/pulls/releases.
+        """
+        import logging
+
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            param_config=ResourceParamConfig(query_params=["state", "type"]),
+        )
+
+        assert handler is not None
+        with caplog.at_level(logging.WARNING, logger="gitea_mcp_server.resources.factory"):
+            result = await handler(owner="o", repo="r", state=None, type=None)
+
+        assert isinstance(result, ResourceResult)
+        assert "unknown kwarg" not in caplog.text
+        # None params are not forwarded to the API.
+        client.request.assert_called_once()
+        _, kwargs = client.request.call_args
+        assert kwargs.get("params") is None
 
     @pytest.mark.asyncio
     async def test_handler_returns_text_resource_result_for_string_response(self) -> None:
@@ -788,22 +957,22 @@ class TestMakeApiResourceMissingEndpoint:
     def test_warns_and_registers_without_schema_for_missing_endpoint(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client()
-        spec = _make_mock_openapi_spec()  # has /repos/{owner}/{repo} but not /orgs/{org}
+        spec = _make_mock_openapi_spec()  # has /repos/{owner}/{repo} but not /widgets/{widget_id}
 
         # This endpoint is NOT in the spec -- should warn but proceed
         handler = make_api_resource(
             mcp,
             client,
             spec,
-            uri="gitea://orgs/{orgname}",
-            api_path="/orgs/{orgname}",
+            uri="gitea://widgets/{widget_id}",
+            api_path="/widgets/{widget_id}",
             format_hint="user",
         )
 
         # Handler should still be returned (registered without schema)
         assert handler is not None
         uris = [call[0][0] for call in mcp.resource.call_args_list]
-        assert "gitea://orgs/{orgname}" in uris
+        assert "gitea://widgets/{widget_id}" in uris
 
     def test_registers_with_none_spec(self) -> None:
         """When openapi_spec is None, the resource should still register."""
@@ -1644,8 +1813,8 @@ class TestMakeApiResourceHandlerHook:
             mcp,
             client,
             spec,
-            uri="gitea://repos/{owner}/{repo}/files/{path*}",
-            api_path="/repos/{owner}/{repo}/contents/{path}",
+            uri="gitea://repos/{owner}/{repo}/contents/{filepath*}",
+            api_path="/repos/{owner}/{repo}/contents/{filepath}",
             param_config=ResourceParamConfig(
                 query_params=["ref"],
             ),
@@ -1653,7 +1822,7 @@ class TestMakeApiResourceHandlerHook:
         )
 
         assert handler is not None
-        result = await handler(owner="o", repo="r", path="f.py", ref="main")
+        result = await handler(owner="o", repo="r", filepath="f.py", ref="main")
         assert isinstance(result, ResourceResult)
         content = result.contents[0]
         assert content.mime_type == "text/plain"

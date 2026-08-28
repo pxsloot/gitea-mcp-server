@@ -63,8 +63,8 @@ class TestCleanResourceUri:
     def test_preserves_wildcard_path_params(self) -> None:
         """Should preserve {path*} and other non-query params."""
         assert (
-            clean_resource_uri("gitea://repos/{owner}/{repo}/files/{path*}")
-            == "gitea://repos/{owner}/{repo}/files/{path*}"
+            clean_resource_uri("gitea://repos/{owner}/{repo}/contents/{filepath*}")
+            == "gitea://repos/{owner}/{repo}/contents/{filepath*}"
         )
 
 

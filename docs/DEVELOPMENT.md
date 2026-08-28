@@ -565,16 +565,25 @@ The factory:
 - Skips registration when the token's scopes are insufficient
 - Returns ``None`` if scope-filtered, the handler otherwise
 
+**Resource URIs are derived, not declared.** When ``uri`` is omitted, the
+factory derives the URI template from the spec path via
+``derive_resource_uri``: ``gitea://{api_path}`` plus the
+``x-wildcard-path-param`` extension (rendered ``{param*}`` so multi-segment
+values route) and the ``{?a,b}`` query suffix from ``param_config``.
+``auto.py`` uses the same derivation, so a custom wrapper and its auto
+sibling always derive the same template — the override skip is structurally
+guaranteed.  Pass an explicit ``uri`` only for convenience resources whose
+URI is not a spec mirror (e.g. the readme wrapper).
+
 **Resource names are snake_case, derived from the endpoint.** When ``name``
 is omitted, the factory derives it from the spec ``operationId``
 (camelCase → snake_case, e.g. ``getRepo`` → ``get_repo``) so wrapper names
 align with their auto-generated siblings.  When the ``api_path`` does not
-match a spec path (e.g. ``/orgs/{orgname}`` vs the spec's ``/orgs/{org}``),
-the name falls back to the URI template's last non-parameter segment, and
-finally to a placeholder with a loud warning — a resource must never
-surface FastMCP's function-name fallback (``"handler"``).  Pass an explicit
-``name`` when the derivation would be misleading (e.g. the readme wrapper
-declares ``repo_get_readme``).
+match a spec path, the name falls back to the URI template's last
+non-parameter segment, and finally to a placeholder with a loud warning — a
+resource must never surface FastMCP's function-name fallback (``"handler"``).
+Pass an explicit ``name`` when the derivation would be misleading (e.g. the
+readme wrapper declares ``repo_get_readme``).
 
 **Descriptions never leak API plumbing.** The handler docstring (what agents
 see as the resource description in ``list_resources``) comes from an

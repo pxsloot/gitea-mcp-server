@@ -1,5 +1,7 @@
 """Integration tests for the MCP server with resources."""
 
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -142,3 +144,63 @@ class TestResourcesIntegration:
         assert "gitea://repos/{owner}/{repo}/readme" in call_uris
         assert "gitea://repos/{owner}/{repo}/issues{?state,type}" in call_uris
         assert "gitea://users/{username}" in call_uris
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_names_between_custom_and_auto(self) -> None:
+        """Custom wrappers replace their auto siblings — no duplicate names.
+
+        The org and contents wrappers now spec-match (orgs/{org},
+        contents/{filepath*}), so the skip fires and each URI is registered
+        exactly once, by the custom wrapper.  Regression for #729.
+        """
+        from gitea_mcp_server import resources as resources_pkg
+
+        spec = make_openapi_spec(
+            paths={
+                "/orgs/{org}": {
+                    "get": {
+                        "operationId": "orgGet",
+                        "summary": "Get an organization",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                },
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "summary": "Get file contents",
+                        "x-wildcard-path-param": "filepath",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                },
+            },
+        )
+
+        mcp = MagicMock()
+        registered: list[tuple[str, str]] = []
+
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            def deco(func: Callable) -> Callable:
+                registered.append((uri, kwargs.get("name", "MISSING")))
+                return func
+
+            return deco
+
+        mcp.resource = MagicMock(side_effect=resource_decorator)
+        mock_client = AsyncMock()
+
+        skip_uris = resources_pkg.register_custom_resources(mcp, mock_client, openapi_spec=spec)
+        resources_pkg.register_auto_generated_resources(mcp, mock_client, spec, skip_uris=skip_uris)
+
+        # The wrapper URIs are registered exactly once (custom, not auto).
+        org_uris = [u for u, _ in registered if u == "gitea://orgs/{org}"]
+        contents_uris = [
+            u
+            for u, _ in registered
+            if u == "gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"
+        ]
+        assert len(org_uris) == 1, f"org resource registered {len(org_uris)} times"
+        assert len(contents_uris) == 1, f"contents resource registered {len(contents_uris)} times"
+
+        # No duplicate resource names across the whole registration.
+        names = [name for _, name in registered]
+        assert len(names) == len(set(names)), f"duplicate resource names in list_resources: {names}"

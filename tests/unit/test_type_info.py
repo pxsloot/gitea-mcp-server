@@ -2,6 +2,9 @@
 
 from typing import cast
 
+import pytest
+from fastmcp.tools.base import Tool
+
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import (
     _walk_parameter_refs,
@@ -354,6 +357,31 @@ class TestResolveTypeInfo:
         assert result["cross_references"]["returned_by"] == []
         assert result["cross_references"]["accepted_by"] == []
 
+    def test_scalar_type_schema_is_primitive(self) -> None:
+        """A scalar type (string enum) yields a primitive ``schema``.
+
+        ``resolve_type``'s declared output schema must accept primitives for
+        the ``schema`` field — ``schema_to_compact_example`` returns a bare
+        string for enum types (e.g. ``ReviewStateType``), and a bare
+        ``{"type": "object"}`` declaration would fail output validation.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "ReviewStateType": {
+                        "type": "string",
+                        "enum": ["APPROVED", "REQUEST_CHANGES", "COMMENT"],
+                    },
+                },
+            },
+        )
+        index = build_type_index(spec)
+        result = resolve_type_info(spec, index, "ReviewStateType", detail="concise")
+        assert result is not None
+        assert isinstance(result["schema"], str), (
+            f"scalar type schema should be a primitive string, got {result['schema']!r}"
+        )
+
 
 class TestResolveTypeInfoEdgeCases:
     """Tests for guard clauses and error handling in resolve_type_info."""
@@ -561,3 +589,63 @@ class TestBuildTypeIndexEdgeCases:
         }
         result = build_type_index(spec)
         assert result == {}
+
+
+class TestResolveTypeOutputSchema:
+    """Tests for the registered ``resolve_type`` tool's output schema.
+
+    The ``schema`` field of the result is a compact example that can be a
+    primitive for scalar types (e.g. ``ReviewStateType`` → a bare string), so
+    the declared schema must accept primitives — otherwise ``resolve_type``
+    fails output validation on every scalar type, breaking agent discovery.
+    """
+
+    SPEC: OpenAPISpec = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "ReviewStateType": {
+                    "type": "string",
+                    "enum": ["APPROVED", "REQUEST_CHANGES", "COMMENT"],
+                },
+            },
+        },
+    }
+
+    @pytest.mark.asyncio
+    async def _get_resolve_type(self) -> Tool:
+        """Helper: register type tools and return the resolve_type tool."""
+        from fastmcp import FastMCP
+
+        from gitea_mcp_server.tools.type_info import register_type_tools
+
+        mcp = FastMCP("test")
+        register_type_tools(mcp, openapi_spec=self.SPEC, tool_prefix="gitea_")
+        tools = await mcp.list_tools()
+        tool_map = {t.name: t for t in tools}
+        result = tool_map.get("resolve_type")
+        assert result is not None
+        return result
+
+    @pytest.mark.asyncio
+    async def test_schema_field_accepts_primitives(self) -> None:
+        """resolve_type's ``schema`` field must accept primitives (scalar types).
+
+        ``schema_to_compact_example`` yields a bare string for enum types, so
+        a bare ``{"type": "object"}`` declaration would fail output validation
+        — the same bug family as ``tool_info``'s ``output_example``.
+        """
+        tool = await self._get_resolve_type()
+        assert tool is not None, "resolve_type not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
+        result_schema = tool.output_schema["properties"]["result"]
+        schema_field = result_schema.get("properties", {}).get("schema", {})
+        assert schema_field, "schema field missing from resolve_type.result.properties"
+        assert "anyOf" in schema_field, "schema field should use anyOf"
+        types = {entry.get("type") for entry in schema_field["anyOf"]}
+        assert "object" in types, f"anyOf should accept objects, got {types}"
+        assert "string" in types, f"anyOf should accept strings, got {types}"
+        assert "boolean" in types, f"anyOf should accept booleans, got {types}"
+        assert "number" in types, f"anyOf should accept numbers, got {types}"
+        assert "null" in types, f"anyOf should accept null, got {types}"

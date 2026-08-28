@@ -239,7 +239,7 @@ Note on output shape: `output_example` and `format=json` results reference
 nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These
 are not inline -- the full object is returned by the live API, but the example
 uses references to stay compact. Don't expect a flat structure; read the nested
-fields from the actual response.
+fields from the actual response. Scalar-result tools (e.g. boolean checks) show a bare primitive instead (`true`, `0`, `"example"`).
 
 When you see a ``$ref:TypeName`` marker and need to know what fields that type
 contains, use ``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or

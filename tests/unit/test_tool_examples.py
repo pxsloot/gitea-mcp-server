@@ -205,6 +205,35 @@ class TestSchemaToExample:
         assert "output_example" not in result
         assert "output_schema" not in result
 
+    def test_serialize_tool_schema_boolean_result(self) -> None:
+        """A boolean-result tool (boolean-check) yields a bare boolean example.
+
+        Boolean-check tools get a ``{"result": boolean}`` fallback schema
+        (``mcp_builder._apply_fallback_schemas``), so the compact example is
+        the inner boolean — ``True``.  ``tool_info``'s declared
+        ``output_example`` schema accepts primitives, so this must not fail
+        output validation.
+        """
+        from fastmcp.tools.base import Tool
+
+        tool = Tool(
+            name="gitea_repo_pull_request_is_merged",
+            description="Check if a pull request has been merged",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "boolean",
+                        "description": "Whether the checked condition holds.",
+                    },
+                },
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        result = serialize_tool_schema(tool)
+        assert result["output_example"] is True
+
     def test_example_string_email_format(self) -> None:
         """_example_string with format=email should return user@example.com."""
         assert _example_string({"format": "email"}) == "user@example.com"

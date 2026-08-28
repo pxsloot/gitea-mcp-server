@@ -155,6 +155,28 @@ class TestToolInfoOutputSchema:
             assert "object" in types, f"anyOf should accept objects, got {types}"
             assert "array" in types, f"anyOf should accept arrays, got {types}"
 
+    @pytest.mark.asyncio
+    async def test_tool_info_output_example_accepts_primitives(self) -> None:
+        """tool_info's output_example must accept primitives (boolean-check tools).
+
+        Boolean-check tools (e.g. ``gitea_repo_pull_request_is_merged``) have
+        a ``{"result": boolean}`` output schema, so ``serialize_tool_schema``
+        produces a bare boolean ``output_example`` (``True``).  The declared
+        schema must accept it — otherwise ``tool_info`` on every boolean-check
+        tool fails with an output-validation error, breaking agent discovery.
+        """
+        tool = await self._get_tool_info()
+        assert tool is not None, "tool_info not registered"
+        assert tool.output_schema is not None, "Expected output_schema to be set"
+        result_schema = tool.output_schema["properties"]["result"]
+        output_example_schema = result_schema.get("properties", {}).get("output_example", {})
+        assert output_example_schema, "output_example missing from tool_info.result.properties"
+        assert "anyOf" in output_example_schema, "output_example should use anyOf"
+        types = {entry.get("type") for entry in output_example_schema["anyOf"]}
+        assert "boolean" in types, f"anyOf should accept booleans, got {types}"
+        assert "number" in types, f"anyOf should accept numbers, got {types}"
+        assert "null" in types, f"anyOf should accept null, got {types}"
+
 
 class TestCallToolRuntimeBehavior:
     """Test runtime behavior of the call_tool function.

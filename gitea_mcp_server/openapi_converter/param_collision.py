@@ -314,7 +314,10 @@ def _rename_colliding_body_properties(
             required.remove(prop_name)
             required.append(new_name)
 
-    if rename_map:
+    if rename_map and ("required" in body_schema or required):
+        # Only write ``required`` back when the schema already declared it or
+        # a rename touched it — never fabricate an empty ``required: []`` on
+        # a schema that had none (mirrors normalize._normalize_operation_body).
         body_schema["required"] = required
 
     return rename_map

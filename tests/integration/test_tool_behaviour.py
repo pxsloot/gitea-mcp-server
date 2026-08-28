@@ -713,6 +713,124 @@ class TestBooleanCheck:
         assert "not found" in error_str.lower(), f"Expected not-found in {error_str}"
 
 
+def _make_member_check_spec() -> dict[str, Any]:
+    """Return a Swagger spec with a boolean-check whose resource is a list.
+
+    Models ``GET /orgs/{org}/members/{username}`` (a boolean-check: 204 on
+    member, 404 on not-member) plus ``GET /orgs/{org}/members`` (the member
+    list, which 404s when the org is missing).  The spec-driven resource
+    derivation picks the member list as the org-existence check.
+    """
+    return {
+        "swagger": "2.0",
+        "info": {"title": "Gitea API", "version": "1.0"},
+        "basePath": "/api/v1",
+        "paths": {
+            "/orgs/{org}/members/{username}": {
+                "get": {
+                    "operationId": "orgIsMember",
+                    "summary": "Check if a user is a member of an organization",
+                    "parameters": [
+                        {
+                            "name": "org",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "username",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                    ],
+                    "responses": {
+                        "204": {"description": "user is a member"},
+                        "404": {"description": "user is not a member"},
+                    },
+                }
+            },
+            "/orgs/{org}/members": {
+                "get": {
+                    "operationId": "orgListMembers",
+                    "summary": "List an organization's members",
+                    "parameters": [
+                        {
+                            "name": "org",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "UserList",
+                            "schema": {
+                                "type": "array",
+                                "items": {"$ref": "#/definitions/User"},
+                            },
+                        },
+                        "404": {"description": "Not found."},
+                    },
+                }
+            },
+        },
+        "definitions": {
+            "User": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "login": {"type": "string"},
+                },
+            },
+        },
+    }
+
+
+class TestBooleanCheckListResource:
+    """Scenario 4c-2: Boolean-check disambiguation via a list resource.
+
+    The spec-driven resource derivation picks the member list
+    (``/orgs/{org}/members``) as the org-existence check for
+    ``org_is_member``: the list 404s when the org is missing, so a 404 on the
+    check with a 200 list means "not a member" (false), and a 404 list means
+    "org not found".
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        return _make_member_check_spec()
+
+    async def test_404_with_existing_org_returns_false(self, mcp_server: FastMCP) -> None:
+        """A 404 (not a member) with an existing org returns ``{"result": false}``."""
+        respx.get(f"{BASE_TEST_URL}/api/v1/orgs/org/members/alice").respond(404)
+        # The org exists (member list 200) → the condition is simply false.
+        respx.get(f"{BASE_TEST_URL}/api/v1/orgs/org/members").respond(
+            200,
+            json=[{"id": 1, "login": "bob"}],
+        )
+        result = await mcp_server.call_tool(
+            "gitea_org_is_member",
+            {"org": "org", "username": "alice", "format": "json"},
+        )
+        assert result.structured_content == {"result": False}
+        text = extract_text_content(result.content)
+        assert json.loads(text)["result"] is False
+
+    async def test_404_with_missing_org_raises_not_found(self, mcp_server: FastMCP) -> None:
+        """A 404 where the org itself is missing raises a clear not-found error."""
+        respx.get(f"{BASE_TEST_URL}/api/v1/orgs/org/members/alice").respond(404)
+        # The org is missing (member list 404) → the check cannot be evaluated.
+        respx.get(f"{BASE_TEST_URL}/api/v1/orgs/org/members").respond(404)
+        with pytest.raises(ToolError) as exc:
+            await mcp_server.call_tool(
+                "gitea_org_is_member",
+                {"org": "org", "username": "alice"},
+            )
+        error_str = str(exc.value)
+        assert "not found" in error_str.lower(), f"Expected not-found in {error_str}"
+
+
 # ---------------------------------------------------------------------------
 # Scenario 4d - snake_case parameter normalization (merge_pull_request)
 # ---------------------------------------------------------------------------
@@ -841,6 +959,97 @@ class TestQueryParamNormalization:
         # Wire query string carries the ORIGINAL camelCase name.
         assert "includeDesc=true" in url, f"Expected includeDesc=true in {url}"
         assert "include_desc" not in url, f"Unexpected snake_case name in {url}"
+
+
+def _make_markdown_spec() -> dict[str, Any]:
+    """Return a Swagger spec with a ``$ref`` body and NO path parameters.
+
+    Models ``POST /markdown`` whose ``MarkdownOption`` body carries PascalCase
+    properties.  Collision resolution never visits operations without path
+    parameters, so Rule A must resolve the ``$ref`` body itself — otherwise
+    the tool exposes ``Context``/``Mode``/``Text``/``Wiki``.
+    """
+    return {
+        "swagger": "2.0",
+        "info": {"title": "Gitea API", "version": "1.0"},
+        "basePath": "/api/v1",
+        "paths": {
+            "/markdown": {
+                "post": {
+                    "operationId": "renderMarkdown",
+                    "summary": "Render a markdown document as HTML",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {"$ref": "#/definitions/MarkdownOption"},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "Markdown rendered as HTML"},
+                    },
+                }
+            },
+        },
+        "definitions": {
+            "MarkdownOption": {
+                "type": "object",
+                "properties": {
+                    "Context": {"type": "string"},
+                    "Mode": {"type": "string"},
+                    "Text": {"type": "string"},
+                    "Wiki": {"type": "boolean"},
+                },
+            },
+        },
+    }
+
+
+class TestRefBodyNormalization:
+    """Scenario 4g: ``$ref`` bodies without path params are normalized.
+
+    Regression for ``POST /markdown``/``POST /markup``: collision resolution
+    only inlines ``$ref`` bodies for operations *with* path parameters, so
+    Rule A must resolve them itself.  The tool exposes snake_case params and
+    the wire body carries the original PascalCase names.
+    """
+
+    @pytest.fixture
+    def base_spec(self) -> dict[str, Any]:
+        return _make_markdown_spec()
+
+    async def test_ref_body_snake_case_params_on_wire(self, mcp_server: FastMCP) -> None:
+        """The snake_case params are exposed; the wire body uses original names."""
+        route = respx.post(f"{BASE_TEST_URL}/api/v1/markdown")
+        route.respond(200, text="<p>rendered</p>")
+        await mcp_server.call_tool(
+            "gitea_render_markdown",
+            {
+                "context": "org/repo",
+                "mode": "gfm",
+                "text": "# Hello",
+                "wiki": False,
+            },
+        )
+        assert route.called
+        sent = route.calls[0].request.content
+        body = json.loads(sent)
+        # Wire body carries the ORIGINAL PascalCase names.
+        assert body == {
+            "Context": "org/repo",
+            "Mode": "gfm",
+            "Text": "# Hello",
+            "Wiki": False,
+        }
+
+    async def test_old_pascal_case_name_is_unknown_parameter(self, mcp_server: FastMCP) -> None:
+        """Passing the old PascalCase name is an unknown-parameter error."""
+        with pytest.raises(ToolError, match="Unknown parameter"):
+            await mcp_server.call_tool(
+                "gitea_render_markdown",
+                {"Context": "org/repo", "text": "# Hello"},
+            )
 
 
 class TestCollisionToolFullPipeline:

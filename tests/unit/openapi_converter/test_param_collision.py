@@ -665,6 +665,27 @@ class TestRenameCollidingBodyProperties:
         assert "title" in schema["properties"]
         assert "body" in schema["properties"]
 
+    def test_no_required_key_not_fabricated(self) -> None:
+        """A body with renames but no ``required`` key stays without one.
+
+        The rule must not write an empty ``required: []`` onto a schema that
+        never declared ``required`` — that would fabricate schema structure
+        FastMCP and agents did not ask for (mirrors the guard in
+        ``normalize._normalize_operation_body``).
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+            },
+        }
+        rename_map = _rename_colliding_body_properties(schema, {"owner", "repo"})
+        assert rename_map == {"body_owner": "owner", "body_repo": "repo"}
+        assert "body_owner" in schema["properties"]
+        assert "body_repo" in schema["properties"]
+        assert "required" not in schema
+
     def test_empty_properties(self) -> None:
         """Empty properties returns empty map."""
         schema = {"type": "object", "properties": {}}

@@ -2580,26 +2580,112 @@ class TestBuildCustomizationMeta:
 
 
 class TestBooleanCheckResourceUri:
-    """Tests for _boolean_check_resource_uri."""
+    """Tests for _boolean_check_resource_uri (spec-driven resource derivation).
 
-    def test_strips_trailing_action_segment(self) -> None:
-        """A trailing literal action segment is stripped and params substituted."""
-        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+    The resource is the longest proper prefix of the check path that exists
+    in the spec as a fetch endpoint (GET with content, not a boolean check)
+    and whose path params are a non-empty subset of the check's params.
+    """
+
+    @staticmethod
+    def _spec_with_fetch(
+        path: str, *, params: list[str], boolean_check: bool = False
+    ) -> OpenAPISpec:
+        """Build a spec whose ``path`` is a GET with a content-bearing 200."""
+        operation: dict[str, Any] = {
+            "operationId": "fetch",
+            "responses": {
+                "200": {
+                    "description": "ok",
+                    "content": {"application/json": {"schema": {"type": "object"}}},
+                },
+            },
+        }
+        if boolean_check:
+            operation["x-response-transform"] = "boolean-check"
+            operation["responses"] = {
+                "204": {"description": "yes"},
+                "404": {"description": "no"},
+            }
+        if params:
+            operation["parameters"] = [
+                {"name": p, "in": "path", "required": True, "schema": {"type": "string"}}
+                for p in params
+            ]
+        return make_openapi_spec(paths={path: {"get": operation}})
+
+    def make_transform(self, spec: OpenAPISpec) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(openapi_spec=spec)
+
+    def test_merge_path_uses_pr_resource(self) -> None:
+        """The PR fetch prefix is the resource for the merge check."""
+        spec = self._spec_with_fetch(
+            "/repos/{owner}/{repo}/pulls/{index}",
+            params=["owner", "repo", "index"],
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
             "/repos/{owner}/{repo}/pulls/{index}/merge",
             {"owner": "org", "repo": "repo", "index": 1},
         )
         assert uri == "gitea://repos/org/repo/pulls/1"
 
-    def test_path_ending_in_param_is_resource(self) -> None:
-        """A path ending in a {param} is itself the resource → None."""
-        uri = _ToolWrappingTransform._boolean_check_resource_uri(
+    def test_member_check_uses_member_list(self) -> None:
+        """The member-list fetch prefix is the resource for the member check.
+
+        The list 404s when the org is missing, so it is a valid org-existence
+        check — even though it is a list, not the org entity itself.
+        """
+        spec = self._spec_with_fetch("/orgs/{org}/members", params=["org"])
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
             "/orgs/{org}/members/{username}",
             {"org": "o", "username": "u"},
+        )
+        assert uri == "gitea://orgs/o/members"
+
+    def test_no_fetch_prefix_returns_none(self) -> None:
+        """No fetch prefix in the spec → the path is the resource → None."""
+        spec = make_openapi_spec()  # empty paths
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/user/starred/{owner}/{repo}",
+            {"owner": "ow", "repo": "r"},
+        )
+        assert uri is None
+
+    def test_self_list_without_params_excluded(self) -> None:
+        """A fetch prefix with no path params is not a valid existence check.
+
+        ``/user/following`` (the current user's list) always exists, so it
+        cannot disambiguate the target user's existence — the non-empty
+        param-subset guard excludes it.
+        """
+        spec = self._spec_with_fetch("/user/following", params=[])
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/user/following/{username}",
+            {"username": "u"},
+        )
+        assert uri is None
+
+    def test_boolean_check_prefix_not_used(self) -> None:
+        """A prefix that is itself a boolean check is not a fetch resource."""
+        spec = self._spec_with_fetch(
+            "/repos/{owner}/{repo}/pulls/{index}",
+            params=["owner", "repo", "index"],
+            boolean_check=True,
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
         )
         assert uri is None
 
     def test_empty_path_returns_none(self) -> None:
-        assert _ToolWrappingTransform._boolean_check_resource_uri("", {}) is None
+        transform = self.make_transform(make_openapi_spec())
+        assert transform._boolean_check_resource_uri("", {}) is None
 
 
 class TestFindHttpStatusError:
@@ -2644,8 +2730,31 @@ class TestBooleanCheckHandlers:
     non-404 error, path-is-resource, no active context).
     """
 
-    def make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+    def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
+        return _ToolWrappingTransform(openapi_spec=openapi_spec or make_openapi_spec())
+
+    @staticmethod
+    def _pr_fetch_spec() -> OpenAPISpec:
+        """Spec whose PR path is a fetch endpoint (the merge check's resource)."""
+        return make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}": {
+                    "get": {
+                        "operationId": "repo_get_pull_request",
+                        "responses": {
+                            "200": {
+                                "description": "PullRequest",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        )
 
     @staticmethod
     def _make_404_error() -> ValueError:
@@ -2683,7 +2792,7 @@ class TestBooleanCheckHandlers:
         assert handled is None
 
     async def test_404_path_is_resource_returns_false(self) -> None:
-        """A 404 on a path that IS the resource means the answer is no."""
+        """A 404 with no distinct resource prefix means the answer is no."""
         transform = self.make_transform()
         handled = await transform._try_handle_boolean_check_404(
             self._make_404_error(),
@@ -2697,7 +2806,7 @@ class TestBooleanCheckHandlers:
 
     async def test_404_no_context_returns_false(self) -> None:
         """Without an active context, a 404 with a distinct resource → false."""
-        transform = self.make_transform()
+        transform = self.make_transform(self._pr_fetch_spec())
         handled = await transform._try_handle_boolean_check_404(
             self._make_404_error(),
             {"owner": "org", "repo": "repo", "index": 1},
@@ -2710,7 +2819,7 @@ class TestBooleanCheckHandlers:
 
     async def test_404_resource_not_found_raises_clear_error(self) -> None:
         """A NOT_FOUND existence check raises a clear not-found error."""
-        transform = self.make_transform()
+        transform = self.make_transform(self._pr_fetch_spec())
 
         class _Ctx:
             async def read_resource(self, uri: str) -> None:
@@ -2742,7 +2851,7 @@ class TestBooleanCheckHandlers:
         confirm the resource exists — but we also cannot claim it does not.
         The error must say "could not verify", not "not found".
         """
-        transform = self.make_transform()
+        transform = self.make_transform(self._pr_fetch_spec())
 
         class _Ctx:
             async def read_resource(self, uri: str) -> None:

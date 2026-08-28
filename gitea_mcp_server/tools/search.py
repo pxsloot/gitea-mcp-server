@@ -1155,8 +1155,11 @@ def register_synthetic_tools(
                                 {"type": "object"},
                                 {"type": "array"},
                                 {"type": "string"},
+                                {"type": "boolean"},
+                                {"type": "number"},
+                                {"type": "null"},
                             ],
-                            "description": "Compact type-summary example (fields with type names for refs)",
+                            "description": "Compact type-summary example (fields with type names for refs; primitives for scalar-result tools like boolean checks)",
                         },
                         "output_schema": {
                             "type": "object",

@@ -212,7 +212,7 @@ tool_names:
       location, and visibility. Use `org_list_repos` to list the
       organization's repositories.
 
-      **Resource**: Use `gitea_read_resource` with `gitea://orgs/{orgname}`
+      **Resource**: Use `gitea_read_resource` with `gitea://orgs/{org}`
       for a formatted Markdown profile.
 
   # List organization's repos

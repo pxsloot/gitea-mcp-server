@@ -500,6 +500,28 @@ class TestAnnotateWildcardPathParams:
         )
         assert branch_op["x-wildcard-path-param"] == "branch"
 
+    def test_stamps_all_methods_on_table_paths(self) -> None:
+        """The wildcard is a path property — every operation is stamped.
+
+        ``contents/*`` is registered for GET, POST, PUT, and DELETE in the
+        router; the extension must not be GET-only.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {"operationId": "repoGetContents"},
+                    "post": {"operationId": "createFile"},
+                    "put": {"operationId": "updateFile"},
+                    "delete": {"operationId": "deleteFile"},
+                },
+            },
+        )
+        annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 4
+        for method in ("get", "post", "put", "delete"):
+            op = spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"][method]
+            assert op["x-wildcard-path-param"] == "filepath"
+
     def test_does_not_stamp_non_table_paths(self) -> None:
         """A path with the same param-name shape but not in the table is untouched.
 
@@ -532,16 +554,14 @@ class TestAnnotateWildcardPathParams:
         assert annotated == 0
         assert "not found in fetched spec" in caplog.text
 
-    def test_missing_get_operation_warns_loudly(
+    def test_path_with_no_operations_warns_loudly(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A table path without a GET operation warns (drift guard)."""
+        """A table path with no operations at all warns (drift guard)."""
         spec = make_openapi_spec(
             paths={
-                "/repos/{owner}/{repo}/contents/{filepath}": {
-                    "post": {"operationId": "createFile"},
-                },
+                "/repos/{owner}/{repo}/contents/{filepath}": {},
             },
         )
         with caplog.at_level(
@@ -549,7 +569,7 @@ class TestAnnotateWildcardPathParams:
         ):
             annotated = _annotate_wildcard_path_params(spec)
         assert annotated == 0
-        assert "has no GET operation" in caplog.text
+        assert "has no operations" in caplog.text
 
 
 class TestNormalizeSpec:

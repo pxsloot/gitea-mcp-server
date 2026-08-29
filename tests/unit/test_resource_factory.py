@@ -473,6 +473,30 @@ class TestDeriveResourceUri:
         )
         assert uri == "gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"
 
+    def test_wildcard_render_is_segment_aware(self) -> None:
+        """Only the exact {param} segment becomes {param*}.
+
+        Regression: a plain str.replace would also rewrite a same-named
+        substring inside a different segment (e.g. ``{filepath}`` inside
+        ``{filepath2}``), corrupting the template.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}/sub/{filepath2}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+        uri = derive_resource_uri(
+            spec,
+            "/repos/{owner}/{repo}/contents/{filepath}/sub/{filepath2}",
+            "GET",
+        )
+        assert uri == "gitea://repos/{owner}/{repo}/contents/{filepath*}/sub/{filepath2}"
+
     def test_no_spec_derives_without_wildcard(self) -> None:
         """Without a spec the wildcard extension is unknown — base path only."""
         assert (

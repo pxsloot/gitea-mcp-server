@@ -223,6 +223,27 @@ def _derive_resource_name_for(
     return "resource"
 
 
+def _render_wildcard_segment(uri: str, param: str) -> str:
+    """Render ``{param}`` as ``{param*}`` in a URI template, segment-aware.
+
+    Only a path segment that is *exactly* ``{param}`` becomes ``{param*}``.
+    A plain ``str.replace`` would also rewrite a same-named substring inside
+    a different segment (e.g. ``{filepath}`` inside ``{filepath2}``) or a
+    ``{?query}`` suffix — both wrong.  Path params are always full segments
+    (between ``/``), so splitting on ``/`` is the correct boundary.
+
+    Args:
+        uri: The URI template (e.g. ``gitea://repos/{owner}/{repo}/contents/{filepath}``).
+        param: The wildcard param name (e.g. ``"filepath"``).
+
+    Returns:
+        The URI with the exact ``{param}`` segment rendered ``{param*}``.
+    """
+    segments = uri.split("/")
+    rendered = [seg if seg != f"{{{param}}}" else f"{{{param}*}}" for seg in segments]
+    return "/".join(rendered)
+
+
 def derive_resource_uri(
     openapi_spec: OpenAPISpec | None,
     api_path: str,
@@ -261,7 +282,7 @@ def derive_resource_uri(
     if operation is not None:
         wildcard = operation.get("x-wildcard-path-param")
         if isinstance(wildcard, str) and wildcard:
-            uri = uri.replace(f"{{{wildcard}}}", f"{{{wildcard}*}}")
+            uri = _render_wildcard_segment(uri, wildcard)
     optional = [p for p in (*(query_params or []), *(context_params or [])) if p]
     if optional:
         uri += "{?" + ",".join(optional) + "}"

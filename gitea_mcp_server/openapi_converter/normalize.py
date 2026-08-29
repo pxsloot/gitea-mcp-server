@@ -372,10 +372,13 @@ _WILDCARD_PATH_PARAMS: dict[str, str] = {
 def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
     """Annotate wildcard path params with ``x-wildcard-path-param``.
 
-    For each GET path in ``_WILDCARD_PATH_PARAMS``, stamp the wildcard param
-    name on the operation.  A table entry whose path no longer exists in the
-    fetched spec is logged loudly — the router/spec changed and the table
-    must be re-verified against ``routers/api/v1``.
+    For each path in ``_WILDCARD_PATH_PARAMS``, stamp the wildcard param
+    name on **every** operation (all HTTP methods) — the wildcard is a
+    property of the path (the router registers ``contents/*`` for GET, POST,
+    PUT, and DELETE alike), not of any single method.  A table entry whose
+    path no longer exists in the fetched spec — or exists with no operations
+    at all — is logged loudly: the router/spec changed and the table must be
+    re-verified against ``routers/api/v1``.
 
     Mutates ``openapi_spec`` in-place.  Returns the number of operations
     annotated.
@@ -394,21 +397,26 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
                 path,
             )
             continue
-        operation = path_item.get("get")
-        if not isinstance(operation, dict):
+        stamped = False
+        for method in HTTP_METHODS_ALL:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            operation["x-wildcard-path-param"] = param_name
+            annotated += 1
+            stamped = True
+            logger.debug(
+                "Annotated wildcard path param %s on %s %s",
+                param_name,
+                method.upper(),
+                path,
+            )
+        if not stamped:
             logger.warning(
-                "Wildcard path table entry %s has no GET operation in fetched "
+                "Wildcard path table entry %s has no operations in fetched "
                 "spec — verify against routers/api/v1 (route may have changed)",
                 path,
             )
-            continue
-        operation["x-wildcard-path-param"] = param_name
-        annotated += 1
-        logger.debug(
-            "Annotated wildcard path param %s on %s",
-            param_name,
-            path,
-        )
     return annotated
 
 
@@ -425,7 +433,7 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
        response is a contentless 204 with a 404 declared, setting
        ``x-response-transform: "boolean-check"``.
     3. **wildcard path params** — stamps ``x-wildcard-path-param`` on the
-       GET operations listed in ``_WILDCARD_PATH_PARAMS`` (source-driven
+       operations listed in ``_WILDCARD_PATH_PARAMS`` (source-driven
        exception, curated from the Gitea/Forgejo router).
 
     Mutates ``openapi_spec`` in-place.  Called after spec conversion and

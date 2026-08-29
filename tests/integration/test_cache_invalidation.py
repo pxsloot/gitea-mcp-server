@@ -82,7 +82,7 @@ class TestCacheInvalidationIntegration:
             "content": "new content",
         }
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
-        assert "gitea://repos/org/repo/files/README.md" in uris
+        assert "gitea://repos/org/repo/contents/README.md" in uris
 
     @pytest.mark.asyncio
     async def test_label_operations_invalidation(self) -> None:
@@ -192,9 +192,11 @@ class TestTemplateSubstitution:
     def test_filepath_substitution(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
-        template = "gitea://repos/{owner}/{repo}/files/{filepath}"
+        template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
-        assert _substitute_template(template, params) == "gitea://repos/org/repo/files/src/main.py"
+        assert (
+            _substitute_template(template, params) == "gitea://repos/org/repo/contents/src/main.py"
+        )
 
     def test_missing_parameter_raises(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template

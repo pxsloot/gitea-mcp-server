@@ -61,10 +61,10 @@ class TestSubstituteTemplate:
 
     def test_multiple_parameters(self) -> None:
         """Multiple parameters are all substituted."""
-        template = "gitea://repos/{owner}/{repo}/files/{path}"
-        params = {"owner": "org", "repo": "repo", "path": "src/main.py"}
+        template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
+        params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
         result = _substitute_template(template, params)
-        assert result == "gitea://repos/org/repo/files/src/main.py"
+        assert result == "gitea://repos/org/repo/contents/src/main.py"
 
     def test_missing_parameter_raises(self) -> None:
         """Missing required parameter raises ValueError."""
@@ -82,10 +82,10 @@ class TestSubstituteTemplate:
 
     def test_wildcard_parameter(self) -> None:
         """Wildcard parameters are handled."""
-        template = "gitea://repos/{owner}/{repo}/files/{path*}"
-        params = {"owner": "org", "repo": "repo", "path": "docs/guide/intro.md"}
+        template = "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        params = {"owner": "org", "repo": "repo", "filepath": "docs/guide/intro.md"}
         result = _substitute_template(template, params)
-        assert result == "gitea://repos/org/repo/files/docs/guide/intro.md"
+        assert result == "gitea://repos/org/repo/contents/docs/guide/intro.md"
 
 
 class TestComputeUrisToInvalidate:
@@ -145,7 +145,7 @@ class TestComputeUrisToInvalidate:
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
         # Should have at least one URI containing the path
         assert any("README.md" in uri for uri in uris)
-        assert "gitea://repos/org/repo/files/README.md" in uris
+        assert "gitea://repos/org/repo/contents/README.md" in uris
 
     def test_missing_parameters_skipped(self) -> None:
         """If required parameters are missing, pattern is skipped gracefully."""

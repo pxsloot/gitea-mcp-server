@@ -184,7 +184,7 @@ PATTERN_LABELS = "labels"
 RESOURCE_PATTERN_ISSUES_LIST = "gitea://repos/{owner}/{repo}/issues"
 RESOURCE_PATTERN_PULLS_LIST = "gitea://repos/{owner}/{repo}/pulls"
 RESOURCE_PATTERN_REPO = "gitea://repos/{owner}/{repo}"
-RESOURCE_PATTERN_FILES = "gitea://repos/{owner}/{repo}/files/{filepath}"
+RESOURCE_PATTERN_FILES = "gitea://repos/{owner}/{repo}/contents/{filepath}"
 RESOURCE_PATTERN_LABELS = "gitea://repos/{owner}/{repo}/labels"
 
 

@@ -258,7 +258,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); shape-driven spec normalization (``normalize.py``) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -397,7 +397,7 @@ from the parameter schema.
 |--------|---------------|
 | `resources/auto.py` | Auto-generated resources from OpenAPI GET endpoints |
 | `resources/custom.py` | Hand-written resource implementations (factory + static) |
-| `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation |
+| `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `tools/display.py` | Domain-specific display formatters with registry |
 | `tools/resource_display.py` | Resource content display pipeline — `format_resource_result` (dual-channel ToolResult: content authoritative, structured mirror) + `format_resource_content` (text wrapper) |
@@ -473,6 +473,17 @@ from the parameter schema.
    -- a fresh set owned by the caller, no defensive copy needed.
    to ``register_auto_generated_resources()``, so auto-generation skips URIs
    already handled by custom resources.
+
+   **Resource URIs are derived, not declared.**  ``make_api_resource()``
+   derives the URI template from the spec path when ``uri`` is omitted:
+   ``gitea://{api_path}`` plus the ``x-wildcard-path-param`` extension
+   (rendered ``{param*}``) and the ``{?a,b}`` query suffix from
+   ``param_config``.  ``auto.py`` uses the same derivation
+   (``derive_resource_uri``) to build its skip-check URI, so a custom wrapper
+   and its auto sibling always derive the same template from the same spec —
+   the override skip is structurally guaranteed, not test-locked.  Only
+   convenience resources whose URI is not a spec mirror declare an explicit
+   ``uri`` (e.g. ``gitea://repos/{owner}/{repo}/readme``).
 
    **Resource names are snake_case, derived from the endpoint.**  The factory
    derives a resource's name from the spec ``operationId`` (camelCase →
@@ -760,10 +771,12 @@ from the parameter schema.
      -- The server mirrors the OpenAPI spec one-to-one, but a few *classes* of
      spec quirks actively mislead agents and recur across many endpoints.
      Rather than hand-fix individual tools, ``normalize_spec()`` applies
-     **shape-driven** rules to the whole spec before FastMCP sees it.  The
-     rules trigger on the *shape* of the spec (naming convention, response
-     structure), never on a hardcoded list of operationIds, so they keep
-     working as the Gitea spec evolves.  Two rules live here:
+     normalization rules to the whole spec before FastMCP sees it.  Rules A
+     and B are **shape-driven**: they trigger on the *shape* of the spec
+     (naming convention, response structure), never on a hardcoded list of
+     operationIds, so they keep working as the Gitea spec evolves.  Rule C is
+     a documented **source-driven exception** (see below).  Three rules live
+     here:
 
      **Rule A — snake_case parameter normalization.**  Gitea's spec mixes
      naming conventions: body properties like ``Do``/``MergeCommitID`` (on
@@ -818,6 +831,22 @@ from the parameter schema.
      "you cannot follow/star a non-existent user/repo" is a defensible answer.
      A curated path→resource map could cover those, but is deliberately
      avoided to keep the rule shape-driven.
+
+     **Rule C — wildcard path-param annotation (source-driven exception).**
+     Gitea/Forgejo's router registers some repo paths as wildcards (values
+     may contain ``/``), but go-swagger erases the wildcard when generating
+     the spec: ``contents/*`` becomes ``contents/{filepath}``.  The spec
+     cannot express this — ``{filepath}`` is indistinguishable from ``{id}``
+     — so the knowledge is curated in ``_WILDCARD_PATH_PARAMS`` from the
+     router source (``routers/api/v1/api.go``, routes registered with
+     ``/*``).  The rule stamps ``x-wildcard-path-param`` on the operation;
+     the resource layer renders ``{param*}`` in URI templates so multi-segment
+     values (``contents/src/main.py``) route correctly.  This is a documented
+     exception to the shape-driven ideal: the wildcard information is erased
+     during spec generation and no spec shape can recover it.  A table entry
+     that no longer matches the fetched spec is logged loudly (drift guard);
+     the table must be re-verified against the router when upgrading
+     Gitea/Forgejo.
 
      Everything else stays **intentionally mirrored** — the spec is the
      source of truth and the one-to-one mapping is what makes the surface

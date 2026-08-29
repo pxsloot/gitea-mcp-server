@@ -1,8 +1,9 @@
 """Unit tests for spec normalization (openapi_converter/normalize.py).
 
-Tests the shape-driven normalization rules:
+Tests the normalization rules:
 - Rule A: snake_case parameter/body-property renames (query/header/cookie/body).
 - Rule B: boolean-check response annotation.
+- Rule C: wildcard path-param annotation (source-driven exception).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.normalize import (
     _annotate_boolean_checks,
+    _annotate_wildcard_path_params,
     _get_body_schema,
     _is_boolean_check_operation,
     _is_snake_case,
@@ -472,6 +474,104 @@ class TestAnnotateBooleanChecks:
         assert _annotate_boolean_checks(spec) == 0
 
 
+class TestAnnotateWildcardPathParams:
+    def test_stamps_wildcard_on_table_paths(self) -> None:
+        """Table paths get x-wildcard-path-param on their GET operation."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {"operationId": "repoGetContents"},
+                },
+                "/repos/{owner}/{repo}/branches/{branch}": {
+                    "get": {"operationId": "repoGetBranch"},
+                },
+            },
+        )
+        annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 2
+        contents_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
+        )
+        assert contents_op["x-wildcard-path-param"] == "filepath"
+        branch_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/branches/{branch}"]["get"],
+        )
+        assert branch_op["x-wildcard-path-param"] == "branch"
+
+    def test_stamps_all_methods_on_table_paths(self) -> None:
+        """The wildcard is a path property — every operation is stamped.
+
+        ``contents/*`` is registered for GET, POST, PUT, and DELETE in the
+        router; the extension must not be GET-only.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {"operationId": "repoGetContents"},
+                    "post": {"operationId": "createFile"},
+                    "put": {"operationId": "updateFile"},
+                    "delete": {"operationId": "deleteFile"},
+                },
+            },
+        )
+        annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 4
+        for method in ("get", "post", "put", "delete"):
+            op = spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"][method]
+            assert op["x-wildcard-path-param"] == "filepath"
+
+    def test_does_not_stamp_non_table_paths(self) -> None:
+        """A path with the same param-name shape but not in the table is untouched.
+
+        ``editorconfig/{filepath}`` looks identical to ``contents/{filepath}``
+        in the spec — only the router distinguishes them.  The table is the
+        source of truth; the shape alone must not trigger.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/editorconfig/{filepath}": {
+                    "get": {"operationId": "repoGetEditorConfig"},
+                },
+            },
+        )
+        annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 0
+        op = spec["paths"]["/repos/{owner}/{repo}/editorconfig/{filepath}"]["get"]
+        assert "x-wildcard-path-param" not in op
+
+    def test_missing_table_path_warns_loudly(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A table entry absent from the fetched spec warns (drift guard)."""
+        spec = make_openapi_spec(paths={})
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 0
+        assert "not found in fetched spec" in caplog.text
+
+    def test_path_with_no_operations_warns_loudly(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A table path with no operations at all warns (drift guard)."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {},
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 0
+        assert "has no operations" in caplog.text
+
+
 class TestNormalizeSpec:
     def test_renames_params_and_annotates_boolean_checks(self) -> None:
         spec = make_openapi_spec(
@@ -535,6 +635,25 @@ class TestNormalizeSpec:
 
         search_op = cast("dict[str, Any]", spec["paths"]["/search"]["get"])
         assert search_op["x-param-rename"] == {"include_desc": "includeDesc"}
+
+    def test_annotates_wildcard_path_params(self) -> None:
+        """normalize_spec stamps x-wildcard-path-param on table paths."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+        )
+        normalize_spec(spec)
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
+        )
+        assert op["x-wildcard-path-param"] == "filepath"
 
     def test_merges_with_existing_rename_map(self) -> None:
         """Normalization merges into an existing x-param-rename (collision map)."""

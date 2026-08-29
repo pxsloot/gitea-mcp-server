@@ -619,7 +619,7 @@ class TestCustomResources:
 
     @pytest.mark.asyncio
     async def test_read_organization(self) -> None:
-        """Read gitea://orgs/{orgname} returns formatted org."""
+        """Read gitea://orgs/{org} returns formatted org."""
         config = SimpleConfig(
             url="https://git.example.com",
             token="test_token",

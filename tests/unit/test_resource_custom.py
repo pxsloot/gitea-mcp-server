@@ -19,7 +19,38 @@ import pytest
 from fastmcp.exceptions import ResourceError
 from mcp.server.fastmcp import FastMCP
 
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.custom import register_custom_resources
+from tests.helpers.spec_fixtures import make_openapi_spec
+
+
+def _custom_spec() -> OpenAPISpec:
+    """Minimal spec for custom-resource derivation tests.
+
+    Includes the paths whose wrappers derive URI/name from the spec:
+    ``/orgs/{org}`` (orgGet) and ``/repos/{owner}/{repo}/contents/{filepath}``
+    (repoGetContents, carrying the Rule C ``x-wildcard-path-param``
+    extension so the files wrapper derives ``{filepath*}``).
+    """
+    return make_openapi_spec(
+        paths={
+            "/orgs/{org}": {
+                "get": {
+                    "operationId": "orgGet",
+                    "summary": "Get an organization",
+                    "responses": {"200": {"description": "Success"}},
+                },
+            },
+            "/repos/{owner}/{repo}/contents/{filepath}": {
+                "get": {
+                    "operationId": "repoGetContents",
+                    "summary": "Gets the metadata and contents (if a file) of an entry in a repository",
+                    "x-wildcard-path-param": "filepath",
+                    "responses": {"200": {"description": "Success"}},
+                },
+            },
+        },
+    )
 
 
 class TestRegisterCustomResources:
@@ -46,19 +77,19 @@ class TestRegisterCustomResources:
         self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
     ) -> None:
         """Test that the 12 custom resources have the expected URI templates."""
-        register_custom_resources(mock_mcp, mock_gitea_client)
+        register_custom_resources(mock_mcp, mock_gitea_client, openapi_spec=_custom_spec())
         uri_templates = [call[0][0] for call in mock_mcp.resource.call_args_list]
         expected = [
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/readme",
             "gitea://repos/{owner}/{repo}/issues{?state,type}",
             "gitea://repos/{owner}/{repo}/pulls{?state}",
-            "gitea://repos/{owner}/{repo}/files/{path*}",
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}",
             "gitea://repos/{owner}/{repo}/releases{?draft,q}",
             "gitea://repos/{owner}/{repo}/labels",
             "gitea://users/{username}",
             "gitea://user",
-            "gitea://orgs/{orgname}",
+            "gitea://orgs/{org}",
             "gitea://version",
             "gitea://token/scopes",
         ]
@@ -86,16 +117,21 @@ class TestRegisterCustomResources:
 
         mock_mcp.resource = MagicMock(side_effect=resource_decorator)
 
-        register_custom_resources(mock_mcp, mock_gitea_client)
+        register_custom_resources(mock_mcp, mock_gitea_client, openapi_spec=_custom_spec())
 
         assert registered_names, "expected custom resources to be registered"
         assert "handler" not in registered_names.values(), (
             f"no resource may be named 'handler', got: {registered_names}"
         )
-        # Explicit names for the 3 wrappers whose api_path doesn't match the spec.
-        assert registered_names["gitea://orgs/{orgname}"] == "org_get"
+        # Spec-derived names for wrappers whose api_path matches the spec.
+        assert registered_names["gitea://orgs/{org}"] == "org_get"
+        assert (
+            registered_names["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
+            == "repo_get_contents"
+        )
+        # Explicit name for the readme convenience wrapper (api_path is not a
+        # spec mirror: /repos/{owner}/{repo}/contents/README.md).
         assert registered_names["gitea://repos/{owner}/{repo}/readme"] == "repo_get_readme"
-        assert registered_names["gitea://repos/{owner}/{repo}/files/{path*}"] == "repo_get_contents"
         # Static resources declare explicit snake_case names.
         assert registered_names["gitea://version"] == "version"
         assert registered_names["gitea://token/scopes"] == "token_scopes"
@@ -238,6 +274,7 @@ class TestCustomResourceStringResponsePaths:
         register_custom_resources(
             mcp,
             mock_gitea_client_str,
+            openapi_spec=_custom_spec(),
             version_str="1.0.0",
         )
         return registered
@@ -348,7 +385,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock
     ) -> None:
         """isinstance(data, str) returns string directly for file."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string file")
         result = await func("owner", "repo", "some/path/file.py")
         assert result == "string file"
@@ -358,7 +395,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock
     ) -> None:
         """Non-dict, non-string file response returns str(response)."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
         mock_gitea_client_str.request = AsyncMock(return_value=[1, 2, 3])
         result = await func("owner", "repo", "f")
         assert result == "[1, 2, 3]"
@@ -370,7 +407,7 @@ class TestCustomResourceStringResponsePaths:
         """File with base64 encoding returns raw JSON (decode is in the read_resource tool layer)."""
 
         encoded = base64.b64encode(b"file content").decode()
-        func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
         mock_gitea_client_str.request = AsyncMock(
             return_value={"content": encoded, "encoding": "base64"}
         )
@@ -386,7 +423,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock
     ) -> None:
         """File with no encoding returns raw JSON (decode is in the read_resource tool layer)."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "plain text"})
         result = await func("owner", "repo", "f.py")
         assert result == '{"content": "plain text"}'
@@ -396,7 +433,7 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock
     ) -> None:
         """File with ref parameter passes ref to the API and returns raw JSON."""
-        func = captured_resources["gitea://repos/{owner}/{repo}/files/{path*}"]
+        func = captured_resources["gitea://repos/{owner}/{repo}/contents/{filepath*}{?ref}"]
         mock_gitea_client_str.request = AsyncMock(return_value={"content": "ref content"})
         result = await func("owner", "repo", "f.py", ref="main")
         assert result == '{"content": "ref content"}'
@@ -466,9 +503,9 @@ class TestCustomResourceStringResponsePaths:
         self, captured_resources: dict[str, Any], mock_gitea_client_str: AsyncMock
     ) -> None:
         """isinstance(data, str) returns string directly for org."""
-        func = captured_resources["gitea://orgs/{orgname}"]
+        func = captured_resources["gitea://orgs/{org}"]
         mock_gitea_client_str.request = AsyncMock(return_value="string org")
-        result = await func("orgname")
+        result = await func("org")
         assert result == "string org"
 
     @pytest.mark.asyncio

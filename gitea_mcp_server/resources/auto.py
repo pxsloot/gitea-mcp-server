@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.resources.factory import make_api_resource
+from gitea_mcp_server.resources.factory import derive_resource_uri, make_api_resource
 from gitea_mcp_server.resources.scope import derive_required_scope
 from gitea_mcp_server.uri_utils import clean_resource_uri
 
@@ -89,7 +89,13 @@ def register_auto_generated_resources(
                     )
                     continue
 
-                uri_template = f"gitea://{path.lstrip('/')}"
+                # URI templates are derived from the spec path via the shared
+                # ``derive_resource_uri`` — the same derivation the factory
+                # uses for custom wrappers that omit ``uri``.  The wildcard
+                # extension (``x-wildcard-path-param``, stamped by the
+                # converter's Rule C) renders ``{param*}`` so multi-segment
+                # values (e.g. ``contents/src/main.py``) route correctly.
+                uri_template = derive_resource_uri(openapi_spec, path, "GET")
 
                 if uri_template in normalized_skip:
                     logger.debug(

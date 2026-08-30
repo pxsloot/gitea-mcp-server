@@ -2881,26 +2881,22 @@ class TestBooleanCheckHandlers:
         """A NOT_FOUND existence check raises a clear not-found error."""
         transform = self.make_transform(self._pr_fetch_spec())
 
-        class _Ctx:
-            async def read_resource(self, uri: str) -> None:
-                raise ResourceError(
-                    {
-                        "code": "NOT_FOUND",
-                        "message": "Resource not found.",
-                        "detail": "404",
-                        "resource_type": "repo",
-                        "resource_id": uri,
-                    }
-                )
-
-            async def info(self, *args: Any, **kwargs: Any) -> None:
-                return None
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = ResourceError(
+            {
+                "code": "NOT_FOUND",
+                "message": "Resource not found.",
+                "detail": "404",
+                "resource_type": "repo",
+                "resource_id": "gitea://repos/org/repo/pulls/1",
+            }
+        )
 
         with pytest.raises(ValueError, match="Resource not found"):
             await transform._try_handle_boolean_check_404(
                 self._make_404_error(),
                 {"owner": "org", "repo": "repo", "index": 1},
-                _Ctx(),
+                ctx,
                 "/repos/{owner}/{repo}/pulls/{index}/merge",
             )
 
@@ -2913,26 +2909,22 @@ class TestBooleanCheckHandlers:
         """
         transform = self.make_transform(self._pr_fetch_spec())
 
-        class _Ctx:
-            async def read_resource(self, uri: str) -> None:
-                raise ResourceError(
-                    {
-                        "code": "API_ERROR",
-                        "message": "API error 500",
-                        "detail": "boom",
-                        "resource_type": "repo",
-                        "resource_id": uri,
-                    }
-                )
-
-            async def info(self, *args: Any, **kwargs: Any) -> None:
-                return None
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = ResourceError(
+            {
+                "code": "API_ERROR",
+                "message": "API error 500",
+                "detail": "boom",
+                "resource_type": "repo",
+                "resource_id": "gitea://repos/org/repo/pulls/1",
+            }
+        )
 
         with pytest.raises(ValueError, match="Could not verify"):
             await transform._try_handle_boolean_check_404(
                 self._make_404_error(),
                 {"owner": "org", "repo": "repo", "index": 1},
-                _Ctx(),
+                ctx,
                 "/repos/{owner}/{repo}/pulls/{index}/merge",
             )
 
@@ -2946,19 +2938,14 @@ class TestBooleanCheckHandlers:
         """
         transform = self.make_transform(self._pr_fetch_spec())
 
-        class _Ctx:
-            async def read_resource(self, uri: str) -> None:
-                msg = "boom"
-                raise RuntimeError(msg)
-
-            async def info(self, *args: Any, **kwargs: Any) -> None:
-                return None
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = RuntimeError("boom")
 
         with pytest.raises(ValueError, match="Could not verify"):
             await transform._try_handle_boolean_check_404(
                 self._make_404_error(),
                 {"owner": "org", "repo": "repo", "index": 1},
-                _Ctx(),
+                ctx,
                 "/repos/{owner}/{repo}/pulls/{index}/merge",
             )
 

@@ -2786,7 +2786,8 @@ class TestBooleanCheckHandlers:
     The integration suite (``tests/integration/test_tool_behaviour.py``)
     covers the happy paths through the full pipeline; these tests pin the
     defensive branches the pipeline cannot reach (content-bearing response,
-    non-404 error, path-is-resource, no active context).
+    non-404 error, path-is-resource, no active context, resource not
+    found, unexpected existence-check error).
     """
 
     def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:

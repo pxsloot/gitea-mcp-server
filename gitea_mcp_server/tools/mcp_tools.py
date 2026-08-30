@@ -15,8 +15,11 @@ Tool list:
 ``list_resources`` uses the shared synthetic registration contract so its
 pagination validation and output schema match generated API tools.
 
-Display pipeline lives in ``tools/resource_display.py`` — this module imports
-from it rather than duplicating formatting logic.
+``read_resource`` is an ordinary synthetic tool: its executor reads the
+resource (raw content + metadata from ``tools/resource_display.py``), decodes
+base64, classifies the shape, and returns an ``ExecutionResult`` that the
+single result pipeline (``tools/result_pipeline.py``) renders — the same
+display path as every tool.
 """
 
 import json
@@ -27,7 +30,6 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
-from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
@@ -35,11 +37,11 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
+from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
     extract_resource_content,
-    format_resource_result,
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
@@ -158,6 +160,36 @@ def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
     """
     extra = {k: v for k, v in meta.items() if k not in _KNOWN_META_KEYS}
     return extra or None
+
+
+def _make_resource_formatter(
+    format_hint: str | None,
+    extra: dict[str, Any] | None,
+) -> Callable[..., str] | None:
+    """Resolve a ``format_hint`` to a markdown formatter callable, binding extra.
+
+    The returned callable matches the result pipeline's ``markdown_formatter``
+    contract ``(data, *, detail='full') -> str``: ``detail`` is passed through
+    from the pipeline, ``extra`` (formatter context such as ``owner``/``repo``
+    or ``type``) is bound at executor time.
+
+    Args:
+        format_hint: Registered formatter name, or ``None``.
+        extra: Extra context dict for formatters that need it.
+
+    Returns:
+        A callable ``(data, *, detail='full') -> str``, or ``None`` if no
+        formatter is registered for ``format_hint``.
+    """
+    if not format_hint:
+        return None
+    fn = get_formatter(format_hint)
+    if fn is None:
+        return None
+    meta = get_formatter_meta(format_hint)
+    if meta.get("need_extra"):
+        return lambda data, *, detail="full": fn(data, detail=detail, extra=extra)
+    return lambda data, *, detail="full": fn(data, detail=detail)
 
 
 async def _mcp_read_resource_impl(
@@ -468,10 +500,8 @@ async def _maybe_decode_base64(raw: str) -> str:
 
 async def _read_resource_tool(
     uri: str,
-    format: str = "markdown",
-    detail: str = "full",
     ctx: Context = CurrentContext(),
-) -> ToolResult:
+) -> ExecutionResult:
     """Read the content of an MCP resource by URI.
 
     Fetches the resource from the server's resource registry and returns its
@@ -491,8 +521,9 @@ async def _read_resource_tool(
     Output format:
     - ``markdown`` (default): schema-aware Markdown with tables and sections (for JSON resources).
       Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
-    - ``raw``: return the resource content exactly as returned by the resource handler.
-      No transformation is applied — base64 content remains base64-encoded.
+    - ``raw``: the executor-produced data serialized as the ``{"result": ...}``
+      envelope — the same deterministic raw contract as every tool.  Base64
+      content is decoded (the executor always produces the data).
     - ``json``: pretty-printed JSON (for JSON resources). For non-JSON resources,
       wraps content in ``{"result": "..."}`` for consistent structured output.
       Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
@@ -512,9 +543,10 @@ async def _read_resource_tool(
     JSON resources the text is the serialized ``{"result": <data>}`` envelope
     (``format=json``) or a markdown rendering (``format=markdown``), and
     ``structured_content`` carries the parsed envelope.  For ``format=raw``
-    the text is the raw string and ``structured_content`` is
-    ``{"result": <raw string>}``.  For text/markdown resources the text is
-    the raw content and ``structured_content`` is ``{"result": <raw text>}``.
+    the text is the serialized envelope ``{"result": <data>}`` — the same
+    deterministic raw contract as every tool.  For text/markdown resources
+    the text is the raw content and ``structured_content`` is
+    ``{"result": <raw text>}``.
 
     ## Usage Examples
 
@@ -570,49 +602,47 @@ async def _read_resource_tool(
 
     1. **Always discover first**: Call `list_resources()` to see available URIs and their metadata
     2. **Check MIME type**: Use the `mimeType` field to anticipate content format
-    3. **Use tags for filtering**: Filter resources by tags (e.g., "wrapper" for human-readable content)
+    3. **Use tags for filtering**: Filter resources by tags (e.g. "wrapper" for human-readable content)
     4. **Handle errors gracefully**: Wrap calls in try-except to handle missing resources or API failures
     5. **Cache when appropriate**: Resources have built-in caching; avoid repeated calls in tight loops
     6. **Use format parameter**: ``format=json`` for structured data extraction, ``format=markdown`` for readability
     7. **Text vs JSON**: Markdown and plain-text resources are returned as raw text;
        JSON resources are returned as ``{"result": ...}`` structured content.
        Gitea ContentsResponse (base64-encoded file content) is auto-decoded to
-       plain text at the tool layer for ``markdown`` and ``json`` formats;
-       use ``format=raw`` to access the original base64-encoded JSON.
+       plain text at the executor layer for every format.
 
     Args:
         uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
-        format: Output format -- ``markdown`` (default), ``raw``, or ``json``.
 
     Returns:
-        A dual-channel ``ToolResult``: ``content`` authoritative and always
-        present, ``structured_content`` mirroring it (parsed envelope for
-        JSON resources, ``{"result": raw}`` for text/raw).
+        Raw executor output (``ExecutionResult``): the resource data with its
+        shape, per-resource schema, and resolved markdown formatter.  The
+        single result pipeline renders it — ``content`` authoritative and
+        always present, ``structured_content`` mirroring it.
 
     Raises:
         ValueError: If the resource is not found or cannot be read
     """
     raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, uri)
-    # Decode base64 ContentsResponse at the tool layer: resources are
-    # pure data; the tool transforms for agent consumption — mirroring
-    # how autogen tools decode in _pipeline_with_context.
-    # Preserve raw for format=raw: agents requesting "raw" expect the
-    # exact API response, not a transformed version.
-    if format != "raw":
-        raw = await _maybe_decode_base64(raw)
-    # The resource display pipeline is the single writer of both channels:
-    # ``content`` (the text) is authoritative and always present, and
-    # ``structured_content`` mirrors it — the parsed envelope for JSON
-    # content, ``{"result": raw}`` for non-JSON/raw.  This ToolResult is
-    # returned directly (the resource display pipeline renders it); the
-    # single result pipeline only renders ExecutionResult results.
-    return format_resource_result(
-        raw,
-        format,
-        detail=detail,
+    # Decode base64 ContentsResponse at the executor layer: resources are
+    # pure data; the executor transforms for agent consumption — mirroring
+    # how autogen tools decode text responses in the HTTP pipeline.
+    raw = await _maybe_decode_base64(raw)
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        data = raw
+        shape = "text"
+    else:
+        # Resources are single fetches — never paginated.  Lists reuse the
+        # "object" (unpaginated) shape: the shape field describes pagination
+        # strategy, not data type.
+        shape = "object" if isinstance(data, (dict, list)) else "scalar"
+    return ExecutionResult(
+        data=data,
+        shape=shape,
         schema=schema,
-        format_hint=format_hint,
-        extra=extra,
+        markdown_formatter=_make_resource_formatter(format_hint, extra),
     )
 
 

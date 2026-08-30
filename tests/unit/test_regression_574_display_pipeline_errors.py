@@ -1,34 +1,29 @@
 """Regression tests for issue #574: display pipeline mid-failure error recovery.
 
-Tests that ``format_resource_content`` and domain formatters handle
-unexpected data shapes gracefully instead of crashing.
+The domain formatters must handle unexpected data shapes gracefully instead
+of crashing.  The pipeline-level try/except that used to live in
+``format_resource_content`` now lives in the single result pipeline
+(``tools/result_pipeline.py`` — see ``TestErrorRecovery`` there); these tests
+lock the formatter-side guards that make the recovery path reachable.
 
 Scenarios covered:
   1. Issues formatter with non-dict items (strings) → no AttributeError
   2. Labels formatter with non-dict items (full detail) → no AttributeError
   3. User formatter with non-dict input → no TypeError
-  4. Non-JSON-serializable data in JSON output → no TypeError (documents
-     raw ``apply_format`` behaviour before pipeline catches it)
-  5. Empty list to issues formatter → no TypeError
-  6. Schema/object but data=[] end-to-end → graceful fallback
-  7. Pipeline fallback returns readable raw data on formatting error
-  8. Pulls formatter with non-dict items → no crash (generic fallback)
-  9. Release formatter with non-dict items → no crash (generic fallback)
+  4. Empty list to issues formatter → no TypeError
+  5. Pulls formatter with non-dict items → no crash (generic fallback)
+  6. Release formatter with non-dict items → no crash (generic fallback)
+  7. format_as_markdown edge cases (None, bool, mixed lists)
 """
 
-import json
 from typing import Any
-from unittest.mock import patch
 
-import pytest
-
-from gitea_mcp_server.format import apply_format, format_as_markdown
+from gitea_mcp_server.format import format_as_markdown
 from gitea_mcp_server.tools.display import (
     _format_issues_markdown,
     _format_labels_markdown,
     _format_user_markdown,
 )
-from gitea_mcp_server.tools.resource_display import format_resource_content
 
 
 class TestFormatIssuesMarkdownGuard:
@@ -92,109 +87,6 @@ class TestFormatUserMarkdownGuard:
         data = [{"login": "user1"}]
         result = _format_user_markdown(data, detail="full")
         assert result.strip() != ""
-
-
-class TestFormatResourceContentPipelineFallback:
-    """Pipeline-level try/except in format_resource_content.
-
-    The pipeline wraps the post-parse formatting in try/except; when a
-    formatter receives unexpected data, the error is logged and a
-    readable fallback is returned instead of crashing.
-    """
-
-    def test_pipeline_recovers_from_type_error(self) -> None:
-        """When apply_format raises TypeError, pipeline returns readable fallback."""
-        raw = '{"key": "value"}'
-        with patch(
-            "gitea_mcp_server.tools.resource_display.apply_format",
-            side_effect=TypeError("bad type"),
-        ):
-            result = format_resource_content(raw, "markdown")
-            assert "key" in result or "value" in result or "fallback" in result.lower()
-
-    def test_pipeline_recovers_from_attribute_error(self) -> None:
-        """When apply_format raises AttributeError, pipeline returns readable fallback."""
-        raw = '{"key": "value"}'
-        with patch(
-            "gitea_mcp_server.tools.resource_display.apply_format",
-            side_effect=AttributeError("no attr"),
-        ):
-            result = format_resource_content(raw, "markdown")
-            assert result.strip() != ""
-
-    def test_pipeline_recovers_from_value_error(self) -> None:
-        """When apply_format raises ValueError, pipeline returns readable fallback."""
-        raw = '{"key": "value"}'
-        with patch(
-            "gitea_mcp_server.tools.resource_display.apply_format",
-            side_effect=ValueError("bad value"),
-        ):
-            result = format_resource_content(raw, "markdown")
-            assert result.strip() != ""
-
-    def test_pipeline_recovers_json_format(self) -> None:
-        """When formatting fails in JSON mode, returns wrapped raw data."""
-        raw = '{"key": "value"}'
-        with patch(
-            "gitea_mcp_server.tools.resource_display.apply_format",
-            side_effect=TypeError("bad type"),
-        ):
-            result = format_resource_content(raw, "json")
-            parsed = json.loads(result)
-            assert parsed == {"result": raw}
-
-    def test_schema_object_data_list_end_to_end(self) -> None:
-        """Schema expects object but data is a list — pipeline produces output."""
-        # This is the scenario from the issue description
-        raw = "[]"
-        schema = {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-        }
-        result = format_resource_content(raw, "markdown", detail="concise", schema=schema)
-        assert result.strip() != ""
-        # Should produce some readable output
-        assert "_(empty)_" in result or "Empty" in result or "N/A" in result
-
-
-class TestApplyFormatRaiseOnNonSerializable:
-    """``apply_format`` raises TypeError for non-JSON-serializable data.
-
-    This documents the raw behavior before the pipeline catches it.
-    The pipeline-level catch in ``format_resource_content`` converts
-    this into a readable fallback; this test verifies the underlying
-    exception is raised when ``apply_format`` is called directly.
-    """
-
-    def test_json_output_non_serializable_raises(self) -> None:
-        """Non-serializable data in JSON mode raises TypeError."""
-
-        class Unserializable:
-            pass
-
-        data = {"bad": Unserializable()}
-        with pytest.raises(TypeError):
-            apply_format(data, "json")
-
-
-class TestFormatResourceContentJsonParseEdgeCases:
-    """Non-JSON content edge cases in format_resource_content."""
-
-    def test_plain_text_markdown_passthrough(self) -> None:
-        """Plain text with format=markdown returns unchanged."""
-        result = format_resource_content("hello world", "markdown")
-        assert result == "hello world"
-
-    def test_plain_text_json_wrapped(self) -> None:
-        """Plain text with format=json wraps in result dict."""
-        result = format_resource_content("hello world", "json")
-        parsed = json.loads(result)
-        assert parsed == {"result": "hello world"}
-
-    def test_empty_string(self) -> None:
-        """Empty string returns empty string for markdown."""
-        result = format_resource_content("", "markdown")
-        assert result == ""
 
 
 class TestFormatPullsMarkdownGuard:

@@ -1,11 +1,12 @@
 """Domain-specific display formatters for resources.
 
 All resources return raw data.  This module provides the registered
-formatters that the unified display pipeline (``format_resource_result``
-in ``tools/resource_display.py``) dispatches to when a ``format_hint`` is present.
+formatters that the ``read_resource`` executor (``tools/mcp_tools.py``)
+resolves into ``markdown_formatter`` callables for the single result
+pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
 
 Each formatter has the signature ``(data, *, detail='full') -> str``.
-The ``detail`` parameter is passed through from the read_resource tool
+The ``detail`` parameter is passed through from the result pipeline
 so that ``detail=concise`` produces collapsed markdown everywhere.
 """
 

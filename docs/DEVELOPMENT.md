@@ -692,8 +692,9 @@ resource (query params with context forwarding)::
 
 The error response carries a ``resource_type`` field with the raw API type
 value (``"issues"`` / ``"pulls"``).  Human-readable entity names (e.g. "pull
-requests") are a display concern for the read_resource layer, not the
-resource itself.
+requests") are a display concern for the single result pipeline (via the
+domain formatters the ``read_resource`` executor resolves from
+``format_hint``), not the resource itself.
 
 And the labels resource (path-param forwarding)::
 

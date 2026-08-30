@@ -820,12 +820,12 @@ class _ToolWrappingTransform(Transform):
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any | None,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             try:
                 run_validation(kwargs, required, properties)
             except ValidationError as e:
                 raise ValueError(str(e)) from e
-            return cast("ToolResult", await executor(kwargs, extracted, ctx))
+            return cast("ExecutionResult", await executor(kwargs, extracted, ctx))
 
         return wrapped
 

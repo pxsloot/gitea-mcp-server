@@ -442,7 +442,7 @@ class TestFormats:
             ExecutionResult(
                 data={"content": "guide text"},
                 shape="object",
-                markdown_formatter=lambda d: d["content"],
+                markdown_formatter=lambda d, *, detail: d["content"],
             ),
             fmt="markdown",
         )
@@ -485,6 +485,113 @@ class TestDetailConcise:
         )
         parsed = parse_json_content(result)
         assert parsed["result"]["owner"]["login"] == "user1"
+
+    def test_executor_schema_preferred_over_tool_schema(self) -> None:
+        """ExecutionResult.schema wins over the tool-level schema for collapse.
+
+        Executors may supply a per-result schema (e.g. read_resource's
+        per-URI response schema); it must take precedence over the tool-level
+        ``_raw_schema`` passed to :func:`render`.
+        """
+        data = {"owner": {"id": 1, "login": "user1"}}
+        executor_schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        tool_schema = {"type": "object", "properties": {"owner": {"type": "object"}}}
+        result = render(
+            ExecutionResult(data=data, shape="object", schema=executor_schema),
+            fmt="json",
+            detail="concise",
+            schema=tool_schema,
+        )
+        parsed = parse_json_content(result)
+        assert parsed["result"]["owner"] == "$ref:User"
+
+    def test_markdown_concise_collapses_page(self) -> None:
+        """detail=concise pre-collapses the page for markdown, like json."""
+        data = {"owner": {"id": 1, "login": "user1"}}
+        schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        result = render(
+            ExecutionResult(data=data, shape="object"),
+            fmt="markdown",
+            detail="concise",
+            schema=schema,
+        )
+        text = extract_text_content(result.content)
+        assert "$ref:User" in text
+        assert "user1" not in text
+
+
+class TestMarkdownPageRendering:
+    """The markdown text channel renders the page, not the full result set (#732)."""
+
+    def test_markdown_renders_page_not_full_data(self) -> None:
+        """Page 1 of N shows N items in the text; later items are absent."""
+        result = render(
+            ExecutionResult(data=_items(25), total_count=25, shape="list", paginated=True),
+            fmt="markdown",
+            page=1,
+            limit=10,
+        )
+        text = extract_text_content(result.content)
+        # Page 1 = ids 0..9; ids 10..24 must NOT appear in the text channel.
+        assert "| Id | 0 |" in text
+        assert "| Id | 9 |" in text
+        assert "| Id | 10 |" not in text
+        assert "| Id | 24 |" not in text
+
+    def test_markdown_page_2_renders_second_page(self) -> None:
+        """Page 2 renders ids 10..19, not page 1's items."""
+        result = render(
+            ExecutionResult(data=_items(25), total_count=25, shape="list", paginated=True),
+            fmt="markdown",
+            page=2,
+            limit=10,
+        )
+        text = extract_text_content(result.content)
+        assert "| Id | 10 |" in text
+        assert "| Id | 19 |" in text
+        assert "| Id | 0 |" not in text
+
+    def test_markdown_formatter_receives_detail(self) -> None:
+        """The pipeline passes detail through to the markdown_formatter."""
+        received: dict[str, Any] = {}
+
+        def formatter(data: Any, *, detail: str = "full") -> str:
+            received["detail"] = detail
+            return "formatted"
+
+        result = render(
+            ExecutionResult(data={"x": 1}, shape="object", markdown_formatter=formatter),
+            fmt="markdown",
+            detail="concise",
+        )
+        assert extract_text_content(result.content) == "formatted"
+        assert received["detail"] == "concise"
+
+    def test_markdown_formatter_receives_collapsed_page(self) -> None:
+        """detail=concise pre-collapses the page before the formatter runs."""
+        data = {"owner": {"id": 1, "login": "user1"}}
+        schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        received: dict[str, Any] = {}
+
+        def formatter(d: Any, *, detail: str = "full") -> str:
+            received["data"] = d
+            return "ok"
+
+        render(
+            ExecutionResult(data=data, shape="object", markdown_formatter=formatter, schema=schema),
+            fmt="markdown",
+            detail="concise",
+        )
+        assert received["data"]["owner"] == "$ref:User"
 
 
 class TestErrorRecovery:

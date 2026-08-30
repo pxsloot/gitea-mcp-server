@@ -1226,7 +1226,8 @@ class TestNonJsonEndpoint:
            text/plain body.
         2. ``_ToolWrappingTransform._pipeline_with_context()`` - wraps the
            text into ``{"result": text}`` when ``is_text_response=True``.
-        3. ``apply_format()`` - renders data per format/detail.
+        3. The single result pipeline (``tools/result_pipeline.py``) - renders
+           data per format/detail.
         4. MCP SDK ``call_tool`` handler - validates ``structured_content``
            against the lightweight ``output_schema``.
 

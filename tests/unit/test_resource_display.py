@@ -1,11 +1,13 @@
-"""Tests for tools/resource_display.py (format_resource_content).
+"""Tests for resource display metadata: context_meta_keys forwarding and extra extraction.
 
 Covers:
-    - context_meta_keys display context forwarding
-    - format_resource_content extra parameter passthrough
-    - Format hint handling (issues, pulls, generic)
-    - Resource handler meta extraction
-    - Labels handler meta forwarding
+    - context_meta_keys display context forwarding (handler → ResourceContent.meta)
+    - _extract_extra_meta known-key stripping
+    - Labels handler meta forwarding (owner/repo path params)
+
+The formatting side of resource display now lives in the single result
+pipeline (``tools/result_pipeline.py``); these tests lock the metadata that
+drives it.
 """
 
 import json
@@ -24,7 +26,8 @@ class TestContextMetaKeysPipeline:
     1. make_api_resource with context_meta_keys=["type"] registers a handler
        that forwards matching query params into ResourceContent.meta
     2. _mcp_read_resource_impl extra extraction from ResourceContent.meta
-    3. format_resource_content passes extra to domain formatters
+    3. The read_resource executor resolves the format_hint + extra into a
+       markdown formatter for the single result pipeline
     """
 
     @pytest.fixture
@@ -158,58 +161,6 @@ class TestContextMetaKeysPipeline:
         assert "state" not in meta
         assert meta.get("format_hint") == "repository"
 
-    def test_format_resource_content_with_extra_pulls(self) -> None:
-        """Display pipeline passes extra to formatter - produces 'Pull Requests' title."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = format_resource_content(
-            data,
-            "markdown",
-            format_hint="issues",
-            extra={"type": "pulls"},
-        )
-        assert "Pull Requests - 1 items" in result
-
-    def test_format_resource_content_with_extra_issues(self) -> None:
-        """Display pipeline passes extra to formatter - produces 'Issues' title."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = format_resource_content(
-            data,
-            "markdown",
-            format_hint="issues",
-            extra={"type": "issues"},
-        )
-        assert "Issues - 1 items" in result
-
-    def test_format_resource_content_without_extra_fallback(self) -> None:
-        """Display pipeline falls back to scanning when extra is absent."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        # Data has no pull_request field -> title is "Issues"
-        data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        result = format_resource_content(
-            data,
-            "markdown",
-            format_hint="issues",
-        )
-        assert "Issues - 1 items" in result
-
-    def test_format_resource_content_without_format_hint(self) -> None:
-        """Display pipeline ignores extra when no format_hint is provided."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        data = json.dumps({"key": "value"})
-        result = format_resource_content(
-            data,
-            "markdown",
-            extra={"type": "pulls"},
-        )
-        # Generic markdown uses capitalized "Key" as header
-        assert "| Key | value |" in result
-
     @pytest.mark.asyncio
     async def test_labels_handler_meta_forwards_owner_repo(self, mock_client: AsyncMock) -> None:
         """Handler with context_meta_keys=["owner","repo"] forwards path params to meta."""
@@ -310,94 +261,12 @@ class TestContextMetaKeysPipeline:
         extra = _extract_extra_meta({})
         assert extra is None
 
+    def test_make_resource_formatter_resolves_extra(self) -> None:
+        """The executor resolves format_hint + extra into a formatter callable."""
+        from gitea_mcp_server.tools.mcp_tools import _make_resource_formatter
 
-class TestFormatResourceResult:
-    """Tests for format_resource_result — the dual-channel display pipeline."""
-
-    def test_json_format_dual_channel_mirror(self) -> None:
-        """fmt=json on JSON content: content text mirrors structured_content."""
-        from gitea_mcp_server.tools.resource_display import format_resource_result
-        from tests.helpers.mcp_results import assert_dual_channel, parse_json_content
-
-        result = format_resource_result('{"key": "val", "num": 42}', "json")
-        assert_dual_channel(result, fmt="json")
-        assert parse_json_content(result) == {"result": {"key": "val", "num": 42}}
-
-    def test_raw_format_dual_channel(self) -> None:
-        """fmt=raw: content is the raw string, structured carries it in the envelope."""
-        from gitea_mcp_server.tools.resource_display import format_resource_result
-        from tests.helpers.mcp_results import extract_text_content, get_structured
-
-        result = format_resource_result('{"key": "val"}', "raw")
-        assert extract_text_content(result.content) == '{"key": "val"}'
-        assert get_structured(result) == {"result": '{"key": "val"}'}
-
-    def test_markdown_structured_carries_parsed_data(self) -> None:
-        """fmt=markdown: content is a rendering, structured carries the parsed data."""
-        from gitea_mcp_server.tools.resource_display import format_resource_result
-        from tests.helpers.mcp_results import extract_text_content, get_structured
-
-        result = format_resource_result('{"key": "val"}', "markdown")
-        rendered = extract_text_content(result.content)
-        assert "Key" in rendered
-        assert "val" in rendered
-        assert get_structured(result) == {"result": {"key": "val"}}
-
-    def test_non_json_json_format(self) -> None:
-        """Non-JSON content with fmt=json: content and structured both carry raw."""
-        from gitea_mcp_server.tools.resource_display import format_resource_result
-        from tests.helpers.mcp_results import assert_dual_channel
-
-        result = format_resource_result("plain text", "json")
-        assert_dual_channel(result, fmt="json")
-
-    def test_concise_collapses_structured_data(self) -> None:
-        """detail=concise with schema: structured carries the collapsed data."""
-        from gitea_mcp_server.tools.resource_display import format_resource_result
-        from tests.helpers.mcp_results import get_structured
-
-        schema = {
-            "type": "object",
-            "properties": {
-                "owner": {"$ref": "#/components/schemas/User"},
-                "name": {"type": "string"},
-            },
-        }
-        raw = json.dumps({"owner": {"id": 1, "login": "alice"}, "name": "repo"})
-        result = format_resource_result(raw, "json", detail="concise", schema=schema)
-        structured = get_structured(result)
-        assert structured["result"]["name"] == "repo"
-        # Nested object collapsed to a $ref label at depth >= 1.
-        assert structured["result"]["owner"] == "$ref:User"
-
-
-class TestFormatResourceContentEmptyFallback:
-    """Tests for format_resource_content empty-content fallback paths."""
-
-    @pytest.mark.parametrize(
-        "content_value",
-        [
-            None,
-            [],
-            [MagicMock()],
-        ],
-        ids=[
-            "content=None",
-            "content=[]",
-            "content=no-TextContent",
-        ],
-    )
-    def test_empty_fallback_returns_empty_string(self, content_value: Any) -> None:
-        """When apply_format result.content is None, [], or non-TextContent, return ''."""
-        from unittest.mock import MagicMock, patch
-
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        mock_result = MagicMock()
-        mock_result.content = content_value
-
-        with patch(
-            "gitea_mcp_server.tools.resource_display.apply_format", return_value=mock_result
-        ):
-            result = format_resource_content("{}", "markdown")
-            assert result == ""
+        data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
+        fn = _make_resource_formatter("issues", {"type": "pulls"})
+        assert callable(fn)
+        result = fn(json.loads(data))
+        assert "Pull Requests - 1 items" in result

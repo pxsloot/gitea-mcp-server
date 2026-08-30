@@ -30,6 +30,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _ToolWrappingTransform,
     create_openapi_provider,
 )
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from tests.helpers.mcp_results import get_structured
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -1056,10 +1057,10 @@ class TestToolWrappingTransform:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any | None,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             captured["kwargs"] = dict(kwargs)
             captured["extracted"] = dict(extracted or {})
-            return ToolResult(structured_content={"result": "synth-ok"})
+            return ExecutionResult(data="synth-ok", shape="scalar")
 
         tool = Tool(
             name="synth_tool",
@@ -1098,8 +1099,8 @@ class TestToolWrappingTransform:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any | None,
-        ) -> ToolResult:
-            return ToolResult(structured_content={"result": "ok"})
+        ) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
 
         tool = Tool(
             name="synth_val",

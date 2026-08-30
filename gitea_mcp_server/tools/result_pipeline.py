@@ -14,8 +14,16 @@ The pipeline is the **single writer of both channels**: ``content`` (the text
 channel) is authoritative and always present; ``structured_content`` is an
 optional mirror that duplicates it.  For ``format=json``/``raw`` the text is
 the serialized envelope dict — the two channels never disagree.  For
-``format=markdown`` the text is a rendering of the page data while
+``format=markdown`` the text is a rendering of the **page data** (the
+envelope's ``result``, not the executor's full data) while
 ``structured_content`` carries the envelope.
+
+Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
+``$ref``-aware collapse when the tool-level schema does not describe the
+result (e.g. ``read_resource``, whose schema varies per URI); it takes
+precedence over the tool-level schema in :func:`render`.  The
+``markdown_formatter`` contract is ``(data, *, detail='full') -> str`` — the
+pipeline passes the requested ``detail`` through.
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -66,9 +74,11 @@ class ExecutionResult:
     Executors (autogen HTTP pipeline and synthetic impls) return this instead
     of a ``ToolResult``; :func:`render` turns it into the agent-facing result.
 
-    ``markdown_formatter`` is a callable — pydantic cannot build a
-    ``TypeAdapter`` for it (FastMCP validates tool return annotations), so
-    the field is typed ``Any`` and excluded from serialization.
+    ``markdown_formatter`` is a callable ``(data, *, detail='full') -> str``
+    — pydantic cannot build a ``TypeAdapter`` for it (FastMCP validates tool
+    return annotations), so the field is typed ``Any`` and excluded from
+    serialization.  The pipeline calls it with the page data and the
+    requested ``detail``; the generic ``format_as_markdown`` is the fallback.
     """
 
     __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
@@ -80,6 +90,13 @@ class ExecutionResult:
     message: str | None = None
     markdown_extras: list[str] | None = None
     markdown_formatter: Any = field(default=None, repr=False)
+    schema: dict[str, Any] | None = None
+    """Schema describing *data* for ``$ref``-aware collapse (``detail=concise``).
+
+    Executor-supplied, per-result — used when the tool-level schema does not
+    describe this result (e.g. ``read_resource``, whose schema varies per
+    URI).  ``render()`` prefers this over the tool-level ``schema`` argument.
+    """
 
 
 def render(  # noqa: PLR0913 - the pipeline is the single display path; every display axis must be a parameter because executors return raw data only and never render
@@ -105,7 +122,9 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         fetch_all: When True, return all items without page slicing
             (in-memory skip-slice — no HTTP loop).
         schema: Optional JSON Schema describing *data* for ``$ref``-aware
-            collapse when ``detail="concise"``.
+            collapse when ``detail="concise"``.  When the ``ExecutionResult``
+            carries its own ``schema`` (executor-supplied, e.g. per-URI for
+            ``read_resource``), that takes precedence over this argument.
 
     Returns:
         A ``ToolResult`` whose ``content`` (the text channel) is authoritative
@@ -119,13 +138,17 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
         raise ValueError(msg)
 
+    # The executor may supply a per-result schema (e.g. read_resource's
+    # per-URI response schema); it wins over the tool-level schema.
+    effective_schema = result.schema if result.schema is not None else schema
+
     envelope, effective_shape = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
     return _format(
         envelope,
         result,
         fmt=fmt,
         detail=detail,
-        schema=schema,
+        schema=effective_schema,
         effective_shape=effective_shape,
     )
 
@@ -257,8 +280,14 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     envelope represents an empty or out-of-range result — the message is
     rendered in every format, including markdown, instead of the (empty)
     data, so the text channel never disagrees with the envelope.
+
+    The markdown path renders the **envelope's page** (``envelope["result"]``),
+    not the executor's full ``result.data`` — so the text channel agrees with
+    ``structured_content`` on paginated list tools (#732).  When
+    ``detail="concise"`` and a schema is available, the page is pre-collapsed
+    (schema-aware ``$ref`` collapse) before the formatter runs, mirroring the
+    json path; the formatter receives the collapsed data plus ``detail``.
     """
-    data = result.data
     try:
         if fmt == "raw":
             text = json_module.dumps(envelope, indent=2)
@@ -274,10 +303,15 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
             # non-paginated empty results.
             text = result.message or envelope.get("message") or ""
         else:
+            # Render the page (the envelope's result), not the executor's
+            # full data — the text channel must agree with the envelope.
+            render_data = envelope["result"]
+            if detail == "concise" and schema is not None and isinstance(render_data, (dict, list)):
+                render_data = collapse_data(render_data, schema, _depth=0, detail="concise")
             formatter = result.markdown_formatter or (
-                lambda d: format_as_markdown(d, schema, detail=detail)
+                lambda d, *, detail: format_as_markdown(d, schema, detail=detail)
             )
-            text = formatter(data)
+            text = formatter(render_data, detail=detail)
             if result.markdown_extras:
                 text += "\n\n---\n\n" + "\n\n---\n\n".join(result.markdown_extras)
     except (TypeError, AttributeError, ValueError) as exc:

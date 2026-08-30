@@ -10,16 +10,15 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.mcp_tools import (
+    _make_resource_formatter,
     _maybe_decode_base64,
     _mcp_read_resource_impl,
     _read_resource_tool,
     mcp_list_resources_impl,
     register_mcp_resource_tools,
 )
-from gitea_mcp_server.tools.resource_display import (
-    clean_resource_uri,
-    format_resource_content,
-)
+from gitea_mcp_server.tools.resource_display import clean_resource_uri
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
@@ -525,13 +524,13 @@ class TestRegisterMcpResourceTools:
 
 
 class TestMcpReadResourceTool:
-    """Tests for read_resource tool function.
+    """Tests for the read_resource executor.
 
-    The tool returns both content (TextContent with the rendered
-    presentation) and structured_content (schema compliance + programmatic
-    extraction). content[0].text delivers the resource content as-is without
-    JSON escaping; structured_content wraps the raw resource payload in
-    {"result": ...} — data, not the rendered text.
+    The executor returns raw data (``ExecutionResult``): the resource content
+    parsed and shape-classified, with its per-resource schema and resolved
+    markdown formatter.  The single result pipeline renders it — these tests
+    assert both the executor's raw output and the rendered agent-facing
+    surface (raw envelope, json envelope, markdown).
     """
 
     def _capture_read_resource(self) -> Callable[..., Any]:
@@ -554,8 +553,8 @@ class TestMcpReadResourceTool:
         return fn
 
     @pytest.mark.asyncio
-    async def test_non_json_has_raw_text_in_content(self) -> None:
-        """Non-JSON (markdown/text) content text should be raw in content, not escaped."""
+    async def test_non_json_returns_text_shape(self) -> None:
+        """Non-JSON (markdown/text) content: text shape with the raw string."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -564,18 +563,15 @@ class TestMcpReadResourceTool:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        tool_result = await fn(uri="gitea://test", format="markdown", ctx=ctx)
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
 
-        assert isinstance(tool_result, ToolResult)
-        assert len(tool_result.content) == 1
-        assert extract_text_content(tool_result.content) == "# Hello\n\nThis is **markdown**"
-        # structured_content is present for schema compliance
-        assert tool_result.structured_content is not None
-        assert tool_result.structured_content["result"] == "# Hello\n\nThis is **markdown**"
+        assert isinstance(exec_result, ExecutionResult)
+        assert exec_result.data == "# Hello\n\nThis is **markdown**"
+        assert exec_result.shape == "text"
 
     @pytest.mark.asyncio
-    async def test_json_returns_structured_content(self) -> None:
-        """JSON content: content is the rendered markdown, structured carries the parsed data."""
+    async def test_json_dict_returns_object_shape(self) -> None:
+        """JSON dict content: object shape with parsed data."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -584,60 +580,72 @@ class TestMcpReadResourceTool:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        tool_result = await fn(uri="gitea://test", format="markdown", ctx=ctx)
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+
+        assert isinstance(exec_result, ExecutionResult)
+        assert exec_result.data == {"key": "val", "num": 42}
+        assert exec_result.shape == "object"
+
+    @pytest.mark.asyncio
+    async def test_json_list_uses_unpaginated_object_shape(self) -> None:
+        """JSON list content: object (unpaginated) shape — resources never paginate."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('[{"id": 1}, {"id": 2}]')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+
+        assert isinstance(exec_result, ExecutionResult)
+        assert exec_result.data == [{"id": 1}, {"id": 2}]
+        assert exec_result.shape == "object"
+
+    @pytest.mark.asyncio
+    async def test_attaches_schema_and_formatter_from_meta(self) -> None:
+        """Content meta (response_schema, format_hint) becomes executor metadata."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        content_part = ResourceContent(
+            '{"name": "test"}',
+            meta={"response_schema": schema, "format_hint": "repository"},
+        )
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+
+        assert exec_result.schema == schema
+        assert exec_result.markdown_formatter is not None
+
+    @pytest.mark.asyncio
+    async def test_renders_markdown_through_pipeline(self) -> None:
+        """Rendered markdown: the pipeline renders the parsed data."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val", "num": 42}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+        tool_result = _render(exec_result, fmt="markdown")
 
         assert isinstance(tool_result, ToolResult)
-        assert tool_result.structured_content is not None
-        # structured_content carries the parsed payload (data), not the raw string.
-        assert tool_result.structured_content["result"] == {"key": "val", "num": 42}
-        # content is the rendered presentation for display.
-        assert len(tool_result.content) == 1
         rendered = extract_text_content(tool_result.content)
         assert "|" in rendered
         assert "Key" in rendered
         assert "val" in rendered
 
     @pytest.mark.asyncio
-    async def test_json_format_dual_channel_mirror(self) -> None:
-        """format=json on JSON content: content text mirrors structured_content."""
-        from fastmcp.resources import ResourceContent, ResourceResult
-
-        fn = self._capture_read_resource()
-        ctx = MagicMock(spec=Context)
-        content_part = ResourceContent('{"key": "val", "num": 42}')
-        result = ResourceResult(contents=[content_part])
-        ctx.read_resource = AsyncMock(return_value=result)
-
-        tool_result = await fn(uri="gitea://test", format="json", ctx=ctx)
-
-        assert isinstance(tool_result, ToolResult)
-        # content is the serialized envelope; structured mirrors it exactly.
-        assert_dual_channel(tool_result, fmt="json")
-        parsed = parse_json_content(tool_result)
-        assert parsed == {"result": {"key": "val", "num": 42}}
-
-    @pytest.mark.asyncio
-    async def test_raw_format_has_raw_text(self) -> None:
-        """format=raw should return raw text in content, not processed."""
-        from fastmcp.resources import ResourceContent, ResourceResult
-
-        fn = self._capture_read_resource()
-        ctx = MagicMock(spec=Context)
-        content_part = ResourceContent("raw markdown")
-        result = ResourceResult(contents=[content_part])
-        ctx.read_resource = AsyncMock(return_value=result)
-
-        tool_result = await fn(uri="gitea://test", format="raw", ctx=ctx)
-
-        assert isinstance(tool_result, ToolResult)
-        assert len(tool_result.content) == 1
-        assert extract_text_content(tool_result.content) == "raw markdown"
-        assert tool_result.structured_content is not None
-        assert tool_result.structured_content["result"] == "raw markdown"
-
-    @pytest.mark.asyncio
-    async def test_raw_format_with_json(self) -> None:
-        """format=raw with JSON content should return raw JSON in content."""
+    async def test_raw_format_returns_envelope(self) -> None:
+        """format=raw renders the envelope — unified with the tool pipeline (#730)."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -646,17 +654,34 @@ class TestMcpReadResourceTool:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        tool_result = await fn(uri="gitea://test", format="raw", ctx=ctx)
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+        tool_result = _render(exec_result, fmt="raw")
 
-        assert isinstance(tool_result, ToolResult)
-        assert len(tool_result.content) == 1
-        assert extract_text_content(tool_result.content) == '{"key": "val"}'
-        assert tool_result.structured_content is not None
-        assert tool_result.structured_content["result"] == '{"key": "val"}'
+        assert_dual_channel(tool_result, fmt="raw")
+        parsed = parse_json_content(tool_result)
+        assert parsed == {"result": {"key": "val"}}
+
+    @pytest.mark.asyncio
+    async def test_json_format_dual_channel_mirror(self) -> None:
+        """format=json: content text mirrors structured_content."""
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val", "num": 42}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
+
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+        tool_result = _render(exec_result, fmt="json")
+
+        assert_dual_channel(tool_result, fmt="json")
+        parsed = parse_json_content(tool_result)
+        assert parsed == {"result": {"key": "val", "num": 42}}
 
     @pytest.mark.asyncio
     async def test_non_json_with_json_format(self) -> None:
-        """Non-JSON content with format=json should wrap in {\"result\": ...}."""
+        """Non-JSON content with format=json wraps in {\"result\": ...}."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -665,247 +690,94 @@ class TestMcpReadResourceTool:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        tool_result = await fn(uri="gitea://test", format="json", ctx=ctx)
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+        tool_result = _render(exec_result, fmt="json")
 
-        assert isinstance(tool_result, ToolResult)
-        assert len(tool_result.content) == 1
         parsed = parse_json_content(tool_result)
         assert parsed == {"result": "plain text"}
-        assert tool_result.structured_content is not None
-        # structured_content carries the raw payload, not the json rendering.
-        assert tool_result.structured_content["result"] == "plain text"
 
 
-class TestFormatResourceContent:
-    """Tests for format_resource_content helper.
+class TestReadResourceRawUnification:
+    """#730: resource format=raw returns the same envelope shape as a tool.
 
-    This is used by read_resource to reformat resource content
-    (JSON strings) into markdown, json, or raw output.
+    Before the unification, the resource pipeline short-circuited raw to a
+    bare string while the tool pipeline produced ``{"result": ...}``.  Now
+    both run through the single result pipeline, so the raw shape is
+    identical — deterministic JSON text mirroring structured_content.
     """
 
-    def test_raw_passthrough(self) -> None:
-        """format=raw should return the string unchanged."""
-        assert format_resource_content("hello world", "raw") == "hello world"
+    @pytest.mark.asyncio
+    async def test_resource_raw_matches_tool_raw_envelope(self) -> None:
+        """A resource raw result has the same envelope shape as a tool raw result."""
+        from fastmcp.resources import ResourceContent, ResourceResult
 
-    def test_raw_with_json_input(self) -> None:
-        """format=raw with JSON input should return the JSON string unchanged."""
-        raw = '{"key": "val"}'
-        assert format_resource_content(raw, "raw") is raw
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        content_part = ResourceContent('{"key": "val"}')
+        result = ResourceResult(contents=[content_part])
+        ctx.read_resource = AsyncMock(return_value=result)
 
-    def test_json_reformats_json_dict(self) -> None:
-        """format=json with JSON dict input should pretty-print, wrapped in result."""
-        result = format_resource_content('{"key": "val", "num": 42}', "json")
-        parsed = json_module.loads(result)
-        assert parsed == {"result": {"key": "val", "num": 42}}
-        assert '"key": "val"' in result
+        exec_result = await fn(uri="gitea://test", ctx=ctx)
+        tool_result = _render(exec_result, fmt="raw")
 
-    def test_json_reformats_json_array(self) -> None:
-        """format=json with JSON array input should pretty-print, wrapped in result."""
-        result = format_resource_content('[{"id": 1}, {"id": 2}]', "json")
-        parsed = json_module.loads(result)
-        assert parsed == {"result": [{"id": 1}, {"id": 2}]}
+        # Resource raw: {"result": <data>} — same shape as a tool's raw.
+        assert_dual_channel(tool_result, fmt="raw")
+        parsed = parse_json_content(tool_result)
+        assert parsed == {"result": {"key": "val"}}
 
-    def test_markdown_reformats_json_dict(self) -> None:
-        """format=markdown with JSON dict input should produce markdown."""
-        result = format_resource_content('{"name": "test", "count": 3}', "markdown")
-        assert "|" in result
-        assert "Name" in result or "name" in result
+    def _capture_read_resource(self) -> Callable[..., Any]:
+        """Register resource tools and return the read_resource function."""
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, Callable[..., Any]] = {}
 
-    def test_markdown_reformats_json_array(self) -> None:
-        """format=markdown with JSON array input should produce markdown table."""
-        result = format_resource_content('[{"id": 1, "label": "a"}]', "markdown")
-        assert "| Property | Value |" in result
-        assert "| Id | 1 |" in result
-        assert "| Label | a |" in result
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
 
-    def test_non_json_wrapped_in_result_for_json_format(self) -> None:
-        """format=json with non-JSON content should wrap in {\"result\": ...}."""
-        result = format_resource_content("plain text", "json")
-        parsed = json_module.loads(result)
-        assert parsed == {"result": "plain text"}
+            return deco
 
-    def test_non_json_passthrough_for_markdown_format(self) -> None:
-        """format=markdown with non-JSON content should return unchanged."""
-        assert format_resource_content("plain text", "markdown") == "plain text"
-
-    def test_non_json_passthrough_for_raw_format(self) -> None:
-        """format=raw with non-JSON content should return unchanged."""
-        assert format_resource_content("plain text", "raw") == "plain text"
-
-    def test_unknown_format_with_json_returns_raw(self) -> None:
-        """Unknown format with valid JSON returns raw string unchanged."""
-        assert format_resource_content('{"key": "val"}', "xml") == '{"key": "val"}'
-
-    # ── detail=concise with schema tests ────────────────────────────────────
-
-    def test_concise_json_collapses_nested_dict(self) -> None:
-        """detail=concise with schema should collapse $ref objects."""
-        raw = '{"name": "test", "owner": {"id": 1, "login": "alice"}}'
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "owner": {"$ref": "#/components/schemas/User"},
-            },
-        }
-        result = format_resource_content(raw, "json", detail="concise", schema=schema)
-        parsed = json_module.loads(result)
-        assert parsed["result"]["name"] == "test"
-        assert parsed["result"]["owner"] == "$ref:User"
-
-    def test_concise_json_collapses_nested_list(self) -> None:
-        """detail=concise with schema should collapse $ref list items."""
-        raw = '{"items": [{"id": 1}, {"id": 2}], "name": "test"}'
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "items": {
-                    "type": "array",
-                    "items": {"$ref": "#/components/schemas/Label"},
-                },
-            },
-        }
-        result = format_resource_content(raw, "json", detail="concise", schema=schema)
-        parsed = json_module.loads(result)
-        assert parsed["result"]["name"] == "test"
-        assert parsed["result"]["items"] == "$ref:Label[2]"
-
-    def test_concise_full_detail_without_schema(self) -> None:
-        """Without schema, concise should return data unchanged (no collapse)."""
-        raw = '{"name": "test", "nested": {"a": 1}}'
-        result = format_resource_content(raw, "json", detail="concise", schema=None)
-        parsed = json_module.loads(result)
-        assert parsed == {"result": {"name": "test", "nested": {"a": 1}}}
-
-    def test_concise_markdown_with_schema(self) -> None:
-        """detail=concise with schema should collapse in markdown output too."""
-        raw = '{"name": "test", "owner": {"id": 1, "login": "alice"}}'
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "owner": {"$ref": "#/components/schemas/User"},
-            },
-        }
-        result = format_resource_content(raw, "markdown", detail="concise", schema=schema)
-        # The collapsed $ref:User should appear in the markdown
-        assert "$ref:User" in result
-
-
-class TestFormatResourceContentWrappedSchema:
-    """Regression tests for issue #510: detail=concise on resource data.
-
-    Resources now store the inner (unwrapped) schema in meta["response_schema"]
-    so format_resource_content receives a schema that matches the data shape.
-    These tests verify that the pipeline works end-to-end with the kind of
-    schemas that resources actually provide.
-    """
-
-    def test_repo_resource_style_concise_json(self) -> None:
-        """Simulates a repository resource: owner and permissions get collapsed."""
-        raw = '{"id": 1, "name": "test-repo", "owner": {"id": 5, "login": "alice"}, "permissions": {"pull": true, "push": false}}'
-        schema = {
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer"},
-                "name": {"type": "string"},
-                "owner": {"$ref": "#/components/schemas/User"},
-                "permissions": {"$ref": "#/components/schemas/Permission"},
-            },
-        }
-        result = format_resource_content(raw, "json", detail="concise", schema=schema)
-        parsed = json_module.loads(result)
-        assert parsed["result"]["name"] == "test-repo"
-        assert parsed["result"]["owner"] == "$ref:User"
-        assert parsed["result"]["permissions"] == "$ref:Permission"
-
-    def test_issues_list_style_concise_json(self) -> None:
-        """Simulates an issue list resource: nested items get collapsed."""
-        raw = '[{"id": 1, "title": "Fix bug", "user": {"id": 5, "login": "alice"}}, {"id": 2, "title": "Add feature", "user": {"id": 7, "login": "bob"}}]'
-        schema = {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "title": {"type": "string"},
-                    "user": {"$ref": "#/components/schemas/User"},
-                },
-            },
-        }
-        result = format_resource_content(raw, "json", detail="concise", schema=schema)
-        parsed = json_module.loads(result)
-        assert len(parsed["result"]) == 2
-        assert parsed["result"][0]["title"] == "Fix bug"
-        assert parsed["result"][0]["user"] == "$ref:User"
-        assert parsed["result"][1]["user"] == "$ref:User"
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        fn = captured["read_resource"]
+        assert fn is not None
+        return fn
 
 
 class TestMakeResourceFormatter:
-    """Tests for _make_resource_formatter helper."""
+    """Tests for _make_resource_formatter (executor-side formatter resolution)."""
 
     def test_none_format_hint_returns_none(self) -> None:
         """format_hint=None returns None."""
-        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
-
-        fn = _make_resource_formatter(None, "full", None)
+        fn = _make_resource_formatter(None, None)
         assert fn is None
 
     def test_unknown_format_hint_returns_none(self) -> None:
         """Unknown format_hint name returns None."""
-        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
-
-        fn = _make_resource_formatter("nonexistent_formatter", "full", None)
+        fn = _make_resource_formatter("nonexistent_formatter", None)
         assert fn is None
 
     def test_known_format_hint_returns_callable(self) -> None:
-        """Known format_hint returns a callable."""
-        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
-
-        fn = _make_resource_formatter("repository", "full", None)
+        """Known format_hint returns a callable matching the pipeline contract."""
+        fn = _make_resource_formatter("repository", None)
         assert callable(fn)
         result = fn({"name": "test-repo", "full_name": "org/test-repo"})
         assert "test-repo" in result
 
     def test_formatter_with_extra_passes_it_through(self) -> None:
         """Formatter registered with need_extra=True receives extra dict."""
-        from gitea_mcp_server.tools.resource_display import _make_resource_formatter
-
-        fn = _make_resource_formatter("labels", "full", {"owner": "myorg", "repo": "myrepo"})
+        fn = _make_resource_formatter("labels", {"owner": "myorg", "repo": "myrepo"})
         assert callable(fn)
         result = fn([{"id": 1, "name": "bug"}])
         assert "myorg/myrepo" in result
 
-
-class TestFormatResourceContentEdgeCases:
-    """Edge cases for format_resource_content."""
-
-    def test_concise_non_dict_data_skips_collapse(self) -> None:
-        """When data is not dict/list, concise with schema skips collapse."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        # Non-JSON input -> not parsed as dict/list -> passes through
-        result = format_resource_content(
-            "plain text",
-            "markdown",
-            detail="concise",
-            schema={"type": "object"},
-        )
-        assert result == "plain text"
-
-    def test_concise_with_non_dict_json_data(self) -> None:
-        """JSON primitive (number) with concise+skips collapse."""
-        from gitea_mcp_server.tools.resource_display import format_resource_content
-
-        result = format_resource_content(
-            "42",
-            "json",
-            detail="concise",
-            schema={"type": "integer"},
-        )
-        parsed = json_module.loads(result)
-        assert parsed == {"result": 42}
+    def test_formatter_receives_detail_from_pipeline(self) -> None:
+        """The returned callable accepts detail and passes it to the formatter."""
+        fn = _make_resource_formatter("repository", None)
+        assert callable(fn)
+        result = fn({"name": "test-repo", "full_name": "org/test-repo"}, detail="concise")
+        assert "test-repo" in result
 
 
 class TestMcpListResourcesFormat:
@@ -1566,13 +1438,16 @@ class TestMaybeDecodeBase64:
 # ---------------------------------------------------------------------------
 
 
-class TestReadResourceToolFormatRaw:
-    """Verify that ``format=raw`` preserves the exact resource content,
-    even when it contains base64-encoded Gitea ContentsResponse data."""
+class TestReadResourceToolBase64Decode:
+    """The executor always decodes base64 ContentsResponse (like autogen).
+
+    ``format=raw`` no longer preserves the base64 JSON — the executor
+    produces the data (decoded text), and raw renders the envelope.
+    """
 
     @pytest.mark.asyncio
-    async def test_format_raw_preserves_base64_content(self) -> None:
-        """``format=raw`` returns raw JSON — no base64 decode is applied."""
+    async def test_always_decodes_base64_content(self) -> None:
+        """Base64 ContentsResponse is decoded in the executor, for every format."""
         import base64
 
         plaintext = "Hello World"
@@ -1590,44 +1465,8 @@ class TestReadResourceToolFormatRaw:
                 wraps=_maybe_decode_base64,
             ) as mock_decode,
         ):
-            result = await _read_resource_tool(
-                uri="gitea://repos/org/repo/contents/file.py",
-                format="raw",
-                detail="full",
-            )
-            # _maybe_decode_base64 must NOT be called for format=raw.
-            mock_decode.assert_not_called()
-            # Result should be the raw base64 JSON string.
-            assert result.structured_content is not None
-            assert result.structured_content["result"] == raw_json
-
-    @pytest.mark.asyncio
-    async def test_format_markdown_decodes_base64_content(self) -> None:
-        """``format=markdown`` auto-decodes base64 ContentsResponse."""
-        import base64
-
-        plaintext = "Hello World"
-        encoded = base64.b64encode(plaintext.encode()).decode()
-        raw_json = json_module.dumps({"content": encoded, "encoding": "base64"})
-
-        with (
-            patch(
-                "gitea_mcp_server.tools.mcp_tools._mcp_read_resource_impl",
-                new_callable=AsyncMock,
-                return_value=(raw_json, None, None, None),
-            ),
-            patch(
-                "gitea_mcp_server.tools.mcp_tools._maybe_decode_base64",
-                wraps=_maybe_decode_base64,
-            ) as mock_decode,
-        ):
-            result = await _read_resource_tool(
-                uri="gitea://repos/org/repo/contents/file.py",
-                format="markdown",
-                detail="full",
-            )
-            # _maybe_decode_base64 MUST be called for format=markdown.
+            result = await _read_resource_tool(uri="gitea://repos/org/repo/contents/file.py")
             mock_decode.assert_called_once()
-            # Result should be decoded plain text.
-            assert result.structured_content is not None
-            assert plaintext in result.structured_content["result"]
+            assert isinstance(result, ExecutionResult)
+            assert result.data == plaintext
+            assert result.shape == "text"

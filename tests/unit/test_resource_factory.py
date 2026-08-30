@@ -708,6 +708,43 @@ class TestMakeApiResourceHandler:
         assert kwargs.get("params") is None
 
     @pytest.mark.asyncio
+    async def test_unknown_kwarg_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A kwarg that is not a path, query, or context param warns loudly.
+
+        The handler treats any remaining kwarg as a path parameter; when the
+        key is not a valid path placeholder the substitution is a no-op, so
+        the warning surfaces the misconfiguration instead of silently
+        returning the wrong resource.
+        """
+        import logging
+
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response=[])
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/issues{?state,type}",
+            api_path="/repos/{owner}/{repo}/issues",
+            param_config=ResourceParamConfig(query_params=["state", "type"]),
+        )
+
+        assert handler is not None
+        with caplog.at_level(logging.WARNING, logger="gitea_mcp_server.resources.factory"):
+            result = await handler(owner="o", repo="r", bogus="x")
+
+        assert isinstance(result, ResourceResult)
+        assert "unknown kwarg" in caplog.text
+        assert "bogus" in caplog.text
+        # The unknown kwarg is ignored — the request still targets the path.
+        client.request.assert_called_once()
+        args, kwargs = client.request.call_args
+        assert args[1] == "/repos/o/r/issues"
+        assert kwargs.get("params") is None
+
+    @pytest.mark.asyncio
     async def test_handler_returns_text_resource_result_for_string_response(self) -> None:
         mcp = _make_mock_mcp()
         client = _make_mock_client(json_response="plain text error")

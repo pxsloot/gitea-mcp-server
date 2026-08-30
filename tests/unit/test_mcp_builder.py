@@ -2687,6 +2687,65 @@ class TestBooleanCheckResourceUri:
         transform = self.make_transform(make_openapi_spec())
         assert transform._boolean_check_resource_uri("", {}) is None
 
+    def test_get_not_a_dict_is_not_fetch(self) -> None:
+        """A path whose get operation is not a dict is not a fetch endpoint."""
+        spec = make_openapi_spec(
+            paths={"/repos/{owner}/{repo}/pulls/{index}": {"get": "not-a-dict"}}
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
+        )
+        assert uri is None
+
+    def test_response_not_a_dict_is_not_fetch(self) -> None:
+        """A get whose 200 response is not a dict is not a fetch endpoint."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}": {"get": {"responses": {"200": "not-a-dict"}}}
+            }
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
+        )
+        assert uri is None
+
+    def test_ref_response_resolved_is_fetch(self) -> None:
+        """A ``$ref`` 200 response that resolves to content is a fetch endpoint.
+
+        The response-level ``$ref`` survives conversion (see
+        ``_wrap_response_schema``) and is resolved here — a 200 that
+        references a content-bearing response is a fetch, not a check.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/pulls/{index}": {
+                    "get": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/PullRequest"},
+                        }
+                    }
+                }
+            },
+            components={
+                "responses": {
+                    "PullRequest": {
+                        "description": "ok",
+                        "content": {"application/json": {"schema": {"type": "object"}}},
+                    }
+                }
+            },
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "org", "repo": "repo", "index": 1},
+        )
+        assert uri == "gitea://repos/org/repo/pulls/1"
+
 
 class TestFindHttpStatusError:
     """Tests for _find_http_status_error."""
@@ -2727,7 +2786,8 @@ class TestBooleanCheckHandlers:
     The integration suite (``tests/integration/test_tool_behaviour.py``)
     covers the happy paths through the full pipeline; these tests pin the
     defensive branches the pipeline cannot reach (content-bearing response,
-    non-404 error, path-is-resource, no active context).
+    non-404 error, path-is-resource, no active context, resource not
+    found, unexpected existence-check error).
     """
 
     def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
@@ -2821,26 +2881,22 @@ class TestBooleanCheckHandlers:
         """A NOT_FOUND existence check raises a clear not-found error."""
         transform = self.make_transform(self._pr_fetch_spec())
 
-        class _Ctx:
-            async def read_resource(self, uri: str) -> None:
-                raise ResourceError(
-                    {
-                        "code": "NOT_FOUND",
-                        "message": "Resource not found.",
-                        "detail": "404",
-                        "resource_type": "repo",
-                        "resource_id": uri,
-                    }
-                )
-
-            async def info(self, *args: Any, **kwargs: Any) -> None:
-                return None
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = ResourceError(
+            {
+                "code": "NOT_FOUND",
+                "message": "Resource not found.",
+                "detail": "404",
+                "resource_type": "repo",
+                "resource_id": "gitea://repos/org/repo/pulls/1",
+            }
+        )
 
         with pytest.raises(ValueError, match="Resource not found"):
             await transform._try_handle_boolean_check_404(
                 self._make_404_error(),
                 {"owner": "org", "repo": "repo", "index": 1},
-                _Ctx(),
+                ctx,
                 "/repos/{owner}/{repo}/pulls/{index}/merge",
             )
 
@@ -2853,26 +2909,43 @@ class TestBooleanCheckHandlers:
         """
         transform = self.make_transform(self._pr_fetch_spec())
 
-        class _Ctx:
-            async def read_resource(self, uri: str) -> None:
-                raise ResourceError(
-                    {
-                        "code": "API_ERROR",
-                        "message": "API error 500",
-                        "detail": "boom",
-                        "resource_type": "repo",
-                        "resource_id": uri,
-                    }
-                )
-
-            async def info(self, *args: Any, **kwargs: Any) -> None:
-                return None
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = ResourceError(
+            {
+                "code": "API_ERROR",
+                "message": "API error 500",
+                "detail": "boom",
+                "resource_type": "repo",
+                "resource_id": "gitea://repos/org/repo/pulls/1",
+            }
+        )
 
         with pytest.raises(ValueError, match="Could not verify"):
             await transform._try_handle_boolean_check_404(
                 self._make_404_error(),
                 {"owner": "org", "repo": "repo", "index": 1},
-                _Ctx(),
+                ctx,
+                "/repos/{owner}/{repo}/pulls/{index}/merge",
+            )
+
+    async def test_404_existence_check_unexpected_error_raises_ambiguity(self) -> None:
+        """An unexpected (non-ResourceError) existence check failure raises an ambiguity error.
+
+        Any failure to read the existence-check resource that is not a
+        ``ResourceError`` (unregistered URI, unexpected error) means we
+        cannot confirm the resource exists — surface the ambiguity rather
+        than a wrong boolean or a false "not found".
+        """
+        transform = self.make_transform(self._pr_fetch_spec())
+
+        ctx = AsyncMock()
+        ctx.read_resource.side_effect = RuntimeError("boom")
+
+        with pytest.raises(ValueError, match="Could not verify"):
+            await transform._try_handle_boolean_check_404(
+                self._make_404_error(),
+                {"owner": "org", "repo": "repo", "index": 1},
+                ctx,
                 "/repos/{owner}/{repo}/pulls/{index}/merge",
             )
 

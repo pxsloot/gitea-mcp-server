@@ -1,8 +1,7 @@
 """Regression tests for issue #574: display pipeline mid-failure error recovery.
 
 The domain formatters must handle unexpected data shapes gracefully instead
-of crashing.  The pipeline-level try/except that used to live in
-``format_resource_content`` now lives in the single result pipeline
+of crashing.  The pipeline-level try/except lives in the single result pipeline
 (``tools/result_pipeline.py`` — see ``TestErrorRecovery`` there); these tests
 lock the formatter-side guards that make the recovery path reachable.
 

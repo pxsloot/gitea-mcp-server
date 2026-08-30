@@ -283,7 +283,7 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
 
     The markdown path renders the **envelope's page** (``envelope["result"]``),
     not the executor's full ``result.data`` — so the text channel agrees with
-    ``structured_content`` on paginated list tools (#732).  When
+    ``structured_content`` on paginated list tools.  When
     ``detail="concise"`` and a schema is available, the page is pre-collapsed
     (schema-aware ``$ref`` collapse) before the formatter runs, mirroring the
     json path; the formatter receives the collapsed data plus ``detail``.

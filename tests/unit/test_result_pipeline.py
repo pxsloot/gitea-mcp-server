@@ -527,7 +527,7 @@ class TestDetailConcise:
 
 
 class TestMarkdownPageRendering:
-    """The markdown text channel renders the page, not the full result set (#732)."""
+    """The markdown text channel renders the page, not the full result set."""
 
     def test_markdown_renders_page_not_full_data(self) -> None:
         """Page 1 of N shows N items in the text; later items are absent."""

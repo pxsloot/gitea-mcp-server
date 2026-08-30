@@ -645,7 +645,7 @@ class TestMcpReadResourceTool:
 
     @pytest.mark.asyncio
     async def test_raw_format_returns_envelope(self) -> None:
-        """format=raw renders the envelope — unified with the tool pipeline (#730)."""
+        """format=raw renders the envelope — unified with the tool pipeline."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -698,7 +698,7 @@ class TestMcpReadResourceTool:
 
 
 class TestReadResourceRawUnification:
-    """#730: resource format=raw returns the same envelope shape as a tool.
+    """resource format=raw returns the same envelope shape as a tool.
 
     Before the unification, the resource pipeline short-circuited raw to a
     bare string while the tool pipeline produced ``{"result": ...}``.  Now

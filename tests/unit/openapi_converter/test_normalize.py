@@ -129,6 +129,17 @@ class TestGetBodySchema:
         operation = {"requestBody": {"content": {"application/json": "not-a-dict"}}}
         assert _get_body_schema(operation, make_openapi_spec()) is None
 
+    def test_schema_not_dict_returns_none(self) -> None:
+        """A requestBody whose schema is not a dict yields no body schema."""
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {"schema": "not-a-dict"},
+                },
+            },
+        }
+        assert _get_body_schema(operation, make_openapi_spec()) is None
+
     def test_resolves_ref_body_and_writes_back(self) -> None:
         """A ``$ref`` body is resolved (deep-copied) and written back.
 
@@ -519,7 +530,10 @@ class TestAnnotateWildcardPathParams:
         annotated = _annotate_wildcard_path_params(spec)
         assert annotated == 4
         for method in ("get", "post", "put", "delete"):
-            op = spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"][method]
+            op = cast(
+                "dict[str, Any]",
+                spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"][method],
+            )
             assert op["x-wildcard-path-param"] == "filepath"
 
     def test_does_not_stamp_non_table_paths(self) -> None:

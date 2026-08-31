@@ -23,7 +23,10 @@ Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 result (e.g. ``read_resource``, whose schema varies per URI); it takes
 precedence over the tool-level schema in :func:`render`.  The
 ``markdown_formatter`` contract is ``(data, *, detail='full') -> str`` — the
-pipeline passes the requested ``detail`` through.
+pipeline passes the requested ``detail`` through.  When ``detail="concise"``
+and a schema is available, the pipeline pre-collapses the page (schema-aware
+``$ref`` collapse) before calling the formatter: formatters receive
+already-collapsed data and must not re-collapse.
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -79,6 +82,10 @@ class ExecutionResult:
     return annotations), so the field is typed ``Any`` and excluded from
     serialization.  The pipeline calls it with the page data and the
     requested ``detail``; the generic ``format_as_markdown`` is the fallback.
+    When ``detail="concise"`` and a schema is available, the pipeline
+    pre-collapses the page (schema-aware ``$ref`` collapse) *before* calling
+    the formatter — the formatter receives already-collapsed data and must
+    not re-collapse.
     """
 
     __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
@@ -284,18 +291,25 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     The markdown path renders the **envelope's page** (``envelope["result"]``),
     not the executor's full ``result.data`` — so the text channel agrees with
     ``structured_content`` on paginated list tools.  When
-    ``detail="concise"`` and a schema is available, the page is pre-collapsed
-    (schema-aware ``$ref`` collapse) before the formatter runs, mirroring the
-    json path; the formatter receives the collapsed data plus ``detail``.
+    ``detail="concise"`` and a schema is available, the page is collapsed
+    once (schema-aware ``$ref`` collapse) for json and markdown, and the
+    envelope's ``result`` is updated so ``structured_content`` mirrors the
+    collapsed text — the two channels never disagree.  ``format=raw`` stays
+    uncollapsed: raw is the unprocessed-data contract.  The formatter
+    receives the collapsed page plus ``detail``.
     """
     try:
-        if fmt == "raw":
-            text = json_module.dumps(envelope, indent=2)
-        elif fmt == "json":
-            if detail == "concise" and schema is not None:
-                envelope["result"] = collapse_data(
-                    envelope["result"], schema, _depth=0, detail="concise"
-                )
+        # Collapse the page once for json/markdown when detail=concise and a
+        # schema is available.  Updating the envelope's ``result`` keeps
+        # ``structured_content`` in sync with the collapsed text — the two
+        # channels never disagree.  ``format=raw`` stays uncollapsed: raw is
+        # the unprocessed-data contract.
+        page_data = envelope["result"]
+        if fmt != "raw" and detail == "concise" and schema is not None:
+            page_data = collapse_data(page_data, schema, _depth=0, detail="concise")
+            envelope["result"] = page_data
+
+        if fmt in ("raw", "json"):
             text = json_module.dumps(envelope, indent=2)
         elif effective_shape in ("empty", "binary"):
             # The envelope carries the defaulted message for empty/out-of-range
@@ -305,16 +319,13 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         else:
             # Render the page (the envelope's result), not the executor's
             # full data — the text channel must agree with the envelope.
-            render_data = envelope["result"]
-            if detail == "concise" and schema is not None and isinstance(render_data, (dict, list)):
-                render_data = collapse_data(render_data, schema, _depth=0, detail="concise")
             formatter = result.markdown_formatter or (
                 lambda d, *, detail: format_as_markdown(d, schema, detail=detail)
             )
-            text = formatter(render_data, detail=detail)
+            text = formatter(page_data, detail=detail)
             if result.markdown_extras:
                 text += "\n\n---\n\n" + "\n\n---\n\n".join(result.markdown_extras)
-    except (TypeError, AttributeError, ValueError) as exc:
+    except (TypeError, AttributeError, ValueError, KeyError, IndexError, RecursionError) as exc:
         logger.warning(
             "Display pipeline recovered from %s: %s. fmt=%s, detail=%s",
             type(exc).__name__,
@@ -324,7 +335,7 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         )
         try:
             data_str = json_module.dumps(envelope, indent=2, default=str)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             data_str = str(envelope)
         if fmt in ("json", "raw"):
             # Deterministic raw: the recovered text is still valid JSON,

@@ -8,6 +8,13 @@ pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
 Each formatter has the signature ``(data, *, detail='full') -> str``.
 The ``detail`` parameter is passed through from the result pipeline
 so that ``detail=concise`` produces collapsed markdown everywhere.
+
+**Invariant**: when ``detail="concise"`` and the result carries a schema, the
+pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
+calling the formatter — formatters receive already-collapsed data (nested
+``$ref``-backed objects are ``"$ref:TypeName"`` strings).  Formatters must
+not re-collapse; their ``detail=concise`` branches render the collapsed
+items as-is (see ``_format_labels_markdown``).
 """
 
 from collections.abc import Callable

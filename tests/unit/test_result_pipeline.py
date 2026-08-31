@@ -525,6 +525,46 @@ class TestDetailConcise:
         assert "$ref:User" in text
         assert "user1" not in text
 
+    def test_markdown_concise_structured_mirrors_collapsed_text(self) -> None:
+        """detail=concise collapses the envelope for markdown too — both channels agree.
+
+        The json path collapses the envelope's ``result``; the markdown path
+        must do the same so ``structured_content`` mirrors the collapsed text
+        (the milestone's "content is the contract" invariant).  Regression
+        guard for the review finding on the duplicated pre-collapse branch.
+        """
+        data = {"owner": {"id": 1, "login": "user1"}}
+        schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        result = render(
+            ExecutionResult(data=data, shape="object"),
+            fmt="markdown",
+            detail="concise",
+            schema=schema,
+        )
+        text = extract_text_content(result.content)
+        assert "$ref:User" in text
+        sc = get_structured(result)
+        assert sc["result"]["owner"] == "$ref:User"
+
+    def test_raw_concise_does_not_collapse(self) -> None:
+        """format=raw is the unprocessed-data contract — no collapse even with concise."""
+        data = {"owner": {"id": 1, "login": "user1"}}
+        schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        result = render(
+            ExecutionResult(data=data, shape="object"),
+            fmt="raw",
+            detail="concise",
+            schema=schema,
+        )
+        parsed = parse_json_content(result)
+        assert parsed["result"]["owner"]["login"] == "user1"
+
 
 class TestMarkdownPageRendering:
     """The markdown text channel renders the page, not the full result set."""
@@ -626,6 +666,48 @@ class TestErrorRecovery:
         result = render(
             ExecutionResult(data=data, shape="object"),
             fmt="raw",
+        )
+        parsed = parse_json_content(result)
+        assert "result" in parsed
+
+    def test_key_error_in_formatter_recovers(self) -> None:
+        """A formatter raising KeyError falls back instead of crashing the tool."""
+
+        def formatter(d: Any, *, detail: str = "full") -> str:
+            missing = "missing"
+            raise KeyError(missing)
+
+        result = render(
+            ExecutionResult(data={"x": 1}, shape="object", markdown_formatter=formatter),
+            fmt="markdown",
+        )
+        text = extract_text_content(result.content)
+        assert "formatting failed" in text
+        assert "KeyError" in text
+
+    def test_index_error_in_formatter_recovers(self) -> None:
+        """A formatter raising IndexError falls back instead of crashing the tool."""
+
+        def formatter(d: Any, *, detail: str = "full") -> str:
+            empty = "empty"
+            raise IndexError(empty)
+
+        result = render(
+            ExecutionResult(data={"x": 1}, shape="object", markdown_formatter=formatter),
+            fmt="markdown",
+        )
+        text = extract_text_content(result.content)
+        assert "formatting failed" in text
+        assert "IndexError" in text
+
+    def test_recursion_error_recovers(self) -> None:
+        """Deeply nested data (RecursionError) falls back to a readable string."""
+        data: dict[str, Any] = {"a": 1}
+        for _ in range(100_000):
+            data = {"nested": data}
+        result = render(
+            ExecutionResult(data=data, shape="object"),
+            fmt="json",
         )
         parsed = parse_json_content(result)
         assert "result" in parsed

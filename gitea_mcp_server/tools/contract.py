@@ -41,6 +41,14 @@ tools pass the OpenAPI HTTP pipeline
 tools pass their local implementation (see ``tools/synthetic_contract.py``).
 API-specific concerns (route-aware HTTP execution, error translation,
 response-class wrapping) stay inside the executor — never in this module.
+
+``ToolResult`` is imported at runtime (not under ``TYPE_CHECKING``) because
+the ``transform_fn`` return annotation is a string under ``from __future__
+import annotations``: FastMCP's ``ParsedFunction`` resolves the function's
+annotations via ``get_type_hints`` when building the tool schema, and
+pydantic evaluates the string return annotation when building the input
+``TypeAdapter``.  Without the runtime import, tool registration fails with
+``NameError``.
 """
 
 from __future__ import annotations
@@ -48,9 +56,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from fastmcp.tools.base import (
-    ToolResult,  # noqa: TC002 - needed at runtime: the transform_fn return annotation is a string under `from __future__ import annotations`, so pydantic evaluates it when building the TypeAdapter
-)
+from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
 from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
 from gitea_mcp_server.context_utils import resolve_current_context

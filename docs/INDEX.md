@@ -52,6 +52,7 @@ truth. Other mentions point here.
 | Config / ConfigProtocol | `config.py` (source) + `TESTING_STANDARDS.md` (test pattern / SimpleConfig) |
 | Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (design decisions) |
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
+| Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #4) |
 | Module map | `ARCHITECTURE.md` |
 | Transform execution order | `ARCHITECTURE.md` |
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |

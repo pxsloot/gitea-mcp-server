@@ -34,10 +34,11 @@ Parameter                         Default        Purpose
                                                  When ``None``, derived in snake_case from the spec
                                                  operationId, then from the URI template, then a
                                                  placeholder with a loud warning (never ``"handler"``).
-``description``                   ``None``       Explicit description used as the handler docstring.
-                                                 When ``None``, the OpenAPI operation summary/
-                                                 description is used; the fallback never leaks API
-                                                 plumbing (``Resource for GET {path}``).
+``description``                   ``None``       Explicit description passed as ``description=`` to
+                                                 ``mcp.resource()`` (what agents see in
+                                                 ``list_resources``).  When ``None``, the OpenAPI
+                                                 operation summary/description is used; the fallback
+                                                 never leaks API plumbing (``Resource for GET {path}``).
 ``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
                                                  Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
@@ -535,16 +536,15 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     )
 
 
-def _set_handler_docstring(  # noqa: PLR0913 - handler + spec + path + lower-method + name + description are all independent docstring inputs
-    handler: Callable[..., Any],
+def _derive_resource_description(
     openapi_spec: OpenAPISpec | None,
     api_path: str,
     method_lower: str,
     *,
-    name: str | None = None,
+    name: str,
     description: str | None = None,
-) -> None:
-    """Set the handler's docstring (the resource description agents see).
+) -> str:
+    """Derive the agent-facing resource description.
 
     Priority order:
 
@@ -554,17 +554,26 @@ def _set_handler_docstring(  # noqa: PLR0913 - handler + spec + path + lower-met
     3. The derived resource ``name`` — never ``Resource for {method}
        {api_path}``, which leaks API plumbing into the agent-facing surface.
 
+    The returned string is passed as ``description=`` to ``mcp.resource()``
+    — the single mechanism for the agent-facing resource description (see
+    ``docs/DEVELOPMENT.md`` → "How to Add a Custom Resource").  The handler's
+    own docstring is code documentation only; FastMCP prefers ``description=``
+    over the docstring when both are present.
+
     Args:
-        handler: The resource handler callable.
         openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
         api_path: API path in spec (e.g. ``/repos/{owner}/{repo}``).
         method_lower: Lowercased HTTP method.
-        name: The (derived or explicit) resource name, for the fallback.
+        name: The (derived or explicit) resource name, used as the fallback
+            description.  Guaranteed non-empty by the caller
+            (``_derive_resource_name_for`` never returns an empty string).
         description: Optional explicit description overriding spec-derived text.
+
+    Returns:
+        The agent-facing description string — never empty.
     """
     if description:
-        handler.__doc__ = description
-        return
+        return description
 
     if openapi_spec is not None:
         paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
@@ -572,17 +581,18 @@ def _set_handler_docstring(  # noqa: PLR0913 - handler + spec + path + lower-met
         if isinstance(path_item, dict):
             operation = path_item.get(method_lower, {})
             if isinstance(operation, dict):
-                summary = operation.get("summary", "")
-                description = operation.get("description", "")
+                summary: str = operation.get("summary", "")
+                spec_description: str = operation.get("description", "")
                 docstring = summary
-                if description:
-                    docstring += "\n\n" + description
+                if spec_description:
+                    docstring += "\n\n" + spec_description
                 if docstring:
-                    handler.__doc__ = docstring
-                    return
+                    return docstring
 
     # Fallback: the derived name is a stable, non-plumbing description.
-    handler.__doc__ = name or "Resource"
+    # ``name`` is guaranteed non-empty by the caller, so no placeholder is
+    # needed here (the old ``name or "Resource"`` was unreachable).
+    return name
 
 
 def _build_optional_param_signature(
@@ -690,10 +700,11 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             ``None``, derived in snake_case from the spec operationId, then
             from the URI template, then a placeholder with a loud warning —
             never FastMCP's function-name fallback (``"handler"``).
-        description: Explicit description used as the handler docstring
-            (what agents see in ``list_resources``).  When ``None``, the
-            OpenAPI operation summary/description is used; the fallback
-            never leaks API plumbing (``Resource for GET {path}``).
+        description: Explicit description passed as ``description=`` to
+            ``mcp.resource()`` (what agents see in ``list_resources``).
+            When ``None``, the OpenAPI operation summary/description is
+            used; the fallback never leaks API plumbing
+            (``Resource for GET {path}``).
         format_hint: Registered formatter name for markdown rendering.
             Not used when ``handler_hook`` is provided.
         handler_hook: Optional async callback for post-processing the API
@@ -1013,10 +1024,15 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         if _sig != inspect.signature(handler):
             handler.__signature__ = _sig  # type: ignore[attr-defined]
 
-    # Set docstring from explicit description, operation summary/description,
-    # or the derived name (never "Resource for GET {path}").
-    _set_handler_docstring(
-        handler,
+    # Derive the agent-facing description: explicit description → OpenAPI
+    # summary/description → derived name (never "Resource for GET {path}").
+    # Passed as ``description=`` to ``mcp.resource()`` — the single mechanism
+    # for the agent-facing resource description (see docs/DEVELOPMENT.md).
+    # The handler's literal docstring stays as code documentation only.
+    # Named ``derived_description`` (not a reassignment of the ``description``
+    # param) so the caller-curated value stays readable — the same shadowing
+    # trap the old ``_set_handler_docstring`` had.
+    derived_description = _derive_resource_description(
         openapi_spec,
         api_path,
         method_lower,
@@ -1032,6 +1048,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     mcp.resource(
         uri,
         name=name,
+        description=derived_description,
         mime_type=mime_type,
         tags=resource_tags,
         meta=meta if meta else None,

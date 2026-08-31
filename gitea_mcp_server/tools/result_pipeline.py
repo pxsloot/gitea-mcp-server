@@ -69,6 +69,12 @@ logger = logging.getLogger(__name__)
 
 _VALID_FORMATS = frozenset({"raw", "json", "markdown"})
 
+# Last-resort fallback when the data is nested too deeply for even ``repr()``
+# to render — the C stack overflows (environment-dependent: an 8 MB stack
+# overflows at ~30k nesting levels, a 16 MB stack at ~60k).  The recovery
+# path must never crash the tool, so this fixed string is the final answer.
+_DEEP_NESTING_FALLBACK = "<data too deeply nested to display>"
+
 
 @dataclass
 class ExecutionResult:
@@ -336,7 +342,13 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         try:
             data_str = json_module.dumps(envelope, indent=2, default=str)
         except (TypeError, ValueError, RecursionError):
-            data_str = str(envelope)
+            try:
+                data_str = str(envelope)
+            except RecursionError:
+                # Even repr() overflows the C stack on pathologically deep
+                # data (observed on CI: 8 MB stack, ~30k nesting levels).
+                # Emit a fixed, honest fallback instead of crashing the tool.
+                data_str = _DEEP_NESTING_FALLBACK
         if fmt in ("json", "raw"):
             # Deterministic raw: the recovered text is still valid JSON,
             # mirroring structured_content.

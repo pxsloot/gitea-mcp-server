@@ -18,6 +18,14 @@ concrete convenience resource whose ``api_path``
 (``/repos/{owner}/{repo}/contents/README.md``) is not a spec mirror.  Static
 resources declare explicit snake_case names.  No resource may surface
 FastMCP's function-name fallback (``"handler"``).
+
+**Descriptions**: the agent-facing resource description is passed as
+``description=`` to ``mcp.resource()`` — the single mechanism across factory
+and static resources (see ``docs/DEVELOPMENT.md`` → "How to Add a Custom
+Resource").  Factory resources derive it (explicit ``description`` → OpenAPI
+summary/description → derived name); static resources pass it explicitly.
+Handler docstrings are code documentation only — FastMCP prefers
+``description=`` over the docstring when both are present.
 """
 
 import json
@@ -335,6 +343,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
     mcp.resource(
         "gitea://version",
         name="version",
+        description="Get server application version.",
         mime_type="text/plain",
         tags={"wrapper", "server"},
         meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
@@ -365,6 +374,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp.resource(
             "gitea://token/scopes",
             name="token_scopes",
+            description="Get the scopes of the active Gitea token.",
             mime_type="application/json",
             tags={"wrapper", "server"},
             meta=_meta_scopes,
@@ -390,6 +400,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp.resource(
             "gitea://server/info",
             name="server_info",
+            description="Get server metadata from OpenAPI info block.",
             mime_type="text/markdown",
             tags={"wrapper", "server"},
             meta=ResourceMeta(

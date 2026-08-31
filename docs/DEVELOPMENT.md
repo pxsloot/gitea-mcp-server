@@ -536,6 +536,7 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
        api_path="/api/path/{param}",
        method="GET",
        format_hint="my_type",
+       description="Get a my resource by param.",
        scope="read:repository",
        cache_ttl=300,
        tags={"my_tag"},
@@ -577,12 +578,17 @@ resource must never surface FastMCP's function-name fallback (``"handler"``).
 Pass an explicit ``name`` when the derivation would be misleading (e.g. the
 readme wrapper declares ``repo_get_readme``).
 
-**Descriptions never leak API plumbing.** The handler docstring (what agents
-see as the resource description in ``list_resources``) comes from an
-explicit ``description`` param when provided, else the OpenAPI operation
+**Descriptions are passed as ``description=``.** The agent-facing resource
+description (what agents see in ``list_resources``) is passed as
+``description=`` to ``mcp.resource()`` — the single mechanism across factory
+and static/synthetic resources.  FastMCP prefers ``description=`` over the
+handler docstring when both are present, so the docstring is code
+documentation only.  The factory derives the description from an explicit
+``description`` param when provided, else the OpenAPI operation
 summary/description, else the derived name — never ``Resource for GET
 {path}``.  Pass an explicit ``description`` for wrapper resources whose
-``api_path`` does not match a spec path (no summary to inherit).
+``api_path`` does not match a spec path (no summary to inherit); static
+resources pass an explicit ``description`` too.
 
 **Text/plain resources via ``handler_hook``**: For resources that serve
 plain text derived from a JSON API response, pass a ``handler_hook`` callback.
@@ -813,6 +819,8 @@ register_all_resources(..., version_str=version_str, ...)
 ```python
 # In custom.py: handler is a closure — no API call on read
 # Direct mcp.resource() call — no decorator needed.
+# The agent-facing description is passed as description= (the docstring
+# is code documentation only — FastMCP prefers description=).
 async def get_version() -> ResourceResult:
     """Get server application version."""
     return ResourceResult(contents=[
@@ -820,7 +828,9 @@ async def get_version() -> ResourceResult:
     ])
 
 mcp.resource(
-    "gitea://version", mime_type="text/plain",
+    "gitea://version",
+    description="Get server application version.",
+    mime_type="text/plain",
     tags={"wrapper", "server"},
     meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
 )(get_version)
@@ -896,6 +906,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 
         mcp.resource(
             uri="gitea://my/{param}",
+            description="Description.",
             mime_type="application/json",
             annotations={"readOnlyHint": True, "idempotentHint": True},
             meta=ResourceMeta(required_scope=scope, size_hint="medium").to_dict(),

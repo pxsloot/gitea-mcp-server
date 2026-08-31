@@ -490,9 +490,16 @@ from the parameter schema.
    auto-generated siblings; the fallback is the URI template's last
    non-parameter segment, then a placeholder with a loud warning.  A resource
    never surfaces FastMCP's function-name fallback (``"handler"``).  Static
-   and synthetic resources declare explicit snake_case names.  Descriptions
-   never leak API plumbing: explicit ``description`` → operation
-   summary/description → derived name.
+   and synthetic resources declare explicit snake_case names.
+
+   **Resource descriptions are passed as ``description=``.**  The agent-facing
+   description (what agents see in ``list_resources``) is passed as
+   ``description=`` to ``mcp.resource()`` — the single mechanism across
+   factory and static/synthetic resources.  FastMCP prefers ``description=``
+   over the handler docstring when both are present, so docstrings are code
+   documentation only.  The factory derives the description and never leaks
+   API plumbing: explicit ``description`` → operation summary/description →
+   derived name.
 
 5. **Response schema wrapping** -- FastMCP requires `output_schema` to be
    `type: object`.  All response schemas are wrapped in `{"result": ...}` to

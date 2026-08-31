@@ -571,27 +571,36 @@ class TestMakeApiResourceUriDerivation:
 
 
 class TestMakeApiResourceDescription:
-    """Tests for the explicit description param and docstring fallbacks."""
+    """Tests for the explicit description param and spec/name fallbacks.
+
+    The agent-facing description is passed as ``description=`` to
+    ``mcp.resource()`` — the single mechanism across factory and static
+    resources (see docs/DEVELOPMENT.md).  The handler's literal docstring
+    is code documentation only; FastMCP prefers ``description=`` over the
+    docstring when both are present.
+    """
 
     @staticmethod
-    def _make_capturing_mcp() -> tuple[MagicMock, dict[str, Any]]:
-        """Create a mock mcp capturing uri → handler from decorator application."""
+    def _make_capturing_mcp() -> tuple[MagicMock, dict[str, Any], dict[str, Any]]:
+        """Create a mock mcp capturing uri → (handler, kwargs) from decorator application."""
         mcp = MagicMock(spec=FastMCP)
         captured: dict[str, Any] = {}
+        captured_kwargs: dict[str, Any] = {}
 
         def resource_decorator(uri: str, **kwargs: Any) -> Callable:
             def deco(func: Callable) -> Callable:
                 captured[uri] = func
+                captured_kwargs[uri] = kwargs
                 return func
 
             return deco
 
         mcp.resource = MagicMock(side_effect=resource_decorator)
-        return mcp, captured
+        return mcp, captured, captured_kwargs
 
-    def test_explicit_description_used_as_docstring(self) -> None:
-        """description param overrides spec-derived docstring."""
-        mcp, captured = self._make_capturing_mcp()
+    def test_explicit_description_passed_as_kwarg(self) -> None:
+        """description param is passed as description= to mcp.resource()."""
+        mcp, _, captured_kwargs = self._make_capturing_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
@@ -604,11 +613,14 @@ class TestMakeApiResourceDescription:
             description="Get full repository metadata",
         )
 
-        assert captured["gitea://repos/{owner}/{repo}"].__doc__ == "Get full repository metadata"
+        assert (
+            captured_kwargs["gitea://repos/{owner}/{repo}"]["description"]
+            == "Get full repository metadata"
+        )
 
     def test_description_falls_back_to_spec_summary(self) -> None:
         """No description → OpenAPI operation summary is used."""
-        mcp, captured = self._make_capturing_mcp()
+        mcp, _, captured_kwargs = self._make_capturing_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
@@ -620,11 +632,11 @@ class TestMakeApiResourceDescription:
             api_path="/repos/{owner}/{repo}",
         )
 
-        assert captured["gitea://repos/{owner}/{repo}"].__doc__ == "Get a repository"
+        assert captured_kwargs["gitea://repos/{owner}/{repo}"]["description"] == "Get a repository"
 
     def test_description_falls_back_to_derived_name_not_api_path(self) -> None:
         """No description and no spec summary → derived name, never API plumbing."""
-        mcp, captured = self._make_capturing_mcp()
+        mcp, _, captured_kwargs = self._make_capturing_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
 
@@ -636,10 +648,40 @@ class TestMakeApiResourceDescription:
             api_path="/widgets/{widget_id}",  # not in spec → no summary
         )
 
-        doc = captured["gitea://widgets/{widget_id}"].__doc__
-        assert doc == "widgets"
-        assert "GET" not in doc
-        assert "/widgets/{widget_id}" not in doc
+        desc = captured_kwargs["gitea://widgets/{widget_id}"]["description"]
+        assert desc == "widgets"
+        assert "GET" not in desc
+        assert "/widgets/{widget_id}" not in desc
+
+    def test_description_kwarg_is_contract_handler_docstring_is_code_doc(self) -> None:
+        """The factory passes description=; the handler keeps its literal docstring.
+
+        Precedence lock: FastMCP prefers ``description=`` over the docstring
+        when both are present (verified in FunctionResource and
+        FunctionResourceTemplate ``from_function``), so the ``description=``
+        kwarg is the agent-facing contract and the handler's literal docstring
+        is code documentation only.
+        """
+        mcp, captured, captured_kwargs = self._make_capturing_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+            description="Curated description",
+        )
+
+        handler = captured["gitea://repos/{owner}/{repo}"]
+        # The handler keeps its literal docstring (code documentation)...
+        assert handler.__doc__ == "Auto-generated resource handler from factory."
+        # ...but the agent-facing description is the description= kwarg.
+        assert (
+            captured_kwargs["gitea://repos/{owner}/{repo}"]["description"] == "Curated description"
+        )
 
 
 class TestMakeApiResourceHandler:

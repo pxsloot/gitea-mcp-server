@@ -12,12 +12,12 @@ Usage::
         default_detail="concise",
         optional_params=[{"name": "state", "type": "string"}],
     )
-    mcp.resource(uri, meta=meta.to_dict())(handler)
+    mcp.resource(uri, description="...", meta=meta.to_dict())(handler)
 
 Or with auto-derivation::
 
     meta = ResourceMeta.for_schema(schema, required_scope="read:repository")
-    mcp.resource(uri, meta=meta.to_dict())(handler)
+    mcp.resource(uri, description="...", meta=meta.to_dict())(handler)
 """
 
 from __future__ import annotations

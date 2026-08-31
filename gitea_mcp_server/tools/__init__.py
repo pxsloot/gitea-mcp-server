@@ -27,7 +27,6 @@ from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.customize import (
     add_inferred_hints,
     categorize_tool,
-    compute_invalidation_patterns,
     generate_tool_title,
 )
 from gitea_mcp_server.tools.extensions_metadata import ExtensionMetadataTransform
@@ -51,7 +50,6 @@ __all__ = [
     "apply_scope_filter",
     "apply_to",
     "categorize_tool",
-    "compute_invalidation_patterns",
     "derive_output_schema",
     "derive_required_scope",
     "extract_from",

@@ -25,7 +25,7 @@ from fastmcp.server.middleware.caching import (
     ResponseCachingMiddleware,
 )
 
-from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware
+from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware, build_invalidation_map
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config, ConfigProtocol
 from gitea_mcp_server.constants import (
@@ -443,6 +443,10 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
         version_str=version_str,
         server_info_md=server_info_md,
     )
+    # Derive cache-invalidation targets AFTER resource registration: the
+    # resource surface (populated by make_api_resource) is the single source
+    # of truth for what a write can invalidate (issue #743).
+    build_invalidation_map(openapi_spec)
     register_type_tools(mcp, openapi_spec=openapi_spec, tool_prefix=config.tool_prefix or "")
     await _apply_virtual_param_scope_filter(available_scopes)
 

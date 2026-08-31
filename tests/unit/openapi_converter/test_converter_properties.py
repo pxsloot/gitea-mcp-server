@@ -459,8 +459,15 @@ class TestNoVendorExtensionsInSchemas:
         result = convert_swagger_to_openapi_v3(spec)
         x_keys = _collect_x_keys(result)
 
-        # Operation-level x-* (x-original-content-types, x-mcp) should survive
-        allowed_prefixes = ("x-original-content-types", "x-mcp", "x-fastmcp-")
+        # Operation-level x-* (x-original-content-types, x-mcp, type
+        # references for cache invalidation) should survive
+        allowed_prefixes = (
+            "x-original-content-types",
+            "x-mcp",
+            "x-fastmcp-",
+            "x-resource-types",
+            "x-modifies-type",
+        )
         schema_x_keys = [k for k in x_keys if not any(k.startswith(p) for p in allowed_prefixes)]
         assert not schema_x_keys, f"Found unexpected x-* keys in converted spec: {schema_x_keys}"
 

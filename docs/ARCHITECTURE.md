@@ -257,12 +257,12 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
 | `server.py` | Assembly, main(), create_mcp_server(), lifespan, middleware wiring, server-level contract transform registration |
-| `constants.py` | Centralized magic numbers, cache TTLs, pattern names, scopes |
+| `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
 | `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
 | `format.py` | Schema-aware formatting shared by tools & resources |
@@ -301,7 +301,7 @@ The customization layers as applied during server startup:
 | 2. Error handling | `tools/errors.py` | wraps `run()` to translate HTTP errors to agent-friendly messages |
 | 3. Label schema | `tools/labels.py` | `update_labels_schema()` — augment label parameter description at schema time |
 | 4. Validation | `validation.py` | runtime validation (owner/repo format, pagination, etc.) + schema augmentation — two-layer enum system: **schema-driven** (validates any param against its own schema ``enum``) + **description inference** (injects ``enum`` from description text for spec types like ``CommitStatusState`` that lack machine-readable enums) |
-| 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries |
+| 5. Cache invalidation | `cache_invalidation.py` | on write, invalidate affected resource cache entries (targets derived from spec + resource surface) |
 | 6. Search/lazy loading | `tools/search.py` | Name-match + BM25 search with alias expansion, synthetic tools |
 | 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 8. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
@@ -398,6 +398,7 @@ from the parameter schema.
 | `resources/custom.py` | Hand-written resource implementations (factory + static) |
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
+| `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets (populated by ``make_api_resource``, consumed by ``build_invalidation_map``) |
 | `tools/display.py` | Domain-specific display formatters with registry |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
@@ -532,10 +533,30 @@ from the parameter schema.
    permanent shape for FastMCP validation.  The inner shape is derived once at
    storage time and cached alongside the wrapped one.
 
-6. **Cache invalidation via middleware** -- Write tools register invalidation
-   patterns at startup.  The `CacheInvalidationMiddleware` computes concrete
-   URIs from tool arguments and clears them from the response cache after
-   successful writes.
+6. **Cache invalidation via middleware, derived from the spec + surface** --
+   Write tools are recorded at customization time (`record_write_tool`).
+   After resource registration, `build_invalidation_map` derives each
+   write tool's invalidation targets from the spec + the registered
+   resource surface (`resources/surface.py`) — no hardcoded URI templates
+   (issue #743).  Two derivation rules:
+
+   - **Path-prefix** — a write at path `P` invalidates every registered
+     resource whose api_path is a prefix of (or equal to) `P`
+     (template-aware, full prefix — no exceptions).  An issue write
+     invalidates the repo resource too.
+   - **Cross-tree** — a write whose operation carries `x-modifies-type`
+     (stamped pre-wrap by `openapi_converter/type_references.py`)
+     invalidates every registered resource whose response schema
+     references that type (`x-resource-types`).  Label/milestone writes
+     invalidate issues/pulls because the Issue schema references
+     Label/Milestone.
+
+   The `CacheInvalidationMiddleware` computes concrete URIs from tool
+   arguments and clears them from the response cache after successful
+   writes.  It also observes resource reads (`on_read_resource`) to record
+   query-variant URIs (e.g. `gitea://.../issues?state=open`) under their
+   base URI — the cache key includes the query string, so a write must
+   clear every variant that has been read.
 
  7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
     re-export of scope-filtering helpers, avoiding a circular import that would
@@ -552,9 +573,12 @@ from the parameter schema.
      (viewer, exporters, env vars) lives in `docs/DEVELOPMENT.md` →
      "OpenTelemetry Observability".
 
- 9. **Constants consolidation** -- `TAG_TO_SCOPE`, `TOOL_INVALIDATION_PATTERNS`,
-    and BM25 search configuration (`SEARCH_*`) were moved from scattered module-level
-    definitions into `constants.py`, the single source of truth for all magic values.
+ 9. **Constants consolidation** -- `TAG_TO_SCOPE` and BM25 search
+    configuration (`SEARCH_*`) were moved from scattered module-level
+    definitions into `constants.py`, the single source of truth for all
+    magic values.  (Cache-invalidation patterns were later *removed* from
+    constants entirely — see design decision #6: targets are derived from
+    the spec + resource surface, not declared.)
 
 10. **OpenAPI spec TypedDict migration** -- All pipeline layers accept typed
     OpenAPI spec parameters instead of `dict[str, Any]`.  Seven TypedDict types

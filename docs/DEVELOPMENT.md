@@ -131,7 +131,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | Module | Concern |
 |--------|---------|
 | `tools/contract.py` | Generic agent-facing contract spine — `build_transform_fn(tool, executor)`, shared by autogen and synthetic tools |
-| `tools/customize.py` | Helpers: title/category generation, hint inference, invalidation |
+| `tools/customize.py` | Helpers: title/category generation, hint inference |
 | `tools/schemas.py` | Output schema derivation, `$ref` resolution |
 | `tools/errors.py` | Error translation, argument validation runner |
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
@@ -153,7 +153,7 @@ The customization pipeline has two phases:
    per-tool at startup via OpenAPIProvider's ``mcp_component_fn`` hook:
 
    - ``_apply_tool_identity()`` — title, annotations, hints, category,
-     scope, cache invalidation
+     scope, cache-invalidation write-tool recording
    - ``_detect_has_labels()`` (in `tools/customize.py`) — detect
      array-typed labels parameter (drives schema augmentation)
    - ``_compute_tool_schema()`` — pure: bundles six spec queries
@@ -255,16 +255,41 @@ length/type checks that the spec doesn't define):
    parameter has no schema-level ``enum`` (schema-driven validation
    takes priority over hardcoded validators).
 
-### 4. Cache invalidation pattern
+### 4. Cache invalidation
 
-Add to `TOOL_INVALIDATION_PATTERNS` in `constants.py`:
+Cache invalidation is **derived, not declared** (issue #743).  A write tool
+invalidates every registered resource whose content it can change, computed
+from the spec + the registered resource surface — there is no hand-curated
+list of URI templates to maintain:
 
-```python
-TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
-    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
-    # ...
-]
-```
+- **Path-prefix** — a write at path `P` invalidates every registered
+  resource whose api_path is a prefix of (or equal to) `P` (template-aware,
+  full prefix — no exceptions).  An issue write invalidates the repo
+  resource too.
+- **Cross-tree** — a write whose operation carries `x-modifies-type`
+  (stamped by `openapi_converter/type_references.py` during conversion)
+  invalidates every registered resource whose response schema references
+  that type (`x-resource-types`).  Label/milestone writes invalidate
+  issues/pulls because the Issue schema references Label/Milestone.
+
+The flow:
+
+1. `mcp_builder._apply_tool_identity` records each write tool's
+   `(name, path, method)` via `record_write_tool`.
+2. `make_api_resource` records every registered resource in the surface
+   registry (`resources/surface.py`).
+3. After `register_all_resources`, `server.py` calls
+   `build_invalidation_map(openapi_spec)` which derives each tool's
+   invalidation URI templates into `TOOL_INVALIDATION_MAP`.
+4. At call time, `CacheInvalidationMiddleware` substitutes the tool's
+   arguments into the templates and clears the cache — including
+   query-variant reads (e.g. `gitea://.../issues?state=open`) recorded by
+   the middleware's `on_read_resource` hook.
+
+To add a resource that should be invalidated by writes, register it via
+`make_api_resource` (or `register_resource_surface`) — the derivation picks
+it up automatically.  A test asserts every invalidation target matches a
+registered resource, so drift fails loudly.
 
 ### 5. Add a virtual parameter
 

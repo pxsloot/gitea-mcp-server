@@ -1,17 +1,36 @@
 """Cache invalidation for write operations in Gitea MCP Server.
 
 This module provides functionality to invalidate cached MCP resources when
-data is modified via tool calls. It addresses the issue where resources
+data is modified via tool calls.  It addresses the issue where resources
 remain cached even after the underlying data changes.
 
 The system works by:
-1. Defining cache invalidation patterns (resource URI templates) that can be affected
-2. During tool customization, each write tool is registered with the patterns it invalidates
-3. After tool execution, the middleware computes concrete URIs from tool arguments
-   and clears them from the cache.
+1. Recording every write tool's ``(name, path, method)`` during tool
+   customization (``record_write_tool``).
+2. After resource registration, deriving each write tool's invalidation
+   targets from the spec + the registered resource surface
+   (``build_invalidation_map``) — no hardcoded URI templates.
+3. After tool execution, the middleware computes concrete URIs from tool
+   arguments and clears them from the cache, including query-variant reads
+   recorded at read time.
 
-The invalidation map is populated at server startup by analyzing each tool's
-HTTP path and method, ensuring automatic coverage of all write operations.
+Target derivation (issue #743) has two parts:
+
+* **Path-prefix** — a write at path ``P`` invalidates every registered
+  resource whose api_path is a prefix of (or equal to) ``P`` (template-
+  aware, full prefix — no exceptions).  This covers the resource itself,
+  its sub-resources, and ancestor aggregates (e.g. an issue write
+  invalidates the repo resource).
+* **Cross-tree** — a write whose operation carries ``x-modifies-type``
+  (stamped by ``openapi_converter.type_references``) invalidates every
+  registered resource whose response schema references that type
+  (``x-resource-types``).  This covers relationships the path tree cannot
+  express — e.g. label/milestone writes change issues/pulls because the
+  Issue schema references Label/Milestone.
+
+Both parts derive from the same single source of truth as resource
+registration (the spec + the resource surface), so a URI change can never
+silently break cache invalidation again.
 """
 
 from __future__ import annotations
@@ -19,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -27,6 +47,8 @@ if TYPE_CHECKING:
     from fastmcp.tools.base import ToolResult
 
     from gitea_mcp_server.label_service import LabelService
+    from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.resources.surface import ResourceSurfaceEntry
 
 from fastmcp.server.middleware.caching import (
     _get_auth_partition_key,
@@ -37,41 +59,20 @@ from fastmcp.server.middleware.middleware import (
     MiddlewareContext,
 )
 
-from gitea_mcp_server.constants import (
-    PATTERN_FILES,
-    PATTERN_ISSUES_LIST,
-    PATTERN_LABELS,
-    PATTERN_PULLS_LIST,
-    PATTERN_REPO,
-    RESOURCE_PATTERN_FILES,
-    RESOURCE_PATTERN_ISSUES_LIST,
-    RESOURCE_PATTERN_LABELS,
-    RESOURCE_PATTERN_PULLS_LIST,
-    RESOURCE_PATTERN_REPO,
-)
+from gitea_mcp_server.constants import HTTP_METHODS_SAFE
+from gitea_mcp_server.resources.surface import get_resource_surface
 
 logger = logging.getLogger(__name__)
 
-# Resource URI templates used to construct concrete URIs for invalidation.
-# These are imported from constants to ensure consistency across the codebase.
-# The dictionary keys are pattern names (used by server to reference patterns).
-RESOURCE_URI_PATTERNS: dict[str, str] = {
-    # Issues
-    PATTERN_ISSUES_LIST: RESOURCE_PATTERN_ISSUES_LIST,
-    # Pull requests
-    PATTERN_PULLS_LIST: RESOURCE_PATTERN_PULLS_LIST,
-    # Repository
-    PATTERN_REPO: RESOURCE_PATTERN_REPO,
-    # File contents (using filepath as parameter name to match Gitea API)
-    PATTERN_FILES: RESOURCE_PATTERN_FILES,
-    # Labels
-    PATTERN_LABELS: RESOURCE_PATTERN_LABELS,
-}
-
-# Global invalidation map populated at server startup.
-# Maps tool name (bare operationId, not namespaced) -> list of pattern names
-# (keys in RESOURCE_URI_PATTERNS).
+# Global invalidation map populated by ``build_invalidation_map`` after
+# resource registration.  Maps tool name (bare operationId, not namespaced)
+# -> list of resource URI templates (base form, no ``{?query}`` suffix).
 TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
+
+# Write tools recorded during tool customization (``record_write_tool``),
+# consumed by ``build_invalidation_map`` after resource registration.
+# Each entry is ``(tool_name, path, method)``.
+_PENDING_WRITE_TOOLS: list[tuple[str, str, str]] = []
 
 # Namespace prefix applied at query time by GiteaNamespace.  Set at
 # middleware construction time from ``config.tool_prefix``; defaults to
@@ -80,22 +81,220 @@ TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
 _DEFAULT_TOOL_PREFIX = ""
 
 
-def register_tool_invalidation(tool_name: str, patterns: list[str]) -> None:
-    """Register cache invalidation patterns for a tool.
+def record_write_tool(tool_name: str, path: str, method: str) -> None:
+    """Record a write tool for later invalidation-target derivation.
 
-    This is called during server initialization for each write tool.
+    Called during server initialization for each non-safe tool.  The
+    targets are derived later by :func:`build_invalidation_map`, once the
+    resource surface is registered.
 
     Args:
-        tool_name: Name of the tool as registered with FastMCP
-        patterns: List of pattern names (from RESOURCE_URI_PATTERNS) to invalidate
+        tool_name: Name of the tool as registered with FastMCP.
+        path: Spec path of the tool's route (e.g. ``/repos/{owner}/{repo}/issues``).
+        method: HTTP method (e.g. ``"POST"``).
     """
-    if patterns:
-        TOOL_INVALIDATION_MAP[tool_name] = patterns
-        logger.debug(
-            "Registered cache invalidation for tool %s: patterns=%s",
-            tool_name,
-            patterns,
-        )
+    if method.upper() in HTTP_METHODS_SAFE:
+        return
+    _PENDING_WRITE_TOOLS.append((tool_name, path, method.upper()))
+    logger.debug("Recorded write tool for invalidation: %s %s %s", method, path, tool_name)
+
+
+def build_invalidation_map(
+    openapi_spec: OpenAPISpec | None,
+    resource_surface: dict[str, ResourceSurfaceEntry] | None = None,
+) -> None:
+    """Derive ``TOOL_INVALIDATION_MAP`` from the spec + registered surface.
+
+    Must run AFTER resource registration (the surface is populated by
+    ``make_api_resource``) and BEFORE the first tool call.  Consumes the
+    pending write tools recorded by :func:`record_write_tool`.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (may be ``None`` in
+            tests — cross-tree derivation is skipped without it).
+        resource_surface: The registered resource surface (base URI ->
+            entry).  Defaults to the module-level registry.
+    """
+    surface = resource_surface if resource_surface is not None else get_resource_surface()
+
+    # Precompute each resource's referenced types once (cross-tree lookup).
+    resource_types: dict[str, set[str]] = {}
+    if openapi_spec is not None:
+        for base_uri, entry in surface.items():
+            types = _get_resource_types(openapi_spec, entry.api_path)
+            if types:
+                resource_types[base_uri] = types
+
+    for tool_name, path, method in _PENDING_WRITE_TOOLS:
+        targets = _derive_targets(openapi_spec, path, method, surface, resource_types)
+        if targets:
+            TOOL_INVALIDATION_MAP[tool_name] = targets
+            logger.debug(
+                "Derived cache invalidation for tool %s: %d target(s)",
+                tool_name,
+                len(targets),
+            )
+    _PENDING_WRITE_TOOLS.clear()
+
+
+def _derive_targets(
+    openapi_spec: OpenAPISpec | None,
+    write_path: str,
+    method: str,
+    surface: dict[str, ResourceSurfaceEntry],
+    resource_types: dict[str, set[str]],
+) -> list[str]:
+    """Compute the invalidation URI templates for one write tool.
+
+    Path-prefix (full prefix, no exceptions) plus cross-tree type
+    references.  Returns sorted base URI templates.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (may be ``None``).
+        write_path: Spec path of the write tool's route.
+        method: HTTP method (UPPER).
+        surface: Registered resource surface (base URI -> entry).
+        resource_types: Precomputed ``base_uri -> referenced types`` map.
+
+    Returns:
+        Sorted list of base URI templates to invalidate.
+    """
+    targets: set[str] = set()
+
+    # Path-prefix: every registered resource whose api_path is a prefix of
+    # (or equal to) the write path — template-aware, full prefix.
+    for base_uri, entry in surface.items():
+        if _path_is_prefix(entry.api_path, write_path):
+            targets.add(base_uri)
+
+    # Cross-tree: every registered resource whose response schema
+    # references the type this write modifies.
+    if openapi_spec is not None:
+        modified = _get_modified_type(openapi_spec, write_path, method)
+        if modified:
+            for base_uri, types in resource_types.items():
+                if modified in types:
+                    targets.add(base_uri)
+
+    return sorted(targets)
+
+
+# ---------------------------------------------------------------------------
+# Path matching helpers (template-aware)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_path(path: str) -> list[str]:
+    """Split a path into segments, normalizing ``{param}``/``{param*}`` to ``*``.
+
+    ``{param}`` and ``{param*}`` are equivalent for matching purposes — the
+    wildcard only affects routing (multi-segment values), not the logical
+    path shape.
+    """
+    return ["*" if seg.startswith("{") and seg.endswith("}") else seg for seg in path.split("/")]
+
+
+def _path_is_prefix(resource_path: str, write_path: str) -> bool:
+    """True if ``resource_path`` is a prefix of (or equal to) ``write_path``.
+
+    Template-aware: ``{param}``/``{param*}`` on either side match any
+    segment.  A resource whose api_path is a prefix of the write path is
+    invalidated by that write (full-prefix semantics — no exceptions).
+
+    Args:
+        resource_path: The resource's api_path (may be a template or a
+            concrete path, e.g. the readme wrapper).
+        write_path: The write tool's spec path (a template).
+
+    Returns:
+        ``True`` when the resource path is a prefix of the write path.
+    """
+    r = _normalize_path(resource_path)
+    w = _normalize_path(write_path)
+    if len(r) > len(w):
+        return False
+    return all(rs in (ws, "*") or ws == "*" for rs, ws in zip(r, w))
+
+
+def _paths_equivalent(a: str, b: str) -> bool:
+    """True if two paths match segment-wise, treating ``{param}`` as wildcards."""
+    na, nb = _normalize_path(a), _normalize_path(b)
+    if len(na) != len(nb):
+        return False
+    return all(x in (y, "*") or y == "*" for x, y in zip(na, nb))
+
+
+def _find_spec_path(openapi_spec: OpenAPISpec, api_path: str) -> str | None:
+    """Find the spec path template matching a resource's api_path.
+
+    Most api_paths ARE spec paths (exact dict lookup).  Convenience
+    wrappers with concrete api_paths (e.g. the readme wrapper's
+    ``/repos/{owner}/{repo}/contents/README.md``) fall back to template
+    matching.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.
+        api_path: The resource's api_path.
+
+    Returns:
+        The matching spec path template, or ``None``.
+    """
+    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
+    if api_path in paths:
+        return api_path
+    for spec_path in paths:
+        if _paths_equivalent(api_path, spec_path):
+            return spec_path
+    return None
+
+
+def _get_modified_type(openapi_spec: OpenAPISpec, write_path: str, method: str) -> str | None:
+    """Read ``x-modifies-type`` from the write operation (stamped pre-wrap).
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.
+        write_path: Spec path of the write tool's route.
+        method: HTTP method (UPPER).
+
+    Returns:
+        The modified type name, or ``None``.
+    """
+    path_item = openapi_spec.get("paths", {}).get(write_path)
+    if not isinstance(path_item, dict):
+        return None
+    operation = path_item.get(method.lower())
+    if not isinstance(operation, dict):
+        return None
+    modified = operation.get("x-modifies-type")
+    return modified if isinstance(modified, str) else None
+
+
+def _get_resource_types(openapi_spec: OpenAPISpec, api_path: str) -> set[str]:
+    """Read ``x-resource-types`` from the GET operation matching ``api_path``.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.
+        api_path: The resource's api_path (template or concrete).
+
+    Returns:
+        Set of type names the resource's response references.
+    """
+    spec_path = _find_spec_path(openapi_spec, api_path)
+    if spec_path is None:
+        return set()
+    path_item = openapi_spec.get("paths", {}).get(spec_path)
+    if not isinstance(path_item, dict):
+        return set()
+    operation = path_item.get("get")
+    if not isinstance(operation, dict):
+        return set()
+    types = operation.get("x-resource-types")
+    return set(types) if isinstance(types, list) else set()
+
+
+# ---------------------------------------------------------------------------
+# Cache key computation and invalidation
+# ---------------------------------------------------------------------------
 
 
 def _compute_cache_key(uri: str, auth_key: str | None = None) -> str:
@@ -190,26 +389,17 @@ def compute_uris_to_invalidate(
         else:
             return []
 
-    pattern_names = TOOL_INVALIDATION_MAP[tool_name]
+    templates = TOOL_INVALIDATION_MAP[tool_name]
     uris = []
 
-    for pattern_name in pattern_names:
-        if pattern_name not in RESOURCE_URI_PATTERNS:
-            logger.warning(
-                "Unknown resource pattern: %s (referenced by tool %s)",
-                pattern_name,
-                tool_name,
-            )
-            continue
-
-        template = RESOURCE_URI_PATTERNS[pattern_name]
+    for template in templates:
         try:
             uri = _substitute_template(template, arguments)
             uris.append(uri)
         except ValueError as e:
             logger.debug(
-                "Skipping invalidation for pattern %s: %s",
-                pattern_name,
+                "Skipping invalidation for template %s: %s",
+                template,
                 e,
             )
 
@@ -279,6 +469,12 @@ class CacheInvalidationMiddleware(Middleware):
     It uses the global TOOL_INVALIDATION_MAP to determine which resources
     to clear based on the tool name and arguments.
 
+    It also observes resource reads (``on_read_resource``) to record
+    query-variant URIs (e.g. ``gitea://.../issues?state=open``) under their
+    base URI.  The cache is keyed by the full URI including the query
+    string, so a write must clear every variant that has been read — not
+    just the base URI.
+
     The middleware must be added AFTER the ResponseCachingMiddleware so that
     it can access and modify the cache.
     """
@@ -303,6 +499,35 @@ class CacheInvalidationMiddleware(Middleware):
         self.caching_middleware = caching_middleware
         self._label_service = label_service
         self._tool_prefix = tool_prefix
+        # base URI -> set of full concrete URIs read (including query
+        # strings).  Populated by on_read_resource; consumed on write to
+        # clear query-variant cache entries the base URI alone cannot reach.
+        self._read_uris: dict[str, set[str]] = defaultdict(set)
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
+        call_next: CallNext[mcp.types.ReadResourceRequestParams, Any],
+    ) -> Any:
+        """Record the read URI so query variants can be invalidated later.
+
+        The cache key includes the full URI (query string included), so a
+        write must clear every variant that has been read.  Recording here
+        is the only robust way to know which variants exist — the cache
+        adapter offers no iteration.
+
+        Args:
+            context: The read context with the resource URI.
+            call_next: The next middleware/resource in the chain.
+
+        Returns:
+            The resource result (unchanged).
+        """
+        uri = str(context.message.uri)
+        if uri:
+            base = uri.split("?", 1)[0]
+            self._read_uris[base].add(uri)
+        return await call_next(context)
 
     async def on_call_tool(
         self,
@@ -333,8 +558,14 @@ class CacheInvalidationMiddleware(Middleware):
                 tool_prefix=self._tool_prefix,
             )
             if uris_to_invalidate:
+                # Expand with query variants recorded at read time: the
+                # cache key includes the query string, so the base URI
+                # alone would leave variants stale.
+                expanded = set(uris_to_invalidate)
+                for base in uris_to_invalidate:
+                    expanded |= self._read_uris.get(base, set())
                 await invalidate_cached_resources(
-                    self.caching_middleware, uris_to_invalidate, tool_name
+                    self.caching_middleware, sorted(expanded), tool_name
                 )
                 # If any URI targets the labels resource, also clear the
                 # LabelService's internal cache for this repo.

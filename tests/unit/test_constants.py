@@ -21,14 +21,6 @@ from gitea_mcp_server.constants import (
     HTTP_TIMEOUT_READ,
     HTTP_TIMEOUT_WRITE,
     LABEL_CACHE_TTL,
-    PATTERN_FILES,
-    PATTERN_ISSUES_LIST,
-    PATTERN_PULLS_LIST,
-    PATTERN_REPO,
-    RESOURCE_PATTERN_FILES,
-    RESOURCE_PATTERN_ISSUES_LIST,
-    RESOURCE_PATTERN_PULLS_LIST,
-    RESOURCE_PATTERN_REPO,
     RESPONSE_PREVIEW_LIMIT,
     RETRY_MAX_ATTEMPTS,
     RETRY_WAIT_MAX,
@@ -39,7 +31,6 @@ from gitea_mcp_server.constants import (
     SEARCH_MIN_TOKEN_LENGTH,
     SEARCH_NAME_BOOST,
     TAG_TO_SCOPE,
-    TOOL_INVALIDATION_PATTERNS,
 )
 
 
@@ -151,27 +142,6 @@ class TestHTTPMethodGroups:
         assert "PATCH" not in HTTP_METHODS_IDEMPOTENT
 
 
-class TestPatternConstants:
-    """Tests for invalidation pattern name constants."""
-
-    def test_pattern_names_defined(self) -> None:
-        assert PATTERN_ISSUES_LIST == "issues_list"
-        assert PATTERN_PULLS_LIST == "pulls_list"
-        assert PATTERN_REPO == "repo"
-        assert PATTERN_FILES == "files"
-
-
-class TestResourcePatterns:
-    """Tests for resource URI pattern templates."""
-
-    def test_patterns_have_placeholders(self) -> None:
-        assert "{owner}" in RESOURCE_PATTERN_ISSUES_LIST
-        assert "{owner}" in RESOURCE_PATTERN_PULLS_LIST
-        assert "{owner}" in RESOURCE_PATTERN_REPO
-        assert "{owner}" in RESOURCE_PATTERN_FILES
-        assert "{filepath}" in RESOURCE_PATTERN_FILES
-
-
 class TestTAGToScope:
     """Tests for Swagger tag to Gitea token scope mapping."""
 
@@ -184,23 +154,3 @@ class TestTAGToScope:
 
     def test_misc_maps_to_misc(self) -> None:
         assert TAG_TO_SCOPE["miscellaneous"] == "misc"
-
-
-class TestToolInvalidationPatterns:
-    """Tests for cache invalidation pattern definitions."""
-
-    def test_patterns_are_tuples(self) -> None:
-        for pattern in TOOL_INVALIDATION_PATTERNS:
-            assert len(pattern) == 3
-            path_prefix, match_type, pattern_names = pattern
-            assert isinstance(path_prefix, str)
-            assert match_type is None or match_type == "exact"
-            assert isinstance(pattern_names, list)
-
-    def test_issues_pattern_present(self) -> None:
-        prefixes = [p[0] for p in TOOL_INVALIDATION_PATTERNS]
-        assert "/repos/{owner}/{repo}/issues" in prefixes
-
-    def test_repo_exact_pattern_present(self) -> None:
-        matches = [(p[0], p[1]) for p in TOOL_INVALIDATION_PATTERNS]
-        assert ("/repos/{owner}/{repo}", "exact") in matches

@@ -82,6 +82,7 @@ from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
+from gitea_mcp_server.resources.surface import register_resource_surface
 from gitea_mcp_server.scope import has_sufficient_scope
 from gitea_mcp_server.tools.schemas import get_success_schema, unwrap_result_schema
 from gitea_mcp_server.uri_utils import clean_resource_uri
@@ -1065,6 +1066,13 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         # this normalization.
         base_uri = clean_resource_uri(uri)
         tracking_set.add(base_uri)
+
+    # Record the resource in the surface registry — the single source of
+    # truth for cache-invalidation targets (issue #743).  The invalidation
+    # derivation matches write paths against ``api_path`` and emits
+    # ``base_uri`` templates, so a URI change here can never silently
+    # break invalidation again.
+    register_resource_surface(uri, api_path, method=method)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

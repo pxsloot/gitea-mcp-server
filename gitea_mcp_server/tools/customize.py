@@ -1,7 +1,7 @@
 """Core tool customization pipeline.
 
 Immediate helpers for the customization pipeline (annotations, hint inference,
-categorization, title generation, scope derivation, invalidation computation).
+categorization, title generation, scope derivation).
 """
 
 import logging
@@ -14,7 +14,6 @@ from gitea_mcp_server.constants import (
     HTTP_METHODS_DESTRUCTIVE,
     HTTP_METHODS_IDEMPOTENT,
     HTTP_METHODS_SAFE,
-    TOOL_INVALIDATION_PATTERNS,
 )
 from gitea_mcp_server.tools.schemas import schema_type_is_array
 
@@ -253,20 +252,6 @@ def synthetic_annotations(
     )
 
 
-def compute_invalidation_patterns(path: str, method: str) -> list[str]:
-    """Return cache invalidation URI patterns for the given path and HTTP method."""
-    if method.upper() in ("GET", "HEAD", "OPTIONS"):
-        return []
-
-    for prefix, match_type, patterns in TOOL_INVALIDATION_PATTERNS:
-        if match_type == "exact":
-            if path == prefix:
-                return patterns
-        elif path.startswith(prefix):
-            return patterns
-    return []
-
-
 def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
     if component.annotations is None:
         new_annotations = ToolAnnotations()
@@ -306,7 +291,6 @@ def _detect_has_labels(component: Any) -> bool:
 __all__ = [
     "add_inferred_hints",
     "categorize_tool",
-    "compute_invalidation_patterns",
     "generate_tool_title",
     "synthetic_annotations",
 ]

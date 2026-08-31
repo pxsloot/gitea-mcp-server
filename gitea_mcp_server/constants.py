@@ -165,30 +165,6 @@ HTTP_STATUS_RETRYABLE = {HTTP_STATUS_RATE_LIMIT, 408, 500, 502, 503, 504}
 
 
 # ============================================================================
-# Resource Invalidation Pattern Names
-# ============================================================================
-# These are the keys used to identify invalidation patterns. They map to URI templates.
-
-PATTERN_ISSUES_LIST = "issues_list"
-PATTERN_PULLS_LIST = "pulls_list"
-PATTERN_REPO = "repo"
-PATTERN_FILES = "files"
-PATTERN_LABELS = "labels"
-
-
-# ============================================================================
-# Resource URI Patterns (for cache invalidation)
-# ============================================================================
-# These are template strings with {placeholders} for path parameters.
-
-RESOURCE_PATTERN_ISSUES_LIST = "gitea://repos/{owner}/{repo}/issues"
-RESOURCE_PATTERN_PULLS_LIST = "gitea://repos/{owner}/{repo}/pulls"
-RESOURCE_PATTERN_REPO = "gitea://repos/{owner}/{repo}"
-RESOURCE_PATTERN_FILES = "gitea://repos/{owner}/{repo}/contents/{filepath}"
-RESOURCE_PATTERN_LABELS = "gitea://repos/{owner}/{repo}/labels"
-
-
-# ============================================================================
 # HTTP Method Semantic Groups
 # ============================================================================
 
@@ -262,33 +238,3 @@ TAG_TO_SCOPE: dict[str, str] = {
     "miscellaneous": "misc",
     "settings": "repository",
 }
-
-
-# ============================================================================
-# Cache Invalidation Patterns
-# ============================================================================
-# Each entry: (path_prefix, match_type, [pattern_names])
-# match_type: None (prefix match) or "exact" (exact match)
-
-TOOL_INVALIDATION_PATTERNS: list[tuple[str, str | None, list[str]]] = [
-    (
-        "/repos/{owner}/{repo}/issues",
-        None,
-        [PATTERN_ISSUES_LIST],
-    ),
-    (
-        "/repos/{owner}/{repo}/pulls",
-        None,
-        [PATTERN_PULLS_LIST],
-    ),
-    ("/repos/{owner}/{repo}", "exact", [PATTERN_REPO]),
-    ("/repos/{owner}/{repo}/contents", None, [PATTERN_FILES]),
-    (
-        "/repos/{owner}/{repo}/labels",
-        None,
-        [PATTERN_LABELS, PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST],
-    ),
-    ("/repos/{owner}/{repo}/milestones", None, [PATTERN_ISSUES_LIST, PATTERN_PULLS_LIST]),
-    ("/repos/{owner}/{repo}/releases", None, [PATTERN_REPO]),
-    ("/repos/{owner}/{repo}/topics", None, [PATTERN_REPO]),
-]

@@ -38,7 +38,7 @@ For each transform in the pipeline:
 - **exclusion.py**: Pattern matching (exact name, glob, tag: prefix), include overrides exclude, prefix-aware matching for prefixed/unprefixed names, filtering for tools/resources/templates, config file loading (missing, empty, malformed YAML)
 - **labels.py**: String "bug" → integer 1 conversion, schema augmentation
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
-- **cache_invalidation.py**: URI pattern computation for each tool type
+- **cache_invalidation.py**: Target derivation (path-prefix + cross-tree type references), template substitution, query-variant invalidation, drift test (every target ∈ registered surface)
 - **spec_loader.py**: Spec-level filtering — excluded-routes computation (deprecated + scope + config-excluded) from the spec
 - **search.py**: Indexing, ranking, lazy loading, synthetic tool output schema
 - **namespace.py**: Prefix application (verify `gitea_` prefix), resource passthrough

@@ -140,6 +140,40 @@ class TestRegisterCustomResources:
             assert name == name.lower(), f"resource {uri} name {name!r} must be snake_case"
             assert " " not in name, f"resource {uri} name {name!r} must not contain spaces"
 
+    async def test_static_resources_pass_description_kwarg(
+        self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
+    ) -> None:
+        """Static resources pass description= to mcp.resource().
+
+        The agent-facing description is passed as ``description=`` — the
+        single mechanism across factory and static resources (see
+        docs/DEVELOPMENT.md).  The handler docstring is code documentation
+        only; FastMCP prefers ``description=`` when both are present.
+        """
+        registered_desc: dict[str, str] = {}
+
+        def resource_decorator(uri: str, **kwargs: Any) -> Callable:
+            registered_desc[uri] = kwargs.get("description", "")
+
+            def deco(func: Callable) -> Callable:
+                return func
+
+            return deco
+
+        mock_mcp.resource = MagicMock(side_effect=resource_decorator)
+
+        register_custom_resources(
+            mock_mcp,
+            mock_gitea_client,
+            server_info_md="# Server Information\n",
+        )
+
+        assert registered_desc["gitea://version"] == "Get server application version."
+        assert "Get the scopes of the active Gitea token" in registered_desc["gitea://token/scopes"]
+        assert (
+            registered_desc["gitea://server/info"] == "Get server metadata from OpenAPI info block."
+        )
+
     async def test_issues_pulls_resources_use_read_issue_scope(
         self, mock_mcp: MagicMock, mock_gitea_client: AsyncMock
     ) -> None:

@@ -536,6 +536,7 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
        api_path="/api/path/{param}",
        method="GET",
        format_hint="my_type",
+       description="Get a my resource by param.",
        scope="read:repository",
        cache_ttl=300,
        tags={"my_tag"},

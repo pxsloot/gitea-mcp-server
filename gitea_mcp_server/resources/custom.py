@@ -374,11 +374,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         mcp.resource(
             "gitea://token/scopes",
             name="token_scopes",
-            description=(
-                "Get the scopes of the active Gitea token.\n\n"
-                "Scopes are pre-computed at startup from the same data used for\n"
-                "scope-based tool filtering -- no API calls are made on read."
-            ),
+            description="Get the scopes of the active Gitea token.",
             mime_type="application/json",
             tags={"wrapper", "server"},
             meta=_meta_scopes,

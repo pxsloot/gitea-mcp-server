@@ -484,7 +484,7 @@ from the parameter schema.
    convenience resources whose URI is not a spec mirror declare an explicit
    ``uri`` (e.g. ``gitea://repos/{owner}/{repo}/readme``).
 
-**Resource names are snake_case, derived from the endpoint.**  The factory
+   **Resource names are snake_case, derived from the endpoint.**  The factory
    derives a resource's name from the spec ``operationId`` (camelCase →
    snake_case) when ``name`` is omitted, so wrapper names align with their
    auto-generated siblings; the fallback is the URI template's last

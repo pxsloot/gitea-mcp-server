@@ -541,7 +541,7 @@ def _derive_resource_description(
     api_path: str,
     method_lower: str,
     *,
-    name: str | None = None,
+    name: str,
     description: str | None = None,
 ) -> str:
     """Derive the agent-facing resource description.
@@ -564,7 +564,9 @@ def _derive_resource_description(
         openapi_spec: Post-conversion OpenAPI 3.1 spec, or ``None``.
         api_path: API path in spec (e.g. ``/repos/{owner}/{repo}``).
         method_lower: Lowercased HTTP method.
-        name: The (derived or explicit) resource name, for the fallback.
+        name: The (derived or explicit) resource name, used as the fallback
+            description.  Guaranteed non-empty by the caller
+            (``_derive_resource_name_for`` never returns an empty string).
         description: Optional explicit description overriding spec-derived text.
 
     Returns:
@@ -588,7 +590,9 @@ def _derive_resource_description(
                     return docstring
 
     # Fallback: the derived name is a stable, non-plumbing description.
-    return name or "Resource"
+    # ``name`` is guaranteed non-empty by the caller, so no placeholder is
+    # needed here (the old ``name or "Resource"`` was unreachable).
+    return name
 
 
 def _build_optional_param_signature(
@@ -1025,7 +1029,10 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # Passed as ``description=`` to ``mcp.resource()`` — the single mechanism
     # for the agent-facing resource description (see docs/DEVELOPMENT.md).
     # The handler's literal docstring stays as code documentation only.
-    description = _derive_resource_description(
+    # Named ``derived_description`` (not a reassignment of the ``description``
+    # param) so the caller-curated value stays readable — the same shadowing
+    # trap the old ``_set_handler_docstring`` had.
+    derived_description = _derive_resource_description(
         openapi_spec,
         api_path,
         method_lower,
@@ -1041,7 +1048,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     mcp.resource(
         uri,
         name=name,
-        description=description,
+        description=derived_description,
         mime_type=mime_type,
         tags=resource_tags,
         meta=meta if meta else None,

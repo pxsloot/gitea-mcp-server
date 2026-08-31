@@ -48,7 +48,7 @@ For each transform in the pipeline:
 
 ### Resources
 
-- Auto-generation: correct URIs, proper docstrings, skip non-GET endpoints
+- Auto-generation: correct URIs, proper descriptions (passed as `description=` to `mcp.resource()`), skip non-GET endpoints
 - Custom resources: error handling (404, missing fields, API errors), Markdown formatting
 - Registry: CRUD operations for resource metadata
 - Scopes: correct mapping from HTTP method + tag → required scope

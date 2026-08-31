@@ -11,16 +11,14 @@ Public functions:
         so any formatter (json or markdown) receives already-collapsed data.
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
-    apply_format - format data for output (raw/json/markdown), no pagination.
-        Dual-channel: ``content`` mirrors ``structured_content``.
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
     _format_parameter_table - render a JSON Schema parameter table.
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
 
-The single result pipeline for tools lives in ``tools/result_pipeline.py``;
-this module provides the shared formatting primitives it (and the resource
-display pipeline) build on.
+The single result pipeline for tools and resources lives in
+``tools/result_pipeline.py``; this module provides the shared formatting
+primitives it builds on.
 """
 
 from __future__ import annotations
@@ -28,14 +26,8 @@ from __future__ import annotations
 import base64
 import json as json_module
 import logging
-from collections.abc import (  # noqa: TC003 - used at runtime, not just type checking
-    Callable,
-)
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
-
-from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
 
 from gitea_mcp_server.schema_utils import get_schema_type
 
@@ -608,7 +600,11 @@ def _format_json_section(title: str, data: Any) -> str:
     return f"## {title}\n\n```json\n{json_module.dumps(data, indent=2)}\n```\n"
 
 
-def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
+def format_tool_info_markdown(
+    schema: ToolSchemaResult,
+    *,
+    detail: str = "full",  # noqa: ARG001 - detail is part of the shared markdown_formatter contract; tool-info output is always full detail
+) -> str:
     """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
 
     Produces a predictable structure with a parameter table that agents can
@@ -619,6 +615,10 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     - ``## Annotations`` — table with ``Hint | Value``
     - ``## Tags`` — comma-separated list
     - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
+
+    ``detail`` is accepted for the shared ``markdown_formatter`` contract
+    ``(data, *, detail='full') -> str`` but has no effect — tool-info output
+    is always full detail.
     """
     lines: list[str] = []
 
@@ -659,81 +659,6 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     return "\n".join(lines).strip()
 
 
-def apply_format(  # noqa: PLR0913 - 2 required (data, fmt) + 4 keyword-only display options (markdown_formatter, markdown_extras, detail, schema) — all independent display axes
-    data: Any,
-    fmt: str,
-    *,
-    markdown_formatter: Callable[[Any], str] | None = None,
-    markdown_extras: list[str] | None = None,
-    detail: str = "full",
-    schema: dict[str, Any] | None = None,
-) -> ToolResult:
-    """Format data for output. No pagination involvement.
-
-    Produces a ``ToolResult`` whose ``content`` (the text channel) is
-    authoritative and always present, with ``structured_content`` as an
-    optional mirror that duplicates it:
-
-    - ``raw``: text = serialized JSON mirroring ``structured_content``
-      (``{"result": data}``).  The text is set explicitly — deterministic
-      raw, not a reliance on FastMCP auto-populating ``content`` from
-      ``structured_content``.
-    - ``json``: text = JSON dump of ``{"result": data}``,
-      structured_content = ``{"result": data}``.
-    - ``markdown``: text = ``markdown_formatter(data)`` or the generic
-      ``format_as_markdown``.  ``markdown_extras`` are appended
-      as additional sections after the main content.
-
-    When ``detail="concise"`` and ``schema`` is provided, data is collapsed
-    before formatting — nested ``$ref``-backed objects are replaced with
-    ``"$ref:TypeName"`` labels (applies to both json and markdown).
-
-    Args:
-        data: The data to format (typically a dict or list).
-        fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
-        markdown_formatter: Optional custom markdown renderer.  When omitted,
-            the generic ``format_as_markdown`` is used.
-        markdown_extras: Optional list of additional markdown sections to
-            append after the main content (only in markdown mode).
-        detail: Output detail level — ``"full"`` (default, complete) or
-            ``"concise"`` (collapse nested ``$ref`` objects).
-        schema: Optional JSON Schema describing *data*, used for schema-aware
-            collapsing when ``detail="concise"``.
-
-    Returns:
-        A ``ToolResult`` with authoritative text content and structured data.
-    """
-    _VALID_FORMATS = frozenset({"raw", "json", "markdown"})
-    if fmt not in _VALID_FORMATS:
-        msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
-        raise ValueError(msg)
-
-    if fmt == "raw":
-        text = json_module.dumps({"result": data}, indent=2)
-        return ToolResult(
-            content=[TextContent(type="text", text=text)],
-            structured_content={"result": data},
-        )
-
-    if fmt == "json":
-        if detail == "concise" and schema is not None:
-            data = collapse_data(data, schema, _depth=0, detail="concise")
-        text = json_module.dumps({"result": data}, indent=2)
-    else:
-        text = (
-            markdown_formatter(data)
-            if markdown_formatter
-            else format_as_markdown(data, schema, detail=detail)
-        )
-        if markdown_extras:
-            text += "\n\n---\n\n" + "\n\n---\n\n".join(markdown_extras)
-
-    return ToolResult(
-        content=[TextContent(type="text", text=text)],
-        structured_content={"result": data},
-    )
-
-
 def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
@@ -763,7 +688,6 @@ def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
 
 
 __all__ = [
-    "apply_format",
     "build_server_info_markdown",
     "collapse_data",
     "decode_base64_content",

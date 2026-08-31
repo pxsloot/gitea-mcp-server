@@ -35,32 +35,40 @@ for both tool families:
     6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
-ExecutionResult | ToolResult`` with the ``Tool`` bound by closure at wrap
-time.  Autogen tools pass the OpenAPI HTTP pipeline
+ExecutionResult`` with the ``Tool`` bound by closure at wrap time.  Autogen
+tools pass the OpenAPI HTTP pipeline
 (``_ToolWrappingTransform`` in ``server_setup/mcp_builder.py``); synthetic
 tools pass their local implementation (see ``tools/synthetic_contract.py``).
 API-specific concerns (route-aware HTTP execution, error translation,
 response-class wrapping) stay inside the executor — never in this module.
-A ``ToolResult`` return is tolerated for the one executor that renders
-through the resource display pipeline (``read_resource``); it passes through
-the spine unrendered.
+
+``ToolResult`` is imported at runtime (not under ``TYPE_CHECKING``) because
+the ``transform_fn`` return annotation is a string under ``from __future__
+import annotations``: FastMCP's ``ParsedFunction`` resolves the function's
+annotations via ``get_type_hints`` when building the tool schema, and
+pydantic evaluates the string return annotation when building the input
+``TypeAdapter``.  Without the runtime import, tool registration fails with
+``NameError``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
 from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
 from gitea_mcp_server.context_utils import resolve_current_context
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from gitea_mcp_server.tools.virtual_params import apply_pre_hooks, apply_to, extract_from
 
+if TYPE_CHECKING:
+    from fastmcp.tools.base import Tool
+
 Executor = Callable[
     [dict[str, Any], dict[str, Any] | None, Any | None],
-    Awaitable[ExecutionResult | ToolResult],
+    Awaitable[ExecutionResult],
 ]
 """Backend-specific execution callable: ``(kwargs, extracted, ctx) → result``.
 
@@ -71,9 +79,7 @@ Executor = Callable[
   active (progress reporting and logging degrade gracefully).
 
 Returns raw data as an :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
-(rendered by the single result pipeline in the spine), or a ``ToolResult``
-for the one executor that renders through the resource display pipeline
-(``read_resource``).
+(rendered by the single result pipeline in the spine).
 
 The ``Tool`` being executed is bound by closure at wrap time — the executor
 does not need to receive it.
@@ -146,10 +152,9 @@ def build_transform_fn(
         virtual_values["_raw_schema"] = (tool.meta or {}).get("output_schema_raw")
 
         # Executors return raw data; the single result pipeline renders it.
-        # A ToolResult return (read_resource's resource-display path) passes
-        # through unrendered.
-        if isinstance(result, ExecutionResult):
-            result = render(
+        # Run post-hooks on the rendered ToolResult and return.
+        return apply_to(
+            render(
                 result,
                 fmt=virtual_values.get("format", "markdown"),
                 detail=virtual_values.get("detail", "full"),
@@ -157,10 +162,9 @@ def build_transform_fn(
                 limit=limit,
                 fetch_all=virtual_values.get("fetch_all", False),
                 schema=virtual_values.get("_raw_schema"),
-            )
-
-        # Run post-hooks: sudo clears context.
-        return apply_to(result, virtual_values)
+            ),
+            virtual_values,
+        )
 
     return transform_fn
 

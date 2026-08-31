@@ -7,8 +7,6 @@ Covers all functions in __all__:
 
 from typing import Any
 
-import pytest
-
 from gitea_mcp_server.format import (
     _collapse_value,
     _extract_type_name,
@@ -19,7 +17,6 @@ from gitea_mcp_server.format import (
     _format_type,
     _resolve_anyof_schema,
     _snake_to_title,
-    apply_format,
     collapse_data,
     format_as_markdown,
 )
@@ -27,12 +24,7 @@ from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
-from tests.helpers.mcp_results import (
-    assert_dual_channel,
-    extract_text_content,
-    get_structured,
-    parse_json_content,
-)
+from tests.helpers.mcp_results import assert_dual_channel, parse_json_content
 
 
 class TestSnakeToTitle:
@@ -1227,43 +1219,6 @@ class TestDualChannelContract:
         )
         assert_dual_channel(result, fmt="json")
 
-    def test_json_content_mirrors_structured(self) -> None:
-        """Non-paginated format=json text must mirror structured_content (result wrapper)."""
-        result = apply_format({"id": 1}, "json")
-        assert_dual_channel(result, fmt="json")
-
-    def test_raw_dual_channel(self) -> None:
-        """format=raw returns JSON text content mirroring structured_content.
-
-        FastMCP auto-populates ``content`` from ``structured_content`` when
-        the caller sets only the latter, so the raw path already satisfies
-        the contract.  This test locks that compliance; the display pipeline makes
-        content explicit rather than relying on the implicit auto-population.
-
-        Caveat: this assertion is only as strong as FastMCP's auto-population
-        behavior.  If a future FastMCP stops mirroring ``structured_content``
-        into ``content``, this test will fail even though the raw path is
-        unchanged — a signal to make the content explicit in the result
-        pipeline.
-        """
-        result = apply_format({"id": 1}, "raw")
-        assert_dual_channel(result, fmt="raw")
-
-    def test_apply_format_invalid_format_raises(self) -> None:
-        """apply_format rejects unsupported formats with a friendly error."""
-        with pytest.raises(ValueError, match="Unsupported format"):
-            apply_format({"id": 1}, "xml")
-
-    def test_apply_format_markdown_extras_appended(self) -> None:
-        """apply_format appends markdown_extras as additional sections."""
-        result = apply_format(
-            {"id": 1},
-            "markdown",
-            markdown_extras=["**Extra section:** content"],
-        )
-        text = extract_text_content(result.content)
-        assert "**Extra section:** content" in text
-
     def test_markdown_dual_channel(self) -> None:
         """Markdown output satisfies the contract: content present, result in structured."""
         result = render(
@@ -1327,138 +1282,6 @@ class TestDualChannelContract:
             "next_offset": None,
             "total_count": 0,
         }
-
-
-# ============================================================================
-# apply_format - detail=concise with JSON output
-# ============================================================================
-
-
-class TestApplyFormatConcise:
-    """Tests for apply_format with detail=concise in JSON mode.
-
-    apply_format receives the schema OF the data directly (not wrapped in a
-    ``{"properties": {"result": ...}}`` container — that wrapper was specific
-    to the removed ``format_result`` which worked on ``ToolResult.structured_content``).
-    """
-
-    def test_json_full_no_collapse(self) -> None:
-        """detail='full' (default) with JSON returns complete data unchanged."""
-        data = {"owner": {"id": 1, "login": "user1"}, "name": "repo"}
-        schema = {
-            "type": "object",
-            "properties": {
-                "owner": {"$ref": "#/components/schemas/User"},
-                "name": {"type": "string"},
-            },
-        }
-        result = apply_format(data, "json", detail="full", schema=schema)
-        assert result.content is not None
-        parsed = parse_json_content(result)
-        assert isinstance(parsed["result"]["owner"], dict)
-        assert parsed["result"]["owner"]["login"] == "user1"
-
-    def test_json_concise_collapses_ref_dict(self) -> None:
-        """detail='concise' + json collapses $ref dicts to labels."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        schema = {
-            "type": "object",
-            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
-        }
-        result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = parse_json_content(result)
-        assert parsed["result"]["owner"] == "$ref:User"
-
-    def test_json_concise_collapses_ref_list(self) -> None:
-        """detail='concise' + json collapses $ref lists to labels."""
-        data = {"labels": [{"id": 1, "name": "bug"}, {"id": 2, "name": "feature"}]}
-        schema = {
-            "type": "object",
-            "properties": {
-                "labels": {"type": "array", "items": {"$ref": "#/components/schemas/Label"}},
-            },
-        }
-        result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = parse_json_content(result)
-        assert parsed["result"]["labels"] == "$ref:Label[2]"
-
-    def test_json_concise_inline_not_collapsed(self) -> None:
-        """Inline schemas (no $ref) remain expanded even with detail='concise'."""
-        data = {"config": {"host": "localhost", "port": 8080}}
-        schema = {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "properties": {"host": {"type": "string"}, "port": {"type": "integer"}},
-                },
-            },
-        }
-        result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = parse_json_content(result)
-        assert isinstance(parsed["result"]["config"], dict)
-        assert parsed["result"]["config"]["host"] == "localhost"
-
-    def test_json_concise_top_level_object_stays(self) -> None:
-        """Top-level object is not collapsed."""
-        data = {"name": "repo", "description": "a test repo"}
-        schema = {
-            "type": "object",
-            "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
-        }
-        result = apply_format(data, "json", detail="concise", schema=schema)
-        parsed = parse_json_content(result)
-        assert parsed["result"]["name"] == "repo"
-        assert parsed["result"]["description"] == "a test repo"
-
-    def test_markdown_concise_collapses_nested_ref(self) -> None:
-        """detail='concise' collapses $ref objects at depth>=1 in markdown."""
-        data = {
-            "meta": {
-                "owner": {"id": 1, "login": "user1"},
-                "name": "repo",
-            },
-        }
-        schema = {
-            "type": "object",
-            "properties": {
-                "meta": {
-                    "type": "object",
-                    "properties": {
-                        "owner": {"$ref": "#/components/schemas/User"},
-                        "name": {"type": "string"},
-                    },
-                },
-            },
-        }
-        result = apply_format(data, "markdown", detail="concise", schema=schema)
-        assert result.content is not None
-        text = extract_text_content(result.content)
-        assert "$ref:User" in text
-        # Top-level scalars and inline props remain expanded
-        assert "repo" in text
-
-    def test_no_schema_fallback(self) -> None:
-        """When schema is None, concise is a no-op (data unchanged)."""
-        data = {"owner": {"id": 1, "login": "user1"}}
-        result = apply_format(data, "json", detail="concise", schema=None)
-        parsed = parse_json_content(result)
-        assert isinstance(parsed["result"]["owner"], dict)
-        assert parsed["result"]["owner"]["login"] == "user1"
-
-    def test_raw_passthrough(self) -> None:
-        """format='raw' ignores detail — data is not collapsed.
-
-        Current shape: structured_content carries the data; the text is
-        auto-populated by FastMCP (see
-        TestDualChannelContract.test_raw_dual_channel).
-        """
-        data = {"owner": {"id": 1, "login": "user1"}}
-        result = apply_format(data, "raw", detail="concise", schema=None)
-        sc = get_structured(result)
-        assert sc is not None
-        assert isinstance(sc["result"], dict)
-        assert sc["result"]["owner"]["login"] == "user1"
 
 
 class TestFormatDateTime:

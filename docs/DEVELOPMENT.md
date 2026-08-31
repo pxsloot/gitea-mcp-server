@@ -396,29 +396,21 @@ in ``_inject_params`` or ``_make_transform_fn``.
 
 **Step 2 — For output-layer params**, use a ``post_hook`` instead.  The hook
 receives ``(result, value, all_extracted)`` — the third arg lets it read
-other virtual params (e.g. ``format`` reads ``detail``):
+other virtual params.
 
-.. code-block:: python
+.. note::
 
-    def _format_post_hook(result, value, all_extracted):
-        if value == "raw":
-            return result
-        detail = all_extracted.get("detail", "full")
-        raw_schema = all_extracted.get("_raw_schema")
-        data = result.structured_content.get("result") if result.structured_content else None
-        if data is None:
-            return result
-        formatted = apply_format(data, value, detail=detail, schema=raw_schema)
-        formatted.structured_content = result.structured_content
-        formatted.meta = result.meta
-        return formatted
+    ``format`` / ``detail`` / ``fetch_all`` are **hook-less pipeline options**
+    registered in ``virtual_params.py`` as plain schema + extraction entries.
+    The single result pipeline
+    (``gitea_mcp_server/tools/result_pipeline.py``) reads them from the
+    extracted dict and renders the executor's raw ``ExecutionResult`` — no
+    display logic lives in the registry.  ``sudo`` and ``content_type`` are
+    the active examples with ``pre_hook``/``post_hook``; see them in
+    ``virtual_params.py`` for the live patterns.
 
-    _VIRTUAL_PARAMS["format"] = VirtualParam(
-        schema={"type": "string", "enum": ["json", "markdown", "raw"]},
-        default="markdown",
-        description="Response format control…",
-        post_hook=_format_post_hook,
-    )
+    A worked ``post_hook`` example (showing the ``(result, value,
+    all_extracted)`` signature on a hypothetical ``verbose`` param):
 
 **Step 3 — If a default is dynamic** (e.g. coming from server config),
 pass it via :func:`inject_into`'s ``default_overrides`` parameter:
@@ -692,8 +684,9 @@ resource (query params with context forwarding)::
 
 The error response carries a ``resource_type`` field with the raw API type
 value (``"issues"`` / ``"pulls"``).  Human-readable entity names (e.g. "pull
-requests") are a display concern for the read_resource layer, not the
-resource itself.
+requests") are a display concern for the single result pipeline (via the
+domain formatters the ``read_resource`` executor resolves from
+``format_hint``), not the resource itself.
 
 And the labels resource (path-param forwarding)::
 
@@ -862,21 +855,22 @@ OpenAPI spec). They live in the same codebase and register themselves via
        mcp: FastMCP,
        openapi_spec: OpenAPISpec | None = None,
    ) -> None:
-       # Build index / cache at registration time
-       my_data = build_my_data(openapi_spec)
+        # Build index / cache at registration time
+        my_data = build_my_data(openapi_spec)
 
-       async def _my_tool_impl(
-           param: str,
-           ctx: Context,
-           format: str = "markdown",
-       ) -> ToolResult:
-           """Description for agents."""
-           if not my_data:
-               raise_value_error("Not available")
-           await ctx.info(f"Processing '{param}'", ...)
-           result = do_the_work(my_data, param)
-           await ctx.report_progress(progress=1.0)
-           return apply_format(result, format)
+        async def _my_tool_impl(
+            param: str,
+            ctx: Context,
+        ) -> ExecutionResult:
+            """Description for agents."""
+            if not my_data:
+                raise_value_error("Not available")
+            await ctx.info(f"Processing '{param}'", ...)
+            result = do_the_work(my_data, param)
+            await ctx.report_progress(progress=1.0)
+            # Return raw data; the single result pipeline renders it for
+            # ``format``/``detail`` — no display logic in the impl.
+            return ExecutionResult(data=result, shape="object")
 
        register_all_synthetic_tools(mcp, [
            SyntheticToolSpec(

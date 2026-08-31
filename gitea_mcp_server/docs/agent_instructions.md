@@ -205,7 +205,7 @@ parameter:
 |-----------|-------------|
 | `markdown`| Default. Schema-aware tables, best for reading. |
 | `json`    | Programmatic extraction (e.g. `result["owner"]["id"]`). |
-| `raw`     | Exact API response, for undocumented fields or debugging. |
+| `raw`     | The data in the ``{"result": ...}`` envelope — deterministic JSON text. ``read_resource`` always decodes base64 ContentsResponse in the executor, so raw shows the decoded text, not the base64 JSON. |
 
 | `detail`  | Effect on output |
 |-----------|------------------|

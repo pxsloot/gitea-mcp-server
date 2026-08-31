@@ -46,8 +46,6 @@ from weakref import WeakKeyDictionary
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
-    from fastmcp.tools.base import ToolResult
-
     from gitea_mcp_server.tools.contract import Executor
     from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 
@@ -296,11 +294,9 @@ def make_impl_executor(
     3. **Call the impl** with ``ctx`` when declared.
 
     The impl returns raw data — an
-    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` (or a
-    ``ToolResult`` for the one impl that renders through the resource display
-    pipeline, ``read_resource``).  The single result pipeline renders
-    ``ExecutionResult`` results; no ``_formatted`` marker exists — display is
-    centralized, not opt-out.
+    :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`.  The
+    single result pipeline renders it; no ``_formatted`` marker exists —
+    display is centralized, not opt-out.
 
     Args:
         impl: The synthetic tool function (full signature — virtual params
@@ -316,7 +312,7 @@ def make_impl_executor(
         kwargs: dict[str, Any],
         extracted: dict[str, Any] | None,
         ctx: Any | None,
-    ) -> ToolResult | ExecutionResult:
+    ) -> ExecutionResult:
         call_kwargs = dict(kwargs)
         for name, value in (extracted or {}).items():
             if name in fn_params:
@@ -330,7 +326,7 @@ def make_impl_executor(
             )
         if "ctx" in fn_params:
             call_kwargs["ctx"] = ctx
-        return cast("ToolResult | ExecutionResult", await impl(**call_kwargs))
+        return cast("ExecutionResult", await impl(**call_kwargs))
 
     return executor
 

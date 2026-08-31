@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
     PAGINATION_SCHEMA_PROPERTIES,
     SyntheticToolSpec,
@@ -27,11 +27,11 @@ class TestRegisterAllSyntheticTools:
 
         mcp = FastMCP("test")
 
-        async def wrapped_impl(query: str = "x") -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        async def wrapped_impl(query: str = "x") -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
-        async def proxy_impl(name: str) -> ToolResult:
-            return ToolResult(structured_content={"result": name})
+        async def proxy_impl(name: str) -> ExecutionResult:
+            return ExecutionResult(data=name, shape="scalar")
 
         register_all_synthetic_tools(
             mcp,
@@ -91,8 +91,8 @@ class TestSyntheticExecutorRegistry:
             get_executor_registry,
         )
 
-        async def impl(page: int = 1) -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        async def impl(page: int = 1) -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         mcp_a = FastMCP("a")
         mcp_b = FastMCP("b")
@@ -118,8 +118,8 @@ class TestSyntheticExecutorRegistry:
         """A tool registered only on one server is absent from the other's registry."""
         from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
 
-        async def impl() -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        async def impl() -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         mcp_a = FastMCP("a")
         mcp_b = FastMCP("b")
@@ -166,8 +166,8 @@ class TestSyntheticToolRegistration:
         """Register a paginated example tool and return (fn, executor)."""
         if impl is None:
 
-            async def impl(page: int = 1, limit: int = 10) -> ToolResult:
-                return ToolResult(structured_content={"result": []})
+            async def impl(page: int = 1, limit: int = 10) -> ExecutionResult:
+                return ExecutionResult(data=[], shape="empty", paginated=True)
 
         executor = make_impl_executor(impl, paginated=True, limit_max=limit_max)
         register_synthetic_tool(
@@ -317,8 +317,8 @@ class TestSyntheticToolRegistration:
         async def impl(
             page: Annotated[int, "Page number (1-based, default 1)"] = 1,
             limit: Annotated[int, "Maximum results per page (1-100, default 10)"] = 10,
-        ) -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        ) -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         self._register_example(mcp, limit_max=200, impl=impl)
 
@@ -366,8 +366,8 @@ class TestSyntheticToolRegistration:
                     examples=[50, 100],
                 ),
             ] = 50,
-        ) -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        ) -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         self._register_example(mcp, limit_max=200, impl=impl)
 
@@ -387,14 +387,14 @@ class TestSyntheticToolRegistration:
         """Docstring-derived parameter descriptions survive bound injection."""
         mcp = FastMCP("test")
 
-        async def impl(page: int = 1, limit: int = 50) -> ToolResult:
+        async def impl(page: int = 1, limit: int = 50) -> ExecutionResult:
             """Read a workflow guide.
 
             Args:
                 page: Page number (1-based, default 1).
                 limit: Lines per page (default 50).
             """
-            return ToolResult(structured_content={"result": []})
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         self._register_example(mcp, limit_max=200, impl=impl)
 
@@ -432,8 +432,8 @@ class TestSyntheticToolRegistration:
         """
         mcp = FastMCP("test")
 
-        async def impl(query: str = "x") -> ToolResult:
-            return ToolResult(structured_content={"result": []})
+        async def impl(query: str = "x") -> ExecutionResult:
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         self._register_example(mcp, limit_max=200, impl=impl)
         tools = await mcp.list_tools()
@@ -446,21 +446,23 @@ class TestSyntheticToolRegistration:
         # The executor must still run (validation skips absent params).
         executor = make_impl_executor(impl, paginated=True, limit_max=200)
         result = await executor({"query": "y"}, {}, None)
-        assert isinstance(result, ToolResult)
-        assert result.structured_content == {"result": []}
+        assert isinstance(result, ExecutionResult)
+        assert result.data == []
+        assert result.shape == "empty"
 
     @pytest.mark.asyncio
     async def test_executor_returns_impl_result_unmarked(self) -> None:
-        """The executor returns the impl's raw result with no _formatted marker.
+        """The executor returns the impl's raw result — display is centralized.
 
-        Display is centralized in the single result pipeline — executors
-        return raw data and never mark results.
+        Executors return ``ExecutionResult`` (raw data only); the single
+        result pipeline renders it.  There is no ``_formatted`` marker —
+        display is centralized, not opt-out.
         """
         mcp = FastMCP("test")
         _, executor = self._register_example(mcp)
 
         result = await executor({"page": 1, "limit": 10}, {}, None)
-        assert "_formatted" not in (result.meta or {})
+        assert isinstance(result, ExecutionResult)
 
     @pytest.mark.asyncio
     async def test_executor_resupplies_declared_virtual_params(self) -> None:
@@ -468,9 +470,9 @@ class TestSyntheticToolRegistration:
         seen: dict[str, Any] = {}
         mcp = FastMCP("test")
 
-        async def impl(format: str = "markdown", page: int = 1) -> ToolResult:
+        async def impl(format: str = "markdown", page: int = 1) -> ExecutionResult:
             seen["format"] = format
-            return ToolResult(structured_content={"result": []})
+            return ExecutionResult(data=[], shape="empty", paginated=True)
 
         executor = make_impl_executor(impl, paginated=True)
         await executor({"page": 2}, {"format": "json"}, None)

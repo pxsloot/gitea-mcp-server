@@ -16,6 +16,7 @@ import pytest
 from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.tools.contract import build_transform_fn
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 
 
 def _make_tool(*, raw_schema: dict[str, Any] | None = None) -> Tool:
@@ -43,10 +44,10 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             received["kwargs"] = dict(kwargs)
             received["extracted"] = dict(extracted or {})
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         tool = _make_tool()
         transform_fn = build_transform_fn(tool, executor)
@@ -65,9 +66,9 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             captured["ctx"] = ctx
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         transform_fn = build_transform_fn(_make_tool(), executor)
         await transform_fn(query="q")
@@ -83,9 +84,9 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             captured["content"] = kwargs.get("content")
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         transform_fn = build_transform_fn(_make_tool(), executor)
         await transform_fn(content="hello", content_type="text")
@@ -108,8 +109,8 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
-            return ToolResult(structured_content={"result": {"name": "x"}})
+        ) -> ExecutionResult:
+            return ExecutionResult(data={"name": "x"}, shape="object")
 
         transform_fn = build_transform_fn(_make_tool(raw_schema=raw_schema), executor)
         await transform_fn(query="q")
@@ -125,9 +126,9 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             calls.append("executor")
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         def _spy_apply_to(result: ToolResult, extracted: dict[str, Any]) -> ToolResult:
             calls.append("apply_to")
@@ -155,10 +156,10 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             received["kwargs"] = dict(kwargs)
             received["extracted"] = dict(extracted or {})
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         tool = _make_tool()
         tool.meta = {"_virtual_params": {"format"}}
@@ -183,10 +184,10 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             received["kwargs"] = dict(kwargs)
             received["extracted"] = dict(extracted or {})
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         transform_fn = build_transform_fn(_make_tool(), executor)
         await transform_fn(query="q", format="json", fetch_all=True)
@@ -209,10 +210,10 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
+        ) -> ExecutionResult:
             received["kwargs"] = dict(kwargs)
             received["extracted"] = dict(extracted or {})
-            return ToolResult(structured_content={"result": "ok"})
+            return ExecutionResult(data="ok", shape="scalar")
 
         tool = _make_tool()
         # What _inject_params stamps for an autogen tool: visible params that
@@ -225,12 +226,12 @@ class TestBuildTransformFn:
         assert received["kwargs"] == {"query": "q", "fetch_all": True}
 
     @pytest.mark.asyncio
-    async def test_toolresult_passes_through_unrendered(self) -> None:
-        """ToolResult-returning executors (read_resource) pass through the spine.
+    async def test_execution_result_is_rendered_by_pipeline(self) -> None:
+        """Every executor return is rendered by the single result pipeline.
 
-        The single result pipeline renders ``ExecutionResult`` results only;
-        a ``ToolResult`` return (the resource-display path) is passed through
-        unchanged — no re-rendering, no envelope.
+        There is no ToolResult carve-out: the spine renders the executor's
+        ``ExecutionResult`` through the pipeline, so ``format=json`` produces
+        the envelope in the text channel.
         """
         raw_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
 
@@ -238,8 +239,8 @@ class TestBuildTransformFn:
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
-        ) -> ToolResult:
-            return ToolResult(structured_content={"result": {"name": "alpha"}})
+        ) -> ExecutionResult:
+            return ExecutionResult(data={"name": "alpha"}, shape="object")
 
         transform_fn = build_transform_fn(_make_tool(raw_schema=raw_schema), executor)
         result = await transform_fn(query="q", format="json")

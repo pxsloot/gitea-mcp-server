@@ -835,6 +835,69 @@ class TestToolInfo:
         assert sc["total_count"] is None
 
     @pytest.mark.asyncio
+    async def test_tool_info_markdown_concise_schema_is_deterministic_json(self) -> None:
+        """tool_info schema page under markdown pre-collapse is deterministic JSON.
+
+        Regression (review finding): the markdown pre-collapse
+        (detail=concise) must not corrupt the schema page — the
+        ``output_example`` JSON section keeps its ``$ref`` markers as valid
+        JSON, and rendering is deterministic (same input → same text).
+        Mirrors the contract spine, which passes the tool-level ``_raw_schema``
+        to :func:`render`.
+        """
+        from gitea_mcp_server.tools.search import TolerantSearchTransform, _tool_info_impl
+
+        transform = TolerantSearchTransform()
+
+        tool = Tool(
+            name="gitea_tool_with_refs",
+            description="A tool",
+            parameters={"properties": {}},
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "assignee": {"$ref": "#/components/schemas/User"},
+                            "labels": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Label"},
+                            },
+                        },
+                    },
+                },
+            },
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.fastmcp.list_tools = AsyncMock(return_value=[tool])
+
+        exec_result = await _tool_info_impl(
+            "gitea_tool_with_refs", mock_ctx, transform, detail="concise"
+        )
+        # The contract spine passes the tool-level _raw_schema (tool_info's
+        # own unwrapped output schema) to render; mirror that here.
+        raw_schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "parameters": {"type": "object"},
+                "output_example": {"type": "object"},
+                "annotations": {"type": "object"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+        }
+        result = _pipeline_render(exec_result, fmt="markdown", detail="concise", schema=raw_schema)
+        text = extract_text_content(result.content)
+        # The output_example JSON section keeps its $ref markers as valid
+        # JSON — the pre-collapse must not corrupt the schema page.
+        assert '"$ref": "User"' in text
+        # Rendering is deterministic: same input → same text.
+        result2 = _pipeline_render(exec_result, fmt="markdown", detail="concise", schema=raw_schema)
+        assert extract_text_content(result2.content) == text
+
+    @pytest.mark.asyncio
     async def test_tool_info_detail_full_preserves_array_result_type(self) -> None:
         """tool_info detail=full must preserve array result type, not collapse to object.
 

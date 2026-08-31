@@ -227,21 +227,20 @@ Agent reads a resource:
     ├─▶ _mcp_read_resource_impl(ctx, uri)
     │     └─▶ ctx.read_resource(uri) → ResourceResult
     │           └─▶ Resource handler  — auto or custom
-    │                 returns raw data + metadata (schema, format_hint)
+    │                 returns raw data + metadata (schema, format_hint, extra)
     │           ← (raw, schema, format_hint, extra)
     │
-    ├─▶ _maybe_decode_base64(raw)    — detect and decode base64
-    │     │                             ContentsResponse (except when
-    │     │                             format=raw)
-    │     └─▶ decode_base64_content()
+    ├─▶ read_resource executor (mcp_tools.py:_read_resource_tool)
+    │     ├─ decode base64 (always, like autogen text responses)
+    │     ├─ parse JSON; classify shape (object/scalar/text)
+    │     └─ return ExecutionResult(data, shape, schema, markdown_formatter)
+    │            (markdown_formatter resolved from format_hint + extra)
     │
-    └─▶ format_resource_result(raw, fmt, schema, format_hint, extra)
-          ├─ if detail=concise: collapse_data (schema-aware)
-          ├─ if format_hint: call_formatter → registered formatter in tools/display.py
-          └─ else: format_as_markdown (generic, in format.py)
-          → dual-channel ToolResult: content authoritative and always
-            present, structured_content mirroring it (parsed envelope for
-            JSON content, {"result": raw} for non-JSON/raw)
+    └─▶ Single result pipeline (tools/result_pipeline.py:render)
+          shape → paginate → format → dual-channel ToolResult
+          ├─ format/json: collapse_data when detail=concise + schema
+          ├─ format/markdown: pre-collapse + formatter(data, detail=detail)
+          └─ format/raw: serialized envelope {"result": <data>}
 ```
 
 ---
@@ -400,7 +399,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `tools/display.py` | Domain-specific display formatters with registry |
-| `tools/resource_display.py` | Resource content display pipeline — `format_resource_result` (dual-channel ToolResult: content authoritative, structured mirror) + `format_resource_content` (text wrapper) |
+| `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
 
@@ -723,19 +722,26 @@ from the parameter schema.
       ``(Request body)`` prefix.  See ``openapi_converter/param_collision.py``
       module docstring for the collection and fallback strategy.
 
- 16. **Single result pipeline** -- Every tool (autogen and synthetic) has one
-     result path.  Executors return raw data only — a small
-     :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` (data,
-     total_count, result shape).  One result pipeline
-     (``tools/result_pipeline.render``) then applies **shape → paginate →
-     format → ToolResult** and is the single writer of both channels:
-     ``content`` (the text) is authoritative and always present,
-     ``structured_content`` mirrors it.  For ``format=json``/``raw`` the text
-     is the serialized envelope dict (deterministic raw — the envelope,
-     including ``has_more``/``next_offset``/``total_count``, is in the text);
-     for ``format=markdown`` the text is a rendering of the page data.
-     Empty/out-of-range pages emit ``{"result": [], "message": "...",
-     "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
+  16. **Single result pipeline** -- Every tool (autogen, synthetic, and
+      `read_resource`) has one result path.  Executors return raw data only
+      — a small
+      :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` (data,
+      total_count, result shape, optional per-result ``schema``,
+      ``markdown_formatter``).  One result pipeline
+      (``tools/result_pipeline.render``) then applies **shape → paginate →
+      format → ToolResult** and is the single writer of both channels:
+      ``content`` (the text) is authoritative and always present,
+      ``structured_content`` mirrors it.  For ``format=json``/``raw`` the text
+      is the serialized envelope dict (deterministic raw — the envelope,
+      including ``has_more``/``next_offset``/``total_count``, is in the text);
+      for ``format=markdown`` the text is a rendering of the **page data**
+      (the envelope's ``result``, not the executor's full data — so the text
+      channel agrees with ``structured_content`` on paginated list tools).
+      The markdown path pre-collapses the page (schema-aware ``$ref``
+      collapse) when ``detail=concise``, mirroring the json path; the
+      pipeline calls ``markdown_formatter(data, detail=detail)``.
+      Empty/out-of-range pages emit ``{"result": [], "message": "...",
+      "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 
      Result shapes classify the pagination strategy: ``"list"`` (the pipeline
      slices by ``page``/``limit`` or ``fetch_all`` skip-slice), ``"object"``

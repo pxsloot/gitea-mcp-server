@@ -15,10 +15,12 @@ All tool-related runtime concerns live here:
 - docs_tools: DocManager + search_docs/read_doc tools + gitea://docs/guide/{topic} resource
 - unified_search: Unified ``search`` tool across tools, docs, and resources
 - mcp_tools: list_resources/read_resource tools + gitea://tool/{name}/schema resource
-- resource_display: Resource content formatting pipeline
+- resource_display: Resource content helpers (extract_resource_content,
+  clean_resource_uri) — formatting lives in result_pipeline
 - result_pipeline: Single result pipeline (ExecutionResult + render) shared by
-  autogen and synthetic tools
-- display: Domain-specific formatter registry (shared by resource_display)
+  autogen and synthetic tools and read_resource
+- display: Domain-specific formatter registry (resolved by the read_resource
+  executor into markdown_formatter callables)
 """
 
 from gitea_mcp_server.scope import derive_required_scope

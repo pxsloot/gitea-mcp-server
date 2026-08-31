@@ -712,6 +712,29 @@ class TestErrorRecovery:
         parsed = parse_json_content(result)
         assert "result" in parsed
 
+    def test_recursion_error_in_recovery_recovers(self) -> None:
+        """When even the recovery serialization recurses, emit a readable fallback.
+
+        The recovery path retries ``json.dumps(default=str)`` then falls back
+        to ``str()`` — both recurse on deeply nested data.  On CI (8 MB C
+        stack) ``str()`` overflows at ~30k levels, so the recovery needs a
+        final non-recursive fallback.  A self-referential ``__repr__`` forces
+        the same RecursionError deterministically (Python recursion limit,
+        not C stack), locking the last-resort branch on every environment.
+        """
+
+        class _RecursiveRepr:
+            def __repr__(self) -> str:
+                return repr(self)
+
+        result = render(
+            ExecutionResult(data={"x": _RecursiveRepr()}, shape="object"),
+            fmt="json",
+        )
+        parsed = parse_json_content(result)
+        assert "result" in parsed
+        assert "too deeply nested" in parsed["result"]
+
 
 class TestDualChannelContract:
     """The pipeline is the single writer of both channels."""

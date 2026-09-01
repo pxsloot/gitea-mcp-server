@@ -38,8 +38,8 @@ from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
-from gitea_mcp_server.cache_invalidation import register_tool_invalidation
-from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
+from gitea_mcp_server.cache_invalidation import record_write_tool
+from gitea_mcp_server.constants import HTTP_METHODS_SAFE, HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
@@ -59,7 +59,6 @@ from gitea_mcp_server.tools.customize import (
     _prepare_annotations,
     add_inferred_hints,
     categorize_tool,
-    compute_invalidation_patterns,
     generate_tool_title,
 )
 from gitea_mcp_server.tools.errors import run_validation, run_with_error_handling
@@ -393,7 +392,9 @@ def _apply_tool_identity(
     """Apply title, annotations, category, hints, scope, and invalidation.
 
     Mutates ``component`` in-place: sets ``annotations`` and ``tags``.
-    Registers cache invalidation patterns for write methods.
+    Records write tools for cache-invalidation derivation — targets are
+    derived later from the spec + resource surface (issue #743), not
+    declared here.
 
     Returns:
         The derived ``required_scope`` (``str | None``).
@@ -407,10 +408,12 @@ def _apply_tool_identity(
     component.tags = (set(component.tags) if component.tags else set()) | {category}
 
     method = getattr(route, "method", None)
-    if method:
-        patterns = compute_invalidation_patterns(route.path, method)
-        if patterns:
-            register_tool_invalidation(component.name, patterns)
+    if method and method.upper() not in HTTP_METHODS_SAFE:
+        # Record the write tool for cache-invalidation derivation.  The
+        # invalidation targets are derived later (build_invalidation_map,
+        # after resource registration) from the spec + registered resource
+        # surface — no hardcoded URI templates (issue #743).
+        record_write_tool(component.name, route.path, method)
 
     return derive_required_scope(
         set(component.tags) if component.tags else None,

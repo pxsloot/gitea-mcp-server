@@ -7,26 +7,215 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
+from gitea_mcp_server import cache_invalidation as ci_module
 from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
     CacheInvalidationMiddleware,
     _compute_cache_key,
     _substitute_template,
+    build_invalidation_map,
     compute_uris_to_invalidate,
     invalidate_cached_resources,
-    register_tool_invalidation,
+    record_write_tool,
 )
-from gitea_mcp_server.tools.customize import (
-    compute_invalidation_patterns as _compute_tool_invalidation_patterns,
+from gitea_mcp_server.openapi_converter.type_references import stamp_type_references
+from gitea_mcp_server.resources.surface import (
+    clear_resource_surface,
+    get_resource_surface,
+    register_resource_surface,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
+
+# ---------------------------------------------------------------------------
+# Spec + surface helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_op(op_id: str, ref: str) -> dict:
+    """GET operation returning a single ``$ref`` schema."""
+    return {
+        "operationId": op_id,
+        "responses": {
+            "200": {
+                "description": "ok",
+                "content": {
+                    "application/json": {"schema": {"$ref": f"#/components/schemas/{ref}"}}
+                },
+            }
+        },
+    }
+
+
+def _list_op(op_id: str, ref: str) -> dict:
+    """GET operation returning an array of ``$ref`` schemas."""
+    return {
+        "operationId": op_id,
+        "responses": {
+            "200": {
+                "description": "ok",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {"$ref": f"#/components/schemas/{ref}"},
+                        }
+                    }
+                },
+            }
+        },
+    }
+
+
+def _write_op(op_id: str, ref: str, code: str = "201") -> dict:
+    """Write operation returning the created/updated ``$ref`` schema."""
+    return {
+        "operationId": op_id,
+        "responses": {
+            code: {
+                "description": "ok",
+                "content": {
+                    "application/json": {"schema": {"$ref": f"#/components/schemas/{ref}"}}
+                },
+            }
+        },
+    }
+
+
+def _empty_op(op_id: str) -> dict:
+    """Write operation with a 204 (no content) response."""
+    return {"operationId": op_id, "responses": {"204": {"description": "no content"}}}
+
+
+def _make_spec() -> Any:
+    """Build a spec with repo/issues/pulls/labels/milestones/branches/tags resources."""
+    return make_openapi_spec(
+        paths={
+            "/repos/{owner}/{repo}": {
+                "get": _get_op("repoGet", "Repository"),
+                "patch": _write_op("repoEdit", "Repository", "200"),
+            },
+            "/repos/{owner}/{repo}/issues": {
+                "get": _list_op("issueList", "Issue"),
+                "post": _write_op("issueCreate", "Issue"),
+            },
+            "/repos/{owner}/{repo}/pulls": {
+                "get": _list_op("pullList", "PullRequest"),
+                "post": _write_op("pullCreate", "PullRequest"),
+            },
+            "/repos/{owner}/{repo}/labels": {
+                "get": _list_op("labelList", "Label"),
+                "post": _write_op("labelCreate", "Label"),
+            },
+            "/repos/{owner}/{repo}/milestones": {
+                "get": _list_op("milestoneList", "Milestone"),
+                "post": _write_op("milestoneCreate", "Milestone"),
+            },
+            "/repos/{owner}/{repo}/milestones/{id}": {
+                "get": _get_op("milestoneGet", "Milestone"),
+                "patch": _write_op("milestoneEdit", "Milestone", "200"),
+                "delete": _empty_op("milestoneDelete"),
+            },
+            "/repos/{owner}/{repo}/branches": {
+                "get": _list_op("branchList", "Branch"),
+                "post": _write_op("branchCreate", "Branch"),
+            },
+            "/repos/{owner}/{repo}/branches/{branch}": {
+                "get": _get_op("branchGet", "Branch"),
+                "delete": _empty_op("branchDelete"),
+            },
+            "/repos/{owner}/{repo}/tags": {
+                "get": _list_op("tagList", "Tag"),
+                "post": _write_op("tagCreate", "Tag"),
+            },
+            "/repos/{owner}/{repo}/tags/{tag}": {
+                "get": _get_op("tagGet", "Tag"),
+                "delete": _empty_op("tagDelete"),
+            },
+        },
+        components={
+            "schemas": {
+                "Repository": {"type": "object", "properties": {"name": {"type": "string"}}},
+                "Issue": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "labels": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Label"},
+                        },
+                        "milestone": {"$ref": "#/components/schemas/Milestone"},
+                    },
+                },
+                "PullRequest": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "labels": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Label"},
+                        },
+                        "milestone": {"$ref": "#/components/schemas/Milestone"},
+                    },
+                },
+                "Label": {"type": "object", "properties": {"name": {"type": "string"}}},
+                "Milestone": {"type": "object", "properties": {"title": {"type": "string"}}},
+                "Branch": {"type": "object", "properties": {"name": {"type": "string"}}},
+                "Tag": {"type": "object", "properties": {"name": {"type": "string"}}},
+            }
+        },
+    )
+
+
+def _register_surface() -> None:
+    """Register the standard resource surface matching ``_make_spec``."""
+    register_resource_surface("gitea://repos/{owner}/{repo}", "/repos/{owner}/{repo}")
+    register_resource_surface("gitea://repos/{owner}/{repo}/issues", "/repos/{owner}/{repo}/issues")
+    register_resource_surface("gitea://repos/{owner}/{repo}/pulls", "/repos/{owner}/{repo}/pulls")
+    register_resource_surface("gitea://repos/{owner}/{repo}/labels", "/repos/{owner}/{repo}/labels")
+    register_resource_surface(
+        "gitea://repos/{owner}/{repo}/milestones", "/repos/{owner}/{repo}/milestones"
+    )
+    register_resource_surface(
+        "gitea://repos/{owner}/{repo}/milestones/{id}",
+        "/repos/{owner}/{repo}/milestones/{id}",
+    )
+    register_resource_surface(
+        "gitea://repos/{owner}/{repo}/branches", "/repos/{owner}/{repo}/branches"
+    )
+    register_resource_surface(
+        "gitea://repos/{owner}/{repo}/branches/{branch*}",
+        "/repos/{owner}/{repo}/branches/{branch}",
+    )
+    register_resource_surface("gitea://repos/{owner}/{repo}/tags", "/repos/{owner}/{repo}/tags")
+    register_resource_surface(
+        "gitea://repos/{owner}/{repo}/tags/{tag*}",
+        "/repos/{owner}/{repo}/tags/{tag}",
+    )
+
+
+def _build_map(spec: Any, tools: list[tuple[str, str, str]]) -> None:
+    """Record write tools and derive the invalidation map.
+
+    Mirrors the production flow: the converter stamps type references
+    (x-resource-types / x-modifies-type) before the derivation reads them.
+    """
+    if spec is not None:
+        stamp_type_references(spec)
+    for name, path, method in tools:
+        record_write_tool(name, path, method)
+    build_invalidation_map(spec)
 
 
 @pytest.fixture(autouse=True)
-def clear_invalidation_map() -> Generator[None, None, None]:
-    """Clear the invalidation map before each test."""
+def clear_invalidation_state() -> Generator[None, None, None]:
+    """Clear the invalidation map, surface, and pending tools before each test."""
     TOOL_INVALIDATION_MAP.clear()
+    clear_resource_surface()
+    ci_module._PENDING_WRITE_TOOLS.clear()
     yield
     TOOL_INVALIDATION_MAP.clear()
+    clear_resource_surface()
+    ci_module._PENDING_WRITE_TOOLS.clear()
 
 
 class TestComputeCacheKey:
@@ -93,33 +282,24 @@ class TestComputeUrisToInvalidate:
 
     def test_issue_edit_invalidates_issues(self) -> None:
         """issue_edit_issue invalidates issues list."""
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
         arguments = {"owner": "myorg", "repo": "myrepo", "index": 42}
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
-        expected = [
-            "gitea://repos/myorg/myrepo/issues",
-        ]
-        assert set(uris) == set(expected)
+        assert uris == ["gitea://repos/myorg/myrepo/issues"]
 
     def test_issue_create_invalidates_issues(self) -> None:
         """issue_create_repo_issue invalidates issues list."""
-        register_tool_invalidation("issue_create_repo_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_create_repo_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
         arguments = {"owner": "org", "repo": "repo", "title": "Bug"}
         uris = compute_uris_to_invalidate("issue_create_repo_issue", arguments)
-        expected = [
-            "gitea://repos/org/repo/issues",
-        ]
-        assert set(uris) == set(expected)
+        assert uris == ["gitea://repos/org/repo/issues"]
 
     def test_pr_create_invalidates_pulls(self) -> None:
         """pull_request_create invalidates pulls list."""
-        register_tool_invalidation("pull_request_create", ["pulls_list"])
+        TOOL_INVALIDATION_MAP["pull_request_create"] = ["gitea://repos/{owner}/{repo}/pulls"]
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
         uris = compute_uris_to_invalidate("pull_request_create", arguments)
-        expected = [
-            "gitea://repos/org/repo/pulls",
-        ]
-        assert set(uris) == set(expected)
+        assert uris == ["gitea://repos/org/repo/pulls"]
 
     def test_unknown_tool_returns_empty(self) -> None:
         """Unknown tool returns empty list."""
@@ -129,51 +309,41 @@ class TestComputeUrisToInvalidate:
 
     def test_repo_edit_invalidates_repo_resource(self) -> None:
         """repo_edit invalidates repository resource."""
-        register_tool_invalidation("repo_edit", ["repo"])
+        TOOL_INVALIDATION_MAP["repo_edit"] = ["gitea://repos/{owner}/{repo}"]
         arguments = {"owner": "org", "repo": "repo"}
         uris = compute_uris_to_invalidate("repo_edit", arguments)
         assert uris == ["gitea://repos/org/repo"]
 
     def test_file_operation_invalidates_file_resource(self) -> None:
         """repo_create_content invalidates file resource with correct path."""
-        register_tool_invalidation("repo_create_content", ["files"])
+        TOOL_INVALIDATION_MAP["repo_create_content"] = [
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        ]
         arguments = {
             "owner": "org",
             "repo": "repo",
-            "filepath": "README.md",  # note: filepath matches pattern placeholder
+            "filepath": "README.md",
         }
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
-        # Should have at least one URI containing the path
-        assert any("README.md" in uri for uri in uris)
         assert "gitea://repos/org/repo/contents/README.md" in uris
 
     def test_missing_parameters_skipped(self) -> None:
-        """If required parameters are missing, pattern is skipped gracefully."""
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
-        # issue_edit_issue needs owner, repo, index
-        arguments = {"owner": "org"}  # missing repo and index
+        """If required parameters are missing, template is skipped gracefully."""
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        arguments = {"owner": "org"}  # missing repo
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
-        # Should return empty because patterns can't be substituted
         assert uris == []
 
-    def test_unknown_pattern_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Unknown pattern name logs a warning."""
-        import logging
-
-        caplog.set_level(logging.WARNING)
-
-        register_tool_invalidation("some_tool", ["unknown_pattern"])
-        arguments = {"owner": "org", "repo": "repo"}
-        uris = compute_uris_to_invalidate("some_tool", arguments)
-        assert uris == []
-        assert "Unknown resource pattern" in caplog.text
-        assert "unknown_pattern" in caplog.text
+    def test_prefix_stripping(self) -> None:
+        """Namespaced tool names are stripped before map lookup."""
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        arguments = {"owner": "org", "repo": "repo", "index": 1}
+        uris = compute_uris_to_invalidate("gitea_issue_edit_issue", arguments, tool_prefix="gitea_")
+        assert uris == ["gitea://repos/org/repo/issues"]
 
     @pytest.mark.asyncio
     async def test_empty_uris_list_noop(self) -> None:
         """invalidate_cached_resources with empty list returns immediately."""
-        from unittest.mock import MagicMock
-
         mock_caching = MagicMock()
         await invalidate_cached_resources(mock_caching, [], "test_tool")
 
@@ -191,13 +361,155 @@ class TestComputeUrisToInvalidate:
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
         mock_caching._read_resource_cache = mock_cache
 
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
         uris = compute_uris_to_invalidate(
             "issue_edit_issue", {"owner": "org", "repo": "repo", "index": 1}
         )
 
         await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
         assert "Failed to invalidate cache" in caplog.text
+
+
+class TestDeriveTargets:
+    """Tests for the spec + surface invalidation derivation (issue #743)."""
+
+    def test_issue_write_full_prefix(self) -> None:
+        """An issue write invalidates the repo resource too (full prefix)."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("issueCreate", "/repos/{owner}/{repo}/issues", "POST")])
+        assert set(TOOL_INVALIDATION_MAP["issueCreate"]) == {
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/issues",
+        }
+
+    def test_label_write_cross_tree(self) -> None:
+        """A label write invalidates issues/pulls (Issue references Label)."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("labelCreate", "/repos/{owner}/{repo}/labels", "POST")])
+        assert set(TOOL_INVALIDATION_MAP["labelCreate"]) == {
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/labels",
+            "gitea://repos/{owner}/{repo}/issues",
+            "gitea://repos/{owner}/{repo}/pulls",
+        }
+
+    def test_milestone_write_cross_tree(self) -> None:
+        """A milestone write invalidates issues/pulls and the milestone resources."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("milestoneCreate", "/repos/{owner}/{repo}/milestones", "POST")])
+        assert set(TOOL_INVALIDATION_MAP["milestoneCreate"]) == {
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/milestones",
+            "gitea://repos/{owner}/{repo}/milestones/{id}",
+            "gitea://repos/{owner}/{repo}/issues",
+            "gitea://repos/{owner}/{repo}/pulls",
+        }
+
+    def test_milestone_edit_covers_single_milestone(self) -> None:
+        """A milestone edit invalidates the single-milestone resource too."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("milestoneEdit", "/repos/{owner}/{repo}/milestones/{id}", "PATCH")])
+        assert (
+            "gitea://repos/{owner}/{repo}/milestones/{id}" in TOOL_INVALIDATION_MAP["milestoneEdit"]
+        )
+
+    def test_branch_create_covers_branch_list(self) -> None:
+        """A branch create invalidates the branches list resource."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("branchCreate", "/repos/{owner}/{repo}/branches", "POST")])
+        assert "gitea://repos/{owner}/{repo}/branches" in TOOL_INVALIDATION_MAP["branchCreate"]
+
+    def test_branch_delete_covers_single_branch(self) -> None:
+        """A branch delete invalidates the single-branch resource (wildcard template)."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("branchDelete", "/repos/{owner}/{repo}/branches/{branch}", "DELETE")])
+        assert (
+            "gitea://repos/{owner}/{repo}/branches/{branch*}"
+            in TOOL_INVALIDATION_MAP["branchDelete"]
+        )
+
+    def test_tag_create_covers_tag_list(self) -> None:
+        """A tag create invalidates the tags list resource."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("tagCreate", "/repos/{owner}/{repo}/tags", "POST")])
+        assert "gitea://repos/{owner}/{repo}/tags" in TOOL_INVALIDATION_MAP["tagCreate"]
+
+    def test_tag_delete_covers_single_tag(self) -> None:
+        """A tag delete invalidates the single-tag resource."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("tagDelete", "/repos/{owner}/{repo}/tags/{tag}", "DELETE")])
+        assert "gitea://repos/{owner}/{repo}/tags/{tag*}" in TOOL_INVALIDATION_MAP["tagDelete"]
+
+    def test_repo_edit_only_repo(self) -> None:
+        """A repo edit invalidates only the repo resource (no cross-tree)."""
+        spec = _make_spec()
+        _register_surface()
+        _build_map(spec, [("repoEdit", "/repos/{owner}/{repo}", "PATCH")])
+        assert TOOL_INVALIDATION_MAP["repoEdit"] == ["gitea://repos/{owner}/{repo}"]
+
+    def test_safe_method_not_recorded(self) -> None:
+        """GET tools are not recorded and produce no invalidation targets."""
+        spec = _make_spec()
+        _register_surface()
+        record_write_tool("issueList", "/repos/{owner}/{repo}/issues", "GET")
+        build_invalidation_map(spec)
+        assert "issueList" not in TOOL_INVALIDATION_MAP
+
+    def test_no_spec_skips_cross_tree(self) -> None:
+        """Without a spec, only path-prefix targets are derived."""
+        _register_surface()
+        _build_map(None, [("labelCreate", "/repos/{owner}/{repo}/labels", "POST")])
+        assert set(TOOL_INVALIDATION_MAP["labelCreate"]) == {
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/labels",
+        }
+
+    def test_non_dict_path_item_skipped(self) -> None:
+        """A non-dict path item in the spec is skipped without error.
+
+        Path-prefix derivation still matches (it needs no spec); the
+        cross-tree lookup degrades to an empty type set.
+        """
+        spec = make_openapi_spec(paths={"/weird": "not-a-dict"})
+        register_resource_surface("gitea://weird", "/weird")
+        _build_map(spec, [("weirdWrite", "/weird", "POST")])
+        assert TOOL_INVALIDATION_MAP["weirdWrite"] == ["gitea://weird"]
+
+
+class TestDrift:
+    """The invalidation map must never drift from the registered surface."""
+
+    def test_every_invalidation_target_matches_registered_resource(self) -> None:
+        """Every derived invalidation URI template is a registered resource."""
+        spec = _make_spec()
+        _register_surface()
+        surface = get_resource_surface()
+        tools = [
+            ("issueCreate", "/repos/{owner}/{repo}/issues", "POST"),
+            ("labelCreate", "/repos/{owner}/{repo}/labels", "POST"),
+            ("milestoneCreate", "/repos/{owner}/{repo}/milestones", "POST"),
+            ("milestoneEdit", "/repos/{owner}/{repo}/milestones/{id}", "PATCH"),
+            ("branchCreate", "/repos/{owner}/{repo}/branches", "POST"),
+            ("branchDelete", "/repos/{owner}/{repo}/branches/{branch}", "DELETE"),
+            ("tagCreate", "/repos/{owner}/{repo}/tags", "POST"),
+            ("tagDelete", "/repos/{owner}/{repo}/tags/{tag}", "DELETE"),
+            ("repoEdit", "/repos/{owner}/{repo}", "PATCH"),
+        ]
+        _build_map(spec, tools)
+        assert TOOL_INVALIDATION_MAP, "expected at least one derived target"
+        for tool, targets in TOOL_INVALIDATION_MAP.items():
+            for target in targets:
+                assert target in surface, (
+                    f"{tool} invalidation target {target!r} is not a registered resource"
+                )
 
 
 class TestCacheInvalidationMiddleware:
@@ -217,7 +529,7 @@ class TestCacheInvalidationMiddleware:
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
 
         async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
@@ -278,7 +590,7 @@ class TestCacheInvalidationMiddleware:
         mock_context.message.name = "issue_edit_issue"
         mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
 
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
 
         async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
@@ -296,98 +608,136 @@ class TestCacheInvalidationMiddleware:
         )
 
 
-class TestComputeToolInvalidationPatterns:
-    """Tests for _compute_tool_invalidation_patterns from server module."""
+class TestQueryVariantInvalidation:
+    """Query-variant reads are recorded and invalidated with their base URI."""
 
-    def test_issue_paths_invalidate_issues(self) -> None:
-        """Paths under /issues trigger invalidations for issues resources."""
-        assert self.compute("/repos/{owner}/{repo}/issues", "POST") == [
-            "issues_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/issues/42", "DELETE") == [
-            "issues_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/issues/42/labels", "PUT") == [
-            "issues_list",
-        ]
+    @pytest.mark.asyncio
+    async def test_read_records_query_variant(self) -> None:
+        """on_read_resource records the full URI under its base."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
 
-    def test_pull_paths_invalidate_pulls(self) -> None:
-        """Paths under /pulls trigger invalidations for pulls resources."""
-        assert self.compute("/repos/{owner}/{repo}/pulls", "POST") == [
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/pulls/5", "DELETE") == [
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/pulls/5/merge", "POST") == [
-            "pulls_list",
-        ]
+        mock_context = MagicMock()
+        mock_context.message.uri = "gitea://repos/org/repo/issues?state=open"
 
-    def test_repo_path_invalidates_repo(self) -> None:
-        """Direct repo modification invalidates repository resource."""
-        assert self.compute("/repos/{owner}/{repo}", "PUT") == ["repo"]
-        assert self.compute("/repos/{owner}/{repo}", "DELETE") == ["repo"]
-        assert self.compute("/repos/{owner}/{repo}", "PATCH") == ["repo"]
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
 
-    def test_file_contents_invalidate_files(self) -> None:
-        """File contents modifications invalidate file resource."""
-        assert self.compute("/repos/{owner}/{repo}/contents/README.md", "PUT") == ["files"]
-        assert self.compute("/repos/{owner}/{repo}/contents/src/main.py", "DELETE") == ["files"]
-        # GET does not invalidate
-        assert self.compute("/repos/{owner}/{repo}/contents/README.md", "GET") == []
+        await middleware.on_read_resource(mock_context, mock_call_next)
 
-    def test_label_operations_invalidate_labels_issues_and_pulls(self) -> None:
-        """Label CRUD affects labels, issues, and pull requests."""
-        assert self.compute("/repos/{owner}/{repo}/labels", "POST") == [
-            "labels",
-            "issues_list",
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/labels/bug", "DELETE") == [
-            "labels",
-            "issues_list",
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/labels", "PATCH") == [
-            "labels",
-            "issues_list",
-            "pulls_list",
-        ]
+        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
+            "gitea://repos/org/repo/issues?state=open"
+        }
 
-    def test_milestone_operations_invalidate_issues_and_pulls(self) -> None:
-        """Milestone CRUD affects both issues and pull requests."""
-        assert self.compute("/repos/{owner}/{repo}/milestones", "POST") == [
-            "issues_list",
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/milestones/1", "PATCH") == [
-            "issues_list",
-            "pulls_list",
-        ]
-        assert self.compute("/repos/{owner}/{repo}/milestones/1", "DELETE") == [
-            "issues_list",
-            "pulls_list",
-        ]
+    @pytest.mark.asyncio
+    async def test_read_without_query_records_base(self) -> None:
+        """A plain read records the base URI itself."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
 
-    def test_release_operations_invalidate_repo(self) -> None:
-        """Release CRUD affects repository resource."""
-        assert self.compute("/repos/{owner}/{repo}/releases", "POST") == ["repo"]
-        assert self.compute("/repos/{owner}/{repo}/releases/v1.0", "DELETE") == ["repo"]
+        mock_context = MagicMock()
+        mock_context.message.uri = "gitea://repos/org/repo/issues"
 
-    def test_topic_operations_invalidate_repo(self) -> None:
-        """Topic changes affect repository resource."""
-        assert self.compute("/repos/{owner}/{repo}/topics", "PUT") == ["repo"]
-        assert self.compute("/repos/{owner}/{repo}/topics", "DELETE") == ["repo"]
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
 
-    def test_safe_methods_return_empty(self) -> None:
-        """Safe methods (GET, HEAD, OPTIONS) do not invalidate."""
-        assert self.compute("/repos/{owner}/{repo}/issues", "GET") == []
-        assert self.compute("/repos/{owner}/{repo}/issues", "HEAD") == []
-        assert self.compute("/repos/{owner}/{repo}/pulls", "OPTIONS") == []
+        await middleware.on_read_resource(mock_context, mock_call_next)
 
-    def compute(self, path: str, method: str) -> list[str]:
-        """Helper to call _compute_tool_invalidation_patterns."""
-        return _compute_tool_invalidation_patterns(path, method)
+        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
+            "gitea://repos/org/repo/issues"
+        }
+
+    @pytest.mark.asyncio
+    async def test_read_uri_dedup(self) -> None:
+        """Re-reading the same URI does not double-count it."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for _ in range(3):
+            mock_context = MagicMock()
+            mock_context.message.uri = "gitea://repos/org/repo/issues?state=open"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        assert middleware._read_uri_count == 1
+        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
+            "gitea://repos/org/repo/issues?state=open"
+        }
+
+    @pytest.mark.asyncio
+    async def test_read_uris_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The read-URI registry is bounded — oldest bases are evicted."""
+        from gitea_mcp_server import cache_invalidation as ci_module
+
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for i in range(5):
+            mock_context = MagicMock()
+            mock_context.message.uri = f"gitea://repos/org/repo/res{i}"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        # Only the 3 most recent bases survive; the 2 oldest were evicted.
+        assert set(middleware._read_uris.keys()) == {
+            "gitea://repos/org/repo/res2",
+            "gitea://repos/org/repo/res3",
+            "gitea://repos/org/repo/res4",
+        }
+        assert middleware._read_uri_count == 3
+
+    @pytest.mark.asyncio
+    async def test_read_uris_bounded_single_base(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A single base with many variants cannot exceed the cap."""
+        from gitea_mcp_server import cache_invalidation as ci_module
+
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for i in range(5):
+            mock_context = MagicMock()
+            mock_context.message.uri = f"gitea://repos/org/repo/issues?page={i}"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        total = sum(len(v) for v in middleware._read_uris.values())
+        assert total <= 3
+        assert middleware._read_uri_count <= 3
+
+    @pytest.mark.asyncio
+    async def test_write_invalidates_query_variants(self) -> None:
+        """A write clears the base URI and every recorded query variant."""
+        mock_cache = AsyncMock()
+        mock_cache.get.return_value = MagicMock()
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        mock_caching._read_resource_cache = mock_cache
+
+        middleware = CacheInvalidationMiddleware(mock_caching)
+        middleware._read_uris["gitea://repos/org/repo/issues"].add(
+            "gitea://repos/org/repo/issues?state=open"
+        )
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+
+        mock_context = MagicMock()
+        mock_context.message.name = "issue_edit_issue"
+        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock(is_error=False)
+
+        await middleware.on_call_tool(mock_context, mock_call_next)
+
+        deleted_uris = [call[1]["key"] for call in mock_cache.delete.call_args_list]
+        assert _compute_cache_key("gitea://repos/org/repo/issues") in deleted_uris
+        assert _compute_cache_key("gitea://repos/org/repo/issues?state=open") in deleted_uris
 
 
 class TestIntegration:
@@ -401,7 +751,7 @@ class TestIntegration:
         mock_caching = MagicMock(spec=ResponseCachingMiddleware)
         mock_caching._read_resource_cache = mock_cache
 
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
 
         middleware = CacheInvalidationMiddleware(mock_caching)
 
@@ -442,7 +792,7 @@ class TestClearLabelServiceCache:
         label_service = MagicMock(spec=LabelService)
         middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
 
-        register_tool_invalidation("repo_create_label", ["labels"])
+        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
 
         mock_context = MagicMock()
         mock_context.message.name = "repo_create_label"
@@ -471,7 +821,7 @@ class TestClearLabelServiceCache:
         label_service = MagicMock(spec=LabelService)
         middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
 
-        register_tool_invalidation("issue_edit_issue", ["issues_list"])
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
 
         mock_context = MagicMock()
         mock_context.message.name = "issue_edit_issue"
@@ -496,7 +846,7 @@ class TestClearLabelServiceCache:
 
         middleware = CacheInvalidationMiddleware(mock_caching, label_service=None)
 
-        register_tool_invalidation("repo_create_label", ["labels"])
+        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
 
         mock_context = MagicMock()
         mock_context.message.name = "repo_create_label"
@@ -549,7 +899,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        register_tool_invalidation("test_label_tool", ["labels"])
+        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -573,7 +923,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        register_tool_invalidation("test_label_tool", ["labels"])
+        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -593,7 +943,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        register_tool_invalidation("test_label_tool", ["labels"])
+        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -613,7 +963,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        register_tool_invalidation("test_label_tool", ["labels"])
+        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -633,7 +983,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        register_tool_invalidation("test_label_tool", ["labels"])
+        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()

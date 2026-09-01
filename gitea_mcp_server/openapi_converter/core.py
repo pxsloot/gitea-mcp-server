@@ -20,6 +20,7 @@ from .schema import (
     SchemaNormalizer,
     SchemaWalker,
 )
+from .type_references import stamp_type_references
 
 logger = logging.getLogger(__name__)
 
@@ -980,6 +981,10 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     remove_swagger_fields(result, ["consumes", "produces", "schemes"])
     result = ReferenceFixer().fix(result)
     _add_nullable_for_optional_refs(cast("OpenAPISpec", result))
+    # Stamp type-reference extensions (x-resource-types / x-modifies-type)
+    # for cache invalidation.  Must run BEFORE _wrap_success_response_schemas:
+    # the wrapping inlines top-level $refs, which would lose the type names.
+    stamp_type_references(cast("OpenAPISpec", result))
     _wrap_success_response_schemas(cast("OpenAPISpec", result))
 
     logger.info("OpenAPI conversion completed successfully")

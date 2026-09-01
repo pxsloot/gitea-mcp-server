@@ -295,7 +295,7 @@ class TestCustomizeMetadata:
         assert c.is_text_response is False
 
     def test_registers_invalidation_patterns_for_write(self) -> None:
-        """Write methods register cache invalidation patterns."""
+        """Write methods record cache invalidation write tools."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
             summary="Create issue",
@@ -311,15 +311,13 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        with patch(
-            "gitea_mcp_server.server_setup.mcp_builder.register_tool_invalidation"
-        ) as mock_register:
+        with patch("gitea_mcp_server.server_setup.mcp_builder.record_write_tool") as mock_record:
             _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
-            mock_register.assert_called_once()
+            mock_record.assert_called_once_with("create_issue", route.path, "POST")
 
     def test_read_method_does_not_register_invalidation(self) -> None:
-        """GET methods do not register cache invalidation."""
+        """GET methods do not record cache invalidation write tools."""
         route = MagicMock(
             path="/repos/{owner}/{repo}/issues",
             summary="List issues",
@@ -335,12 +333,10 @@ class TestCustomizeMetadata:
         tool.output_schema = None
         tool.meta = {}
 
-        with patch(
-            "gitea_mcp_server.server_setup.mcp_builder.register_tool_invalidation"
-        ) as mock_register:
+        with patch("gitea_mcp_server.server_setup.mcp_builder.record_write_tool") as mock_record:
             _customize_metadata(route, tool, openapi_spec=make_openapi_spec())
 
-            mock_register.assert_not_called()
+            mock_record.assert_not_called()
 
     def test_output_schema_not_none_sets_wrap_flag(self) -> None:
         """When output_schema is not None, x-fastmcp-wrap-result is set."""

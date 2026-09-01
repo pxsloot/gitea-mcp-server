@@ -74,11 +74,21 @@ TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
 # Each entry is ``(tool_name, path, method)``.
 _PENDING_WRITE_TOOLS: list[tuple[str, str, str]] = []
 
-# Namespace prefix applied at query time by GiteaNamespace.  Set at
-# middleware construction time from ``config.tool_prefix``; defaults to
-# empty string (no prefix) so the module-level constant is never relied on
-# at runtime.
+# Namespace prefix applied at query time by GiteaNamespace.  Production
+# wiring always passes ``config.tool_prefix`` explicitly (see
+# ``server._setup_middleware``); this empty default only serves direct
+# construction in tests and standalone calls.
 _DEFAULT_TOOL_PREFIX = ""
+
+# Minimum path segments for a label resource URI
+# (``gitea://repos/{owner}/{repo}/labels`` → 6 parts after ``split("/")``).
+_MIN_LABEL_URI_PARTS = 6
+
+# Maximum number of read URIs recorded for query-variant invalidation.
+# Bounds memory on long-lived servers.  Cache entries expire via TTL
+# (``CACHE_TTL_DEFAULT``) anyway, so evicting the oldest recorded base only
+# risks leaving a variant stale until its TTL expires — never permanently.
+_MAX_READ_URIS = 1000
 
 
 def record_write_tool(tool_name: str, path: str, method: str) -> None:
@@ -502,7 +512,35 @@ class CacheInvalidationMiddleware(Middleware):
         # base URI -> set of full concrete URIs read (including query
         # strings).  Populated by on_read_resource; consumed on write to
         # clear query-variant cache entries the base URI alone cannot reach.
+        # Bounded by ``_MAX_READ_URIS`` (see ``_record_read_uri``).
         self._read_uris: dict[str, set[str]] = defaultdict(set)
+        self._read_uri_count = 0
+
+    def _record_read_uri(self, uri: str) -> None:
+        """Record a read URI under its base, bounding total recorded URIs.
+
+        The cache key includes the full URI (query string included), so a
+        write must clear every variant that has been read.  Recording here
+        is the only robust way to know which variants exist — the cache
+        adapter offers no iteration.
+
+        Memory is bounded by ``_MAX_READ_URIS``: when the cap is reached,
+        the oldest recorded base URI (and its variants) is evicted.  Cache
+        entries expire via TTL anyway, so an evicted variant is only left
+        stale until its TTL expires — never permanently.
+
+        Args:
+            uri: The full resource URI that was read.
+        """
+        base = uri.split("?", 1)[0]
+        variants = self._read_uris[base]
+        if uri in variants:
+            return
+        variants.add(uri)
+        self._read_uri_count += 1
+        while self._read_uri_count > _MAX_READ_URIS:
+            oldest_base = next(iter(self._read_uris))
+            self._read_uri_count -= len(self._read_uris.pop(oldest_base))
 
     async def on_read_resource(
         self,
@@ -525,8 +563,7 @@ class CacheInvalidationMiddleware(Middleware):
         """
         uri = str(context.message.uri)
         if uri:
-            base = uri.split("?", 1)[0]
-            self._read_uris[base].add(uri)
+            self._record_read_uri(uri)
         return await call_next(context)
 
     async def on_call_tool(
@@ -593,7 +630,6 @@ class CacheInvalidationMiddleware(Middleware):
         # URIs follow the resolved pattern: gitea://repos/{owner}/{repo}/labels
         # Parse directly from the path rather than trying to match templates
         # with substituted parameters.
-        _MIN_LABEL_URI_PARTS = 6
         for uri in uris:
             if not uri.endswith("/labels"):
                 continue

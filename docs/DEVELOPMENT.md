@@ -272,6 +272,15 @@ list of URI templates to maintain:
   that type (`x-resource-types`).  Label/milestone writes invalidate
   issues/pulls because the Issue schema references Label/Milestone.
 
+The cross-tree rule is intentionally **conservative**: the type closure is
+transitive, so a write to a widely-referenced type (e.g. `User`) invalidates
+every resource whose response references it — editing your own profile
+clears repos, issues, pulls, orgs, and more.  This is deliberate: the cache
+uses a short TTL for dynamic endpoints, and broad invalidation is preferred
+over stale cache hits on busy servers.  If a write's blast radius ever
+becomes a problem, tighten the derivation (e.g. depth-limited type closure)
+without changing the architecture.
+
 The flow:
 
 1. `mcp_builder._apply_tool_identity` records each write tool's

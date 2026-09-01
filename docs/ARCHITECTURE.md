@@ -551,12 +551,20 @@ from the parameter schema.
      invalidate issues/pulls because the Issue schema references
      Label/Milestone.
 
+   The cross-tree rule is intentionally conservative: the type closure is
+   transitive, so a write to a widely-referenced type (e.g. `User`)
+   invalidates every resource whose response references it.  This is
+   deliberate — the cache uses a short TTL for dynamic endpoints, and broad
+   invalidation is preferred over stale cache hits on busy servers.
+
    The `CacheInvalidationMiddleware` computes concrete URIs from tool
    arguments and clears them from the response cache after successful
    writes.  It also observes resource reads (`on_read_resource`) to record
    query-variant URIs (e.g. `gitea://.../issues?state=open`) under their
    base URI — the cache key includes the query string, so a write must
-   clear every variant that has been read.
+   clear every variant that has been read.  The recorded read-URI registry
+   is bounded (`_MAX_READ_URIS`) so it cannot grow without limit on
+   long-lived servers.
 
  7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
     re-export of scope-filtering helpers, avoiding a circular import that would

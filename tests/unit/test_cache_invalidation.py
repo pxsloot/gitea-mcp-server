@@ -648,6 +648,71 @@ class TestQueryVariantInvalidation:
         }
 
     @pytest.mark.asyncio
+    async def test_read_uri_dedup(self) -> None:
+        """Re-reading the same URI does not double-count it."""
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for _ in range(3):
+            mock_context = MagicMock()
+            mock_context.message.uri = "gitea://repos/org/repo/issues?state=open"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        assert middleware._read_uri_count == 1
+        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
+            "gitea://repos/org/repo/issues?state=open"
+        }
+
+    @pytest.mark.asyncio
+    async def test_read_uris_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The read-URI registry is bounded — oldest bases are evicted."""
+        from gitea_mcp_server import cache_invalidation as ci_module
+
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for i in range(5):
+            mock_context = MagicMock()
+            mock_context.message.uri = f"gitea://repos/org/repo/res{i}"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        # Only the 3 most recent bases survive; the 2 oldest were evicted.
+        assert set(middleware._read_uris.keys()) == {
+            "gitea://repos/org/repo/res2",
+            "gitea://repos/org/repo/res3",
+            "gitea://repos/org/repo/res4",
+        }
+        assert middleware._read_uri_count == 3
+
+    @pytest.mark.asyncio
+    async def test_read_uris_bounded_single_base(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A single base with many variants cannot exceed the cap."""
+        from gitea_mcp_server import cache_invalidation as ci_module
+
+        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
+        middleware = CacheInvalidationMiddleware(mock_caching)
+        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock()
+
+        for i in range(5):
+            mock_context = MagicMock()
+            mock_context.message.uri = f"gitea://repos/org/repo/issues?page={i}"
+            await middleware.on_read_resource(mock_context, mock_call_next)
+
+        total = sum(len(v) for v in middleware._read_uris.values())
+        assert total <= 3
+        assert middleware._read_uri_count <= 3
+
+    @pytest.mark.asyncio
     async def test_write_invalidates_query_variants(self) -> None:
         """A write clears the base URI and every recorded query variant."""
         mock_cache = AsyncMock()

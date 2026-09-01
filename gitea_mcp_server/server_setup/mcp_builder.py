@@ -392,7 +392,9 @@ def _apply_tool_identity(
     """Apply title, annotations, category, hints, scope, and invalidation.
 
     Mutates ``component`` in-place: sets ``annotations`` and ``tags``.
-    Registers cache invalidation patterns for write methods.
+    Records write tools for cache-invalidation derivation — targets are
+    derived later from the spec + resource surface (issue #743), not
+    declared here.
 
     Returns:
         The derived ``required_scope`` (``str | None``).

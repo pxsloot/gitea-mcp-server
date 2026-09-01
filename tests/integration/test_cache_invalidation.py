@@ -9,6 +9,7 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
+import respx
 
 from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
@@ -16,12 +17,17 @@ from gitea_mcp_server.cache_invalidation import (
     compute_uris_to_invalidate,
     record_write_tool,
 )
+from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.openapi_converter.type_references import stamp_type_references
 from gitea_mcp_server.resources.surface import (
     clear_resource_surface,
     register_resource_surface,
 )
+from gitea_mcp_server.server import create_mcp_server
+from tests.conftest import SimpleConfig
 from tests.helpers.spec_fixtures import make_openapi_spec
+
+BASE_TEST_URL = "https://git.example.com"
 
 
 def _get_op(op_id: str, ref: str) -> dict:
@@ -395,6 +401,143 @@ class TestToolInvalidationCoverage:
         build_invalidation_map(spec)
         for i in range(len(paths_and_methods)):
             assert "gitea://repos/{owner}/{repo}" in TOOL_INVALIDATION_MAP[f"repo_write_{i}"]
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: full server startup derives a correct invalidation map
+# ---------------------------------------------------------------------------
+
+# Swagger 2.0 spec with GET + write ops and cross-referencing schemas
+# (Issue references Label) so both derivation rules are exercised through
+# the real wiring: provider mcp_component_fn → record_write_tool →
+# register_all_resources → build_invalidation_map.
+E2E_SWAGGER_SPEC = {
+    "swagger": "2.0",
+    "info": {"title": "Gitea API", "version": "1.0"},
+    "basePath": "/api/v1",
+    "paths": {
+        "/repos/{owner}/{repo}": {
+            "get": {
+                "operationId": "repoGet",
+                "summary": "Get a repository",
+                "responses": {
+                    "200": {"description": "ok", "schema": {"$ref": "#/definitions/Repository"}}
+                },
+            },
+            "patch": {
+                "operationId": "repoEdit",
+                "summary": "Edit a repository",
+                "responses": {
+                    "200": {"description": "ok", "schema": {"$ref": "#/definitions/Repository"}}
+                },
+            },
+        },
+        "/repos/{owner}/{repo}/issues": {
+            "get": {
+                "operationId": "issueList",
+                "summary": "List issues",
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {
+                            "type": "array",
+                            "items": {"$ref": "#/definitions/Issue"},
+                        },
+                    }
+                },
+            },
+            "post": {
+                "operationId": "issueCreate",
+                "summary": "Create an issue",
+                "responses": {
+                    "201": {"description": "ok", "schema": {"$ref": "#/definitions/Issue"}}
+                },
+            },
+        },
+        "/repos/{owner}/{repo}/labels": {
+            "get": {
+                "operationId": "labelList",
+                "summary": "List labels",
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {
+                            "type": "array",
+                            "items": {"$ref": "#/definitions/Label"},
+                        },
+                    }
+                },
+            },
+            "post": {
+                "operationId": "labelCreate",
+                "summary": "Create a label",
+                "responses": {
+                    "201": {"description": "ok", "schema": {"$ref": "#/definitions/Label"}}
+                },
+            },
+        },
+    },
+    "definitions": {
+        "Repository": {"type": "object", "properties": {"name": {"type": "string"}}},
+        "Issue": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "labels": {"type": "array", "items": {"$ref": "#/definitions/Label"}},
+            },
+        },
+        "Label": {"type": "object", "properties": {"name": {"type": "string"}}},
+    },
+}
+
+
+class TestEndToEndInvalidationMap:
+    """Full server startup derives a correct invalidation map (issue #743).
+
+    Guards the wiring that the unit/integration tests above mock by hand:
+    if ``record_write_tool`` stops firing (provider hook regression) or
+    ``build_invalidation_map`` runs before resource registration, the map
+    would be silently empty and every other test would still pass.
+    """
+
+    @pytest.mark.asyncio
+    async def test_server_startup_derives_invalidation_map(self) -> None:
+        """create_mcp_server wires record_write_tool → surface → build_invalidation_map."""
+        from gitea_mcp_server import cache_invalidation as ci_module
+        from gitea_mcp_server.resources.surface import get_resource_surface
+
+        config = SimpleConfig(url=BASE_TEST_URL, token="test_token")
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(200, json=E2E_SWAGGER_SPEC)
+            await create_mcp_server(gitea_client)
+
+        surface = get_resource_surface()
+        assert surface, "expected a registered resource surface after startup"
+
+        assert ci_module.TOOL_INVALIDATION_MAP, (
+            "expected a non-empty invalidation map after startup — "
+            "record_write_tool / build_invalidation_map wiring is broken"
+        )
+
+        # Drift: every derived target must be a registered resource.
+        for tool, targets in ci_module.TOOL_INVALIDATION_MAP.items():
+            for target in targets:
+                assert target in surface, (
+                    f"{tool} invalidation target {target!r} is not a registered resource"
+                )
+
+        # Spot-check the derivation rules through the real wiring.
+        # Path-prefix: an issue write invalidates the repo resource too.
+        assert "gitea://repos/{owner}/{repo}" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        assert (
+            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        )
+        # Cross-tree: a label write invalidates issues (Issue references Label).
+        assert (
+            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["label_create"]
+        )
 
 
 if __name__ == "__main__":

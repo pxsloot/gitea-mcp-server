@@ -522,13 +522,16 @@ Gitea spec evolves.
 
 Two existing rules show the pattern:
 
-- **Rule A (snake_case parameters)** — renames non-snake_case body/query/
-  header/cookie parameters, recording the mapping in an ``x-param-rename``
-  extension on the operation.  The runtime shim
-  (``mcp_builder._apply_param_rename``) corrects the ``parameter_map`` so the
-  HTTP request still sends the original wire name; an agent that passes an old
-  name gets the standard "Unknown parameter(s)" error.  Path-param renames are
-  deferred to issue #734 (they require rewriting the route path template).
+- **Rule A (snake_case parameters)** — renames non-snake_case path/query/
+  header/cookie parameters and body properties, converting both camelCase and
+  kebab-case (``repository-id`` → ``repository_id``) to snake_case, recording
+  the mapping in an ``x-param-rename`` extension on the operation.  The
+  runtime shim (``mcp_builder._apply_param_rename``) corrects the
+  ``parameter_map`` so the HTTP request still sends the original wire name —
+  for path parameters it corrects ``openapi_name`` back to the original
+  segment name, so the ``{placeholder}`` in the unchanged route path template
+  is substituted with the original wire name; an agent that passes an old
+  name gets the standard "Unknown parameter(s)" error.
 - **Rule B (boolean-check)** — detects a GET whose success response is a
   contentless 204 and which declares a 404, then annotates the operation with
   ``x-response-transform: "boolean-check"``.  The schema-time fallback

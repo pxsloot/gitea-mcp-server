@@ -129,7 +129,7 @@ class TestPullRequest:
         mcp = await world.server_for(DEV, SCOPE_WRITE)
         result = await mcp.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": DEV.username, "repo": _REPO, "index": pr["number"], "diffType": "diff"},
+            {"owner": DEV.username, "repo": _REPO, "index": pr["number"], "diff_type": "diff"},
         )
         assert not result.isError, "Failed to download PR diff"
         text = extract_text_content(result.content)

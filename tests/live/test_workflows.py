@@ -130,7 +130,7 @@ async def test_issue_to_pull_diff_workflow(world: World) -> None:
             "owner": DEV.username,
             "repo": _PR_REPO,
             "index": pull_request["number"],
-            "diffType": "diff",
+            "diff_type": "diff",
         },
         contracts=(TextContains(("diff --git", _PR_FILE)),),
     )

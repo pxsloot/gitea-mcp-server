@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
-    _FORMATTER_META,
     _FORMATTERS,
     _ISSUE_FIELDS,
     _build_labels_markdown,
@@ -42,17 +41,14 @@ def _clean_formatters() -> Generator[None, None, None]:
     """Save and restore the global formatter registry around each test.
 
     Tests register ad-hoc formatters via ``@register_formatter`` which
-    mutates the module-level ``_FORMATTERS`` and ``_FORMATTER_META``
-    dicts.  This fixture ensures each test starts with a clean slate
-    and does not leak registrations to subsequent tests.
+    mutates the module-level ``_FORMATTERS`` dict.  This fixture ensures
+    each test starts with a clean slate and does not leak registrations
+    to subsequent tests.
     """
     saved_formatters = dict(_FORMATTERS)
-    saved_meta = dict(_FORMATTER_META)
     yield
     _FORMATTERS.clear()
     _FORMATTERS.update(saved_formatters)
-    _FORMATTER_META.clear()
-    _FORMATTER_META.update(saved_meta)
 
 
 class TestCallFormatter:
@@ -74,12 +70,10 @@ class TestCallFormatter:
         assert "formatted:" in result
 
     def test_formatter_with_extra_needed(self) -> None:
-        """Formatter registered with need_extra=True receives extra dict."""
+        """Formatter declaring ``extra`` receives the extra dict."""
 
-        @register_formatter("test_extra", need_extra=True)
-        def _test_extra(
-            data: Any, *, detail: str = "full", extra: dict[str, Any] | None = None
-        ) -> str:
+        @register_formatter("test_extra")
+        def _test_extra(data: Any, *, extra: dict[str, Any] | None = None) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 

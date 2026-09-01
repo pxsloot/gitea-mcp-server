@@ -5,22 +5,25 @@ formatters that the ``read_resource`` executor (``tools/mcp_tools.py``)
 resolves into ``markdown_formatter`` callables for the single result
 pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
 
-Each formatter has the signature ``(data, *, detail='full') -> str``.
-The ``detail`` parameter is passed through from the result pipeline
-so that ``detail=concise`` produces collapsed markdown everywhere.
+Formatters are **pure renderers** — they take ``data`` and optionally
+``extra`` (formatter context) and/or ``detail`` (for rendering decisions),
+declaring only the keyword params they use.  The pipeline dispatches through
+``call_markdown_formatter`` (``format.py``), which inspects each signature
+once and passes exactly the accepted kwargs.
 
 **Invariant**: when ``detail="concise"`` and the result carries a schema, the
 pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
 calling the formatter — formatters receive already-collapsed data (nested
 ``$ref``-backed objects are ``"$ref:TypeName"`` strings).  Formatters must
-not re-collapse; their ``detail=concise`` branches render the collapsed
-items as-is (see ``_format_labels_markdown``).
+not re-collapse; a formatter that renders collapsed items differently (e.g.
+``_format_labels_markdown``) declares ``detail`` and renders the collapsed
+items as-is.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-from gitea_mcp_server.format import format_as_markdown
+from gitea_mcp_server.format import call_markdown_formatter, format_as_markdown
 
 # ---------------------------------------------------------------------------
 # Formatter registry
@@ -28,31 +31,23 @@ from gitea_mcp_server.format import format_as_markdown
 
 _FORMATTERS: dict[str, Callable[..., str]] = {}
 
-_FORMATTER_META: dict[str, dict[str, Any]] = {}
-"""Optional per-formatter metadata (e.g. ``{"need_extra": True}``)."""
-
 
 def register_formatter(
     name: str,
-    **meta: Any,
 ) -> Callable[[Callable[..., str]], Callable[..., str]]:
     """Decorator that registers a domain-specific markdown formatter.
 
     Args:
         name: Unique name used as ``format_hint`` in resource metadata.
-        **meta: Optional metadata (``need_extra``, etc.) stored alongside
-            the formatter for the display pipeline.
 
     Usage::
 
         @register_formatter("repository")
-        def _format_repo_markdown(data, *, detail="full"): ...
+        def _format_repo_markdown(data): ...
     """
 
     def deco(fn: Callable[..., str]) -> Callable[..., str]:
         _FORMATTERS[name] = fn
-        if meta:
-            _FORMATTER_META[name] = meta
         return fn
 
     return deco
@@ -61,11 +56,6 @@ def register_formatter(
 def get_formatter(name: str) -> Callable[..., str] | None:
     """Look up a registered formatter by name.  Returns ``None`` if not found."""
     return _FORMATTERS.get(name)
-
-
-def get_formatter_meta(name: str) -> dict[str, Any]:
-    """Return metadata for a registered formatter, or empty dict."""
-    return _FORMATTER_META.get(name, {})
 
 
 def call_formatter(
@@ -81,8 +71,7 @@ def call_formatter(
         name: Formatter name (registered via ``@register_formatter``).
         data: The data to format (already collapsed if ``detail=concise``).
         detail: Output detail level.
-        extra: Optional context dict passed to formatters that need it
-            (checked via ``need_extra`` metadata flag).
+        extra: Optional context dict passed to formatters that need it.
 
     Returns:
         Markdown string.
@@ -91,10 +80,7 @@ def call_formatter(
     if fn is None:
         msg = f"No formatter registered for {name!r}"
         raise ValueError(msg)
-    meta = get_formatter_meta(name)
-    if meta.get("need_extra"):
-        return fn(data, detail=detail, extra=extra)
-    return fn(data, detail=detail)
+    return call_markdown_formatter(fn, data, detail=detail, extra=extra)
 
 
 # ---------------------------------------------------------------------------
@@ -178,17 +164,16 @@ _RELEASE_FIELDS: dict[str, dict] = {
 
 
 @register_formatter("repository")
-def _format_repo_markdown(data: dict, *, detail: str = "full") -> str:
+def _format_repo_markdown(data: dict) -> str:
     return format_as_markdown(
         data,
         title=data.get("full_name", "Repository"),
         field_filter=_REPO_FIELDS,
-        detail=detail,
     )
 
 
-@register_formatter("issues", need_extra=True)
-def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | None = None) -> str:
+@register_formatter("issues")
+def _format_issues_markdown(data: list, *, extra: dict | None = None) -> str:
     # The /issues endpoint returns both issues and pull requests by default.
     # When available, use the ``type`` query param from the handler context
     # (forwarded via content meta → extra dict) to determine the title
@@ -218,24 +203,22 @@ def _format_issues_markdown(data: list, *, detail: str = "full", extra: dict | N
         title=title,
         field_filter=_ISSUE_FIELDS,
         item_title_key="title",
-        detail=detail,
     )
 
 
 @register_formatter("pull_requests")
-def _format_pulls_markdown(data: list, *, detail: str = "full") -> str:
+def _format_pulls_markdown(data: list) -> str:
     title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
     return format_as_markdown(
         data,
         title=title,
         field_filter=_PULL_FIELDS,
         item_title_key="title",
-        detail=detail,
     )
 
 
 @register_formatter("user")
-def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
+def _format_user_markdown(data: Any) -> str:
     # Guard against non-dict input (unexpected data shape).
     if not isinstance(data, dict):
         # Show the type and a truncated repr so agents can still reason
@@ -245,7 +228,7 @@ def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
             "_type": type(data).__name__,
             "_raw": str(data)[:500],
         }
-        return format_as_markdown(fallback_data, title="User", detail=detail)
+        return format_as_markdown(fallback_data, title="User")
     # Normalize: API may return 'created_at' or 'created' for the same field
     normalized = dict(data)
     if "created_at" not in normalized and "created" in normalized:
@@ -254,12 +237,11 @@ def _format_user_markdown(data: Any, *, detail: str = "full") -> str:
         normalized,
         title=normalized.get("login", "User"),
         field_filter=_USER_FIELDS,
-        detail=detail,
     )
 
 
 @register_formatter("release")
-def _format_release_markdown(data: list, *, detail: str = "full") -> str:
+def _format_release_markdown(data: list) -> str:
     """Format a list of releases as markdown."""
     title = f"Releases - {len(data)} releases" if data else "Releases"
     return format_as_markdown(
@@ -267,11 +249,10 @@ def _format_release_markdown(data: list, *, detail: str = "full") -> str:
         title=title,
         field_filter=_RELEASE_FIELDS,
         item_title_key="tag_name",
-        detail=detail,
     )
 
 
-@register_formatter("labels", need_extra=True)
+@register_formatter("labels")
 def _format_labels_markdown(
     data: list,
     *,
@@ -358,6 +339,5 @@ def _build_labels_markdown(data: list, owner: str, repo: str, *, detail: str = "
 __all__ = [
     "call_formatter",
     "get_formatter",
-    "get_formatter_meta",
     "register_formatter",
 ]

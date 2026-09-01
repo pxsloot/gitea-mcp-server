@@ -766,7 +766,7 @@ class TestMakeResourceFormatter:
         assert "test-repo" in result
 
     def test_formatter_with_extra_passes_it_through(self) -> None:
-        """Formatter registered with need_extra=True receives extra dict."""
+        """Formatter declaring ``extra`` receives the bound extra dict."""
         fn = _make_resource_formatter("labels", {"owner": "myorg", "repo": "myrepo"})
         assert callable(fn)
         result = fn([{"id": 1, "name": "bug"}])

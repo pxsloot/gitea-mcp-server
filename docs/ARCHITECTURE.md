@@ -239,7 +239,9 @@ Agent reads a resource:
     └─▶ Single result pipeline (tools/result_pipeline.py:render)
           shape → paginate → format → dual-channel ToolResult
           ├─ format/json: collapse_data when detail=concise + schema
-          ├─ format/markdown: pre-collapse + formatter(data, detail=detail)
+          ├─ format/markdown: pre-collapse + formatter (dispatched via
+          │   call_markdown_formatter — passes only the kwargs the
+          │   formatter declares, e.g. detail/extra)
           └─ format/raw: serialized envelope {"result": <data>}
 ```
 
@@ -265,7 +267,7 @@ Agent reads a resource:
 | `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
 | `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
-| `format.py` | Schema-aware formatting shared by tools & resources |
+| `format.py` | Schema-aware formatting shared by tools & resources; `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) |
 | `tools/unified_search.py` | Unified search across tools, docs, and resources |
 
 ### Tool Customization Stack (applied in order)
@@ -399,7 +401,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets (populated by ``make_api_resource``, consumed by ``build_invalidation_map``) |
-| `tools/display.py` | Domain-specific display formatters with registry |
+| `tools/display.py` | Domain-specific display formatters with registry — pure renderers declaring only the kwargs they use (`detail`, `extra`); dispatched via `call_markdown_formatter` |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -778,7 +780,11 @@ from the parameter schema.
       channel agrees with ``structured_content`` on paginated list tools).
       The markdown path pre-collapses the page (schema-aware ``$ref``
       collapse) when ``detail=concise``, mirroring the json path; the
-      pipeline calls ``markdown_formatter(data, detail=detail)``.
+      pipeline dispatches the formatter through
+      ``call_markdown_formatter`` (``format.py``), which inspects each
+      formatter's signature once (cached) and passes only the kwargs it
+      declares (``detail``, ``extra``) — formatters are pure renderers that
+      never collapse and never carry dead ``detail`` params.
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

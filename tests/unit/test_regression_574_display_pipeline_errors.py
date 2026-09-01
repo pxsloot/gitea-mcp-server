@@ -31,7 +31,7 @@ class TestFormatIssuesMarkdownGuard:
     def test_non_dict_items_no_crash(self) -> None:
         """Non-dict items (strings) produce output, not AttributeError."""
         data = ["string item", "another string"]
-        result = _format_issues_markdown(data, detail="full")
+        result = _format_issues_markdown(data)
         assert result.strip() != ""
         # Should contain the generic title since items aren't dicts
         assert "Issues" in result or "Issues and Pull Requests" in result
@@ -39,7 +39,7 @@ class TestFormatIssuesMarkdownGuard:
     def test_empty_list_no_crash(self) -> None:
         """Empty list produces output, not TypeError or crash."""
         data: list[Any] = []
-        result = _format_issues_markdown(data, detail="full")
+        result = _format_issues_markdown(data)
         assert result.strip() != ""
         assert "_(empty)_" in result
 
@@ -78,13 +78,13 @@ class TestFormatUserMarkdownGuard:
     def test_non_dict_input_no_crash(self) -> None:
         """Non-dict input produces output, not TypeError."""
         data = "just a string"
-        result = _format_user_markdown(data, detail="full")
+        result = _format_user_markdown(data)
         assert result.strip() != ""
 
     def test_list_input_no_crash(self) -> None:
         """List input produces output, not TypeError."""
         data = [{"login": "user1"}]
-        result = _format_user_markdown(data, detail="full")
+        result = _format_user_markdown(data)
         assert result.strip() != ""
 
 

@@ -31,13 +31,13 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.format import decode_base64_content
+from gitea_mcp_server.format import call_markdown_formatter, decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.display import get_formatter, get_formatter_meta
+from gitea_mcp_server.tools.display import get_formatter
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
@@ -171,7 +171,8 @@ def _make_resource_formatter(
     The returned callable matches the result pipeline's ``markdown_formatter``
     contract ``(data, *, detail='full') -> str``: ``detail`` is passed through
     from the pipeline, ``extra`` (formatter context such as ``owner``/``repo``
-    or ``type``) is bound at executor time.
+    or ``type``) is bound at executor time.  The formatter declares only the
+    kwargs it uses; ``call_markdown_formatter`` dispatches the accepted ones.
 
     Args:
         format_hint: Registered formatter name, or ``None``.
@@ -186,10 +187,9 @@ def _make_resource_formatter(
     fn = get_formatter(format_hint)
     if fn is None:
         return None
-    meta = get_formatter_meta(format_hint)
-    if meta.get("need_extra"):
-        return lambda data, *, detail="full": fn(data, detail=detail, extra=extra)
-    return lambda data, *, detail="full": fn(data, detail=detail)
+    return lambda data, *, detail="full": call_markdown_formatter(
+        fn, data, detail=detail, extra=extra
+    )
 
 
 async def _mcp_read_resource_impl(

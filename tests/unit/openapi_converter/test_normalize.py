@@ -162,6 +162,32 @@ class TestNormalizeOperationParameters:
         assert rename_map == {}
         assert operation["parameters"][0]["name"] == "file"
 
+    def test_param_collision_warns_and_skips(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An operation with both ``pre-release`` and ``pre_release`` warns and skips.
+
+        Renaming ``pre-release`` → ``pre_release`` would silently produce two
+        parameters with the same name.  The rule must warn loudly and skip
+        instead of creating a collision — mirroring the body-property guard.
+        """
+        operation = {
+            "parameters": [
+                {"name": "pre-release", "in": "query", "schema": {"type": "string"}},
+                {"name": "pre_release", "in": "query", "schema": {"type": "string"}},
+            ],
+        }
+        with caplog.at_level(logging.WARNING):
+            rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {}
+        # Both parameters survive; nothing was renamed into a collision.
+        assert [p["name"] for p in operation["parameters"]] == [
+            "pre-release",
+            "pre_release",
+        ]
+        assert "already exists" in caplog.text
+
 
 class TestMergeRenameMap:
     def test_empty_map_is_noop(self) -> None:

@@ -173,6 +173,18 @@ def _normalize_operation_parameters(
             # ``some-Name`` → ``some__name``) is left alone — renaming it
             # would violate the rule's own invariant.
             continue
+        if any(isinstance(p, dict) and p.get("name") == new_name for p in params):
+            # Another parameter already carries the target name (e.g. both
+            # ``pre-release`` and ``pre_release`` in the same operation).
+            # Renaming would silently produce two parameters with the same
+            # name; warn loudly and skip instead of creating a collision.
+            logger.warning(
+                "Parameter '%s' normalizes to '%s' which already exists; "
+                "skipping rename to avoid collision",
+                name,
+                new_name,
+            )
+            continue
         param["name"] = new_name
         rename_map[new_name] = name
         logger.debug(

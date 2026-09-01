@@ -1173,7 +1173,7 @@ class TestNonJsonEndpoint:
         # Must NOT raise ToolError or any other exception
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+            {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
         )
         assert result is not None
 
@@ -1188,7 +1188,7 @@ class TestNonJsonEndpoint:
         )
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+            {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
         )
         assert result.structured_content is not None
         assert "result" in result.structured_content
@@ -1206,7 +1206,7 @@ class TestNonJsonEndpoint:
         )
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+            {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
         )
         assert len(result.content) > 0
         text = extract_text_content(result.content)
@@ -1249,7 +1249,7 @@ class TestNonJsonEndpoint:
         )
         result = await mcp_server.call_tool(
             "gitea_repo_download_pull_diff_or_patch",
-            {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+            {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
         )
         # Layer 4: no output validation error - a result is returned, not raised.
         assert result is not None
@@ -1297,7 +1297,7 @@ class TestNonJsonEndpoint:
         async with Client(mcp_server) as client:
             result = await client.call_tool(
                 "gitea_repo_download_pull_diff_or_patch",
-                {"owner": "owner", "repo": "repo", "index": 1, "diffType": "diff"},
+                {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
                 raise_on_error=False,
             )
 

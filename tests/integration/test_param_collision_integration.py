@@ -331,6 +331,80 @@ class TestRuntimeShim:
         assert route.parameter_map["repo"]["openapi_name"] == "repo"
         assert route.parameter_map["index"]["openapi_name"] == "index"
 
+    def test_apply_param_rename_fixes_path_param_openapi_name(self) -> None:
+        """_apply_param_rename corrects openapi_name for renamed path params.
+
+        Issue #734: a path param renamed at spec level (e.g. ``pageName`` →
+        ``page_name``) must map ``openapi_name`` back to the original segment
+        name so ``_build_url`` substitutes the ``{pageName}`` placeholder in
+        the unchanged route path template.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/wiki/page/{pageName}": {
+                    "get": {
+                        "operationId": "repoGetWikiPage",
+                        "parameters": [
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "pageName",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+        )
+        # Simulate Rule A renaming pageName -> page_name in the spec.
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/wiki/page/{pageName}"]["get"],
+        )
+        for p in op["parameters"]:
+            if p["name"] == "pageName":
+                p["name"] = "page_name"
+        op["x-param-rename"] = {"page_name": "pageName"}
+
+        parameter_map = {
+            "owner": {"location": "path", "openapi_name": "owner"},
+            "repo": {"location": "path", "openapi_name": "repo"},
+            "page_name": {"location": "path", "openapi_name": "page_name"},
+        }
+
+        class _RouteStub:
+            def __init__(self, path: str, method: str, parameter_map: dict[str, Any]) -> None:
+                self.path = path
+                self.method = method
+                self.parameter_map = parameter_map
+
+        route = _RouteStub(
+            path="/repos/{owner}/{repo}/wiki/page/{pageName}",
+            method="GET",
+            parameter_map=parameter_map,
+        )
+
+        _apply_param_rename(route, spec)
+
+        # The renamed path param maps openapi_name back to the original segment.
+        assert route.parameter_map["page_name"]["openapi_name"] == "pageName"
+        # Unrenamed path params are untouched.
+        assert route.parameter_map["owner"]["openapi_name"] == "owner"
+        assert route.parameter_map["repo"]["openapi_name"] == "repo"
+
 
 # ---------------------------------------------------------------------------
 # Tests: full pipeline (spec -> FastMCP provider -> tools)
@@ -526,6 +600,77 @@ class TestRequestEmission:
         request = send.call_args.args[0]
         assert request.url.path == "/repos/someowner/somerepo/issues"
         assert json.loads(request.content) == {"title": "A title", "body": "A body"}
+
+    @pytest.mark.asyncio
+    async def test_renamed_path_param_emits_original_segment(self) -> None:
+        """A renamed path param emits the original segment name in the URL.
+
+        Issue #734: the agent-facing param is ``page_name`` but the wire URL
+        must still carry the original ``{pageName}`` placeholder value.  This
+        pins the FastMCP ``parameter_map`` contract for path params — if a
+        FastMCP upgrade changes it, the shim no-ops and the URL would contain
+        an unsubstituted ``{pageName}`` placeholder (the tripwire).
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/wiki/page/{pageName}": {
+                    "get": {
+                        "operationId": "repoGetWikiPage",
+                        "summary": "Get a wiki page",
+                        "parameters": [
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "pageName",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+        )
+        # Simulate Rule A renaming pageName -> page_name in the spec.
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/wiki/page/{pageName}"]["get"],
+        )
+        for p in op["parameters"]:
+            if p["name"] == "pageName":
+                p["name"] = "page_name"
+        op["x-param-rename"] = {"page_name": "pageName"}
+
+        gitea_client, send = self._make_recording_client()
+        provider = create_openapi_provider(
+            openapi_spec=spec,
+            gitea_client=gitea_client,
+            label_service=MagicMock(),
+            excluded_routes=set(),
+        )
+
+        tools = await provider.list_tools()
+        tool = _tool_dict(tools)["repoGetWikiPage"]
+
+        await tool.run(
+            arguments={"owner": "o", "repo": "r", "page_name": "MyPage"},
+        )
+
+        send.assert_awaited_once()
+        request = send.call_args.args[0]
+        # The wire URL uses the original path segment name.
+        assert request.url.path == "/repos/o/r/wiki/page/MyPage"
 
 
 # ---------------------------------------------------------------------------

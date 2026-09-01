@@ -54,6 +54,39 @@ class TestNormalizeOperationParameters:
         assert rename_map == {"include_desc": "includeDesc"}
         assert operation["parameters"][0]["name"] == "include_desc"
 
+    def test_renames_path_param(self) -> None:
+        """Path params are normalized to snake_case (issue #734)."""
+        operation = {
+            "parameters": [
+                {"name": "pageName", "in": "path", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {"page_name": "pageName"}
+        assert operation["parameters"][0]["name"] == "page_name"
+
+    def test_renames_kebab_case_path_param(self) -> None:
+        """Kebab-case path params are normalized to snake_case (issue #734)."""
+        operation = {
+            "parameters": [
+                {"name": "repository-id", "in": "path", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {"repository_id": "repository-id"}
+        assert operation["parameters"][0]["name"] == "repository_id"
+
+    def test_renames_kebab_case_query_param(self) -> None:
+        """Kebab-case query params are normalized too (uniform surface)."""
+        operation = {
+            "parameters": [
+                {"name": "pre-release", "in": "query", "schema": {"type": "boolean"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {"pre_release": "pre-release"}
+        assert operation["parameters"][0]["name"] == "pre_release"
+
     def test_leaves_snake_case_untouched(self) -> None:
         operation = {
             "parameters": [
@@ -64,17 +97,6 @@ class TestNormalizeOperationParameters:
         rename_map = _normalize_operation_parameters(operation)
         assert rename_map == {}
         assert [p["name"] for p in operation["parameters"]] == ["owner", "limit"]
-
-    def test_path_params_not_renamed(self) -> None:
-        """Path params are deferred to issue #734."""
-        operation = {
-            "parameters": [
-                {"name": "pageName", "in": "path", "schema": {"type": "string"}},
-            ],
-        }
-        rename_map = _normalize_operation_parameters(operation)
-        assert rename_map == {}
-        assert operation["parameters"][0]["name"] == "pageName"
 
     def test_skips_non_dict_params(self) -> None:
         """A non-dict entry in the parameters list is skipped."""
@@ -98,16 +120,47 @@ class TestNormalizeOperationParameters:
         rename_map = _normalize_operation_parameters(operation)
         assert rename_map == {}
 
-    def test_skips_name_unchanged_by_camel_to_snake(self) -> None:
-        """A name camel_to_snake leaves unchanged (e.g. 'foo-bar') is not renamed."""
+    def test_skips_name_unchanged_by_normalization(self) -> None:
+        """A name neither camel_to_snake nor kebab→snake converts is not renamed."""
         operation = {
             "parameters": [
-                {"name": "foo-bar", "in": "query", "schema": {"type": "string"}},
+                {"name": "foo bar", "in": "query", "schema": {"type": "string"}},
             ],
         }
         rename_map = _normalize_operation_parameters(operation)
         assert rename_map == {}
-        assert operation["parameters"][0]["name"] == "foo-bar"
+        assert operation["parameters"][0]["name"] == "foo bar"
+
+    def test_skips_name_that_converts_to_non_snake_case(self) -> None:
+        """A mixed name that converts to non-snake_case (e.g. 'some-Name') is not renamed.
+
+        ``some-Name`` → ``some__name`` (double underscore) is not valid
+        snake_case, so renaming it would violate the rule's own invariant.
+        """
+        operation = {
+            "parameters": [
+                {"name": "some-Name", "in": "query", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {}
+        assert operation["parameters"][0]["name"] == "some-Name"
+
+    def test_skips_param_with_unknown_location(self) -> None:
+        """A param whose location is not path/query/header/cookie is skipped.
+
+        Swagger 2.0 ``formData``/``body`` parameters are converted to
+        requestBody by the converter before normalization runs, but a stray
+        location must not crash the pass — it is simply not renamed.
+        """
+        operation = {
+            "parameters": [
+                {"name": "file", "in": "formData", "schema": {"type": "string"}},
+            ],
+        }
+        rename_map = _normalize_operation_parameters(operation)
+        assert rename_map == {}
+        assert operation["parameters"][0]["name"] == "file"
 
 
 class TestMergeRenameMap:
@@ -267,21 +320,69 @@ class TestNormalizeOperationBody:
         }
         assert _normalize_operation_body(operation, make_openapi_spec()) == {}
 
-    def test_skips_prop_unchanged_by_camel_to_snake(self) -> None:
-        """A body property camel_to_snake leaves unchanged is not renamed."""
+    def test_skips_prop_unchanged_by_normalization(self) -> None:
+        """A body property neither camel_to_snake nor kebab→snake converts is not renamed."""
         operation = {
             "requestBody": {
                 "content": {
                     "application/json": {
                         "schema": {
                             "type": "object",
-                            "properties": {"foo-bar": {"type": "string"}},
+                            "properties": {"foo bar": {"type": "string"}},
                         },
                     },
                 },
             },
         }
         assert _normalize_operation_body(operation, make_openapi_spec()) == {}
+
+    def test_renames_kebab_case_body_property(self) -> None:
+        """A kebab-case body property is normalized to snake_case."""
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"some-field": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        }
+        rename_map = _normalize_operation_body(operation, make_openapi_spec())
+        assert rename_map == {"some_field": "some-field"}
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
+        assert set(schema["properties"].keys()) == {"some_field"}
+
+    def test_skips_body_prop_that_converts_to_non_snake_case(self) -> None:
+        """A mixed body property that converts to non-snake_case is not renamed.
+
+        ``some-Name`` → ``some__name`` (double underscore) is not valid
+        snake_case, so renaming it would violate the rule's own invariant.
+        """
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"some-Name": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        }
+        rename_map = _normalize_operation_body(operation, make_openapi_spec())
+        assert rename_map == {}
+        schema = cast(
+            "dict[str, Any]",
+            operation["requestBody"]["content"]["application/json"]["schema"],
+        )
+        assert set(schema["properties"].keys()) == {"some-Name"}
 
     def test_overwrite_collision_warns_and_skips(
         self,
@@ -649,6 +750,70 @@ class TestNormalizeSpec:
 
         search_op = cast("dict[str, Any]", spec["paths"]["/search"]["get"])
         assert search_op["x-param-rename"] == {"include_desc": "includeDesc"}
+
+    def test_renames_path_params(self) -> None:
+        """normalize_spec renames non-snake_case path params (issue #734)."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/wiki/page/{pageName}": {
+                    "get": {
+                        "operationId": "repoGetWikiPage",
+                        "parameters": [
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "pageName",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+                "/activitypub/repository-id/{repository-id}": {
+                    "get": {
+                        "operationId": "activitypubGetRepository",
+                        "parameters": [
+                            {
+                                "name": "repository-id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                },
+            },
+        )
+        normalize_spec(spec)
+
+        wiki_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/wiki/page/{pageName}"]["get"],
+        )
+        assert wiki_op["x-param-rename"] == {"page_name": "pageName"}
+        param_names = [p["name"] for p in wiki_op["parameters"]]
+        assert "page_name" in param_names
+        assert "pageName" not in param_names
+
+        ap_op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/activitypub/repository-id/{repository-id}"]["get"],
+        )
+        assert ap_op["x-param-rename"] == {"repository_id": "repository-id"}
+        assert ap_op["parameters"][0]["name"] == "repository_id"
 
     def test_annotates_wildcard_path_params(self) -> None:
         """normalize_spec stamps x-wildcard-path-param on table paths."""

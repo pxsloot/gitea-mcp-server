@@ -555,18 +555,22 @@ def _apply_param_rename(
     the correct field names on the wire.
 
     The ``RequestDirector`` uses ``openapi_name`` as the wire key for
-    ``body``, ``query``, ``header``, and ``cookie`` locations (director.py
-    ``_unflatten_arguments``), so correcting ``openapi_name`` is sufficient
-    for those.  Path parameters are **deferred** to issue #734: they are
-    substituted into the URL template by ``openapi_name``, so renaming them
-    additionally requires rewriting the ``{placeholder}`` in ``route.path``.
+    ``body``, ``query``, ``header``, ``cookie``, and ``path`` locations
+    (director.py ``_unflatten_arguments``), so correcting ``openapi_name`` is
+    sufficient for all of them.  For a path parameter, correcting
+    ``openapi_name`` back to the original segment name makes ``_build_url``
+    substitute the ``{placeholder}`` in the unchanged route path template with
+    the original wire name — no path-template rewrite is needed.
 
     For example, if ``x-param-rename`` is ``{"body_owner": "owner"}`` and
     ``route.parameter_map`` has ``{"body_owner": {"location": "body",
     "openapi_name": "body_owner"}}``, this function changes it to
     ``{"body_owner": {"location": "body", "openapi_name": "owner"}}``.
     Likewise ``{"do": "Do"}`` with a query param maps ``openapi_name`` to
-    ``"Do"`` so the query string carries the original name.
+    ``"Do"`` so the query string carries the original name, and
+    ``{"page_name": "pageName"}`` with a path param maps ``openapi_name`` to
+    ``"pageName"`` so the URL template ``{pageName}`` is substituted with the
+    original segment name.
 
     Mutates ``route.parameter_map`` in-place.
 
@@ -588,7 +592,7 @@ def _apply_param_rename(
     for new_name, original_name in rename_map.items():
         if new_name in parameter_map:
             mapping = parameter_map[new_name]
-            if isinstance(mapping, dict) and mapping.get("location") != "path":
+            if isinstance(mapping, dict):
                 mapping["openapi_name"] = original_name
                 logger.debug(
                     "Fixed parameter_map for %s %s: %s → openapi_name=%s",
@@ -611,7 +615,8 @@ def _customize_metadata(
     1. ``_apply_tool_identity`` — title, annotations, hints, category,
        scope, cache invalidation
     2. ``_apply_param_rename`` — fix ``parameter_map`` for renamed body
-       properties (collision resolution)
+       properties (collision resolution) and renamed path/query/header/cookie
+       parameters (snake_case normalization)
     3. ``_detect_has_labels`` — detect array-typed labels parameter
        (drives schema augmentation and metadata)
     4. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
@@ -624,9 +629,11 @@ def _customize_metadata(
 
     required_scope = _apply_tool_identity(route, component)
 
-    # Fix parameter_map for renamed body properties (collision resolution).
-    # Must run after tool identity (which may inspect route metadata) but
-    # before any schema processing that depends on parameter names.
+    # Fix parameter_map for renamed body properties (collision resolution)
+    # and renamed path/query/header/cookie parameters (snake_case
+    # normalization).  Must run after tool identity (which may inspect route
+    # metadata) but before any schema processing that depends on parameter
+    # names.
     _apply_param_rename(route, openapi_spec)
 
     has_labels = _detect_has_labels(component)

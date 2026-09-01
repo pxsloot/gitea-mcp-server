@@ -828,19 +828,20 @@ from the parameter schema.
      ``MergePullRequestOption``), query params like ``includeDesc``/``starredBy``,
      and path params like ``pageName``/``repository-id``.  Non-snake_case
      names read like sentence words or leak Go struct internals.  The rule
-     renames any body/query/header/cookie parameter or body property that is
-     not snake_case, recording the mapping in an ``x-param-rename`` extension
-     on the operation (merged with any collision map set by
-     ``resolve_param_collisions`` — normalization is the final authority and
-     merges, never clobbers).  At runtime, the shim in
+     renames any path/query/header/cookie parameter or body property that is
+     not snake_case, converting both camelCase/PascalCase and kebab-case
+     (``repository-id`` → ``repository_id``) to snake_case, recording the
+     mapping in an ``x-param-rename`` extension on the operation (merged with
+     any collision map set by ``resolve_param_collisions`` — normalization is
+     the final authority and merges, never clobbers).  At runtime, the shim in
      ``mcp_builder._apply_param_rename`` corrects the ``parameter_map`` so the
-     HTTP request still sends the original wire name.  An agent that passes an
-     old name gets the standard "Unknown parameter(s)" error — the present
-     names are what ``tool_info`` shows, and old names are simply parameters
-     that do not exist.  Path parameters are
-     **deferred** to issue #734: renaming them additionally requires rewriting
-     the ``{placeholder}`` in the route path template, a deeper FastMCP-IR
-     mutation.
+     HTTP request still sends the original wire name — for path parameters it
+     corrects ``openapi_name`` back to the original segment name, so the
+     ``{placeholder}`` in the unchanged route path template is substituted
+     with the original wire name (no path-template rewrite needed).  An agent
+     that passes an old name gets the standard "Unknown parameter(s)" error —
+     the present names are what ``tool_info`` shows, and old names are simply
+     parameters that do not exist.
 
      **Rule B — boolean-check response normalization.**  Gitea models "is
      this thing true?" endpoints as a GET that returns ``204 No Content`` on

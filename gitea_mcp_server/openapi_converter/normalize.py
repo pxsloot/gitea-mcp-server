@@ -15,20 +15,18 @@ conventions: body properties like ``Do``/``MergeCommitID`` (on
 ``MergePullRequestOption``), query params like ``includeDesc``/``starredBy``,
 and path params like ``pageName``/``repository-id``.  Non-snake_case names
 read like sentence words or leak Go struct internals.  This rule renames any
-parameter or body property that is not snake_case and that
-:func:`camel_to_snake` can convert (kebab-case names like ``repository-id``
-are already readable and are left alone), recording the mapping in
-an ``x-param-rename`` extension on the operation (merged with any collision
-map set by :func:`resolve_param_collisions`).  ``$ref`` request bodies are
-resolved (deep-copied) by this module itself, so the rule is self-sufficient
-— it does not depend on collision resolution having inlined the body.  At
-runtime, the shim in ``mcp_builder._apply_param_rename`` corrects the
-``parameter_map`` so the HTTP request still sends the original wire name.
-
-Path parameters are **deferred** to issue #734: renaming them additionally
-requires rewriting the ``{placeholder}`` in the route path template, which is
-a deeper FastMCP-IR mutation.  This module normalizes body, query, header,
-and cookie parameters only.
+parameter or body property that is not snake_case, converting both
+camelCase/PascalCase (via :func:`camel_to_snake`) and kebab-case
+(``repository-id`` → ``repository_id``) to snake_case, recording the mapping
+in an ``x-param-rename`` extension on the operation (merged with any
+collision map set by :func:`resolve_param_collisions`).  ``$ref`` request
+bodies are resolved (deep-copied) by this module itself, so the rule is
+self-sufficient — it does not depend on collision resolution having inlined
+the body.  At runtime, the shim in ``mcp_builder._apply_param_rename``
+corrects the ``parameter_map`` so the HTTP request still sends the original
+wire name — for path parameters this means correcting ``openapi_name`` back
+to the original segment name, so the ``{placeholder}`` in the unchanged route
+path template is substituted with the original wire name.
 
 **Rule B — boolean-check response normalization.**  Gitea models "is this
 thing true?" endpoints as a GET that returns ``204 No Content`` on success
@@ -82,14 +80,37 @@ logger = logging.getLogger(__name__)
 _SNAKE_CASE_RE = re.compile(r"^[a-z0-9]+(_[a-z0-9]+)*$")
 
 # Parameter locations that carry a single scalar name on the wire (as opposed
-# to body properties, which are keys inside a JSON object).  Path is deferred
-# to issue #734.
-_NON_PATH_PARAM_LOCATIONS = ("query", "header", "cookie")
+# to body properties, which are keys inside a JSON object).  Path is included:
+# renaming a path param is safe because the runtime shim corrects
+# ``openapi_name`` back to the original segment name, so the ``{placeholder}``
+# in the unchanged route path template is substituted with the original wire
+# name (see ``mcp_builder._apply_param_rename``).
+_PARAM_LOCATIONS = ("path", "query", "header", "cookie")
 
 
 def _is_snake_case(name: str) -> bool:
     """Return ``True`` if ``name`` is already snake_case."""
     return bool(_SNAKE_CASE_RE.fullmatch(name))
+
+
+def _to_snake_case(name: str) -> str:
+    """Convert a non-snake_case name to snake_case.
+
+    Handles both camelCase/PascalCase (via :func:`camel_to_snake`) and
+    kebab-case (``repository-id`` → ``repository_id``).  ``camel_to_snake``
+    leaves kebab-case names unchanged, so the hyphen→underscore pass runs
+    after it.  A name that is already snake_case (or that neither pass can
+    convert, e.g. one with spaces) is returned unchanged.  A mixed name like
+    ``some-Name`` yields ``some__name`` (double underscore) — callers guard
+    with :func:`_is_snake_case` before applying the rename.
+
+    Args:
+        name: The parameter or body-property name to convert.
+
+    Returns:
+        The snake_case form of ``name``.
+    """
+    return camel_to_snake(name).replace("-", "_")
 
 
 def _merge_rename_map(operation: dict[str, Any], rename_map: dict[str, str]) -> None:
@@ -117,7 +138,7 @@ def _merge_rename_map(operation: dict[str, Any], rename_map: dict[str, str]) -> 
 def _normalize_operation_parameters(
     operation: dict[str, Any],
 ) -> dict[str, str]:
-    """Rename non-snake_case query/header/cookie parameters in an operation.
+    """Rename non-snake_case path/query/header/cookie parameters in an operation.
 
     Mutates ``operation["parameters"]`` in-place.  Returns a
     ``{new_name: original_name}`` mapping for the renames performed.
@@ -137,15 +158,20 @@ def _normalize_operation_parameters(
         if not isinstance(param, dict):
             continue
         location = param.get("in")
-        if location not in _NON_PATH_PARAM_LOCATIONS:
+        if location not in _PARAM_LOCATIONS:
             continue
         name = param.get("name")
         if not isinstance(name, str) or not name:
             continue
         if _is_snake_case(name):
             continue
-        new_name = camel_to_snake(name)
+        new_name = _to_snake_case(name)
         if new_name == name or not new_name:
+            continue
+        if not _is_snake_case(new_name):
+            # A name neither pass can convert to valid snake_case (e.g.
+            # ``some-Name`` → ``some__name``) is left alone — renaming it
+            # would violate the rule's own invariant.
             continue
         param["name"] = new_name
         rename_map[new_name] = name
@@ -231,8 +257,13 @@ def _normalize_operation_body(
     for name in list(props.keys()):
         if _is_snake_case(name):
             continue
-        new_name = camel_to_snake(name)
+        new_name = _to_snake_case(name)
         if new_name == name or not new_name:
+            continue
+        if not _is_snake_case(new_name):
+            # A name neither pass can convert to valid snake_case (e.g.
+            # ``some-Name`` → ``some__name``) is left alone — renaming it
+            # would violate the rule's own invariant.
             continue
         if new_name in props:
             # A body with both ``Do`` and ``do`` would silently overwrite the
@@ -425,10 +456,10 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
 
     Applies three rules:
 
-    1. **snake_case parameters** — renames non-snake_case query/header/cookie
-       parameters and body properties (that :func:`camel_to_snake` can
-       convert), recording the mapping in ``x-param-rename`` (merged with any
-       collision map).
+    1. **snake_case parameters** — renames non-snake_case path/query/header/
+       cookie parameters and body properties (converting both camelCase and
+       kebab-case to snake_case), recording the mapping in ``x-param-rename``
+       (merged with any collision map).
     2. **boolean-check responses** — annotates GET operations whose success
        response is a contentless 204 with a 404 declared, setting
        ``x-response-transform: "boolean-check"``.

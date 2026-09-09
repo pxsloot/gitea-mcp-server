@@ -6,18 +6,21 @@ resolves into ``markdown_formatter`` callables for the single result
 pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
 
 Formatters are **pure renderers** — they take ``data`` and optionally
-``extra`` (formatter context) and/or ``detail`` (for rendering decisions),
-declaring only the keyword params they use.  The pipeline dispatches through
-``call_markdown_formatter`` (``format.py``), which inspects each signature
-once and passes exactly the accepted kwargs.
+``extra`` (formatter context), declaring only the keyword params they use.
+The pipeline dispatches through ``call_markdown_formatter`` (``format.py``),
+which inspects each signature and passes exactly the accepted kwargs.
 
 **Invariant**: when ``detail="concise"`` and the result carries a schema, the
 pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
 calling the formatter — formatters receive already-collapsed data (nested
 ``$ref``-backed objects are ``"$ref:TypeName"`` strings).  Formatters must
 not re-collapse; a formatter that renders collapsed items differently (e.g.
-``_format_labels_markdown``) declares ``detail`` and renders the collapsed
-items as-is.
+``_format_labels_markdown``) detects the collapsed shape (items are
+``$ref:TypeName`` strings) rather than reading the ``detail`` flag — the
+formatter does not know the requested detail level.  Trade-off: shape
+detection is implicit, not explicit; it stays correct as long as collapse
+produces ``$ref:TypeName`` strings, which the pipeline guarantees for
+``$ref``-backed schemas.
 """
 
 from collections.abc import Callable
@@ -62,7 +65,6 @@ def call_formatter(
     name: str,
     data: Any,
     *,
-    detail: str = "full",
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Look up and call a registered formatter.
@@ -70,7 +72,6 @@ def call_formatter(
     Args:
         name: Formatter name (registered via ``@register_formatter``).
         data: The data to format (already collapsed if ``detail=concise``).
-        detail: Output detail level.
         extra: Optional context dict passed to formatters that need it.
 
     Returns:
@@ -80,7 +81,7 @@ def call_formatter(
     if fn is None:
         msg = f"No formatter registered for {name!r}"
         raise ValueError(msg)
-    return call_markdown_formatter(fn, data, detail=detail, extra=extra)
+    return call_markdown_formatter(fn, data, extra=extra)
 
 
 # ---------------------------------------------------------------------------
@@ -256,16 +257,23 @@ def _format_release_markdown(data: list) -> str:
 def _format_labels_markdown(
     data: list,
     *,
-    detail: str = "full",
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Format labels list as Markdown with format and validation hints.
 
     Needs ``extra`` with ``owner`` and ``repo`` keys for the heading.
 
-    When ``detail=concise``, the data items may be collapsed to ``$ref:Label``
-    strings by the display pipeline before reaching this formatter — the
-    per-label detail section is replaced with a compact summary.
+    The formatter is a pure renderer and does not know the requested
+    ``detail`` level: when the pipeline collapses the page
+    (``detail=concise`` + schema), the items arrive as ``$ref:Label``
+    strings, and this formatter detects that collapsed shape directly
+    (all items are strings) to render a compact summary instead of full
+    per-label sections.  Trade-off: shape detection is implicit rather
+    than explicit (``detail=concise``); it stays correct as long as
+    collapse produces ``$ref:TypeName`` strings, which the pipeline
+    guarantees for ``$ref``-backed schemas.  A side benefit: if concise
+    was requested but no schema was available (no collapse), the items
+    are dicts and render as full sections — better than a raw dict dump.
     """
     owner = (extra or {}).get("owner", "?")
     repo = (extra or {}).get("repo", "?")
@@ -290,11 +298,11 @@ def _format_labels_markdown(
     if not data:
         lines.append("*No labels configured for this repository.*")
         lines.append("")
-    elif detail == "concise":
+    elif all(isinstance(label, str) for label in data):
         # Pre-collapsed items: the display pipeline collapses nested
-        # objects to ``$ref:Label`` strings before reaching this
-        # formatter.  Show a compact listing with type-name items
-        # instead of full per-label detail.
+        # objects to ``$ref:Label`` strings when ``detail=concise``.
+        # Show a compact listing with type-name items instead of full
+        # per-label detail.
         lines.append(f"## Labels ({len(data)})")
         lines.append("")
         for label in data:
@@ -331,9 +339,9 @@ def _format_labels_markdown(
     return "\n".join(lines)
 
 
-def _build_labels_markdown(data: list, owner: str, repo: str, *, detail: str = "full") -> str:
+def _build_labels_markdown(data: list, owner: str, repo: str) -> str:
     """Shorthand for calling the labels formatter with context."""
-    return call_formatter("labels", data, detail=detail, extra={"owner": owner, "repo": repo})
+    return call_formatter("labels", data, extra={"owner": owner, "repo": repo})
 
 
 __all__ = [

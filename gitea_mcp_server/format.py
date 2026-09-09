@@ -28,7 +28,6 @@ import inspect
 import json as json_module
 import logging
 from datetime import datetime
-from functools import cache
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.schema_utils import get_schema_type
@@ -48,16 +47,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@cache
 def _accepted_kwargs(fn: Callable[..., Any]) -> frozenset[str]:
-    """Keyword-only params a callable accepts, cached per callable.
+    """Keyword-only params a callable accepts.
 
     Formatters are pure renderers with heterogeneous signatures: most take
-    only ``data``, some take ``extra`` (formatter context), and a few take
-    ``detail`` for rendering decisions.  The display pipeline pre-collapses
-    the data, so ``detail`` is only passed to formatters that declare it.
-    The accepted kwargs are inspected once and cached — no per-call
-    introspection.
+    only ``data``, some take ``extra`` (formatter context).  The display
+    pipeline pre-collapses the data, so formatters never see the ``detail``
+    flag — collapsed items are detected by shape (``$ref:TypeName`` strings).
+
+    The signature is inspected per call — ``inspect.signature`` is cheap
+    (microseconds) next to the HTTP call and the formatting walk, and the
+    callables handed to the pipeline are often fresh per call (lambdas,
+    ``functools.partial``), so a cache keyed on the callable would never
+    hit and would grow without bound on a long-lived server.
     """
     return frozenset(
         name
@@ -70,22 +72,25 @@ def call_markdown_formatter(
     fn: Callable[..., str],
     data: Any,
     *,
-    detail: str = "full",
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Call a markdown formatter with only the kwargs it accepts.
 
     The single dispatch point for the display pipeline's ``markdown_formatter``
     contract.  Formatters declare only the keyword params they use — most take
-    just ``data``, some take ``extra``, a few take ``detail`` — and this helper
-    inspects each signature once (cached) to pass exactly the accepted kwargs.
+    just ``data``, some take ``extra`` (formatter context) — and this helper
+    inspects each signature to pass exactly the accepted kwargs.
     This keeps the pipeline's call site uniform while letting formatters drop
-    dead ``detail`` params.
+    dead params.
+
+    ``detail`` is deliberately not part of the contract: the pipeline
+    pre-collapses the data when ``detail=concise``, so formatters receive
+    already-collapsed data and detect the collapsed shape themselves
+    (``$ref:TypeName`` strings) rather than reading the detail flag.
 
     Args:
         fn: The formatter callable ``(data, **accepted_kwargs) -> str``.
         data: The (already-collapsed) data to render.
-        detail: Output detail level; passed only if ``fn`` declares it.
         extra: Formatter context; passed only if ``fn`` declares it.
 
     Returns:
@@ -93,8 +98,6 @@ def call_markdown_formatter(
     """
     kwargs: dict[str, Any] = {}
     accepted = _accepted_kwargs(fn)
-    if "detail" in accepted:
-        kwargs["detail"] = detail
     if "extra" in accepted:
         kwargs["extra"] = extra
     return fn(data, **kwargs)
@@ -412,7 +415,7 @@ def _render_list_as_compact_ref(raw_val: list, template: str) -> str:
     return ", ".join(items)
 
 
-def _format_dict_as_markdown(  # noqa: PLR0912 - both justified: scalar/nested, field_filter, allOf, anyOf, render hints
+def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field_filter, allOf, anyOf, render hints
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
@@ -454,8 +457,7 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - both justified: scalar/nested, 
             render_hint = field_opts.get("render", "expand")
 
             # Render hints override nesting — compact_ref and badge
-            # always produce flat table rows regardless of value type
-            # or detail level.
+            # always produce flat table rows regardless of value type.
             if render_hint == "compact_ref" and isinstance(raw_val, dict):
                 template = field_opts.get("template", "{id}")
                 try:
@@ -680,11 +682,11 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
 def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
-    Unlike registered domain formatters (which follow the
-    ``(data, *, detail) -> str`` signature), this function takes the
-    raw OpenAPI spec directly.  It lives in ``format.py`` rather than
-    ``tools/display.py`` because it is not a registered formatter —
-    it is a shared utility used by ``resources/custom.py``.
+    Unlike registered domain formatters (which take ``data`` and optional
+    ``extra``), this function takes the raw OpenAPI spec directly.  It lives
+    in ``format.py`` rather than ``tools/display.py`` because it is not a
+    registered formatter — it is a shared utility used by
+    ``resources/custom.py``.
     """
     info = openapi_spec.get("info", {})
     title = info.get("title", "Unknown")

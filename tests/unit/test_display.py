@@ -63,7 +63,7 @@ class TestCallFormatter:
         """Known formatter is called and returns expected output."""
 
         @register_formatter("test_formatter")
-        def _test_fmt(data: Any, *, detail: str = "full") -> str:
+        def _test_fmt(data: Any) -> str:
             return f"formatted: {data}"
 
         result = call_formatter("test_formatter", {"hello": "world"})
@@ -125,14 +125,13 @@ class TestFormatLabelsMarkdownEdgeCases:
         """Empty labels list produces 'no labels' message."""
         result = _format_labels_markdown(
             [],
-            detail="full",
             extra={"owner": "org", "repo": "repo"},
         )
         assert "No labels configured for this repository" in result
 
     def test_empty_data_labels_no_extra(self) -> None:
         """Empty labels list with no extra still works (uses ? placeholders)."""
-        result = _format_labels_markdown([], detail="full")
+        result = _format_labels_markdown([])
         assert "?/?" in result
 
 
@@ -142,7 +141,7 @@ class TestBuildLabelsMarkdown:
     def test_build_labels_markdown(self) -> None:
         """_build_labels_markdown delegates correctly."""
         data = [{"id": 1, "name": "bug", "color": "ff0000", "description": "A bug"}]
-        result = _build_labels_markdown(data, "myorg", "myrepo", detail="full")
+        result = _build_labels_markdown(data, "myorg", "myrepo")
         assert "myorg/myrepo" in result
         assert "bug" in result
 
@@ -637,10 +636,12 @@ class TestToolResourceConsistency:
         assert "`#ff0000`" in result
 
     def test_labels_format_concise_handles_collapsed_refs(self) -> None:
-        """_format_labels_markdown with detail=concise handles collapsed $ref:Label strings."""
+        """_format_labels_markdown detects collapsed $ref:Label strings by shape."""
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
-        # Simulate collapsed items from the display pipeline (detail=concise).
+        # Simulate collapsed items from the display pipeline (detail=concise):
+        # the pipeline collapses $ref-backed objects to "$ref:TypeName" strings,
+        # and the formatter detects that shape instead of reading a detail flag.
         collapsed_labels = [
             "$ref:Label",
             "$ref:Label",
@@ -648,12 +649,11 @@ class TestToolResourceConsistency:
         ]
         result = _format_labels_markdown(
             collapsed_labels,
-            detail="concise",
             extra={"owner": "test-owner", "repo": "test-repo"},
         )
         assert "# Labels for test-owner/test-repo" in result
         assert "**Total**: 3 labels" in result
         assert "Accepted Format" in result
         assert "$ref:Label" in result
-        # Per-label detail sections should NOT appear for concise mode
+        # Per-label detail sections should NOT appear for collapsed items
         assert "**Color**:" not in result

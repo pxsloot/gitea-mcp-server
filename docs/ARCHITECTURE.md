@@ -241,7 +241,8 @@ Agent reads a resource:
           ├─ format/json: collapse_data when detail=concise + schema
           ├─ format/markdown: pre-collapse + formatter (dispatched via
           │   call_markdown_formatter — passes only the kwargs the
-          │   formatter declares, e.g. detail/extra)
+          │   formatter declares, e.g. extra; detail is not forwarded —
+          │   collapsed items are detected by shape)
           └─ format/raw: serialized envelope {"result": <data>}
 ```
 
@@ -401,7 +402,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets (populated by ``make_api_resource``, consumed by ``build_invalidation_map``) |
-| `tools/display.py` | Domain-specific display formatters with registry — pure renderers declaring only the kwargs they use (`detail`, `extra`); dispatched via `call_markdown_formatter` |
+| `tools/display.py` | Domain-specific display formatters with registry — pure renderers declaring only the kwargs they use (`extra`); dispatched via `call_markdown_formatter`; collapsed items are detected by shape (`$ref:TypeName` strings), not a `detail` flag |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -782,9 +783,11 @@ from the parameter schema.
       collapse) when ``detail=concise``, mirroring the json path; the
       pipeline dispatches the formatter through
       ``call_markdown_formatter`` (``format.py``), which inspects each
-      formatter's signature once (cached) and passes only the kwargs it
-      declares (``detail``, ``extra``) — formatters are pure renderers that
-      never collapse and never carry dead ``detail`` params.
+      formatter's signature and passes only the kwargs it
+      declares (``extra``) — formatters are pure renderers that
+      never collapse and never carry dead params.  ``detail`` is not
+      forwarded to formatters: collapsed items are detected by shape
+      (``$ref:TypeName`` strings), not by the detail flag.
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

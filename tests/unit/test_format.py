@@ -3,11 +3,13 @@
 Covers all functions in __all__:
 - _snake_to_title, _format_datetime, _format_scalar, _format_simple_value
 - _resolve_anyof_schema, format_as_markdown, _format_parameter_table, _format_type
+- call_markdown_formatter, _accepted_kwargs (signature-aware formatter dispatch)
 """
 
 from typing import Any
 
 from gitea_mcp_server.format import (
+    _accepted_kwargs,
     _extract_type_name,
     _format_datetime,
     _format_parameter_table,
@@ -16,6 +18,7 @@ from gitea_mcp_server.format import (
     _format_type,
     _resolve_anyof_schema,
     _snake_to_title,
+    call_markdown_formatter,
     collapse_data,
     format_as_markdown,
 )
@@ -199,6 +202,77 @@ class TestExtractTypeName:
         """allOf with anyOf ref — first found wins."""
         schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}, {"type": "object"}]}
         assert _extract_type_name(schema) == "Repository"
+
+
+class TestCallMarkdownFormatter:
+    """Tests for call_markdown_formatter — signature-aware formatter dispatch.
+
+    The display pipeline pre-collapses the data, so formatters declare only
+    the keyword params they use (``extra``); the dispatch helper inspects
+    each signature and passes exactly the accepted kwargs.  ``detail`` is
+    deliberately not part of the contract — collapsed items are detected by
+    shape, not by the detail flag.
+    """
+
+    def test_formatter_with_no_kwargs(self) -> None:
+        """Formatter declaring no keyword params receives only data."""
+
+        def _fmt(data: Any) -> str:
+            return f"data={data}"
+
+        result = call_markdown_formatter(_fmt, "x", extra={"a": 1})
+        assert result == "data=x"
+
+    def test_formatter_with_extra(self) -> None:
+        """Formatter declaring ``extra`` receives it."""
+
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return f"data={data} extra={extra}"
+
+        result = call_markdown_formatter(_fmt, "x", extra={"ctx": "c"})
+        assert result == "data=x extra={'ctx': 'c'}"
+
+    def test_extra_defaults_to_none_when_omitted(self) -> None:
+        """``extra`` defaults to None when the caller omits it."""
+
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return f"extra={extra}"
+
+        assert call_markdown_formatter(_fmt, "x") == "extra=None"
+
+    def test_positional_only_param_not_treated_as_kwarg(self) -> None:
+        """Only keyword-only params are dispatched; positional params are not."""
+
+        def _fmt(data: Any, /, *, extra: dict[str, Any] | None = None) -> str:
+            return f"{data}:{extra}"
+
+        result = call_markdown_formatter(_fmt, "x", extra={"ctx": "c"})
+        assert result == "x:{'ctx': 'c'}"
+
+    def test_partial_fallback_signature(self) -> None:
+        """A ``functools.partial`` binding schema dispatches correctly.
+
+        Mirrors the pipeline's fallback
+        ``functools.partial(format_as_markdown, schema=schema)``.  Note that
+        ``inspect.signature`` on a partial keeps the bound ``schema`` as a
+        keyword-only param — but since ``extra`` is not accepted, only
+        ``data`` is passed.
+        """
+        import functools
+
+        def _fmt(data: Any, schema: dict[str, Any] | None = None) -> str:
+            return f"{data} via {schema}"
+
+        partial = functools.partial(_fmt, schema={"type": "object"})
+        assert call_markdown_formatter(partial, "x") == "x via {'type': 'object'}"
+
+    def test_accepted_kwargs_returns_keyword_only_names(self) -> None:
+        """``_accepted_kwargs`` returns exactly the keyword-only param names."""
+
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return ""
+
+        assert _accepted_kwargs(_fmt) == frozenset({"extra"})
 
 
 class TestCollapseData:

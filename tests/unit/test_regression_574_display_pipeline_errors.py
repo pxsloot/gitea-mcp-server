@@ -47,12 +47,11 @@ class TestFormatIssuesMarkdownGuard:
 class TestFormatLabelsMarkdownGuard:
     """Guard: _format_labels_markdown handles non-dict items."""
 
-    def test_non_dict_items_full_detail_no_crash(self) -> None:
-        """Non-dict items in full detail mode produce output, not AttributeError."""
+    def test_non_dict_items_no_crash(self) -> None:
+        """String items (collapsed shape) render compactly, not AttributeError."""
         data = ["bug", "feature"]
         result = _format_labels_markdown(
             data,
-            detail="full",
             extra={"owner": "test", "repo": "test"},
         )
         assert result.strip() != ""
@@ -60,12 +59,11 @@ class TestFormatLabelsMarkdownGuard:
         assert "- bug" in result
         assert "- feature" in result
 
-    def test_non_dict_items_concise_ok(self) -> None:
-        """Non-dict items in concise mode is already safe."""
+    def test_collapsed_ref_items_ok(self) -> None:
+        """Collapsed ``$ref:Label`` strings (concise shape) render compactly."""
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
             data,
-            detail="concise",
             extra={"owner": "o", "repo": "r"},
         )
         assert "Labels for o/r" in result

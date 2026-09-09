@@ -558,9 +558,16 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
 1. **Add a display formatter** (if needed) in `tools/display.py`:
    ```python
    @register_formatter("my_type")
-   def _format_my_type(data: dict, *, detail: str = "full") -> str:
+   def _format_my_type(data: dict) -> str:
        ...
    ```
+   Formatters are **pure renderers**: declare only the keyword params you
+   use — `extra` for formatter context.  The pipeline dispatches through
+   `call_markdown_formatter` (in `format.py`), which passes exactly the
+   accepted kwargs; the data is pre-collapsed by the pipeline when
+   `detail=concise`, so formatters never collapse themselves and never see
+   the `detail` flag — collapsed items are detected by shape
+   (`$ref:TypeName` strings), not by a detail parameter.
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:

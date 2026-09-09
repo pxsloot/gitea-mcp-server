@@ -23,12 +23,14 @@ Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 result (e.g. ``read_resource``, whose schema varies per URI); it takes
 precedence over the tool-level schema in :func:`render`.  The
 ``markdown_formatter`` contract is ``(data, **accepted_kwargs) -> str`` —
-formatters declare only the keyword params they use (``detail``, ``extra``),
-and the pipeline dispatches through ``call_markdown_formatter`` (``format.py``)
-which inspects each signature once and passes exactly the accepted kwargs.
+formatters declare only the keyword params they use (``extra``), and the
+pipeline dispatches through ``call_markdown_formatter`` (``format.py``)
+which inspects each signature and passes exactly the accepted kwargs.
 When ``detail="concise"`` and a schema is available, the pipeline
 pre-collapses the page (schema-aware ``$ref`` collapse) before calling the
 formatter: formatters receive already-collapsed data and must not re-collapse.
+``detail`` is not forwarded to formatters — collapsed items are detected by
+shape (``$ref:TypeName`` strings), not by the detail flag.
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -91,11 +93,12 @@ class ExecutionResult:
     return annotations), so the field is typed ``Any`` and excluded from
     serialization.  The pipeline dispatches through ``call_markdown_formatter``
     (``format.py``), which passes only the kwargs the formatter declares
-    (``detail``, ``extra``); the generic ``format_as_markdown`` is the
+    (``extra``); the generic ``format_as_markdown`` is the
     fallback.  When ``detail="concise"`` and a schema is available, the
     pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
     calling the formatter — the formatter receives already-collapsed data and
-    must not re-collapse.
+    must not re-collapse.  ``detail`` is not forwarded to formatters; collapsed
+    items are detected by shape (``$ref:TypeName`` strings).
     """
 
     __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
@@ -306,8 +309,8 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     envelope's ``result`` is updated so ``structured_content`` mirrors the
     collapsed text — the two channels never disagree.  ``format=raw`` stays
     uncollapsed: raw is the unprocessed-data contract.  The formatter
-    receives the collapsed page; ``call_markdown_formatter`` passes ``detail``
-    only to formatters that declare it.
+    receives the collapsed page; ``detail`` is not forwarded — formatters
+    detect collapsed items by shape (``$ref:TypeName`` strings).
     """
     try:
         # Collapse the page once for json/markdown when detail=concise and a
@@ -331,12 +334,12 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
             # Render the page (the envelope's result), not the executor's
             # full data — the text channel must agree with the envelope.
             # The formatter declares only the kwargs it uses; the dispatch
-            # helper passes exactly the accepted ones (e.g. ``detail`` only
-            # to formatters that render collapsed data differently).
+            # helper passes exactly the accepted ones (``extra``).  ``detail``
+            # is not forwarded — collapsed items are detected by shape.
             formatter = result.markdown_formatter or functools.partial(
                 format_as_markdown, schema=schema
             )
-            text = call_markdown_formatter(formatter, page_data, detail=detail)
+            text = call_markdown_formatter(formatter, page_data)
             if result.markdown_extras:
                 text += "\n\n---\n\n" + "\n\n---\n\n".join(result.markdown_extras)
     except (TypeError, AttributeError, ValueError, KeyError, IndexError, RecursionError) as exc:

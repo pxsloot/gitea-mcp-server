@@ -169,27 +169,26 @@ def _make_resource_formatter(
     """Resolve a ``format_hint`` to a markdown formatter callable, binding extra.
 
     The returned callable matches the result pipeline's ``markdown_formatter``
-    contract ``(data, *, detail='full') -> str``: ``detail`` is passed through
-    from the pipeline, ``extra`` (formatter context such as ``owner``/``repo``
-    or ``type``) is bound at executor time.  The formatter declares only the
-    kwargs it uses; ``call_markdown_formatter`` dispatches the accepted ones.
+    contract ``(data) -> str``: ``extra`` (formatter context such as
+    ``owner``/``repo`` or ``type``) is bound at executor time.  The formatter
+    declares only the kwargs it uses; ``call_markdown_formatter`` dispatches
+    the accepted ones.  ``detail`` is not part of the contract — the pipeline
+    pre-collapses the data and formatters detect collapsed items by shape.
 
     Args:
         format_hint: Registered formatter name, or ``None``.
         extra: Extra context dict for formatters that need it.
 
     Returns:
-        A callable ``(data, *, detail='full') -> str``, or ``None`` if no
-        formatter is registered for ``format_hint``.
+        A callable ``(data) -> str``, or ``None`` if no formatter is
+        registered for ``format_hint``.
     """
     if not format_hint:
         return None
     fn = get_formatter(format_hint)
     if fn is None:
         return None
-    return lambda data, *, detail="full": call_markdown_formatter(
-        fn, data, detail=detail, extra=extra
-    )
+    return lambda data: call_markdown_formatter(fn, data, extra=extra)
 
 
 async def _mcp_read_resource_impl(

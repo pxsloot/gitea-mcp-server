@@ -69,6 +69,21 @@ class TestFormatLabelsMarkdownGuard:
         assert "Labels for o/r" in result
         assert "$ref:Label[2]" in result
 
+    def test_mixed_items_full_branch_guard(self) -> None:
+        """Mixed string+dict items hit the full-branch non-dict guard, no crash.
+
+        Not all items are strings, so the compact (all-strings) branch is
+        skipped; the full-detail branch then guards the non-dict item.
+        """
+        data = ["$ref:Label", {"id": 1, "name": "bug", "color": "ff0000"}]
+        result = _format_labels_markdown(
+            data,
+            extra={"owner": "o", "repo": "r"},
+        )
+        assert "Labels for o/r" in result
+        assert "- $ref:Label" in result
+        assert "bug" in result
+
 
 class TestFormatUserMarkdownGuard:
     """Guard: _format_user_markdown handles non-dict input."""

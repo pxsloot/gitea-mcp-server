@@ -88,6 +88,11 @@ def call_markdown_formatter(
     already-collapsed data and detect the collapsed shape themselves
     (``$ref:TypeName`` strings) rather than reading the detail flag.
 
+    Only ``extra`` is dispatched among keyword-only params, so formatters
+    should declare no other keyword-only param (and ``extra`` with a
+    default) — a required keyword-only param other than ``extra`` would
+    raise ``TypeError``.
+
     Args:
         fn: The formatter callable ``(data, **accepted_kwargs) -> str``.
         data: The (already-collapsed) data to render.

@@ -442,7 +442,7 @@ class TestFormats:
             ExecutionResult(
                 data={"content": "guide text"},
                 shape="object",
-                markdown_formatter=lambda d, *, detail: d["content"],
+                markdown_formatter=lambda d: d["content"],
             ),
             fmt="markdown",
         )
@@ -597,11 +597,11 @@ class TestMarkdownPageRendering:
         assert "| Id | 19 |" in text
         assert "| Id | 0 |" not in text
 
-    def test_markdown_formatter_receives_detail(self) -> None:
-        """The pipeline passes detail through to the markdown_formatter."""
+    def test_markdown_formatter_does_not_receive_detail(self) -> None:
+        """The pipeline does not forward detail — collapsed items are shape-detected."""
         received: dict[str, Any] = {}
 
-        def formatter(data: Any, *, detail: str = "full") -> str:
+        def formatter(data: Any, *, detail: str = "sentinel") -> str:
             received["detail"] = detail
             return "formatted"
 
@@ -611,7 +611,8 @@ class TestMarkdownPageRendering:
             detail="concise",
         )
         assert extract_text_content(result.content) == "formatted"
-        assert received["detail"] == "concise"
+        # detail=concise was requested but NOT forwarded to the formatter.
+        assert received["detail"] == "sentinel"
 
     def test_markdown_formatter_receives_collapsed_page(self) -> None:
         """detail=concise pre-collapses the page before the formatter runs."""
@@ -622,7 +623,7 @@ class TestMarkdownPageRendering:
         }
         received: dict[str, Any] = {}
 
-        def formatter(d: Any, *, detail: str = "full") -> str:
+        def formatter(d: Any) -> str:
             received["data"] = d
             return "ok"
 

@@ -766,18 +766,25 @@ class TestMakeResourceFormatter:
         assert "test-repo" in result
 
     def test_formatter_with_extra_passes_it_through(self) -> None:
-        """Formatter registered with need_extra=True receives extra dict."""
+        """Formatter declaring ``extra`` receives the bound extra dict."""
         fn = _make_resource_formatter("labels", {"owner": "myorg", "repo": "myrepo"})
         assert callable(fn)
         result = fn([{"id": 1, "name": "bug"}])
         assert "myorg/myrepo" in result
 
-    def test_formatter_receives_detail_from_pipeline(self) -> None:
-        """The returned callable accepts detail and passes it to the formatter."""
+    def test_formatter_callable_takes_data_only(self) -> None:
+        """The returned callable matches the ``(data) -> str`` contract.
+
+        ``detail`` is not part of the formatter contract — the pipeline
+        pre-collapses the data and formatters detect collapsed items by
+        shape, so the callable rejects a ``detail`` kwarg.
+        """
         fn = _make_resource_formatter("repository", None)
         assert callable(fn)
-        result = fn({"name": "test-repo", "full_name": "org/test-repo"}, detail="concise")
+        result = fn({"name": "test-repo", "full_name": "org/test-repo"})
         assert "test-repo" in result
+        with pytest.raises(TypeError):
+            fn({"name": "test-repo"}, detail="concise")
 
 
 class TestMcpListResourcesFormat:

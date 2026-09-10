@@ -425,7 +425,7 @@ def register_doc_tools(
             total_count=total_lines,
             shape="object",
             paginated=True,
-            markdown_formatter=lambda d, *, detail: d["content"],  # noqa: ARG005 - detail is part of the shared markdown_formatter contract
+            markdown_formatter=lambda d: d["content"],
         )
 
     read_doc_spec = SyntheticToolSpec(

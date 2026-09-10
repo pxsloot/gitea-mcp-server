@@ -3,12 +3,13 @@
 Covers all functions in __all__:
 - _snake_to_title, _format_datetime, _format_scalar, _format_simple_value
 - _resolve_anyof_schema, format_as_markdown, _format_parameter_table, _format_type
+- call_markdown_formatter, _accepted_kwargs (signature-aware formatter dispatch)
 """
 
 from typing import Any
 
 from gitea_mcp_server.format import (
-    _collapse_value,
+    _accepted_kwargs,
     _extract_type_name,
     _format_datetime,
     _format_parameter_table,
@@ -17,6 +18,7 @@ from gitea_mcp_server.format import (
     _format_type,
     _resolve_anyof_schema,
     _snake_to_title,
+    call_markdown_formatter,
     collapse_data,
     format_as_markdown,
 )
@@ -202,59 +204,75 @@ class TestExtractTypeName:
         assert _extract_type_name(schema) == "Repository"
 
 
-class TestCollapseValue:
-    """Tests for _collapse_value — collapses runtime values to compact $ref strings."""
+class TestCallMarkdownFormatter:
+    """Tests for call_markdown_formatter — signature-aware formatter dispatch.
 
-    def test_dict_with_ref(self) -> None:
-        """Dict with matching $ref schema collapses to $ref:TypeName."""
-        schema = {"$ref": "#/components/schemas/User"}
-        assert _collapse_value({"id": 1, "login": "me"}, schema) == "$ref:User"
+    The display pipeline pre-collapses the data, so formatters declare only
+    the keyword params they use (``extra``); the dispatch helper inspects
+    each signature and passes exactly the accepted kwargs.  ``detail`` is
+    deliberately not part of the contract — collapsed items are detected by
+    shape, not by the detail flag.
+    """
 
-    def test_dict_with_allof_ref(self) -> None:
-        """Dict with allOf $ref (common OpenAPI pattern) collapses correctly."""
-        schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}]}
-        assert _collapse_value({"name": "repo"}, schema) == "$ref:Repository"
+    def test_formatter_with_no_kwargs(self) -> None:
+        """Formatter declaring no keyword params receives only data."""
 
-    def test_dict_with_anyof_ref(self) -> None:
-        """Dict with anyOf $ref schema collapses to $ref:TypeName."""
-        schema = {"anyOf": [{"$ref": "#/components/schemas/Repository"}, {"type": "null"}]}
-        assert _collapse_value({"name": "repo"}, schema) == "$ref:Repository"
+        def _fmt(data: Any) -> str:
+            return f"data={data}"
 
-    def test_dict_without_schema_uses_placeholder(self) -> None:
-        """Dict with no schema falls back to placeholder."""
-        assert _collapse_value({"id": 1}, None) == "{...}"
+        result = call_markdown_formatter(_fmt, "x", extra={"a": 1})
+        assert result == "data=x"
 
-    def test_dict_without_ref_uses_placeholder(self) -> None:
-        """Dict with schema but no $ref falls back to placeholder."""
-        schema = {"type": "object", "properties": {}}
-        assert _collapse_value({"id": 1}, schema) == "{...}"
+    def test_formatter_with_extra(self) -> None:
+        """Formatter declaring ``extra`` receives it."""
 
-    def test_list_with_ref(self) -> None:
-        """List with items.$ref collapses to $ref:TypeName[count]."""
-        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Label"}}
-        assert _collapse_value([{"id": 1}, {"id": 2}], schema) == "$ref:Label[2]"
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return f"data={data} extra={extra}"
 
-    def test_list_without_ref_shows_count(self) -> None:
-        """List without $ref items falls back to count."""
-        schema = {"type": "array", "items": {"type": "object"}}
-        assert _collapse_value([{"x": 1}], schema) == "[1 items]"
+        result = call_markdown_formatter(_fmt, "x", extra={"ctx": "c"})
+        assert result == "data=x extra={'ctx': 'c'}"
 
-    def test_list_with_none_schema(self) -> None:
-        """List with no schema falls back to count."""
-        assert _collapse_value([1, 2, 3], None) == "[3 items]"
+    def test_extra_defaults_to_none_when_omitted(self) -> None:
+        """``extra`` defaults to None when the caller omits it."""
 
-    def test_list_with_ref_in_anyof_items(self) -> None:
-        """Array items with anyOf $ref collapses correctly."""
-        schema = {
-            "type": "array",
-            "items": {"anyOf": [{"$ref": "#/components/schemas/Issue"}, {"type": "null"}]},
-        }
-        assert _collapse_value([{"title": "bug"}], schema) == "$ref:Issue[1]"
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return f"extra={extra}"
 
-    def test_scalar_passthrough(self) -> None:
-        """Non-dict, non-list values are stringified."""
-        assert _collapse_value("hello", None) == "hello"
-        assert _collapse_value(42, None) == "42"
+        assert call_markdown_formatter(_fmt, "x") == "extra=None"
+
+    def test_positional_only_param_not_treated_as_kwarg(self) -> None:
+        """Only keyword-only params are dispatched; positional params are not."""
+
+        def _fmt(data: Any, /, *, extra: dict[str, Any] | None = None) -> str:
+            return f"{data}:{extra}"
+
+        result = call_markdown_formatter(_fmt, "x", extra={"ctx": "c"})
+        assert result == "x:{'ctx': 'c'}"
+
+    def test_partial_fallback_signature(self) -> None:
+        """A ``functools.partial`` binding schema dispatches correctly.
+
+        Mirrors the pipeline's fallback
+        ``functools.partial(format_as_markdown, schema=schema)``.  Note that
+        ``inspect.signature`` on a partial keeps the bound ``schema`` as a
+        keyword-only param — but since ``extra`` is not accepted, only
+        ``data`` is passed.
+        """
+        import functools
+
+        def _fmt(data: Any, schema: dict[str, Any] | None = None) -> str:
+            return f"{data} via {schema}"
+
+        partial = functools.partial(_fmt, schema={"type": "object"})
+        assert call_markdown_formatter(partial, "x") == "x via {'type': 'object'}"
+
+    def test_accepted_kwargs_returns_keyword_only_names(self) -> None:
+        """``_accepted_kwargs`` returns exactly the keyword-only param names."""
+
+        def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:
+            return ""
+
+        assert _accepted_kwargs(_fmt) == frozenset({"extra"})
 
 
 class TestCollapseData:
@@ -687,11 +705,11 @@ class TestFormatAsMarkdown:
         assert "Host" in result or "Port" in result or "database" in result
 
     def test_dict_concise_collapses_nested_at_depth(self) -> None:
-        """detail='concise' collapses nested objects at depth>=1 to $ref:TypeName.
+        """The formatter renders already-collapsed data — it does not collapse.
 
-        The collapse triggers when a property VALUE is a dict or list AND
-        the current nesting depth (_depth) is >= 1.  Top-level properties
-        (_depth=0) are always expanded — they become sections.
+        Collapsing is the display pipeline's job (``collapse_data``); the
+        formatter receives already-collapsed data (nested ``$ref``-backed
+        objects are ``"$ref:TypeName"`` strings) and renders them as-is.
         """
         # Outer wrapper pushes 'owner' and 'repo' to _depth=1
         data = {
@@ -719,16 +737,17 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = format_as_markdown(data, schema, detail="concise")
-        # The nested values at depth>=1 should be collapsed to $ref labels
+        collapsed = collapse_data(data, schema, _depth=0, detail="concise")
+        result = format_as_markdown(collapsed, schema)
+        # The collapsed $ref labels render in the markdown
         assert "$ref:User" in result
         assert "$ref:Repository" in result
-        # Original values should NOT be visible since they're collapsed
+        # Original values are gone — collapsed before the formatter ran
         assert "user1" not in result
         assert "my-repo" not in result
 
     def test_dict_concise_collapses_list_at_depth(self) -> None:
-        """detail='concise' at depth>=1 collapses list to $ref:TypeName[N]."""
+        """The formatter renders already-collapsed lists — it does not collapse."""
         data = {
             "nested": {
                 "labels": [{"id": 1, "name": "bug"}, {"id": 2, "name": "feature"}],
@@ -748,13 +767,18 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = format_as_markdown(data, schema, detail="concise")
+        collapsed = collapse_data(data, schema, _depth=0, detail="concise")
+        result = format_as_markdown(collapsed, schema)
         assert "$ref:Label[2]" in result
         assert "bug" not in result
         assert "feature" not in result
 
     def test_dict_concise_top_level_stays_expanded(self) -> None:
-        """detail='concise' at depth=0 keeps top-level nested objects expanded."""
+        """The formatter renders un-collapsed data as-is (no collapse at any depth).
+
+        Collapsing is the pipeline's job; the formatter renders whatever data
+        it receives.  Un-collapsed nested objects render as sections.
+        """
         data = {
             "user": {"id": 1, "login": "testuser"},
         }
@@ -767,8 +791,8 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        result = format_as_markdown(data, schema, detail="concise")
-        # At depth=0, nested objects are sections, not collapsed
+        result = format_as_markdown(data, schema)
+        # Nested objects render as sections, not collapsed
         assert "testuser" in result
 
     def test_property_schema_not_a_dict_skipped(self) -> None:
@@ -879,7 +903,7 @@ class TestFormatAsMarkdown:
         assert "## Base" not in result
 
     def test_compact_ref_at_full_detail(self) -> None:
-        """compact_ref works at detail=full (not just concise)."""
+        """compact_ref renders a flat row regardless of detail level."""
         data = {
             "name": "PR-42",
             "head": {"owner": "fork", "repo": "fork-repo", "branch": "feature-x"},
@@ -888,12 +912,12 @@ class TestFormatAsMarkdown:
             "name": {},
             "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = format_as_markdown(data, field_filter=field_filter, detail="full")
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Head | fork/fork-repo:feature-x |" in result
         assert "## Head" not in result
 
     def test_compact_ref_at_concise_detail(self) -> None:
-        """compact_ref works at detail=concise (same flat rendering)."""
+        """compact_ref renders a flat row regardless of detail level."""
         data = {
             "name": "PR-42",
             "head": {"owner": "fork", "repo": "fork-repo", "branch": "feature-x"},
@@ -902,7 +926,7 @@ class TestFormatAsMarkdown:
             "name": {},
             "head": {"render": "compact_ref", "template": "{owner}/{repo}:{branch}"},
         }
-        result = format_as_markdown(data, field_filter=field_filter, detail="concise")
+        result = format_as_markdown(data, field_filter=field_filter)
         assert "| Head | fork/fork-repo:feature-x |" in result
 
     def test_compact_ref_fallback_on_missing_template_key(self) -> None:

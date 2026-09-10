@@ -31,7 +31,7 @@ class TestFormatIssuesMarkdownGuard:
     def test_non_dict_items_no_crash(self) -> None:
         """Non-dict items (strings) produce output, not AttributeError."""
         data = ["string item", "another string"]
-        result = _format_issues_markdown(data, detail="full")
+        result = _format_issues_markdown(data)
         assert result.strip() != ""
         # Should contain the generic title since items aren't dicts
         assert "Issues" in result or "Issues and Pull Requests" in result
@@ -39,7 +39,7 @@ class TestFormatIssuesMarkdownGuard:
     def test_empty_list_no_crash(self) -> None:
         """Empty list produces output, not TypeError or crash."""
         data: list[Any] = []
-        result = _format_issues_markdown(data, detail="full")
+        result = _format_issues_markdown(data)
         assert result.strip() != ""
         assert "_(empty)_" in result
 
@@ -47,12 +47,11 @@ class TestFormatIssuesMarkdownGuard:
 class TestFormatLabelsMarkdownGuard:
     """Guard: _format_labels_markdown handles non-dict items."""
 
-    def test_non_dict_items_full_detail_no_crash(self) -> None:
-        """Non-dict items in full detail mode produce output, not AttributeError."""
+    def test_non_dict_items_no_crash(self) -> None:
+        """String items (collapsed shape) render compactly, not AttributeError."""
         data = ["bug", "feature"]
         result = _format_labels_markdown(
             data,
-            detail="full",
             extra={"owner": "test", "repo": "test"},
         )
         assert result.strip() != ""
@@ -60,16 +59,30 @@ class TestFormatLabelsMarkdownGuard:
         assert "- bug" in result
         assert "- feature" in result
 
-    def test_non_dict_items_concise_ok(self) -> None:
-        """Non-dict items in concise mode is already safe."""
+    def test_collapsed_ref_items_ok(self) -> None:
+        """Collapsed ``$ref:Label`` strings (concise shape) render compactly."""
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
             data,
-            detail="concise",
             extra={"owner": "o", "repo": "r"},
         )
         assert "Labels for o/r" in result
         assert "$ref:Label[2]" in result
+
+    def test_mixed_items_full_branch_guard(self) -> None:
+        """Mixed string+dict items hit the full-branch non-dict guard, no crash.
+
+        Not all items are strings, so the compact (all-strings) branch is
+        skipped; the full-detail branch then guards the non-dict item.
+        """
+        data = ["$ref:Label", {"id": 1, "name": "bug", "color": "ff0000"}]
+        result = _format_labels_markdown(
+            data,
+            extra={"owner": "o", "repo": "r"},
+        )
+        assert "Labels for o/r" in result
+        assert "- $ref:Label" in result
+        assert "bug" in result
 
 
 class TestFormatUserMarkdownGuard:
@@ -78,13 +91,13 @@ class TestFormatUserMarkdownGuard:
     def test_non_dict_input_no_crash(self) -> None:
         """Non-dict input produces output, not TypeError."""
         data = "just a string"
-        result = _format_user_markdown(data, detail="full")
+        result = _format_user_markdown(data)
         assert result.strip() != ""
 
     def test_list_input_no_crash(self) -> None:
         """List input produces output, not TypeError."""
         data = [{"login": "user1"}]
-        result = _format_user_markdown(data, detail="full")
+        result = _format_user_markdown(data)
         assert result.strip() != ""
 
 

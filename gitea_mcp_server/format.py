@@ -24,6 +24,7 @@ primitives it builds on.
 from __future__ import annotations
 
 import base64
+import inspect
 import json as json_module
 import logging
 from datetime import datetime
@@ -32,12 +33,80 @@ from typing import TYPE_CHECKING, Any, cast
 from gitea_mcp_server.schema_utils import get_schema_type
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from gitea_mcp_server.models import ToolSchemaResult
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
 
 # Length bounds for auto-detecting ISO datetime strings without schema hint
+
+# ---------------------------------------------------------------------------
+# Shared formatter dispatch
+# ---------------------------------------------------------------------------
+
+
+def _accepted_kwargs(fn: Callable[..., Any]) -> frozenset[str]:
+    """Keyword-only params a callable accepts.
+
+    Formatters are pure renderers with heterogeneous signatures: most take
+    only ``data``, some take ``extra`` (formatter context).  The display
+    pipeline pre-collapses the data, so formatters never see the ``detail``
+    flag — collapsed items are detected by shape (``$ref:TypeName`` strings).
+
+    The signature is inspected per call — ``inspect.signature`` is cheap
+    (microseconds) next to the HTTP call and the formatting walk, and the
+    callables handed to the pipeline are often fresh per call (lambdas,
+    ``functools.partial``), so a cache keyed on the callable would never
+    hit and would grow without bound on a long-lived server.
+    """
+    return frozenset(
+        name
+        for name, param in inspect.signature(fn).parameters.items()
+        if param.kind == inspect.Parameter.KEYWORD_ONLY
+    )
+
+
+def call_markdown_formatter(
+    fn: Callable[..., str],
+    data: Any,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Call a markdown formatter with only the kwargs it accepts.
+
+    The single dispatch point for the display pipeline's ``markdown_formatter``
+    contract.  Formatters declare only the keyword params they use — most take
+    just ``data``, some take ``extra`` (formatter context) — and this helper
+    inspects each signature to pass exactly the accepted kwargs.
+    This keeps the pipeline's call site uniform while letting formatters drop
+    dead params.
+
+    ``detail`` is deliberately not part of the contract: the pipeline
+    pre-collapses the data when ``detail=concise``, so formatters receive
+    already-collapsed data and detect the collapsed shape themselves
+    (``$ref:TypeName`` strings) rather than reading the detail flag.
+
+    Only ``extra`` is dispatched among keyword-only params, so formatters
+    should declare no other keyword-only param (and ``extra`` with a
+    default) — a required keyword-only param other than ``extra`` would
+    raise ``TypeError``.
+
+    Args:
+        fn: The formatter callable ``(data, **accepted_kwargs) -> str``.
+        data: The (already-collapsed) data to render.
+        extra: Formatter context; passed only if ``fn`` declares it.
+
+    Returns:
+        The rendered markdown string.
+    """
+    kwargs: dict[str, Any] = {}
+    accepted = _accepted_kwargs(fn)
+    if "extra" in accepted:
+        kwargs["extra"] = extra
+    return fn(data, **kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Shared content transform: base64 decode
@@ -239,42 +308,12 @@ def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, n
     return data
 
 
-def _collapse_value(raw_val: Any, prop_schema: dict[str, Any] | None) -> str:
-    """Render a nested runtime value as a compact type reference string.
-
-    Used when ``detail="concise"`` and the value sits at ``_depth >= 1``.
-    Extracts the type name from the schema where possible, otherwise
-    falls back to a generic placeholder.
-
-    Args:
-        raw_val: The runtime value (dict or list).
-        prop_schema: The JSON Schema describing *raw_val*, or ``None``.
-
-    Returns:
-        A compact string such as ``"$ref:Repository"`` or ``"$ref:Label[3]"``.
-    """
-    if isinstance(raw_val, dict):
-        type_name = _extract_type_name(prop_schema)
-        if type_name:
-            return f"$ref:{type_name}"
-        return "{...}"
-    if isinstance(raw_val, list):
-        items_schema = prop_schema.get("items", {}) if isinstance(prop_schema, dict) else {}
-        type_name = _extract_type_name(items_schema)
-        count = len(raw_val)
-        if type_name:
-            return f"$ref:{type_name}[{count}]"
-        return f"[{count} items]"
-    return str(raw_val)
-
-
-def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schema, indent, field_filter, item_title_key, detail
+def _format_list_as_markdown(
     data: list[Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
     field_filter: dict[str, dict] | None = None,
     item_title_key: str | None = None,
-    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     item_schema = schema.get("items") if isinstance(schema, dict) else None
@@ -300,7 +339,6 @@ def _format_list_as_markdown(  # noqa: PLR0913 - 6 params justified: data, schem
                 title=title,
                 _depth=0,
                 field_filter=field_filter,
-                detail=detail,
             )
             lines.append(sub)
     elif item_schema and get_schema_type(item_schema) in ("string", "number", "integer", "boolean"):
@@ -382,13 +420,12 @@ def _render_list_as_compact_ref(raw_val: list, template: str) -> str:
     return ", ".join(items)
 
 
-def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar/nested, detail, field_filter, allOf, anyOf, render hints
+def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field_filter, allOf, anyOf, render hints
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
     _depth: int = 0,
     field_filter: dict[str, dict] | None = None,
-    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     combined_schema = _merge_allof_schema(schema)
@@ -425,8 +462,7 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar
             render_hint = field_opts.get("render", "expand")
 
             # Render hints override nesting — compact_ref and badge
-            # always produce flat table rows regardless of value type
-            # or detail level.
+            # always produce flat table rows regardless of value type.
             if render_hint == "compact_ref" and isinstance(raw_val, dict):
                 template = field_opts.get("template", "{id}")
                 try:
@@ -442,25 +478,21 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar
                 flat.append((label, "Yes" if raw_val else "No"))
             elif isinstance(raw_val, (dict, list)):
                 # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-                # tables — only on the expand path; render hints
-                # (compact_ref, badge) already handled their cases above.
+                # tables.  The display pipeline pre-collapses nested
+                # ``$ref``-backed objects to ``"$ref:TypeName"`` strings when
+                # ``detail=concise``, so this formatter only ever sees
+                # already-collapsed data — it renders, it does not collapse.
                 if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
                     raw_val = f"$ref:{raw_val['$ref']}"
-                if detail == "concise" and _depth >= 1:
-                    # Collapse nested objects to compact type references
-                    collapsed = _collapse_value(raw_val, prop_schema or effective)
-                    flat.append((label, collapsed))
-                else:
-                    # Don't propagate field_filter into nested sub-objects -
-                    # the parent's field names don't apply to child objects.
-                    sub = format_as_markdown(
-                        raw_val,
-                        effective or prop_schema,
-                        _depth=_depth + 1,
-                        detail=detail,
-                    )
-                    if sub.strip():
-                        nested.append((label, sub))
+                # Don't propagate field_filter into nested sub-objects -
+                # the parent's field names don't apply to child objects.
+                sub = format_as_markdown(
+                    raw_val,
+                    effective or prop_schema,
+                    _depth=_depth + 1,
+                )
+                if sub.strip():
+                    nested.append((label, sub))
             else:
                 formatted = _format_scalar(raw_val, prop_schema)
                 flat.append((label, formatted))
@@ -475,14 +507,13 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - both justified: scalar
     return "\n".join(lines)
 
 
-def format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, title, _depth, field_filter, item_title_key, detail
+def format_as_markdown(
     data: Any,
     schema: dict[str, Any] | None = None,
     title: str | None = None,
     _depth: int = 0,
     field_filter: dict[str, dict] | None = None,
     item_title_key: str | None = None,
-    detail: str = "full",
 ) -> str:
     lines: list[str] = []
     indent = "  " * _depth
@@ -502,7 +533,6 @@ def format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, tit
             indent,
             field_filter=field_filter,
             item_title_key=item_title_key,
-            detail=detail,
         )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
@@ -515,7 +545,6 @@ def format_as_markdown(  # noqa: PLR0913 - 7 params justified: data, schema, tit
             indent,
             _depth,
             field_filter=field_filter,
-            detail=detail,
         )
         if title and _depth == 0:
             return f"# {title}\n\n{result}"
@@ -600,11 +629,7 @@ def _format_json_section(title: str, data: Any) -> str:
     return f"## {title}\n\n```json\n{json_module.dumps(data, indent=2)}\n```\n"
 
 
-def format_tool_info_markdown(
-    schema: ToolSchemaResult,
-    *,
-    detail: str = "full",  # noqa: ARG001 - detail is part of the shared markdown_formatter contract; tool-info output is always full detail
-) -> str:
+def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     """Format a ``ToolSchemaResult`` as parseable, consistent markdown.
 
     Produces a predictable structure with a parameter table that agents can
@@ -616,9 +641,9 @@ def format_tool_info_markdown(
     - ``## Tags`` — comma-separated list
     - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
 
-    ``detail`` is accepted for the shared ``markdown_formatter`` contract
-    ``(data, *, detail='full') -> str`` but has no effect — tool-info output
-    is always full detail.
+    Tool-info output is always full detail — the display pipeline pre-collapses
+    only when ``detail=concise``, and this formatter renders fixed-shape output
+    that never collapses, so it takes no ``detail`` parameter.
     """
     lines: list[str] = []
 
@@ -662,11 +687,11 @@ def format_tool_info_markdown(
 def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
     """Build server info markdown from OpenAPI spec info block.
 
-    Unlike registered domain formatters (which follow the
-    ``(data, *, detail) -> str`` signature), this function takes the
-    raw OpenAPI spec directly.  It lives in ``format.py`` rather than
-    ``tools/display.py`` because it is not a registered formatter —
-    it is a shared utility used by ``resources/custom.py``.
+    Unlike registered domain formatters (which take ``data`` and optional
+    ``extra``), this function takes the raw OpenAPI spec directly.  It lives
+    in ``format.py`` rather than ``tools/display.py`` because it is not a
+    registered formatter — it is a shared utility used by
+    ``resources/custom.py``.
     """
     info = openapi_spec.get("info", {})
     title = info.get("title", "Unknown")
@@ -689,6 +714,7 @@ def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
 
 __all__ = [
     "build_server_info_markdown",
+    "call_markdown_formatter",
     "collapse_data",
     "decode_base64_content",
     "format_as_markdown",

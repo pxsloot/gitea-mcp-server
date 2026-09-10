@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
-    _FORMATTER_META,
     _FORMATTERS,
     _ISSUE_FIELDS,
     _build_labels_markdown,
@@ -42,17 +41,14 @@ def _clean_formatters() -> Generator[None, None, None]:
     """Save and restore the global formatter registry around each test.
 
     Tests register ad-hoc formatters via ``@register_formatter`` which
-    mutates the module-level ``_FORMATTERS`` and ``_FORMATTER_META``
-    dicts.  This fixture ensures each test starts with a clean slate
-    and does not leak registrations to subsequent tests.
+    mutates the module-level ``_FORMATTERS`` dict.  This fixture ensures
+    each test starts with a clean slate and does not leak registrations
+    to subsequent tests.
     """
     saved_formatters = dict(_FORMATTERS)
-    saved_meta = dict(_FORMATTER_META)
     yield
     _FORMATTERS.clear()
     _FORMATTERS.update(saved_formatters)
-    _FORMATTER_META.clear()
-    _FORMATTER_META.update(saved_meta)
 
 
 class TestCallFormatter:
@@ -67,19 +63,17 @@ class TestCallFormatter:
         """Known formatter is called and returns expected output."""
 
         @register_formatter("test_formatter")
-        def _test_fmt(data: Any, *, detail: str = "full") -> str:
+        def _test_fmt(data: Any) -> str:
             return f"formatted: {data}"
 
         result = call_formatter("test_formatter", {"hello": "world"})
         assert "formatted:" in result
 
     def test_formatter_with_extra_needed(self) -> None:
-        """Formatter registered with need_extra=True receives extra dict."""
+        """Formatter declaring ``extra`` receives the extra dict."""
 
-        @register_formatter("test_extra", need_extra=True)
-        def _test_extra(
-            data: Any, *, detail: str = "full", extra: dict[str, Any] | None = None
-        ) -> str:
+        @register_formatter("test_extra")
+        def _test_extra(data: Any, *, extra: dict[str, Any] | None = None) -> str:
             ctx = (extra or {}).get("ctx", "none")
             return f"data={data} ctx={ctx}"
 
@@ -131,14 +125,13 @@ class TestFormatLabelsMarkdownEdgeCases:
         """Empty labels list produces 'no labels' message."""
         result = _format_labels_markdown(
             [],
-            detail="full",
             extra={"owner": "org", "repo": "repo"},
         )
         assert "No labels configured for this repository" in result
 
     def test_empty_data_labels_no_extra(self) -> None:
         """Empty labels list with no extra still works (uses ? placeholders)."""
-        result = _format_labels_markdown([], detail="full")
+        result = _format_labels_markdown([])
         assert "?/?" in result
 
 
@@ -148,7 +141,7 @@ class TestBuildLabelsMarkdown:
     def test_build_labels_markdown(self) -> None:
         """_build_labels_markdown delegates correctly."""
         data = [{"id": 1, "name": "bug", "color": "ff0000", "description": "A bug"}]
-        result = _build_labels_markdown(data, "myorg", "myrepo", detail="full")
+        result = _build_labels_markdown(data, "myorg", "myrepo")
         assert "myorg/myrepo" in result
         assert "bug" in result
 
@@ -643,10 +636,12 @@ class TestToolResourceConsistency:
         assert "`#ff0000`" in result
 
     def test_labels_format_concise_handles_collapsed_refs(self) -> None:
-        """_format_labels_markdown with detail=concise handles collapsed $ref:Label strings."""
+        """_format_labels_markdown detects collapsed $ref:Label strings by shape."""
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
-        # Simulate collapsed items from the display pipeline (detail=concise).
+        # Simulate collapsed items from the display pipeline (detail=concise):
+        # the pipeline collapses $ref-backed objects to "$ref:TypeName" strings,
+        # and the formatter detects that shape instead of reading a detail flag.
         collapsed_labels = [
             "$ref:Label",
             "$ref:Label",
@@ -654,12 +649,11 @@ class TestToolResourceConsistency:
         ]
         result = _format_labels_markdown(
             collapsed_labels,
-            detail="concise",
             extra={"owner": "test-owner", "repo": "test-repo"},
         )
         assert "# Labels for test-owner/test-repo" in result
         assert "**Total**: 3 labels" in result
         assert "Accepted Format" in result
         assert "$ref:Label" in result
-        # Per-label detail sections should NOT appear for concise mode
+        # Per-label detail sections should NOT appear for collapsed items
         assert "**Color**:" not in result

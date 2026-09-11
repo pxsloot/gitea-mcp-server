@@ -126,10 +126,6 @@ def _setup_middleware(
     any caching logic runs.  Invalidation middleware must be added after the
     response-cache middleware so the cache exists to invalidate.
 
-    The response cache is project-owned (``response_cache.py``, issue #755):
-    key format, TTL policy, and invalidation are all project code — no
-    FastMCP caching internals are used.
-
     Args:
         mcp: The FastMCP server instance.
         label_service: Optional LabelService for label cache invalidation.
@@ -429,7 +425,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     )
     # Derive cache-invalidation targets AFTER resource registration: the
     # resource surface (populated by make_api_resource) is the single source
-    # of truth for what a write can invalidate (issue #743).
+    # of truth for what a write can invalidate.
     build_invalidation_map(openapi_spec)
     register_type_tools(mcp, openapi_spec=openapi_spec, tool_prefix=config.tool_prefix or "")
     await _apply_virtual_param_scope_filter(available_scopes)

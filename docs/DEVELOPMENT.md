@@ -257,10 +257,9 @@ length/type checks that the spec doesn't define):
 
 ### 4. Cache invalidation
 
-Cache invalidation is **derived, not declared** (issue #743).  A write tool
+Cache invalidation is **derived, not declared**.  A write tool
 invalidates every registered resource whose content it can change, computed
-from the spec + the registered resource surface — there is no hand-curated
-list of URI templates to maintain:
+from the spec + the registered resource surface:
 
 - **Path-prefix** — a write at path `P` invalidates every registered
   resource whose api_path is a prefix of (or equal to) `P` (template-aware,
@@ -296,16 +295,6 @@ The flow:
    cache (`response_cache.ResponseCache`) — including query-variant reads
    (e.g. `gitea://.../issues?state=open`), which the store indexes under
    their base URI.
-
-The cache is **project-owned** (issue #755): `ResponseCacheMiddleware`
-replaces FastMCP's `ResponseCachingMiddleware` for resource reads and
-listings.  Key format (raw URIs), TTL policy (per-resource `cache_ttl`
-from the surface, else `CACHE_TTL_DEFAULT`), and invalidation are all
-project code — no FastMCP caching internals are used, so a FastMCP upgrade
-can never silently break invalidation.  The server runs exactly one token,
-so there is no per-token partitioning: a single global key space keyed by
-URI.  Items larger than `CACHE_MAX_ITEM_SIZE` are not cached
-(skip-oversize) — the read still succeeds, it is simply not stored.
 
 To add a resource that should be invalidated by writes, register it via
 `make_api_resource` (or `register_resource_surface`) — the derivation picks
@@ -1213,7 +1202,7 @@ for the fixture pattern.
 This project uses FastMCP 3.x.  Key APIs:
 
 - `OpenAPIProvider(spec, client)` -- auto-generates tools from OpenAPI spec
-- `ResponseCacheMiddleware` -- project-owned TTL-based resource caching (issue #755; replaces FastMCP's `ResponseCachingMiddleware`)
+- `ResponseCacheMiddleware` -- TTL-based resource caching
 - `BM25SearchTransform` -- lazy loading with name-match + BM25 search
 - `Transform` -- modify tool lists, intercept tool lookups
 - `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior

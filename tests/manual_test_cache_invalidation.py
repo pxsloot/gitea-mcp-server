@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual verification script for cache invalidation (issues #743, #755).
+"""Manual verification script for cache invalidation.
 
 This script demonstrates that the cache invalidation system works correctly
 by simulating the flow:
@@ -10,9 +10,8 @@ by simulating the flow:
 4. Compute concrete URIs from tool arguments
 5. Show that query-variant reads are invalidated too
 
-The cache is the project-owned ``ResponseCache`` (issue #755): keys are raw
-URIs, and the store resolves query variants internally — no FastMCP caching
-internals are involved.
+The cache is the project-owned ``ResponseCache``: keys are raw
+URIs, and the store resolves query variants internally.
 
 Run: python -m tests.manual_test_cache_invalidation
 """
@@ -172,8 +171,7 @@ def main() -> None:
         for template in templates:
             print(f"    → {template}")
 
-    # 4. Simulate caching a resource (including a query variant) in the
-    #    project-owned cache.
+    # 4. Simulate caching a resource (including a query variant) in the cache.
     print_section("Simulating Cache Population")
     test_repo = {"owner": "mcp-server", "repo": "gitea-mcp-server"}
     issues_uri = f"gitea://repos/{test_repo['owner']}/{test_repo['repo']}/issues"
@@ -209,7 +207,6 @@ def main() -> None:
         print("  ✅ Cache is clean - all affected entries were invalidated!")
 
     print("\n✅ All checks passed!")
-    print("Issue #743 is effectively resolved; the cache is project-owned (#755).")
 
 
 if __name__ == "__main__":

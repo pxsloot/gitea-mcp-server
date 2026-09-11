@@ -1,4 +1,4 @@
-"""Unit tests for the project-owned response cache (issue #755).
+"""Unit tests for the response cache.
 
 Covers the ``ResponseCache`` store (TTL, skip-oversize, query-variant
 invalidation, bounding) and the ``ResponseCacheMiddleware`` (read caching,

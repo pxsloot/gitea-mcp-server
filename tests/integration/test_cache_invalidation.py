@@ -3,10 +3,7 @@
 These tests verify that write operations properly invalidate cached resources
 by using respx to mock the Gitea API and observing cache behavior.
 
-The cache is project-owned (``response_cache.py``, issue #755): the
-tautological "key matches FastMCP format" test is gone because there is no
-FastMCP key format to match — the key format is owned here, so nothing can
-drift.  End-to-end staleness is covered by the read → write → read regression
+End-to-end staleness is covered by the read → write → read regression
 in ``test_tool_edge_cases.py`` (base URI) and ``TestQueryVariantStaleness``
 below (query variants).
 """
@@ -473,7 +470,7 @@ E2E_SWAGGER_SPEC = {
 
 
 class TestEndToEndInvalidationMap:
-    """Full server startup derives a correct invalidation map (issue #743).
+    """Full server startup derives a correct invalidation map.
 
     Guards the wiring that the unit/integration tests above mock by hand:
     if ``record_write_tool`` stops firing (provider hook regression) or
@@ -522,7 +519,7 @@ class TestEndToEndInvalidationMap:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end: query-variant staleness regression (issue #755)
+# End-to-end: query-variant staleness regression
 # ---------------------------------------------------------------------------
 
 # Swagger spec with an issues resource that accepts a ``state`` query param
@@ -594,7 +591,7 @@ QUERY_VARIANT_SWAGGER_SPEC = {
 
 
 class TestQueryVariantStaleness:
-    """A write clears cached query-variant reads (issue #755 regression).
+    """A write clears cached query-variant reads.
 
     The cache key includes the query string, so a write must clear every
     variant that has been read — not just the base URI.  This is the

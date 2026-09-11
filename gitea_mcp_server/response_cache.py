@@ -1,16 +1,11 @@
-"""Project-owned response cache for resource reads and resource listings.
+"""Response cache for resource reads and resource listings.
 
-This module replaces FastMCP's ``ResponseCachingMiddleware`` for the two
-methods this server caches (``resources/read`` and ``resources/list``).
-The cache is owned here — key format, TTL policy, and invalidation are all
-project code, so a FastMCP upgrade can never silently break cache
-invalidation again (issue #755).
+This module implements the response cache for the two methods this server
+caches (``resources/read`` and ``resources/list``).
 
 Design decisions:
 
-* **Single global key space.** The server starts with exactly one token —
-  there is no multi-token deployment, so there is no per-token partitioning
-  and no cross-token leakage to guard against.  Keys are the raw resource
+* **Single global key space.** Keys are the raw resource
   URIs; the format is defined here, so the writer and the invalidator can
   never drift apart.
 * **Per-resource TTL.** Each resource may declare a ``cache_ttl`` (via the
@@ -258,12 +253,7 @@ def make_ttl_resolver(
 
 
 class ResponseCacheMiddleware(Middleware):
-    """Cache resource reads and resource listings in the project-owned store.
-
-    Replaces FastMCP's ``ResponseCachingMiddleware`` for the two methods
-    this server caches.  The cache is owned here — key format, TTL policy,
-    and invalidation are all project code, so a FastMCP upgrade can never
-    silently break cache invalidation (issue #755).
+    """Cache resource reads and resource listings in the store.
 
     TTL policy: per-resource ``cache_ttl`` from the resource surface when
     set, else ``CACHE_TTL_DEFAULT``.  Resource listings use
@@ -278,8 +268,7 @@ class ResponseCacheMiddleware(Middleware):
         """Initialize the middleware.
 
         Args:
-            cache: The project-owned store.  Defaults to a fresh
-                ``ResponseCache``.
+            cache: The cache store.  Defaults to a fresh ``ResponseCache``.
             ttl_resolver: Maps a concrete resource URI to its per-resource
                 TTL (``None`` means "use the default").  Defaults to a
                 resolver over the live resource surface.
@@ -289,7 +278,7 @@ class ResponseCacheMiddleware(Middleware):
 
     @property
     def cache(self) -> ResponseCache:
-        """The project-owned store (handed to the invalidation middleware)."""
+        """The cache store (handed to the invalidation middleware)."""
         return self._cache
 
     async def on_read_resource(

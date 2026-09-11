@@ -94,7 +94,7 @@ RETRY_WAIT_MAX = 10
 
 
 # ============================================================================
-# Cache Configuration (project-owned response cache)
+# Cache Configuration
 # ============================================================================
 
 CACHE_TTL_DEFAULT = 30.0
@@ -102,7 +102,7 @@ CACHE_TTL_DEFAULT = 30.0
 
 Used for resources without a per-resource ``cache_ttl`` (the per-resource
 constants below are honoured by ``response_cache.ResponseCacheMiddleware``
-via the resource surface — issue #755).
+via the resource surface).
 """
 
 CACHE_TTL_RESOURCE_LIST = 300.0

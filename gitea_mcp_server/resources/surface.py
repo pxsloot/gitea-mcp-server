@@ -3,7 +3,7 @@
 Every resource registered via ``make_api_resource`` records its addressing
 facts (URI template + spec api_path) here.  Cache invalidation derives its
 targets from this registry instead of hardcoded URI templates, so a URI
-change can never silently break invalidation again (issue #743).
+change can never silently break invalidation.
 
 The registry is populated at resource registration time (custom wrappers
 first, then auto-generated resources) and consumed by
@@ -37,7 +37,7 @@ class ResourceSurfaceEntry:
     """Per-resource cache TTL in seconds, or ``None`` for the default.
 
     Populated from ``make_api_resource(cache_ttl=...)``; consumed by the
-    response-cache middleware to honour per-resource TTLs (issue #755).
+    response-cache middleware to honour per-resource TTLs.
     """
 
     @property

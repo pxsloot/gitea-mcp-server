@@ -11,15 +11,11 @@ The system works by:
    targets from the spec + the registered resource surface
    (``build_invalidation_map``) — no hardcoded URI templates.
 3. After tool execution, the middleware computes concrete URIs from tool
-   arguments and clears them from the project-owned response cache
+   arguments and clears them from the response cache
    (``response_cache.ResponseCache``), including query variants recorded
    at read time.
 
-The cache itself is owned by this project (issue #755), so invalidation
-deletes by the project's own key format — nothing to drift.  This module
-never reaches into FastMCP caching internals.
-
-Target derivation (issue #743) has two parts:
+Target derivation has two parts:
 
 * **Path-prefix** — a write at path ``P`` invalidates every registered
   resource whose api_path is a prefix of (or equal to) ``P`` (template-
@@ -393,12 +389,11 @@ async def invalidate_cached_resources(
 ) -> None:
     """Invalidate cached resource responses for the given URIs.
 
-    Deletes by the project-owned cache's own key format (raw URIs, with
-    query variants resolved inside the store) — nothing to drift (issue
-    #755).
+    Deletes by the cache's own key format (raw URIs, with
+    query variants resolved inside the store).
 
     Args:
-        cache: The project-owned response cache.
+        cache: The response cache.
         uris: List of concrete resource URIs to invalidate.
         tool_name: Optional tool name for logging.
     """
@@ -423,7 +418,7 @@ class CacheInvalidationMiddleware(Middleware):
     write.  It uses the global TOOL_INVALIDATION_MAP to determine which
     resources to clear based on the tool name and arguments.
 
-    Invalidation targets the project-owned ``ResponseCache`` (issue #755):
+    Invalidation targets the ``ResponseCache``:
     the store resolves query variants internally, so the middleware only
     computes the concrete base URIs and hands them to the cache.
 
@@ -437,10 +432,10 @@ class CacheInvalidationMiddleware(Middleware):
         label_service: LabelService | None = None,
         tool_prefix: str = _DEFAULT_TOOL_PREFIX,
     ):
-        """Initialize with a reference to the project-owned response cache.
+        """Initialize with a reference to the response cache.
 
         Args:
-            cache: The project-owned response cache to invalidate.
+            cache: The response cache to invalidate.
             label_service: Optional LabelService to clear label caches on
                 label write operations.
             tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).

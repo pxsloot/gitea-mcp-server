@@ -134,8 +134,8 @@ This doc explains the server's architecture and design decisions. If you need:
 │    • FilteredToolMiddleware — intercept direct calls    │
 │      to filtered tools (scope/excluded/deprecated)      │
 │      with helpful error messages                        │
-│    • ResponseCache            — project-owned TTL cache │
-│      for resource reads + listings (issue #755)         │
+│    • ResponseCache — TTL cache for resource reads       │
+│      + listings                                         │
 │    • CacheInvalidationOnWrite — clear on write tools    │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -313,7 +313,7 @@ The customization layers as applied during server startup:
 | 7. Namespace | `tools/namespace.py` | prefix all tools with `gitea_` (resources pass through unchanged) |
 | 8. Extension metadata | `tools/extensions_metadata.py` | apply YAML overrides (title, description, tags, hints) to matching tools — runs after namespace so it matches both `gitea_` and unprefixed names |
 | 9. Unified search | `tools/unified_search.py` | merged name-match + BM25 search across tools, docs, and resources with `type` discriminator |
-| 10. Response caching | `response_cache.py` middleware | project-owned TTL-based caching of resource reads + listings (issue #755) |
+| 10. Response caching | `response_cache.py` middleware | TTL-based caching of resource reads + listings |
 | 11. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
 | 12. Contract wrapping | `server_setup/mcp_builder.py` + `tools/contract.py` | `_ToolWrappingTransform` — **server-level** transform registered via `mcp.add_transform()` (first in the chain), wraps tools stamped with the `_WRAP_ME` marker: virtual-param injection, validation, error translation, pagination metadata, formatting. Spine shared via `tools/contract.build_transform_fn(tool, executor)` |
 
@@ -544,8 +544,8 @@ from the parameter schema.
    Write tools are recorded at customization time (`record_write_tool`).
    After resource registration, `build_invalidation_map` derives each
    write tool's invalidation targets from the spec + the registered
-   resource surface (`resources/surface.py`) — no hardcoded URI templates
-   (issue #743).  Two derivation rules:
+   resource surface (`resources/surface.py`) — no hardcoded URI templates.
+   Two derivation rules:
 
    - **Path-prefix** — a write at path `P` invalidates every registered
      resource whose api_path is a prefix of (or equal to) `P`
@@ -564,22 +564,14 @@ from the parameter schema.
    deliberate — the cache uses a short TTL for dynamic endpoints, and broad
    invalidation is preferred over stale cache hits on busy servers.
 
-   The cache itself is **project-owned** (`response_cache.py`, issue #755):
-   `ResponseCacheMiddleware` replaces FastMCP's `ResponseCachingMiddleware`
-   for resource reads and listings.  Key format (raw URIs), TTL policy
-   (per-resource `cache_ttl` from the surface, else `CACHE_TTL_DEFAULT`),
-   and invalidation are all project code — no FastMCP caching internals are
-   used, so a FastMCP upgrade can never silently break invalidation.  The
-   server runs exactly one token, so there is no per-token partitioning:
-   a single global key space keyed by URI.  The store indexes every cached
-   URI under its base (query-stripped) URI, so a write clears every query
-   variant that has been read (e.g. `gitea://.../issues?state=open`), not
-   just the base.  Items larger than `CACHE_MAX_ITEM_SIZE` are not cached
-   (skip-oversize) — the read still succeeds, it is simply not stored.
+   The store indexes every cached URI under its base (query-stripped) URI,
+   so a write clears every query variant that has been read (e.g.
+   `gitea://.../issues?state=open`), not just the base.  Items larger than
+   `CACHE_MAX_ITEM_SIZE` are not cached (skip-oversize) — the read still succeeds,
+   it is simply not stored.
 
    The `CacheInvalidationMiddleware` computes concrete URIs from tool
-   arguments and clears them from the project-owned cache after successful
-   writes.
+   arguments and clears them from the cache after successful writes.
 
  7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
     re-export of scope-filtering helpers, avoiding a circular import that would
@@ -1138,7 +1130,7 @@ Agent: call_tool("gitea_issue_create_issue", {...})
   ├─▶ CacheInvalidationMiddleware.on_call_tool()
   │     └─▶ executes tool
   │     └─▶ on success: compute URIs to invalidate → clear
-  │         project-owned ResponseCache (query variants included)
+  │         ResponseCache (query variants included)
   │
   └─▶ _ToolWrappingTransform (outermost)
         ├─▶ inject virtual params into schema (tools/virtual_params.py)

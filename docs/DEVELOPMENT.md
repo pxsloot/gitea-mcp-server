@@ -286,14 +286,26 @@ The flow:
 1. `mcp_builder._apply_tool_identity` records each write tool's
    `(name, path, method)` via `record_write_tool`.
 2. `make_api_resource` records every registered resource in the surface
-   registry (`resources/surface.py`).
+   registry (`resources/surface.py`), including its per-resource
+   `cache_ttl`.
 3. After `register_all_resources`, `server.py` calls
    `build_invalidation_map(openapi_spec)` which derives each tool's
    invalidation URI templates into `TOOL_INVALIDATION_MAP`.
 4. At call time, `CacheInvalidationMiddleware` substitutes the tool's
-   arguments into the templates and clears the cache — including
-   query-variant reads (e.g. `gitea://.../issues?state=open`) recorded by
-   the middleware's `on_read_resource` hook.
+   arguments into the templates and clears the project-owned response
+   cache (`response_cache.ResponseCache`) — including query-variant reads
+   (e.g. `gitea://.../issues?state=open`), which the store indexes under
+   their base URI.
+
+The cache is **project-owned** (issue #755): `ResponseCacheMiddleware`
+replaces FastMCP's `ResponseCachingMiddleware` for resource reads and
+listings.  Key format (raw URIs), TTL policy (per-resource `cache_ttl`
+from the surface, else `CACHE_TTL_DEFAULT`), and invalidation are all
+project code — no FastMCP caching internals are used, so a FastMCP upgrade
+can never silently break invalidation.  The server runs exactly one token,
+so there is no per-token partitioning: a single global key space keyed by
+URI.  Items larger than `CACHE_MAX_ITEM_SIZE` are not cached
+(skip-oversize) — the read still succeeds, it is simply not stored.
 
 To add a resource that should be invalidated by writes, register it via
 `make_api_resource` (or `register_resource_surface`) — the derivation picks
@@ -1201,7 +1213,7 @@ for the fixture pattern.
 This project uses FastMCP 3.x.  Key APIs:
 
 - `OpenAPIProvider(spec, client)` -- auto-generates tools from OpenAPI spec
-- `ResponseCachingMiddleware` -- TTL-based resource caching
+- `ResponseCacheMiddleware` -- project-owned TTL-based resource caching (issue #755; replaces FastMCP's `ResponseCachingMiddleware`)
 - `BM25SearchTransform` -- lazy loading with name-match + BM25 search
 - `Transform` -- modify tool lists, intercept tool lookups
 - `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior

@@ -2,9 +2,15 @@
 
 These tests verify that write operations properly invalidate cached resources
 by using respx to mock the Gitea API and observing cache behavior.
+
+The cache is project-owned (``response_cache.py``, issue #755): the
+tautological "key matches FastMCP format" test is gone because there is no
+FastMCP key format to match — the key format is owned here, so nothing can
+drift.  End-to-end staleness is covered by the read → write → read regression
+in ``test_tool_edge_cases.py`` (base URI) and ``TestQueryVariantStaleness``
+below (query variants).
 """
 
-import hashlib
 from collections.abc import Generator
 from typing import Any
 
@@ -306,31 +312,6 @@ class TestCacheInvalidationIntegration:
         assert "issue_options" not in TOOL_INVALIDATION_MAP
 
 
-class TestCacheKeyConsistency:
-    """Test that cache key computation matches FastMCP's algorithm."""
-
-    def test_cache_key_matches_fastmcp_format(self) -> None:
-        """Verify our cache key matches FastMCP's ``_make_read_resource_cache_key``.
-
-        The key includes the auth partition prefix to match the format
-        ``sha256(f"{auth_key}:{uri}")``.
-        """
-        uri = "gitea://repos/owner/repo/issues"
-        auth_key = "__anonymous__"
-        expected = hashlib.sha256(f"{auth_key}:{uri}".encode()).hexdigest()
-        from gitea_mcp_server.cache_invalidation import _compute_cache_key
-
-        assert _compute_cache_key(uri, auth_key=auth_key) == expected
-
-    def test_different_uris_different_keys(self) -> None:
-        """Different URIs should produce different cache keys."""
-        from gitea_mcp_server.cache_invalidation import _compute_cache_key
-
-        uri1 = "gitea://repos/owner/repo/issues"
-        uri2 = "gitea://repos/owner/repo/pulls"
-        assert _compute_cache_key(uri1) != _compute_cache_key(uri2)
-
-
 class TestTemplateSubstitution:
     """Test URI template substitution logic."""
 
@@ -538,6 +519,139 @@ class TestEndToEndInvalidationMap:
         assert (
             "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["label_create"]
         )
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: query-variant staleness regression (issue #755)
+# ---------------------------------------------------------------------------
+
+# Swagger spec with an issues resource that accepts a ``state`` query param
+# and an issue-edit write tool.  The write must clear the cached
+# ``?state=open`` variant, not just the base URI.
+QUERY_VARIANT_SWAGGER_SPEC = {
+    "swagger": "2.0",
+    "info": {"title": "Gitea API", "version": "1.0"},
+    "basePath": "/api/v1",
+    "paths": {
+        "/repos/{owner}/{repo}/issues": {
+            "get": {
+                "operationId": "issueList",
+                "summary": "List issues",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "state", "in": "query", "required": False, "type": "string"},
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {
+                            "type": "array",
+                            "items": {"$ref": "#/definitions/Issue"},
+                        },
+                    }
+                },
+            },
+        },
+        "/repos/{owner}/{repo}/issues/{index}": {
+            "patch": {
+                "operationId": "issueEdit",
+                "summary": "Edit an issue",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "index", "in": "path", "required": True, "type": "integer"},
+                    {
+                        "name": "body",
+                        "in": "body",
+                        "required": False,
+                        "schema": {
+                            "type": "object",
+                            "properties": {"title": {"type": "string"}},
+                        },
+                    },
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {"$ref": "#/definitions/Issue"},
+                    }
+                },
+            },
+        },
+    },
+    "definitions": {
+        "Issue": {
+            "type": "object",
+            "properties": {
+                "number": {"type": "integer"},
+                "title": {"type": "string"},
+                "state": {"type": "string"},
+            },
+        },
+    },
+}
+
+
+class TestQueryVariantStaleness:
+    """A write clears cached query-variant reads (issue #755 regression).
+
+    The cache key includes the query string, so a write must clear every
+    variant that has been read — not just the base URI.  This is the
+    end-to-end guard for the store's base→variants index.
+    """
+
+    @pytest.mark.asyncio
+    async def test_write_invalidates_query_variant_read(self) -> None:
+        """Read ?state=open (cached) → edit issue → read again returns fresh data."""
+        import httpx
+
+        config = SimpleConfig(
+            url=BASE_TEST_URL,
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(
+                200, json=QUERY_VARIANT_SWAGGER_SPEC
+            )
+            issues_route = mock.get(
+                f"{BASE_TEST_URL}/api/v1/repos/owner/repo/issues",
+                params={"state": "open"},
+            )
+            issues_route.side_effect = [
+                httpx.Response(200, json=[{"number": 1, "title": "v1", "state": "open"}]),
+                httpx.Response(200, json=[{"number": 1, "title": "v2", "state": "open"}]),
+            ]
+            mock.patch(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/issues/1").respond(
+                200,
+                json={"number": 1, "title": "v2", "state": "open"},
+            )
+
+            mcp = await create_mcp_server(gitea_client)
+
+            # First read — cache miss → API returns v1.
+            r1 = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
+            assert "v1" in r1.contents[0].content
+
+            # Second read — cache hit → still v1, no second API call.
+            r2 = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
+            assert "v1" in r2.contents[0].content
+            assert issues_route.call_count == 1, "second read should come from cache"
+
+            # Write tool — invalidates the base URI and its query variants.
+            await mcp.call_tool(
+                "gitea_issue_edit",
+                {"owner": "owner", "repo": "repo", "index": 1, "title": "v2"},
+            )
+
+            # Third read — cache invalidated → API returns v2.
+            r3 = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
+            assert "v2" in r3.contents[0].content
+            assert issues_route.call_count == 2, "third read should hit the API again"
 
 
 if __name__ == "__main__":

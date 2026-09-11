@@ -33,6 +33,13 @@ class ResourceSurfaceEntry:
     method: str = "GET"
     """HTTP method of the underlying operation (always ``"GET"`` for resources)."""
 
+    cache_ttl: float | None = None
+    """Per-resource cache TTL in seconds, or ``None`` for the default.
+
+    Populated from ``make_api_resource(cache_ttl=...)``; consumed by the
+    response-cache middleware to honour per-resource TTLs (issue #755).
+    """
+
     @property
     def base_uri(self) -> str:
         """URI template without the ``{?query}`` suffix — the invalidation target."""
@@ -41,19 +48,31 @@ class ResourceSurfaceEntry:
 
 # Module-level registry: base URI template -> entry.
 # Populated at resource registration time; consumed by the invalidation
-# derivation after registration completes.
+# derivation and the response-cache TTL resolver after registration completes.
 RESOURCE_SURFACE: dict[str, ResourceSurfaceEntry] = {}
 
 
-def register_resource_surface(uri_template: str, api_path: str, method: str = "GET") -> None:
+def register_resource_surface(
+    uri_template: str,
+    api_path: str,
+    method: str = "GET",
+    cache_ttl: float | None = None,
+) -> None:
     """Record a registered resource in the surface registry.
 
     Args:
         uri_template: Full URI template as registered with FastMCP.
         api_path: Spec path the resource mirrors.
-        method: HTTP method of the underlying operation (default ``"GET"``).
+        method: HTTP method (default ``"GET"``).
+        cache_ttl: Per-resource cache TTL in seconds, or ``None`` for the
+            default (``CACHE_TTL_DEFAULT``).
     """
-    entry = ResourceSurfaceEntry(uri_template=uri_template, api_path=api_path, method=method)
+    entry = ResourceSurfaceEntry(
+        uri_template=uri_template,
+        api_path=api_path,
+        method=method,
+        cache_ttl=cache_ttl,
+    )
     RESOURCE_SURFACE[entry.base_uri] = entry
 
 

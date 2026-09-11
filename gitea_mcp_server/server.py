@@ -16,28 +16,18 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
-from fastmcp.server.middleware.caching import (
-    CallToolSettings,
-    GetPromptSettings,
-    ListResourcesSettings,
-    ListToolsSettings,
-    ReadResourceSettings,
-    ResponseCachingMiddleware,
-)
 
 from gitea_mcp_server.cache_invalidation import CacheInvalidationMiddleware, build_invalidation_map
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.config import Config, ConfigProtocol
 from gitea_mcp_server.constants import (
-    CACHE_MAX_ITEM_SIZE,
-    CACHE_TTL_DEFAULT,
-    CACHE_TTL_RESOURCE_LIST,
     SEARCH_MAX_RESULTS,
 )
 from gitea_mcp_server.exceptions import GiteaAPIError, SpecError
 from gitea_mcp_server.format import build_server_info_markdown
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
+from gitea_mcp_server.response_cache import ResponseCacheMiddleware
 from gitea_mcp_server.server_setup.http_server import run_http_server
 from gitea_mcp_server.tools.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.tools.filter_info import FilteredToolMiddleware
@@ -130,11 +120,15 @@ def _setup_middleware(
     filtered_tools_info: dict[str, Any] | None = None,
     tool_prefix: str = "",
 ) -> None:
-    """Add middleware: filtered-tool interceptor, response caching, cache invalidation.
+    """Add middleware: filtered-tool interceptor, response cache, cache invalidation.
 
     Filtered-tool middleware runs first so filtered tools are rejected before
-    any caching logic runs.  Invalidation middleware must be added after
-    caching middleware.
+    any caching logic runs.  Invalidation middleware must be added after the
+    response-cache middleware so the cache exists to invalidate.
+
+    The response cache is project-owned (``response_cache.py``, issue #755):
+    key format, TTL policy, and invalidation are all project code — no
+    FastMCP caching internals are used.
 
     Args:
         mcp: The FastMCP server instance.
@@ -150,23 +144,13 @@ def _setup_middleware(
         )
     )
 
-    logger.info("Adding response caching middleware...")
-    caching_middleware = ResponseCachingMiddleware(
-        cache_storage=None,
-        read_resource_settings=ReadResourceSettings(enabled=True, ttl=int(CACHE_TTL_DEFAULT)),
-        list_resources_settings=ListResourcesSettings(
-            enabled=True, ttl=int(CACHE_TTL_RESOURCE_LIST)
-        ),
-        list_tools_settings=ListToolsSettings(enabled=False),
-        call_tool_settings=CallToolSettings(enabled=False),
-        get_prompt_settings=GetPromptSettings(enabled=False),
-        max_item_size=CACHE_MAX_ITEM_SIZE,
-    )
-    mcp.add_middleware(caching_middleware)
+    logger.info("Adding response cache middleware...")
+    cache_middleware = ResponseCacheMiddleware()
+    mcp.add_middleware(cache_middleware)
 
     logger.info("Adding cache invalidation middleware...")
     invalidation_middleware = CacheInvalidationMiddleware(
-        caching_middleware,
+        cache_middleware.cache,
         label_service=label_service,
         tool_prefix=tool_prefix,
     )

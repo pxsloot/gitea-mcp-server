@@ -39,6 +39,7 @@ For each transform in the pipeline:
 - **labels.py**: String "bug" → integer 1 conversion, schema augmentation
 - **validation.py**: Each validator with valid + invalid inputs (use `parametrize`)
 - **cache_invalidation.py**: Target derivation (path-prefix + cross-tree type references), template substitution, query-variant invalidation, drift test (every target ∈ registered surface)
+- **response_cache.py**: Store (TTL, skip-oversize, query-variant invalidation, bounding), middleware (read caching, per-resource TTL resolution, resource-list caching), TTL resolver template matching
 - **spec_loader.py**: Spec-level filtering — excluded-routes computation (deprecated + scope + config-excluded) from the spec
 - **search.py**: Indexing, ranking, lazy loading, synthetic tool output schema
 - **namespace.py**: Prefix application (verify `gitea_` prefix), resource passthrough

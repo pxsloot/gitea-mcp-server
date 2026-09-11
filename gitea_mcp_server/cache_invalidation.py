@@ -11,8 +11,13 @@ The system works by:
    targets from the spec + the registered resource surface
    (``build_invalidation_map``) — no hardcoded URI templates.
 3. After tool execution, the middleware computes concrete URIs from tool
-   arguments and clears them from the cache, including query-variant reads
-   recorded at read time.
+   arguments and clears them from the project-owned response cache
+   (``response_cache.ResponseCache``), including query variants recorded
+   at read time.
+
+The cache itself is owned by this project (issue #755), so invalidation
+deletes by the project's own key format — nothing to drift.  This module
+never reaches into FastMCP caching internals.
 
 Target derivation (issue #743) has two parts:
 
@@ -35,24 +40,19 @@ silently break cache invalidation again.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import mcp
-    from fastmcp.server.middleware.caching import ResponseCachingMiddleware
     from fastmcp.tools.base import ToolResult
 
     from gitea_mcp_server.label_service import LabelService
     from gitea_mcp_server.openapi_types import OpenAPISpec
     from gitea_mcp_server.resources.surface import ResourceSurfaceEntry
+    from gitea_mcp_server.response_cache import ResponseCache
 
-from fastmcp.server.middleware.caching import (
-    _get_auth_partition_key,
-)
 from fastmcp.server.middleware.middleware import (
     CallNext,
     Middleware,
@@ -83,12 +83,6 @@ _DEFAULT_TOOL_PREFIX = ""
 # Minimum path segments for a label resource URI
 # (``gitea://repos/{owner}/{repo}/labels`` → 6 parts after ``split("/")``).
 _MIN_LABEL_URI_PARTS = 6
-
-# Maximum number of read URIs recorded for query-variant invalidation.
-# Bounds memory on long-lived servers.  Cache entries expire via TTL
-# (``CACHE_TTL_DEFAULT``) anyway, so evicting the oldest recorded base only
-# risks leaving a variant stale until its TTL expires — never permanently.
-_MAX_READ_URIS = 1000
 
 
 def record_write_tool(tool_name: str, path: str, method: str) -> None:
@@ -303,30 +297,8 @@ def _get_resource_types(openapi_spec: OpenAPISpec, api_path: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Cache key computation and invalidation
+# Cache invalidation
 # ---------------------------------------------------------------------------
-
-
-def _compute_cache_key(uri: str, auth_key: str | None = None) -> str:
-    """Compute the cache key for a resource URI using SHA256.
-
-    This mirrors FastMCP's ``_make_read_resource_cache_key`` to ensure we
-    compute the exact same key that the caching middleware uses.  The cache
-    key is ``sha256(f"{auth_key}:{uri}")`` - the auth partition prevents
-    per-token response filtering from leaking across users.
-
-    Args:
-        uri: The resource URI
-        auth_key: Auth partition key.  If ``None``, the current request's
-            auth key is fetched via ``_get_auth_partition_key()`` (which
-            returns ``__anonymous__`` for STDIO / unauthenticated callers).
-
-    Returns:
-        Hex digest of SHA256 hash
-    """
-    if auth_key is None:
-        auth_key = _get_auth_partition_key()
-    return hashlib.sha256(f"{auth_key}:{uri}".encode()).hexdigest()
 
 
 def _substitute_template(template: str, params: dict[str, Any]) -> str:
@@ -417,56 +389,28 @@ def compute_uris_to_invalidate(
 
 
 async def invalidate_cached_resources(
-    caching_middleware: ResponseCachingMiddleware, uris: list[str], tool_name: str = ""
+    cache: ResponseCache, uris: list[str], tool_name: str = ""
 ) -> None:
     """Invalidate cached resource responses for the given URIs.
 
+    Deletes by the project-owned cache's own key format (raw URIs, with
+    query variants resolved inside the store) — nothing to drift (issue
+    #755).
+
     Args:
-        caching_middleware: The ResponseCachingMiddleware instance
-        uris: List of resource URIs to invalidate
-        tool_name: Optional tool name for logging
+        cache: The project-owned response cache.
+        uris: List of concrete resource URIs to invalidate.
+        tool_name: Optional tool name for logging.
     """
     if not uris:
         return
 
-    # FastMCP does not expose a public API for cache invalidation yet.
-    # Access _read_resource_cache with graceful degradation in case the
-    # private attribute changes in a future FastMCP version.
-    cache_adapter = getattr(caching_middleware, "_read_resource_cache", None)
-    if cache_adapter is None:
-        logger.warning(
-            "Cache invalidation unavailable: "
-            "ResponseCachingMiddleware._read_resource_cache not found. "
-            "This may be caused by a FastMCP version upgrade."
-        )
-        return
+    removed = cache.invalidate(uris)
 
-    deleted_count = 0
-
-    for uri in uris:
-        cache_key = _compute_cache_key(uri)
-        try:
-            existing = await cache_adapter.get(key=cache_key)
-            if existing is not None:
-                await cache_adapter.delete(key=cache_key)
-                deleted_count += 1
-                logger.debug(
-                    "Invalidated cached resource: uri=%s, cache_key=%s, tool=%s",
-                    uri,
-                    cache_key[:16],
-                    tool_name,
-                )
-        except (KeyError, ValueError) as e:
-            logger.warning(
-                "Failed to invalidate cache for URI %s: %s",
-                uri,
-                e,
-            )
-
-    if deleted_count > 0:
+    if removed > 0:
         logger.info(
             "Cache invalidation: removed %d cached resource(s) for tool %s",
-            deleted_count,
+            removed,
             tool_name,
         )
 
@@ -475,96 +419,37 @@ class CacheInvalidationMiddleware(Middleware):
     """Middleware that invalidates cached resources after write operations.
 
     This middleware intercepts tool calls and, after successful execution,
-    invalidates any cached resources that may have been affected by the write.
-    It uses the global TOOL_INVALIDATION_MAP to determine which resources
-    to clear based on the tool name and arguments.
+    invalidates any cached resources that may have been affected by the
+    write.  It uses the global TOOL_INVALIDATION_MAP to determine which
+    resources to clear based on the tool name and arguments.
 
-    It also observes resource reads (``on_read_resource``) to record
-    query-variant URIs (e.g. ``gitea://.../issues?state=open``) under their
-    base URI.  The cache is keyed by the full URI including the query
-    string, so a write must clear every variant that has been read — not
-    just the base URI.
+    Invalidation targets the project-owned ``ResponseCache`` (issue #755):
+    the store resolves query variants internally, so the middleware only
+    computes the concrete base URIs and hands them to the cache.
 
-    The middleware must be added AFTER the ResponseCachingMiddleware so that
-    it can access and modify the cache.
+    The middleware must be added AFTER the response-cache middleware so the
+    cache exists to invalidate.
     """
 
     def __init__(
         self,
-        caching_middleware: ResponseCachingMiddleware,
+        cache: ResponseCache,
         label_service: LabelService | None = None,
         tool_prefix: str = _DEFAULT_TOOL_PREFIX,
     ):
-        """Initialize with a reference to the caching middleware.
+        """Initialize with a reference to the project-owned response cache.
 
         Args:
-            caching_middleware: The response caching middleware whose
-                               cache should be invalidated
+            cache: The project-owned response cache to invalidate.
             label_service: Optional LabelService to clear label caches on
-                          label write operations.
+                label write operations.
             tool_prefix: Configured namespace prefix (e.g. ``"gitea_"``).
                 Used to strip the prefix from tool names before looking up
                 the invalidation map.  Empty string means no prefix.
         """
-        self.caching_middleware = caching_middleware
+        self.cache = cache
         self._label_service = label_service
         self._tool_prefix = tool_prefix
-        # base URI -> set of full concrete URIs read (including query
-        # strings).  Populated by on_read_resource; consumed on write to
-        # clear query-variant cache entries the base URI alone cannot reach.
-        # Bounded by ``_MAX_READ_URIS`` (see ``_record_read_uri``).
-        self._read_uris: dict[str, set[str]] = defaultdict(set)
-        self._read_uri_count = 0
-
-    def _record_read_uri(self, uri: str) -> None:
-        """Record a read URI under its base, bounding total recorded URIs.
-
-        The cache key includes the full URI (query string included), so a
-        write must clear every variant that has been read.  Recording here
-        is the only robust way to know which variants exist — the cache
-        adapter offers no iteration.
-
-        Memory is bounded by ``_MAX_READ_URIS``: when the cap is reached,
-        the oldest recorded base URI (and its variants) is evicted.  Cache
-        entries expire via TTL anyway, so an evicted variant is only left
-        stale until its TTL expires — never permanently.
-
-        Args:
-            uri: The full resource URI that was read.
-        """
-        base = uri.split("?", 1)[0]
-        variants = self._read_uris[base]
-        if uri in variants:
-            return
-        variants.add(uri)
-        self._read_uri_count += 1
-        while self._read_uri_count > _MAX_READ_URIS:
-            oldest_base = next(iter(self._read_uris))
-            self._read_uri_count -= len(self._read_uris.pop(oldest_base))
-
-    async def on_read_resource(
-        self,
-        context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
-        call_next: CallNext[mcp.types.ReadResourceRequestParams, Any],
-    ) -> Any:
-        """Record the read URI so query variants can be invalidated later.
-
-        The cache key includes the full URI (query string included), so a
-        write must clear every variant that has been read.  Recording here
-        is the only robust way to know which variants exist — the cache
-        adapter offers no iteration.
-
-        Args:
-            context: The read context with the resource URI.
-            call_next: The next middleware/resource in the chain.
-
-        Returns:
-            The resource result (unchanged).
-        """
-        uri = str(context.message.uri)
-        if uri:
-            self._record_read_uri(uri)
-        return await call_next(context)
 
     async def on_call_tool(
         self,
@@ -595,15 +480,10 @@ class CacheInvalidationMiddleware(Middleware):
                 tool_prefix=self._tool_prefix,
             )
             if uris_to_invalidate:
-                # Expand with query variants recorded at read time: the
-                # cache key includes the query string, so the base URI
-                # alone would leave variants stale.
-                expanded = set(uris_to_invalidate)
-                for base in uris_to_invalidate:
-                    expanded |= self._read_uris.get(base, set())
-                await invalidate_cached_resources(
-                    self.caching_middleware, sorted(expanded), tool_name
-                )
+                # The cache resolves query variants internally: the store
+                # indexes every cached URI under its base, so clearing the
+                # base also clears every variant that has been read.
+                await invalidate_cached_resources(self.cache, sorted(uris_to_invalidate), tool_name)
                 # If any URI targets the labels resource, also clear the
                 # LabelService's internal cache for this repo.
                 if self._label_service is not None:

@@ -1071,8 +1071,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # truth for cache-invalidation targets (issue #743).  The invalidation
     # derivation matches write paths against ``api_path`` and emits
     # ``base_uri`` templates, so a URI change here can never silently
-    # break invalidation again.
-    register_resource_surface(uri, api_path, method=method)
+    # break invalidation again.  ``cache_ttl`` rides along so the
+    # response-cache middleware can honour per-resource TTLs (issue #755).
+    register_resource_surface(uri, api_path, method=method, cache_ttl=cache_ttl)
 
     logger.debug("Registered factory resource: %s", uri)
     return handler

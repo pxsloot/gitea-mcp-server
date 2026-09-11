@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual verification script for cache invalidation (issue #743).
+"""Manual verification script for cache invalidation (issues #743, #755).
 
 This script demonstrates that the cache invalidation system works correctly
 by simulating the flow:
@@ -10,10 +10,12 @@ by simulating the flow:
 4. Compute concrete URIs from tool arguments
 5. Show that query-variant reads are invalidated too
 
+The cache is the project-owned ``ResponseCache`` (issue #755): keys are raw
+URIs, and the store resolves query variants internally — no FastMCP caching
+internals are involved.
+
 Run: python -m tests.manual_test_cache_invalidation
 """
-
-import hashlib
 
 from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
@@ -26,12 +28,8 @@ from gitea_mcp_server.resources.surface import (
     clear_resource_surface,
     register_resource_surface,
 )
+from gitea_mcp_server.response_cache import ResponseCache
 from tests.helpers.spec_fixtures import make_openapi_spec
-
-
-def compute_cache_key(uri: str) -> str:
-    """Compute the same hash FastMCP uses."""
-    return hashlib.sha256(uri.encode()).hexdigest()
 
 
 def print_section(title: str) -> None:
@@ -174,15 +172,16 @@ def main() -> None:
         for template in templates:
             print(f"    → {template}")
 
-    # 4. Simulate caching a resource (including a query variant).
+    # 4. Simulate caching a resource (including a query variant) in the
+    #    project-owned cache.
     print_section("Simulating Cache Population")
     test_repo = {"owner": "mcp-server", "repo": "gitea-mcp-server"}
     issues_uri = f"gitea://repos/{test_repo['owner']}/{test_repo['repo']}/issues"
     issues_open_uri = f"{issues_uri}?state=open"
 
-    simulated_cache = {}
-    simulated_cache[compute_cache_key(issues_uri)] = {"data": "Issues list (cached)"}
-    simulated_cache[compute_cache_key(issues_open_uri)] = {"data": "Open issues (cached)"}
+    cache = ResponseCache()
+    cache.put(issues_uri, {"data": "Issues list (cached)"}, ttl=30)
+    cache.put(issues_open_uri, {"data": "Open issues (cached)"}, ttl=30)
     print(f"\n✓ Cached: {issues_uri}")
     print(f"✓ Cached: {issues_open_uri}")
 
@@ -191,39 +190,26 @@ def main() -> None:
     arguments = {**test_repo, "index": 42, "state": "closed"}
     uris_to_invalidate = compute_uris_to_invalidate("issue_edit_issue", arguments)
 
-    # The middleware expands base URIs with query variants recorded at read
-    # time (the cache key includes the query string).
-    read_uris = {
-        "gitea://repos/mcp-server/gitea-mcp-server/issues": {
-            "gitea://repos/mcp-server/gitea-mcp-server/issues?state=open"
-        }
-    }
-    expanded = set(uris_to_invalidate)
-    for base in uris_to_invalidate:
-        expanded |= read_uris.get(base, set())
+    # The store resolves query variants internally: invalidating the base
+    # URI also clears every variant that has been read.
+    removed = cache.invalidate(uris_to_invalidate)
 
     print("\n🔧 Tool called: issue_edit_issue")
-    print(f"   URIs to invalidate (incl. query variants): {sorted(expanded)}")
-
-    deleted = []
-    for uri in sorted(expanded):
-        key = compute_cache_key(uri)
-        if key in simulated_cache:
-            del simulated_cache[key]
-            deleted.append(uri)
-    print(f"🗑️  Deleted {len(deleted)} cache entries")
+    print(f"   URIs to invalidate: {sorted(uris_to_invalidate)}")
+    print(f"🗑️  Deleted {removed} cache entries")
 
     # 6. Show cache state after invalidation.
     print_section("Cache State After Invalidation")
-    if simulated_cache:
+    remaining = [uri for uri in (issues_uri, issues_open_uri) if cache.get(uri) is not None]
+    if remaining:
         print("  Remaining entries:")
-        for key in simulated_cache:
-            print(f"    {key[:16]}...")
+        for uri in remaining:
+            print(f"    {uri}")
     else:
         print("  ✅ Cache is clean - all affected entries were invalidated!")
 
     print("\n✅ All checks passed!")
-    print("Issue #743 is effectively resolved.")
+    print("Issue #743 is effectively resolved; the cache is project-owned (#755).")
 
 
 if __name__ == "__main__":

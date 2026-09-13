@@ -2,16 +2,14 @@
 
 from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
-from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
 from gitea_mcp_server import cache_invalidation as ci_module
 from gitea_mcp_server.cache_invalidation import (
     TOOL_INVALIDATION_MAP,
     CacheInvalidationMiddleware,
-    _compute_cache_key,
     _substitute_template,
     build_invalidation_map,
     compute_uris_to_invalidate,
@@ -24,6 +22,7 @@ from gitea_mcp_server.resources.surface import (
     get_resource_surface,
     register_resource_surface,
 )
+from gitea_mcp_server.response_cache import ResponseCache
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
@@ -218,26 +217,6 @@ def clear_invalidation_state() -> Generator[None, None, None]:
     ci_module._PENDING_WRITE_TOOLS.clear()
 
 
-class TestComputeCacheKey:
-    """Tests for _compute_cache_key function."""
-
-    def test_consistent_hashing(self) -> None:
-        """Same URI produces same hash."""
-        uri = "gitea://repos/owner/repo/issues"
-        key1 = _compute_cache_key(uri)
-        key2 = _compute_cache_key(uri)
-        assert key1 == key2
-        assert len(key1) == 64  # SHA256 hex digest length
-
-    def test_different_uris_different_keys(self) -> None:
-        """Different URIs produce different hashes."""
-        uri1 = "gitea://repos/owner/repo/issues"
-        uri2 = "gitea://repos/owner/repo/pulls"
-        key1 = _compute_cache_key(uri1)
-        key2 = _compute_cache_key(uri2)
-        assert key1 != key2
-
-
 class TestSubstituteTemplate:
     """Tests for _substitute_template function."""
 
@@ -341,33 +320,24 @@ class TestComputeUrisToInvalidate:
         uris = compute_uris_to_invalidate("gitea_issue_edit_issue", arguments, tool_prefix="gitea_")
         assert uris == ["gitea://repos/org/repo/issues"]
 
+    def test_prefix_stripping_unknown_tool_returns_empty(self) -> None:
+        """A namespaced tool absent from the map invalidates nothing."""
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        assert compute_uris_to_invalidate("gitea_unknown_tool", {}, tool_prefix="gitea_") == []
+
     @pytest.mark.asyncio
     async def test_empty_uris_list_noop(self) -> None:
         """invalidate_cached_resources with empty list returns immediately."""
-        mock_caching = MagicMock()
-        await invalidate_cached_resources(mock_caching, [], "test_tool")
+        cache = ResponseCache()
+        await invalidate_cached_resources(cache, [], "test_tool")
 
     @pytest.mark.asyncio
-    async def test_cache_delete_key_error_logged(self, caplog: pytest.LogCaptureFixture) -> None:
-        """KeyError during cache delete is caught and logged."""
-        import logging
-
-        caplog.set_level(logging.WARNING)
-
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()  # exists
-        mock_cache.delete.side_effect = KeyError("cache key not found")
-
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
-        uris = compute_uris_to_invalidate(
-            "issue_edit_issue", {"owner": "org", "repo": "repo", "index": 1}
-        )
-
-        await invalidate_cached_resources(mock_caching, uris, "issue_edit_issue")
-        assert "Failed to invalidate cache" in caplog.text
+    async def test_invalidate_uncached_uri_noop(self) -> None:
+        """Invalidating a URI that was never cached removes nothing."""
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "x"}, ttl=30)
+        await invalidate_cached_resources(cache, ["gitea://repos/org/repo/pulls"], "test_tool")
+        assert cache.get("gitea://repos/org/repo/issues") == {"title": "x"}
 
 
 class TestDeriveTargets:
@@ -483,6 +453,31 @@ class TestDeriveTargets:
         _build_map(spec, [("weirdWrite", "/weird", "POST")])
         assert TOOL_INVALIDATION_MAP["weirdWrite"] == ["gitea://weird"]
 
+    def test_path_item_without_get_operation_skips_cross_tree(self) -> None:
+        """A path item with only a write op yields no referenced types.
+
+        Path-prefix derivation still matches (it needs no spec); the
+        cross-tree lookup degrades to an empty type set when the path item
+        is a dict but has no GET operation.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/widgets": {
+                    "post": _write_op("widgetCreate", "Widget"),
+                }
+            },
+            components={
+                "schemas": {
+                    "Widget": {"type": "object", "properties": {"name": {"type": "string"}}}
+                }
+            },
+        )
+        register_resource_surface(
+            "gitea://repos/{owner}/{repo}/widgets", "/repos/{owner}/{repo}/widgets"
+        )
+        _build_map(spec, [("widgetCreate", "/repos/{owner}/{repo}/widgets", "POST")])
+        assert TOOL_INVALIDATION_MAP["widgetCreate"] == ["gitea://repos/{owner}/{repo}/widgets"]
+
 
 class TestDrift:
     """The invalidation map must never drift from the registered surface."""
@@ -515,229 +510,87 @@ class TestDrift:
 class TestCacheInvalidationMiddleware:
     """Tests for CacheInvalidationMiddleware behavior."""
 
+    def _make_middleware(
+        self, cache: ResponseCache | None = None, label_service: Any = None
+    ) -> CacheInvalidationMiddleware:
+        return CacheInvalidationMiddleware(
+            cache if cache is not None else ResponseCache(),
+            label_service=label_service,
+        )
+
+    def _make_context_and_call_next(
+        self,
+        tool_name: str = "issue_edit_issue",
+        arguments: dict[str, Any] | None = None,
+        is_error: bool = False,
+    ) -> tuple[MagicMock, Any]:
+        mock_context = MagicMock()
+        mock_context.message.name = tool_name
+        mock_context.message.arguments = arguments or {"owner": "org", "repo": "repo", "index": 1}
+
+        async def mock_call_next(context: Any) -> MagicMock:
+            return MagicMock(is_error=is_error)
+
+        return mock_context, mock_call_next
+
     @pytest.mark.asyncio
     async def test_successful_tool_invalidates_cache(self) -> None:
         """Successful tool call triggers cache invalidation."""
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.name = "issue_edit_issue"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "stale"}, ttl=30)
+        middleware = self._make_middleware(cache)
 
         TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
-        assert mock_cache.delete.called
+        assert cache.get("gitea://repos/org/repo/issues") is None
 
     @pytest.mark.asyncio
     async def test_error_tool_no_invalidation(self) -> None:
         """Failed tool call does not invalidate cache."""
-        mock_cache = AsyncMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "kept"}, ttl=30)
+        middleware = self._make_middleware(cache)
 
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.name = "issue_edit_issue"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=True)
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        mock_context, mock_call_next = self._make_context_and_call_next(is_error=True)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
-        assert not mock_cache.delete.called
+        assert cache.get("gitea://repos/org/repo/issues") == {"title": "kept"}
 
     @pytest.mark.asyncio
     async def test_unknown_tool_no_invalidation(self) -> None:
         """Tool not in invalidation map does not trigger invalidation."""
-        mock_cache = AsyncMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "kept"}, ttl=30)
+        middleware = self._make_middleware(cache)
 
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.name = "some_unknown_tool"
-        mock_context.message.arguments = {}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
-
-        await middleware.on_call_tool(mock_context, mock_call_next)
-
-        assert not mock_cache.delete.called
-
-    @pytest.mark.asyncio
-    async def test_missing_read_resource_cache_graceful(self) -> None:
-        """Graceful degradation when _read_resource_cache attribute is missing."""
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        del mock_caching._read_resource_cache
-
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.name = "issue_edit_issue"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
-
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
-
-        await middleware.on_call_tool(mock_context, mock_call_next)
-
-    @pytest.mark.asyncio
-    async def test_invalidate_cached_resources_missing_attribute(self) -> None:
-        """invalidate_cached_resources handles missing _read_resource_cache gracefully."""
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        del mock_caching._read_resource_cache
-
-        await invalidate_cached_resources(
-            mock_caching, ["gitea://repos/org/repo/issues"], "test_tool"
+        mock_context, mock_call_next = self._make_context_and_call_next(
+            tool_name="some_unknown_tool"
         )
 
+        await middleware.on_call_tool(mock_context, mock_call_next)
 
-class TestQueryVariantInvalidation:
-    """Query-variant reads are recorded and invalidated with their base URI."""
-
-    @pytest.mark.asyncio
-    async def test_read_records_query_variant(self) -> None:
-        """on_read_resource records the full URI under its base."""
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.uri = "gitea://repos/org/repo/issues?state=open"
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock()
-
-        await middleware.on_read_resource(mock_context, mock_call_next)
-
-        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
-            "gitea://repos/org/repo/issues?state=open"
-        }
-
-    @pytest.mark.asyncio
-    async def test_read_without_query_records_base(self) -> None:
-        """A plain read records the base URI itself."""
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        mock_context = MagicMock()
-        mock_context.message.uri = "gitea://repos/org/repo/issues"
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock()
-
-        await middleware.on_read_resource(mock_context, mock_call_next)
-
-        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
-            "gitea://repos/org/repo/issues"
-        }
-
-    @pytest.mark.asyncio
-    async def test_read_uri_dedup(self) -> None:
-        """Re-reading the same URI does not double-count it."""
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        middleware = CacheInvalidationMiddleware(mock_caching)
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock()
-
-        for _ in range(3):
-            mock_context = MagicMock()
-            mock_context.message.uri = "gitea://repos/org/repo/issues?state=open"
-            await middleware.on_read_resource(mock_context, mock_call_next)
-
-        assert middleware._read_uri_count == 1
-        assert middleware._read_uris["gitea://repos/org/repo/issues"] == {
-            "gitea://repos/org/repo/issues?state=open"
-        }
-
-    @pytest.mark.asyncio
-    async def test_read_uris_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The read-URI registry is bounded — oldest bases are evicted."""
-        from gitea_mcp_server import cache_invalidation as ci_module
-
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        middleware = CacheInvalidationMiddleware(mock_caching)
-        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock()
-
-        for i in range(5):
-            mock_context = MagicMock()
-            mock_context.message.uri = f"gitea://repos/org/repo/res{i}"
-            await middleware.on_read_resource(mock_context, mock_call_next)
-
-        # Only the 3 most recent bases survive; the 2 oldest were evicted.
-        assert set(middleware._read_uris.keys()) == {
-            "gitea://repos/org/repo/res2",
-            "gitea://repos/org/repo/res3",
-            "gitea://repos/org/repo/res4",
-        }
-        assert middleware._read_uri_count == 3
-
-    @pytest.mark.asyncio
-    async def test_read_uris_bounded_single_base(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A single base with many variants cannot exceed the cap."""
-        from gitea_mcp_server import cache_invalidation as ci_module
-
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        middleware = CacheInvalidationMiddleware(mock_caching)
-        monkeypatch.setattr(ci_module, "_MAX_READ_URIS", 3)
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock()
-
-        for i in range(5):
-            mock_context = MagicMock()
-            mock_context.message.uri = f"gitea://repos/org/repo/issues?page={i}"
-            await middleware.on_read_resource(mock_context, mock_call_next)
-
-        total = sum(len(v) for v in middleware._read_uris.values())
-        assert total <= 3
-        assert middleware._read_uri_count <= 3
+        assert cache.get("gitea://repos/org/repo/issues") == {"title": "kept"}
 
     @pytest.mark.asyncio
     async def test_write_invalidates_query_variants(self) -> None:
-        """A write clears the base URI and every recorded query variant."""
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
+        """A write clears the base URI and every cached query variant."""
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "base"}, ttl=30)
+        cache.put("gitea://repos/org/repo/issues?state=open", {"title": "open"}, ttl=30)
+        middleware = self._make_middleware(cache)
 
-        middleware = CacheInvalidationMiddleware(mock_caching)
-        middleware._read_uris["gitea://repos/org/repo/issues"].add(
-            "gitea://repos/org/repo/issues?state=open"
-        )
         TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
-
-        mock_context = MagicMock()
-        mock_context.message.name = "issue_edit_issue"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
+        mock_context, mock_call_next = self._make_context_and_call_next()
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
-        deleted_uris = [call[1]["key"] for call in mock_cache.delete.call_args_list]
-        assert _compute_cache_key("gitea://repos/org/repo/issues") in deleted_uris
-        assert _compute_cache_key("gitea://repos/org/repo/issues?state=open") in deleted_uris
+        assert cache.get("gitea://repos/org/repo/issues") is None
+        assert cache.get("gitea://repos/org/repo/issues?state=open") is None
 
 
 class TestIntegration:
@@ -746,14 +599,16 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_close_issue_invalidates_resources(self) -> None:
         """Closing an issue via issue_edit_issue invalidates relevant caches."""
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
+        cache = ResponseCache()
+        cache.put("gitea://repos/testorg/testrepo/issues", {"title": "stale"}, ttl=30)
+        cache.put("gitea://repos/testorg/testrepo", {"name": "stale"}, ttl=30)
 
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = [
+            "gitea://repos/{owner}/{repo}",
+            "gitea://repos/{owner}/{repo}/issues",
+        ]
 
-        middleware = CacheInvalidationMiddleware(mock_caching)
+        middleware = CacheInvalidationMiddleware(cache)
 
         mock_context = MagicMock()
         mock_context.message.name = "issue_edit_issue"
@@ -769,37 +624,43 @@ class TestIntegration:
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
-        deleted_uris = [call[1]["key"] for call in mock_cache.delete.call_args_list]
-        expected_key = _compute_cache_key("gitea://repos/testorg/testrepo/issues")
-        assert deleted_uris == [expected_key]
+        assert cache.get("gitea://repos/testorg/testrepo/issues") is None
+        assert cache.get("gitea://repos/testorg/testrepo") is None
 
 
 class TestClearLabelServiceCache:
     """Tests for CacheInvalidationMiddleware._clear_label_service_cache."""
 
-    @pytest.mark.asyncio
-    async def test_label_uri_clears_label_cache(self) -> None:
-        """URI ending with /labels clears LabelService cache for that repo."""
-        from unittest.mock import AsyncMock, MagicMock
+    def _make_middleware(self, label_service: Any = None) -> CacheInvalidationMiddleware:
+        return CacheInvalidationMiddleware(ResponseCache(), label_service=label_service)
 
-        from gitea_mcp_server.label_service import LabelService
-
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
-        label_service = MagicMock(spec=LabelService)
-        middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
-
-        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
-
+    def _make_context_and_call_next(
+        self, tool_name: str = "test_label_tool", arguments: dict[str, Any] | None = None
+    ) -> tuple[MagicMock, Any]:
         mock_context = MagicMock()
-        mock_context.message.name = "repo_create_label"
-        mock_context.message.arguments = {"owner": "myorg", "repo": "myrepo"}
+        mock_context.message.name = tool_name
+        mock_context.message.arguments = arguments or {}
 
         async def mock_call_next(context: Any) -> MagicMock:
             return MagicMock(is_error=False)
+
+        return mock_context, mock_call_next
+
+    @pytest.mark.asyncio
+    async def test_label_uri_clears_label_cache(self) -> None:
+        """URI ending with /labels clears LabelService cache for that repo."""
+        from unittest.mock import MagicMock
+
+        from gitea_mcp_server.label_service import LabelService
+
+        label_service = MagicMock(spec=LabelService)
+        middleware = self._make_middleware(label_service=label_service)
+
+        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
+
+        mock_context, mock_call_next = self._make_context_and_call_next(
+            tool_name="repo_create_label", arguments={"owner": "myorg", "repo": "myrepo"}
+        )
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
@@ -809,26 +670,18 @@ class TestClearLabelServiceCache:
     @pytest.mark.asyncio
     async def test_non_label_uri_does_not_clear_label_cache(self) -> None:
         """URI not ending with /labels does not clear LabelService cache."""
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import MagicMock
 
         from gitea_mcp_server.label_service import LabelService
 
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
         label_service = MagicMock(spec=LabelService)
-        middleware = CacheInvalidationMiddleware(mock_caching, label_service=label_service)
+        middleware = self._make_middleware(label_service=label_service)
 
         TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
 
-        mock_context = MagicMock()
-        mock_context.message.name = "issue_edit_issue"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo", "index": 1}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
+        mock_context, mock_call_next = self._make_context_and_call_next(
+            tool_name="issue_edit_issue", arguments={"owner": "org", "repo": "repo", "index": 1}
+        )
 
         await middleware.on_call_tool(mock_context, mock_call_next)
 
@@ -837,23 +690,13 @@ class TestClearLabelServiceCache:
     @pytest.mark.asyncio
     async def test_no_label_service_skips_gracefully(self) -> None:
         """When label_service is None, no error is raised."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
-        middleware = CacheInvalidationMiddleware(mock_caching, label_service=None)
+        middleware = self._make_middleware(label_service=None)
 
         TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
 
-        mock_context = MagicMock()
-        mock_context.message.name = "repo_create_label"
-        mock_context.message.arguments = {"owner": "org", "repo": "repo"}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
+        mock_context, mock_call_next = self._make_context_and_call_next(
+            tool_name="repo_create_label", arguments={"owner": "org", "repo": "repo"}
+        )
 
         # Should not raise even though label_service is None
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -864,33 +707,6 @@ class TestClearLabelServiceCache:
     # arise from the normal invalidation system (all registered patterns
     # produce well-formed gitea://repos/.../labels URIs).
     # ------------------------------------------------------------------
-
-    def _make_middleware(self, label_service: Any = None) -> CacheInvalidationMiddleware:
-        """Helper: create CacheInvalidationMiddleware with a mock cache and optional label_service."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-        return CacheInvalidationMiddleware(mock_caching, label_service=label_service)
-
-    def _make_context_and_call_next(
-        self, tool_name: str = "test_label_tool", arguments: dict[str, Any] | None = None
-    ) -> tuple[MagicMock, Any]:
-        """Helper: create mock context and call_next for on_call_tool tests."""
-        from unittest.mock import MagicMock
-
-        mock_context = MagicMock()
-        mock_context.message.name = tool_name
-        mock_context.message.arguments = arguments or {}
-
-        async def mock_call_next(context: Any) -> MagicMock:
-            return MagicMock(is_error=False)
-
-        return mock_context, mock_call_next
 
     @pytest.mark.asyncio
     async def test_uri_too_few_parts_skips(self) -> None:
@@ -998,16 +814,7 @@ class TestClearLabelServiceCache:
 
     def test_clear_label_service_cache_with_none_label_service(self) -> None:
         """Calling _clear_label_service_cache directly with label_service=None is a no-op."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-
-        mock_cache = AsyncMock()
-        mock_cache.get.return_value = MagicMock()
-        mock_caching = MagicMock(spec=ResponseCachingMiddleware)
-        mock_caching._read_resource_cache = mock_cache
-
-        middleware = CacheInvalidationMiddleware(mock_caching, label_service=None)
+        middleware = self._make_middleware(label_service=None)
         # Direct call to the inner guard method — should not raise
         middleware._clear_label_service_cache(
             ["gitea://repos/org/repo/labels"], {"owner": "org", "repo": "repo"}

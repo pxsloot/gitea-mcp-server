@@ -94,11 +94,16 @@ RETRY_WAIT_MAX = 10
 
 
 # ============================================================================
-# Cache Configuration (ResponseCachingMiddleware)
+# Cache Configuration
 # ============================================================================
 
 CACHE_TTL_DEFAULT = 30.0
-"""Default cache TTL for resources (seconds)."""
+"""Default cache TTL for resources (seconds).
+
+Used for resources without a per-resource ``cache_ttl`` (the per-resource
+constants below are honoured by ``response_cache.ResponseCacheMiddleware``
+via the resource surface).
+"""
 
 CACHE_TTL_RESOURCE_LIST = 300.0
 """Cache TTL for resource list operations (seconds, 5 minutes)."""
@@ -115,8 +120,14 @@ CACHE_TTL_RELEASES = 600.0
 CACHE_TTL_USERS = 300.0
 """Cache TTL for user/organization profiles (seconds, 5 minutes)."""
 
-CACHE_MAX_ITEM_SIZE = 100_000_000
-"""Maximum size of cached items (bytes, 100MB)."""
+CACHE_MAX_ITEM_SIZE = 10_000_000
+"""Maximum size of cached items (bytes, 10MB).
+
+Items larger than this are not cached (skip-oversize): the read still
+succeeds, it is simply not stored.  The largest resources (issues/pulls
+lists) run to a few hundred KB, so 10MB is a generous safety valve against
+pathological responses pinning memory.
+"""
 
 
 # ============================================================================

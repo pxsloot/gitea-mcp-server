@@ -257,10 +257,9 @@ length/type checks that the spec doesn't define):
 
 ### 4. Cache invalidation
 
-Cache invalidation is **derived, not declared** (issue #743).  A write tool
+Cache invalidation is **derived, not declared**.  A write tool
 invalidates every registered resource whose content it can change, computed
-from the spec + the registered resource surface — there is no hand-curated
-list of URI templates to maintain:
+from the spec + the registered resource surface:
 
 - **Path-prefix** — a write at path `P` invalidates every registered
   resource whose api_path is a prefix of (or equal to) `P` (template-aware,
@@ -286,14 +285,16 @@ The flow:
 1. `mcp_builder._apply_tool_identity` records each write tool's
    `(name, path, method)` via `record_write_tool`.
 2. `make_api_resource` records every registered resource in the surface
-   registry (`resources/surface.py`).
+   registry (`resources/surface.py`), including its per-resource
+   `cache_ttl`.
 3. After `register_all_resources`, `server.py` calls
    `build_invalidation_map(openapi_spec)` which derives each tool's
    invalidation URI templates into `TOOL_INVALIDATION_MAP`.
 4. At call time, `CacheInvalidationMiddleware` substitutes the tool's
-   arguments into the templates and clears the cache — including
-   query-variant reads (e.g. `gitea://.../issues?state=open`) recorded by
-   the middleware's `on_read_resource` hook.
+   arguments into the templates and clears the project-owned response
+   cache (`response_cache.ResponseCache`) — including query-variant reads
+   (e.g. `gitea://.../issues?state=open`), which the store indexes under
+   their base URI.
 
 To add a resource that should be invalidated by writes, register it via
 `make_api_resource` (or `register_resource_surface`) — the derivation picks
@@ -1201,7 +1202,7 @@ for the fixture pattern.
 This project uses FastMCP 3.x.  Key APIs:
 
 - `OpenAPIProvider(spec, client)` -- auto-generates tools from OpenAPI spec
-- `ResponseCachingMiddleware` -- TTL-based resource caching
+- `ResponseCacheMiddleware` -- TTL-based resource caching
 - `BM25SearchTransform` -- lazy loading with name-match + BM25 search
 - `Transform` -- modify tool lists, intercept tool lookups
 - `Tool.from_tool(existing, transform_fn=...)` -- wrap existing tools with new behavior

@@ -57,7 +57,7 @@ _LIST_RESOURCES_KEY = "__gitea_list_resources__"
 # invalidation.  Bounds memory on long-lived servers.  Cache entries expire
 # via TTL anyway, so evicting the oldest tracked base only risks leaving a
 # variant stale until its TTL expires — never permanently.
-_MAX_TRACKED_URIS = 1000
+_MAX_TRACKED_URIS = 50
 
 
 class _CacheEntry:

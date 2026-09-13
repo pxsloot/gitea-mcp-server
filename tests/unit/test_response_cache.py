@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from fastmcp.resources import FunctionResource
 
 from gitea_mcp_server.constants import CACHE_TTL_DEFAULT, CACHE_TTL_RESOURCE_LIST
 from gitea_mcp_server.resources.surface import (
@@ -113,6 +114,22 @@ class TestResponseCacheStore:
         assert cache.invalidate(["gitea://repos/org/repo/issues?state=open"]) == 1
         assert cache.get("gitea://repos/org/repo/issues?state=open") is None
 
+    def test_invalidate_untracked_entry_still_cleared(self) -> None:
+        """An entry without a variant-index record is still cleared.
+
+        The store keeps ``_entries`` and ``_variants`` in lockstep, so this
+        state is not reachable through the public API; the fallback guards
+        against future bookkeeping drift, so pin it.
+        """
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/issues", {"title": "orphan"}, ttl=30)
+        # Simulate index drift: drop the variant bookkeeping but keep the entry.
+        cache._variants.clear()
+        cache._tracked_uri_count = 0
+
+        assert cache.invalidate(["gitea://repos/org/repo/issues"]) == 1
+        assert cache.get("gitea://repos/org/repo/issues") is None
+
     def test_clear(self) -> None:
         """clear() drops every entry."""
         cache = ResponseCache()
@@ -209,6 +226,40 @@ class TestTTLResolver:
         )
         resolver = make_ttl_resolver()
         assert resolver("gitea://repos/org/repo/contents/src/main.py") == 600.0
+
+    def test_shorter_uri_does_not_match_wildcard_template(self) -> None:
+        """A {filepath*} template does not match a URI shorter than its prefix."""
+        register_resource_surface(
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}",
+            "/repos/{owner}/{repo}/contents/{filepath}",
+            cache_ttl=600.0,
+        )
+        resolver = make_ttl_resolver()
+        assert resolver("gitea://repos/org/repo") is None
+
+
+# ---------------------------------------------------------------------------
+# Size estimation
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateSize:
+    def test_function_resource_falls_back_to_str_size(self) -> None:
+        """A resource carrying a callable cannot be JSON-serialised.
+
+        ``_estimate_size`` falls back to a string-length estimate (the
+        ``model_dump_json`` path raises), and the list is still cached.
+        """
+
+        def handler() -> str:
+            return "value"
+
+        resource = FunctionResource.from_function(
+            fn=handler, uri="gitea://repos/org/repo", name="repo"
+        )
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo", [resource], ttl=30)
+        assert cache.get("gitea://repos/org/repo") == [resource]
 
 
 # ---------------------------------------------------------------------------

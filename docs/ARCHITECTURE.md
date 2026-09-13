@@ -130,7 +130,7 @@ This doc explains the server's architecture and design decisions. If you need:
 │      required_scope is unavailable (custom)             │
 │      (see Spec-Level Filtering)                         │
 │                                                         │
-│  Middleware (applied in order on tool calls):           │
+│  Middleware (chain order; each acts on its hooks):      │
 │    • FilteredToolMiddleware — intercept direct calls    │
 │      to filtered tools (scope/excluded/deprecated)      │
 │      with helpful error messages                        │
@@ -199,8 +199,8 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     ├─▶ TolerantSearchTransform (synthetic handler)
     │     └─▶ ctx.fastmcp.call_tool(name, args)
     │
-    ├─▶ ResponseCacheMiddleware
-    │     └─▶ return cached resource read if fresh (TTL)
+    ├─▶ ResponseCacheMiddleware  — pass-through for tools (resource
+    │     reads are cached; see the resource flow below)
     │
     ├─▶ CacheInvalidationMiddleware
     │     ├─▶ executes the tool (auto OTEL span: tools/call gitea_*)

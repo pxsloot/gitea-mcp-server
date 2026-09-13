@@ -320,6 +320,11 @@ class TestComputeUrisToInvalidate:
         uris = compute_uris_to_invalidate("gitea_issue_edit_issue", arguments, tool_prefix="gitea_")
         assert uris == ["gitea://repos/org/repo/issues"]
 
+    def test_prefix_stripping_unknown_tool_returns_empty(self) -> None:
+        """A namespaced tool absent from the map invalidates nothing."""
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        assert compute_uris_to_invalidate("gitea_unknown_tool", {}, tool_prefix="gitea_") == []
+
     @pytest.mark.asyncio
     async def test_empty_uris_list_noop(self) -> None:
         """invalidate_cached_resources with empty list returns immediately."""
@@ -447,6 +452,31 @@ class TestDeriveTargets:
         register_resource_surface("gitea://weird", "/weird")
         _build_map(spec, [("weirdWrite", "/weird", "POST")])
         assert TOOL_INVALIDATION_MAP["weirdWrite"] == ["gitea://weird"]
+
+    def test_path_item_without_get_operation_skips_cross_tree(self) -> None:
+        """A path item with only a write op yields no referenced types.
+
+        Path-prefix derivation still matches (it needs no spec); the
+        cross-tree lookup degrades to an empty type set when the path item
+        is a dict but has no GET operation.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/widgets": {
+                    "post": _write_op("widgetCreate", "Widget"),
+                }
+            },
+            components={
+                "schemas": {
+                    "Widget": {"type": "object", "properties": {"name": {"type": "string"}}}
+                }
+            },
+        )
+        register_resource_surface(
+            "gitea://repos/{owner}/{repo}/widgets", "/repos/{owner}/{repo}/widgets"
+        )
+        _build_map(spec, [("widgetCreate", "/repos/{owner}/{repo}/widgets", "POST")])
+        assert TOOL_INVALIDATION_MAP["widgetCreate"] == ["gitea://repos/{owner}/{repo}/widgets"]
 
 
 class TestDrift:

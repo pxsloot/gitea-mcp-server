@@ -4,11 +4,13 @@ Covers all functions in __all__:
 - _snake_to_title, _format_datetime, _format_scalar, _format_simple_value
 - _resolve_anyof_schema, format_as_markdown, _format_parameter_table, _format_type
 - call_markdown_formatter, _accepted_kwargs (signature-aware formatter dispatch)
+- MarkdownFormatter (the canonical formatter contract alias)
 """
 
 from typing import Any
 
 from gitea_mcp_server.format import (
+    MarkdownFormatter,
     _accepted_kwargs,
     _extract_type_name,
     _format_datetime,
@@ -273,6 +275,24 @@ class TestCallMarkdownFormatter:
             return ""
 
         assert _accepted_kwargs(_fmt) == frozenset({"extra"})
+
+
+class TestMarkdownFormatterContract:
+    """The ``MarkdownFormatter`` alias is the canonical formatter contract."""
+
+    def test_alias_is_callable_returning_str(self) -> None:
+        """``MarkdownFormatter`` is ``Callable[..., str]`` — the contract type."""
+        import typing
+        from collections.abc import Callable as _Callable
+
+        assert typing.get_origin(MarkdownFormatter) is _Callable
+        assert typing.get_args(MarkdownFormatter) == (Ellipsis, str)
+
+    def test_alias_is_exported(self) -> None:
+        """``MarkdownFormatter`` is part of ``format.__all__`` (public contract)."""
+        import gitea_mcp_server.format as _format_module
+
+        assert "MarkdownFormatter" in _format_module.__all__
 
 
 class TestCollapseData:

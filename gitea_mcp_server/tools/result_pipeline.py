@@ -21,16 +21,13 @@ envelope's ``result``, not the executor's full data) while
 Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 ``$ref``-aware collapse when the tool-level schema does not describe the
 result (e.g. ``read_resource``, whose schema varies per URI); it takes
-precedence over the tool-level schema in :func:`render`.  The
-``markdown_formatter`` contract is ``(data, **accepted_kwargs) -> str`` —
-formatters declare only the keyword params they use (``extra``), and the
-pipeline dispatches through ``call_markdown_formatter`` (``format.py``)
-which inspects each signature and passes exactly the accepted kwargs.
-When ``detail="concise"`` and a schema is available, the pipeline
-pre-collapses the page (schema-aware ``$ref`` collapse) before calling the
-formatter: formatters receive already-collapsed data and must not re-collapse.
-``detail`` is not forwarded to formatters — collapsed items are detected by
-shape (``$ref:TypeName`` strings), not by the detail flag.
+precedence over the tool-level schema in :func:`render`.  A per-result
+``markdown_formatter`` — a :data:`~gitea_mcp_server.format.MarkdownFormatter`,
+whose contract is stated canonically in ``format.py`` — is dispatched through
+``call_markdown_formatter``.  When ``detail="concise"`` and a schema is
+available, the pipeline pre-collapses the page (schema-aware ``$ref``
+collapse) before calling the formatter, so formatters receive
+already-collapsed data and must not re-collapse.
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -65,9 +62,15 @@ from typing import Any
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 from pydantic import ConfigDict
+from pydantic.json_schema import SkipJsonSchema  # noqa: TC002 - runtime use via get_type_hints
 
 from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
-from gitea_mcp_server.format import call_markdown_formatter, collapse_data, format_as_markdown
+from gitea_mcp_server.format import (
+    MarkdownFormatter,
+    call_markdown_formatter,
+    collapse_data,
+    format_as_markdown,
+)
 from gitea_mcp_server.pagination import add_pagination_metadata
 
 logger = logging.getLogger(__name__)
@@ -88,17 +91,18 @@ class ExecutionResult:
     Executors (autogen HTTP pipeline and synthetic impls) return this instead
     of a ``ToolResult``; :func:`render` turns it into the agent-facing result.
 
-    ``markdown_formatter`` is a callable ``(data, **accepted_kwargs) -> str``
-    — pydantic cannot build a ``TypeAdapter`` for it (FastMCP validates tool
-    return annotations), so the field is typed ``Any`` and excluded from
-    serialization.  The pipeline dispatches through ``call_markdown_formatter``
-    (``format.py``), which passes only the kwargs the formatter declares
-    (``extra``); the generic ``format_as_markdown`` is the
-    fallback.  When ``detail="concise"`` and a schema is available, the
-    pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
-    calling the formatter — the formatter receives already-collapsed data and
-    must not re-collapse.  ``detail`` is not forwarded to formatters; collapsed
-    items are detected by shape (``$ref:TypeName`` strings).
+    ``markdown_formatter`` is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
+    (the contract is stated canonically in ``format.py``), dispatched through
+    ``call_markdown_formatter``; when absent the pipeline falls back to
+    ``format_as_markdown`` bound to the result schema (see
+    :func:`_resolve_formatter`).  The field is wrapped in ``SkipJsonSchema``:
+    FastMCP derives a tool's output JSON Schema from its return annotation,
+    and pydantic cannot generate a schema for a ``Callable`` — the wrapper
+    keeps the field typed for mypy / ``get_type_hints`` while excluding it
+    from the generated schema.  When ``detail="concise"`` and a schema is
+    available, the pipeline pre-collapses the page (schema-aware ``$ref``
+    collapse) *before* calling the formatter — the formatter receives
+    already-collapsed data and must not re-collapse.
     """
 
     __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
@@ -109,7 +113,7 @@ class ExecutionResult:
     paginated: bool = False
     message: str | None = None
     markdown_extras: list[str] | None = None
-    markdown_formatter: Any = field(default=None, repr=False)
+    markdown_formatter: SkipJsonSchema[MarkdownFormatter | None] = field(default=None, repr=False)
     schema: dict[str, Any] | None = None
     """Schema describing *data* for ``$ref``-aware collapse (``detail=concise``).
 
@@ -280,6 +284,24 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
     return {"result": data}, shape
 
 
+def _resolve_formatter(
+    result: ExecutionResult,
+    schema: dict[str, Any] | None,
+) -> MarkdownFormatter:
+    """Return the result's formatter, or the schema-bound generic fallback.
+
+    ``ExecutionResult.markdown_formatter`` is optional.  When it is set, the
+    result's own :data:`~gitea_mcp_server.format.MarkdownFormatter` is used.
+    Otherwise the pipeline falls back to :func:`~gitea_mcp_server.format.format_as_markdown`,
+    binding ``schema`` up front because ``call_markdown_formatter`` dispatches
+    only ``extra`` (never ``schema`` or ``detail``).  Centralising the choice
+    here keeps ``_format`` a single, uniform formatter call site.
+    """
+    if result.markdown_formatter is not None:
+        return result.markdown_formatter
+    return functools.partial(format_as_markdown, schema=schema)
+
+
 def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, effective_shape) must be a parameter because executors return raw data only and never render
     envelope: dict[str, Any],
     result: ExecutionResult,
@@ -308,9 +330,9 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     once (schema-aware ``$ref`` collapse) for json and markdown, and the
     envelope's ``result`` is updated so ``structured_content`` mirrors the
     collapsed text — the two channels never disagree.  ``format=raw`` stays
-    uncollapsed: raw is the unprocessed-data contract.  The formatter
-    receives the collapsed page; ``detail`` is not forwarded — formatters
-    detect collapsed items by shape (``$ref:TypeName`` strings).
+    uncollapsed: raw is the unprocessed-data contract.  The formatter receives
+    the collapsed page; the ``MarkdownFormatter`` contract (``format.py``)
+    governs what it may declare.
     """
     try:
         # Collapse the page once for json/markdown when detail=concise and a
@@ -333,13 +355,10 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         else:
             # Render the page (the envelope's result), not the executor's
             # full data — the text channel must agree with the envelope.
-            # The formatter declares only the kwargs it uses; the dispatch
-            # helper passes exactly the accepted ones (``extra``).  ``detail``
-            # is not forwarded — collapsed items are detected by shape.
-            formatter = result.markdown_formatter or functools.partial(
-                format_as_markdown, schema=schema
-            )
-            text = call_markdown_formatter(formatter, page_data)
+            # The formatter (result-specific, or the schema-bound generic
+            # fallback) is resolved in one place by _resolve_formatter; the
+            # dispatch helper forwards only the kwargs it declares.
+            text = call_markdown_formatter(_resolve_formatter(result, schema), page_data)
             if result.markdown_extras:
                 text += "\n\n---\n\n" + "\n\n---\n\n".join(result.markdown_extras)
     except (TypeError, AttributeError, ValueError, KeyError, IndexError, RecursionError) as exc:

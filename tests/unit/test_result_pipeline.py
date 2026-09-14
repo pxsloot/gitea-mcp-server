@@ -12,8 +12,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import TypeAdapter
 
-from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
+from gitea_mcp_server.format import MarkdownFormatter
+from gitea_mcp_server.tools.result_pipeline import ExecutionResult, _resolve_formatter, render
 from tests.helpers.mcp_results import (
     assert_dual_channel,
     extract_text_content,
@@ -765,3 +767,63 @@ class TestDualChannelContract:
             fmt="raw",
         )
         assert_dual_channel(result, fmt="raw")
+
+
+class TestResolveFormatter:
+    """``_resolve_formatter`` centralises the result-specific vs generic choice."""
+
+    def test_explicit_formatter_returned_unchanged(self) -> None:
+        """A result carrying a formatter returns that exact callable."""
+
+        def _fmt(data: Any) -> str:
+            return "custom"
+
+        result = ExecutionResult(data={"x": 1}, markdown_formatter=_fmt)
+        assert _resolve_formatter(result, None) is _fmt
+
+    def test_none_falls_back_to_schema_bound_generic(self) -> None:
+        """Without a formatter, the generic ``format_as_markdown`` (schema-bound) is used."""
+        from gitea_mcp_server.format import format_as_markdown
+
+        schema = {
+            "type": "object",
+            "properties": {"owner": {"$ref": "#/components/schemas/User"}},
+        }
+        result = ExecutionResult(data={"owner": {"id": 1, "login": "u"}}, schema=schema)
+        formatter = _resolve_formatter(result, schema)
+        data = {"owner": {"id": 1, "login": "u"}}
+        # The fallback is format_as_markdown with schema bound up front, so it
+        # renders identically to calling the generic formatter with the schema.
+        assert formatter(data) == format_as_markdown(data, schema=schema)
+
+
+class TestExecutionResultFormatterField:
+    """The ``markdown_formatter`` field is typed yet excluded from the JSON schema."""
+
+    def test_field_excluded_from_generated_schema(self) -> None:
+        """``SkipJsonSchema`` keeps the callable out of the output JSON Schema.
+
+        This is *why* the wrapper exists: FastMCP derives the tool output
+        schema from the return annotation, and pydantic cannot generate a
+        schema for a ``Callable``.
+        """
+        schema = TypeAdapter(ExecutionResult).json_schema()
+        props = schema.get("properties", {})
+        assert "markdown_formatter" not in props
+        assert "data" in props
+
+    def test_field_type_preserved_for_get_type_hints(self) -> None:
+        """Despite the schema exclusion, the real callable type survives."""
+        import typing
+
+        hints = typing.get_type_hints(ExecutionResult)
+        assert hints["markdown_formatter"] == MarkdownFormatter | None
+
+    def test_field_accepts_a_formatter(self) -> None:
+        """The field still stores a formatter on a directly-constructed result."""
+
+        def _fmt(data: Any) -> str:
+            return "ok"
+
+        result = ExecutionResult(data={"x": 1}, markdown_formatter=_fmt)
+        assert result.markdown_formatter is _fmt

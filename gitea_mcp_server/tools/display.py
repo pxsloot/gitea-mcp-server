@@ -5,39 +5,32 @@ formatters that the ``read_resource`` executor (``tools/mcp_tools.py``)
 resolves into ``markdown_formatter`` callables for the single result
 pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
 
-Formatters are **pure renderers** — they take ``data`` and optionally
-``extra`` (formatter context), declaring only the keyword params they use.
-The pipeline dispatches through ``call_markdown_formatter`` (``format.py``),
-which inspects each signature and passes exactly the accepted kwargs.
-
-**Invariant**: when ``detail="concise"`` and the result carries a schema, the
-pipeline pre-collapses the page (schema-aware ``$ref`` collapse) *before*
-calling the formatter — formatters receive already-collapsed data (nested
-``$ref``-backed objects are ``"$ref:TypeName"`` strings).  Formatters must
-not re-collapse; a formatter that renders collapsed items differently (e.g.
-``_format_labels_markdown``) detects the collapsed shape (items are
-``$ref:TypeName`` strings) rather than reading the ``detail`` flag — the
-formatter does not know the requested detail level.  Trade-off: shape
-detection is implicit, not explicit; it stays correct as long as collapse
-produces ``$ref:TypeName`` strings, which the pipeline guarantees for
-``$ref``-backed schemas.
+Every formatter here is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
+— a pure renderer that takes ``data`` and may declare a keyword-only
+``extra`` for context.  The contract itself (and why ``detail`` is not part
+of it) is stated canonically in ``format.py``; this module does not restate
+it.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-from gitea_mcp_server.format import call_markdown_formatter, format_as_markdown
+from gitea_mcp_server.format import (
+    MarkdownFormatter,
+    call_markdown_formatter,
+    format_as_markdown,
+)
 
 # ---------------------------------------------------------------------------
 # Formatter registry
 # ---------------------------------------------------------------------------
 
-_FORMATTERS: dict[str, Callable[..., str]] = {}
+_FORMATTERS: dict[str, MarkdownFormatter] = {}
 
 
 def register_formatter(
     name: str,
-) -> Callable[[Callable[..., str]], Callable[..., str]]:
+) -> Callable[[MarkdownFormatter], MarkdownFormatter]:
     """Decorator that registers a domain-specific markdown formatter.
 
     Args:
@@ -49,14 +42,14 @@ def register_formatter(
         def _format_repo_markdown(data): ...
     """
 
-    def deco(fn: Callable[..., str]) -> Callable[..., str]:
+    def deco(fn: MarkdownFormatter) -> MarkdownFormatter:
         _FORMATTERS[name] = fn
         return fn
 
     return deco
 
 
-def get_formatter(name: str) -> Callable[..., str] | None:
+def get_formatter(name: str) -> MarkdownFormatter | None:
     """Look up a registered formatter by name.  Returns ``None`` if not found."""
     return _FORMATTERS.get(name)
 

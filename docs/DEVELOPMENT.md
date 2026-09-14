@@ -562,13 +562,14 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    def _format_my_type(data: dict) -> str:
        ...
    ```
-   Formatters are **pure renderers**: declare only the keyword params you
-   use — `extra` for formatter context.  The pipeline dispatches through
-   `call_markdown_formatter` (in `format.py`), which passes exactly the
-   accepted kwargs; the data is pre-collapsed by the pipeline when
-   `detail=concise`, so formatters never collapse themselves and never see
-   the `detail` flag — collapsed items are detected by shape
-   (`$ref:TypeName` strings), not by a detail parameter.
+   A formatter is a `format.MarkdownFormatter` — a pure renderer that takes
+   `data` and may declare a keyword-only `extra` for formatter context.  The
+   contract is stated canonically in `format.py`; the pipeline dispatches
+   through `call_markdown_formatter`, which forwards only the kwargs a
+   formatter declares.  The data is pre-collapsed by the pipeline when
+   `detail=concise`, so formatters never collapse themselves and never see the
+   `detail` flag — collapsed items are detected by shape (`$ref:TypeName`
+   strings).
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:

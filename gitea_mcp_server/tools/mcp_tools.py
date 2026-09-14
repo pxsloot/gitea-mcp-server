@@ -31,7 +31,11 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.format import call_markdown_formatter, decode_base64_content
+from gitea_mcp_server.format import (
+    MarkdownFormatter,
+    call_markdown_formatter,
+    decode_base64_content,
+)
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
@@ -165,23 +169,21 @@ def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
 def _make_resource_formatter(
     format_hint: str | None,
     extra: dict[str, Any] | None,
-) -> Callable[..., str] | None:
+) -> MarkdownFormatter | None:
     """Resolve a ``format_hint`` to a markdown formatter callable, binding extra.
 
-    The returned callable matches the result pipeline's ``markdown_formatter``
-    contract ``(data) -> str``: ``extra`` (formatter context such as
-    ``owner``/``repo`` or ``type``) is bound at executor time.  The formatter
-    declares only the kwargs it uses; ``call_markdown_formatter`` dispatches
-    the accepted ones.  ``detail`` is not part of the contract — the pipeline
-    pre-collapses the data and formatters detect collapsed items by shape.
+    The returned callable is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
+    (the contract is stated canonically in ``format.py``): ``extra`` (formatter
+    context such as ``owner``/``repo`` or ``type``) is bound at executor time,
+    so the callable takes ``data`` only.
 
     Args:
         format_hint: Registered formatter name, or ``None``.
         extra: Extra context dict for formatters that need it.
 
     Returns:
-        A callable ``(data) -> str``, or ``None`` if no formatter is
-        registered for ``format_hint``.
+        A :data:`MarkdownFormatter`, or ``None`` if no formatter is registered
+        for ``format_hint``.
     """
     if not format_hint:
         return None

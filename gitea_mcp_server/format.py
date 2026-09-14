@@ -16,6 +16,12 @@ Public functions:
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
 
+Formatter contract:
+    MarkdownFormatter - the display pipeline's markdown formatter type.  This
+        module is its canonical home; other modules point here rather than
+        restating the signature.  ``call_markdown_formatter`` is the single
+        dispatch point.
+
 The single result pipeline for tools and resources lives in
 ``tools/result_pipeline.py``; this module provides the shared formatting
 primitives it builds on.
@@ -27,14 +33,13 @@ import base64
 import inspect
 import json as json_module
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.schema_utils import get_schema_type
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from gitea_mcp_server.models import ToolSchemaResult
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
@@ -46,9 +51,24 @@ logger = logging.getLogger(__name__)
 # Shared formatter dispatch
 # ---------------------------------------------------------------------------
 
+# The display pipeline's markdown formatter contract — the canonical home for
+# this statement; other modules point here rather than restating it.
+#
+# A formatter is a *pure renderer*: it takes already-shaped data and returns
+# markdown.  It may declare a keyword-only ``extra`` parameter (with a
+# default) for formatter context; ``call_markdown_formatter`` inspects each
+# signature and forwards ``extra`` only to formatters that declare it.  No
+# other keyword-only parameter is dispatched.
+#
+# ``detail`` is deliberately NOT part of the contract: when ``detail="concise"``
+# and a schema is available the pipeline pre-collapses the page, so formatters
+# receive already-collapsed data and detect collapsed items by shape
+# (``$ref:TypeName`` strings) rather than reading a detail flag.
+MarkdownFormatter = Callable[..., str]
 
-def _accepted_kwargs(fn: Callable[..., Any]) -> frozenset[str]:
-    """Keyword-only params a callable accepts.
+
+def _accepted_kwargs(fn: MarkdownFormatter) -> frozenset[str]:
+    """Keyword-only params a formatter callable accepts.
 
     Formatters are pure renderers with heterogeneous signatures: most take
     only ``data``, some take ``extra`` (formatter context).  The display
@@ -69,7 +89,7 @@ def _accepted_kwargs(fn: Callable[..., Any]) -> frozenset[str]:
 
 
 def call_markdown_formatter(
-    fn: Callable[..., str],
+    fn: MarkdownFormatter,
     data: Any,
     *,
     extra: dict[str, Any] | None = None,
@@ -94,7 +114,7 @@ def call_markdown_formatter(
     raise ``TypeError``.
 
     Args:
-        fn: The formatter callable ``(data, **accepted_kwargs) -> str``.
+        fn: A :data:`MarkdownFormatter` — ``(data, *, extra?) -> str``.
         data: The (already-collapsed) data to render.
         extra: Formatter context; passed only if ``fn`` declares it.
 
@@ -713,6 +733,7 @@ def build_server_info_markdown(openapi_spec: OpenAPISpec) -> str:
 
 
 __all__ = [
+    "MarkdownFormatter",
     "build_server_info_markdown",
     "call_markdown_formatter",
     "collapse_data",

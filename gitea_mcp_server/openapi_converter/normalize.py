@@ -398,8 +398,17 @@ def _annotate_boolean_checks(openapi_spec: OpenAPISpec) -> int:
 #
 # Verify against the router when upgrading Gitea/Forgejo: a path that no
 # longer matches the fetched spec (or a new ``/*`` route) must be updated
-# here.  ``_annotate_wildcard_path_params`` warns loudly when a table entry
-# no longer exists in the spec (drift guard).
+# here.  The runtime drift guard is asymmetric — it warns loudly when a
+# table entry disappears from the spec, but a NEW router wildcard is
+# invisible from the spec: go-swagger erases ``/*`` into ``{param}``, so a
+# new wildcard route is indistinguishable from an ordinary path.  Only the
+# manual router audit at upgrade time catches those.
+#
+# Known forward drift: Gitea main registers
+# ``/repos/{owner}/{repo}/contents-ext`` with ``m.Get("/*", ...)``
+# (``repo.GetContentsExt``) — absent from the 1.22-era spec this table was
+# curated against.  When a server upgrade starts exposing a
+# ``contents-ext/{filepath}`` path, add it to the table below.
 
 _WILDCARD_PATH_PARAMS: dict[str, str] = {
     "/repos/{owner}/{repo}/contents/{filepath}": "filepath",

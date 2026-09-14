@@ -60,6 +60,14 @@ logger = logging.getLogger(__name__)
 # signature and forwards ``extra`` only to formatters that declare it.  No
 # other keyword-only parameter is dispatched.
 #
+# The type is deliberately ``Callable[..., str]`` — not a tighter
+# ``Callable[[Any], str]`` or a ``Protocol``: formatters have heterogeneous
+# signatures (``data`` positional, optional keyword-only ``extra``), and
+# Python's type system cannot express "may declare this optional keyword"
+# without rejecting the common ``def f(data)`` form.  The shape of the
+# contract is therefore enforced at runtime by ``call_markdown_formatter``
+# and locked by tests, not by the type itself.
+#
 # ``detail`` is deliberately NOT part of the contract: when ``detail="concise"``
 # and a schema is available the pipeline pre-collapses the page, so formatters
 # receive already-collapsed data and detect collapsed items by shape
@@ -71,9 +79,8 @@ def _accepted_kwargs(fn: MarkdownFormatter) -> frozenset[str]:
     """Keyword-only params a formatter callable accepts.
 
     Formatters are pure renderers with heterogeneous signatures: most take
-    only ``data``, some take ``extra`` (formatter context).  The display
-    pipeline pre-collapses the data, so formatters never see the ``detail``
-    flag — collapsed items are detected by shape (``$ref:TypeName`` strings).
+    only ``data``, some take ``extra`` (formatter context) — the contract is
+    stated canonically on :data:`MarkdownFormatter`.
 
     The signature is inspected per call — ``inspect.signature`` is cheap
     (microseconds) next to the HTTP call and the formatting walk, and the
@@ -101,12 +108,9 @@ def call_markdown_formatter(
     just ``data``, some take ``extra`` (formatter context) — and this helper
     inspects each signature to pass exactly the accepted kwargs.
     This keeps the pipeline's call site uniform while letting formatters drop
-    dead params.
-
-    ``detail`` is deliberately not part of the contract: the pipeline
-    pre-collapses the data when ``detail=concise``, so formatters receive
-    already-collapsed data and detect the collapsed shape themselves
-    (``$ref:TypeName`` strings) rather than reading the detail flag.
+    dead params.  The contract itself — including why ``detail`` is not
+    dispatched (the pipeline pre-collapses and formatters detect collapsed
+    items by shape) — is stated canonically on :data:`MarkdownFormatter`.
 
     Only ``extra`` is dispatched among keyword-only params, so formatters
     should declare no other keyword-only param (and ``extra`` with a

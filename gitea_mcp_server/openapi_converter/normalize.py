@@ -51,9 +51,13 @@ multi-segment values route correctly.
 
 Rule C is a **documented exception** to the module's shape-driven ideal: it
 is source-driven, not shape-driven, because the wildcard information is
-erased during spec generation and no spec shape can recover it.  The table
-must be re-verified against the router when upgrading Gitea/Forgejo; a table
-entry that no longer matches the fetched spec is logged loudly (drift guard).
+erased during spec generation and no spec shape can recover it.  The drift
+guard is therefore asymmetric: ``_annotate_wildcard_path_params`` warns
+loudly when a table entry disappears from the fetched spec, but a new
+router wildcard is invisible there (the erasure above) and indistinguishable
+from an ordinary path.  The table must be re-verified against the router
+when upgrading Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries
+the upgrade note and the known forward-drift example.
 
 Rules A and B are **shape-driven, not name-driven**: they trigger on the shape
 of the spec (naming convention, response structure), never on a hardcoded
@@ -388,18 +392,20 @@ def _annotate_boolean_checks(openapi_spec: OpenAPISpec) -> int:
 
 # ── Rule C — wildcard path params (source-driven exception) ─────────────────
 #
-# Gitea/Forgejo's router registers these repo paths as wildcards (values may
-# contain '/'), but go-swagger erases the wildcard when generating the spec:
-# ``contents/*`` becomes ``contents/{filepath}``.  The spec cannot express
-# this — ``{filepath}`` is indistinguishable from ``{id}`` — so the knowledge
-# is curated here from the router source (``routers/api/v1/api.go``, routes
-# registered with ``/*``).  This is a documented exception to the module's
-# shape-driven ideal: the rule is source-driven, not shape-driven.
+# Curated from the router source (``routers/api/v1/api.go``, routes
+# registered with ``/*``); the module docstring carries the design
+# rationale, including why the runtime drift guard is asymmetric.
 #
-# Verify against the router when upgrading Gitea/Forgejo: a path that no
-# longer matches the fetched spec (or a new ``/*`` route) must be updated
-# here.  ``_annotate_wildcard_path_params`` warns loudly when a table entry
-# no longer exists in the spec (drift guard).
+# Upgrade audit: when upgrading Gitea/Forgejo, re-verify this table
+# against the router.  The guard warns when an entry here vanishes from
+# the fetched spec, but never about a NEW wildcard — only this audit
+# catches forward drift.
+#
+# Known forward drift: Gitea main registers
+# ``/repos/{owner}/{repo}/contents-ext`` with ``m.Get("/*", ...)``
+# (``repo.GetContentsExt``) — absent from the 1.22-era spec this table was
+# curated against.  When a server upgrade starts exposing a
+# ``contents-ext/{filepath}`` path, add it to the table below.
 
 _WILDCARD_PATH_PARAMS: dict[str, str] = {
     "/repos/{owner}/{repo}/contents/{filepath}": "filepath",

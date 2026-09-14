@@ -903,10 +903,12 @@ from the parameter schema.
      the resource layer renders ``{param*}`` in URI templates so multi-segment
      values (``contents/src/main.py``) route correctly.  This is a documented
      exception to the shape-driven ideal: the wildcard information is erased
-     during spec generation and no spec shape can recover it.  A table entry
-     that no longer matches the fetched spec is logged loudly (drift guard);
-     the table must be re-verified against the router when upgrading
-     Gitea/Forgejo.
+     during spec generation and no spec shape can recover it.  The drift
+     guard is asymmetric — it warns when a table entry vanishes from the
+     fetched spec, but a new router wildcard is invisible there — so the
+     table must be re-verified against the router when upgrading
+     Gitea/Forgejo (upgrade note and known forward drift: the
+     ``_WILDCARD_PATH_PARAMS`` comment in ``normalize.py``).
 
      Everything else stays **intentionally mirrored** — the spec is the
      source of truth and the one-to-one mapping is what makes the surface

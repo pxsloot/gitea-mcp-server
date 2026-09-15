@@ -319,10 +319,16 @@ class TestFormatterGaps:
         result = _format_issues_markdown(issues, extra={"type": "pulls"})
         assert "Pull Requests - 1 items" in result
 
-    def test_format_issues_markdown_extra_type_fallback_when_data_is_str(self) -> None:
-        """Issues formatter falls back to generic title when data is collapsed strings."""
+    def test_format_issues_markdown_defensive_on_string_items(self) -> None:
+        """Issues formatter tolerates string items (defensive, not the contract).
+
+        Since #759 the concise contract summarizes items as dicts — bare
+        ``$ref:Issue`` strings no longer reach formatters through the
+        pipeline.  If an unexpected shape arrives, the scan simply finds no
+        pull requests and renders the plain "Issues" title.
+        """
         result = _format_issues_markdown(["$ref:Issue"], extra=None)
-        assert "Issues and Pull Requests - 1 items" in result
+        assert "Issues - 1 items" in result
 
     def test_format_issues_markdown_fallback_scan_detects_prs(self) -> None:
         """Fallback scanning detects pull requests when items have pull_request dict."""
@@ -635,25 +641,41 @@ class TestToolResourceConsistency:
         assert "validated" in result.lower()
         assert "`#ff0000`" in result
 
-    def test_labels_format_concise_handles_collapsed_refs(self) -> None:
-        """_format_labels_markdown detects collapsed $ref:Label strings by shape."""
+    def test_labels_format_concise_receives_item_dicts(self) -> None:
+        """Under detail=concise items are summarized dicts (#759), not labels.
+
+        The ``Label`` schema has no nested ``$ref`` fields, so a concise
+        item is the full scalar dict — the formatter renders the same
+        per-label sections on both detail levels (no shape detection).
+        """
         from gitea_mcp_server.tools.display import _format_labels_markdown
 
-        # Simulate collapsed items from the display pipeline (detail=concise):
-        # the pipeline collapses $ref-backed objects to "$ref:TypeName" strings,
-        # and the formatter detects that shape instead of reading a detail flag.
-        collapsed_labels = [
-            "$ref:Label",
-            "$ref:Label",
-            "$ref:Label",
+        concise_labels = [
+            {"id": 1, "name": "Kind/Bug", "color": "ee0701", "description": "Bugs"},
+            {"id": 2, "name": "Priority/High", "color": "e64a19", "description": ""},
         ]
         result = _format_labels_markdown(
-            collapsed_labels,
+            concise_labels,
             extra={"owner": "test-owner", "repo": "test-repo"},
         )
         assert "# Labels for test-owner/test-repo" in result
-        assert "**Total**: 3 labels" in result
-        assert "Accepted Format" in result
-        assert "$ref:Label" in result
-        # Per-label detail sections should NOT appear for collapsed items
+        assert "**Total**: 2 labels" in result
+        assert "### Kind/Bug (#1)" in result
+        assert "**Color**:" in result
+
+    def test_labels_format_defensive_on_string_items(self) -> None:
+        """The labels formatter renders unexpected non-dict items as bullets.
+
+        Defensive guard only — the pipeline never delivers collapsed
+        strings as items since #759 (root-list items are dicts).
+        """
+        from gitea_mcp_server.tools.display import _format_labels_markdown
+
+        result = _format_labels_markdown(
+            ["$ref:Label", "$ref:Label"],
+            extra={"owner": "test-owner", "repo": "test-repo"},
+        )
+        assert "**Total**: 2 labels" in result
+        assert "- $ref:Label" in result
+        # Per-label detail sections must NOT appear for non-dict items
         assert "**Color**:" not in result

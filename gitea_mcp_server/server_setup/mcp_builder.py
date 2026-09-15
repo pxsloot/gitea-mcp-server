@@ -805,7 +805,10 @@ class _ToolWrappingTransform(Transform):
             executor = self._make_autogen_executor(tool, customization)
         else:
             executor = self._wrap_synthetic_executor(tool, executor)
-        return build_transform_fn(tool, executor)
+        # The spec flows to the display pipeline (root-list item summaries
+        # under detail=concise, #759) — both tool families are wrapped here,
+        # so this single call covers autogen and synthetic tools alike.
+        return build_transform_fn(tool, executor, openapi_spec=self._openapi_spec)
 
     def _wrap_synthetic_executor(
         self,

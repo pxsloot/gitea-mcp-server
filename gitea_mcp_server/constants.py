@@ -26,15 +26,16 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "description": (
         "Output detail level.  "
         '"full" (default) — complete information, full object expansion.  '
-        '"concise" — compact view: nested objects are collapsed to type '
-        "labels ($ref:TypeName) at depth > 0."
+        '"concise" — root items are summarized (scalar fields intact); '
+        "nested $ref-backed objects collapse to type labels ($ref:TypeName)."
     ),
 }
 """JSON Schema for the ``detail`` parameter used by all tools.
 
 Controls how much detail is shown in tool output.  ``"full"`` renders
-everything recursively; ``"concise"`` collapses deep nesting to compact
-type references.  The default is ``"full"`` (backward compatible).
+everything recursively; ``"concise"`` summarizes root items (scalar fields
+intact) and collapses nested ``$ref``-backed objects to compact type
+references (#759).  The default is ``"full"`` (backward compatible).
 
 .. note::
     The ``enum`` values **must** stay in sync with the

@@ -27,8 +27,10 @@ from gitea_mcp_server.format import (
 from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
 )
+from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from tests.helpers.mcp_results import assert_dual_channel, parse_json_content
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestSnakeToTitle:
@@ -295,6 +297,37 @@ class TestMarkdownFormatterContract:
         assert "MarkdownFormatter" in _format_module.__all__
 
 
+def _issue_spec() -> OpenAPISpec:
+    """A spec with Issue (scalars + nested $ref user + $ref-list labels) + User/Label."""
+    return make_openapi_spec(
+        components={
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}, "login": {"type": "string"}},
+                },
+                "Label": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}, "name": {"type": "string"}},
+                },
+                "Issue": {
+                    "type": "object",
+                    "properties": {
+                        "number": {"type": "integer"},
+                        "title": {"type": "string"},
+                        "body": {"type": "string"},
+                        "user": {"$ref": "#/components/schemas/User"},
+                        "labels": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Label"},
+                        },
+                    },
+                },
+            }
+        }
+    )
+
+
 class TestCollapseData:
     """Tests for collapse_data — walk data+schema, collapse $ref objects at depth>=1.
 
@@ -409,16 +442,207 @@ class TestCollapseData:
         assert meta["description"] == "a repo"
 
     def test_list_at_depth_0_no_collapse(self) -> None:
-        """Top-level list is not collapsed to $ref:TypeName[N], but
-        items inside it at depth>=1 ARE collapsed."""
+        """Without a spec, top-level list items keep the whole-item label fallback.
+
+        Pre-#759 behavior is the documented fallback: the collapse can only
+        summarize a root-list item when it can resolve the item ``$ref``,
+        which needs the OpenAPI spec.  Callers that pass no spec (synthetic
+        tools, unit callers) get the bare ``$ref:TypeName`` item labels.
+        """
         data = [{"id": 1, "login": "user1"}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/User"}}
         result = collapse_data(data, schema, _depth=0, detail="concise")
         # List stays as list (not collapsed to label)
         assert isinstance(result, list)
         assert len(result) == 1
-        # But nested items at depth>=1 ARE collapsed
+        # But nested items at depth>=1 ARE collapsed (no spec → fallback)
         assert result[0] == "$ref:User"
+
+    def test_root_list_with_spec_summarizes_items(self) -> None:
+        """#759: with a spec, concise summarizes root-list items.
+
+        Scalars stay intact; nested ``$ref``-backed fields collapse to
+        ``$ref:TypeName`` labels; nested lists collapse to
+        ``$ref:TypeName[N]``.  This is the S1-lite contract.
+        """
+        spec = _issue_spec()
+        data = [
+            {
+                "number": 1,
+                "title": "Bug",
+                "body": "long text...",
+                "user": {"id": 1, "login": "dev2"},
+                "labels": [{"id": 1, "name": "Kind/Bug"}],
+            },
+        ]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        item = result[0]
+        assert isinstance(item, dict)
+        assert item["number"] == 1
+        assert item["title"] == "Bug"
+        assert item["body"] == "long text..."  # scalar intact
+        assert item["user"] == "$ref:User"  # nested ref collapses
+        assert item["labels"] == "$ref:Label[1]"  # nested list collapses
+
+    def test_root_list_no_truncation(self) -> None:
+        """Scalars pass through verbatim — the collapse never truncates (#759 AC)."""
+        long_body = "x" * 10_000
+        spec = _issue_spec()
+        data = [{"number": 1, "title": "t", "body": long_body, "user": {"id": 1, "login": "u"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0]["body"] == long_body
+
+    def test_root_list_alias_chain_resolved(self) -> None:
+        """A $ref item whose target is itself a bare $ref is chased one hop at a time."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Alias": {"$ref": "#/components/schemas/Real"},
+                    "Real": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "who": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                }
+            }
+        )
+        data = [{"id": 7, "who": {"login": "u"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0] == {"id": 7, "who": "$ref:User"}
+
+    def test_root_list_allof_alias_chased(self) -> None:
+        """A combinator-wrapped alias target is chased, not mislabeled.
+
+        The chase uses the same ``$ref`` notion as the collapse walker
+        (``_extract_ref``), so an ``allOf``-wrapped reference resolves to the
+        concrete schema and the item is *summarized*.  Before this, the
+        resolver stopped at the wrapper and the walker's own allOf check
+        label-replaced the item — a silent degrade to pre-#759 behavior.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Alias": {"allOf": [{"$ref": "#/components/schemas/Real"}]},
+                    "Real": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "who": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                }
+            }
+        )
+        data = [{"id": 7, "who": {"login": "u"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0] == {"id": 7, "who": "$ref:User"}
+
+    def test_root_list_allof_cycle_falls_back(self) -> None:
+        """A cycle routed through a combinator hits the hop cap → fallback label."""
+        spec = make_openapi_spec(
+            components={"schemas": {"Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}]}}}
+        )
+        data = [{"a": 1}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result == ["$ref:Loop"]
+
+    def test_root_list_allof_merge_passes_extension_through(self) -> None:
+        """A genuine allOf merge is chased to its first $ref member; the other
+        members' keys carry no property schema and pass through verbatim.
+
+        Documents the deliberate trade-off: the summary may be slightly
+        fatter (uncollapsed extension values) but never emptier than the
+        whole-item label the old code produced for this shape.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Base": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "who": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "Merged": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/Base"},
+                            {
+                                "type": "object",
+                                "properties": {"extra": {"$ref": "#/components/schemas/User"}},
+                            },
+                        ]
+                    },
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                }
+            }
+        )
+        data = [{"id": 7, "who": {"login": "u"}, "extra": {"login": "x"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Merged"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0] == {
+            "id": 7,
+            "who": "$ref:User",  # Base's nested ref collapses
+            "extra": {"login": "x"},  # extension key: no schema → verbatim
+        }
+
+    def test_root_list_ref_cycle_falls_back(self) -> None:
+        """A self-referential alias hits the hop cap → whole-item label fallback."""
+        spec = make_openapi_spec(
+            components={"schemas": {"Loop": {"$ref": "#/components/schemas/Loop"}}}
+        )
+        data = [{"a": 1}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result == ["$ref:Loop"]
+
+    def test_root_list_missing_ref_falls_back(self) -> None:
+        """A pointer missing from the spec → whole-item label fallback."""
+        spec = _issue_spec()
+        data = [{"a": 1}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Nope"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result == ["$ref:Nope"]
+
+    def test_root_list_anyof_ref_with_spec_summarizes(self) -> None:
+        """anyOf-wrapped item refs resolve via the spec too."""
+        spec = _issue_spec()
+        schema = {
+            "type": "array",
+            "items": {"anyOf": [{"$ref": "#/components/schemas/User"}, {"type": "null"}]},
+        }
+        data = [{"id": 1, "login": "x"}]
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        # User has no nested $ref fields — the summary is the full scalar dict
+        assert result == [{"id": 1, "login": "x"}]
+
+    def test_root_list_inline_items_ignore_spec(self) -> None:
+        """No $ref at the item root → the spec is not consulted; behavior unchanged."""
+        spec = _issue_spec()
+        schema = {
+            "type": "array",
+            "items": {"type": "object", "properties": {"host": {"type": "string"}}},
+        }
+        data = [{"host": "a"}]
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result == [{"host": "a"}]
+
+    def test_detail_full_ignores_spec(self) -> None:
+        """detail='full' returns unchanged even when a spec is supplied."""
+        spec = _issue_spec()
+        data = [{"user": {"id": 1}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
+        result = collapse_data(data, schema, _depth=0, detail="full", openapi_spec=spec)
+        assert result is data
 
     def test_non_dict_prop_schema_guarded(self) -> None:
         """When a property schema is not a dict, set to None instead of crashing."""

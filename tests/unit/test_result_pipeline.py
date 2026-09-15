@@ -22,6 +22,7 @@ from tests.helpers.mcp_results import (
     get_structured,
     parse_json_content,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 def _items(n: int) -> list[dict[str, int]]:
@@ -566,6 +567,71 @@ class TestDetailConcise:
         )
         parsed = parse_json_content(result)
         assert parsed["result"]["owner"]["login"] == "user1"
+
+    def test_json_concise_root_list_summarized_with_spec(self) -> None:
+        """render(openapi_spec=...) threads the spec into the collapse (#759).
+
+        Root-list items are summarized — scalars intact, nested $ref-backed
+        fields collapsed — instead of being label-replaced wholesale.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                    "Issue": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "user": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                }
+            }
+        )
+        data = [{"title": "Bug", "user": {"login": "dev2"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
+        result = render(
+            ExecutionResult(data=data, shape="list", paginated=False),
+            fmt="json",
+            detail="concise",
+            schema=schema,
+            openapi_spec=spec,
+        )
+        parsed = parse_json_content(result)
+        item = parsed["result"][0]
+        assert item == {"title": "Bug", "user": "$ref:User"}
+
+    def test_markdown_concise_root_list_summarized_with_spec(self) -> None:
+        """The markdown channel renders item summaries, not bare $ref bullets (#759)."""
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                    "Issue": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "user": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                }
+            }
+        )
+        data = [{"title": "Bug", "user": {"login": "dev2"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
+        result = render(
+            ExecutionResult(data=data, shape="list", paginated=False),
+            fmt="markdown",
+            detail="concise",
+            schema=schema,
+            openapi_spec=spec,
+        )
+        text = extract_text_content(result.content)
+        assert "Bug" in text  # item scalar visible
+        assert "$ref:User" in text  # nested ref collapsed
+        assert "$ref:Issue" not in text  # items are never label-replaced
+        sc = get_structured(result)
+        assert sc["result"][0] == {"title": "Bug", "user": "$ref:User"}
 
 
 class TestMarkdownPageRendering:

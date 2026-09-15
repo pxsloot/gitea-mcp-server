@@ -66,6 +66,8 @@ from gitea_mcp_server.tools.virtual_params import apply_pre_hooks, apply_to, ext
 if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
 
+    from gitea_mcp_server.openapi_types import OpenAPISpec
+
 Executor = Callable[
     [dict[str, Any], dict[str, Any] | None, Any | None],
     Awaitable[ExecutionResult],
@@ -89,6 +91,8 @@ does not need to receive it.
 def build_transform_fn(
     tool: Tool,
     executor: Executor,
+    *,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> Callable[..., Any]:
     """Build the per-call :func:`transform_fn` closure for a tool.
 
@@ -97,6 +101,12 @@ def build_transform_fn(
     pre-hooks, resolve the context, delegate to *executor*, render the raw
     ``ExecutionResult`` through the single result pipeline, then hand off
     to :func:`apply_to` for post-hooks (sudo cleanup).
+
+    ``openapi_spec`` is captured by the closure and forwarded to
+    :func:`render` — it enables root-list item summaries under
+    ``detail="concise"`` (#759).  It is display metadata, deliberately *not*
+    stored in ``tool.meta`` (meta is serialized with the tool; the full spec
+    would bloat every ``list_tools`` response).
 
     Args:
         tool: The ``Tool`` being wrapped.  ``tool.meta["output_schema_raw"]``
@@ -109,6 +119,9 @@ def build_transform_fn(
         executor: Backend-specific execution callable (see :data:`Executor`).
             Autogen tools pass the HTTP pipeline; synthetic tools pass their
             local implementation.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (or ``None``), captured
+            by the closure and forwarded to :func:`render` so
+            ``detail="concise"`` can summarize root-list items (#759).
 
     Returns:
         The ``transform_fn`` callable to attach via
@@ -162,6 +175,7 @@ def build_transform_fn(
                 limit=limit,
                 fetch_all=virtual_values.get("fetch_all", False),
                 schema=virtual_values.get("_raw_schema"),
+                openapi_spec=openapi_spec,
             ),
             virtual_values,
         )

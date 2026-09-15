@@ -113,7 +113,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `limit`     | integer | page size for list/search tools |
 | `fetch_all`   | boolean | When true, return all matching results without page slicing (synthetic search/list tools only). Default `false` — single page only. See Pagination edge case below. |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
-| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` collapses nested objects to `$ref:TypeName` labels at depth >= 1 (affects both `json` and `markdown` output) |
+| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` summarizes root items (scalars intact) and collapses nested objects to `$ref:TypeName` labels (affects both `json` and `markdown` output) |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
 
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
@@ -210,7 +210,7 @@ parameter:
 | `detail`  | Effect on output |
 |-----------|------------------|
 | `"full"` (default) | Complete information, full object expansion. |
-| `"concise"` | Compact view: nested objects at depth >= 1 are collapsed to ``$ref:TypeName`` labels. Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
+| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) collapse to ``$ref:TypeName`` labels. Lists *inside* an item collapse whole (``$ref:Type[N]``). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
 
 **Content is the contract.** The text channel (`content`) is authoritative
 and always present; `structured_content` mirrors it. For `format=json` and

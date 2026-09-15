@@ -17,6 +17,7 @@ from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 def _make_tool(*, raw_schema: dict[str, Any] | None = None) -> Tool:
@@ -224,6 +225,66 @@ class TestBuildTransformFn:
 
         assert received["extracted"] == {"format": "json"}
         assert received["kwargs"] == {"query": "q", "fetch_all": True}
+
+    @pytest.mark.asyncio
+    async def test_openapi_spec_forwarded_to_render(self, monkeypatch: Any) -> None:
+        """build_transform_fn captures openapi_spec and threads it to render (#759).
+
+        The spec enables root-list item summaries under ``detail=concise``.
+        This is the unit lock for the closure threading — without it the
+        wiring (``mcp_builder`` → ``build_transform_fn`` → ``render`` →
+        collapse) is pinned only by the live suite.
+        """
+        from gitea_mcp_server.tools import contract as contract_module
+
+        spec = make_openapi_spec()
+        seen: dict[str, Any] = {}
+        real_render = contract_module.render
+
+        def _spy_render(result: ExecutionResult, **kwargs: Any) -> ToolResult:
+            seen.update(kwargs)
+            return real_render(result, **kwargs)
+
+        monkeypatch.setattr(contract_module, "render", _spy_render)
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, openapi_spec=spec)
+        result = await transform_fn(query="q", format="json")
+
+        assert seen["openapi_spec"] is spec
+        assert result.structured_content == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_openapi_spec_defaults_to_none(self, monkeypatch: Any) -> None:
+        """Omitting the spec (unit callers) forwards ``None`` — fallback contract."""
+        from gitea_mcp_server.tools import contract as contract_module
+
+        seen: dict[str, Any] = {}
+        real_render = contract_module.render
+
+        def _spy_render(result: ExecutionResult, **kwargs: Any) -> ToolResult:
+            seen.update(kwargs)
+            return real_render(result, **kwargs)
+
+        monkeypatch.setattr(contract_module, "render", _spy_render)
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor)
+        await transform_fn(query="q", format="json")
+
+        assert seen["openapi_spec"] is None
 
     @pytest.mark.asyncio
     async def test_execution_result_is_rendered_by_pipeline(self) -> None:

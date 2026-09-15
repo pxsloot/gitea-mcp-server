@@ -60,7 +60,12 @@ class TestFormatLabelsMarkdownGuard:
         assert "- feature" in result
 
     def test_collapsed_ref_items_ok(self) -> None:
-        """Collapsed ``$ref:Label`` strings (concise shape) render compactly."""
+        """``$ref:Label[2]``-style strings render compactly, not crash.
+
+        Defensive shape guard: since #759 the concise contract summarizes
+        items as dicts, so collapsed strings reaching a formatter represent
+        an unexpected payload, not the detail=concise path.
+        """
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
             data,

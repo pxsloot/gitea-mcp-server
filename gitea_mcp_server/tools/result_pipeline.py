@@ -27,7 +27,11 @@ whose contract is stated canonically in ``format.py`` — is dispatched through
 ``call_markdown_formatter``.  When ``detail="concise"`` and a schema is
 available, the pipeline pre-collapses the page (schema-aware ``$ref``
 collapse) before calling the formatter, so formatters receive
-already-collapsed data and must not re-collapse.
+already-collapsed data and must not re-collapse.  Root-list items are
+*summarized*, not label-replaced: the collapse resolves a root list's item
+``$ref`` one level via the server's OpenAPI spec (``render(openapi_spec=...)``),
+so each item keeps its scalar fields and only its nested ``$ref``-backed
+fields collapse to ``$ref:TypeName`` labels (#759).
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -57,7 +61,7 @@ import functools
 import json as json_module
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
@@ -72,6 +76,9 @@ from gitea_mcp_server.format import (
     format_as_markdown,
 )
 from gitea_mcp_server.pagination import add_pagination_metadata
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +139,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     limit: int = DEFAULT_PAGE_SIZE,
     fetch_all: bool = False,
     schema: dict[str, Any] | None = None,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
     """Render an ``ExecutionResult`` into a dual-channel ``ToolResult``.
 
@@ -149,6 +157,11 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
             collapse when ``detail="concise"``.  When the ``ExecutionResult``
             carries its own ``schema`` (executor-supplied, e.g. per-URI for
             ``read_resource``), that takes precedence over this argument.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec enabling root-list
+            item summaries under ``detail="concise"`` (#759) — the collapse
+            resolves a root list's item ``$ref`` one level so items keep
+            their scalar fields.  ``None`` keeps the whole-item label
+            fallback (synthetic tools with inline schemas need nothing).
 
     Returns:
         A ``ToolResult`` whose ``content`` (the text channel) is authoritative
@@ -174,6 +187,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         detail=detail,
         schema=effective_schema,
         effective_shape=effective_shape,
+        openapi_spec=openapi_spec,
     )
 
 
@@ -302,7 +316,7 @@ def _resolve_formatter(
     return functools.partial(format_as_markdown, schema=schema)
 
 
-def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, effective_shape) must be a parameter because executors return raw data only and never render
+def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render
     envelope: dict[str, Any],
     result: ExecutionResult,
     *,
@@ -310,6 +324,7 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     detail: str,
     schema: dict[str, Any] | None,
     effective_shape: str,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
     """Format the envelope dict into a dual-channel ``ToolResult``.
 
@@ -327,9 +342,10 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     not the executor's full ``result.data`` — so the text channel agrees with
     ``structured_content`` on paginated list tools.  When
     ``detail="concise"`` and a schema is available, the page is collapsed
-    once (schema-aware ``$ref`` collapse) for json and markdown, and the
-    envelope's ``result`` is updated so ``structured_content`` mirrors the
-    collapsed text — the two channels never disagree.  ``format=raw`` stays
+    once (schema-aware ``$ref`` collapse; root-list items are summarized via
+    *openapi_spec*, #759) for json and markdown, and the envelope's
+    ``result`` is updated so ``structured_content`` mirrors the collapsed
+    text — the two channels never disagree.  ``format=raw`` stays
     uncollapsed: raw is the unprocessed-data contract.  The formatter receives
     the collapsed page; the ``MarkdownFormatter`` contract (``format.py``)
     governs what it may declare.
@@ -342,7 +358,13 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         # the unprocessed-data contract.
         page_data = envelope["result"]
         if fmt != "raw" and detail == "concise" and schema is not None:
-            page_data = collapse_data(page_data, schema, _depth=0, detail="concise")
+            page_data = collapse_data(
+                page_data,
+                schema,
+                _depth=0,
+                detail="concise",
+                openapi_spec=openapi_spec,
+            )
             envelope["result"] = page_data
 
         if fmt in ("raw", "json"):

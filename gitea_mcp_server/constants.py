@@ -26,8 +26,8 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "description": (
         "Output detail level.  "
         '"full" (default) — complete information, full object expansion.  '
-        '"concise" — compact view: nested objects are collapsed to type '
-        "labels ($ref:TypeName) at depth > 0."
+        '"concise" — root items are summarized (scalar fields intact); '
+        "nested $ref-backed objects collapse to type labels ($ref:TypeName)."
     ),
 }
 """JSON Schema for the ``detail`` parameter used by all tools.

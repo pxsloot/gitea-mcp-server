@@ -174,6 +174,31 @@ class TestDetailLevels:
         assert "$ref:" in owner, f"Expected $ref: prefix, got {owner!r}"
 
     @pytest.mark.live
+    async def test_concise_list_items_summarized(self, world: World) -> None:
+        """#759: concise on a root-list tool returns item summaries, not bare labels.
+
+        The issue's reproduction pair: items must keep their scalar fields
+        (name) with nested $ref-backed fields collapsed (owner), instead of
+        every item collapsing to a content-free ``$ref:Repository``.
+        """
+        workflow = Workflow(world)
+        _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
+        mcp = await world.server_for(DEV, SCOPE_WRITE)
+        result = await mcp.call_tool(
+            "gitea_user_current_list_repos",
+            {"limit": 3, "format": "json", "detail": "concise"},
+        )
+        data = assert_result_ok(result)
+        assert isinstance(data, list)
+        assert data, "expected at least one owned repo"
+        item = data[0]
+        assert isinstance(item, dict), f"concise items must be dicts, got {item!r}"
+        assert item.get("name"), f"item scalar 'name' must survive collapse: {item!r}"
+        assert item.get("owner") == "$ref:User", (
+            f"nested $ref-backed field must collapse to a label, got {item.get('owner')!r}"
+        )
+
+    @pytest.mark.live
     async def test_full_detail_expands_all(self, world: World) -> None:
         """Detail=full expands all nested objects."""
         workflow = Workflow(world)

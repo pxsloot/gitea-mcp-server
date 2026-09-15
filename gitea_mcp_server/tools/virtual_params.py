@@ -222,7 +222,8 @@ _VIRTUAL_PARAMS["detail"] = VirtualParam(
     default="full",
     description=(
         'Output detail level.  "full" (default) — complete information. '
-        '"concise" — nested objects collapsed to ``$ref:TypeName`` labels.'
+        '"concise" — root items summarized (scalars intact), nested '
+        "$ref-backed objects collapsed to ``$ref:TypeName`` labels."
     ),
 )
 

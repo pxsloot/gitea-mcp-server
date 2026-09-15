@@ -533,9 +533,11 @@ async def _read_resource_tool(
 
     Output detail level:
     - ``"full"`` (default): complete information, full object expansion.
-    - ``"concise"``: compact view with collapsed nested objects. Affects both
-      JSON and Markdown output. Schema-aware ``$ref`` collapse is applied
-      when the resource carries a response schema.
+    - ``"concise"``: root items are summarized — scalar fields stay intact
+      while nested ``$ref``-backed fields collapse to ``$ref:TypeName``
+      labels (#759).  Affects both JSON and Markdown output.  Schema-aware
+      ``$ref`` collapse is applied when the resource carries a response
+      schema.
 
     ## Return Value
 

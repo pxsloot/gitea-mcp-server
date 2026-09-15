@@ -568,8 +568,9 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    through `call_markdown_formatter`, which forwards only the kwargs a
    formatter declares.  The data is pre-collapsed by the pipeline when
    `detail=concise`, so formatters never collapse themselves and never see the
-   `detail` flag — collapsed items are detected by shape (`$ref:TypeName`
-   strings).
+   `detail` flag — collapsed *fields* arrive as `$ref:TypeName` strings;
+   root-list items are always dicts (summarized, #759), so formatters must
+   not branch on collapsed item shapes.
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:
@@ -995,7 +996,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, required_scope, wrap). The loop builds the executor, stamps the wrap marker, and registers |
 | Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}`` to reject ``detail``/``fetch_all`` entirely, or ``tool_info``/``resolve_type`` → ``{"format"}`` so the impl's own ``detail`` default (``"concise"``) is the single source; ``sudo`` is opt-in). Only allowlisted params are popped from kwargs — an off-profile registry-name key stays in kwargs and is rejected with "Unknown parameter(s)" rather than silently dropped. The executor re-supplies the popped values to the impl. ``format``/``detail``/``fetch_all`` are hook-less pipeline options read by the result pipeline — no display logic lives in the registry |
 | Impl return | Return raw data only — an ``ExecutionResult(data, total_count, shape)``. The single result pipeline slices (``list``), envelopes, and formats — and owns out-of-range handling for every shape: return the full item set (``shape="list"``) or the pre-sliced object (``shape="object"``, e.g. ``read_doc``/``tool_info``) and the pipeline emits the message envelope on out-of-range pages. Set ``message`` only for custom empty-result messages (e.g. cross-link hints). For bespoke markdown (e.g. ``tool_info``, ``read_doc``) set ``markdown_formatter`` / ``markdown_extras`` on the result |
-| ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels at depth >= 1. Affects both ``json`` and ``markdown`` output. |
+| ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` summarizes root items (scalars intact) and collapses nested ``$ref``-backed objects to ``$ref:TypeName`` labels; root-list items are never label-replaced (#759). Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
 | ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |
 | Resource names | Snake_case everywhere, derived from the endpoint (operationId) for auto and wrapper resources; explicit snake_case names for static/synthetic resources. Never Title Case, never spaces, never FastMCP's function-name fallback (``"handler"``). See "Preferred: Use the factory" above |

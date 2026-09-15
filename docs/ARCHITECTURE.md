@@ -243,12 +243,13 @@ Agent reads a resource:
     └─▶ Single result pipeline (tools/result_pipeline.py:render)
           shape → paginate → format → dual-channel ToolResult
           ├─ format/json: collapse_data when detail=concise + schema
+          │   (root-list items summarized via one-level $ref resolution, #759)
           ├─ format/markdown: pre-collapse + formatter (resolved by
           │   _resolve_formatter — the result's own MarkdownFormatter or the
           │   schema-bound format_as_markdown fallback — then dispatched via
           │   call_markdown_formatter, which passes only the kwargs the
           │   formatter declares, e.g. extra; detail is not forwarded —
-          │   collapsed items are detected by shape)
+          │   collapsed fields are $ref:TypeName strings, items are dicts)
           └─ format/raw: serialized envelope {"result": <data>}
 ```
 

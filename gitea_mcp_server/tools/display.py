@@ -179,12 +179,10 @@ def _format_issues_markdown(data: list, *, extra: dict | None = None) -> str:
     if extra and extra.get("type"):
         type_value = extra["type"]
         title_label = "Pull Requests" if type_value == "pulls" else "Issues"
-    elif data and isinstance(data[0], str):
-        # When items are collapsed to ``$ref`` strings (``detail=concise``),
-        # we can't scan; fall back to the safe default.
-        title_label = "Issues and Pull Requests"
     else:
-        # Guard against non-dict items (unexpected data shape).
+        # Guard against non-dict items (unexpected data shape).  Under
+        # detail=concise items are summarized dicts (#759), never bare
+        # $ref strings, so the scan sees real ``pull_request`` fields.
         has_prs = (
             (any(isinstance(item, dict) and item.get("pull_request") for item in data))
             if data
@@ -257,16 +255,11 @@ def _format_labels_markdown(
     Needs ``extra`` with ``owner`` and ``repo`` keys for the heading.
 
     The formatter is a pure renderer and does not know the requested
-    ``detail`` level: when the pipeline collapses the page
-    (``detail=concise`` + schema), the items arrive as ``$ref:Label``
-    strings, and this formatter detects that collapsed shape directly
-    (all items are strings) to render a compact summary instead of full
-    per-label sections.  Trade-off: shape detection is implicit rather
-    than explicit (``detail=concise``); it stays correct as long as
-    collapse produces ``$ref:TypeName`` strings, which the pipeline
-    guarantees for ``$ref``-backed schemas.  A side benefit: if concise
-    was requested but no schema was available (no collapse), the items
-    are dicts and render as full sections — better than a raw dict dump.
+    ``detail`` level: under ``detail=concise`` the pipeline summarizes
+    items (#759) — the ``Label`` schema has no nested ``$ref`` fields, so
+    a concise item is the full scalar dict and renders here unchanged.
+    Items are dicts on both detail levels; the non-dict branch below is a
+    defensive guard for unexpected shapes, not the collapse contract.
     """
     owner = (extra or {}).get("owner", "?")
     repo = (extra or {}).get("repo", "?")
@@ -290,16 +283,6 @@ def _format_labels_markdown(
 
     if not data:
         lines.append("*No labels configured for this repository.*")
-        lines.append("")
-    elif all(isinstance(label, str) for label in data):
-        # Pre-collapsed items: the display pipeline collapses nested
-        # objects to ``$ref:Label`` strings when ``detail=concise``.
-        # Show a compact listing with type-name items instead of full
-        # per-label detail.
-        lines.append(f"## Labels ({len(data)})")
-        lines.append("")
-        for label in data:
-            lines.append(f"- {label}")
         lines.append("")
     else:
         lines.append(f"## Labels ({len(data)})")

@@ -31,11 +31,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.format import (
-    MarkdownFormatter,
-    call_markdown_formatter,
-    decode_base64_content,
-)
+from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
@@ -164,33 +160,6 @@ def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
     """
     extra = {k: v for k, v in meta.items() if k not in _KNOWN_META_KEYS}
     return extra or None
-
-
-def _make_resource_formatter(
-    format_hint: str | None,
-    extra: dict[str, Any] | None,
-) -> MarkdownFormatter | None:
-    """Resolve a ``format_hint`` to a markdown formatter callable, binding extra.
-
-    The returned callable is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
-    (the contract is stated canonically in ``format.py``): ``extra`` (formatter
-    context such as ``owner``/``repo`` or ``type``) is bound at executor time,
-    so the callable takes ``data`` only.
-
-    Args:
-        format_hint: Registered formatter name, or ``None``.
-        extra: Extra context dict for formatters that need it.
-
-    Returns:
-        A :data:`MarkdownFormatter`, or ``None`` if no formatter is registered
-        for ``format_hint``.
-    """
-    if not format_hint:
-        return None
-    fn = get_formatter(format_hint)
-    if fn is None:
-        return None
-    return lambda data: call_markdown_formatter(fn, data, extra=extra)
 
 
 async def _mcp_read_resource_impl(
@@ -619,9 +588,14 @@ async def _read_resource_tool(
 
     Returns:
         Raw executor output (``ExecutionResult``): the resource data with its
-        shape, per-resource schema, and resolved markdown formatter.  The
-        single result pipeline renders it — ``content`` authoritative and
-        always present, ``structured_content`` mirroring it.
+        shape, per-resource schema, the resolved ``format_hint`` formatter
+        (tier 1 of the pipeline's formatter dispatch), and the content-meta
+        extra context (``owner``/``repo``/``type``) forwarded as display
+        input.  The single result pipeline renders it — ``content``
+        authoritative and always present, ``structured_content`` mirroring
+        it.  Resources without a ``format_hint`` still get the domain view
+        when their response type is bound (``register_formatter(types=...)``,
+        #760).
 
     Raises:
         ValueError: If the resource is not found or cannot be read
@@ -645,7 +619,8 @@ async def _read_resource_tool(
         data=data,
         shape=shape,
         schema=schema,
-        markdown_formatter=_make_resource_formatter(format_hint, extra),
+        markdown_formatter=get_formatter(format_hint) if format_hint else None,
+        extra=extra,
     )
 
 

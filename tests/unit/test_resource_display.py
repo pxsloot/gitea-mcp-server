@@ -10,13 +10,14 @@ pipeline (``tools/result_pipeline.py``); these tests lock the metadata that
 drives it.
 """
 
-import json
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
+
+from tests.helpers.mcp_results import extract_text_content
 
 
 class TestContextMetaKeysPipeline:
@@ -26,8 +27,9 @@ class TestContextMetaKeysPipeline:
     1. make_api_resource with context_meta_keys=["type"] registers a handler
        that forwards matching query params into ResourceContent.meta
     2. _mcp_read_resource_impl extra extraction from ResourceContent.meta
-    3. The read_resource executor resolves the format_hint + extra into a
-       markdown formatter for the single result pipeline
+    3. The read_resource executor resolves the format_hint into a formatter
+       and forwards the extra as display input; the single result pipeline
+       binds them at the formatter call site (#760)
     """
 
     @pytest.fixture
@@ -261,12 +263,22 @@ class TestContextMetaKeysPipeline:
         extra = _extract_extra_meta({})
         assert extra is None
 
-    def test_make_resource_formatter_resolves_extra(self) -> None:
-        """The executor resolves format_hint + extra into a formatter callable."""
-        from gitea_mcp_server.tools.mcp_tools import _make_resource_formatter
+    def test_resource_extra_flows_through_pipeline(self) -> None:
+        """format_hint + extra reach the formatter via the pipeline (#760).
 
-        data = json.dumps([{"number": 1, "title": "Bug", "state": "open"}])
-        fn = _make_resource_formatter("issues", {"type": "pulls"})
-        assert callable(fn)
-        result = fn(json.loads(data))
-        assert "Pull Requests - 1 items" in result
+        The executor resolves the hint into a plain formatter and forwards
+        the content meta as ``ExecutionResult.extra``; the pipeline binds
+        the two at the single call site (no executor-side closure).
+        """
+        from gitea_mcp_server.tools.display import get_formatter
+        from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
+
+        data = [{"number": 1, "title": "Bug", "state": "open"}]
+        result = ExecutionResult(
+            data=data,
+            shape="object",
+            markdown_formatter=get_formatter("issues"),
+            extra={"type": "pulls"},
+        )
+        tool_result = render(result, fmt="markdown")
+        assert "Pull Requests - 1 items" in extract_text_content(tool_result.content)

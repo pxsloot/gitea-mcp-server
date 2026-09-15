@@ -60,7 +60,12 @@ class TestJsonMarkdownEquivalence:
 
     @pytest.mark.live
     async def test_single_object_equivalence(self, world: World) -> None:
-        """Single object (repo get): json and markdown carry same data."""
+        """Single object (repo get): json complete, markdown the curated view.
+
+        ``repo_get`` is type-bound to the ``repository`` formatter (#760), so
+        its markdown is a curated domain view by contract — value
+        completeness lives in json.  The curated rows are asserted directly.
+        """
         workflow = Workflow(world)
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
@@ -68,7 +73,15 @@ class TestJsonMarkdownEquivalence:
             mcp,
             "gitea_repo_get",
             {"owner": DEV.username, "repo": _REPO},
+            skip_values=True,
         )
+        md_result = await mcp.call_tool(
+            "gitea_repo_get",
+            {"owner": DEV.username, "repo": _REPO, "format": "markdown"},
+        )
+        md_text = extract_text_content(md_result.content)
+        assert md_text.startswith(f"# {DEV.username}/{_REPO}"), md_text[:200]
+        assert "| Default Branch |" in md_text
 
     @pytest.mark.live
     async def test_list_equivalence(self, world: World) -> None:

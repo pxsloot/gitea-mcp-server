@@ -120,6 +120,15 @@ async def assert_formats_equivalent(
     in the markdown text.  This avoids the camelCase↔Title Case mapping
     problem: we match on the information content, not the field names.
 
+    **Curated views (#760):** tools whose response type is bound to a domain
+    formatter (``register_formatter(types=...)`` — Issue, PullRequest,
+    Repository, User, Label, Release and their list siblings) render a
+    *curated* markdown view by contract: the field whitelist trims noise, and
+    the collection view drops payload fields (``body``) that the detail read
+    keeps.  For those tools, value completeness is deliberately false —
+    json/raw carry everything, markdown carries the domain view.  Pass
+    ``skip_values=True`` and assert the curated rows at the call site.
+
     Args:
         mcp: Connected MCP client session.
         tool_name: Full tool name (e.g. ``"gitea_user_get_current"``).

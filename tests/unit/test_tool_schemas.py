@@ -18,6 +18,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 from gitea_mcp_server.tools.schemas import (
     deep_resolve_schema,
     derive_output_schema,
+    get_success_schema,
     is_object_type,
     is_text_response,
     schema_type_is_array,
@@ -226,6 +227,49 @@ class TestDeriveOutputSchema:
         assert schema["type"] == "object"
         assert "id" in schema["properties"]
         assert "name" in schema["properties"]
+
+    def test_response_type_stamp_stripped_from_agent_schema(self) -> None:
+        """``x-response-type`` (#760 binding stamp) stays off the agent-facing schema.
+
+        The converter stamps inlined root schemas; the raw channel keeps the
+        stamp (the pipeline reads it for type binding), while the deep-resolved
+        output schema must not leak it to agents.
+        """
+        spec: OpenAPISpec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/repos/{owner}/{repo}": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "result": {
+                                                    "type": "object",
+                                                    "properties": {"id": {"type": "integer"}},
+                                                    "x-response-type": "Repository",
+                                                }
+                                            },
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {"schemas": {}},
+        }
+        resolved = get_success_schema(spec, "/repos/{owner}/{repo}", "get")
+        assert resolved is not None
+        assert "x-response-type" not in resolved["properties"]["result"]
+        # The raw (unresolved) channel keeps the stamp for the binding.
+        raw = get_success_schema(spec, "/repos/{owner}/{repo}", "get", resolve=False)
+        assert raw is not None
+        assert raw["properties"]["result"]["x-response-type"] == "Repository"
 
     def test_no_content_response_returns_none(self) -> None:
         """204 No Content responses should return None."""

@@ -237,16 +237,19 @@ Agent reads a resource:
     ├─▶ read_resource executor (mcp_tools.py:_read_resource_tool)
     │     ├─ decode base64 (always, like autogen text responses)
     │     ├─ parse JSON; classify shape (object/scalar/text)
-    │     └─ return ExecutionResult(data, shape, schema, markdown_formatter)
-    │            (markdown_formatter resolved from format_hint + extra)
+    │     └─ return ExecutionResult(data, shape, schema, markdown_formatter, extra)
+    │            (markdown_formatter = get_formatter(format_hint); extra from
+    │            content meta — display input, not display logic)
     │
     └─▶ Single result pipeline (tools/result_pipeline.py:render)
           shape → paginate → format → dual-channel ToolResult
           ├─ format/json: collapse_data when detail=concise + schema
           │   (root-list items summarized via one-level $ref resolution, #759)
           ├─ format/markdown: pre-collapse + formatter (resolved by
-          │   _resolve_formatter — the result's own MarkdownFormatter or the
-          │   schema-bound format_as_markdown fallback — then dispatched via
+          │   _resolve_formatter — three tiers: the result's own
+          │   MarkdownFormatter, else the type-bound domain formatter for the
+          │   response schema's root type (#760), else the schema-bound
+          │   format_as_markdown fallback — then dispatched via
           │   call_markdown_formatter, which passes only the kwargs the
           │   formatter declares, e.g. extra; detail is not forwarded —
           │   collapsed fields are $ref:TypeName strings, items are dicts)
@@ -409,7 +412,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets and per-resource cache TTLs (populated by ``make_api_resource``, consumed by ``build_invalidation_map`` and the response-cache TTL resolver) |
-| `tools/display.py` | Domain-specific display formatters with registry — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); dispatched via `call_markdown_formatter` |
+| `tools/display.py` | Domain-specific display formatters with registry — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter` |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -710,6 +713,18 @@ from the parameter schema.
      the strip to the whole spec -- that would silently break text/plain
      response detection and MCP extension overrides.
 
+     One schema-level extension is *added* by the converter, after the strip:
+     ``x-response-type``.  ``_wrap_response_schema()`` must inline a media-type
+     ``$ref`` to keep the wrapped output schema self-contained for FastMCP's
+     response validation -- but the inlining erases the root type name the
+     display pipeline needs for its type-bound formatter dispatch (issue #760).
+     So the wrap step stamps the name onto the inlined copy just before
+     inlining.  The stamp lives only on the *raw* schema channel
+     (``output_schema_raw`` / resource ``response_schema``);
+     ``deep_resolve_schema`` strips it from the agent-facing output schema.
+     It is our own metadata, not a Gitea leak -- do not confuse it with the
+     stripped Go extensions.
+
  15. **Parameter collision resolution (``body_`` prefix)** -- FastMCP's
      ``_combine_schemas_and_map_params`` detects name collisions between path
      parameters and body property names, then renames the *non-body* parameter
@@ -776,8 +791,8 @@ from the parameter schema.
       — a small
       :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult` (data,
       total_count, result shape, optional per-result ``schema``,
-      ``markdown_formatter``).  One result pipeline
-      (``tools/result_pipeline.render``) then applies **shape → paginate →
+      ``markdown_formatter``, and formatter context ``extra``).  One result
+      pipeline (``tools/result_pipeline.render``) then applies **shape → paginate →
       format → ToolResult** and is the single writer of both channels:
       ``content`` (the text) is authoritative and always present,
       ``structured_content`` mirrors it.  For ``format=json``/``raw`` the text
@@ -789,11 +804,15 @@ from the parameter schema.
       The markdown path pre-collapses the page (schema-aware ``$ref``
       collapse) when ``detail=concise``, mirroring the json path.  The
       formatter — a ``format.MarkdownFormatter`` (the contract is stated
-      canonically in ``format.py``) — is resolved by ``_resolve_formatter``
-      (the result's own formatter, or the schema-bound ``format_as_markdown``
-      fallback) and dispatched through ``call_markdown_formatter``, which
-      forwards only the kwargs a formatter declares (``extra``).  Formatters
-      are pure renderers: they never collapse and never carry dead params.
+      canonically in ``format.py``) — is resolved by ``_resolve_formatter`` in
+      three tiers: the result's own formatter (the resource ``format_hint``
+      path), else the **type-bound** domain formatter for the response
+      schema's root type (``register_formatter(types=...)``, issue #760 — so a
+      tool renders the same curated view as its resource sibling), else the
+      schema-bound ``format_as_markdown`` fallback — and is dispatched through
+      ``call_markdown_formatter``, which forwards only the kwargs a formatter
+      declares (``extra``).  Formatters are pure renderers: they never
+      collapse and never carry dead params.
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

@@ -307,3 +307,65 @@ class TestBuildTransformFn:
         result = await transform_fn(query="q", format="json")
 
         assert result.structured_content == {"result": {"name": "alpha"}}
+
+
+class TestDisplayExtraDerivation:
+    """The spine forwards formatter context derived from the call args (#760).
+
+    ``owner``/``repo``/``type`` are real path/query params on the tools whose
+    domain formatters use them; the spine surfaces them as the pipeline's
+    ``extra`` display input — the same channel as the page/limit capture.
+    """
+
+    @staticmethod
+    async def _run_transform(**call_kwargs: Any) -> dict[str, Any]:
+        """Run the spine with a spy on ``render``; return the captured kwargs."""
+        from gitea_mcp_server.tools import contract as contract_module
+
+        seen: dict[str, Any] = {}
+        real_render = contract_module.render
+
+        def _spy_render(result: ExecutionResult, **kwargs: Any) -> ToolResult:
+            seen.update(kwargs)
+            return real_render(result, **kwargs)
+
+        monkeypatch = pytest.MonkeyPatch()
+        try:
+            monkeypatch.setattr(contract_module, "render", _spy_render)
+
+            async def executor(
+                kwargs: dict[str, Any],
+                extracted: dict[str, Any] | None,
+                ctx: Any,
+            ) -> ExecutionResult:
+                return ExecutionResult(data=[], shape="list")
+
+            transform_fn = build_transform_fn(_make_tool(), executor)
+            await transform_fn(**call_kwargs)
+            return seen
+        finally:
+            monkeypatch.undo()
+
+    @pytest.mark.asyncio
+    async def test_context_keys_forwarded(self) -> None:
+        seen = await self._run_transform(owner="o", repo="r", type="pulls", format="json")
+        assert seen["extra"] == {"owner": "o", "repo": "r", "type": "pulls"}
+
+    @pytest.mark.asyncio
+    async def test_partial_context_keys(self) -> None:
+        seen = await self._run_transform(owner="o", q="x", format="json")
+        assert seen["extra"] == {"owner": "o"}
+
+    @pytest.mark.asyncio
+    async def test_no_context_keys_is_none(self) -> None:
+        """Tools without repo scope pass ``None`` — formatters use graceful defaults."""
+        seen = await self._run_transform(q="x", format="json")
+        assert seen["extra"] is None
+
+    def test_none_values_dropped(self) -> None:
+        """A param explicitly set to ``None`` is not forwarded as context."""
+        from gitea_mcp_server.tools.contract import _derive_display_extra
+
+        assert _derive_display_extra({"owner": "o", "repo": None}) == {"owner": "o"}
+        assert _derive_display_extra({"owner": None}) is None
+        assert _derive_display_extra({}) is None

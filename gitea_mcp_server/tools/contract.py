@@ -31,7 +31,9 @@ for both tool families:
        (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
        shape → paginate → format → ``ToolResult``.
     5. Attach ``_raw_schema`` to the extracted dict so the pipeline can
-       render schema-aware output (``detail=concise``).
+       render schema-aware output (``detail=concise``), and derive the
+       formatter context (``extra``) from the call's path/query args so a
+       type-bound domain formatter sees repo/type context (issue #760).
     6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
@@ -86,6 +88,26 @@ Returns raw data as an :class:`~gitea_mcp_server.tools.result_pipeline.Execution
 The ``Tool`` being executed is bound by closure at wrap time — the executor
 does not need to receive it.
 """
+
+# Call-arg names forwarded to the display pipeline as formatter ``extra``
+# (issue #760): the context keys the domain formatters understand — repo
+# scope (``owner``/``repo``, used by the labels views) and the issue-list
+# ``type`` filter (used by the issues title).  This is display *input*
+# derived from the call, not display logic — the same category as the
+# page/limit capture below.  ``call_markdown_formatter`` forwards ``extra``
+# only to formatters that declare it, so carrying these keys is harmless
+# for every other tool (synthetic tools never declare ``extra``).
+_DISPLAY_CONTEXT_KEYS: tuple[str, ...] = ("owner", "repo", "type")
+
+
+def _derive_display_extra(kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract formatter context from the tool call's path/query args.
+
+    Returns ``None`` when no context keys are present (the formatter then
+    falls back to its graceful defaults, e.g. ``"?"`` headings).
+    """
+    extra = {k: kwargs[k] for k in _DISPLAY_CONTEXT_KEYS if kwargs.get(k) is not None}
+    return extra or None
 
 
 def build_transform_fn(
@@ -156,6 +178,10 @@ def build_transform_fn(
         page = kwargs.get("page", 1)
         limit = kwargs.get("limit", DEFAULT_PAGE_SIZE)
 
+        # Same for formatter context: owner/repo/type are real call args on
+        # the tools whose domain formatters use them (#760).
+        display_extra = _derive_display_extra(kwargs)
+
         result = await executor(kwargs, virtual_values, ctx)
 
         # Attach raw_schema to the extracted dict so the pipeline can render
@@ -175,6 +201,7 @@ def build_transform_fn(
                 limit=limit,
                 fetch_all=virtual_values.get("fetch_all", False),
                 schema=virtual_values.get("_raw_schema"),
+                extra=display_extra,
                 openapi_spec=openapi_spec,
             ),
             virtual_values,

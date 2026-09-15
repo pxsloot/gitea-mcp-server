@@ -1086,10 +1086,12 @@ class TestServerEdgeCases:
 
     @pytest.mark.asyncio
     async def test_served_instructions_line_budget(self) -> None:
-        """Served instructions respect the line-count budget (<= 300 lines).
+        """Served instructions respect the line-count budget (see history).
 
         The budget protects the agent-context economy. Raise it deliberately
-        with a comment, not by 'tidying'.
+        with a comment, not by 'tidying'.  The assertion below is the single
+        source of truth for the current number; the history explains every
+        raise.
 
         Budget history:
         - 200 lines: initial contract from #462 (proved too tight)
@@ -1107,13 +1109,15 @@ class TestServerEdgeCases:
           behaviour and list_hidden_tools in the Discovery section (#722).
         - 337 lines: raised 2026-08-26 to document read_doc's out-of-range
           message envelope in the Output format section (#727).
+        - 341 lines: raised 2026-09-15 to state the tool/resource display-parity
+          contract in the Resources section (#760).
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 337, (
-            f"Instructions are {line_count} lines (budget: 337). "
+        assert line_count <= 341, (
+            f"Instructions are {line_count} lines (budget: 341). "
             "Increase the budget deliberately, not by trimming."
         )
 

@@ -1,18 +1,32 @@
-"""Domain-specific display formatters for resources.
+"""Domain-specific display formatters for resources and type-bound tools.
 
-All resources return raw data.  This module provides the registered
-formatters that the ``read_resource`` executor (``tools/mcp_tools.py``)
-resolves into ``markdown_formatter`` callables for the single result
-pipeline (``tools/result_pipeline.py``) when a ``format_hint`` is present.
+All resources and tools return raw data.  This module provides the registered
+formatters that the single result pipeline (``tools/result_pipeline.py``)
+resolves into the markdown channel through two paths:
+
+- **Resources** — the ``read_resource`` executor (``tools/mcp_tools.py``)
+  resolves the resource's ``format_hint`` (content metadata) into an
+  ``ExecutionResult.markdown_formatter`` and forwards the remaining content
+  meta (``owner``/``repo``/``type``) as ``ExecutionResult.extra``.
+- **Tools** — ``_resolve_formatter`` binds a formatter by the response
+  schema's root type name (the ``types=`` argument below, issue #760), so a
+  tool renders the same domain view as its resource sibling.
 
 Every formatter here is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
 — a pure renderer that takes ``data`` and may declare a keyword-only
 ``extra`` for context.  The contract itself (and why ``detail`` is not part
 of it) is stated canonically in ``format.py``; this module does not restate
 it.
+
+Formatters are *shape-tolerant*: a list renders the **collection view** (the
+curated per-item table the resource surface has always shown); a dict renders
+the **detail view** — the collection fields plus the payload fields (``body``,
+``milestone``, …) that a single-resource read must never drop.  The pipeline
+may hand a formatter either shape: list tools and list resources produce
+lists, detail tools (``repo_get``, ``issue_get_issue``, …) produce dicts.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from gitea_mcp_server.format import (
@@ -27,23 +41,38 @@ from gitea_mcp_server.format import (
 
 _FORMATTERS: dict[str, MarkdownFormatter] = {}
 
+# Response-schema type name -> formatter name (the #760 binding).  Populated
+# by ``register_formatter(types=...)``; consulted by the pipeline's
+# ``_resolve_formatter`` as the middle tier between an explicit per-result
+# formatter and the generic fallback.
+_TYPE_FORMATTERS: dict[str, str] = {}
+
 
 def register_formatter(
     name: str,
+    *,
+    types: Sequence[str] = (),
 ) -> Callable[[MarkdownFormatter], MarkdownFormatter]:
     """Decorator that registers a domain-specific markdown formatter.
 
     Args:
         name: Unique name used as ``format_hint`` in resource metadata.
+        types: Response-schema type names (``$ref`` roots, e.g. ``"Issue"``)
+            this formatter renders on the tool side.  The result pipeline
+            binds a tool's markdown output to this formatter when the
+            response schema's root type (or a root list's item type) matches
+            one of them (issue #760).
 
     Usage::
 
-        @register_formatter("repository")
+        @register_formatter("repository", types=["Repository"])
         def _format_repo_markdown(data): ...
     """
 
     def deco(fn: MarkdownFormatter) -> MarkdownFormatter:
         _FORMATTERS[name] = fn
+        for type_name in types:
+            _TYPE_FORMATTERS[type_name] = name
         return fn
 
     return deco
@@ -52,6 +81,18 @@ def register_formatter(
 def get_formatter(name: str) -> MarkdownFormatter | None:
     """Look up a registered formatter by name.  Returns ``None`` if not found."""
     return _FORMATTERS.get(name)
+
+
+def get_formatter_for_type(type_name: str) -> MarkdownFormatter | None:
+    """Look up the formatter bound to a response type name (``types=``).
+
+    Returns ``None`` for unbound types — callers fall back to the generic
+    renderer (the pipeline's third tier, see ``_resolve_formatter``).
+    """
+    formatter_name = _TYPE_FORMATTERS.get(type_name)
+    if formatter_name is None:
+        return None
+    return _FORMATTERS.get(formatter_name)
 
 
 def call_formatter(
@@ -151,23 +192,87 @@ _RELEASE_FIELDS: dict[str, dict] = {
     "body": {},
 }
 
+# Detail views (issue #760): the collection fields plus the payload fields a
+# single-resource read must never drop (``body``, ``milestone``, ``assignees``,
+# merge state).  Reached when a *dict* arrives — ``issue_get_issue``,
+# ``repo_get_pull_request``, the auto resource for ``/issues/{index}``, …
+# The collection whitelists above stay untouched (resource parity).
+_ISSUE_DETAIL_FIELDS: dict[str, dict] = {
+    "number": {},
+    "title": {},
+    "state": {},
+    "user": {},
+    "body": {},
+    "labels": {"render": "compact_ref", "template": "{name}"},
+    "milestone": {},
+    "assignee": {},
+    "assignees": {},
+    "comments": {},
+    "created_at": {},
+    "updated_at": {},
+    "closed_at": {},
+    "due_date": {},
+    # Expanded (not badge) here: PullRequestMeta's merged/draft state matters
+    # on a detail read of an issue that is a PR.
+    "pull_request": {},
+    "ref": {},
+    "html_url": {},
+}
+_PULL_DETAIL_FIELDS: dict[str, dict] = {
+    "number": {},
+    "title": {},
+    "state": {},
+    "user": {},
+    "body": {},
+    "labels": {"render": "compact_ref", "template": "{name}"},
+    "milestone": {},
+    "assignees": {},
+    "base": {"render": "compact_ref", "template": "{ref}"},
+    "head": {"render": "compact_ref", "template": "{ref}"},
+    "comments": {},
+    "review_comments": {},
+    "draft": {},
+    "mergeable": {},
+    "merged": {},
+    "merged_at": {},
+    "closed_at": {},
+    "created_at": {},
+    "updated_at": {},
+    "html_url": {},
+}
+
 
 # ---------------------------------------------------------------------------
 # Domain formatters
 # ---------------------------------------------------------------------------
 
 
-@register_formatter("repository")
-def _format_repo_markdown(data: dict) -> str:
-    return format_as_markdown(
-        data,
-        title=data.get("full_name", "Repository"),
-        field_filter=_REPO_FIELDS,
-    )
+@register_formatter("repository", types=["Repository"])
+def _format_repo_markdown(data: Any) -> str:
+    if isinstance(data, list):
+        # Collection view (repo_list_* siblings, org_list_repos, …).
+        title = f"Repositories - {len(data)} items" if data else "Repositories"
+        return format_as_markdown(
+            data,
+            title=title,
+            field_filter=_REPO_FIELDS,
+            item_title_key="full_name",
+        )
+    if isinstance(data, dict):
+        return format_as_markdown(
+            data,
+            title=data.get("full_name", "Repository"),
+            field_filter=_REPO_FIELDS,
+        )
+    # Unexpected shape: render through the generic path so the agent still
+    # sees the payload (#574 guard discipline).
+    return format_as_markdown(data, title="Repository")
 
 
-@register_formatter("issues")
-def _format_issues_markdown(data: list, *, extra: dict | None = None) -> str:
+@register_formatter("issues", types=["Issue"])
+def _format_issues_markdown(data: Any, *, extra: dict | None = None) -> str:
+    if isinstance(data, dict):
+        return _format_issue_detail(data, extra=extra)
     # The /issues endpoint returns both issues and pull requests by default.
     # When available, use the ``type`` query param from the handler context
     # (forwarded via content meta → extra dict) to determine the title
@@ -198,8 +303,38 @@ def _format_issues_markdown(data: list, *, extra: dict | None = None) -> str:
     )
 
 
-@register_formatter("pull_requests")
-def _format_pulls_markdown(data: list) -> str:
+def _format_issue_detail(data: dict, *, extra: dict | None = None) -> str:
+    """Detail view for a single Issue dict (``issue_get_issue``, #760).
+
+    The collection whitelist drops ``body`` — the payload of a detail read —
+    so this view renders the detail field set instead.  An issue that is a
+    pull request (``pull_request`` set, or ``type=pulls`` context) is titled
+    accordingly.
+    """
+    is_pr = bool(data.get("pull_request")) or (extra or {}).get("type") == "pulls"
+    label = "Pull Request" if is_pr else "Issue"
+    number = data.get("number", "?")
+    title = data.get("title")
+    heading = f"{label} #{number}: {title}" if title else f"{label} #{number}"
+    return format_as_markdown(
+        data,
+        title=heading,
+        field_filter=_ISSUE_DETAIL_FIELDS,
+    )
+
+
+@register_formatter("pull_requests", types=["PullRequest"])
+def _format_pulls_markdown(data: Any) -> str:
+    if isinstance(data, dict):
+        # Detail view (repo_get_pull_request, the /pulls/{index} resource).
+        number = data.get("number", "?")
+        title = data.get("title")
+        heading = f"Pull Request #{number}: {title}" if title else f"Pull Request #{number}"
+        return format_as_markdown(
+            data,
+            title=heading,
+            field_filter=_PULL_DETAIL_FIELDS,
+        )
     title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
     return format_as_markdown(
         data,
@@ -209,22 +344,29 @@ def _format_pulls_markdown(data: list) -> str:
     )
 
 
-@register_formatter("user")
+@register_formatter("user", types=["User", "Organization"])
 def _format_user_markdown(data: Any) -> str:
+    if isinstance(data, list):
+        # Collection view (org_list_members, user_list_followers, …).
+        items = [_normalize_user(item) for item in data]
+        title = f"Users - {len(data)} items" if data else "Users"
+        return format_as_markdown(
+            items,
+            title=title,
+            field_filter=_USER_FIELDS,
+            item_title_key="login",
+        )
     # Guard against non-dict input (unexpected data shape).
     if not isinstance(data, dict):
         # Show the type and a truncated repr so agents can still reason
         # about what was returned, without producing a misleading login
-        # field (e.g. ``str([...])`` for list input).
+        # field (e.g. ``str(42)`` for scalar input).
         fallback_data = {
             "_type": type(data).__name__,
             "_raw": str(data)[:500],
         }
         return format_as_markdown(fallback_data, title="User")
-    # Normalize: API may return 'created_at' or 'created' for the same field
-    normalized = dict(data)
-    if "created_at" not in normalized and "created" in normalized:
-        normalized["created_at"] = normalized["created"]
+    normalized = _normalize_user(data)
     return format_as_markdown(
         normalized,
         title=normalized.get("login", "User"),
@@ -232,9 +374,32 @@ def _format_user_markdown(data: Any) -> str:
     )
 
 
-@register_formatter("release")
-def _format_release_markdown(data: list) -> str:
-    """Format a list of releases as markdown."""
+def _normalize_user(item: Any) -> Any:
+    """Normalize the API's ``created``/``created_at`` aliasing for display.
+
+    The User schema emits ``created``; the field spec uses ``created_at``.
+    Returns a copy (never mutates the executor's data); non-dict items pass
+    through untouched (the generic renderer handles them).
+    """
+    if isinstance(item, dict) and "created_at" not in item and "created" in item:
+        normalized = dict(item)
+        normalized["created_at"] = normalized["created"]
+        return normalized
+    return item
+
+
+@register_formatter("release", types=["Release"])
+def _format_release_markdown(data: Any) -> str:
+    """Format a release dict or a list of releases as markdown."""
+    if isinstance(data, dict):
+        # Detail view (release_get): _RELEASE_FIELDS already carries `body`
+        # (the release notes), so the collection set doubles as the detail set.
+        tag = data.get("tag_name") or data.get("name") or "Release"
+        return format_as_markdown(
+            data,
+            title=f"Release {tag}",
+            field_filter=_RELEASE_FIELDS,
+        )
     title = f"Releases - {len(data)} releases" if data else "Releases"
     return format_as_markdown(
         data,
@@ -244,13 +409,13 @@ def _format_release_markdown(data: list) -> str:
     )
 
 
-@register_formatter("labels")
+@register_formatter("labels", types=["Label"])
 def _format_labels_markdown(
-    data: list,
+    data: Any,
     *,
     extra: dict[str, Any] | None = None,
 ) -> str:
-    """Format labels list as Markdown with format and validation hints.
+    """Format labels as Markdown with format and validation hints.
 
     Needs ``extra`` with ``owner`` and ``repo`` keys for the heading.
 
@@ -260,7 +425,13 @@ def _format_labels_markdown(
     a concise item is the full scalar dict and renders here unchanged.
     Items are dicts on both detail levels; the non-dict branch below is a
     defensive guard for unexpected shapes, not the collapse contract.
+
+    A *dict* arrives from single-label reads (``issue_get_label``, #760)
+    and renders the detail view instead of the collection list.
     """
+    if isinstance(data, dict):
+        return _format_label_detail(data, extra=extra)
+
     owner = (extra or {}).get("owner", "?")
     repo = (extra or {}).get("repo", "?")
 
@@ -292,36 +463,55 @@ def _format_labels_markdown(
                 # Guard against non-dict items (unexpected data shape).
                 lines.append(f"- {label}")
                 continue
-            label_id = label.get("id", "?")
             name = label.get("name", "Unnamed")
-            color = label.get("color", "")
-            desc = label.get("description") or "(no description)"
-            exclusive = label.get("exclusive", False)
-
-            scope_info = ""
-            if "/" in name:
-                scope = name.rsplit("/", 1)[0]
-                scope_info = f" (scope: `{scope}`)"
-
-            archived = label.get("is_archived", False)
-            archived_tag = " *(archived)*" if archived else ""
-
-            lines.append(f"### {name} (#{label_id}){archived_tag}")
-            lines.append(f"- **Color**: `#{color}`")
-            lines.append(f"- **Description**: {desc}")
-            lines.append(f"- **Exclusive**: {'Yes' if exclusive else 'No'}{scope_info}")
+            archived_tag = " *(archived)*" if label.get("is_archived", False) else ""
+            lines.append(f"### {name} (#{label.get('id', '?')}){archived_tag}")
+            lines.extend(_label_detail_lines(label))
             lines.append("")
 
     return "\n".join(lines)
 
 
-def _build_labels_markdown(data: list, owner: str, repo: str) -> str:
-    """Shorthand for calling the labels formatter with context."""
-    return call_formatter("labels", data, extra={"owner": owner, "repo": repo})
+def _label_detail_lines(label: dict) -> list[str]:
+    """Bullet lines for one label dict — shared by both labels views."""
+    name = label.get("name", "Unnamed")
+    color = label.get("color", "")
+    desc = label.get("description") or "(no description)"
+    exclusive = label.get("exclusive", False)
+
+    scope_info = ""
+    if "/" in name:
+        scope = name.rsplit("/", 1)[0]
+        scope_info = f" (scope: `{scope}`)"
+
+    return [
+        f"- **Color**: `#{color}`",
+        f"- **Description**: {desc}",
+        f"- **Exclusive**: {'Yes' if exclusive else 'No'}{scope_info}",
+    ]
+
+
+def _format_label_detail(label: dict, *, extra: dict | None = None) -> str:
+    """Detail view for a single Label dict (``issue_get_label``, #760).
+
+    No collection heading or validation-format section — those guide label
+    *selection*; a detail read already holds one label.  The repo scope is
+    shown when ``extra`` carries it (``issue_get_label`` passes ``owner``/
+    ``repo`` from the call args); graceful otherwise.
+    """
+    owner = (extra or {}).get("owner")
+    repo = (extra or {}).get("repo")
+    scope = f" for {owner}/{repo}" if owner and repo else ""
+    name = label.get("name", "Unnamed")
+    archived_tag = " *(archived)*" if label.get("is_archived", False) else ""
+    lines = [f"# Label: {name} (#{label.get('id', '?')}){archived_tag}{scope}", ""]
+    lines.extend(_label_detail_lines(label))
+    return "\n".join(lines)
 
 
 __all__ = [
     "call_formatter",
     "get_formatter",
+    "get_formatter_for_type",
     "register_formatter",
 ]

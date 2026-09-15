@@ -504,6 +504,42 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
         assert "$ref" not in schema
+        # The inlined root keeps its type name for the display binding (#760).
+        assert schema["properties"]["result"]["x-response-type"] == "Item"
+
+    def test_array_response_not_stamped(self) -> None:
+        """Inline array responses keep their ``items.$ref`` — no stamp needed (#760)."""
+        spec: OpenAPISpec = {
+            "paths": {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Item"},
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {"Item": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+            },
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        result = schema["properties"]["result"]
+        assert result["type"] == "array"
+        assert result["items"]["$ref"] == "#/components/schemas/Item"
+        assert "x-response-type" not in result
 
     def test_wraps_response_ref(self) -> None:
         """Response-level $ref is left as-is; component schema gets wrapped.
@@ -556,6 +592,8 @@ class TestEnrichResponseSchemas:
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "version" in schema["properties"]["result"]["properties"]
+        # Inlined shared-response schema carries the binding stamp too (#760).
+        assert schema["properties"]["result"]["x-response-type"] == "ServerVersion"
 
     def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""

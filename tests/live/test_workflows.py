@@ -78,7 +78,9 @@ async def test_add_label_to_issue_workflow(world: World) -> None:
                 keys=("number", "title", "labels"),
                 key_types=(("number", int), ("title", str)),
             ),
-            FormatsEquivalent(),
+            # issue_get_issue is type-bound to the curated issue detail view
+            # (#760): json carries everything, markdown the domain rows.
+            FormatsEquivalent(skip_values=True),
         ),
     )
     verified_data = assert_result_ok(verified)

@@ -828,7 +828,13 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     spec reflects that same wrapping.
 
     ``$ref`` schemas (media-type level) are resolved so the wrapped schema
-    is self-contained at each response site.
+    is self-contained at each response site.  Before inlining, the referenced
+    type name is stamped onto the resolved schema as ``x-response-type`` —
+    the one place where the root type is still known (issue #760's binding
+    key for object responses; root-list responses are inline arrays and keep
+    their ``items.$ref`` naturally).  The stamp is stripped from the
+    agent-facing output schema by ``deep_resolve_schema`` (``format.py``) and
+    consumed by the result pipeline's type-bound formatter dispatch.
 
     Note: Response-level ``$ref`` responses (e.g.
     ``{"$ref": "#/components/responses/empty"}``) are skipped here because
@@ -856,10 +862,16 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
 
     # Resolve $ref schemas to get the actual schema before wrapping.
     if "$ref" in schema:
-        resolved = resolve_spec_ref(spec, schema["$ref"])
+        ref = schema["$ref"]
+        resolved = resolve_spec_ref(spec, ref)
         if not isinstance(resolved, dict):
             return
         schema = deepcopy(resolved)
+        # Stamp the root type name for the display pipeline's type binding
+        # (#760): last segment of the schema pointer (e.g. "Repository").
+        type_name = ref.rsplit("/", 1)[-1] if isinstance(ref, str) else ""
+        if type_name:
+            schema["x-response-type"] = type_name
 
     json_content["schema"] = {
         "type": "object",

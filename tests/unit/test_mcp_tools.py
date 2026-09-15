@@ -10,7 +10,6 @@ from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
 from gitea_mcp_server.tools.mcp_tools import (
-    _make_resource_formatter,
     _maybe_decode_base64,
     _mcp_read_resource_impl,
     _read_resource_tool,
@@ -745,46 +744,72 @@ class TestReadResourceRawUnification:
         return fn
 
 
-class TestMakeResourceFormatter:
-    """Tests for _make_resource_formatter (executor-side formatter resolution)."""
+class TestResourceFormatterAttachment:
+    """The read_resource executor attaches a plain formatter + extra (#760).
 
-    def test_none_format_hint_returns_none(self) -> None:
-        """format_hint=None returns None."""
-        fn = _make_resource_formatter(None, None)
-        assert fn is None
+    The executor no longer closes over ``extra`` — it resolves the
+    ``format_hint`` to the registered formatter (tier 1) and forwards the
+    content-meta context via ``ExecutionResult.extra``; the pipeline binds
+    them at the single formatter call site.
+    """
 
-    def test_unknown_format_hint_returns_none(self) -> None:
-        """Unknown format_hint name returns None."""
-        fn = _make_resource_formatter("nonexistent_formatter", None)
-        assert fn is None
+    @staticmethod
+    def _capture_read_resource() -> Any:
+        return TestMcpReadResourceTool()._capture_read_resource()
 
-    def test_known_format_hint_returns_callable(self) -> None:
-        """Known format_hint returns a callable matching the pipeline contract."""
-        fn = _make_resource_formatter("repository", None)
-        assert callable(fn)
-        result = fn({"name": "test-repo", "full_name": "org/test-repo"})
-        assert "test-repo" in result
+    async def _exec_result(self, content: str, meta: dict[str, Any] | None) -> ExecutionResult:
+        from fastmcp.resources import ResourceContent, ResourceResult
 
-    def test_formatter_with_extra_passes_it_through(self) -> None:
-        """Formatter declaring ``extra`` receives the bound extra dict."""
-        fn = _make_resource_formatter("labels", {"owner": "myorg", "repo": "myrepo"})
-        assert callable(fn)
-        result = fn([{"id": 1, "name": "bug"}])
-        assert "myorg/myrepo" in result
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        result = ResourceResult(contents=[ResourceContent(content, meta=meta)])
+        ctx.read_resource = AsyncMock(return_value=result)
+        exec_result: ExecutionResult = await fn(uri="gitea://test", ctx=ctx)
+        return exec_result
 
-    def test_formatter_callable_takes_data_only(self) -> None:
-        """The returned callable matches the ``(data) -> str`` contract.
+    @pytest.mark.asyncio
+    async def test_none_format_hint_leaves_formatter_unset(self) -> None:
+        """No format_hint: tier 1 unset (type binding / generic decide)."""
+        exec_result = await self._exec_result('{"name": "r"}', None)
+        assert exec_result.markdown_formatter is None
+        assert exec_result.extra is None
 
-        ``detail`` is not part of the formatter contract — the pipeline
-        pre-collapses the data and formatters detect collapsed items by
-        shape, so the callable rejects a ``detail`` kwarg.
-        """
-        fn = _make_resource_formatter("repository", None)
-        assert callable(fn)
-        result = fn({"name": "test-repo", "full_name": "org/test-repo"})
-        assert "test-repo" in result
-        with pytest.raises(TypeError):
-            fn({"name": "test-repo"}, detail="concise")
+    @pytest.mark.asyncio
+    async def test_unknown_format_hint_leaves_formatter_unset(self) -> None:
+        """Unknown format_hint name: tier 1 unset — no silent crash."""
+        exec_result = await self._exec_result(
+            '{"name": "r"}', {"format_hint": "nonexistent_formatter"}
+        )
+        assert exec_result.markdown_formatter is None
+
+    @pytest.mark.asyncio
+    async def test_known_format_hint_resolves_registered_formatter(self) -> None:
+        """Known hint resolves to the registered callable (not a closure)."""
+        from gitea_mcp_server.tools.display import get_formatter
+
+        exec_result = await self._exec_result('{"name": "r"}', {"format_hint": "repository"})
+        assert exec_result.markdown_formatter is get_formatter("repository")
+
+    @pytest.mark.asyncio
+    async def test_content_meta_surfaces_as_extra(self) -> None:
+        """Non-known meta keys arrive as ExecutionResult.extra."""
+        exec_result = await self._exec_result(
+            '[{"id": 1, "name": "bug"}]',
+            {"format_hint": "labels", "owner": "myorg", "repo": "myrepo"},
+        )
+        assert exec_result.extra == {"owner": "myorg", "repo": "myrepo"}
+
+    @pytest.mark.asyncio
+    async def test_extra_renders_through_pipeline(self) -> None:
+        """The bound extra reaches a formatter declaring it (labels heading)."""
+        exec_result = await self._exec_result(
+            '[{"id": 1, "name": "bug", "color": "ff0000"}]',
+            {"format_hint": "labels", "owner": "myorg", "repo": "myrepo"},
+        )
+        tool_result = _render(exec_result, fmt="markdown")
+        rendered = extract_text_content(tool_result.content)
+        assert "# Labels for myorg/myrepo" in rendered
+        assert "bug" in rendered
 
 
 class TestMcpListResourcesFormat:

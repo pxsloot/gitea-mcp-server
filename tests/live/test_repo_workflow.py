@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers.mcp_results import extract_text_content
 from tests.live.assertions import (
     assert_content,
     assert_formats_equivalent,
@@ -97,15 +98,20 @@ class TestRepoCreate:
 
     @pytest.mark.live
     async def test_repo_cross_format(self, world: World) -> None:
-        """``gitea_repo_get`` — json ↔ markdown equivalence."""
+        """``gitea_repo_get`` — curated markdown view (#760).
+
+        The json completeness side is locked by ``test_repo_shape``; this
+        locks the domain view: ``repo_get`` is type-bound to the
+        ``repository`` formatter, so the text channel renders the curated
+        heading and core rows end-to-end.
+        """
         workflow = Workflow(world)
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
-        await assert_formats_equivalent(
-            mcp,
-            "gitea_repo_get",
-            {"owner": DEV.username, "repo": _REPO},
-        )
+        result = await mcp.call_tool("gitea_repo_get", {"owner": DEV.username, "repo": _REPO})
+        text = extract_text_content(result.content)
+        assert text.startswith(f"# {DEV.username}/{_REPO}"), text[:200]
+        assert "| Default Branch |" in text
 
 
 # ---------------------------------------------------------------------------

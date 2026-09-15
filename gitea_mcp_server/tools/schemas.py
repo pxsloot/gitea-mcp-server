@@ -73,6 +73,10 @@ def deep_resolve_schema(
 ) -> dict[str, Any]:
     """Recursively resolve all $ref pointers in a schema against the spec.
 
+    The converter's ``x-response-type`` display-binding stamp (stamped by
+    ``_wrap_response_schema``, #760) is stripped here: it is pipeline-internal
+    metadata consumed from the *raw* schema channel, never agent-facing.
+
     Args:
         schema: Schema tree (individual JSON Schema node, typed ``Any``
                 because property names are dynamic).
@@ -89,6 +93,8 @@ def deep_resolve_schema(
     _seen = _seen or set()
 
     for key, value in schema.items():
+        if key == "x-response-type":
+            continue  # display-binding stamp — raw channel only, not agent-facing
         if key == "$ref" and isinstance(value, str):
             if value in _seen:
                 result[key] = value

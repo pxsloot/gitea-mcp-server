@@ -558,8 +558,8 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
 
 1. **Add a display formatter** (if needed) in `tools/display.py`:
    ```python
-   @register_formatter("my_type")
-   def _format_my_type(data: dict) -> str:
+   @register_formatter("my_type", types=["MyType"])
+   def _format_my_type(data: Any) -> str:
        ...
    ```
    A formatter is a `format.MarkdownFormatter` — a pure renderer that takes
@@ -571,6 +571,26 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    `detail` flag — collapsed *fields* arrive as `$ref:TypeName` strings;
    root-list items are always dicts (summarized, #759), so formatters must
    not branch on collapsed item shapes.
+
+   **`types=` binds the formatter to tools by response type (#760).** The
+   result pipeline's `_resolve_formatter` dispatches in three tiers: an
+   explicit per-result `markdown_formatter` (the resource `format_hint`
+   path) → the formatter registered for the response schema's root type
+   (`$ref:Issue` on a root list's items; the `x-response-type` stamp or root
+   `$ref` on an object response — see ARCHITECTURE design decision #14) →
+   the generic `format_as_markdown`.  So one registration gives the tool
+   family the same domain view its resource sibling renders; unregistered
+   types keep the generic fallback.
+
+   **Formatters must be shape-tolerant.** A bound type arrives in both
+   shapes: list tools (`repo_list_*`) hand over lists, detail tools
+   (`repo_get`, `issue_get_issue`, …) hand over dicts.  The convention is
+   list → *collection view* (curated field whitelist, per-item titles) and
+   dict → *detail view* (the whitelist plus payload fields such as `body` —
+   a detail read must never silently drop the payload).  `extra` context
+   (`owner`/`repo`/`type`) reaches formatters from the call args via the
+   contract spine, or from resource content meta; always fall back
+   gracefully when it is absent.
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:

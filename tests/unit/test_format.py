@@ -516,6 +516,85 @@ class TestCollapseData:
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
         assert result[0] == {"id": 7, "who": "$ref:User"}
 
+    def test_root_list_allof_alias_chased(self) -> None:
+        """A combinator-wrapped alias target is chased, not mislabeled.
+
+        The chase uses the same ``$ref`` notion as the collapse walker
+        (``_extract_ref``), so an ``allOf``-wrapped reference resolves to the
+        concrete schema and the item is *summarized*.  Before this, the
+        resolver stopped at the wrapper and the walker's own allOf check
+        label-replaced the item — a silent degrade to pre-#759 behavior.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Alias": {"allOf": [{"$ref": "#/components/schemas/Real"}]},
+                    "Real": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "who": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                }
+            }
+        )
+        data = [{"id": 7, "who": {"login": "u"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0] == {"id": 7, "who": "$ref:User"}
+
+    def test_root_list_allof_cycle_falls_back(self) -> None:
+        """A cycle routed through a combinator hits the hop cap → fallback label."""
+        spec = make_openapi_spec(
+            components={"schemas": {"Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}]}}}
+        )
+        data = [{"a": 1}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result == ["$ref:Loop"]
+
+    def test_root_list_allof_merge_passes_extension_through(self) -> None:
+        """A genuine allOf merge is chased to its first $ref member; the other
+        members' keys carry no property schema and pass through verbatim.
+
+        Documents the deliberate trade-off: the summary may be slightly
+        fatter (uncollapsed extension values) but never emptier than the
+        whole-item label the old code produced for this shape.
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "Base": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "who": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "Merged": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/Base"},
+                            {
+                                "type": "object",
+                                "properties": {"extra": {"$ref": "#/components/schemas/User"}},
+                            },
+                        ]
+                    },
+                    "User": {"type": "object", "properties": {"login": {"type": "string"}}},
+                }
+            }
+        )
+        data = [{"id": 7, "who": {"login": "u"}, "extra": {"login": "x"}}]
+        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Merged"}}
+        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        assert result[0] == {
+            "id": 7,
+            "who": "$ref:User",  # Base's nested ref collapses
+            "extra": {"login": "x"},  # extension key: no schema → verbatim
+        }
+
     def test_root_list_ref_cycle_falls_back(self) -> None:
         """A self-referential alias hits the hop cap → whole-item label fallback."""
         spec = make_openapi_spec(

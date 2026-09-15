@@ -285,10 +285,11 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
 
 
 # Alias-chasing cap for root-item resolution: a ``$ref`` whose target is
-# itself a bare ``$ref`` (e.g. ``CreatePullReviewCommentOptions`` in the live
-# Gitea spec) is followed at most this many hops before resolution gives up
-# and the caller falls back to whole-item labelling.  The cap also breaks
-# reference cycles.
+# itself a reference — bare (e.g. ``CreatePullReviewCommentOptions`` in the
+# live Gitea spec) or combinator-wrapped (``allOf``/``anyOf``/``oneOf``) —
+# is followed at most this many hops before resolution gives up and the
+# caller falls back to whole-item labelling.  The cap also breaks reference
+# cycles (including cycles routed through a combinator).
 _MAX_REF_ALIAS_HOPS = 5
 
 
@@ -297,6 +298,14 @@ def _resolve_root_items_schema(
     openapi_spec: OpenAPISpec | None,
 ) -> dict[str, Any] | None:
     """Resolve a root list's item ``$ref`` for S1-lite collapse (#759).
+
+    Uses :func:`_extract_ref` at every hop — the same ``$ref`` notion the
+    collapse walker itself applies (top-level first, then combinator
+    options) — so resolver and walker can never disagree about whether a
+    schema *is* a reference.  A genuine ``allOf`` merge is chased to its
+    first ``$ref`` member; the remaining members' keys then carry no
+    property schema and pass through verbatim — a summary that is slightly
+    fatter, never emptier, than whole-item labelling.
 
     Returns the concrete schema the referenced type resolves to, or
     ``None`` when there is no spec, no ``$ref``, or resolution fails
@@ -313,10 +322,10 @@ def _resolve_root_items_schema(
         resolved = resolve_spec_ref(openapi_spec, ref)
         if not isinstance(resolved, dict):
             return None
-        nxt = resolved.get("$ref")
-        if not isinstance(nxt, str):
-            return resolved  # concrete schema (properties / allOf / …)
-        ref = nxt  # alias — chase one hop
+        nxt = _extract_ref(resolved)
+        if nxt is None:
+            return resolved  # concrete schema (properties / inline combinator)
+        ref = nxt  # alias (bare or combinator-wrapped) — chase one hop
     return None
 
 
@@ -588,10 +597,14 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
                 flat.append((label, "Yes" if raw_val else "No"))
             elif isinstance(raw_val, (dict, list)):
                 # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-                # tables.  The display pipeline pre-collapses nested
+                # tables.  This is the EXAMPLE/TYPE-SUMMARY shape emitted by
+                # schema_to_compact_example (tool_info's output_example,
+                # resolve_type's summary) as *payload content* — NOT the
+                # collapse marker, which is a plain string handled by the
+                # scalar branch below.  The pipeline pre-collapses nested
                 # ``$ref``-backed objects to ``"$ref:TypeName"`` strings when
-                # ``detail=concise``, so this formatter only ever sees
-                # already-collapsed data — it renders, it does not collapse.
+                # ``detail=concise`` (#759), so this formatter only ever
+                # renders collapsed data — it does not collapse.
                 if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
                     raw_val = f"$ref:{raw_val['$ref']}"
                 # Don't propagate field_filter into nested sub-objects -

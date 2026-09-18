@@ -573,7 +573,7 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    not branch on collapsed item shapes.
 
    **`types=` binds the formatter to tools by response type (#760).** The
-   result pipeline's `_resolve_formatter` dispatches in three tiers: an
+   format layer's `resolve_formatter` dispatches in three tiers: an
    explicit per-result `markdown_formatter` (the resource `format_hint`
    path) → the formatter registered for the response schema's root type
    (`$ref:Issue` on a root list's items; the `x-response-type` stamp or root
@@ -581,6 +581,15 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    the generic `format_as_markdown`.  So one registration gives the tool
    family the same domain view its resource sibling renders; unregistered
    types keep the generic fallback.
+
+   **The registry lives in `format.py`, not `display.py`.** `display.py` is a
+   pure plugin set: it imports `register_formatter` from `format` and holds no
+   registry state.  This keeps the dependency Result → Format → Display — the
+   result pipeline resolves formatters through `format.resolve_formatter`
+   without importing `display`, so the generic pipeline never depends on the
+   Gitea-specific formatter catalog.  The tools package (`tools/__init__.py`)
+   imports `display` for its registration side effect; any code that imports
+   `gitea_mcp_server.tools` loads the plugins.
 
    **Formatters must be shape-tolerant.** A bound type arrives in both
    shapes: list tools (`repo_list_*`) hand over lists, detail tools
@@ -1054,7 +1063,11 @@ def _format_custom_type(data: dict) -> str:
     ...
 ```
 
-Domain-specific resource formatters are registered in `tools/display.py` via the ``@register_formatter`` decorator. See "How to Add a Custom Resource" above.
+Domain-specific resource formatters are registered via the
+``@register_formatter`` decorator; the formatters themselves live in
+`tools/display.py`, but the registry and the three-tier
+``resolve_formatter`` dispatch live in `format.py` (see the add-a-formatter
+how-to above). See "How to Add a Custom Resource" above.
 
 ---
 

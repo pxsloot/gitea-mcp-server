@@ -8,9 +8,14 @@ resolves into the markdown channel through two paths:
   resolves the resource's ``format_hint`` (content metadata) into an
   ``ExecutionResult.markdown_formatter`` and forwards the remaining content
   meta (``owner``/``repo``/``type``) as ``ExecutionResult.extra``.
-- **Tools** — ``_resolve_formatter`` binds a formatter by the response
+- **Tools** — ``format.resolve_formatter`` binds a formatter by the response
   schema's root type name (the ``types=`` argument below, issue #760), so a
   tool renders the same domain view as its resource sibling.
+
+This module is a pure plugin set: the registry itself lives in
+``format.py`` (the format layer) so the result pipeline resolves formatters
+without importing this module — Result → Format → Display.  Each formatter
+below registers via :func:`~gitea_mcp_server.format.register_formatter`.
 
 Every formatter here is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
 — a pure renderer that takes ``data`` and may declare a keyword-only
@@ -26,73 +31,14 @@ may hand a formatter either shape: list tools and list resources produce
 lists, detail tools (``repo_get``, ``issue_get_issue``, …) produce dicts.
 """
 
-from collections.abc import Callable, Sequence
 from typing import Any
 
 from gitea_mcp_server.format import (
-    MarkdownFormatter,
     call_markdown_formatter,
     format_as_markdown,
+    get_formatter,
+    register_formatter,
 )
-
-# ---------------------------------------------------------------------------
-# Formatter registry
-# ---------------------------------------------------------------------------
-
-_FORMATTERS: dict[str, MarkdownFormatter] = {}
-
-# Response-schema type name -> formatter name (the #760 binding).  Populated
-# by ``register_formatter(types=...)``; consulted by the pipeline's
-# ``_resolve_formatter`` as the middle tier between an explicit per-result
-# formatter and the generic fallback.
-_TYPE_FORMATTERS: dict[str, str] = {}
-
-
-def register_formatter(
-    name: str,
-    *,
-    types: Sequence[str] = (),
-) -> Callable[[MarkdownFormatter], MarkdownFormatter]:
-    """Decorator that registers a domain-specific markdown formatter.
-
-    Args:
-        name: Unique name used as ``format_hint`` in resource metadata.
-        types: Response-schema type names (``$ref`` roots, e.g. ``"Issue"``)
-            this formatter renders on the tool side.  The result pipeline
-            binds a tool's markdown output to this formatter when the
-            response schema's root type (or a root list's item type) matches
-            one of them (issue #760).
-
-    Usage::
-
-        @register_formatter("repository", types=["Repository"])
-        def _format_repo_markdown(data): ...
-    """
-
-    def deco(fn: MarkdownFormatter) -> MarkdownFormatter:
-        _FORMATTERS[name] = fn
-        for type_name in types:
-            _TYPE_FORMATTERS[type_name] = name
-        return fn
-
-    return deco
-
-
-def get_formatter(name: str) -> MarkdownFormatter | None:
-    """Look up a registered formatter by name.  Returns ``None`` if not found."""
-    return _FORMATTERS.get(name)
-
-
-def get_formatter_for_type(type_name: str) -> MarkdownFormatter | None:
-    """Look up the formatter bound to a response type name (``types=``).
-
-    Returns ``None`` for unbound types — callers fall back to the generic
-    renderer (the pipeline's third tier, see ``_resolve_formatter``).
-    """
-    formatter_name = _TYPE_FORMATTERS.get(type_name)
-    if formatter_name is None:
-        return None
-    return _FORMATTERS.get(formatter_name)
 
 
 def call_formatter(
@@ -102,6 +48,9 @@ def call_formatter(
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Look up and call a registered formatter.
+
+    Thin convenience wrapper over :func:`~gitea_mcp_server.format.get_formatter`
+    and ``call_markdown_formatter`` for callers that hold a formatter name.
 
     Args:
         name: Formatter name (registered via ``@register_formatter``).
@@ -556,7 +505,4 @@ def _format_label_detail(label: dict, *, extra: dict | None = None) -> str:
 
 __all__ = [
     "call_formatter",
-    "get_formatter",
-    "get_formatter_for_type",
-    "register_formatter",
 ]

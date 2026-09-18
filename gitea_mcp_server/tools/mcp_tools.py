@@ -31,13 +31,12 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.format import decode_base64_content
+from gitea_mcp_server.format import decode_base64_content, get_formatter
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.display import get_formatter
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,

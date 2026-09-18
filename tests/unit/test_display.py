@@ -17,16 +17,20 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gitea_mcp_server.format import build_server_info_markdown
+from gitea_mcp_server.format import (
+    _FORMATTERS,
+    _TYPE_FORMATTERS,
+    build_server_info_markdown,
+    get_formatter_for_type,
+    register_formatter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
-    _FORMATTERS,
     _ISSUE_FIELDS,
-    _TYPE_FORMATTERS,
     _format_issues_markdown,
     _format_labels_markdown,
     _format_pulls_markdown,
@@ -34,8 +38,6 @@ from gitea_mcp_server.tools.display import (
     _format_repo_markdown,
     _format_user_markdown,
     call_formatter,
-    get_formatter_for_type,
-    register_formatter,
 )
 
 

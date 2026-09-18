@@ -868,7 +868,7 @@ class TestResolveFormatter:
 
     def test_root_list_items_ref_binds_domain_formatter(self) -> None:
         """Tier 2: ``$ref:Issue`` on the root list's items binds ``issues``."""
-        from gitea_mcp_server.tools.display import get_formatter_for_type
+        from gitea_mcp_server.format import get_formatter_for_type
 
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
         result = ExecutionResult(data=[{"number": 1}], shape="list")
@@ -876,7 +876,7 @@ class TestResolveFormatter:
 
     def test_object_root_ref_binds_domain_formatter(self) -> None:
         """Tier 2: ``$ref:Repository`` on the root binds ``repository``."""
-        from gitea_mcp_server.tools.display import get_formatter_for_type
+        from gitea_mcp_server.format import get_formatter_for_type
 
         schema = {"$ref": "#/components/schemas/Repository"}
         result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
@@ -889,7 +889,7 @@ class TestResolveFormatter:
         raw schema reaches the pipeline, leaving ``x-response-type`` as the
         only root-type marker on the object channel.
         """
-        from gitea_mcp_server.tools.display import get_formatter_for_type
+        from gitea_mcp_server.format import get_formatter_for_type
 
         schema = {
             "type": "object",
@@ -910,7 +910,7 @@ class TestResolveFormatter:
 
     def test_unregistered_stamp_falls_through_to_items_ref(self) -> None:
         """An unbound stamp does not block the ``items.$ref`` binding key."""
-        from gitea_mcp_server.tools.display import get_formatter_for_type
+        from gitea_mcp_server.format import get_formatter_for_type
 
         schema = {
             "type": "array",
@@ -922,7 +922,7 @@ class TestResolveFormatter:
 
     def test_combinator_wrapped_root_ref_binds(self) -> None:
         """``allOf``/``anyOf`` roots resolve via ``_extract_type_name`` like the collapse walker."""
-        from gitea_mcp_server.tools.display import get_formatter_for_type
+        from gitea_mcp_server.format import get_formatter_for_type
 
         schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}]}
         result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
@@ -961,13 +961,13 @@ class TestResolveFormatter:
 
     def test_non_dict_items_schema_is_ignored(self) -> None:
         """Tuple-form / malformed ``items`` never reach the type lookup."""
-        from gitea_mcp_server.tools.result_pipeline import _type_bound_formatter
+        from gitea_mcp_server.format import _type_bound_formatter
 
         assert _type_bound_formatter({"type": "array", "items": [{"type": "string"}]}) is None
 
     def test_non_dict_schema_is_ignored(self) -> None:
         """A non-dict schema (defensive) skips the binding without crashing."""
-        from gitea_mcp_server.tools.result_pipeline import _type_bound_formatter
+        from gitea_mcp_server.format import _type_bound_formatter
 
         assert _type_bound_formatter(["not", "a", "schema"]) is None  # type: ignore[arg-type]
         assert _type_bound_formatter(None) is None

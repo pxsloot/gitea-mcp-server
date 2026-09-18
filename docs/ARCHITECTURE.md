@@ -278,7 +278,7 @@ Agent reads a resource:
 | `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
 | `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
-| `format.py` | Schema-aware formatting shared by tools & resources; `MarkdownFormatter` (the canonical formatter contract) + `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) |
+| `format.py` | Schema-aware formatting shared by tools & resources; `MarkdownFormatter` (the canonical formatter contract) + `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) + the **formatter registry** (`register_formatter`/`get_formatter`/`get_formatter_for_type`) and `resolve_formatter` (the three-tier dispatch policy). Domain formatters register here; the result pipeline imports only this module (Result → Format → Display) |
 | `tools/unified_search.py` | Unified search across tools, docs, and resources |
 
 ### Tool Customization Stack (applied in order)
@@ -412,7 +412,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets and per-resource cache TTLs (populated by ``make_api_resource``, consumed by ``build_invalidation_map`` and the response-cache TTL resolver) |
-| `tools/display.py` | Domain-specific display formatters with registry — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter` |
+| `tools/display.py` | Domain-specific display formatter **plugins** — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter`.  Holds no registry state — the registry lives in `format.py`, and `tools/__init__.py` imports this module for its registration side effect |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -804,15 +804,19 @@ from the parameter schema.
       The markdown path pre-collapses the page (schema-aware ``$ref``
       collapse) when ``detail=concise``, mirroring the json path.  The
       formatter — a ``format.MarkdownFormatter`` (the contract is stated
-      canonically in ``format.py``) — is resolved by ``_resolve_formatter`` in
-      three tiers: the result's own formatter (the resource ``format_hint``
-      path), else the **type-bound** domain formatter for the response
-      schema's root type (``register_formatter(types=...)``, issue #760 — so a
+      canonically in ``format.py``) — is resolved by
+      ``format.resolve_formatter`` in three tiers: the result's own formatter
+      (the resource ``format_hint`` path), else the **type-bound** domain
+      formatter for the response schema's root type
+      (``register_formatter(types=...)``, issue #760 — so a
       tool renders the same curated view as its resource sibling), else the
       schema-bound ``format_as_markdown`` fallback — and is dispatched through
       ``call_markdown_formatter``, which forwards only the kwargs a formatter
       declares (``extra``).  Formatters are pure renderers: they never
-      collapse and never carry dead params.
+      collapse and never carry dead params.  The registry and the resolution
+      policy live in the format layer (``format.py``), so the pipeline never
+      imports the domain formatter module ``tools/display.py`` — the plugins
+      register themselves and are loaded by ``tools/__init__.py``.
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

@@ -270,7 +270,7 @@ class TestContextMetaKeysPipeline:
         the content meta as ``ExecutionResult.extra``; the pipeline binds
         the two at the single call site (no executor-side closure).
         """
-        from gitea_mcp_server.tools.display import get_formatter
+        from gitea_mcp_server.format import get_formatter
         from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 
         data = [{"number": 1, "title": "Bug", "state": "open"}]

@@ -64,7 +64,6 @@ page size (``constants.DEFAULT_PAGE_SIZE``), the cap
 
 from __future__ import annotations
 
-import functools
 import json as json_module
 import logging
 from dataclasses import dataclass, field
@@ -78,14 +77,11 @@ from pydantic.json_schema import SkipJsonSchema  # noqa: TC002 - runtime use via
 from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
 from gitea_mcp_server.format import (
     MarkdownFormatter,
-    _extract_type_name,
     call_markdown_formatter,
     collapse_data,
-    format_as_markdown,
+    resolve_formatter,
 )
 from gitea_mcp_server.pagination import add_pagination_metadata
-from gitea_mcp_server.schema_utils import schema_type_matches
-from gitea_mcp_server.tools.display import get_formatter_for_type
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -327,42 +323,6 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
     return {"result": data}, shape
 
 
-def _type_bound_formatter(schema: dict[str, Any] | None) -> MarkdownFormatter | None:
-    """Return the domain formatter bound to the result's response type (#760).
-
-    The binding key is the response schema's root type, read from the raw
-    (un-deep-resolved) schema channel — two shapes, one lookup:
-
-    - **Root list** (``issue_list_issues``): the item ``$ref``
-      (``$ref:Issue``) — array responses are inline schemas whose item refs
-      the converter never resolves.
-    - **Object response** (``repo_get``): the ``x-response-type`` stamp the
-      converter applies when it inlines a media-type ``$ref`` during
-      response wrapping (``_wrap_response_schema``) — the root ``$ref`` is
-      gone by then, so the stamp carries the name.  A root ``$ref`` (inline
-      callers, synthetic schemas) is honoured too via ``_extract_type_name``.
-
-    Returns ``None`` — and the caller falls back to the generic renderer —
-    when there is no schema, no type, or no formatter registered for the
-    type.  Unknown types therefore keep today's behavior exactly.
-    """
-    if not isinstance(schema, dict):
-        return None
-    type_names: list[str] = []
-    stamped = schema.get("x-response-type")
-    if isinstance(stamped, str) and stamped:
-        type_names.append(stamped)
-    source = schema.get("items") if schema_type_matches(schema, "array") else schema
-    ref_name = _extract_type_name(source if isinstance(source, dict) else None)
-    if ref_name is not None:
-        type_names.append(ref_name)
-    for type_name in type_names:
-        formatter = get_formatter_for_type(type_name)
-        if formatter is not None:
-            return formatter
-    return None
-
-
 def _resolve_formatter(
     result: ExecutionResult,
     schema: dict[str, Any] | None,
@@ -370,26 +330,17 @@ def _resolve_formatter(
     """Return the result's formatter, the type-bound domain formatter, or the
     schema-bound generic fallback.
 
-    Three tiers, consulted in order:
+    Delegates the three-tier choice to
+    :func:`~gitea_mcp_server.format.resolve_formatter` (explicit per-result →
+    type-bound domain formatter → generic).  Keeping the policy in the format
+    layer means the pipeline never imports the domain formatter module
+    (``tools/display.py``) — Result → Format, not Result → Display.
 
-    1. ``ExecutionResult.markdown_formatter`` — an explicit per-result
-       formatter (the resource surface's ``format_hint`` resolution).
-    2. The type-bound domain formatter for the response schema's root type
-       (``_type_bound_formatter``, #760) — the same view a resource sibling
-       renders, applied to autogen tools and un-hinted resources.
-    3. :func:`~gitea_mcp_server.format.format_as_markdown`, with ``schema``
-       bound up front because ``call_markdown_formatter`` dispatches only
-       ``extra`` (never ``schema`` or ``detail``).
-
-    Centralising the choice here keeps ``_format`` a single, uniform
-    formatter call site.
+    The explicit tier is the ``ExecutionResult.markdown_formatter`` (the
+    resource surface's ``format_hint`` resolution); the pipeline is a single,
+    uniform formatter call site.
     """
-    if result.markdown_formatter is not None:
-        return result.markdown_formatter
-    bound = _type_bound_formatter(schema)
-    if bound is not None:
-        return bound
-    return functools.partial(format_as_markdown, schema=schema)
+    return resolve_formatter(schema, explicit=result.markdown_formatter)
 
 
 def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, extra, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render

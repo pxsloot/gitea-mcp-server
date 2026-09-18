@@ -785,7 +785,7 @@ class TestResourceFormatterAttachment:
     @pytest.mark.asyncio
     async def test_known_format_hint_resolves_registered_formatter(self) -> None:
         """Known hint resolves to the registered callable (not a closure)."""
-        from gitea_mcp_server.tools.display import get_formatter
+        from gitea_mcp_server.format import get_formatter
 
         exec_result = await self._exec_result('{"name": "r"}', {"format_hint": "repository"})
         assert exec_result.markdown_formatter is get_formatter("repository")

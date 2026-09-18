@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
+    from gitea_mcp_server.openapi_types import SwaggerV2Spec
 
 from gitea_mcp_server.openapi_converter import (
     convert_swagger_to_openapi_v3,
 )
 from gitea_mcp_server.openapi_converter.core import _add_nullable_for_optional_refs
 from gitea_mcp_server.schema_utils import schema_type_matches
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestEmailFormatHandling:
@@ -25,7 +26,7 @@ class TestEmailFormatHandling:
                 "email": {"type": "string", "format": "email", "description": "User email address"}
             },
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         # The schema is mutated in place
         email_schema = schema["properties"]["email"]
@@ -55,7 +56,7 @@ class TestEmailFormatHandling:
             "required": ["email"],
             "properties": {"email": {"type": "string", "format": "email"}},
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         # Required field: should remain as simple format:email, NOT anyOf
@@ -79,7 +80,7 @@ class TestEmailFormatHandling:
             "type": "object",
             "properties": {"email": {"type": "string", "format": "email"}},
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         assert "anyOf" in email_schema
@@ -104,7 +105,7 @@ class TestEmailFormatHandling:
                 }
             },
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         email_branch = next((b for b in email_schema["anyOf"] if b.get("format") == "email"), None)
@@ -130,7 +131,7 @@ class TestEmailFormatHandling:
                 }
             },
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         email_schema = schema["properties"]["email"]
         # Should become anyOf, not remain a simple type list
@@ -197,7 +198,7 @@ class TestDateFormatHandling:
                 "date_field": {"type": "string", "format": "date", "description": "Some date"}
             },
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         date_schema = schema["properties"]["date_field"]
         # Should NOT have anyOf
@@ -219,7 +220,7 @@ class TestDateFormatHandling:
             "required": ["date_field"],
             "properties": {"date_field": {"type": "string", "format": "date"}},
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         date_schema = schema["properties"]["date_field"]
         # Should NOT have anyOf
@@ -234,7 +235,7 @@ class TestDateFormatHandling:
             "type": "object",
             "properties": {"datetime_field": {"type": "string", "format": "date-time"}},
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         dt_schema = schema["properties"]["datetime_field"]
         assert "anyOf" not in dt_schema
@@ -299,7 +300,7 @@ class TestUuidFormatHandling:
                 "token_id": {"type": "string", "format": "uuid", "description": "A UUID token"}
             },
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         uuid_schema = schema["properties"]["token_id"]
         assert "anyOf" not in uuid_schema
@@ -317,7 +318,7 @@ class TestUuidFormatHandling:
             "required": ["token_id"],
             "properties": {"token_id": {"type": "string", "format": "uuid"}},
         }
-        spec: OpenAPISpec = {"components": {"schemas": {"Test": schema}}}
+        spec = make_openapi_spec(components={"schemas": {"Test": schema}})
         _add_nullable_for_optional_refs(spec)
         uuid_schema = schema["properties"]["token_id"]
         assert "anyOf" not in uuid_schema

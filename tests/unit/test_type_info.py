@@ -1,11 +1,10 @@
 """Tests for type_info module (build_type_index, resolve_type_info)."""
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from fastmcp.tools.base import Tool
 
-from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.type_info import (
     _walk_parameter_refs,
     _walk_request_body_refs,
@@ -15,21 +14,24 @@ from gitea_mcp_server.tools.type_info import (
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
 
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
+
 
 class TestBuildTypeIndex:
     """Tests for build_type_index."""
 
     def test_empty_spec_returns_empty(self) -> None:
         """Should return empty dict when spec has no components/schemas."""
-        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
+        spec = make_openapi_spec(openapi="3.1.0", paths={})
         assert build_type_index(spec) == {}
 
     def test_registers_all_types(self) -> None:
         """Should register every type from components/schemas."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {},
-            "components": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={},
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -41,7 +43,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert set(index.keys()) == {"User", "Label"}
         assert index["User"]["referenced_types"] == []
@@ -49,10 +51,10 @@ class TestBuildTypeIndex:
 
     def test_detects_nested_refs(self) -> None:
         """Should detect $ref references between types."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {},
-            "components": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={},
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -69,16 +71,16 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert "User" in index
         assert "User" in index["User"]["referenced_types"]
 
     def test_cross_references_from_response(self) -> None:
         """Should record which tools return a type in their response."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/issues/{id}": {
                     "get": {
                         "operationId": "issue_get_issue",
@@ -100,7 +102,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -108,16 +110,16 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert "User" in index
         assert "issue_get_issue" in index["User"]["returned_by"]
 
     def test_cross_references_from_parameters(self) -> None:
         """Should record which tools accept a type in their parameters."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/users": {
                     "post": {
                         "operationId": "admin_create_user",
@@ -144,7 +146,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "CreateUserOption": {
                         "type": "object",
@@ -152,16 +154,16 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert "CreateUserOption" in index
         assert "admin_create_user" in index["CreateUserOption"]["accepted_by"]
 
     def test_cross_references_from_request_body(self) -> None:
         """Should record which tools accept a type via requestBody."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/repos": {
                     "post": {
                         "operationId": "repo_create",
@@ -188,7 +190,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "CreateRepoOption": {
                         "type": "object",
@@ -196,15 +198,15 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert "repo_create" in index["CreateRepoOption"]["accepted_by"]
 
     def test_deduplicates_cross_references(self) -> None:
         """Should deduplicate operationId entries in returned_by/accepted_by."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/issues/{id}": {
                     "get": {
                         "operationId": "issue_get_issue",
@@ -227,7 +229,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -235,7 +237,7 @@ class TestBuildTypeIndex:
                     },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         # Even though User appears twice in the response, the operation
         # should only appear once in returned_by.
@@ -243,16 +245,19 @@ class TestBuildTypeIndex:
 
     def test_non_dict_schema_skipped(self) -> None:
         """Should skip non-dict schema entries."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {},
-            "components": {
-                "schemas": {
-                    "User": {"type": "object", "properties": {}},
-                    "BadType": "not a dict",  # Should be skipped gracefully
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {},
+                "components": {
+                    "schemas": {
+                        "User": {"type": "object", "properties": {}},
+                        "BadType": "not a dict",  # Should be skipped gracefully
+                    },
                 },
             },
-        }
+        )
         index = build_type_index(spec)
         assert "User" in index
         assert "BadType" not in index
@@ -261,9 +266,9 @@ class TestBuildTypeIndex:
 class TestResolveTypeInfo:
     """Tests for resolve_type_info."""
 
-    SIMPLE_SPEC: OpenAPISpec = {
-        "openapi": "3.1.0",
-        "paths": {
+    SIMPLE_SPEC = make_openapi_spec(
+        openapi="3.1.0",
+        paths={
             "/issues/{id}": {
                 "get": {
                     "operationId": "issue_get_issue",
@@ -285,7 +290,7 @@ class TestResolveTypeInfo:
                 },
             },
         },
-        "components": {
+        components={
             "schemas": {
                 "User": {
                     "type": "object",
@@ -304,7 +309,7 @@ class TestResolveTypeInfo:
                 },
             },
         },
-    }
+    )
 
     def test_resolves_known_type_concise(self) -> None:
         """Should return compact type info for a known type."""
@@ -403,7 +408,7 @@ class TestResolveTypeInfoEdgeCases:
 class TestWalkResponseRefs:
     """Guard clauses in _walk_response_refs."""
 
-    MINIMAL_SPEC: OpenAPISpec = {"openapi": "3.1.0", "components": {"schemas": {}}}
+    MINIMAL_SPEC = make_openapi_spec(openapi="3.1.0", components={"schemas": {}})
 
     def test_non_dict_responses_early_return(self) -> None:
         """Non-dict responses triggers early return."""
@@ -515,8 +520,6 @@ class TestWalkParameterRefs:
 class TestWalkRequestBodyRefs:
     """Guard clauses in _walk_request_body_refs."""
 
-    MINIMAL_SPEC: OpenAPISpec = {"openapi": "3.1.0"}
-
     def test_non_dict_body_content_early_return(self) -> None:
         """Non-dict body content triggers early return."""
         type_index: dict = {}
@@ -543,11 +546,14 @@ class TestBuildTypeIndexEdgeCases:
 
     def test_non_dict_schemas_returns_empty(self) -> None:
         """When components.schemas is not a dict, return empty."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "components": {"schemas": "not a dict"},
-            "paths": {},
-        }
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "components": {"schemas": "not a dict"},
+                "paths": {},
+            },
+        )
         result = build_type_index(spec)
         assert result == {}
 
@@ -575,9 +581,9 @@ class TestBuildTypeIndexEdgeCases:
 
     def test_empty_operation_id_skipped(self) -> None:
         """Operation without operationId is skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "operationId": "",  # empty — should be skipped
@@ -585,8 +591,8 @@ class TestBuildTypeIndexEdgeCases:
                     },
                 },
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
         result = build_type_index(spec)
         assert result == {}
 
@@ -600,10 +606,10 @@ class TestResolveTypeOutputSchema:
     fails output validation on every scalar type, breaking agent discovery.
     """
 
-    SPEC: OpenAPISpec = {
-        "openapi": "3.1.0",
-        "paths": {},
-        "components": {
+    SPEC = make_openapi_spec(
+        openapi="3.1.0",
+        paths={},
+        components={
             "schemas": {
                 "ReviewStateType": {
                     "type": "string",
@@ -611,7 +617,7 @@ class TestResolveTypeOutputSchema:
                 },
             },
         },
-    }
+    )
 
     @pytest.mark.asyncio
     async def _get_resolve_type(self) -> Tool:

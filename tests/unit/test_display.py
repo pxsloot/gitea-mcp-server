@@ -28,7 +28,6 @@ from gitea_mcp_server.format import (
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
     _ISSUE_FIELDS,
     _format_issues_markdown,
@@ -39,6 +38,7 @@ from gitea_mcp_server.tools.display import (
     _format_repo_markdown,
     _format_user_markdown,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 @pytest.fixture(autouse=True)
@@ -701,13 +701,13 @@ class TestFormatterGaps:
         assert "| Prerelease | True |" in result
 
     def test_build_server_info_markdown(self) -> None:
-        spec: OpenAPISpec = {
-            "info": {
+        spec = make_openapi_spec(
+            info={
                 "title": "Gitea API",
                 "version": "1.21.0",
                 "description": "Gitea API description.",
             }
-        }
+        )
         result = build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result
@@ -716,7 +716,7 @@ class TestFormatterGaps:
         assert "Gitea API description." in result
 
     def test_build_server_info_markdown_no_description(self) -> None:
-        spec: OpenAPISpec = {"info": {"title": "Gitea API", "version": "1.21.0"}}
+        spec = make_openapi_spec(info={"title": "Gitea API", "version": "1.21.0"})
         result = build_server_info_markdown(spec)
 
         assert "**Server Type**: Gitea API" in result

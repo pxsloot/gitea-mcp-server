@@ -513,17 +513,15 @@ class TestRouteMapFiltering:
 
     def test_empty_paths(self) -> None:
         """Empty paths dict returns empty set."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {},
-            "info": {"title": "T", "version": "1"},
-        }
+        spec = make_openapi_spec(openapi="3.1.1", paths={}, info={"title": "T", "version": "1"})
         provider = self._provider(spec, set())
         assert provider is not None
 
     def test_missing_paths(self) -> None:
         """Spec with no paths key returns empty set."""
-        spec: OpenAPISpec = {"openapi": "3.1.1", "info": {"title": "T", "version": "1"}}
+        spec = make_openapi_spec(
+            include_defaults=False, openapi="3.1.1", info={"title": "T", "version": "1"}
+        )
         provider = self._provider(spec, set())
         assert provider is not None
 
@@ -548,44 +546,44 @@ class TestRouteMapFiltering:
 
     def test_no_deprecated_returns_empty(self) -> None:
         """No deprecated:true operations returns empty set."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser"},
                     "post": {"operationId": "createUser"},
                 },
             },
-        }
+        )
         provider = self._provider(spec, set())
         assert provider is not None
 
     def test_single_deprecated_get(self) -> None:
         """Single deprecated GET is excluded via route_map_fn."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser", "deprecated": True},
                     "post": {"operationId": "createUser"},
                 },
             },
-        }
+        )
         provider = self._provider(spec, {("/user", "GET")})
         assert provider is not None
 
     def test_multiple_deprecated_operations(self) -> None:
         """Multiple deprecated methods on same path are excluded."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/repos/{owner}/{repo}": {
                     "get": {"operationId": "getRepo"},
                     "put": {"operationId": "updateRepo", "deprecated": True},
                     "delete": {"operationId": "deleteRepo", "deprecated": True},
                 },
             },
-        }
+        )
         provider = self._provider(
             spec, {("/repos/{owner}/{repo}", "PUT"), ("/repos/{owner}/{repo}", "DELETE")}
         )
@@ -593,9 +591,9 @@ class TestRouteMapFiltering:
 
     def test_multiple_paths_mixed(self) -> None:
         """Deprecated across multiple paths, non-deprecated excluded."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/v1/old": {
                     "get": {"operationId": "oldGet", "deprecated": True},
                     "post": {"operationId": "oldPost", "deprecated": True},
@@ -608,7 +606,7 @@ class TestRouteMapFiltering:
                     "patch": {"operationId": "oldPatch", "deprecated": True},
                 },
             },
-        }
+        )
         provider = self._provider(
             spec,
             {
@@ -621,28 +619,28 @@ class TestRouteMapFiltering:
 
     def test_deprecated_false_not_included(self) -> None:
         """deprecated: false is treated as not deprecated (no exclusion)."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser", "deprecated": False},
                 },
             },
-        }
+        )
         provider = self._provider(spec, set())
         assert provider is not None
 
     def test_non_http_method_keys_ignored(self) -> None:
         """Parameters key at path level is not treated as an operation."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/repos/{owner}/{repo}": {
                     "parameters": [{"name": "owner", "in": "path"}],
                     "get": {"operationId": "getRepo", "deprecated": True},
                 },
             },
-        }
+        )
         provider = self._provider(spec, {("/repos/{owner}/{repo}", "GET")})
         assert provider is not None
 
@@ -837,10 +835,10 @@ class TestCreateOpenapiProvider:
         from gitea_mcp_server.server_setup.mcp_builder import create_openapi_provider
 
         # Spec with a deprecated route
-        openapi_spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "info": {"title": "Test", "version": "1.0.0"},
-            "paths": {
+        openapi_spec = make_openapi_spec(
+            openapi="3.1.1",
+            info={"title": "Test", "version": "1.0.0"},
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser"},
                 },
@@ -848,8 +846,8 @@ class TestCreateOpenapiProvider:
                     "post": {"operationId": "oldEndpoint", "deprecated": True},
                 },
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
 
         from gitea_mcp_server.label_service import LabelService
 
@@ -871,16 +869,16 @@ class TestCreateOpenapiProvider:
         """response_format should flow into the tool's format parameter default."""
         from gitea_mcp_server.label_service import LabelService
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "info": {"title": "Test", "version": "1.0.0"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            info={"title": "Test", "version": "1.0.0"},
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser"},
                 },
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
         mock_gitea_client = MagicMock()
         mock_gitea_client.client = MagicMock()
 
@@ -911,16 +909,16 @@ class TestProviderTransformRegistration:
     def _make_provider(self) -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "info": {"title": "Test", "version": "1.0.0"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            info={"title": "Test", "version": "1.0.0"},
+            paths={
                 "/user": {
                     "get": {"operationId": "getUser"},
                 },
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
         mock_gitea_client = MagicMock()
         mock_gitea_client.client = MagicMock()
         return create_openapi_provider(

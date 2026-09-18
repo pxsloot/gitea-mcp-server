@@ -62,5 +62,6 @@ truth. Other mentions point here.
 | OpenTelemetry | `DEVELOPMENT.md` |
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |
 | Testing patterns | `TESTING_STANDARDS.md` |
+| Typed spec fixtures / `make_openapi_spec` | `testing/FIXTURES.md` |
 | Agent instructions intent / editing rules | `AGENT_INSTRUCTIONS_STANDARDS.md` |
 | Documentation-set principles (audience, de-dup, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |

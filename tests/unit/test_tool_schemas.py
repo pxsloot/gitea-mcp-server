@@ -91,9 +91,9 @@ class TestIsObjectType:
 class TestDeriveOutputSchema:
     """Tests for derive_output_schema function."""
 
-    MINIMAL_SPEC: OpenAPISpec = {
-        "openapi": "3.1.0",
-        "paths": {
+    MINIMAL_SPEC = make_openapi_spec(
+        openapi="3.1.0",
+        paths={
             "/repos/{owner}/{repo}/issues/{index}": {
                 "get": {
                     "responses": {
@@ -141,7 +141,7 @@ class TestDeriveOutputSchema:
                 }
             },
         },
-        "components": {
+        components={
             "schemas": {
                 "Repository": {
                     "type": "object",
@@ -161,7 +161,7 @@ class TestDeriveOutputSchema:
                 }
             },
         },
-    }
+    )
 
     def _make_route(self, path: str, method: str = "GET") -> MagicMock:
         """Helper to create a mock route."""
@@ -191,14 +191,14 @@ class TestDeriveOutputSchema:
     def test_ref_response_resolved(self) -> None:
         """Should resolve $ref in response to get the schema."""
 
-        spec_with_ref: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec_with_ref = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/repos/{owner}/{repo}": {
                     "get": {"responses": {"200": {"$ref": "#/components/responses/Repository"}}}
                 }
             },
-            "components": {
+            components={
                 "schemas": {
                     "Repository": {
                         "type": "object",
@@ -219,7 +219,7 @@ class TestDeriveOutputSchema:
                     }
                 },
             },
-        }
+        )
 
         route = self._make_route("/repos/{owner}/{repo}", "GET")
         schema = derive_output_schema(route, spec_with_ref)
@@ -236,9 +236,9 @@ class TestDeriveOutputSchema:
         response-schema wrapping inlines the root ``$ref``; the registration
         layer reads it here.  Method matching is case-insensitive.
         """
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/repos/{owner}/{repo}": {
                     "get": {
                         "responses": {
@@ -247,8 +247,8 @@ class TestDeriveOutputSchema:
                     }
                 }
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
         # The stamp is hyphenated on the wire; TypedDict keys cannot be.
         spec["paths"]["/repos/{owner}/{repo}"]["get"]["x-response-type"] = "Repository"  # type: ignore[typeddict-unknown-key]
         assert get_response_type(spec, "/repos/{owner}/{repo}", "get") == "Repository"
@@ -256,7 +256,7 @@ class TestDeriveOutputSchema:
 
     def test_response_type_absent_returns_none(self) -> None:
         """No stamp, missing path, or missing method → ``None`` (unbound)."""
-        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {"/x": {"get": {"responses": {}}}}}
+        spec = make_openapi_spec(openapi="3.1.0", paths={"/x": {"get": {"responses": {}}}})
         assert get_response_type(spec, "/x", "get") is None
         assert get_response_type(spec, "/missing", "get") is None
         assert get_response_type(spec, "/x", "post") is None
@@ -292,9 +292,9 @@ class TestDeriveOutputSchema:
     def test_prefers_200_over_201(self) -> None:
         """Should prefer 200 over 201 when both are present."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "post": {
                         "responses": {
@@ -324,7 +324,7 @@ class TestDeriveOutputSchema:
                     }
                 }
             },
-        }
+        )
 
         route = self._make_route("/test", "POST")
         schema = derive_output_schema(route, spec)
@@ -335,9 +335,9 @@ class TestDeriveOutputSchema:
     def test_falls_back_to_201_when_no_200(self) -> None:
         """Should fall back to 201 when no 200 response exists."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "post": {
                         "responses": {
@@ -356,7 +356,7 @@ class TestDeriveOutputSchema:
                     }
                 }
             },
-        }
+        )
 
         route = self._make_route("/test", "POST")
         schema = derive_output_schema(route, spec)
@@ -416,9 +416,9 @@ class TestDeriveOutputSchema:
         tool.description = "Merge a pull request"
         tool.meta = {}
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/repos/{owner}/{repo}/pulls/{index}/merge": {
                     "put": {
                         "responses": {
@@ -427,14 +427,14 @@ class TestDeriveOutputSchema:
                     }
                 },
             },
-            "components": {
+            components={
                 "responses": {
                     "APIEmpty": {
                         "description": "APIEmpty is an empty response",
                     },
                 },
             },
-        }
+        )
         _customize_metadata(route, tool, openapi_spec=spec)
 
         assert tool.output_schema is not None
@@ -659,9 +659,9 @@ class TestResponseHasNoContent:
 
     @pytest.fixture
     def empty_body_spec(self) -> OpenAPISpec:
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "paths": {
+        return make_openapi_spec(
+            openapi="3.1.1",
+            paths={
                 "/repos/{owner}/{repo}/issues/{index}": {
                     "delete": {
                         "responses": {
@@ -757,15 +757,14 @@ class TestResponseHasNoContent:
                     },
                 },
             },
-            "components": {
+            components={
                 "responses": {
                     "APIEmpty": {
                         "description": "APIEmpty is an empty response",
                     },
                 },
             },
-        }
-        return spec
+        )
 
     def test_204_no_content_detected(self, empty_body_spec: OpenAPISpec) -> None:
         """204 No Content response should return True."""
@@ -1063,9 +1062,9 @@ class TestTextResponseOutputSchema:
 class TestDeepResolveSchema:
     """Tests for deep_resolve_schema function."""
 
-    SPEC: OpenAPISpec = {
-        "openapi": "3.1.0",
-        "components": {
+    SPEC = make_openapi_spec(
+        openapi="3.1.0",
+        components={
             "schemas": {
                 "User": {
                     "type": "object",
@@ -1100,7 +1099,7 @@ class TestDeepResolveSchema:
                 },
             },
         },
-    }
+    )
 
     def test_resolves_nested_property_refs(self) -> None:
         """Resolves $ref inside property values."""
@@ -1175,8 +1174,8 @@ class TestDeepResolveSchema:
         """Circular $ref should not cause infinite recursion."""
         from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
-        circular_spec: OpenAPISpec = {
-            "components": {
+        circular_spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "Node": {
                         "type": "object",
@@ -1186,8 +1185,8 @@ class TestDeepResolveSchema:
                         },
                     },
                 },
-            },
-        }
+            }
+        )
         schema = {"$ref": "#/components/schemas/Node"}
         resolved = deep_resolve_schema(schema, circular_spec)
         assert resolved["type"] == "object"
@@ -1197,9 +1196,9 @@ class TestDeepResolveSchema:
     def test_deep_resolve_applied_in_derive_output_schema(self) -> None:
         """derive_output_schema should deep-resolve nested refs."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/repos/{owner}/{repo}": {
                     "get": {
                         "responses": {
@@ -1221,7 +1220,7 @@ class TestDeepResolveSchema:
                     }
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -1232,7 +1231,7 @@ class TestDeepResolveSchema:
                     },
                 },
             },
-        }
+        )
         route = MagicMock(path="/repos/{owner}/{repo}", method="GET")
         schema = derive_output_schema(route, spec)
         assert schema is not None
@@ -1245,19 +1244,19 @@ class TestDeepResolveSchema:
 
     def test_deepresolve_ref_resolves_to_non_dict(self) -> None:
         """When $ref resolves to non-dict, should keep the $ref key."""
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "Foo": "just a string",
                 }
             }
-        }
+        )
         result = deep_resolve_schema({"$ref": "#/components/schemas/Foo"}, spec)
         assert "$ref" in result
 
     def test_deep_resolve_custom_dict_key(self) -> None:
         """Non-standard keys with dict values should be deep-resolved."""
-        spec: OpenAPISpec = {"components": {"schemas": {"Bar": {"type": "string"}}}}
+        spec = make_openapi_spec(components={"schemas": {"Bar": {"type": "string"}}})
         schema = {
             "type": "object",
             "example": {"nested": {"$ref": "#/components/schemas/Bar"}},
@@ -1290,9 +1289,9 @@ class TestGetSuccessSchema:
     def test_ref_resolves_to_non_dict(self) -> None:
         """When $ref in response resolves to non-dict, should continue to next status code."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "responses": {
@@ -1312,12 +1311,12 @@ class TestGetSuccessSchema:
                     }
                 }
             },
-            "components": {
+            components={
                 "responses": {
                     "OK": "just a string",
                 }
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get")
         assert result is not None
         assert result["type"] == "object"
@@ -1325,76 +1324,85 @@ class TestGetSuccessSchema:
     def test_non_dict_content(self) -> None:
         """When content is not a dict, should continue."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "get": {
-                        "responses": {
-                            "200": {"description": "OK", "content": "not a dict"},
-                            "201": {
-                                "description": "Created",
-                                "content": {"application/json": {"schema": {"type": "string"}}},
-                            },
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "get": {
+                            "responses": {
+                                "200": {"description": "OK", "content": "not a dict"},
+                                "201": {
+                                    "description": "Created",
+                                    "content": {"application/json": {"schema": {"type": "string"}}},
+                                },
+                            }
                         }
                     }
-                }
+                },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
     def test_non_dict_json_content(self) -> None:
         """When application/json content is not a dict, should continue."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "OK",
-                                "content": {
-                                    "application/json": "not a dict",
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "get": {
+                            "responses": {
+                                "200": {
+                                    "description": "OK",
+                                    "content": {
+                                        "application/json": "not a dict",
+                                    },
                                 },
-                            },
-                            "201": {
-                                "description": "Created",
-                                "content": {"application/json": {"schema": {"type": "string"}}},
-                            },
+                                "201": {
+                                    "description": "Created",
+                                    "content": {"application/json": {"schema": {"type": "string"}}},
+                                },
+                            }
                         }
                     }
-                }
+                },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
     def test_non_dict_schema(self) -> None:
         """When schema is not a dict, should continue."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
-                "/test": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "OK",
-                                "content": {
-                                    "application/json": {"schema": "not a dict"},
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "paths": {
+                    "/test": {
+                        "get": {
+                            "responses": {
+                                "200": {
+                                    "description": "OK",
+                                    "content": {
+                                        "application/json": {"schema": "not a dict"},
+                                    },
                                 },
-                            },
-                            "201": {
-                                "description": "Created",
-                                "content": {"application/json": {"schema": {"type": "string"}}},
-                            },
+                                "201": {
+                                    "description": "Created",
+                                    "content": {"application/json": {"schema": {"type": "string"}}},
+                                },
+                            }
                         }
                     }
-                }
+                },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get")
         assert result is not None
 
@@ -1405,9 +1413,9 @@ class TestGetRawSuccessSchema:
     def test_inline_schema_keeps_ref_intact(self) -> None:
         """resolve=False should return schema with $ref intact."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "responses": {
@@ -1428,7 +1436,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -1439,7 +1447,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get", resolve=False)
         assert result is not None
         user_schema = result["properties"]["user"]
@@ -1450,9 +1458,9 @@ class TestGetRawSuccessSchema:
     def test_resolve_true_expands_ref(self) -> None:
         """resolve=True (default) should deep-resolve $ref."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "responses": {
@@ -1473,7 +1481,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-            "components": {
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -1484,7 +1492,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get", resolve=True)
         assert result is not None
         user_schema = result["properties"]["user"]
@@ -1520,15 +1528,15 @@ class TestGetRawSuccessSchema:
     def test_missing_path_returns_none(self) -> None:
         """Missing path should return None."""
 
-        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
+        spec = make_openapi_spec(openapi="3.1.0", paths={})
         assert get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
 
     def test_missing_method_returns_none(self) -> None:
         """Missing method should return None."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "responses": {
@@ -1542,15 +1550,15 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-        }
+        )
         assert get_success_schema(spec, "/test", "post", resolve=False) is None
 
     def test_prefers_200_over_201(self) -> None:
         """Should prefer 200 status code over 201."""
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            paths={
                 "/test": {
                     "get": {
                         "responses": {
@@ -1580,7 +1588,7 @@ class TestGetRawSuccessSchema:
                     },
                 },
             },
-        }
+        )
         result = get_success_schema(spec, "/test", "get", resolve=False)
         assert result is not None
         assert "from_200" in result["properties"]

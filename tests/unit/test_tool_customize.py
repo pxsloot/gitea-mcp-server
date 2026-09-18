@@ -28,6 +28,7 @@ from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
 from tests.helpers.mcp_results import assert_dual_channel, extract_text_content, get_structured
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestCategorizeTool:
@@ -359,7 +360,7 @@ class TestInferredHints:
         tool.description = "Test POST"
         tool.meta = {}
 
-        _customize_metadata(route, tool, openapi_spec={})
+        _customize_metadata(route, tool, openapi_spec=make_openapi_spec(include_defaults=False))
 
         # All hints should be set based on method
         assert tool.annotations.readOnlyHint is False
@@ -517,7 +518,7 @@ class TestPaginationMetadata:
 
     def _make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
 
     def _make_tool(
@@ -806,7 +807,7 @@ class TestCustomizeComponentTextResponse:
         from mcp.types import TextContent
 
         transform = _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
 
         tool = Tool(
@@ -855,7 +856,7 @@ class TestCustomizeComponentTextResponse:
         from mcp.types import TextContent
 
         transform = _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
 
         tool = Tool(

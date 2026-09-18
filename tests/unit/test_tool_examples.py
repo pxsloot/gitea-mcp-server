@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
 from fastmcp.tools.base import Tool
-
-if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.tools.examples import (
     _example_array,
@@ -17,6 +12,7 @@ from gitea_mcp_server.tools.examples import (
     _schema_to_example,
     serialize_tool_schema,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestSchemaToExample:
@@ -556,8 +552,8 @@ class TestSchemaToCompactExample:
         """Bare $ref at depth=0 with openapi_spec should resolve one level."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "NotificationThread": {
                         "type": "object",
@@ -574,8 +570,8 @@ class TestSchemaToCompactExample:
                         },
                     },
                 },
-            },
-        }
+            }
+        )
         schema = {"$ref": "#/components/schemas/NotificationThread"}
         result = schema_to_compact_example(schema, openapi_spec=spec)
         # Should show actual fields, with nested $ref rendered as placeholder
@@ -596,8 +592,8 @@ class TestSchemaToCompactExample:
         """$ref at depth > 0 should still emit placeholder even with spec."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -606,8 +602,8 @@ class TestSchemaToCompactExample:
                         },
                     },
                 },
-            },
-        }
+            }
+        )
         schema = {
             "type": "object",
             "properties": {
@@ -622,8 +618,8 @@ class TestSchemaToCompactExample:
         """Array with $ref items at depth=0 should resolve items with spec."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "NotificationThread": {
                         "type": "object",
@@ -633,8 +629,8 @@ class TestSchemaToCompactExample:
                         },
                     },
                 },
-            },
-        }
+            }
+        )
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/NotificationThread"},
@@ -649,8 +645,8 @@ class TestSchemaToCompactExample:
     def test_serialize_bare_ref_with_openapi_spec(self) -> None:
         """serialize_tool_schema with bare $ref output resolves with spec."""
 
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "NotificationThread": {
                         "type": "object",
@@ -660,8 +656,8 @@ class TestSchemaToCompactExample:
                         },
                     },
                 },
-            },
-        }
+            }
+        )
         tool = Tool(
             name="test_tool",
             description="Test bare ref",
@@ -695,7 +691,7 @@ class TestSchemaToCompactExample:
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         # Spec without the referenced schema
-        spec: OpenAPISpec = {"components": {"schemas": {}}}
+        spec = make_openapi_spec(components={"schemas": {}})
         schema = {"$ref": "#/components/schemas/MissingType"}
         result = schema_to_compact_example(schema, openapi_spec=spec)
         assert result == {"$ref": "MissingType"}

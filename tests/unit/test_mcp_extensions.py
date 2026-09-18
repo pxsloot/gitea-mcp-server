@@ -17,6 +17,7 @@ from gitea_mcp_server.server_setup.mcp_extensions import (
     apply_mcp_extensions,
     load_mcp_extensions,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestApplyMcpExtensions:
@@ -24,8 +25,8 @@ class TestApplyMcpExtensions:
 
     def test_does_not_apply_title_or_description_at_spec_level(self) -> None:
         """title/description overrides are handled by ExtensionMetadataTransform, not here."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -34,7 +35,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "create_issue": {
@@ -52,8 +53,8 @@ class TestApplyMcpExtensions:
         assert "x-mcp" not in op
 
     def test_applies_parameter_customization(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -68,7 +69,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "create_issue": {
@@ -93,8 +94,8 @@ class TestApplyMcpExtensions:
         assert param["examples"] == ["Bug: Something broke", "Feature: Add something"]
 
     def test_handles_multiple_parameters(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -105,7 +106,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "create_issue": {
@@ -124,8 +125,8 @@ class TestApplyMcpExtensions:
         assert params[1]["description"] == "Custom body desc"
 
     def test_skips_unknown_tool_names(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -133,7 +134,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "unknown_operation": {
@@ -148,17 +149,17 @@ class TestApplyMcpExtensions:
         assert op["summary"] == "Original title"
 
     def test_removes_x_mcp_after_processing(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
                         "summary": "Original",
-                        "x-mcp": {"title": "Custom"},  # type: ignore[typeddict-unknown-key]
+                        "x-mcp": {"title": "Custom"},
                     }
                 }
             }
-        }
+        )
         extensions = {"tool_names": {"create_issue": {"description": "Custom"}}}
 
         apply_mcp_extensions(spec, extensions)
@@ -167,15 +168,15 @@ class TestApplyMcpExtensions:
         assert "x-mcp" not in op
 
     def test_handles_missing_operation_id_in_spec(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/some/path": {
                     "post": {
                         "summary": "No op ID",
                     }
                 }
             }
-        }
+        )
         extensions = {"tool_names": {"some_op": {"title": "Custom"}}}
 
         # Should not crash, just skip
@@ -185,8 +186,8 @@ class TestApplyMcpExtensions:
 
     def test_applies_only_provided_parameters(self) -> None:
         """Only parameters field is processed at spec level; title/description are ignored."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -198,7 +199,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "create_issue": {
@@ -218,8 +219,8 @@ class TestApplyMcpExtensions:
         assert op["parameters"][0]["description"] == "Custom body desc"
 
     def test_handles_empty_extensions(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -227,7 +228,7 @@ class TestApplyMcpExtensions:
                     }
                 }
             }
-        }
+        )
         extensions: dict[str, Any] = {"tool_names": {}}
 
         apply_mcp_extensions(spec, extensions)
@@ -236,8 +237,8 @@ class TestApplyMcpExtensions:
         assert op["summary"] == "Original"
 
     def test_merges_multiple_operation_parameters(self) -> None:
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "create_issue",
@@ -257,7 +258,7 @@ class TestApplyMcpExtensions:
                     }
                 },
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "create_issue": {
@@ -382,8 +383,8 @@ class TestLoadMcpExtensionsEdgeCases:
 
     def test_apply_parameter_extensions_skips_missing_name(self) -> None:
         """apply_mcp_extensions skips parameter extensions with no name."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/test": {
                     "post": {
                         "operationId": "test_op",
@@ -398,7 +399,7 @@ class TestLoadMcpExtensionsEdgeCases:
                     }
                 }
             }
-        }
+        )
         extensions = {
             "tool_names": {
                 "test_op": {
@@ -414,16 +415,19 @@ class TestLoadMcpExtensionsEdgeCases:
 
     def test_apply_skips_non_dict_path_item(self) -> None:
         """apply_mcp_extensions skips path items that are not dicts."""
-        spec: OpenAPISpec = {
-            "paths": {
-                "/valid": {
-                    "get": {
-                        "operationId": "get_valid",
-                    }
-                },
-                "/broken": "not_a_dict",  # type: ignore[dict-item]
-            }
-        }
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "paths": {
+                    "/valid": {
+                        "get": {
+                            "operationId": "get_valid",
+                        }
+                    },
+                    "/broken": "not_a_dict",
+                }
+            },
+        )
         extensions = {"tool_names": {"get_valid": {"description": "Updated"}}}
         apply_mcp_extensions(spec, extensions)
         # Non-dict path is skipped, no crash
@@ -431,17 +435,20 @@ class TestLoadMcpExtensionsEdgeCases:
 
     def test_apply_skips_invalid_operation_types(self) -> None:
         """apply_mcp_extensions skips non-dict operations or invalid methods."""
-        spec: OpenAPISpec = {
-            "paths": {
-                "/test": {
-                    "get": {
-                        "operationId": "get_test",
-                    },
-                    "invalid_method": "this is not a dict",  # type: ignore[typeddict-unknown-key]
-                    "parameters": [{"name": "p1", "in": "query"}],
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "paths": {
+                    "/test": {
+                        "get": {
+                            "operationId": "get_test",
+                        },
+                        "invalid_method": "this is not a dict",
+                        "parameters": [{"name": "p1", "in": "query"}],
+                    }
                 }
-            }
-        }
+            },
+        )
         extensions = {"tool_names": {"get_test": {"description": "Updated"}}}
         apply_mcp_extensions(spec, extensions)
         # description is not applied at spec level; get_test's params/x-mcp aren't set either
@@ -449,6 +456,6 @@ class TestLoadMcpExtensionsEdgeCases:
 
     def test_apply_with_empty_tool_names(self) -> None:
         """apply_mcp_extensions with no tool_names returns early."""
-        spec: OpenAPISpec = {"paths": {}}
+        spec = make_openapi_spec(paths={})
         apply_mcp_extensions(spec, extensions={"tool_names": {}})
         assert True  # No error

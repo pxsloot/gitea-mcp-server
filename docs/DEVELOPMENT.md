@@ -607,9 +607,11 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    list → *collection view* (curated field whitelist, per-item titles) and
    dict → *detail view* (the whitelist plus payload fields such as `body` —
    a detail read must never silently drop the payload).  `extra` context
-   (`owner`/`repo`/`type`) reaches formatters from the call args via the
-   contract spine, or from resource content meta; always fall back
-   gracefully when it is absent.
+   (`owner`/`repo`/`org`/`type`) reaches formatters from the call args via
+   the contract spine, or from resource content meta; always fall back
+   gracefully when it is absent.  `org` is the owner-equivalent on
+   org-scoped tools (`org_list_labels`, `org_get_label`, …); a formatter
+   that needs a scope should accept either `owner`/`repo` or `org`.
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:

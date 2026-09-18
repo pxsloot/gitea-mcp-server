@@ -174,7 +174,7 @@ async def _mcp_read_resource_impl(
     ``ResourceContent.meta`` and passed to the display pipeline.
 
     ``response_type`` is the converter's pre-wrap ``x-response-type`` stamp
-    (the type-binding key for domain markdown formatters, #760); it is
+    (the type-binding key for domain markdown formatters); it is
     pipeline metadata, not formatter context, so it is split out of ``extra``.
 
     Args:
@@ -602,8 +602,7 @@ async def _read_resource_tool(
         formatters).  The single result pipeline renders it — ``content``
         authoritative and always present, ``structured_content`` mirroring
         it.  Resources without a ``format_hint`` still get the domain view
-        when their response type is bound (``register_formatter(types=...)``,
-        #760).
+        when their response type is bound (``register_formatter(types=...)``.
 
     Raises:
         ValueError: If the resource is not found or cannot be read

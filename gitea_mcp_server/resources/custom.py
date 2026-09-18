@@ -153,7 +153,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         openapi_spec,
         api_path="/orgs/{org}",
         method="GET",
-        format_hint="user",
+        format_hint="organization",
         scope="read:organization",
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "organization"},

@@ -211,9 +211,9 @@ tool_names:
     description: |
       Get an organization's public profile by name.
 
-      Markdown output is a curated profile (name, description, website,
-      location, visibility). Use `format="json"` for the complete metadata.
-      Use `org_list_repos` to list the organization's repositories.
+      Markdown output is a curated profile (username, name, description,
+      website, location, visibility). Use `format="json"` for the complete
+      metadata. Use `org_list_repos` to list the organization's repositories.
 
       **Resource**: Use `gitea_read_resource` with `gitea://orgs/{org}`
       for a formatted Markdown profile.

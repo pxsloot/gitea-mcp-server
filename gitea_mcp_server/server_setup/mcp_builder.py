@@ -189,7 +189,7 @@ class _ComputedSchema(NamedTuple):
     ``tool.meta`` or re-extracting from ``route``.
 
     ``response_type`` is the operation's pre-wrap ``x-response-type`` stamp
-    (the display layer's type-binding key, #760); it is stored in
+    (the display layer's type-binding key); it is stored in
     ``tool.meta["response_type"]`` for the result pipeline.
     """
 
@@ -246,7 +246,7 @@ def _compute_tool_schema(
     is_binary_response = _response_is_binary(openapi_spec, path, method)
 
     # Pre-wrap ``x-response-type`` stamp — the display layer's type-binding
-    # key (#760).  Read from the operation, never from the schema: wrapping
+    # key.  Read from the operation, never from the schema: wrapping
     # inlines the root ``$ref`` and erases the name.
     response_type = get_response_type(openapi_spec, path, method)
 
@@ -456,7 +456,7 @@ def _build_customization_meta(
     if schema.raw_schema is not None:
         component_meta["output_schema_raw"] = unwrap_result_schema(schema.raw_schema)
 
-    # Display type-binding key (#760): the pre-wrap response type the result
+    # Display type-binding key: the pre-wrap response type the result
     # pipeline maps to a domain markdown formatter.  Carried in tool.meta —
     # the same channel as ``output_schema_raw`` — because the root ``$ref``
     # is erased when the schema is wrapped/inlined.

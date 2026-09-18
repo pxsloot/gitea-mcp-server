@@ -296,7 +296,7 @@ def get_response_type(
 
     The converter stamps the root (or element) type name of every operation's
     success response *before* response-schema wrapping inlines the root
-    ``$ref`` and erases it (``openapi_converter/type_references.py``, #760).
+    ``$ref`` and erases it (``openapi_converter/type_references.py``).
     The registration layers propagate this into ``tool.meta["response_type"]``
     and resource content meta; the result pipeline binds a domain markdown
     formatter by it.

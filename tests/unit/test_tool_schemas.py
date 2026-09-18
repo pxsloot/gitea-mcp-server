@@ -230,7 +230,7 @@ class TestDeriveOutputSchema:
         assert "name" in schema["properties"]
 
     def test_response_type_read_from_operation_stamp(self) -> None:
-        """``get_response_type`` reads the pre-wrap operation-level stamp (#760).
+        """``get_response_type`` reads the pre-wrap operation-level stamp.
 
         The converter stamps ``x-response-type`` on the operation before
         response-schema wrapping inlines the root ``$ref``; the registration

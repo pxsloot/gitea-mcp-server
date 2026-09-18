@@ -1110,7 +1110,7 @@ class TestServerEdgeCases:
         - 337 lines: raised 2026-08-26 to document read_doc's out-of-range
           message envelope in the Output format section (#727).
         - 341 lines: raised 2026-09-15 to state the tool/resource display-parity
-          contract in the Resources section (#760).
+          contract in the Resources section.
         """
         from gitea_mcp_server.server import _build_server_instructions
 

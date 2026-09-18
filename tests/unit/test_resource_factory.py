@@ -2156,7 +2156,7 @@ class TestMakeApiResourceErrorMessageFormat:
 
 
 class TestBuildHandlerMeta:
-    """``_build_handler_meta`` carries the display pipeline's known keys (#760)."""
+    """``_build_handler_meta`` carries the display pipeline's known keys."""
 
     def test_response_type_included(self) -> None:
         """The pre-wrap response type is content metadata, not formatter extra."""

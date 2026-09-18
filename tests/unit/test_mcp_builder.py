@@ -2539,7 +2539,7 @@ class TestBuildCustomizationMeta:
         assert meta["_customization"].route_method == "GET"
 
     def test_response_type_stored_in_meta(self) -> None:
-        """The pre-wrap response type is carried in tool.meta (#760)."""
+        """The pre-wrap response type is carried in tool.meta."""
         component = MagicMock(spec=OpenAPITool)
         component.meta = {}
         schema = _ComputedSchema(

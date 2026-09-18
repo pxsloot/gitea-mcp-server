@@ -768,7 +768,7 @@ class TestReadResourceRawUnification:
 
 
 class TestResourceFormatterAttachment:
-    """The read_resource executor attaches a plain formatter + extra (#760).
+    """The read_resource executor attaches a plain formatter + extra.
 
     The executor no longer closes over ``extra`` — it resolves the
     ``format_hint`` to the registered formatter (tier 1) and forwards the

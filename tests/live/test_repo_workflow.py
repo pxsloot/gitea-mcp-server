@@ -98,7 +98,7 @@ class TestRepoCreate:
 
     @pytest.mark.live
     async def test_repo_cross_format(self, world: World) -> None:
-        """``gitea_repo_get`` — curated markdown view (#760).
+        """``gitea_repo_get`` — curated markdown view.
 
         The json completeness side is locked by ``test_repo_shape``; this
         locks the domain view: ``repo_get`` is type-bound to the

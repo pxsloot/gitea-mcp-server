@@ -26,7 +26,7 @@ precedence over the tool-level schema in :func:`render`.  A per-result
 whose contract is stated canonically in ``format.py`` — is dispatched through
 ``call_markdown_formatter``.  When it is absent, ``_resolve_formatter``
 consults the **type-bound** domain formatter for the result's response type
-(``tools/display.py``, ``register_formatter(types=...)``, #760) before
+(``tools/display.py``, ``register_formatter(types=...)``) before
 falling back to the generic renderer — so a tool and its resource sibling
 render the same domain view.  The type name is first-class metadata
 (``ExecutionResult.response_type`` / :func:`render`'s *response_type*),
@@ -111,7 +111,7 @@ class ExecutionResult:
     (the contract is stated canonically in ``format.py``), dispatched through
     ``call_markdown_formatter``; when absent the pipeline consults
     :func:`_resolve_formatter`'s tiers — the type-bound domain formatter for
-    the result's ``response_type`` (#760), then ``format_as_markdown`` bound
+    the result's ``response_type``, then ``format_as_markdown`` bound
     to the result schema.  The field is wrapped in ``SkipJsonSchema``:
     FastMCP derives a tool's output JSON Schema from its return annotation,
     and pydantic cannot generate a schema for a ``Callable`` — the wrapper
@@ -141,7 +141,7 @@ class ExecutionResult:
     formatters declaring ``extra`` receive it).
     """
     response_type: str | None = None
-    """Response type name for type-bound formatter resolution (#760).
+    """Response type name for type-bound formatter resolution.
 
     The pre-wrap ``x-response-type`` stamp, propagated from ``tool.meta``
     (autogen tools) or resource content meta (``read_resource``).  It is the
@@ -190,10 +190,10 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
             ``read_resource``), that takes precedence over this argument.
         extra: Optional formatter context (``owner``/``repo``/``type``) —
             display *input* derived by the contract spine from the tool
-            call's args (#760).  When the ``ExecutionResult`` carries its
+            call's args .  When the ``ExecutionResult`` carries its
             own ``extra`` (resource content meta), that takes precedence.
         response_type: Optional response type name for type-bound formatter
-            resolution (#760) — read by the contract spine from
+            resolution — read by the contract spine from
             ``tool.meta["response_type"]``.  When the ``ExecutionResult``
             carries its own ``response_type`` (per-URI ``read_resource``),
             that takes precedence.

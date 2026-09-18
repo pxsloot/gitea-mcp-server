@@ -403,7 +403,7 @@ def _build_handler_meta(
     directly in ``make_api_resource()``, not here.
 
     ``response_type`` is the converter's pre-wrap ``x-response-type`` stamp
-    (the display layer's type-binding key, #760).  Like ``response_schema``
+    (the display layer's type-binding key).  Like ``response_schema``
     and ``format_hint`` it is *known* pipeline metadata — ``_mcp_read_resource_impl``
     strips it out of the formatter ``extra`` and surfaces it separately.
 
@@ -461,7 +461,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
         response_schema: Unwrapped inner response schema for display layer.
         format_hint: Registered formatter name for markdown rendering.
         response_type: Pre-wrap ``x-response-type`` stamp for the display
-            layer's type-bound formatter dispatch (#760).
+            layer's type-bound formatter dispatch.
         resource_type: Machine-readable resource type for error responses.
         error_message: User-facing 404 error message, possibly a template
             expanded with ``error_kwargs``.
@@ -853,7 +853,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     response_schema = (
         None if handler_hook else _auto_derive_schema(openapi_spec, api_path, method_lower)
     )
-    # Display type-binding key (#760): the operation's pre-wrap
+    # Display type-binding key: the operation's pre-wrap
     # ``x-response-type`` stamp.  Skipped for text/plain ``handler_hook``
     # resources (no JSON response type) and when no spec is available.
     response_type = (

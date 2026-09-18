@@ -62,7 +62,7 @@ class TestJsonMarkdownEquivalence:
     async def test_single_object_equivalence(self, world: World) -> None:
         """Single object (repo get): json complete, markdown the curated view.
 
-        ``repo_get`` is type-bound to the ``repository`` formatter (#760), so
+        ``repo_get`` is type-bound to the ``repository`` formatter, so
         its markdown is a curated domain view by contract — value
         completeness lives in json.  The curated rows are asserted directly.
         """

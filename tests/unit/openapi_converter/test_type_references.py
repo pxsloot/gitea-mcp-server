@@ -1,8 +1,8 @@
 """Unit tests for the type-reference analysis (openapi_converter.type_references).
 
 Covers ``stamp_type_references`` — the pre-wrap pass that stamps
-``x-response-type`` on every operation (the display layer's type-binding key,
-#760), ``x-resource-types`` on GET operations, and ``x-modifies-type`` on write
+``x-response-type`` on every operation (the display layer's type-binding key),
+``x-resource-types`` on GET operations, and ``x-modifies-type`` on write
 operations for cache invalidation (issue #743).
 """
 
@@ -119,7 +119,7 @@ class TestStampTypeReferences:
         assert set(types) == {"Issue", "Label"}
 
     def test_every_operation_gets_response_type(self) -> None:
-        """``x-response-type`` names the root/element type on every operation (#760)."""
+        """``x-response-type`` names the root/element type on every operation."""
         spec = _make_spec()
         stamp_type_references(spec)
         paths = spec["paths"]

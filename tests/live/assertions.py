@@ -120,7 +120,7 @@ async def assert_formats_equivalent(
     in the markdown text.  This avoids the camelCase↔Title Case mapping
     problem: we match on the information content, not the field names.
 
-    **Curated views (#760):** tools whose response type is bound to a domain
+    **Curated views:** tools whose response type is bound to a domain
     formatter (``register_formatter(types=...)`` — Issue, PullRequest,
     Repository, User, Label, Release and their list siblings) render a
     *curated* markdown view by contract: the field whitelist trims noise, and

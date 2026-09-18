@@ -29,7 +29,7 @@ class TestContextMetaKeysPipeline:
     2. _mcp_read_resource_impl extra extraction from ResourceContent.meta
     3. The read_resource executor resolves the format_hint into a formatter
        and forwards the extra as display input; the single result pipeline
-       binds them at the formatter call site (#760)
+       binds them at the formatter call site
     """
 
     @pytest.fixture
@@ -268,7 +268,7 @@ class TestContextMetaKeysPipeline:
         assert extra is None
 
     def test_resource_extra_flows_through_pipeline(self) -> None:
-        """format_hint + extra reach the formatter via the pipeline (#760).
+        """format_hint + extra reach the formatter via the pipeline.
 
         The executor resolves the hint into a plain formatter and forwards
         the content meta as ``ExecutionResult.extra``; the pipeline binds
@@ -288,7 +288,7 @@ class TestContextMetaKeysPipeline:
         assert "Pull Requests - 1 items" in extract_text_content(tool_result.content)
 
     def test_resource_response_type_flows_through_pipeline(self) -> None:
-        """A resource with no ``format_hint`` still gets the domain view (#760).
+        """A resource with no ``format_hint`` still gets the domain view.
 
         The factory stores the pre-wrap ``x-response-type`` in content meta;
         the executor surfaces it as ``ExecutionResult.response_type``; the

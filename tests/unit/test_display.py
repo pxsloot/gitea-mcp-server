@@ -1,11 +1,11 @@
 """Tests for display formatters (tools/display.py).
 
 Covers:
-    - the type-binding registry (``register_formatter(types=...)``, #760)
+    - the type-binding registry (``register_formatter(types=...)``)
     - _format_user_markdown created_at fallback
     - _format_repo_markdown
     - _format_issues_markdown, _format_pulls_markdown, _format_release_markdown
-    - shape tolerance: collection (list) vs detail (dict) views (#760)
+    - shape tolerance: collection (list) vs detail (dict) views 
     - Formatter edge cases
     - Tool/resource formatting consistency
 """
@@ -32,6 +32,7 @@ from gitea_mcp_server.tools.display import (
     _ISSUE_FIELDS,
     _format_issues_markdown,
     _format_labels_markdown,
+    _format_org_markdown,
     _format_pulls_markdown,
     _format_release_markdown,
     _format_repo_markdown,
@@ -102,7 +103,7 @@ class TestFormatLabelsMarkdownEdgeCases:
 
 
 class TestTypeBindingRegistry:
-    """``register_formatter(types=...)`` populates the #760 type index."""
+    """``register_formatter(types=...)`` populates the type index."""
 
     def test_types_populate_index(self) -> None:
         @register_formatter("thing", types=["Thing"])
@@ -141,7 +142,7 @@ class TestTypeBindingRegistry:
             "PullRequest": "pull_requests",
             "Repository": "repository",
             "User": "user",
-            "Organization": "user",
+            "Organization": "organization",
             "Label": "labels",
             "Release": "release",
         }
@@ -151,7 +152,7 @@ class TestTypeBindingRegistry:
 
 
 class TestFormatterShapeTolerance:
-    """#760: a list renders the collection view, a dict the detail view.
+    """a list renders the collection view, a dict the detail view.
 
     The pipeline hands a type-bound formatter either shape: list tools
     (``repo_list_*``) and list resources produce lists; detail tools
@@ -289,6 +290,48 @@ class TestFormatterShapeTolerance:
         result = _format_user_markdown([])
         assert "Users" in result
 
+    def test_org_dict_renders_org_fields(self) -> None:
+        """A single org read keeps username/name/description/visibility (#766)."""
+        org = {
+            "id": 26,
+            "username": "mcp-server",
+            "name": "mcp-server",
+            "full_name": "MCP Server",
+            "description": "The org",
+            "email": "org@example.com",
+            "avatar_url": "https://example.com/a.png",
+            "website": "https://example.com",
+            "location": "Earth",
+            "visibility": "public",
+            "repo_admin_change_team_access": True,
+            "created": "2026-03-21T21:10:48Z",
+        }
+        result = _format_org_markdown(org)
+        assert result.startswith("# mcp-server")
+        assert "| Username | mcp-server |" in result
+        assert "| Description | The org |" in result
+        assert "| Visibility | public |" in result
+        assert "| Created At | 2026-03-21" in result
+        # Never the user heading.
+        assert "# User" not in result
+
+    def test_org_list_renders_org_names(self) -> None:
+        """An org list titles each item by username, not login (#766)."""
+        orgs = [{"username": "alpha"}, {"username": "beta"}]
+        result = _format_org_markdown(orgs)
+        assert "Organizations - 2 items" in result
+        assert "alpha" in result
+        assert "beta" in result
+
+    def test_org_empty_list(self) -> None:
+        result = _format_org_markdown([])
+        assert "Organizations" in result
+
+    def test_org_scalar_passthrough_no_crash(self) -> None:
+        """Unexpected scalar shape renders through the generic path (#574)."""
+        result = _format_org_markdown(42)
+        assert "42" in result
+
     def test_label_dict_detail_view(self) -> None:
         label = {
             "id": 1,
@@ -311,6 +354,50 @@ class TestFormatterShapeTolerance:
         result = _format_labels_markdown({"id": 2, "name": "bug"})
         assert result.startswith("# Label: bug (#2)")
         assert " for " not in result.splitlines()[0]
+
+    def test_label_list_org_scope(self) -> None:
+        """Org-scoped label tools pass ``org`` — heading shows it (#766)."""
+        result = _format_labels_markdown(
+            [{"id": 1, "name": "bug", "color": "red"}], extra={"org": "mcp-server"}
+        )
+        assert "# Labels for mcp-server" in result
+        assert "?/?" not in result
+
+    def test_label_detail_org_scope(self) -> None:
+        result = _format_labels_markdown({"id": 1, "name": "bug"}, extra={"org": "mcp-server"})
+        assert result.startswith("# Label: bug (#1) for mcp-server")
+
+    def test_label_scope_prefers_owner_over_org(self) -> None:
+        """When both are present, owner/repo wins (repo-scoped tools)."""
+        result = _format_labels_markdown(
+            [{"id": 1, "name": "bug"}],
+            extra={"owner": "o", "repo": "r", "org": "ignored"},
+        )
+        assert "# Labels for o/r" in result
+
+    def test_release_dict_detail_keeps_author_and_assets(self) -> None:
+        """A single-release read keeps author, assets, and download URLs (#766)."""
+        rel = {
+            "id": 5,
+            "tag_name": "v1.0",
+            "name": "One",
+            "body": "notes",
+            "author": {"login": "dev2"},
+            "assets": [{"id": 9, "name": "bin.tar.gz", "size": 100}],
+            "html_url": "https://example.com/releases/v1.0",
+            "target_commitish": "main",
+            "tarball_url": "https://example.com/tarball",
+            "zipball_url": "https://example.com/zipball",
+        }
+        result = _format_release_markdown(rel)
+        assert result.startswith("# Release v1.0")
+        # Nested objects render as sections; scalars as table rows.
+        assert "## Author" in result
+        assert "dev2" in result
+        assert "## Assets" in result
+        assert "bin.tar.gz" in result
+        assert "| Html Url |" in result
+        assert "| Target Commitish | main |" in result
 
 
 class TestFormatRepoMarkdown:
@@ -417,19 +504,15 @@ class TestResourceFormatters:
         assert "| Bio | Software developer |" in result
 
     def test_format_user_markdown_organization(self) -> None:
-        """Test organization profile formatting."""
+        """Organization is a distinct shape — the user formatter must not claim it.
 
-        org = {
-            "login": "myorg",
-            "type": "Organization",
-            "html_url": "https://example.com/myorg",
-            "public_repos": 25,
-            "description": "A test organization",
-        }
-        result = _format_user_markdown(org)
+        The org formatter is registered separately (#766); the user formatter
+        renders whatever dict it is handed, so this locks that the *binding*
+        (not the function) routes Organization to the org view.
+        """
+        from gitea_mcp_server.format import get_formatter_for_type
 
-        assert "# myorg" in result
-        assert "| Type | Organization |" in result
+        assert get_formatter_for_type("Organization") is not get_formatter_for_type("User")
 
 
 class TestFormatterGaps:

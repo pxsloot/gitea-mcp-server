@@ -839,7 +839,7 @@ class TestResolveFormatter:
     """``_resolve_formatter`` centralises the three-tier formatter dispatch.
 
     Tiers: explicit per-result formatter → type-bound domain formatter
-    (``register_formatter(types=...)``, #760) → schema-bound generic.
+    (``register_formatter(types=...)``) → schema-bound generic.
     """
 
     def test_explicit_formatter_returned_unchanged(self) -> None:
@@ -876,7 +876,7 @@ class TestResolveFormatter:
         )
 
     def test_schema_ref_alone_does_not_bind(self) -> None:
-        """The type is first-class metadata, not re-derived from the schema (#760).
+        """The type is first-class metadata, not re-derived from the schema.
 
         A schema carrying ``$ref:Issue`` with no ``response_type`` falls back
         to the generic renderer — the binding key is the propagated type name.
@@ -916,7 +916,7 @@ class TestResolveFormatter:
 
 
 class TestResponseTypePrecedence:
-    """``ExecutionResult.response_type`` beats ``render(response_type=...)`` (#760)."""
+    """``ExecutionResult.response_type`` beats ``render(response_type=...)``."""
 
     def test_result_response_type_wins_over_render_argument(self) -> None:
         """Per-URI ``read_resource`` type wins over the tool-level meta value."""
@@ -943,7 +943,7 @@ class TestResponseTypePrecedence:
 
 
 class TestExtraForwarding:
-    """Formatter context (``extra``) flows as display input through the pipeline (#760)."""
+    """Formatter context (``extra``) flows as display input through the pipeline."""
 
     def test_render_extra_forwarded_to_declaring_formatter(self) -> None:
         def _fmt(data: Any, *, extra: dict[str, Any] | None = None) -> str:

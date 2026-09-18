@@ -505,12 +505,12 @@ class TestEnrichResponseSchemas:
         assert "id" in schema["properties"]["result"]["properties"]
         assert "$ref" not in schema
         # The display type-binding key is an operation-level stamp applied
-        # pre-wrap (type_references.stamp_type_references, #760) — the wrap
+        # pre-wrap (type_references.stamp_type_references) — the wrap
         # step must not inject schema-level pipeline metadata.
         assert "x-response-type" not in schema["properties"]["result"]
 
     def test_array_response_not_stamped(self) -> None:
-        """Wrapping injects no schema-level display metadata (#760)."""
+        """Wrapping injects no schema-level display metadata."""
         spec: OpenAPISpec = {
             "paths": {
                 "/items": {

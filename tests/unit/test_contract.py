@@ -316,7 +316,7 @@ class TestBuildTransformFn:
 
 
 class TestDisplayExtraDerivation:
-    """The spine forwards formatter context derived from the call args (#760).
+    """The spine forwards formatter context derived from the call args.
 
     ``owner``/``repo``/``type`` are real path/query params on the tools whose
     domain formatters use them; the spine surfaces them as the pipeline's
@@ -362,6 +362,12 @@ class TestDisplayExtraDerivation:
         assert seen["extra"] == {"owner": "o", "repo": "r", "type": "pulls"}
 
     @pytest.mark.asyncio
+    async def test_org_context_key_forwarded(self) -> None:
+        """Org-scoped tools forward ``org`` as display context (#766)."""
+        seen = await self._run_transform(org="mcp-server", format="json")
+        assert seen["extra"] == {"org": "mcp-server"}
+
+    @pytest.mark.asyncio
     async def test_partial_context_keys(self) -> None:
         seen = await self._run_transform(owner="o", q="x", format="json")
         assert seen["extra"] == {"owner": "o"}
@@ -374,7 +380,7 @@ class TestDisplayExtraDerivation:
 
     @pytest.mark.asyncio
     async def test_response_type_forwarded_from_tool_meta(self) -> None:
-        """The spine reads ``tool.meta["response_type"]`` into ``render`` (#760)."""
+        """The spine reads ``tool.meta["response_type"]`` into ``render``."""
         seen = await self._run_transform(tool=_make_tool(response_type="Repository"), format="json")
         assert seen["response_type"] == "Repository"
 

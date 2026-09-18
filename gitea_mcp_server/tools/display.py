@@ -102,6 +102,24 @@ _USER_FIELDS: dict[str, dict] = {
     "location": {},
     "website": {},
 }
+# Organization shares no field names with User: it uses ``username``/``name``
+# (not ``login``), has no ``html_url``/``type``/``public_repos``/``bio``, and
+# carries ``description``/``visibility``/``repo_admin_change_team_access``.
+# Binding it to the user formatter dropped every identifying field (#766).
+_ORG_FIELDS: dict[str, dict] = {
+    "id": {},
+    "username": {},
+    "name": {},
+    "full_name": {},
+    "description": {},
+    "email": {},
+    "avatar_url": {},
+    "website": {},
+    "location": {},
+    "visibility": {},
+    "repo_admin_change_team_access": {},
+    "created_at": {},
+}
 _RELEASE_FIELDS: dict[str, dict] = {
     "tag_name": {},
     "name": {},
@@ -110,6 +128,19 @@ _RELEASE_FIELDS: dict[str, dict] = {
     "created_at": {},
     "published_at": {},
     "body": {},
+}
+# Detail view for a single release: the collection set plus the fields a
+# detail read must not drop — author, assets, and the download URLs (#766).
+_RELEASE_DETAIL_FIELDS: dict[str, dict] = {
+    **_RELEASE_FIELDS,
+    "id": {},
+    "author": {},
+    "assets": {},
+    "html_url": {},
+    "target_commitish": {},
+    "tarball_url": {},
+    "zipball_url": {},
+    "url": {},
 }
 
 # Detail views: a *dict* result renders the collection fields plus the fields
@@ -309,7 +340,7 @@ def _format_pulls_markdown(data: Any) -> str:
     )
 
 
-@register_formatter("user", types=["User", "Organization"])
+@register_formatter("user", types=["User"])
 def _format_user_markdown(data: Any) -> str:
     if isinstance(data, list):
         # Collection view (org_list_members, user_list_followers, …).
@@ -353,17 +384,49 @@ def _normalize_user(item: Any) -> Any:
     return item
 
 
+@register_formatter("organization", types=["Organization"])
+def _format_org_markdown(data: Any) -> str:
+    """Format an organization dict or a list of organizations as markdown.
+
+    Organization is a distinct shape from User (``username``/``name``, no
+    ``login``/``html_url``); it gets its own field set and heading so an org
+    read never renders as ``# User`` with every identifying field dropped
+    (#766).
+    """
+    if isinstance(data, list):
+        items = [_normalize_user(item) for item in data]
+        title = f"Organizations - {len(data)} items" if data else "Organizations"
+        return format_as_markdown(
+            items,
+            title=title,
+            field_filter=_ORG_FIELDS,
+            item_title_key="username",
+        )
+    if not isinstance(data, dict):
+        # Unexpected shape: show type + truncated repr so agents can reason
+        # about the payload without a misleading org heading (#574 guard).
+        fallback_data = {"_type": type(data).__name__, "_raw": str(data)[:500]}
+        return format_as_markdown(fallback_data, title="Organization")
+    normalized = _normalize_user(data)
+    title = normalized.get("username") or normalized.get("name") or "Organization"
+    return format_as_markdown(
+        normalized,
+        title=title,
+        field_filter=_ORG_FIELDS,
+    )
+
+
 @register_formatter("release", types=["Release"])
 def _format_release_markdown(data: Any) -> str:
     """Format a release dict or a list of releases as markdown."""
     if isinstance(data, dict):
-        # Detail view (release_get): _RELEASE_FIELDS already carries `body`
-        # (the release notes), so the collection set doubles as the detail set.
+        # Detail view (release_get): the collection set plus author, assets,
+        # and download URLs a single-release read must not drop (#766).
         tag = data.get("tag_name") or data.get("name") or "Release"
         return format_as_markdown(
             data,
             title=f"Release {tag}",
-            field_filter=_RELEASE_FIELDS,
+            field_filter=_RELEASE_DETAIL_FIELDS,
         )
     title = f"Releases - {len(data)} releases" if data else "Releases"
     return format_as_markdown(
@@ -382,7 +445,9 @@ def _format_labels_markdown(
 ) -> str:
     """Format labels as Markdown with format and validation hints.
 
-    Needs ``extra`` with ``owner`` and ``repo`` keys for the heading.
+    Needs ``extra`` with a scope for the heading: ``owner``/``repo`` on
+    repo-scoped tools, or ``org`` on org-scoped tools (``org_list_labels``,
+    ``org_get_label``, …) — the org is the owner-equivalent there (#766).
 
     The formatter is a pure renderer and does not know the requested
     ``detail`` level: under ``detail=concise`` the pipeline summarizes
@@ -397,11 +462,10 @@ def _format_labels_markdown(
     if isinstance(data, dict):
         return _format_label_detail(data, extra=extra)
 
-    owner = (extra or {}).get("owner", "?")
-    repo = (extra or {}).get("repo", "?")
+    scope = _label_scope(extra)
 
     lines = [
-        f"# Labels for {owner}/{repo}",
+        f"# Labels for {scope}",
         "",
         f"**Total**: {len(data)} labels",
         "",
@@ -437,6 +501,23 @@ def _format_labels_markdown(
     return "\n".join(lines)
 
 
+def _label_scope(extra: dict | None) -> str:
+    """Resolve the label scope label from formatter context.
+
+    Repo-scoped tools pass ``owner``/``repo``; org-scoped tools pass ``org``
+    (the owner-equivalent, #766).  Falls back to ``?/?`` when neither is
+    present, matching the pre-#766 graceful default.
+    """
+    ctx = extra or {}
+    owner = ctx.get("owner") or ctx.get("org")
+    repo = ctx.get("repo")
+    if owner and repo:
+        return f"{owner}/{repo}"
+    if owner:
+        return str(owner)
+    return "?/?"
+
+
 def _label_detail_lines(label: dict) -> list[str]:
     """Bullet lines for one label dict — shared by both labels views."""
     name = label.get("name", "Unnamed")
@@ -460,13 +541,14 @@ def _format_label_detail(label: dict, *, extra: dict | None = None) -> str:
     """Detail view for a single Label dict (``issue_get_label``).
 
     No collection heading or validation-format section — those guide label
-    *selection*; a detail read already holds one label.  The repo scope is
-    shown when ``extra`` carries it (``issue_get_label`` passes ``owner``/
-    ``repo`` from the call args); graceful otherwise.
+    *selection*; a detail read already holds one label.  The scope is shown
+    when ``extra`` carries it (``issue_get_label`` passes ``owner``/``repo``;
+    ``org_get_label`` passes ``org``, #766); graceful otherwise.
     """
-    owner = (extra or {}).get("owner")
-    repo = (extra or {}).get("repo")
-    scope = f" for {owner}/{repo}" if owner and repo else ""
+    ctx = extra or {}
+    owner = ctx.get("owner") or ctx.get("org")
+    repo = ctx.get("repo")
+    scope = f" for {owner}/{repo}" if owner and repo else (f" for {owner}" if owner else "")
     name = label.get("name", "Unnamed")
     archived_tag = " *(archived)*" if label.get("is_archived", False) else ""
     lines = [f"# Label: {name} (#{label.get('id', '?')}){archived_tag}{scope}", ""]

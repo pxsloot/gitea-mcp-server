@@ -33,7 +33,7 @@ for both tool families:
     5. Attach ``_raw_schema`` and ``response_type`` (both read from
        ``tool.meta``) so the pipeline can render schema-aware output
        (``detail=concise``) and dispatch a type-bound domain markdown
-       formatter (#760), and derive the formatter context (``extra``) from the
+       formatter, and derive the formatter context (``extra``) from the
        call's path/query args so the formatter sees repo/type context.
     6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
@@ -90,15 +90,16 @@ The ``Tool`` being executed is bound by closure at wrap time — the executor
 does not need to receive it.
 """
 
-# Call-arg names forwarded to the display pipeline as formatter ``extra``
-# (issue #760): the context keys the domain formatters understand — repo
-# scope (``owner``/``repo``, used by the labels views) and the issue-list
+# Call-arg names forwarded to the display pipeline as formatter ``extra``:
+# the context keys the domain formatters understand — repo
+# scope (``owner``/``repo``, used by the labels views), org scope (``org``,
+# the owner-equivalent on org-scoped label tools, #766), and the issue-list
 # ``type`` filter (used by the issues title).  This is display *input*
 # derived from the call, not display logic — the same category as the
 # page/limit capture below.  ``call_markdown_formatter`` forwards ``extra``
 # only to formatters that declare it, so carrying these keys is harmless
 # for every other tool (synthetic tools never declare ``extra``).
-_DISPLAY_CONTEXT_KEYS: tuple[str, ...] = ("owner", "repo", "type")
+_DISPLAY_CONTEXT_KEYS: tuple[str, ...] = ("owner", "repo", "org", "type")
 
 
 def _derive_display_extra(kwargs: dict[str, Any]) -> dict[str, Any] | None:
@@ -180,7 +181,7 @@ def build_transform_fn(
         limit = kwargs.get("limit", DEFAULT_PAGE_SIZE)
 
         # Same for formatter context: owner/repo/type are real call args on
-        # the tools whose domain formatters use them (#760).
+        # the tools whose domain formatters use them.
         display_extra = _derive_display_extra(kwargs)
 
         result = await executor(kwargs, virtual_values, ctx)
@@ -191,7 +192,7 @@ def build_transform_fn(
         # format, etc.
         virtual_values["_raw_schema"] = (tool.meta or {}).get("output_schema_raw")
 
-        # Display type-binding key (#760): the pre-wrap response type the
+        # Display type-binding key: the pre-wrap response type the
         # registration layer stored in tool.meta (same channel as
         # ``output_schema_raw``).  The pipeline maps it to a domain markdown
         # formatter; absent means the generic renderer.

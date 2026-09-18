@@ -125,9 +125,9 @@ id parameter name -- with `tool_info`.
 
 Resources give cached, pre-formatted reads. For any read-only operation, prefer
 `read_resource()` over calling a tool. Tool and resource display are unified: a
-tool whose response type is bound to a domain formatter (`issue_list_issues`,
-`repo_get`, ...) renders the same curated view as its resource sibling —
-markdown is the curated view; `format=json` / `format=raw` carry everything.
+tool bound by response type renders its resource sibling's view — curated for
+collections (`issue_list_issues`), full payload for a single resource
+(`repo_get`); `format=json` / `format=raw` are always the raw API data.
 URI pattern:
 
 - `gitea://repos/{owner}/{repo}`            -> repository summary

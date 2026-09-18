@@ -124,9 +124,9 @@ tool_names:
     description: |
       Get a single repository by owner and repository name.
 
-      Markdown output is a curated summary (description, topics, owner,
-      default branch, counts, timestamps, visibility, and permissions).
-      Use `format="json"` for the complete repository metadata.
+      Markdown output renders the repository's full field set, with nested
+      owner and permissions sections. Use `format="json"` for the raw API
+      JSON.
 
       For searching across multiple repos, use `repo_search` with keyword filters.
 
@@ -190,10 +190,9 @@ tool_names:
     description: |
       Get a single user's public profile by username.
 
-      Markdown output is a curated profile (full name, URL, email, counts,
-      location, website, creation date). Use `format="json"` for the complete
-      profile, including the avatar URL. Does not require authentication for
-      public users.
+      Markdown output renders the user's full field set (including avatar URL
+      and account state). Use `format="json"` for the raw API JSON. Does not
+      require authentication for public users.
 
       **Resource**: Use `gitea_read_resource` with `gitea://users/{username}`
       for a formatted Markdown profile.
@@ -211,9 +210,9 @@ tool_names:
     description: |
       Get an organization's public profile by name.
 
-      Markdown output is a curated profile (username, name, description,
-      website, location, visibility). Use `format="json"` for the complete
-      metadata. Use `org_list_repos` to list the organization's repositories.
+      Markdown output renders the organization's full field set. Use
+      `format="json"` for the raw API JSON. Use `org_list_repos` to list the
+      organization's repositories.
 
       **Resource**: Use `gitea_read_resource` with `gitea://orgs/{org}`
       for a formatted Markdown profile.

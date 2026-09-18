@@ -15,7 +15,8 @@ from gitea_mcp_server.openapi_converter import (
     convert_swagger_to_openapi_v3,
 )
 from gitea_mcp_server.openapi_converter.core import _wrap_success_response_schemas
-from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
+from gitea_mcp_server.openapi_types import SwaggerV2Spec
+from tests.helpers.spec_fixtures import make_openapi_spec
 from tests.helpers.spec_fixtures import minimal_spec as _minimal_spec
 
 # Load OpenAPI 3.1 schema once
@@ -383,8 +384,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_array_schema(self) -> None:
         """Array response schemas should be wrapped in result object."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/items": {
                     "get": {
                         "responses": {
@@ -405,7 +406,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -416,8 +417,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_object_schema(self) -> None:
         """Object response schemas should be wrapped in result object."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/item": {
                     "get": {
                         "responses": {
@@ -435,7 +436,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -446,8 +447,8 @@ class TestEnrichResponseSchemas:
 
     def test_stays_unwrapped_when_ref_cannot_be_resolved(self) -> None:
         """$ref schemas with unresolvable targets should remain unchanged."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/item": {
                     "get": {
                         "responses": {
@@ -462,7 +463,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -471,8 +472,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_ref_schema(self) -> None:
         """$ref response schemas should be resolved and wrapped in result."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/item": {
                     "get": {
                         "responses": {
@@ -487,7 +488,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             },
-            "components": {
+            components={
                 "schemas": {
                     "Item": {
                         "type": "object",
@@ -495,7 +496,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             },
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/item"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -511,8 +512,8 @@ class TestEnrichResponseSchemas:
 
     def test_array_response_not_stamped(self) -> None:
         """Wrapping injects no schema-level display metadata."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/items": {
                     "get": {
                         "responses": {
@@ -530,10 +531,10 @@ class TestEnrichResponseSchemas:
                     }
                 }
             },
-            "components": {
+            components={
                 "schemas": {"Item": {"type": "object", "properties": {"id": {"type": "integer"}}}}
             },
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -554,8 +555,8 @@ class TestEnrichResponseSchemas:
         component-level schema is still wrapped for shared response
         definitions that do carry content.
         """
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/version": {
                     "get": {
                         "responses": {
@@ -564,7 +565,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             },
-            "components": {
+            components={
                 "responses": {
                     "ServerVersion": {
                         "description": "ServerVersion",
@@ -582,7 +583,7 @@ class TestEnrichResponseSchemas:
                     }
                 },
             },
-        }
+        )
         _wrap_success_response_schemas(spec)
         # Path-level $ref is left as-is (no content to wrap).
         path_response = spec["paths"]["/version"]["get"]["responses"]["200"]
@@ -599,8 +600,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/health": {
                     "get": {
                         "responses": {
@@ -609,7 +610,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
@@ -620,8 +621,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_component_responses_inline(self) -> None:
         """Component-level response schemas should also be wrapped."""
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "responses": {
                     "ItemList": {
                         "content": {
@@ -638,7 +639,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["components"]["responses"]["ItemList"]["content"]["application/json"][
             "schema"
@@ -648,8 +649,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_component_responses_ref(self) -> None:
         """Component responses with $ref should be resolved and wrapped."""
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "responses": {
                     "ItemDetail": {
                         "content": {
@@ -664,7 +665,7 @@ class TestEnrichResponseSchemas:
                     }
                 },
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["components"]["responses"]["ItemDetail"]["content"]["application/json"][
             "schema"
@@ -675,24 +676,22 @@ class TestEnrichResponseSchemas:
 
     def test_skips_204_no_content(self) -> None:
         """204 No Content responses should be skipped (no content to wrap)."""
-        spec: OpenAPISpec = {
-            "paths": {
-                "/item/{id}": {"delete": {"responses": {"204": {"description": "No Content"}}}}
-            }
-        }
+        spec = make_openapi_spec(
+            paths={"/item/{id}": {"delete": {"responses": {"204": {"description": "No Content"}}}}}
+        )
         _wrap_success_response_schemas(spec)
         assert "content" not in spec["paths"]["/item/{id}"]["delete"]["responses"]["204"]
 
     def test_handles_empty_spec_gracefully(self) -> None:
         """Empty spec should not cause errors during wrapping."""
-        spec: OpenAPISpec = {}
+        spec = make_openapi_spec(include_defaults=False)
         _wrap_success_response_schemas(spec)
         assert spec == {}
 
     def test_wraps_201_created_responses(self) -> None:
         """201 Created responses should be wrapped like 200 responses."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/items": {
                     "post": {
                         "responses": {
@@ -713,7 +712,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/items"]["post"]["responses"]["201"]["content"]["application/json"][
             "schema"
@@ -723,8 +722,8 @@ class TestEnrichResponseSchemas:
 
     def test_wraps_multiple_methods_on_same_path(self) -> None:
         """Multiple HTTP methods on the same path should each get wrapping."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/items": {
                     "get": {
                         "responses": {
@@ -753,7 +752,7 @@ class TestEnrichResponseSchemas:
                     },
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         get_schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"][
             "application/json"
@@ -769,8 +768,8 @@ class TestEnrichResponseSchemas:
 
     def test_skips_text_plain_content(self) -> None:
         """text/plain content types should NOT be wrapped in result."""
-        spec: OpenAPISpec = {
-            "paths": {
+        spec = make_openapi_spec(
+            paths={
                 "/diff": {
                     "get": {
                         "responses": {
@@ -779,7 +778,7 @@ class TestEnrichResponseSchemas:
                     }
                 }
             }
-        }
+        )
         _wrap_success_response_schemas(spec)
         schema = spec["paths"]["/diff"]["get"]["responses"]["200"]["content"]["text/plain"][
             "schema"

@@ -16,7 +16,7 @@ tests/
 │   ├── __init__.py
 │   ├── mock_tool.py                        # make_mock_tool, make_mock_route
 │   ├── tool_names.py                       # extract_tool_names
-│   └── spec_fixtures.py                    # base_spec, minimal_spec
+│   └── spec_fixtures.py                    # base_spec, minimal_spec, make_openapi_spec
 ├── schemas/
 │   ├── openapi_3.1_schema.json             # JSON Schema for validating converted specs
 │   └── openapi_3.1.1_schema.json
@@ -163,6 +163,7 @@ across the entire module tree:
 | Test file | What it verifies | Added in |
 |---|---|---|
 | `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. **Must be updated** when a new module is added to any subpackage — add its dotted name to ``ALL_MODULES``. | #552 |
+| `tests/unit/test_spec_fixture_convention.py` | No test annotates an inline dict literal as an `OpenAPISpec`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
 
 ## Test Data and Fixtures
 
@@ -171,7 +172,9 @@ across the entire module tree:
 - Keep module-specific fixtures in the test module or class
 - Use descriptive fixture names that indicate their purpose
 - Fixtures should be idempotent and independent
-- For spec-related tests, prefer inline dict fixtures over file loads (faster, self-contained)
+- For spec-related tests, build specs with the typed `make_openapi_spec()`
+  factory (see `testing/FIXTURES.md`); prefer inline construction over file
+  loads (faster, self-contained)
 - Use `tests/swagger.v1.json` only for end-to-end conversion + schema validation tests
 
 ```python

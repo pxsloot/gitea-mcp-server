@@ -21,6 +21,7 @@ from gitea_mcp_server.server_setup.spec_loader import (
     fetch_token_scopes,
 )
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ═══════════════════════════════════════════════════════════════════════
 # _match_active_token
@@ -342,16 +343,22 @@ class TestComputeExcludedRoutes:
         """Non-dict path items in spec are skipped without error."""
         from typing import cast
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
-                "/bad": cast("OpenAPIPathItem", "not_a_dict"),
-                "/good": {
-                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Test", "version": "1"},
+                "paths": {
+                    "/bad": cast("OpenAPIPathItem", "not_a_dict"),
+                    "/good": {
+                        "get": {
+                            "operationId": "test_get",
+                            "responses": {"200": {"description": "OK"}},
+                        }
+                    },
                 },
             },
-        }
+        )
         filtered = compute_filtered_tools_info(
             spec,
             available_scopes={"sudo"},
@@ -363,16 +370,16 @@ class TestComputeExcludedRoutes:
 
     def test_non_http_method_key_skipped(self) -> None:
         """Non-HTTP-method keys in path items are skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/endpoint": {
                     "parameters": [{"name": "id"}],
                     "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}},
                 },
             },
-        }
+        )
         filtered = compute_filtered_tools_info(
             spec,
             available_scopes={"sudo"},
@@ -384,24 +391,24 @@ class TestComputeExcludedRoutes:
 
     def test_empty_operation_id_skipped(self) -> None:
         """Operations with empty operationId are skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/endpoint": {
                     "get": {"operationId": "", "responses": {"200": {"description": "OK"}}}
                 },
             },
-        }
+        )
         excluded = _compute_excluded_routes(spec, {"filtered": {"": {"reason": "deprecated"}}})
         assert excluded == set()
 
     def test_scope_filtering_disabled_skips_scope_routes(self) -> None:
         """When scope_filtering_enabled=False, scope-based exclusions are skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/admin/users": {
                     "get": {
                         "operationId": "admin_list_users",
@@ -410,7 +417,7 @@ class TestComputeExcludedRoutes:
                     }
                 },
             },
-        }
+        )
         filtered = compute_filtered_tools_info(
             spec,
             available_scopes={"read:repository"},  # insufficient for admin
@@ -423,10 +430,10 @@ class TestComputeExcludedRoutes:
 
     def test_scope_filtering_enabled_includes_scope_routes(self) -> None:
         """When scope_filtering_enabled=True (default), scope-based exclusions apply."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/admin/users": {
                     "get": {
                         "operationId": "admin_list_users",
@@ -435,7 +442,7 @@ class TestComputeExcludedRoutes:
                     }
                 },
             },
-        }
+        )
         filtered = compute_filtered_tools_info(
             spec,
             available_scopes={"read:repository"},  # insufficient for admin → requires sudo
@@ -457,10 +464,10 @@ class TestProviderRouteMapFiltering:
     def _make_provider(self, excluded_routes: set[tuple[str, str]]) -> OpenAPIProvider:
         from gitea_mcp_server.label_service import LabelService
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.1",
-            "info": {"title": "Test", "version": "1.0.0"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.1",
+            info={"title": "Test", "version": "1.0.0"},
+            paths={
                 "/repos/{owner}/{repo}": {
                     "get": {"operationId": "repo_get", "tags": ["repository"]},
                 },
@@ -468,8 +475,8 @@ class TestProviderRouteMapFiltering:
                     "get": {"operationId": "admin_list_users", "tags": ["admin"]},
                 },
             },
-            "components": {"schemas": {}},
-        }
+            components={"schemas": {}},
+        )
         mock_gitea_client = MagicMock()
         mock_gitea_client.client = MagicMock()
         return create_openapi_provider(

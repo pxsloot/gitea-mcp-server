@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import pytest
 
-if TYPE_CHECKING:
-    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 from gitea_mcp_server.openapi_converter import (
     OptionalPropertyTransformer,
@@ -20,6 +18,7 @@ from gitea_mcp_server.openapi_converter import (
     fix_references,
 )
 from gitea_mcp_server.openapi_converter.core import _add_nullable_for_optional_refs
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestFixReferences:
@@ -371,8 +370,8 @@ class TestAddNullableForOptionalRefs:
 
     def test_adds_nullable_to_optional_refs(self) -> None:
         """Optional $ref schemas should get nullable anyOf wrapper."""
-        spec: OpenAPISpec = {
-            "components": {
+        spec = make_openapi_spec(
+            components={
                 "schemas": {
                     "User": {
                         "type": "object",
@@ -385,7 +384,7 @@ class TestAddNullableForOptionalRefs:
                     "Email": {"type": "string", "format": "email"},
                 }
             }
-        }
+        )
         _add_nullable_for_optional_refs(spec)
         email_prop = spec["components"]["schemas"]["User"]["properties"]["email"]
         assert "anyOf" in email_prop
@@ -852,12 +851,12 @@ class TestNonDictDefensiveGuards:
         from gitea_mcp_server.openapi_converter.core import _wrap_response_schema
 
         response: dict[str, Any] = {"description": "OK", "content": "not_a_dict"}
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {},
-            "components": {"schemas": {}},
-        }
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={},
+            components={"schemas": {}},
+        )
         # Should not raise
         _wrap_response_schema(response, spec)
 
@@ -869,11 +868,11 @@ class TestNonDictDefensiveGuards:
             "description": "OK",
             "content": {"application/json": "not_a_dict"},
         }
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {},
-            "components": {"schemas": {}},
-        }
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={},
+            components={"schemas": {}},
+        )
         # Should not raise
         _wrap_response_schema(response, spec)

@@ -17,12 +17,13 @@ from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 from gitea_mcp_server.tools.synthetic_contract import get_executor_registry
 from gitea_mcp_server.tools.type_info import register_type_tools
 from tests.helpers.mcp_results import get_structured
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # Minimal OpenAPI 3.1 spec with two types for testing
-_MINIMAL_SPEC: OpenAPISpec = {
-    "openapi": "3.1.0",
-    "info": {"title": "Test", "version": "1.0"},
-    "paths": {
+_MINIMAL_SPEC = make_openapi_spec(
+    openapi="3.1.0",
+    info={"title": "Test", "version": "1.0"},
+    paths={
         "/issues/{id}": {
             "get": {
                 "operationId": "issue_get_issue",
@@ -45,7 +46,7 @@ _MINIMAL_SPEC: OpenAPISpec = {
             },
         },
     },
-    "components": {
+    components={
         "schemas": {
             "User": {
                 "type": "object",
@@ -63,7 +64,7 @@ _MINIMAL_SPEC: OpenAPISpec = {
             },
         },
     },
-}
+)
 
 
 @pytest.fixture

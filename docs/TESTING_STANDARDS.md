@@ -95,4 +95,7 @@ uv run pytest --cov=gitea_mcp_server --cov-report=html
    - **integration**: Multiple components wired together, real server creation
 5. Update the relevant sub-doc if introducing new testing patterns
 6. Don't copy-paste `SimpleConfig` — use or extend the canonical version
-7. Run `uv run pytest` before pushing — all tests should pass
+7. Build post-conversion specs with `make_openapi_spec()` (or
+   `cast("OpenAPISpec", ...)` for deliberately non-conforming shapes) —
+   never an inline annotated dict literal.  See `testing/FIXTURES.md`.
+8. Run `uv run pytest` before pushing — all tests should pass

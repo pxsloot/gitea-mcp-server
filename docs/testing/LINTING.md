@@ -92,9 +92,12 @@ uv run mypy tests/
   text = extract_text_content(result.content)
   data = parse_json_content(result)
   ```
-- **OpenAPI spec typing**: Test fixtures that construct specs should use
-  the ``make_openapi_spec()`` factory (returns typed ``OpenAPISpec``).
-  See `testing/FIXTURES.md` for the three-tier strategy.
+- **OpenAPI spec typing**: Test fixtures that construct specs must use
+  the ``make_openapi_spec()`` factory (returns typed ``OpenAPISpec``);
+  deliberately non-conforming specs use ``cast("OpenAPISpec", ...)``.
+  Annotating an inline dict literal is forbidden and enforced by
+  ``tests/unit/test_spec_fixture_convention.py``.  See `testing/FIXTURES.md`
+  for the two-tier strategy.
 - **Mock helpers**: Use ``make_async_mock(SomeClass)`` and
   ``make_magic_mock(some_callable)`` from ``tests/helpers/mock_tool.py``
   to avoid mypy narrowing mocked objects to their spec type (which hides

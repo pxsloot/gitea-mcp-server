@@ -12,7 +12,10 @@ Provides reusable spec dictionaries at three granularities:
 
 Prefer ``make_openapi_spec()`` over inline ``dict`` literals for all
 post-conversion spec construction.  The factory returns ``OpenAPISpec``,
-which satisfies the type expected by production functions.
+which satisfies the type expected by production functions; deliberately
+non-conforming specs use ``cast("OpenAPISpec", ...)``.  Test code that
+annotates an inline dict literal is rejected by
+``tests/unit/test_spec_fixture_convention.py``.  See ``docs/testing/FIXTURES.md``.
 """
 
 from typing import Any, cast
@@ -20,32 +23,46 @@ from typing import Any, cast
 from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 
-def make_openapi_spec(**overrides: Any) -> OpenAPISpec:
-    """Create a minimal valid post-conversion OpenAPI 3.1 spec for tests.
+def make_openapi_spec(*, include_defaults: bool = True, **overrides: Any) -> OpenAPISpec:
+    """Create a post-conversion OpenAPI 3.1 spec for tests.
 
-    Returns a typed ``OpenAPISpec`` with sensible defaults that can be
-    overridden via keyword arguments.  Use this instead of inline dict
-    literals passed to functions expecting ``OpenAPISpec``::
+    Returns a typed ``OpenAPISpec``.  By default it carries the minimal
+    valid defaults ``openapi="3.1.0"``, ``info={"title": "Test API",
+    "version": "1.0.0"}``, and ``paths={}``; each keyword override replaces
+    the matching default key (``components`` and ``servers`` are added when
+    passed).  Use this instead of inline dict literals passed to functions
+    expecting ``OpenAPISpec``::
 
         # Good — typed, no mypy error:
         spec = make_openapi_spec()
         _customize_metadata(route, tool, openapi_spec=spec)
 
         # Good — with custom paths:
-        spec = make_openapi_spec(paths={\"/ping\": {\"get\": ...}})
+        spec = make_openapi_spec(paths={"/ping": {"get": ...}})
+
+        # Good — exact key set, no defaults:
+        spec = make_openapi_spec(include_defaults=False, openapi="3.1.1")
 
         # Bad — plain dict triggers mypy arg-type:
-        spec = {\"openapi\": \"3.1.0\", ...}
+        spec = {"openapi": "3.1.0", ...}
         _customize_metadata(route, tool, openapi_spec=spec)  # mypy error
 
-    The single ``cast()`` is hidden inside this factory rather than
-    repeated at every call site across the test suite (~266 occurrences).
+    Pass ``include_defaults=False`` for a spec whose exact key set matters
+    (empty spec, or a spec that deliberately omits a defaulted key); only the
+    ``**overrides`` become keys.  Deliberately malformed specs use
+    ``cast("OpenAPISpec", ...)`` instead — see ``docs/testing/FIXTURES.md``.
+
+    The single ``cast()`` is hidden inside this factory rather than repeated
+    at every call site.  ``tests/unit/test_spec_fixture_convention.py``
+    guards the convention so it cannot re-drift.
     """
-    base: dict[str, Any] = {
-        "openapi": "3.1.0",
-        "info": {"title": "Test API", "version": "1.0.0"},
-        "paths": {},
-    }
+    base: dict[str, Any] = {}
+    if include_defaults:
+        base = {
+            "openapi": "3.1.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {},
+        }
     base.update(overrides)
     return cast("OpenAPISpec", base)
 

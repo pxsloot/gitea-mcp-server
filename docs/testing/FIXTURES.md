@@ -35,48 +35,65 @@ mypy errors and keep test code consistent:
 
 Production functions accept ``OpenAPISpec`` (a TypedDict).  Test code that
 passes plain ``dict`` literals to these functions triggers ``arg-type`` mypy
-errors.  The fix is a three-tier strategy:
+errors.  The suite uses a two-tier strategy:
 
 **Tier 1 — Factory helper**: ``make_openapi_spec(**overrides)`` in
-``tests/helpers/spec_fixtures.py`` creates a minimal valid post-conversion
-OpenAPI 3.1 spec typed as ``OpenAPISpec``.  Use this as the default
-construction path for specs:
+``tests/helpers/spec_fixtures.py`` creates a post-conversion OpenAPI 3.1 spec
+typed as ``OpenAPISpec``.  Use this for **every valid spec**, including
+custom shapes — ``openapi``, ``info``, ``paths``, ``components``, and
+``servers`` are accepted as keyword overrides and replace the factory
+defaults:
 
 ```python
 spec = make_openapi_spec()
 result = some_function(openapi_spec=spec)
 
 spec = make_openapi_spec(paths={"/ping": {"get": ...}})
-result = some_function(openapi_spec=spec)
+spec = make_openapi_spec(components={"schemas": {"User": {...}}})
 ```
 
-**Tier 2 — Annotated inline dicts**: When a test needs a unique spec shape
-that doesn't fit the factory, annotate the variable:
+When a valid spec's *exact key set* matters (an empty spec, or a spec that
+deliberately omits a defaulted key such as ``paths``), pass
+``include_defaults=False`` and supply only the keys you want — still Tier 1,
+no cast:
 
 ```python
-spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {...}}
+spec = make_openapi_spec(include_defaults=False)
+spec = make_openapi_spec(include_defaults=False, openapi="3.1.1", info={...})
 ```
 
-**Tier 3 — ``cast()`` for deliberately invalid specs**: Tests that pass
-malformed spec values (strings where dicts are expected, numeric keys,
-etc.) to exercise error paths must wrap in ``cast("OpenAPISpec", ...)``:
+**Tier 2 — ``cast()`` for deliberately malformed specs**: Tests that pass
+malformed spec values to exercise error paths — strings where dicts are
+expected, non-dict path items, unknown operation keys — must wrap in
+``cast("OpenAPISpec", ...)`` so the deviation from the convention is
+explicit:
 
 ```python
 spec = cast("OpenAPISpec", {"paths": "not_a_dict"})
+spec = cast("OpenAPISpec", {"paths": {0: "bad"}})
 result = some_function(openapi_spec=spec)
 ```
+
+``cast("OpenAPISpec", ...)`` also appears where a *computed* dict or variable
+is narrowed to the type (e.g. ``cast("OpenAPISpec", dict(spec))``, or
+widening a converted local).  That is a conversion, not spec construction,
+and is outside this convention.
 
 Two conventions apply project-wide:
 
 - ``cast()`` always uses the **string form** ``cast("OpenAPISpec", ...)``
   (not bare ``cast(OpenAPISpec, ...)``) to satisfy ruff TC006.
 - Imports of ``OpenAPISpec`` are placed in ``if TYPE_CHECKING:`` blocks
-  when only needed for type annotations (see TC001).  Files that use
-  ``OpenAPISpec`` exclusively in annotations add ``from __future__ import
-  annotations`` to make lazy strings.
+  when only needed for type annotations or string casts (see TC001).  Files
+  that use ``OpenAPISpec`` exclusively in annotations add ``from __future__
+  import annotations`` to make lazy strings.
 
-Prefer Tier 1, fall back to Tier 2, use Tier 3 only when testing
-deliberately invalid spec shapes.
+No test may annotate an inline dict literal as an ``OpenAPISpec``: the
+annotation duplicates the single ``cast()`` the factory already hides and
+lets the suite drift.  This is locked by
+``tests/unit/test_spec_fixture_convention.py``, an AST guard that reports
+``file:line`` for every violation.  Prefer Tier 1; use Tier 2 only when
+testing deliberately malformed shapes.
 
 ## Module-Level Fixtures
 

@@ -23,6 +23,7 @@ from gitea_mcp_server.tools.filter_info import (
     compute_filtered_tools_info,
     get_filtered_tool_info,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ═══════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -256,46 +257,52 @@ class TestComputeFilteredToolsInfo:
         """Non-dict path items in spec are skipped without error."""
         from typing import cast
 
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
-                "/bad": cast("OpenAPIPathItem", "not_a_dict"),
-                "/good": {
-                    "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}}
+        spec = cast(
+            "OpenAPISpec",
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Test", "version": "1"},
+                "paths": {
+                    "/bad": cast("OpenAPIPathItem", "not_a_dict"),
+                    "/good": {
+                        "get": {
+                            "operationId": "test_get",
+                            "responses": {"200": {"description": "OK"}},
+                        }
+                    },
                 },
             },
-        }
+        )
         result = compute_filtered_tools_info(spec)
         assert "test_get" not in result["filtered"]
 
     def test_non_http_method_skipped(self) -> None:
         """Keys that are not HTTP methods in path items are skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/endpoint": {
                     "parameters": [{"name": "id"}],
                     "get": {"operationId": "test_get", "responses": {"200": {"description": "OK"}}},
                 }
             },
-        }
+        )
         result = compute_filtered_tools_info(spec)
         # 'parameters' is not an HTTP method — should be skipped, get is fine
         assert "test_get" not in result["filtered"]
 
     def test_empty_operation_id_skipped(self) -> None:
         """Operations with empty operationId are skipped."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/endpoint": {
                     "get": {"operationId": "", "responses": {"200": {"description": "OK"}}}
                 }
             },
-        }
+        )
         result = compute_filtered_tools_info(spec)
         assert result["filtered"] == {}
 
@@ -310,10 +317,10 @@ class TestComputeFilteredToolsInfo:
 
     def test_post_method_write_scope(self) -> None:
         """POST endpoints require write: scope."""
-        spec: OpenAPISpec = {
-            "openapi": "3.1.0",
-            "info": {"title": "Test", "version": "1"},
-            "paths": {
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
                 "/repos/{owner}/{repo}/issues": {
                     "post": {
                         "operationId": "issue_create_issue",
@@ -323,7 +330,7 @@ class TestComputeFilteredToolsInfo:
                     },
                 },
             },
-        }
+        )
         # Token has read-only → write operation is filtered
         result = compute_filtered_tools_info(spec, available_scopes={"read:issue"})
         assert "issue_create_issue" in result["filtered"]

@@ -9,7 +9,6 @@ Filtering happens at spec-prep time — no runtime transform applies exclusion.
 
 from pathlib import Path
 
-from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.spec_loader import (
     _compute_excluded_routes,
     load_exclusion_config,
@@ -19,6 +18,7 @@ from gitea_mcp_server.tools.exclusion import (
     matches_pattern,
 )
 from gitea_mcp_server.tools.filter_info import compute_filtered_tools_info
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
 # Config loading tests
@@ -104,10 +104,10 @@ class TestPatternMatching:
 # ---------------------------------------------------------------------------
 
 
-SPEC: OpenAPISpec = {
-    "openapi": "3.1.1",
-    "info": {"title": "Test", "version": "1.0.0"},
-    "paths": {
+SPEC = make_openapi_spec(
+    openapi="3.1.1",
+    info={"title": "Test", "version": "1.0.0"},
+    paths={
         "/repos/{owner}/{repo}": {
             "get": {"operationId": "repo_get", "tags": ["repository"]},
             "delete": {"operationId": "repo_delete", "tags": ["repository"]},
@@ -116,8 +116,8 @@ SPEC: OpenAPISpec = {
             "get": {"operationId": "admin_list_users", "tags": ["admin"]},
         },
     },
-    "components": {"schemas": {}},
-}
+    components={"schemas": {}},
+)
 
 
 class TestSpecLevelExclusion:

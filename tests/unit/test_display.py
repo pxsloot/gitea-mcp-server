@@ -1,7 +1,6 @@
 """Tests for display formatters (tools/display.py).
 
 Covers:
-    - call_formatter error path (unknown formatter)
     - the type-binding registry (``register_formatter(types=...)``, #760)
     - _format_user_markdown created_at fallback
     - _format_repo_markdown
@@ -37,7 +36,6 @@ from gitea_mcp_server.tools.display import (
     _format_release_markdown,
     _format_repo_markdown,
     _format_user_markdown,
-    call_formatter,
 )
 
 
@@ -57,46 +55,6 @@ def _clean_formatters() -> Generator[None, None, None]:
     _FORMATTERS.update(saved_formatters)
     _TYPE_FORMATTERS.clear()
     _TYPE_FORMATTERS.update(saved_types)
-
-
-class TestCallFormatter:
-    """Tests for call_formatter."""
-
-    def test_unknown_formatter_raises(self) -> None:
-        """Unknown formatter name raises ValueError."""
-        with pytest.raises(ValueError, match="No formatter registered for 'nonexistent'"):
-            call_formatter("nonexistent", {"key": "value"})
-
-    def test_known_formatter_invoked(self) -> None:
-        """Known formatter is called and returns expected output."""
-
-        @register_formatter("test_formatter")
-        def _test_fmt(data: Any) -> str:
-            return f"formatted: {data}"
-
-        result = call_formatter("test_formatter", {"hello": "world"})
-        assert "formatted:" in result
-
-    def test_formatter_with_extra_needed(self) -> None:
-        """Formatter declaring ``extra`` receives the extra dict."""
-
-        @register_formatter("test_extra")
-        def _test_extra(data: Any, *, extra: dict[str, Any] | None = None) -> str:
-            ctx = (extra or {}).get("ctx", "none")
-            return f"data={data} ctx={ctx}"
-
-        result = call_formatter("test_extra", "val", extra={"ctx": "my_context"})
-        assert "ctx=my_context" in result
-
-    def test_formatter_without_detail(self) -> None:
-        """Formatter that ignores detail still works."""
-
-        @register_formatter("test_no_detail")
-        def _test_no_detail(data: Any, **kwargs: Any) -> str:
-            return f"ok:{data}"
-
-        result = call_formatter("test_no_detail", 42)
-        assert result == "ok:42"
 
 
 class TestFormatUserMarkdown:

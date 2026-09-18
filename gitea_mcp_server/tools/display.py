@@ -34,38 +34,9 @@ lists, detail tools (``repo_get``, ``issue_get_issue``, …) produce dicts.
 from typing import Any
 
 from gitea_mcp_server.format import (
-    call_markdown_formatter,
     format_as_markdown,
-    get_formatter,
     register_formatter,
 )
-
-
-def call_formatter(
-    name: str,
-    data: Any,
-    *,
-    extra: dict[str, Any] | None = None,
-) -> str:
-    """Look up and call a registered formatter.
-
-    Thin convenience wrapper over :func:`~gitea_mcp_server.format.get_formatter`
-    and ``call_markdown_formatter`` for callers that hold a formatter name.
-
-    Args:
-        name: Formatter name (registered via ``@register_formatter``).
-        data: The data to format (already collapsed if ``detail=concise``).
-        extra: Optional context dict passed to formatters that need it.
-
-    Returns:
-        Markdown string.
-    """
-    fn = get_formatter(name)
-    if fn is None:
-        msg = f"No formatter registered for {name!r}"
-        raise ValueError(msg)
-    return call_markdown_formatter(fn, data, extra=extra)
-
 
 # ---------------------------------------------------------------------------
 # Shared field specifications
@@ -501,8 +472,3 @@ def _format_label_detail(label: dict, *, extra: dict | None = None) -> str:
     lines = [f"# Label: {name} (#{label.get('id', '?')}){archived_tag}{scope}", ""]
     lines.extend(_label_detail_lines(label))
     return "\n".join(lines)
-
-
-__all__ = [
-    "call_formatter",
-]

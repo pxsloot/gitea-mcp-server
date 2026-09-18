@@ -13,25 +13,50 @@ Provides reusable spec dictionaries at three granularities:
 Prefer ``make_openapi_spec()`` over inline ``dict`` literals for all
 post-conversion spec construction.  The factory returns ``OpenAPISpec``,
 which satisfies the type expected by production functions; deliberately
-non-conforming specs use ``cast("OpenAPISpec", ...)``.  Test code that
-annotates an inline dict literal is rejected by
+non-conforming specs use ``cast("OpenAPISpec", ...)``.  An inline spec dict
+literal — annotated (``spec: OpenAPISpec = {...}``) or passed as a keyword
+argument (``fn(openapi_spec={...})``) — is rejected by
 ``tests/unit/test_spec_fixture_convention.py``.  See ``docs/testing/FIXTURES.md``.
 """
 
-from typing import Any, cast
+from __future__ import annotations
 
-from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPIInfo, OpenAPISpec, SwaggerV2Spec
 
 
-def make_openapi_spec(*, include_defaults: bool = True, **overrides: Any) -> OpenAPISpec:
+class _SpecOverrides(TypedDict, total=False):
+    """Keyword overrides accepted by :func:`make_openapi_spec`.
+
+    Mirrors the top-level ``OpenAPISpec`` keys so a typo (``pats=``) or a
+    wrong value type is caught by mypy at the call site.  Nested values stay
+    ``Any`` — that is the factory's deliberate escape hatch for arbitrary
+    test shapes.
+    """
+
+    openapi: str
+    info: OpenAPIInfo
+    paths: dict[str, Any]
+    components: dict[str, Any]
+    servers: list[dict[str, Any]]
+
+
+def make_openapi_spec(
+    *, include_defaults: bool = True, **overrides: Unpack[_SpecOverrides]
+) -> OpenAPISpec:
     """Create a post-conversion OpenAPI 3.1 spec for tests.
 
     Returns a typed ``OpenAPISpec``.  By default it carries the minimal
     valid defaults ``openapi="3.1.0"``, ``info={"title": "Test API",
-    "version": "1.0.0"}``, and ``paths={}``; each keyword override replaces
-    the matching default key (``components`` and ``servers`` are added when
-    passed).  Use this instead of inline dict literals passed to functions
-    expecting ``OpenAPISpec``::
+    "version": "1.0.0"}``, and ``paths={}``; a keyword override replaces the
+    matching default key, and any other keyword (e.g. ``components`` or
+    ``servers``) is added as-is.  Override *names* and top-level value types
+    are checked against ``_SpecOverrides``; nested contents stay ``Any`` and
+    are not structurally type-checked — that is the factory's deliberate
+    escape hatch.  Use this instead of inline dict literals passed to
+    functions expecting ``OpenAPISpec``::
 
         # Good — typed, no mypy error:
         spec = make_openapi_spec()

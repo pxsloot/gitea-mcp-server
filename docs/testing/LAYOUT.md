@@ -163,7 +163,7 @@ across the entire module tree:
 | Test file | What it verifies | Added in |
 |---|---|---|
 | `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. **Must be updated** when a new module is added to any subpackage — add its dotted name to ``ALL_MODULES``. | #552 |
-| `tests/unit/test_spec_fixture_convention.py` | No test annotates an inline dict literal as an `OpenAPISpec`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
+| `tests/unit/test_spec_fixture_convention.py` | No test builds a spec as an inline dict literal — annotated or passed as `openapi_spec=`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
 
 ## Test Data and Fixtures
 
@@ -178,13 +178,15 @@ across the entire module tree:
 - Use `tests/swagger.v1.json` only for end-to-end conversion + schema validation tests
 
 ```python
-@pytest.fixture
-def minimal_spec():
-    """Return a minimal valid Swagger 2.0 spec."""
-    return {
-        "swagger": "2.0",
-        "info": {"title": "Test API", "version": "1.0.0"},
-        "basePath": "/api/v1",
-        "paths": {},
-    }
+from tests.helpers.spec_fixtures import make_openapi_spec
+
+# Post-conversion specs (what production functions accept) go through the
+# typed factory — never an inline annotated dict literal.
+spec = make_openapi_spec(
+    paths={"/repos/{owner}/{repo}": {"get": {"responses": {"200": {"description": "OK"}}}}}
+)
 ```
+
+For pre-conversion *Swagger 2.0* specs, import the canonical helper
+(`tests.helpers.spec_fixtures.minimal_spec` / `base_spec`) rather than
+redefining one inline.

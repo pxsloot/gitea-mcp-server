@@ -219,7 +219,9 @@ class TestRegisterCustomResources:
         register_custom_resources(
             mock_mcp,
             mock_gitea_client,
-            openapi_spec={"info": {"title": "test", "version": "1.0.0"}},
+            openapi_spec=make_openapi_spec(
+                include_defaults=False, info={"title": "test", "version": "1.0.0"}
+            ),
             server_info_md="# Server Information\n\n**Server Type**: Test\n**API Version**: 1.0\n",
         )
         assert mock_mcp.resource.call_count == 13

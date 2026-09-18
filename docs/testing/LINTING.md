@@ -95,9 +95,9 @@ uv run mypy tests/
 - **OpenAPI spec typing**: Test fixtures that construct specs must use
   the ``make_openapi_spec()`` factory (returns typed ``OpenAPISpec``);
   deliberately non-conforming specs use ``cast("OpenAPISpec", ...)``.
-  Annotating an inline dict literal is forbidden and enforced by
-  ``tests/unit/test_spec_fixture_convention.py``.  See `testing/FIXTURES.md`
-  for the two-tier strategy.
+  Inline dict literals — annotated or passed as ``openapi_spec=`` — are
+  forbidden and enforced by ``tests/unit/test_spec_fixture_convention.py``.
+  See `testing/FIXTURES.md` for the two-tier strategy.
 - **Mock helpers**: Use ``make_async_mock(SomeClass)`` and
   ``make_magic_mock(some_callable)`` from ``tests/helpers/mock_tool.py``
   to avoid mypy narrowing mocked objects to their spec type (which hides

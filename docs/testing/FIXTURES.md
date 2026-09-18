@@ -88,9 +88,10 @@ Two conventions apply project-wide:
   that use ``OpenAPISpec`` exclusively in annotations add ``from __future__
   import annotations`` to make lazy strings.
 
-No test may annotate an inline dict literal as an ``OpenAPISpec``: the
-annotation duplicates the single ``cast()`` the factory already hides and
-lets the suite drift.  This is locked by
+No test may build a spec as an inline dict literal — annotated
+(``spec: OpenAPISpec = {...}``) or passed as a keyword argument
+(``fn(openapi_spec={...})``).  Both bypass the factory's single ``cast()``
+and let the suite drift.  This is locked by
 ``tests/unit/test_spec_fixture_convention.py``, an AST guard that reports
 ``file:line`` for every violation.  Prefer Tier 1; use Tier 2 only when
 testing deliberately malformed shapes.

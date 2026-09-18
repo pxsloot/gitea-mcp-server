@@ -22,6 +22,7 @@ from gitea_mcp_server.tools.virtual_params import (
     extract_from,
     inject_into,
 )
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 # A minimal VirtualParam entry used by lifecycle tests that patch _VIRTUAL_PARAMS.
 _FORMAT_VP = VirtualParam(
@@ -589,7 +590,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
         tool = self._make_tool()
         [wrapped] = await transform.list_tools([tool])
@@ -606,7 +607,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
         tool = self._make_tool()
 
@@ -637,7 +638,7 @@ class TestWrapIntegration:
         from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
 
         transform = _ToolWrappingTransform(
-            openapi_spec={},
+            openapi_spec=make_openapi_spec(include_defaults=False),
         )
         tool = self._make_tool()
 

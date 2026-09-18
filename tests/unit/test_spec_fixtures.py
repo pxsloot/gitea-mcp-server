@@ -30,6 +30,15 @@ class TestMakeOpenApiSpec:
         assert spec["components"] == {"schemas": {"User": {}}}
         assert spec["paths"] == {}
 
+    def test_calls_return_independent_specs(self) -> None:
+        """Each call builds a fresh dict; mutation cannot leak between calls."""
+        first = make_openapi_spec()
+        first["info"]["title"] = "Mutated"
+        first["paths"]["/x"] = {}
+        second = make_openapi_spec()
+        assert second["info"]["title"] == "Test API"
+        assert second["paths"] == {}
+
     def test_include_defaults_false_is_empty(self) -> None:
         """Disabling defaults with no overrides yields an empty spec."""
         spec = make_openapi_spec(include_defaults=False)

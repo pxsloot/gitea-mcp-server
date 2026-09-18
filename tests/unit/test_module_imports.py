@@ -15,6 +15,8 @@ Reasons to keep this file:
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 
 import pytest
 
@@ -209,3 +211,70 @@ class TestNoCircularImports:
         """All modules import cleanly in one pass."""
         for mod in ALL_MODULES:
             importlib.import_module(mod)
+
+
+class TestLayerDependencies:
+    """The result pipeline must not depend on the domain formatter module.
+
+    The formatter registry lives in the format layer (``format.py``); the
+    domain formatters in ``tools/display.py`` are pure plugins.  This keeps
+    the dependency Result → Format → Display, so the generic pipeline can be
+    used and tested without the Gitea-specific formatter catalog.
+
+    This is a structural regression lock: a future edit that imports
+    ``tools.display`` back into ``result_pipeline`` (re-inverting the
+    layering) fails here, not in production.
+    """
+
+    def test_result_pipeline_does_not_import_display(self) -> None:
+        import gitea_mcp_server.tools.display as display_module
+        from gitea_mcp_server.tools import result_pipeline
+
+        for name, value in vars(result_pipeline).items():
+            assert value is not display_module, (
+                f"result_pipeline binds the display module as {name!r}; "
+                "the formatter registry belongs in the format layer"
+            )
+        # No symbol may be imported from display either.
+        assert "get_formatter_for_type" not in vars(result_pipeline)
+        assert "_extract_type_name" not in vars(result_pipeline)
+
+    def test_registry_lives_in_format_layer(self) -> None:
+        """The registry symbols are defined in ``format``, not ``display``."""
+        import gitea_mcp_server.format as format_module
+
+        for symbol in (
+            "register_formatter",
+            "get_formatter",
+            "get_formatter_for_type",
+            "resolve_formatter",
+        ):
+            assert hasattr(format_module, symbol), f"format is missing {symbol}"
+
+        # Display holds no registry state — plugins only.
+        import gitea_mcp_server.tools.display as display_module
+
+        assert not hasattr(display_module, "_FORMATTERS")
+        assert not hasattr(display_module, "_TYPE_FORMATTERS")
+
+    def test_importing_pipeline_does_not_load_display(self) -> None:
+        """The package import must not load the plugins; the root does.
+
+        Run in a fresh interpreter so the in-process registrations the test
+        suite performs (``conftest``) cannot mask the real import graph: if
+        ``tools/__init__.py`` re-grows a ``display`` side-effect import, this
+        fails even though ``test_result_pipeline_does_not_import_display``
+        (a namespace check) still passes.
+        """
+        code = (
+            "import sys; import gitea_mcp_server.tools.result_pipeline; "
+            "assert 'gitea_mcp_server.tools.display' not in sys.modules, "
+            "'importing result_pipeline pulled in the display plugins'"
+        )
+        result = subprocess.run(  # noqa: S603 - trusted interpreter, literal code
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr

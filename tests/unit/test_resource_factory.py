@@ -16,6 +16,7 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
+    _build_handler_meta,
     _build_optional_param_signature,
     derive_resource_uri,
     make_api_resource,
@@ -2152,3 +2153,36 @@ class TestMakeApiResourceErrorMessageFormat:
         assert error["code"] == "NOT_FOUND"
         # The raw message should be used (with bad format key still present)
         assert "Resource '{badkey}' not found." in error["message"]
+
+
+class TestBuildHandlerMeta:
+    """``_build_handler_meta`` carries the display pipeline's known keys."""
+
+    def test_response_type_included(self) -> None:
+        """The pre-wrap response type is content metadata, not formatter extra."""
+        meta = _build_handler_meta(response_type="Repository")
+        assert meta == {"response_type": "Repository"}
+
+    def test_all_known_keys_together(self) -> None:
+        meta = _build_handler_meta(
+            response_schema={"type": "object"},
+            format_hint="repository",
+            response_type="Repository",
+            owner="o",
+            repo="r",
+        )
+        assert meta == {
+            "response_schema": {"type": "object"},
+            "format_hint": "repository",
+            "response_type": "Repository",
+            "owner": "o",
+            "repo": "r",
+        }
+
+    def test_absent_response_type_omitted(self) -> None:
+        """``None`` response_type is omitted, not stored as null."""
+        meta = _build_handler_meta(format_hint="repository")
+        assert meta == {"format_hint": "repository"}
+
+    def test_empty_meta_returns_none(self) -> None:
+        assert _build_handler_meta() is None

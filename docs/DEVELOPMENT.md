@@ -558,8 +558,8 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
 
 1. **Add a display formatter** (if needed) in `tools/display.py`:
    ```python
-   @register_formatter("my_type")
-   def _format_my_type(data: dict) -> str:
+   @register_formatter("my_type", types=["MyType"])
+   def _format_my_type(data: Any) -> str:
        ...
    ```
    A formatter is a `format.MarkdownFormatter` — a pure renderer that takes
@@ -571,6 +571,48 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    `detail` flag — collapsed *fields* arrive as `$ref:TypeName` strings;
    root-list items are always dicts (summarized, #759), so formatters must
    not branch on collapsed item shapes.
+
+   **`types=` binds the formatter to tools by response type (#760).** The
+   format layer's `resolve_formatter` dispatches in three tiers: an
+   explicit per-result `markdown_formatter` (the resource `format_hint`
+   path) → the formatter registered for the result's `response_type` →
+   the generic `format_as_markdown`.  So one registration gives the tool
+   family the same domain view its resource sibling renders; unregistered
+   types keep the generic fallback.
+
+   **The type name is first-class metadata, not read from the schema.**
+   Response-schema wrapping inlines the root `$ref` and erases the type
+   name, so the converter stamps the operation-level `x-response-type`
+   *pre-wrap* in `openapi_converter/type_references.py` (alongside
+   `x-resource-types` / `x-modifies-type`).  The registration layers
+   propagate it: `server_setup/mcp_builder.py` stores it in
+   `tool.meta["response_type"]`, and `resources/factory.py` stores it in
+   resource content meta.  The contract spine and the `read_resource`
+   executor put it on `ExecutionResult.response_type`, which the pipeline
+   passes to `resolve_formatter`.  To bind a new type, register it with
+   `types=[...]` — no schema introspection is involved.
+
+   **The registry lives in `format.py`, not `display.py`.** `display.py` is a
+   pure plugin set: it imports `register_formatter` from `format` and holds no
+   registry state.  This keeps the dependency Result → Format → Display — the
+   result pipeline resolves formatters through `format.resolve_formatter`
+   without importing `display`, so the generic pipeline never depends on the
+   Gitea-specific formatter catalog.  The composition root (`server.py`)
+   imports `display` for its registration side effect; the test suite does the
+   same in `conftest.py`.
+
+   **Formatters must be shape-tolerant.** A bound type arrives in both
+   shapes: list tools (`repo_list_*`) hand over lists, detail tools
+   (`repo_get`, `issue_get_issue`, …) hand over dicts.  The convention is
+   list → *collection view* (curated field whitelist, per-item titles) and
+   dict → *detail view* (the full payload — every field present in the data,
+   rendered without a whitelist, so a detail read never drops a payload
+   field).  `extra` context
+   (`owner`/`repo`/`org`/`type`) reaches formatters from the call args via
+   the contract spine, or from resource content meta; always fall back
+   gracefully when it is absent.  `org` is the owner-equivalent on
+   org-scoped tools (`org_list_labels`, `org_get_label`, …); a formatter
+   that needs a scope should accept either `owner`/`repo` or `org`.
 
 2. **Add a factory call** in `register_custom_resources()` in
    `resources/custom.py`:
@@ -1034,7 +1076,11 @@ def _format_custom_type(data: dict) -> str:
     ...
 ```
 
-Domain-specific resource formatters are registered in `tools/display.py` via the ``@register_formatter`` decorator. See "How to Add a Custom Resource" above.
+Domain-specific resource formatters are registered via the
+``@register_formatter`` decorator; the formatters themselves live in
+`tools/display.py`, but the registry and the three-tier
+``resolve_formatter`` dispatch live in `format.py` (see the add-a-formatter
+how-to above). See "How to Add a Custom Resource" above.
 
 ---
 

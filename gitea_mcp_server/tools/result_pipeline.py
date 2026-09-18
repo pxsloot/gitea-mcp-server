@@ -24,7 +24,17 @@ result (e.g. ``read_resource``, whose schema varies per URI); it takes
 precedence over the tool-level schema in :func:`render`.  A per-result
 ``markdown_formatter`` — a :data:`~gitea_mcp_server.format.MarkdownFormatter`,
 whose contract is stated canonically in ``format.py`` — is dispatched through
-``call_markdown_formatter``.  When ``detail="concise"`` and a schema is
+``call_markdown_formatter``.  When it is absent, ``_resolve_formatter``
+consults the **type-bound** domain formatter for the result's response type
+(``tools/display.py``, ``register_formatter(types=...)``) before
+falling back to the generic renderer — so a tool and its resource sibling
+render the same domain view.  The type name is first-class metadata
+(``ExecutionResult.response_type`` / :func:`render`'s *response_type*),
+stamped pre-wrap on the spec operation and propagated through ``tool.meta``
+and resource content meta.  Formatter context (``owner``/``repo``/``type``)
+flows as display *input* through ``ExecutionResult.extra`` (resource content
+meta) or :func:`render`'s *extra* argument (derived by the contract spine
+from the call args).  When ``detail="concise"`` and a schema is
 available, the pipeline pre-collapses the page (schema-aware ``$ref``
 collapse) before calling the formatter, so formatters receive
 already-collapsed data and must not re-collapse.  Root-list items are
@@ -57,7 +67,6 @@ page size (``constants.DEFAULT_PAGE_SIZE``), the cap
 
 from __future__ import annotations
 
-import functools
 import json as json_module
 import logging
 from dataclasses import dataclass, field
@@ -73,7 +82,7 @@ from gitea_mcp_server.format import (
     MarkdownFormatter,
     call_markdown_formatter,
     collapse_data,
-    format_as_markdown,
+    resolve_formatter,
 )
 from gitea_mcp_server.pagination import add_pagination_metadata
 
@@ -100,9 +109,10 @@ class ExecutionResult:
 
     ``markdown_formatter`` is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
     (the contract is stated canonically in ``format.py``), dispatched through
-    ``call_markdown_formatter``; when absent the pipeline falls back to
-    ``format_as_markdown`` bound to the result schema (see
-    :func:`_resolve_formatter`).  The field is wrapped in ``SkipJsonSchema``:
+    ``call_markdown_formatter``; when absent the pipeline consults
+    :func:`_resolve_formatter`'s tiers — the type-bound domain formatter for
+    the result's ``response_type``, then ``format_as_markdown`` bound
+    to the result schema.  The field is wrapped in ``SkipJsonSchema``:
     FastMCP derives a tool's output JSON Schema from its return annotation,
     and pydantic cannot generate a schema for a ``Callable`` — the wrapper
     keeps the field typed for mypy / ``get_type_hints`` while excluding it
@@ -121,6 +131,25 @@ class ExecutionResult:
     message: str | None = None
     markdown_extras: list[str] | None = None
     markdown_formatter: SkipJsonSchema[MarkdownFormatter | None] = field(default=None, repr=False)
+    extra: dict[str, Any] | None = None
+    """Formatter context (``owner``/``repo``/``type``) — display *input*, not
+    display logic.  The resource executor supplies it from content metadata;
+    the contract spine derives it from the tool call's path/query args.  It
+    takes precedence over :func:`render`'s *extra* argument the same way
+    ``schema`` takes precedence over the tool-level schema, and is forwarded
+    to the markdown formatter via ``call_markdown_formatter`` (only
+    formatters declaring ``extra`` receive it).
+    """
+    response_type: str | None = None
+    """Response type name for type-bound formatter resolution.
+
+    The pre-wrap ``x-response-type`` stamp, propagated from ``tool.meta``
+    (autogen tools) or resource content meta (``read_resource``).  It is the
+    middle tier of :func:`~gitea_mcp_server.format.resolve_formatter`;
+    ``None`` means unbound — the generic renderer.  :func:`render` prefers
+    this over the tool-level ``response_type`` argument, the same precedence
+    rule as ``schema`` and ``extra``.
+    """
     schema: dict[str, Any] | None = None
     """Schema describing *data* for ``$ref``-aware collapse (``detail=concise``).
 
@@ -139,6 +168,8 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     limit: int = DEFAULT_PAGE_SIZE,
     fetch_all: bool = False,
     schema: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
+    response_type: str | None = None,
     openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
     """Render an ``ExecutionResult`` into a dual-channel ``ToolResult``.
@@ -157,6 +188,15 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
             collapse when ``detail="concise"``.  When the ``ExecutionResult``
             carries its own ``schema`` (executor-supplied, e.g. per-URI for
             ``read_resource``), that takes precedence over this argument.
+        extra: Optional formatter context (``owner``/``repo``/``type``) —
+            display *input* derived by the contract spine from the tool
+            call's args .  When the ``ExecutionResult`` carries its
+            own ``extra`` (resource content meta), that takes precedence.
+        response_type: Optional response type name for type-bound formatter
+            resolution — read by the contract spine from
+            ``tool.meta["response_type"]``.  When the ``ExecutionResult``
+            carries its own ``response_type`` (per-URI ``read_resource``),
+            that takes precedence.
         openapi_spec: Post-conversion OpenAPI 3.1 spec enabling root-list
             item summaries under ``detail="concise"`` (#759) — the collapse
             resolves a root list's item ``$ref`` one level so items keep
@@ -178,6 +218,14 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     # The executor may supply a per-result schema (e.g. read_resource's
     # per-URI response schema); it wins over the tool-level schema.
     effective_schema = result.schema if result.schema is not None else schema
+    # Same precedence for formatter context: per-result extra (resource meta)
+    # wins over the spine-derived call-arg extra.
+    effective_extra = result.extra if result.extra is not None else extra
+    # And the type-binding key: per-result response_type (read_resource's
+    # per-URI type) wins over the tool-level one from tool.meta.
+    effective_response_type = (
+        result.response_type if result.response_type is not None else response_type
+    )
 
     envelope, effective_shape = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
     return _format(
@@ -186,6 +234,8 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         fmt=fmt,
         detail=detail,
         schema=effective_schema,
+        extra=effective_extra,
+        response_type=effective_response_type,
         effective_shape=effective_shape,
         openapi_spec=openapi_spec,
     )
@@ -301,28 +351,35 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
 def _resolve_formatter(
     result: ExecutionResult,
     schema: dict[str, Any] | None,
+    response_type: str | None = None,
 ) -> MarkdownFormatter:
-    """Return the result's formatter, or the schema-bound generic fallback.
+    """Return the result's formatter, the type-bound domain formatter, or the
+    schema-bound generic fallback.
 
-    ``ExecutionResult.markdown_formatter`` is optional.  When it is set, the
-    result's own :data:`~gitea_mcp_server.format.MarkdownFormatter` is used.
-    Otherwise the pipeline falls back to :func:`~gitea_mcp_server.format.format_as_markdown`,
-    binding ``schema`` up front because ``call_markdown_formatter`` dispatches
-    only ``extra`` (never ``schema`` or ``detail``).  Centralising the choice
-    here keeps ``_format`` a single, uniform formatter call site.
+    Delegates the three-tier choice to
+    :func:`~gitea_mcp_server.format.resolve_formatter` (explicit per-result →
+    type-bound domain formatter → generic).  Keeping the policy in the format
+    layer means the pipeline never imports the domain formatter module
+    (``tools/display.py``) — Result → Format, not Result → Display.
+
+    The explicit tier is the ``ExecutionResult.markdown_formatter`` (the
+    resource surface's ``format_hint`` resolution); the type-bound tier uses
+    ``response_type``; the pipeline is a single, uniform formatter call site.
     """
-    if result.markdown_formatter is not None:
-        return result.markdown_formatter
-    return functools.partial(format_as_markdown, schema=schema)
+    return resolve_formatter(
+        schema, explicit=result.markdown_formatter, response_type=response_type
+    )
 
 
-def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render
+def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, extra, response_type, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render
     envelope: dict[str, Any],
     result: ExecutionResult,
     *,
     fmt: str,
     detail: str,
     schema: dict[str, Any] | None,
+    extra: dict[str, Any] | None = None,
+    response_type: str | None = None,
     effective_shape: str,
     openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
@@ -377,10 +434,15 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
         else:
             # Render the page (the envelope's result), not the executor's
             # full data — the text channel must agree with the envelope.
-            # The formatter (result-specific, or the schema-bound generic
-            # fallback) is resolved in one place by _resolve_formatter; the
-            # dispatch helper forwards only the kwargs it declares.
-            text = call_markdown_formatter(_resolve_formatter(result, schema), page_data)
+            # The formatter (result-specific, type-bound, or the schema-bound
+            # generic fallback) is resolved in one place by
+            # _resolve_formatter; the dispatch helper forwards only the
+            # kwargs it declares, here ``extra`` (formatter context).
+            text = call_markdown_formatter(
+                _resolve_formatter(result, schema, response_type=response_type),
+                page_data,
+                extra=extra,
+            )
             if result.markdown_extras:
                 text += "\n\n---\n\n" + "\n\n---\n\n".join(result.markdown_extras)
     except (TypeError, AttributeError, ValueError, KeyError, IndexError, RecursionError) as exc:

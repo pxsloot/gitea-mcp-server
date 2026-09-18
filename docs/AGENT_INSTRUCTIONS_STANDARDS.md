@@ -127,7 +127,7 @@ The assertable invariants are guarded by these tests in
 |------|--------|
 | ``test_served_instructions_no_unresolved_placeholders`` | No ``{{}}`` remains after substitution |
 | ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
-| ``test_served_instructions_line_budget`` | ≤ 300 lines (see budget history in test) |
+| ``test_served_instructions_line_budget`` | Line-count budget — the test's assertion is the single source of truth for the current number; its history explains each raise |
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
 
 A regression in any of these fails ``make test``. This file guards the

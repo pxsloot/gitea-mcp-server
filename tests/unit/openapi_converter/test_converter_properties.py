@@ -460,12 +460,15 @@ class TestNoVendorExtensionsInSchemas:
         x_keys = _collect_x_keys(result)
 
         # Operation-level x-* (x-original-content-types, x-mcp, type
-        # references for cache invalidation) should survive
+        # references for cache invalidation, and the display type-binding
+        # stamp) should survive.  These are all stamped on the operation,
+        # never on schema nodes.
         allowed_prefixes = (
             "x-original-content-types",
             "x-mcp",
             "x-fastmcp-",
             "x-resource-types",
+            "x-response-type",
             "x-modifies-type",
         )
         schema_x_keys = [k for k in x_keys if not any(k.startswith(p) for p in allowed_prefixes)]

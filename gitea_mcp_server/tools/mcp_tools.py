@@ -31,17 +31,12 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.format import (
-    MarkdownFormatter,
-    call_markdown_formatter,
-    decode_base64_content,
-)
+from gitea_mcp_server.format import decode_base64_content, get_formatter
 from gitea_mcp_server.models import ResourceEntry, ResourceListing
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
-from gitea_mcp_server.tools.display import get_formatter
 from gitea_mcp_server.tools.examples import serialize_tool_schema
 from gitea_mcp_server.tools.resource_display import (
     clean_resource_uri,
@@ -151,64 +146,43 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
 # Known meta keys that carry display pipeline metadata rather than
 # extra context for formatters.  Everything else in meta is forwarded
 # as extra to the display pipeline.
-_KNOWN_META_KEYS: frozenset[str] = frozenset({"response_schema", "format_hint"})
+_KNOWN_META_KEYS: frozenset[str] = frozenset({"response_schema", "format_hint", "response_type"})
 
 
 def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
     """Extract non-known keys from a resource meta dict.
 
     Strips keys that belong to the display pipeline
-    (``response_schema``, ``format_hint``) and returns everything else as
-    extra context for formatters.  Returns ``None`` when no extra keys
-    exist, matching the ``or None`` idiom used throughout the codebase.
+    (``response_schema``, ``format_hint``, ``response_type``) and returns
+    everything else as extra context for formatters.  Returns ``None`` when
+    no extra keys exist, matching the ``or None`` idiom used throughout the
+    codebase.
     """
     extra = {k: v for k, v in meta.items() if k not in _KNOWN_META_KEYS}
     return extra or None
 
 
-def _make_resource_formatter(
-    format_hint: str | None,
-    extra: dict[str, Any] | None,
-) -> MarkdownFormatter | None:
-    """Resolve a ``format_hint`` to a markdown formatter callable, binding extra.
-
-    The returned callable is a :data:`~gitea_mcp_server.format.MarkdownFormatter`
-    (the contract is stated canonically in ``format.py``): ``extra`` (formatter
-    context such as ``owner``/``repo`` or ``type``) is bound at executor time,
-    so the callable takes ``data`` only.
-
-    Args:
-        format_hint: Registered formatter name, or ``None``.
-        extra: Extra context dict for formatters that need it.
-
-    Returns:
-        A :data:`MarkdownFormatter`, or ``None`` if no formatter is registered
-        for ``format_hint``.
-    """
-    if not format_hint:
-        return None
-    fn = get_formatter(format_hint)
-    if fn is None:
-        return None
-    return lambda data: call_markdown_formatter(fn, data, extra=extra)
-
-
 async def _mcp_read_resource_impl(
     ctx: Context,
     uri: str,
-) -> tuple[Any, dict[str, Any] | None, str | None, dict[str, Any] | None]:
-    """Read a resource and return (content, schema, format_hint, extra).
+) -> tuple[Any, dict[str, Any] | None, str | None, dict[str, Any] | None, str | None]:
+    """Read a resource and return display metadata.
 
-    The content is the raw string from the resource handler.  Schema,
-    format_hint, and extra are extracted from ``ResourceContent.meta`` and
-    passed to the display pipeline.
+    Returns ``(content, schema, format_hint, extra, response_type)``.  The
+    content is the raw string from the resource handler.  Schema,
+    ``format_hint``, ``response_type``, and extra are extracted from
+    ``ResourceContent.meta`` and passed to the display pipeline.
+
+    ``response_type`` is the converter's pre-wrap ``x-response-type`` stamp
+    (the type-binding key for domain markdown formatters); it is
+    pipeline metadata, not formatter context, so it is split out of ``extra``.
 
     Args:
         ctx: FastMCP Context object (injected automatically).
         uri: The resource URI to read.
 
     Returns:
-        Tuple of ``(content, schema, format_hint, extra)``.
+        Tuple of ``(content, schema, format_hint, extra, response_type)``.
     """
     try:
         # ctx.read_resource returns a ResourceResult (FastMCP 3.x)
@@ -220,18 +194,20 @@ async def _mcp_read_resource_impl(
         schema: dict[str, Any] | None = None
         format_hint: str | None = None
         extra: dict[str, Any] | None = None
+        response_type: str | None = None
         if contents and hasattr(contents[0], "meta") and contents[0].meta:
             meta = contents[0].meta
             schema = meta.get("response_schema")
             format_hint = meta.get("format_hint")
-            # Everything except response_schema and format_hint is extra context
+            response_type = meta.get("response_type")
+            # Everything except the known pipeline keys is extra context.
             extra = _extract_extra_meta(meta)
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"
         raise ValueError(msg) from e
     else:
-        return raw, schema, format_hint, extra
+        return raw, schema, format_hint, extra, response_type
 
 
 # ============================================================================
@@ -619,14 +595,19 @@ async def _read_resource_tool(
 
     Returns:
         Raw executor output (``ExecutionResult``): the resource data with its
-        shape, per-resource schema, and resolved markdown formatter.  The
-        single result pipeline renders it — ``content`` authoritative and
-        always present, ``structured_content`` mirroring it.
+        shape, per-resource schema, the resolved ``format_hint`` formatter
+        (tier 1 of the pipeline's formatter dispatch), the content-meta extra
+        context (``owner``/``repo``/``type``) forwarded as display input, and
+        the content-meta ``response_type`` (tier 2 — type-bound domain
+        formatters).  The single result pipeline renders it — ``content``
+        authoritative and always present, ``structured_content`` mirroring
+        it.  Resources without a ``format_hint`` still get the domain view
+        when their response type is bound (``register_formatter(types=...)``).
 
     Raises:
         ValueError: If the resource is not found or cannot be read
     """
-    raw, schema, format_hint, extra = await _mcp_read_resource_impl(ctx, uri)
+    raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(ctx, uri)
     # Decode base64 ContentsResponse at the executor layer: resources are
     # pure data; the executor transforms for agent consumption — mirroring
     # how autogen tools decode text responses in the HTTP pipeline.
@@ -645,7 +626,9 @@ async def _read_resource_tool(
         data=data,
         shape=shape,
         schema=schema,
-        markdown_formatter=_make_resource_formatter(format_hint, extra),
+        markdown_formatter=get_formatter(format_hint) if format_hint else None,
+        extra=extra,
+        response_type=response_type,
     )
 
 

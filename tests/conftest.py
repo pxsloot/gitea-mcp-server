@@ -19,6 +19,11 @@ from typing import Any, cast
 
 import pytest
 
+# The test suite is its own composition root: production loads the domain
+# formatter plugins explicitly in ``server.py``; tests that exercise the
+# display pipeline need the same registration.
+import gitea_mcp_server.tools.display  # noqa: F401
+
 
 class SimpleConfig:
     """Canonical test config stub, mirrors essential Config behavior.

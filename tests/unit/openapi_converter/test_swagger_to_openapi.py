@@ -504,6 +504,44 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
         assert "$ref" not in schema
+        # The display type-binding key is an operation-level stamp applied
+        # pre-wrap (type_references.stamp_type_references) — the wrap
+        # step must not inject schema-level pipeline metadata.
+        assert "x-response-type" not in schema["properties"]["result"]
+
+    def test_array_response_not_stamped(self) -> None:
+        """Wrapping injects no schema-level display metadata."""
+        spec: OpenAPISpec = {
+            "paths": {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Item"},
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {"Item": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+            },
+        }
+        _wrap_success_response_schemas(spec)
+        schema = spec["paths"]["/items"]["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        result = schema["properties"]["result"]
+        assert result["type"] == "array"
+        assert result["items"]["$ref"] == "#/components/schemas/Item"
+        assert "x-response-type" not in result
 
     def test_wraps_response_ref(self) -> None:
         """Response-level $ref is left as-is; component schema gets wrapped.
@@ -556,6 +594,8 @@ class TestEnrichResponseSchemas:
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "version" in schema["properties"]["result"]["properties"]
+        # No schema-level display stamp — the type binding is operation-level.
+        assert "x-response-type" not in schema["properties"]["result"]
 
     def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""

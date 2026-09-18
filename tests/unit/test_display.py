@@ -1,94 +1,62 @@
 """Tests for display formatters (tools/display.py).
 
 Covers:
-    - call_formatter error path (unknown formatter)
+    - the type-binding registry (``register_formatter(types=...)``)
     - _format_user_markdown created_at fallback
     - _format_repo_markdown
     - _format_issues_markdown, _format_pulls_markdown, _format_release_markdown
+    - shape tolerance: collection (list) vs detail (dict) views
     - Formatter edge cases
     - Tool/resource formatting consistency
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gitea_mcp_server.format import build_server_info_markdown
+from gitea_mcp_server.format import (
+    _FORMATTERS,
+    _TYPE_FORMATTERS,
+    build_server_info_markdown,
+    get_formatter_for_type,
+    register_formatter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.display import (
-    _FORMATTERS,
     _ISSUE_FIELDS,
-    _build_labels_markdown,
     _format_issues_markdown,
     _format_labels_markdown,
+    _format_org_markdown,
     _format_pulls_markdown,
     _format_release_markdown,
     _format_repo_markdown,
     _format_user_markdown,
-    call_formatter,
-    register_formatter,
 )
 
 
 @pytest.fixture(autouse=True)
 def _clean_formatters() -> Generator[None, None, None]:
-    """Save and restore the global formatter registry around each test.
+    """Save and restore the global formatter registries around each test.
 
     Tests register ad-hoc formatters via ``@register_formatter`` which
-    mutates the module-level ``_FORMATTERS`` dict.  This fixture ensures
-    each test starts with a clean slate and does not leak registrations
-    to subsequent tests.
+    mutates the module-level ``_FORMATTERS`` and (with ``types=``)
+    ``_TYPE_FORMATTERS`` dicts.  This fixture ensures each test starts with
+    a clean slate and does not leak registrations to subsequent tests.
     """
     saved_formatters = dict(_FORMATTERS)
+    saved_types = dict(_TYPE_FORMATTERS)
     yield
     _FORMATTERS.clear()
     _FORMATTERS.update(saved_formatters)
-
-
-class TestCallFormatter:
-    """Tests for call_formatter."""
-
-    def test_unknown_formatter_raises(self) -> None:
-        """Unknown formatter name raises ValueError."""
-        with pytest.raises(ValueError, match="No formatter registered for 'nonexistent'"):
-            call_formatter("nonexistent", {"key": "value"})
-
-    def test_known_formatter_invoked(self) -> None:
-        """Known formatter is called and returns expected output."""
-
-        @register_formatter("test_formatter")
-        def _test_fmt(data: Any) -> str:
-            return f"formatted: {data}"
-
-        result = call_formatter("test_formatter", {"hello": "world"})
-        assert "formatted:" in result
-
-    def test_formatter_with_extra_needed(self) -> None:
-        """Formatter declaring ``extra`` receives the extra dict."""
-
-        @register_formatter("test_extra")
-        def _test_extra(data: Any, *, extra: dict[str, Any] | None = None) -> str:
-            ctx = (extra or {}).get("ctx", "none")
-            return f"data={data} ctx={ctx}"
-
-        result = call_formatter("test_extra", "val", extra={"ctx": "my_context"})
-        assert "ctx=my_context" in result
-
-    def test_formatter_without_detail(self) -> None:
-        """Formatter that ignores detail still works."""
-
-        @register_formatter("test_no_detail")
-        def _test_no_detail(data: Any, **kwargs: Any) -> str:
-            return f"ok:{data}"
-
-        result = call_formatter("test_no_detail", 42)
-        assert result == "ok:42"
+    _TYPE_FORMATTERS.clear()
+    _TYPE_FORMATTERS.update(saved_types)
 
 
 class TestFormatUserMarkdown:
@@ -135,15 +103,333 @@ class TestFormatLabelsMarkdownEdgeCases:
         assert "?/?" in result
 
 
-class TestBuildLabelsMarkdown:
-    """Tests for _build_labels_markdown shorthand."""
+class TestTypeBindingRegistry:
+    """``register_formatter(types=...)`` populates the type index."""
 
-    def test_build_labels_markdown(self) -> None:
-        """_build_labels_markdown delegates correctly."""
-        data = [{"id": 1, "name": "bug", "color": "ff0000", "description": "A bug"}]
-        result = _build_labels_markdown(data, "myorg", "myrepo")
-        assert "myorg/myrepo" in result
-        assert "bug" in result
+    def test_types_populate_index(self) -> None:
+        @register_formatter("thing", types=["Thing"])
+        def _fmt(data: Any) -> str:
+            return "thing!"
+
+        assert _TYPE_FORMATTERS["Thing"] == "thing"
+        assert get_formatter_for_type("Thing") is _fmt
+
+    def test_multiple_types_bind_one_formatter(self) -> None:
+        @register_formatter("who", types=["User", "Organization"])
+        def _fmt(data: Any) -> str:
+            return "who!"
+
+        assert get_formatter_for_type("User") is _fmt
+        assert get_formatter_for_type("Organization") is _fmt
+
+    def test_unbound_type_returns_none(self) -> None:
+        """Unregistered types keep the generic fallback (pipeline tier 3)."""
+        assert get_formatter_for_type("Widget") is None
+
+    def test_registered_name_without_types(self) -> None:
+        """Plain ``register_formatter(name)`` binds nothing by type."""
+
+        @register_formatter("hint_only")
+        def _fmt(data: Any) -> str:
+            return "x"
+
+        assert "hint_only" in _FORMATTERS
+        assert not any(v == "hint_only" for v in _TYPE_FORMATTERS.values())
+
+    def test_shipped_domain_bindings(self) -> None:
+        """Each domain type binds to its resource-sibling formatter."""
+        expected = {
+            "Issue": "issues",
+            "PullRequest": "pull_requests",
+            "Repository": "repository",
+            "User": "user",
+            "Organization": "organization",
+            "Label": "labels",
+            "Release": "release",
+        }
+        for type_name, formatter_name in expected.items():
+            assert _TYPE_FORMATTERS.get(type_name) == formatter_name
+            assert get_formatter_for_type(type_name) is not None
+
+    def test_duplicate_type_binding_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Rebinding a type to a different formatter warns; last registration wins."""
+
+        @register_formatter("first", types=["Dup"])
+        def _first(data: Any) -> str:
+            return "first"
+
+        with caplog.at_level(logging.WARNING, logger="gitea_mcp_server.format"):
+
+            @register_formatter("second", types=["Dup"])
+            def _second(data: Any) -> str:
+                return "second"
+
+        assert "already bound" in caplog.text
+        assert get_formatter_for_type("Dup") is _second
+
+
+class TestFormatterShapeTolerance:
+    """a list renders the collection view, a dict the detail view.
+
+    The pipeline hands a type-bound formatter either shape: list tools
+    (``repo_list_*``) and list resources produce lists; detail tools
+    (``repo_get``, ``issue_get_issue``, …) produce dicts.
+    """
+
+    def test_repo_list_renders_collection(self) -> None:
+        repos = [
+            {"name": "a", "full_name": "o/a", "description": "first"},
+            {"name": "b", "full_name": "o/b", "description": "second"},
+        ]
+        result = _format_repo_markdown(repos)
+        assert "Repositories - 2 items" in result
+        assert "o/a" in result
+        assert "o/b" in result
+
+    def test_repo_empty_list(self) -> None:
+        result = _format_repo_markdown([])
+        assert "Repositories" in result
+
+    def test_repo_dict_renders_detail(self) -> None:
+        result = _format_repo_markdown({"name": "r", "full_name": "o/r"})
+        assert result.startswith("# o/r")
+
+    def test_repo_dict_detail_keeps_state_and_permissions(self) -> None:
+        """A single-repo read keeps the full payload the collection drops."""
+        repo = {
+            "full_name": "o/r",
+            "default_branch": "main",
+            "private": True,
+            "archived": True,
+            "stars_count": 7,
+            "permissions": {"admin": True, "push": False, "pull": True},
+        }
+        result = _format_repo_markdown(repo)
+        assert "| Private | True |" in result
+        assert "| Archived | True |" in result
+        assert "| Stars Count | 7 |" in result
+        # Detail renders every payload field; nested objects become sections.
+        assert "## Permissions" in result
+        assert "| Admin | True |" in result
+        assert "| Push | False |" in result
+        assert "| Pull | True |" in result
+
+    def test_repo_scalar_passthrough_no_crash(self) -> None:
+        """Unexpected scalar shape renders through the generic path (#574)."""
+        result = _format_repo_markdown(42)
+        assert "42" in result
+
+    def test_issues_dict_detail_keeps_body(self) -> None:
+        """The detail view must not drop the payload (``body``)."""
+        issue = {
+            "number": 1,
+            "title": "Bug",
+            "state": "open",
+            "body": "THE PAYLOAD",
+            "labels": [{"name": "Kind/Bug"}],
+        }
+        result = _format_issues_markdown(issue)
+        assert result.startswith("# Issue #1: Bug")
+        assert "THE PAYLOAD" in result
+        assert "Kind/Bug" in result
+
+    def test_issues_dict_pr_gets_pr_title(self) -> None:
+        issue = {"number": 2, "title": "Feat", "pull_request": {"merged": False}}
+        result = _format_issues_markdown(issue)
+        assert result.startswith("# Pull Request #2: Feat")
+
+    def test_issues_dict_pr_title_from_extra(self) -> None:
+        issue = {"number": 3, "title": "Feat"}
+        result = _format_issues_markdown(issue, extra={"type": "pulls"})
+        assert result.startswith("# Pull Request #3: Feat")
+
+    def test_issues_dict_no_title(self) -> None:
+        issue = {"number": 4}
+        result = _format_issues_markdown(issue)
+        assert result.startswith("# Issue #4")
+
+    def test_issues_list_collection_drops_body(self) -> None:
+        """Collection view keeps the curated whitelist (resource parity)."""
+        issues = [{"number": 1, "title": "T", "body": "NOT IN LIST VIEW"}]
+        result = _format_issues_markdown(issues)
+        assert "NOT IN LIST VIEW" not in result
+        assert "Issues - 1 items" in result
+
+    def test_pulls_dict_detail_keeps_body(self) -> None:
+        pr = {
+            "number": 9,
+            "title": "PR",
+            "body": "PR PAYLOAD",
+            "additions": 12,
+            "deletions": 3,
+            "changed_files": 2,
+            "base": {"ref": "main"},
+            "head": {"ref": "feat"},
+        }
+        result = _format_pulls_markdown(pr)
+        assert result.startswith("# Pull Request #9: PR")
+        assert "PR PAYLOAD" in result
+        # Diff stats are payload the collection view drops (#767).
+        assert "| Additions | 12 |" in result
+        assert "| Deletions | 3 |" in result
+        assert "| Changed Files | 2 |" in result
+        # Detail renders the full payload; base/head become sections.
+        assert "## Base" in result
+        assert "main" in result
+
+    def test_pulls_dict_no_title(self) -> None:
+        result = _format_pulls_markdown({"number": 10})
+        assert result.startswith("# Pull Request #10")
+
+    def test_release_dict_detail(self) -> None:
+        rel = {"tag_name": "v1.0", "name": "One", "body": "notes"}
+        result = _format_release_markdown(rel)
+        assert result.startswith("# Release v1.0")
+        assert "notes" in result
+
+    def test_release_dict_falls_back_to_name(self) -> None:
+        result = _format_release_markdown({"name": "OnlyName"})
+        assert result.startswith("# Release OnlyName")
+
+    def test_user_list_renders_collection(self) -> None:
+        users = [{"login": "a"}, {"login": "b"}]
+        result = _format_user_markdown(users)
+        assert "Users - 2 items" in result
+        assert "| Login | a |" in result
+
+    def test_user_dict_detail_keeps_email_and_visibility(self) -> None:
+        """A single-user read keeps profile fields the collection drops."""
+        user = {
+            "login": "dev2",
+            "email": "dev2@home.lan",
+            "visibility": "public",
+            "is_admin": False,
+        }
+        result = _format_user_markdown(user)
+        assert "# dev2" in result
+        assert "| Email | dev2@home.lan |" in result
+        assert "| Visibility | public |" in result
+        assert "| Is Admin | False |" in result
+
+    def test_user_list_normalizes_created(self) -> None:
+        """Per-item created→created_at normalization applies in lists too."""
+        users = [{"login": "a", "created": "2024-06-01T00:00:00Z"}]
+        result = _format_user_markdown(users)
+        assert "2024-06-01" in result
+        assert "Created At" in result
+
+    def test_user_empty_list(self) -> None:
+        result = _format_user_markdown([])
+        assert "Users" in result
+
+    def test_org_dict_renders_org_fields(self) -> None:
+        """A single org read keeps username/name/description/visibility (#766)."""
+        org = {
+            "id": 26,
+            "username": "mcp-server",
+            "name": "mcp-server",
+            "full_name": "MCP Server",
+            "description": "The org",
+            "email": "org@example.com",
+            "avatar_url": "https://example.com/a.png",
+            "website": "https://example.com",
+            "location": "Earth",
+            "visibility": "public",
+            "repo_admin_change_team_access": True,
+            "created": "2026-03-21T21:10:48Z",
+        }
+        result = _format_org_markdown(org)
+        assert result.startswith("# mcp-server")
+        assert "| Username | mcp-server |" in result
+        assert "| Description | The org |" in result
+        assert "| Visibility | public |" in result
+        assert "| Created At | 2026-03-21" in result
+        # Never the user heading.
+        assert "# User" not in result
+
+    def test_org_list_renders_org_names(self) -> None:
+        """An org list titles each item by username, not login (#766)."""
+        orgs = [{"username": "alpha"}, {"username": "beta"}]
+        result = _format_org_markdown(orgs)
+        assert "Organizations - 2 items" in result
+        assert "alpha" in result
+        assert "beta" in result
+
+    def test_org_empty_list(self) -> None:
+        result = _format_org_markdown([])
+        assert "Organizations" in result
+
+    def test_org_scalar_passthrough_no_crash(self) -> None:
+        """Unexpected scalar shape renders through the generic path (#574)."""
+        result = _format_org_markdown(42)
+        assert "42" in result
+
+    def test_label_dict_detail_view(self) -> None:
+        label = {
+            "id": 1,
+            "name": "Kind/Bug",
+            "color": "ee0701",
+            "description": "desc",
+            "exclusive": True,
+            "is_archived": True,
+        }
+        result = _format_labels_markdown(label, extra={"owner": "o", "repo": "r"})
+        assert result.startswith("# Label: Kind/Bug (#1) *(archived)* for o/r")
+        assert "scope: `Kind`" in result
+        assert "**Exclusive**: Yes" in result
+        # No collection scaffolding on a detail read.
+        assert "Accepted Format" not in result
+        assert "**Total**" not in result
+
+    def test_label_dict_without_extra(self) -> None:
+        """Graceful without repo context — no dangling 'for' clause."""
+        result = _format_labels_markdown({"id": 2, "name": "bug"})
+        assert result.startswith("# Label: bug (#2)")
+        assert " for " not in result.splitlines()[0]
+
+    def test_label_list_org_scope(self) -> None:
+        """Org-scoped label tools pass ``org`` — heading shows it (#766)."""
+        result = _format_labels_markdown(
+            [{"id": 1, "name": "bug", "color": "red"}], extra={"org": "mcp-server"}
+        )
+        assert "# Labels for mcp-server" in result
+        assert "?/?" not in result
+
+    def test_label_detail_org_scope(self) -> None:
+        result = _format_labels_markdown({"id": 1, "name": "bug"}, extra={"org": "mcp-server"})
+        assert result.startswith("# Label: bug (#1) for mcp-server")
+
+    def test_label_scope_prefers_owner_over_org(self) -> None:
+        """When both are present, owner/repo wins (repo-scoped tools)."""
+        result = _format_labels_markdown(
+            [{"id": 1, "name": "bug"}],
+            extra={"owner": "o", "repo": "r", "org": "ignored"},
+        )
+        assert "# Labels for o/r" in result
+
+    def test_release_dict_detail_keeps_author_and_assets(self) -> None:
+        """A single-release read keeps author, assets, and download URLs (#766)."""
+        rel = {
+            "id": 5,
+            "tag_name": "v1.0",
+            "name": "One",
+            "body": "notes",
+            "author": {"login": "dev2"},
+            "assets": [{"id": 9, "name": "bin.tar.gz", "size": 100}],
+            "html_url": "https://example.com/releases/v1.0",
+            "target_commitish": "main",
+            "tarball_url": "https://example.com/tarball",
+            "zipball_url": "https://example.com/zipball",
+        }
+        result = _format_release_markdown(rel)
+        assert result.startswith("# Release v1.0")
+        # Nested objects render as sections; scalars as table rows.
+        assert "## Author" in result
+        assert "dev2" in result
+        assert "## Assets" in result
+        assert "bin.tar.gz" in result
+        assert "| Html Url |" in result
+        assert "| Target Commitish | main |" in result
 
 
 class TestFormatRepoMarkdown:
@@ -157,26 +443,24 @@ class TestFormatRepoMarkdown:
             "owner": {"login": "owner"},
             "html_url": "https://example.com/owner/repo",
             "default_branch": "main",
-            "stargazers_count": 42,
+            "stars_count": 42,
             "forks_count": 10,
             "open_issues_count": 5,
             "size": 1024,
             "created_at": "2024-01-01T00:00:00Z",
             "updated_at": "2024-01-15T00:00:00Z",
             "topics": ["test", "example"],
-            "license": {"name": "MIT"},
         }
         result = _format_repo_markdown(repo)
 
         assert "# owner/repo" in result
         assert "| Description | Test repo |" in result
-        # Owner renders as compact_ref flat row (login), not a nested section
-        assert "| Owner | owner |" in result
-        assert "## Owner" not in result
-        assert "| Stargazers Count | 42 |" in result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in result
+        assert "owner" in result
+        assert "| Stars Count | 42 |" in result
         assert "test" in result
         assert "example" in result
-        assert "## License" in result
 
     def test_handles_missing_fields(self) -> None:
         """Test repo with missing optional fields."""
@@ -189,9 +473,9 @@ class TestFormatRepoMarkdown:
 
         assert "# owner/repo" in result
         assert "| Property | Value |" in result
-        # Owner renders as compact_ref flat row
-        assert "| Owner | owner |" in result
-        assert "## Owner" not in result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in result
+        assert "owner" in result
 
 
 class TestResourceFormatters:
@@ -234,11 +518,10 @@ class TestResourceFormatters:
             "login": "johndoe",
             "full_name": "John Doe",
             "html_url": "https://example.com/johndoe",
-            "public_repos": 10,
             "followers_count": 5,
             "following_count": 3,
             "created_at": "2024-01-01T00:00:00Z",
-            "bio": "Software developer",
+            "description": "Software developer",
             "location": "NYC",
             "website": "https://johndoe.com",
         }
@@ -246,23 +529,19 @@ class TestResourceFormatters:
 
         assert "# johndoe" in result
         assert "| Full Name | John Doe |" in result
-        assert "| Public Repos | 10 |" in result
-        assert "| Bio | Software developer |" in result
+        assert "| Followers Count | 5 |" in result
+        assert "| Description | Software developer |" in result
 
     def test_format_user_markdown_organization(self) -> None:
-        """Test organization profile formatting."""
+        """Organization is a distinct shape — the user formatter must not claim it.
 
-        org = {
-            "login": "myorg",
-            "type": "Organization",
-            "html_url": "https://example.com/myorg",
-            "public_repos": 25,
-            "description": "A test organization",
-        }
-        result = _format_user_markdown(org)
+        The org formatter is registered separately (#766); the user formatter
+        renders whatever dict it is handed, so this locks that the *binding*
+        (not the function) routes Organization to the org view.
+        """
+        from gitea_mcp_server.format import get_formatter_for_type
 
-        assert "# myorg" in result
-        assert "| Type | Organization |" in result
+        assert get_formatter_for_type("Organization") is not get_formatter_for_type("User")
 
 
 class TestFormatterGaps:
@@ -549,7 +828,7 @@ class TestToolResourceConsistency:
         assert "## Base" not in resource_result
 
     def test_repo_format_consistent_with_shared_formatter(self) -> None:
-        """_format_repo_markdown delegates to format_as_markdown with field_filter."""
+        """_format_repo_markdown: collection whitelist for lists, full dict detail."""
 
         repo = {
             "full_name": "owner/repo",
@@ -562,9 +841,9 @@ class TestToolResourceConsistency:
         assert "# owner/repo" in resource_result
         assert "| Full Name | owner/repo |" in resource_result
         assert "| Description | Test repo |" in resource_result
-        # Owner renders as compact_ref flat row (login), not a nested section
-        assert "| Owner | owner |" in resource_result
-        assert "## Owner" not in resource_result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in resource_result
+        assert "owner" in resource_result
 
     def test_user_format_consistent_with_shared_formatter(self) -> None:
         """_format_user_markdown delegates to format_as_markdown with field_filter."""
@@ -573,7 +852,7 @@ class TestToolResourceConsistency:
             "login": "johndoe",
             "full_name": "John Doe",
             "html_url": "https://example.com/johndoe",
-            "public_repos": 10,
+            "followers_count": 10,
         }
         resource_result = _format_user_markdown(user)
         assert "# johndoe" in resource_result

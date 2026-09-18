@@ -367,11 +367,10 @@ class TestCustomResources:
                     "login": "alice",
                     "full_name": "Alice",
                     "html_url": "https://git.example.com/alice",
-                    "public_repos": 5,
                     "followers_count": 10,
                     "following_count": 3,
-                    "created_at": "2023-01-01T00:00:00Z",
-                    "bio": "Developer",
+                    "created": "2023-01-01T00:00:00Z",
+                    "description": "Developer",
                     "location": "Earth",
                     "website": "",
                 },
@@ -408,7 +407,7 @@ class TestCustomResources:
                     "default_branch": "main",
                     "html_url": "https://git.example.com/owner/repo",
                     "owner": {"login": "owner", "id": 1},
-                    "stargazers_count": 5,
+                    "stars_count": 5,
                     "forks_count": 2,
                     "open_issues_count": 1,
                     "created_at": "2024-01-01T00:00:00Z",
@@ -639,15 +638,12 @@ class TestCustomResources:
             mock.get("https://git.example.com/api/v1/orgs/myorg").respond(
                 200,
                 json={
-                    "login": "myorg",
+                    "username": "myorg",
+                    "name": "myorg",
                     "full_name": "My Org",
-                    "html_url": "https://git.example.com/myorg",
-                    "type": "Organization",
-                    "public_repos": 10,
-                    "followers_count": 0,
-                    "following_count": 0,
-                    "created_at": "2022-01-01T00:00:00Z",
-                    "bio": "",
+                    "description": "",
+                    "visibility": "public",
+                    "created": "2022-01-01T00:00:00Z",
                     "location": "",
                     "website": "",
                 },
@@ -1086,10 +1082,12 @@ class TestServerEdgeCases:
 
     @pytest.mark.asyncio
     async def test_served_instructions_line_budget(self) -> None:
-        """Served instructions respect the line-count budget (<= 300 lines).
+        """Served instructions respect the line-count budget (see history).
 
         The budget protects the agent-context economy. Raise it deliberately
-        with a comment, not by 'tidying'.
+        with a comment, not by 'tidying'.  The assertion below is the single
+        source of truth for the current number; the history explains every
+        raise.
 
         Budget history:
         - 200 lines: initial contract from #462 (proved too tight)
@@ -1107,13 +1105,15 @@ class TestServerEdgeCases:
           behaviour and list_hidden_tools in the Discovery section (#722).
         - 337 lines: raised 2026-08-26 to document read_doc's out-of-range
           message envelope in the Output format section (#727).
+        - 341 lines: raised 2026-09-15 to state the tool/resource display-parity
+          contract in the Resources section.
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 337, (
-            f"Instructions are {line_count} lines (budget: 337). "
+        assert line_count <= 341, (
+            f"Instructions are {line_count} lines (budget: 341). "
             "Increase the budget deliberately, not by trimming."
         )
 

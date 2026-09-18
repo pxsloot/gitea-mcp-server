@@ -19,8 +19,9 @@ All tool-related runtime concerns live here:
   clean_resource_uri) — formatting lives in result_pipeline
 - result_pipeline: Single result pipeline (ExecutionResult + render) shared by
   autogen and synthetic tools and read_resource
-- display: Domain-specific formatter registry (resolved by the read_resource
-  executor into markdown_formatter callables)
+- display: Domain-specific formatter plugins, registered into the format-layer
+  registry (``format.register_formatter``); the composition root (``server.py``)
+  imports the module for its registration side effect
 """
 
 from gitea_mcp_server.scope import derive_required_scope

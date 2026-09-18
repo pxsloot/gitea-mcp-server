@@ -29,6 +29,11 @@ from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.logging_config import setup_logging
 from gitea_mcp_server.response_cache import ResponseCacheMiddleware
 from gitea_mcp_server.server_setup.http_server import run_http_server
+
+# Domain formatter plugins register into the format-layer registry on import.
+# The composition root loads them explicitly; the result pipeline never
+# imports ``display`` (Result → Format → Display).
+from gitea_mcp_server.tools import display as _display  # noqa: F401
 from gitea_mcp_server.tools.docs_tools import DocManager, register_doc_tools
 from gitea_mcp_server.tools.filter_info import FilteredToolMiddleware
 

@@ -19,11 +19,19 @@ Public functions:
     _format_annotations_table - render an annotations table.
     _format_json_section - render a JSON code block section.
 
-Formatter contract:
+Formatter contract and registry:
     MarkdownFormatter - the display pipeline's markdown formatter type.  This
         module is its canonical home; other modules point here rather than
         restating the signature.  ``call_markdown_formatter`` is the single
         dispatch point.
+    register_formatter / get_formatter / get_formatter_for_type - the formatter
+        registry.  Domain formatters live in ``tools/display.py`` and register
+        here; the result pipeline resolves through :func:`resolve_formatter`
+        without importing the domain module (Result → Format, never Result →
+        Display).
+    resolve_formatter - the three-tier formatter choice (explicit per-result →
+        type-bound domain formatter → generic), the single dispatch policy
+        shared by every tool and resource.
 
 The single result pipeline for tools and resources lives in
 ``tools/result_pipeline.py``; this module provides the shared formatting
@@ -33,15 +41,16 @@ primitives it builds on.
 from __future__ import annotations
 
 import base64
+import functools
 import inspect
 import json as json_module
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
-from gitea_mcp_server.schema_utils import get_schema_type
+from gitea_mcp_server.schema_utils import extract_type_name, extract_type_ref, get_schema_type
 
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
@@ -136,6 +145,136 @@ def call_markdown_formatter(
     if "extra" in accepted:
         kwargs["extra"] = extra
     return fn(data, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Formatter registry and resolution
+# ---------------------------------------------------------------------------
+#
+# The registry lives in the format layer (not in ``tools/display.py``) so the
+# result pipeline can resolve a formatter without importing the domain
+# formatter module: Result → Format → Display.  Domain formatters
+# (``tools/display.py``) are pure plugins — they register here and hold no
+# registry state.
+
+_FORMATTERS: dict[str, MarkdownFormatter] = {}
+
+# Response-schema type name -> formatter name.  Populated
+# by ``register_formatter(types=...)``; consulted by :func:`resolve_formatter`
+# as the middle tier between an explicit per-result formatter and the generic
+# fallback.
+_TYPE_FORMATTERS: dict[str, str] = {}
+
+
+def register_formatter(
+    name: str,
+    *,
+    types: Sequence[str] = (),
+) -> Callable[[MarkdownFormatter], MarkdownFormatter]:
+    """Decorator that registers a domain-specific markdown formatter.
+
+    Domain formatters live in ``tools/display.py``; the registry itself lives
+    here so the result pipeline depends on the format layer only.
+
+    Args:
+        name: Unique name used as ``format_hint`` in resource metadata.
+        types: Response type names (e.g. ``"Issue"``) this formatter renders
+            on the tool side.  The result pipeline binds a tool's markdown
+            output to this formatter when the result's ``response_type``
+            matches one of them.
+
+    Usage::
+
+        @register_formatter("repository", types=["Repository"])
+        def _format_repo_markdown(data): ...
+    """
+
+    def deco(fn: MarkdownFormatter) -> MarkdownFormatter:
+        _FORMATTERS[name] = fn
+        for type_name in types:
+            existing = _TYPE_FORMATTERS.get(type_name)
+            if existing is not None and existing != name:
+                logger.warning(
+                    "Response type %r already bound to formatter %r; rebinding to %r",
+                    type_name,
+                    existing,
+                    name,
+                )
+            _TYPE_FORMATTERS[type_name] = name
+        return fn
+
+    return deco
+
+
+def get_formatter(name: str) -> MarkdownFormatter | None:
+    """Look up a registered formatter by name.  Returns ``None`` if not found."""
+    return _FORMATTERS.get(name)
+
+
+def get_formatter_for_type(type_name: str) -> MarkdownFormatter | None:
+    """Look up the formatter bound to a response type name (``types=``).
+
+    Returns ``None`` for unbound types — callers fall back to the generic
+    renderer (the pipeline's third tier, see :func:`resolve_formatter`).
+    """
+    formatter_name = _TYPE_FORMATTERS.get(type_name)
+    if formatter_name is None:
+        return None
+    return _FORMATTERS.get(formatter_name)
+
+
+def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None:
+    """Return the domain formatter bound to a response type name.
+
+    The binding key is the response schema's root type, carried as
+    first-class metadata rather than read back out of the schema:
+
+    - the converter stamps the operation-level ``x-response-type`` *before*
+      response-schema wrapping inlines the root ``$ref`` (which would erase
+      it) — see ``openapi_converter/type_references.py``;
+    - the tool/resource registration layers propagate it into
+      ``tool.meta["response_type"]`` / resource content meta;
+    - the contract spine and the ``read_resource`` executor put it on
+      ``ExecutionResult.response_type``.
+
+    It covers array and object responses uniformly (the stamp is the element
+    or root type).  Returns ``None`` — and the caller falls back to the
+    generic renderer — when there is no type or no formatter registered for
+    the type, so unknown types keep today's behavior exactly.
+    """
+    if not response_type:
+        return None
+    return get_formatter_for_type(response_type)
+
+
+def resolve_formatter(
+    schema: dict[str, Any] | None,
+    explicit: MarkdownFormatter | None = None,
+    response_type: str | None = None,
+) -> MarkdownFormatter:
+    """Return the formatter for a result: explicit, type-bound, or generic.
+
+    Three tiers, consulted in order:
+
+    1. ``explicit`` — an explicit per-result formatter (the resource
+       surface's ``format_hint`` resolution).
+    2. The type-bound domain formatter for ``response_type``
+       (:func:`_type_bound_formatter`) — the same view a resource
+       sibling renders, applied to autogen tools and un-hinted resources.
+    3. :func:`format_as_markdown`, with ``schema`` bound up front because
+       ``call_markdown_formatter`` dispatches only ``extra`` (never
+       ``schema`` or ``detail``).
+
+    Centralising the choice here keeps the pipeline's ``_format`` a single,
+    uniform formatter call site.  The function lives in the format layer so
+    the pipeline never imports the domain formatter module.
+    """
+    if explicit is not None:
+        return explicit
+    bound = _type_bound_formatter(response_type)
+    if bound is not None:
+        return bound
+    return functools.partial(format_as_markdown, schema=schema)
 
 
 # ---------------------------------------------------------------------------
@@ -241,10 +380,11 @@ def _format_simple_value(value: Any) -> str:
 def _extract_ref(schema: dict[str, Any] | None) -> str | None:
     """Extract a ``$ref`` pointer string from a schema dict.
 
-    Checks the schema itself and any ``anyOf``/``oneOf``/``allOf``
-    options for a ``$ref`` pointer.  Returns the full pointer (e.g.
-    ``"#/components/schemas/Repository"``) or ``None`` if no ``$ref``
-    is found.
+    Thin delegation to :func:`~gitea_mcp_server.schema_utils.extract_type_ref`
+    — the single shared root-ref notion used by the converter's pre-wrap
+    response-type stamp, the display layer's collapse walker, and the
+    type-bound formatter dispatch, so they can never disagree about whether a
+    schema *is* a reference.
 
     Args:
         schema: A JSON Schema fragment (may be ``None``).
@@ -252,27 +392,15 @@ def _extract_ref(schema: dict[str, Any] | None) -> str | None:
     Returns:
         The ``$ref`` pointer string or ``None``.
     """
-    if not schema:
-        return None
-    ref = schema.get("$ref")
-    if isinstance(ref, str):
-        return ref
-    for key in ("anyOf", "oneOf", "allOf"):
-        options = schema.get(key)
-        if isinstance(options, list):
-            for opt in options:
-                if isinstance(opt, dict):
-                    ref = opt.get("$ref")
-                    if isinstance(ref, str):
-                        return ref
-    return None
+    return extract_type_ref(schema)
 
 
 def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     """Extract a type name from a schema dict via ``$ref``.
 
-    Thin wrapper over :func:`_extract_ref` — returns the last path
-    segment (the type name) or ``None`` if no ``$ref`` is found.
+    Thin delegation to
+    :func:`~gitea_mcp_server.schema_utils.extract_type_name` — returns the
+    last path segment (the type name) or ``None`` if no ``$ref`` is found.
 
     Args:
         schema: A JSON Schema fragment (may be ``None``).
@@ -280,8 +408,7 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     Returns:
         The type name (e.g. ``"Repository"``) or ``None``.
     """
-    ref = _extract_ref(schema)
-    return ref.rsplit("/", 1)[-1] if ref else None
+    return extract_type_name(schema)
 
 
 # Alias-chasing cap for root-item resolution: a ``$ref`` whose target is
@@ -842,4 +969,8 @@ __all__ = [
     "collapse_data",
     "decode_base64_content",
     "format_as_markdown",
+    "get_formatter",
+    "get_formatter_for_type",
+    "register_formatter",
+    "resolve_formatter",
 ]

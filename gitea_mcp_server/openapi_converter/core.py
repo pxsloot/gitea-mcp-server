@@ -828,7 +828,11 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     spec reflects that same wrapping.
 
     ``$ref`` schemas (media-type level) are resolved so the wrapped schema
-    is self-contained at each response site.
+    is self-contained at each response site.  The root type name is *not*
+    recovered here: the display layer's type-binding key is stamped pre-wrap
+    as an operation-level ``x-response-type`` by
+    ``type_references.stamp_type_references``, before this
+    function inlines the ``$ref`` and erases the name.
 
     Note: Response-level ``$ref`` responses (e.g.
     ``{"$ref": "#/components/responses/empty"}``) are skipped here because

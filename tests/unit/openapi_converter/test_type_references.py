@@ -1,7 +1,8 @@
 """Unit tests for the type-reference analysis (openapi_converter.type_references).
 
 Covers ``stamp_type_references`` — the pre-wrap pass that stamps
-``x-resource-types`` on GET operations and ``x-modifies-type`` on write
+``x-response-type`` on every operation (the display layer's type-binding key,
+#760), ``x-resource-types`` on GET operations, and ``x-modifies-type`` on write
 operations for cache invalidation (issue #743).
 """
 
@@ -116,6 +117,39 @@ class TestStampTypeReferences:
         stamp_type_references(spec)
         types = spec["paths"]["/repos/{owner}/{repo}/issues"]["get"]["x-resource-types"]
         assert set(types) == {"Issue", "Label"}
+
+    def test_every_operation_gets_response_type(self) -> None:
+        """``x-response-type`` names the root/element type on every operation (#760)."""
+        spec = _make_spec()
+        stamp_type_references(spec)
+        paths = spec["paths"]
+        # Root list → element type.
+        assert paths["/repos/{owner}/{repo}/issues"]["get"]["x-response-type"] == "Issue"
+        # Object response → root type.
+        assert paths["/repos/{owner}/{repo}/labels/{id}"]["get"]["x-response-type"] == "Label"
+        # Write returning the created object → root type.
+        assert paths["/repos/{owner}/{repo}/labels"]["post"]["x-response-type"] == "Label"
+
+    def test_empty_write_has_no_response_type(self) -> None:
+        """A bodyless 204 write carries no display type (unbound)."""
+        spec = _make_spec()
+        stamp_type_references(spec)
+        assert "x-response-type" not in spec["paths"]["/repos/{owner}/{repo}/labels/{id}"]["delete"]
+
+    def test_combinator_root_response_type(self) -> None:
+        """A root wrapped in ``allOf`` stamps the referenced type name."""
+        spec = make_openapi_spec(
+            paths={"/things": {"get": {"operationId": "thingGet", "responses": {"200": {}}}}},
+            components={"schemas": {"Thing": {"type": "object", "properties": {}}}},
+        )
+        spec["paths"]["/things"]["get"]["responses"]["200"] = {
+            "description": "ok",
+            "content": {
+                "application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Thing"}]}}
+            },
+        }
+        stamp_type_references(spec)
+        assert spec["paths"]["/things"]["get"].get("x-response-type") == "Thing"
 
     def test_write_operation_gets_modified_type(self) -> None:
         """A write operation reports the type its response returns."""
@@ -252,6 +286,16 @@ class TestPrimaryType:
     def test_inline_object_no_ref(self) -> None:
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         assert _primary_type(schema) is None
+
+    def test_combinator_root_ref(self) -> None:
+        """A root wrapped in a combinator resolves via the shared helper."""
+        schema = {"allOf": [{"$ref": "#/components/schemas/Label"}]}
+        assert _primary_type(schema) == "Label"
+
+    def test_array_combinator_item_ref(self) -> None:
+        """An array whose items are combinator-wrapped resolves too."""
+        schema = {"type": "array", "items": {"anyOf": [{"$ref": "#/components/schemas/Label"}]}}
+        assert _primary_type(schema) == "Label"
 
     def test_none_schema(self) -> None:
         assert _primary_type(None) is None

@@ -575,12 +575,22 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    **`types=` binds the formatter to tools by response type (#760).** The
    format layer's `resolve_formatter` dispatches in three tiers: an
    explicit per-result `markdown_formatter` (the resource `format_hint`
-   path) → the formatter registered for the response schema's root type
-   (`$ref:Issue` on a root list's items; the `x-response-type` stamp or root
-   `$ref` on an object response — see ARCHITECTURE design decision #14) →
+   path) → the formatter registered for the result's `response_type` →
    the generic `format_as_markdown`.  So one registration gives the tool
    family the same domain view its resource sibling renders; unregistered
    types keep the generic fallback.
+
+   **The type name is first-class metadata, not read from the schema.**
+   Response-schema wrapping inlines the root `$ref` and erases the type
+   name, so the converter stamps the operation-level `x-response-type`
+   *pre-wrap* in `openapi_converter/type_references.py` (alongside
+   `x-resource-types` / `x-modifies-type`).  The registration layers
+   propagate it: `server_setup/mcp_builder.py` stores it in
+   `tool.meta["response_type"]`, and `resources/factory.py` stores it in
+   resource content meta.  The contract spine and the `read_resource`
+   executor put it on `ExecutionResult.response_type`, which the pipeline
+   passes to `resolve_formatter`.  To bind a new type, register it with
+   `types=[...]` — no schema introspection is involved.
 
    **The registry lives in `format.py`, not `display.py`.** `display.py` is a
    pure plugin set: it imports `register_formatter` from `format` and holds no

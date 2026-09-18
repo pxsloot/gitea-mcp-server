@@ -248,7 +248,7 @@ Agent reads a resource:
           ├─ format/markdown: pre-collapse + formatter (resolved by
           │   _resolve_formatter — three tiers: the result's own
           │   MarkdownFormatter, else the type-bound domain formatter for the
-          │   response schema's root type (#760), else the schema-bound
+          │   result's response_type (#760), else the schema-bound
           │   format_as_markdown fallback — then dispatched via
           │   call_markdown_formatter, which passes only the kwargs the
           │   formatter declares, e.g. extra; detail is not forwarded —
@@ -713,17 +713,20 @@ from the parameter schema.
      the strip to the whole spec -- that would silently break text/plain
      response detection and MCP extension overrides.
 
-     One schema-level extension is *added* by the converter, after the strip:
-     ``x-response-type``.  ``_wrap_response_schema()`` must inline a media-type
-     ``$ref`` to keep the wrapped output schema self-contained for FastMCP's
-     response validation -- but the inlining erases the root type name the
-     display pipeline needs for its type-bound formatter dispatch (issue #760).
-     So the wrap step stamps the name onto the inlined copy just before
-     inlining.  The stamp lives only on the *raw* schema channel
-     (``output_schema_raw`` / resource ``response_schema``);
-     ``deep_resolve_schema`` strips it from the agent-facing output schema.
-     It is our own metadata, not a Gitea leak -- do not confuse it with the
-     stripped Go extensions.
+     One operation-level extension is *added* by the converter, after the
+     strip: ``x-response-type``.  ``_wrap_response_schema()`` must inline a
+     media-type ``$ref`` to keep the wrapped output schema self-contained for
+     FastMCP's response validation -- but the inlining erases the root type
+     name the display pipeline needs for its type-bound formatter dispatch
+     (issue #760).  So ``stamp_type_references()`` (which already runs
+     pre-wrap for cache invalidation) stamps the root/element type name onto
+     the *operation* -- the same channel as ``x-resource-types`` /
+     ``x-modifies-type`` -- and the registration layers propagate it into
+     ``tool.meta["response_type"]`` and resource content meta.  It is our own
+     metadata, not a Gitea leak -- do not confuse it with the stripped Go
+     extensions.  (An earlier revision stamped the inlined *schema* and
+     stripped it in ``deep_resolve_schema``; the operation-level stamp is the
+     systemic form -- one carrier, no strip, no schema pollution.)
 
  15. **Parameter collision resolution (``body_`` prefix)** -- FastMCP's
      ``_combine_schemas_and_map_params`` detects name collisions between path
@@ -807,16 +810,22 @@ from the parameter schema.
       canonically in ``format.py``) — is resolved by
       ``format.resolve_formatter`` in three tiers: the result's own formatter
       (the resource ``format_hint`` path), else the **type-bound** domain
-      formatter for the response schema's root type
+      formatter for the result's ``response_type``
       (``register_formatter(types=...)``, issue #760 — so a
       tool renders the same curated view as its resource sibling), else the
       schema-bound ``format_as_markdown`` fallback — and is dispatched through
       ``call_markdown_formatter``, which forwards only the kwargs a formatter
-      declares (``extra``).  Formatters are pure renderers: they never
-      collapse and never carry dead params.  The registry and the resolution
-      policy live in the format layer (``format.py``), so the pipeline never
-      imports the domain formatter module ``tools/display.py`` — the plugins
-      register themselves and are loaded by ``tools/__init__.py``.
+      declares (``extra``).  The type name is first-class metadata, not
+      re-derived from the schema: the converter stamps the operation-level
+      ``x-response-type`` pre-wrap (design decision #14), the registration
+      layers store it in ``tool.meta["response_type"]`` / resource content
+      meta, and the contract spine / ``read_resource`` executor put it on
+      ``ExecutionResult.response_type``.  Formatters are pure renderers: they
+      never collapse and never carry dead params.  The registry and the
+      resolution policy live in the format layer (``format.py``), so the
+      pipeline never imports the domain formatter module ``tools/display.py``
+      — the plugins register themselves and are loaded by
+      ``tools/__init__.py``.
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

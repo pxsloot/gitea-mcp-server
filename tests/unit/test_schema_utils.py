@@ -1,11 +1,17 @@
 """Unit tests for gitea_mcp_server/schema_utils.py.
 
-Covers both exported functions:
+Covers the exported functions:
 - ``schema_type_matches`` — type-as-list-aware matching
 - ``get_schema_type`` — extract primary type from type-as-list
+- ``extract_type_ref`` / ``extract_type_name`` — shared root-ref notion
 """
 
-from gitea_mcp_server.schema_utils import get_schema_type, schema_type_matches
+from gitea_mcp_server.schema_utils import (
+    extract_type_name,
+    extract_type_ref,
+    get_schema_type,
+    schema_type_matches,
+)
 
 
 class TestSchemaTypeMatches:
@@ -108,3 +114,50 @@ class TestGetSchemaType:
     def test_type_is_non_string_non_list_returns_none(self) -> None:
         """Unexpected type value returns None."""
         assert get_schema_type({"type": 42}) is None
+
+
+class TestExtractTypeRef:
+    """Tests for extract_type_ref — the shared root-ref notion."""
+
+    def test_direct_ref(self) -> None:
+        assert extract_type_ref({"$ref": "#/components/schemas/Repository"}) == (
+            "#/components/schemas/Repository"
+        )
+
+    def test_combinator_ref(self) -> None:
+        """A root wrapped in allOf/anyOf/oneOf resolves to its first $ref."""
+        for key in ("allOf", "anyOf", "oneOf"):
+            schema = {key: [{"$ref": "#/components/schemas/User"}]}
+            assert extract_type_ref(schema) == "#/components/schemas/User"
+
+    def test_direct_ref_wins_over_combinator(self) -> None:
+        schema = {
+            "$ref": "#/components/schemas/Direct",
+            "allOf": [{"$ref": "#/components/schemas/Other"}],
+        }
+        assert extract_type_ref(schema) == "#/components/schemas/Direct"
+
+    def test_no_ref_returns_none(self) -> None:
+        assert extract_type_ref({"type": "object", "properties": {}}) is None
+
+    def test_non_dict_returns_none(self) -> None:
+        assert extract_type_ref(None) is None
+        assert extract_type_ref("not-a-schema") is None
+        assert extract_type_ref([{"$ref": "#/x/Y"}]) is None
+
+    def test_combinator_without_ref_returns_none(self) -> None:
+        assert extract_type_ref({"allOf": [{"type": "object"}]}) is None
+
+
+class TestExtractTypeName:
+    """Tests for extract_type_name — last path segment of the root ref."""
+
+    def test_direct_ref_name(self) -> None:
+        assert extract_type_name({"$ref": "#/components/schemas/Repository"}) == "Repository"
+
+    def test_combinator_ref_name(self) -> None:
+        assert extract_type_name({"allOf": [{"$ref": "#/components/schemas/Issue"}]}) == "Issue"
+
+    def test_no_ref_returns_none(self) -> None:
+        assert extract_type_name({"type": "object"}) is None
+        assert extract_type_name(None) is None

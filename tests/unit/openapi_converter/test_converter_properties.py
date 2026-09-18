@@ -460,11 +460,9 @@ class TestNoVendorExtensionsInSchemas:
         x_keys = _collect_x_keys(result)
 
         # Operation-level x-* (x-original-content-types, x-mcp, type
-        # references for cache invalidation) should survive.  So do the
-        # converter's own schema-level stamps: x-resource-types (transitive
-        # resource types) and x-response-type (display binding stamp applied
-        # by _wrap_response_schema, #760 — stripped from the agent-facing
-        # output schema by deep_resolve_schema).
+        # references for cache invalidation, and the display type-binding
+        # stamp) should survive.  These are all stamped on the operation,
+        # never on schema nodes.
         allowed_prefixes = (
             "x-original-content-types",
             "x-mcp",

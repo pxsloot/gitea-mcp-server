@@ -2538,6 +2538,55 @@ class TestBuildCustomizationMeta:
         assert meta["_customization"].route_path == "/repos/{owner}/{repo}"
         assert meta["_customization"].route_method == "GET"
 
+    def test_response_type_stored_in_meta(self) -> None:
+        """The pre-wrap response type is carried in tool.meta (#760)."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = {}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}",
+            route_method="GET",
+            response_type="Repository",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope="read:repository",
+            schema=schema,
+            has_labels=False,
+            has_no_content=False,
+        )
+
+        assert component.meta["response_type"] == "Repository"
+
+    def test_absent_response_type_omits_meta_key(self) -> None:
+        """An unbound response type leaves the meta key absent (not ``None``)."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = {}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}",
+            route_method="GET",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope="read:repository",
+            schema=schema,
+            has_labels=False,
+            has_no_content=False,
+        )
+
+        assert "response_type" not in component.meta
+
     def test_tool_customization_fields_match_schema(self) -> None:
         """ToolCustomization fields are wired from _ComputedSchema."""
         component = MagicMock(spec=OpenAPITool)

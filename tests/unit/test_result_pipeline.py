@@ -866,67 +866,44 @@ class TestResolveFormatter:
         # renders identically to calling the generic formatter with the schema.
         assert formatter(data) == format_as_markdown(data, schema=schema)
 
-    def test_root_list_items_ref_binds_domain_formatter(self) -> None:
-        """Tier 2: ``$ref:Issue`` on the root list's items binds ``issues``."""
+    def test_response_type_binds_domain_formatter(self) -> None:
+        """Tier 2: the ``response_type`` argument binds the domain formatter."""
         from gitea_mcp_server.format import get_formatter_for_type
+
+        result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
+        assert _resolve_formatter(result, None, response_type="Repository") is (
+            get_formatter_for_type("Repository")
+        )
+
+    def test_schema_ref_alone_does_not_bind(self) -> None:
+        """The type is first-class metadata, not re-derived from the schema (#760).
+
+        A schema carrying ``$ref:Issue`` with no ``response_type`` falls back
+        to the generic renderer — the binding key is the propagated type name.
+        """
+        from gitea_mcp_server.format import format_as_markdown
 
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
         result = ExecutionResult(data=[{"number": 1}], shape="list")
-        assert _resolve_formatter(result, schema) is get_formatter_for_type("Issue")
+        formatter = _resolve_formatter(result, schema)
+        assert formatter([{"number": 1}]) == format_as_markdown([{"number": 1}], schema=schema)
 
-    def test_object_root_ref_binds_domain_formatter(self) -> None:
-        """Tier 2: ``$ref:Repository`` on the root binds ``repository``."""
-        from gitea_mcp_server.format import get_formatter_for_type
-
-        schema = {"$ref": "#/components/schemas/Repository"}
-        result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
-        assert _resolve_formatter(result, schema) is get_formatter_for_type("Repository")
-
-    def test_object_stamp_binds_domain_formatter(self) -> None:
-        """Tier 2 via the converter stamp: inlined object responses bind (#760).
-
-        ``_wrap_response_schema`` resolves the media-type ``$ref`` before the
-        raw schema reaches the pipeline, leaving ``x-response-type`` as the
-        only root-type marker on the object channel.
-        """
-        from gitea_mcp_server.format import get_formatter_for_type
-
-        schema = {
-            "type": "object",
-            "properties": {"full_name": {"type": "string"}},
-            "x-response-type": "Repository",
-        }
-        result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
-        assert _resolve_formatter(result, schema) is get_formatter_for_type("Repository")
-
-    def test_unregistered_stamp_falls_back_to_generic(self) -> None:
-        """A stamp for an unbound type is not an error — generic renderer."""
+    def test_unregistered_type_falls_back_to_generic(self) -> None:
+        """Unknown types keep the generic renderer — no behavior change off the beaten path."""
         from gitea_mcp_server.format import format_as_markdown
 
-        schema = {"type": "object", "properties": {}, "x-response-type": "Widget"}
+        schema = {"type": "object", "properties": {}}
         result = ExecutionResult(data={"a": 1}, shape="object")
-        formatter = _resolve_formatter(result, schema)
+        formatter = _resolve_formatter(result, schema, response_type="Widget")
         assert formatter({"a": 1}) == format_as_markdown({"a": 1}, schema=schema)
 
-    def test_unregistered_stamp_falls_through_to_items_ref(self) -> None:
-        """An unbound stamp does not block the ``items.$ref`` binding key."""
-        from gitea_mcp_server.format import get_formatter_for_type
+    def test_empty_or_none_type_falls_back_to_generic(self) -> None:
+        """No type, empty string, or ``None`` all keep the generic renderer."""
+        from gitea_mcp_server.format import _type_bound_formatter
 
-        schema = {
-            "type": "array",
-            "items": {"$ref": "#/components/schemas/Issue"},
-            "x-response-type": "IssueList",
-        }
-        result = ExecutionResult(data=[{"number": 1}], shape="list")
-        assert _resolve_formatter(result, schema) is get_formatter_for_type("Issue")
-
-    def test_combinator_wrapped_root_ref_binds(self) -> None:
-        """``allOf``/``anyOf`` roots resolve via ``_extract_type_name`` like the collapse walker."""
-        from gitea_mcp_server.format import get_formatter_for_type
-
-        schema = {"allOf": [{"$ref": "#/components/schemas/Repository"}]}
-        result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
-        assert _resolve_formatter(result, schema) is get_formatter_for_type("Repository")
+        assert _type_bound_formatter(None) is None
+        assert _type_bound_formatter("") is None
+        assert _type_bound_formatter("Widget") is None
 
     def test_explicit_formatter_wins_over_type_binding(self) -> None:
         """Tier 1 beats tier 2 — the resource ``format_hint`` path is unchanged."""
@@ -934,43 +911,35 @@ class TestResolveFormatter:
         def _fmt(data: Any) -> str:
             return "custom"
 
-        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
         result = ExecutionResult(data=[], shape="list", markdown_formatter=_fmt)
-        assert _resolve_formatter(result, schema) is _fmt
+        assert _resolve_formatter(result, None, response_type="Issue") is _fmt
 
-    def test_unregistered_type_falls_back_to_generic(self) -> None:
-        """Unknown types keep the generic renderer — no behavior change off the beaten path."""
-        from gitea_mcp_server.format import format_as_markdown
 
-        schema = {"$ref": "#/components/schemas/Widget"}
-        result = ExecutionResult(data={"a": 1}, shape="object")
-        formatter = _resolve_formatter(result, schema)
-        assert formatter({"a": 1}) == format_as_markdown({"a": 1}, schema=schema)
+class TestResponseTypePrecedence:
+    """``ExecutionResult.response_type`` beats ``render(response_type=...)`` (#760)."""
 
-    def test_inline_item_schema_falls_back_to_generic(self) -> None:
-        """A root list with inline (no-$ref) items is not type-bound."""
-        from gitea_mcp_server.format import format_as_markdown
+    def test_result_response_type_wins_over_render_argument(self) -> None:
+        """Per-URI ``read_resource`` type wins over the tool-level meta value."""
+        result = ExecutionResult(
+            data=[{"number": 1, "title": "T"}],
+            shape="list",
+            response_type="Issue",
+        )
+        out = render(result, fmt="markdown", response_type="Repository")
+        text = extract_text_content(out.content)
+        assert "Issues - 1 items" in text
+        assert "Repositories" not in text
 
-        schema = {
-            "type": "array",
-            "items": {"type": "object", "properties": {"a": {"type": "integer"}}},
-        }
-        result = ExecutionResult(data=[{"a": 1}], shape="list")
-        formatter = _resolve_formatter(result, schema)
-        assert formatter([{"a": 1}]) == format_as_markdown([{"a": 1}], schema=schema)
-
-    def test_non_dict_items_schema_is_ignored(self) -> None:
-        """Tuple-form / malformed ``items`` never reach the type lookup."""
-        from gitea_mcp_server.format import _type_bound_formatter
-
-        assert _type_bound_formatter({"type": "array", "items": [{"type": "string"}]}) is None
-
-    def test_non_dict_schema_is_ignored(self) -> None:
-        """A non-dict schema (defensive) skips the binding without crashing."""
-        from gitea_mcp_server.format import _type_bound_formatter
-
-        assert _type_bound_formatter(["not", "a", "schema"]) is None  # type: ignore[arg-type]
-        assert _type_bound_formatter(None) is None
+    def test_render_argument_used_when_result_has_none(self) -> None:
+        """Tool-level ``render(response_type=...)`` binds when the result has none."""
+        result = ExecutionResult(data=[{"id": 1, "name": "bug"}], shape="list")
+        out = render(
+            result,
+            fmt="markdown",
+            response_type="Label",
+            extra={"owner": "o", "repo": "r"},
+        )
+        assert "# Labels for o/r" in extract_text_content(out.content)
 
 
 class TestExtraForwarding:
@@ -1009,11 +978,10 @@ class TestExtraForwarding:
 
     def test_type_bound_formatter_receives_extra(self) -> None:
         """The labels view gets ``owner``/``repo`` from the call context."""
-        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Label"}}
         out = render(
             ExecutionResult(data=[{"id": 1, "name": "bug"}], shape="list"),
             fmt="markdown",
-            schema=schema,
+            response_type="Label",
             extra={"owner": "o", "repo": "r"},
         )
         text = extract_text_content(out.content)
@@ -1023,11 +991,10 @@ class TestExtraForwarding:
 
     def test_json_channel_unaffected_by_type_binding(self) -> None:
         """Formatters are a markdown-channel concern — json keeps the envelope."""
-        schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
         out = render(
             ExecutionResult(data=[{"number": 1}], shape="list", total_count=1, paginated=True),
             fmt="json",
-            schema=schema,
+            response_type="Issue",
         )
         parsed = parse_json_content(out)
         assert parsed["result"] == [{"number": 1}]

@@ -20,11 +20,17 @@ from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
-def _make_tool(*, raw_schema: dict[str, Any] | None = None) -> Tool:
-    """Minimal Tool whose meta optionally carries ``output_schema_raw``."""
+def _make_tool(
+    *,
+    raw_schema: dict[str, Any] | None = None,
+    response_type: str | None = None,
+) -> Tool:
+    """Minimal Tool whose meta optionally carries display pipeline metadata."""
     meta: dict[str, Any] = {}
     if raw_schema is not None:
         meta["output_schema_raw"] = raw_schema
+    if response_type is not None:
+        meta["response_type"] = response_type
     return Tool(
         name="test_tool",
         description="A test tool.",
@@ -318,7 +324,11 @@ class TestDisplayExtraDerivation:
     """
 
     @staticmethod
-    async def _run_transform(**call_kwargs: Any) -> dict[str, Any]:
+    async def _run_transform(
+        *,
+        tool: Tool | None = None,
+        **call_kwargs: Any,
+    ) -> dict[str, Any]:
         """Run the spine with a spy on ``render``; return the captured kwargs."""
         from gitea_mcp_server.tools import contract as contract_module
 
@@ -340,7 +350,7 @@ class TestDisplayExtraDerivation:
             ) -> ExecutionResult:
                 return ExecutionResult(data=[], shape="list")
 
-            transform_fn = build_transform_fn(_make_tool(), executor)
+            transform_fn = build_transform_fn(tool or _make_tool(), executor)
             await transform_fn(**call_kwargs)
             return seen
         finally:
@@ -361,6 +371,18 @@ class TestDisplayExtraDerivation:
         """Tools without repo scope pass ``None`` — formatters use graceful defaults."""
         seen = await self._run_transform(q="x", format="json")
         assert seen["extra"] is None
+
+    @pytest.mark.asyncio
+    async def test_response_type_forwarded_from_tool_meta(self) -> None:
+        """The spine reads ``tool.meta["response_type"]`` into ``render`` (#760)."""
+        seen = await self._run_transform(tool=_make_tool(response_type="Repository"), format="json")
+        assert seen["response_type"] == "Repository"
+
+    @pytest.mark.asyncio
+    async def test_absent_response_type_is_none(self) -> None:
+        """A tool without the meta key passes ``None`` — generic renderer."""
+        seen = await self._run_transform(format="json")
+        assert seen["response_type"] is None
 
     def test_none_values_dropped(self) -> None:
         """A param explicitly set to ``None`` is not forwarded as context."""

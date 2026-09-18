@@ -504,11 +504,13 @@ class TestEnrichResponseSchemas:
         assert "result" in schema["properties"]
         assert "id" in schema["properties"]["result"]["properties"]
         assert "$ref" not in schema
-        # The inlined root keeps its type name for the display binding (#760).
-        assert schema["properties"]["result"]["x-response-type"] == "Item"
+        # The display type-binding key is an operation-level stamp applied
+        # pre-wrap (type_references.stamp_type_references, #760) — the wrap
+        # step must not inject schema-level pipeline metadata.
+        assert "x-response-type" not in schema["properties"]["result"]
 
     def test_array_response_not_stamped(self) -> None:
-        """Inline array responses keep their ``items.$ref`` — no stamp needed (#760)."""
+        """Wrapping injects no schema-level display metadata (#760)."""
         spec: OpenAPISpec = {
             "paths": {
                 "/items": {
@@ -592,8 +594,8 @@ class TestEnrichResponseSchemas:
         assert schema["type"] == "object"
         assert "result" in schema["properties"]
         assert "version" in schema["properties"]["result"]["properties"]
-        # Inlined shared-response schema carries the binding stamp too (#760).
-        assert schema["properties"]["result"]["x-response-type"] == "ServerVersion"
+        # No schema-level display stamp — the type binding is operation-level.
+        assert "x-response-type" not in schema["properties"]["result"]
 
     def test_wraps_primitive_schema(self) -> None:
         """Primitive (string) response schemas should be wrapped in result object."""

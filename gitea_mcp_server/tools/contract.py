@@ -30,10 +30,11 @@ for both tool families:
        (data, total_count, result shape).  The single result pipeline
        (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
        shape → paginate → format → ``ToolResult``.
-    5. Attach ``_raw_schema`` to the extracted dict so the pipeline can
-       render schema-aware output (``detail=concise``), and derive the
-       formatter context (``extra``) from the call's path/query args so a
-       type-bound domain formatter sees repo/type context (issue #760).
+    5. Attach ``_raw_schema`` and ``response_type`` (both read from
+       ``tool.meta``) so the pipeline can render schema-aware output
+       (``detail=concise``) and dispatch a type-bound domain markdown
+       formatter (#760), and derive the formatter context (``extra``) from the
+       call's path/query args so the formatter sees repo/type context.
     6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
@@ -190,6 +191,12 @@ def build_transform_fn(
         # format, etc.
         virtual_values["_raw_schema"] = (tool.meta or {}).get("output_schema_raw")
 
+        # Display type-binding key (#760): the pre-wrap response type the
+        # registration layer stored in tool.meta (same channel as
+        # ``output_schema_raw``).  The pipeline maps it to a domain markdown
+        # formatter; absent means the generic renderer.
+        response_type = (tool.meta or {}).get("response_type")
+
         # Executors return raw data; the single result pipeline renders it.
         # Run post-hooks on the rendered ToolResult and return.
         return apply_to(
@@ -202,6 +209,7 @@ def build_transform_fn(
                 fetch_all=virtual_values.get("fetch_all", False),
                 schema=virtual_values.get("_raw_schema"),
                 extra=display_extra,
+                response_type=response_type,
                 openapi_spec=openapi_spec,
             ),
             virtual_values,

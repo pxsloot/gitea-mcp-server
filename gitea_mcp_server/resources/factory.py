@@ -84,7 +84,11 @@ from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.surface import register_resource_surface
 from gitea_mcp_server.scope import has_sufficient_scope
-from gitea_mcp_server.tools.schemas import get_success_schema, unwrap_result_schema
+from gitea_mcp_server.tools.schemas import (
+    get_response_type,
+    get_success_schema,
+    unwrap_result_schema,
+)
 from gitea_mcp_server.uri_utils import clean_resource_uri
 
 logger = logging.getLogger(__name__)
@@ -388,6 +392,7 @@ def _build_handler_meta(
     *,
     response_schema: dict[str, Any] | None = None,
     format_hint: str | None = None,
+    response_type: str | None = None,
     **extra: Any,
 ) -> dict[str, Any] | None:
     """Build the content metadata dict for a JSON resource response.
@@ -397,17 +402,25 @@ def _build_handler_meta(
     Registration-level metadata (``optional_params``, ``cache_ttl``) is set
     directly in ``make_api_resource()``, not here.
 
+    ``response_type`` is the converter's pre-wrap ``x-response-type`` stamp
+    (the display layer's type-binding key, #760).  Like ``response_schema``
+    and ``format_hint`` it is *known* pipeline metadata — ``_mcp_read_resource_impl``
+    strips it out of the formatter ``extra`` and surfaces it separately.
+
     Extra keyword arguments are merged on top of the standard keys.  The
-    display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``
-    and ``format_hint`` and surfaces everything else as the ``extra`` dict
-    passed to domain formatters — useful for forwarding handler context
-    like path params (``owner``, ``repo``) or query params (``type``).
+    display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``,
+    ``format_hint``, and ``response_type`` and surfaces everything else as
+    the ``extra`` dict passed to domain formatters — useful for forwarding
+    handler context like path params (``owner``, ``repo``) or query params
+    (``type``).
     """
     meta: dict[str, Any] = {}
     if response_schema is not None:
         meta["response_schema"] = response_schema
     if format_hint is not None:
         meta["format_hint"] = format_hint
+    if response_type is not None:
+        meta["response_type"] = response_type
     meta.update(extra)
     return meta if meta else None
 
@@ -420,6 +433,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
     params: dict[str, Any] | None = None,
     response_schema: dict[str, Any] | None,
     format_hint: str | None,
+    response_type: str | None,
     resource_type: str,
     error_message: str,
     uri: str,
@@ -446,6 +460,8 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
         params: Optional query params dict passed to the API request.
         response_schema: Unwrapped inner response schema for display layer.
         format_hint: Registered formatter name for markdown rendering.
+        response_type: Pre-wrap ``x-response-type`` stamp for the display
+            layer's type-bound formatter dispatch (#760).
         resource_type: Machine-readable resource type for error responses.
         error_message: User-facing 404 error message, possibly a template
             expanded with ``error_kwargs``.
@@ -530,6 +546,7 @@ async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inpu
                 meta=_build_handler_meta(
                     response_schema=response_schema,
                     format_hint=format_hint,
+                    response_type=response_type,
                     **(handler_extra_meta or {}),
                 ),
             ),
@@ -836,6 +853,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     response_schema = (
         None if handler_hook else _auto_derive_schema(openapi_spec, api_path, method_lower)
     )
+    # Display type-binding key (#760): the operation's pre-wrap
+    # ``x-response-type`` stamp.  Skipped for text/plain ``handler_hook``
+    # resources (no JSON response type) and when no spec is available.
+    response_type = (
+        get_response_type(openapi_spec, api_path, method_lower)
+        if openapi_spec is not None and handler_hook is None
+        else None
+    )
     if response_schema is None and openapi_spec is not None and handler_hook is None:
         paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
         if paths:
@@ -966,6 +991,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 params=query_kwargs or None,
                 response_schema=response_schema,
                 format_hint=format_hint,
+                response_type=response_type,
                 resource_type=effective_resource_type,
                 error_message=error_message,
                 uri=uri,
@@ -993,6 +1019,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                 api_path,
                 response_schema=response_schema,
                 format_hint=format_hint,
+                response_type=response_type,
                 resource_type=_resource_type,
                 error_message=error_message,
                 uri=uri,

@@ -67,6 +67,7 @@ from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.schemas import (
     derive_output_schema,
+    get_response_type,
     get_success_schema,
     is_text_response,
     response_has_no_content,
@@ -186,6 +187,10 @@ class _ComputedSchema(NamedTuple):
     route identity that share the same path/method into a single call.
     Consumers use typed attribute access instead of reaching into
     ``tool.meta`` or re-extracting from ``route``.
+
+    ``response_type`` is the operation's pre-wrap ``x-response-type`` stamp
+    (the display layer's type-binding key, #760); it is stored in
+    ``tool.meta["response_type"]`` for the result pipeline.
     """
 
     output_schema: dict[str, Any] | None
@@ -195,6 +200,7 @@ class _ComputedSchema(NamedTuple):
     response_transform: str | None
     route_path: str
     route_method: str
+    response_type: str | None = None
 
 
 def _compute_tool_schema(
@@ -203,7 +209,7 @@ def _compute_tool_schema(
 ) -> _ComputedSchema:
     """Compute output schema, raw schema, and response classification.
 
-    Six spec queries that share the same route path/method are bundled
+    Seven spec queries that share the same route path/method are bundled
     into a single pure function.  ContentsResponse detection (the
     authoritative ``encoding`` + ``content`` fallback for Forgejo compat)
     is applied here because it depends on the derived ``output_schema``.
@@ -239,6 +245,11 @@ def _compute_tool_schema(
 
     is_binary_response = _response_is_binary(openapi_spec, path, method)
 
+    # Pre-wrap ``x-response-type`` stamp — the display layer's type-binding
+    # key (#760).  Read from the operation, never from the schema: wrapping
+    # inlines the root ``$ref`` and erases the name.
+    response_type = get_response_type(openapi_spec, path, method)
+
     return _ComputedSchema(
         output_schema,
         raw_schema,
@@ -247,6 +258,7 @@ def _compute_tool_schema(
         response_transform,
         path,
         method,
+        response_type,
     )
 
 
@@ -432,7 +444,8 @@ def _build_customization_meta(
     """Build and attach the ``component.meta`` dict consumed by runtime transforms.
 
     Mutates ``component.meta`` in-place.  Sets ``required_scope``,
-    ``output_schema_raw``, ``_customization``, and ``_WRAP_ME``.
+    ``output_schema_raw``, ``response_type``, ``_customization``, and
+    ``_WRAP_ME``.
 
     All per-tool metadata comes from ``schema`` (:class:`_ComputedSchema`)
     — no direct ``route`` or ``openapi_spec`` access needed.
@@ -442,6 +455,13 @@ def _build_customization_meta(
 
     if schema.raw_schema is not None:
         component_meta["output_schema_raw"] = unwrap_result_schema(schema.raw_schema)
+
+    # Display type-binding key (#760): the pre-wrap response type the result
+    # pipeline maps to a domain markdown formatter.  Carried in tool.meta —
+    # the same channel as ``output_schema_raw`` — because the root ``$ref``
+    # is erased when the schema is wrapped/inlined.
+    if schema.response_type is not None:
+        component_meta["response_type"] = schema.response_type
 
     component_meta["_customization"] = ToolCustomization(
         has_labels=has_labels,

@@ -252,7 +252,11 @@ class TestContextMetaKeysPipeline:
         """_extract_extra_meta returns None when only known keys are present."""
         from gitea_mcp_server.tools.mcp_tools import _extract_extra_meta
 
-        meta_only_known = {"response_schema": {}, "format_hint": "repository"}
+        meta_only_known = {
+            "response_schema": {},
+            "format_hint": "repository",
+            "response_type": "Repository",
+        }
         extra = _extract_extra_meta(meta_only_known)
         assert extra is None
 
@@ -282,3 +286,19 @@ class TestContextMetaKeysPipeline:
         )
         tool_result = render(result, fmt="markdown")
         assert "Pull Requests - 1 items" in extract_text_content(tool_result.content)
+
+    def test_resource_response_type_flows_through_pipeline(self) -> None:
+        """A resource with no ``format_hint`` still gets the domain view (#760).
+
+        The factory stores the pre-wrap ``x-response-type`` in content meta;
+        the executor surfaces it as ``ExecutionResult.response_type``; the
+        pipeline binds the type-bound formatter (tier 2).
+        """
+        from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
+
+        data = [{"number": 1, "title": "Bug", "state": "open"}]
+        result = ExecutionResult(data=data, shape="object", response_type="Issue")
+        tool_result = render(result, fmt="markdown")
+        text = extract_text_content(tool_result.content)
+        assert "Issues - 1 items" in text
+        assert "| Title | Bug |" in text

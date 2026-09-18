@@ -50,7 +50,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
-from gitea_mcp_server.schema_utils import get_schema_type, schema_type_matches
+from gitea_mcp_server.schema_utils import extract_type_name, extract_type_ref, get_schema_type
 
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
@@ -159,7 +159,7 @@ def call_markdown_formatter(
 
 _FORMATTERS: dict[str, MarkdownFormatter] = {}
 
-# Response-schema type name -> formatter name (the #760 binding).  Populated
+# Response-schema type name -> formatter name.  Populated
 # by ``register_formatter(types=...)``; consulted by :func:`resolve_formatter`
 # as the middle tier between an explicit per-result formatter and the generic
 # fallback.
@@ -178,11 +178,10 @@ def register_formatter(
 
     Args:
         name: Unique name used as ``format_hint`` in resource metadata.
-        types: Response-schema type names (``$ref`` roots, e.g. ``"Issue"``)
-            this formatter renders on the tool side.  The result pipeline
-            binds a tool's markdown output to this formatter when the
-            response schema's root type (or a root list's item type) matches
-            one of them (issue #760).
+        types: Response type names (e.g. ``"Issue"``) this formatter renders
+            on the tool side.  The result pipeline binds a tool's markdown
+            output to this formatter when the result's ``response_type``
+            matches one of them.
 
     Usage::
 
@@ -216,45 +215,34 @@ def get_formatter_for_type(type_name: str) -> MarkdownFormatter | None:
     return _FORMATTERS.get(formatter_name)
 
 
-def _type_bound_formatter(schema: dict[str, Any] | None) -> MarkdownFormatter | None:
-    """Return the domain formatter bound to the result's response type (#760).
+def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None:
+    """Return the domain formatter bound to a response type name.
 
-    The binding key is the response schema's root type, read from the raw
-    (un-deep-resolved) schema channel — two shapes, one lookup:
+    The binding key is the response schema's root type, carried as
+    first-class metadata rather than read back out of the schema:
 
-    - **Root list** (``issue_list_issues``): the item ``$ref``
-      (``$ref:Issue``) — array responses are inline schemas whose item refs
-      the converter never resolves.
-    - **Object response** (``repo_get``): the ``x-response-type`` stamp the
-      converter applies when it inlines a media-type ``$ref`` during
-      response wrapping (``_wrap_response_schema``) — the root ``$ref`` is
-      gone by then, so the stamp carries the name.  A root ``$ref`` (inline
-      callers, synthetic schemas) is honoured too via ``_extract_type_name``.
+    - the converter stamps the operation-level ``x-response-type`` *before*
+      response-schema wrapping inlines the root ``$ref`` (which would erase
+      it) — see ``openapi_converter/type_references.py``;
+    - the tool/resource registration layers propagate it into
+      ``tool.meta["response_type"]`` / resource content meta;
+    - the contract spine and the ``read_resource`` executor put it on
+      ``ExecutionResult.response_type``.
 
-    Returns ``None`` — and the caller falls back to the generic renderer —
-    when there is no schema, no type, or no formatter registered for the
-    type.  Unknown types therefore keep today's behavior exactly.
+    It covers array and object responses uniformly (the stamp is the element
+    or root type).  Returns ``None`` — and the caller falls back to the
+    generic renderer — when there is no type or no formatter registered for
+    the type, so unknown types keep today's behavior exactly.
     """
-    if not isinstance(schema, dict):
+    if not response_type:
         return None
-    type_names: list[str] = []
-    stamped = schema.get("x-response-type")
-    if isinstance(stamped, str) and stamped:
-        type_names.append(stamped)
-    source = schema.get("items") if schema_type_matches(schema, "array") else schema
-    ref_name = _extract_type_name(source if isinstance(source, dict) else None)
-    if ref_name is not None:
-        type_names.append(ref_name)
-    for type_name in type_names:
-        formatter = get_formatter_for_type(type_name)
-        if formatter is not None:
-            return formatter
-    return None
+    return get_formatter_for_type(response_type)
 
 
 def resolve_formatter(
     schema: dict[str, Any] | None,
     explicit: MarkdownFormatter | None = None,
+    response_type: str | None = None,
 ) -> MarkdownFormatter:
     """Return the formatter for a result: explicit, type-bound, or generic.
 
@@ -262,8 +250,8 @@ def resolve_formatter(
 
     1. ``explicit`` — an explicit per-result formatter (the resource
        surface's ``format_hint`` resolution).
-    2. The type-bound domain formatter for the response schema's root type
-       (:func:`_type_bound_formatter`, #760) — the same view a resource
+    2. The type-bound domain formatter for ``response_type``
+       (:func:`_type_bound_formatter`) — the same view a resource
        sibling renders, applied to autogen tools and un-hinted resources.
     3. :func:`format_as_markdown`, with ``schema`` bound up front because
        ``call_markdown_formatter`` dispatches only ``extra`` (never
@@ -275,7 +263,7 @@ def resolve_formatter(
     """
     if explicit is not None:
         return explicit
-    bound = _type_bound_formatter(schema)
+    bound = _type_bound_formatter(response_type)
     if bound is not None:
         return bound
     return functools.partial(format_as_markdown, schema=schema)
@@ -384,10 +372,11 @@ def _format_simple_value(value: Any) -> str:
 def _extract_ref(schema: dict[str, Any] | None) -> str | None:
     """Extract a ``$ref`` pointer string from a schema dict.
 
-    Checks the schema itself and any ``anyOf``/``oneOf``/``allOf``
-    options for a ``$ref`` pointer.  Returns the full pointer (e.g.
-    ``"#/components/schemas/Repository"``) or ``None`` if no ``$ref``
-    is found.
+    Thin delegation to :func:`~gitea_mcp_server.schema_utils.extract_type_ref`
+    — the single shared root-ref notion used by the converter's pre-wrap
+    response-type stamp, the display layer's collapse walker, and the
+    type-bound formatter dispatch, so they can never disagree about whether a
+    schema *is* a reference.
 
     Args:
         schema: A JSON Schema fragment (may be ``None``).
@@ -395,27 +384,15 @@ def _extract_ref(schema: dict[str, Any] | None) -> str | None:
     Returns:
         The ``$ref`` pointer string or ``None``.
     """
-    if not schema:
-        return None
-    ref = schema.get("$ref")
-    if isinstance(ref, str):
-        return ref
-    for key in ("anyOf", "oneOf", "allOf"):
-        options = schema.get(key)
-        if isinstance(options, list):
-            for opt in options:
-                if isinstance(opt, dict):
-                    ref = opt.get("$ref")
-                    if isinstance(ref, str):
-                        return ref
-    return None
+    return extract_type_ref(schema)
 
 
 def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     """Extract a type name from a schema dict via ``$ref``.
 
-    Thin wrapper over :func:`_extract_ref` — returns the last path
-    segment (the type name) or ``None`` if no ``$ref`` is found.
+    Thin delegation to
+    :func:`~gitea_mcp_server.schema_utils.extract_type_name` — returns the
+    last path segment (the type name) or ``None`` if no ``$ref`` is found.
 
     Args:
         schema: A JSON Schema fragment (may be ``None``).
@@ -423,8 +400,7 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     Returns:
         The type name (e.g. ``"Repository"``) or ``None``.
     """
-    ref = _extract_ref(schema)
-    return ref.rsplit("/", 1)[-1] if ref else None
+    return extract_type_name(schema)
 
 
 # Alias-chasing cap for root-item resolution: a ``$ref`` whose target is

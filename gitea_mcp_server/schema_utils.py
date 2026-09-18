@@ -49,6 +49,57 @@ def schema_type_matches(schema: dict[str, Any], expected: str) -> bool:
     return False
 
 
+def extract_type_ref(schema: Any) -> str | None:
+    """Return the first ``$ref`` pointer at a schema's root or in a combinator.
+
+    Checks the schema itself and any ``anyOf``/``oneOf``/``allOf`` options
+    for a ``$ref`` pointer.  Returns the full pointer (e.g.
+    ``"#/components/schemas/Repository"``) or ``None`` if no ``$ref`` is
+    found.
+
+    The lookup is deliberately shallow: it does not resolve the pointer or
+    follow alias chains.  Callers that need the referenced schema resolve it
+    against the spec.  This is the shared root-ref notion used by the
+    converter's pre-wrap response-type stamp and the display layer's
+    type-bound formatter dispatch, so the two can never disagree about
+    whether a schema *is* a reference.
+
+    Args:
+        schema: A JSON Schema fragment (may be ``None`` or non-dict).
+
+    Returns:
+        The ``$ref`` pointer string or ``None``.
+    """
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return ref
+    for key in ("anyOf", "oneOf", "allOf"):
+        options = schema.get(key)
+        if isinstance(options, list):
+            for option in options:
+                if isinstance(option, dict):
+                    option_ref = option.get("$ref")
+                    if isinstance(option_ref, str):
+                        return option_ref
+    return None
+
+
+def extract_type_name(schema: Any) -> str | None:
+    """Extract a type name from a schema via :func:`extract_type_ref`.
+
+    Args:
+        schema: A JSON Schema fragment (may be ``None``).
+
+    Returns:
+        The last path segment of the first ``$ref`` found (e.g.
+        ``"Repository"``) or ``None`` when the schema carries no reference.
+    """
+    ref = extract_type_ref(schema)
+    return ref.rsplit("/", 1)[-1] if ref else None
+
+
 def get_schema_type(schema: dict[str, Any]) -> str | None:
     """Extract the primary type name from a schema, resolving type-as-list.
 
@@ -85,6 +136,8 @@ def get_schema_type(schema: dict[str, Any]) -> str | None:
 
 
 __all__ = [
+    "extract_type_name",
+    "extract_type_ref",
     "get_schema_type",
     "schema_type_matches",
 ]

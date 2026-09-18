@@ -73,10 +73,6 @@ def deep_resolve_schema(
 ) -> dict[str, Any]:
     """Recursively resolve all $ref pointers in a schema against the spec.
 
-    The converter's ``x-response-type`` display-binding stamp (stamped by
-    ``_wrap_response_schema``, #760) is stripped here: it is pipeline-internal
-    metadata consumed from the *raw* schema channel, never agent-facing.
-
     Args:
         schema: Schema tree (individual JSON Schema node, typed ``Any``
                 because property names are dynamic).
@@ -93,8 +89,6 @@ def deep_resolve_schema(
     _seen = _seen or set()
 
     for key, value in schema.items():
-        if key == "x-response-type":
-            continue  # display-binding stamp — raw channel only, not agent-facing
         if key == "$ref" and isinstance(value, str):
             if value in _seen:
                 result[key] = value
@@ -293,6 +287,42 @@ def get_success_schema(  # noqa: PLR0911 - many early returns for guard clauses
     return None
 
 
+def get_response_type(
+    openapi_spec: OpenAPISpec,
+    path: str,
+    method: str,
+) -> str | None:
+    """Read the operation-level ``x-response-type`` stamp for a route.
+
+    The converter stamps the root (or element) type name of every operation's
+    success response *before* response-schema wrapping inlines the root
+    ``$ref`` and erases it (``openapi_converter/type_references.py``, #760).
+    The registration layers propagate this into ``tool.meta["response_type"]``
+    and resource content meta; the result pipeline binds a domain markdown
+    formatter by it.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.
+        path: The API path (spec path template, e.g. ``"/repos/{owner}/{repo}"``).
+        method: The HTTP method (case-insensitive).
+
+    Returns:
+        The stamped type name (e.g. ``"Repository"``), or ``None`` when the
+        operation is absent or carries no stamp (text/empty/inline responses).
+    """
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    path_item = paths.get(path)
+    if not isinstance(path_item, dict):
+        return None
+    operation = path_item.get(method.lower())
+    if not isinstance(operation, dict):
+        return None
+    response_type = operation.get("x-response-type")
+    if isinstance(response_type, str) and response_type:
+        return response_type
+    return None
+
+
 def derive_output_schema(
     route: Any,
     openapi_spec: OpenAPISpec | None,
@@ -372,6 +402,7 @@ __all__ = [
     "collect_refs",
     "deep_resolve_schema",
     "derive_output_schema",
+    "get_response_type",
     "get_success_schema",
     "is_object_type",
     "is_text_response",

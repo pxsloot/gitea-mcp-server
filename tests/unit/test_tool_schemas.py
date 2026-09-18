@@ -18,6 +18,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
 from gitea_mcp_server.tools.schemas import (
     deep_resolve_schema,
     derive_output_schema,
+    get_response_type,
     get_success_schema,
     is_object_type,
     is_text_response,
@@ -228,12 +229,12 @@ class TestDeriveOutputSchema:
         assert "id" in schema["properties"]
         assert "name" in schema["properties"]
 
-    def test_response_type_stamp_stripped_from_agent_schema(self) -> None:
-        """``x-response-type`` (#760 binding stamp) stays off the agent-facing schema.
+    def test_response_type_read_from_operation_stamp(self) -> None:
+        """``get_response_type`` reads the pre-wrap operation-level stamp (#760).
 
-        The converter stamps inlined root schemas; the raw channel keeps the
-        stamp (the pipeline reads it for type binding), while the deep-resolved
-        output schema must not leak it to agents.
+        The converter stamps ``x-response-type`` on the operation before
+        response-schema wrapping inlines the root ``$ref``; the registration
+        layer reads it here.  Method matching is case-insensitive.
         """
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -241,35 +242,24 @@ class TestDeriveOutputSchema:
                 "/repos/{owner}/{repo}": {
                     "get": {
                         "responses": {
-                            "200": {
-                                "content": {
-                                    "application/json": {
-                                        "schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                "result": {
-                                                    "type": "object",
-                                                    "properties": {"id": {"type": "integer"}},
-                                                    "x-response-type": "Repository",
-                                                }
-                                            },
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                            "200": {"content": {"application/json": {"schema": {"type": "object"}}}}
+                        },
                     }
                 }
             },
             "components": {"schemas": {}},
         }
-        resolved = get_success_schema(spec, "/repos/{owner}/{repo}", "get")
-        assert resolved is not None
-        assert "x-response-type" not in resolved["properties"]["result"]
-        # The raw (unresolved) channel keeps the stamp for the binding.
-        raw = get_success_schema(spec, "/repos/{owner}/{repo}", "get", resolve=False)
-        assert raw is not None
-        assert raw["properties"]["result"]["x-response-type"] == "Repository"
+        # The stamp is hyphenated on the wire; TypedDict keys cannot be.
+        spec["paths"]["/repos/{owner}/{repo}"]["get"]["x-response-type"] = "Repository"  # type: ignore[typeddict-unknown-key]
+        assert get_response_type(spec, "/repos/{owner}/{repo}", "get") == "Repository"
+        assert get_response_type(spec, "/repos/{owner}/{repo}", "GET") == "Repository"
+
+    def test_response_type_absent_returns_none(self) -> None:
+        """No stamp, missing path, or missing method → ``None`` (unbound)."""
+        spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {"/x": {"get": {"responses": {}}}}}
+        assert get_response_type(spec, "/x", "get") is None
+        assert get_response_type(spec, "/missing", "get") is None
+        assert get_response_type(spec, "/x", "post") is None
 
     def test_no_content_response_returns_none(self) -> None:
         """204 No Content responses should return None."""
@@ -1281,7 +1271,6 @@ class TestGetSuccessSchema:
 
     def test_non_dict_responses(self) -> None:
         """When responses is not a dict, should return None."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec = cast(
             "OpenAPISpec",
@@ -1300,7 +1289,6 @@ class TestGetSuccessSchema:
 
     def test_ref_resolves_to_non_dict(self) -> None:
         """When $ref in response resolves to non-dict, should continue to next status code."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1336,7 +1324,6 @@ class TestGetSuccessSchema:
 
     def test_non_dict_content(self) -> None:
         """When content is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1359,7 +1346,6 @@ class TestGetSuccessSchema:
 
     def test_non_dict_json_content(self) -> None:
         """When application/json content is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1387,7 +1373,6 @@ class TestGetSuccessSchema:
 
     def test_non_dict_schema(self) -> None:
         """When schema is not a dict, should continue."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1419,7 +1404,6 @@ class TestGetRawSuccessSchema:
 
     def test_inline_schema_keeps_ref_intact(self) -> None:
         """resolve=False should return schema with $ref intact."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1465,7 +1449,6 @@ class TestGetRawSuccessSchema:
 
     def test_resolve_true_expands_ref(self) -> None:
         """resolve=True (default) should deep-resolve $ref."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1512,7 +1495,6 @@ class TestGetRawSuccessSchema:
 
     def test_text_response_returns_none(self) -> None:
         """Text responses should return None regardless of resolve flag."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec = make_openapi_spec(
             openapi="3.1.0",
@@ -1537,14 +1519,12 @@ class TestGetRawSuccessSchema:
 
     def test_missing_path_returns_none(self) -> None:
         """Missing path should return None."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {"openapi": "3.1.0", "paths": {}}
         assert get_success_schema(spec, "/nonexistent", "get", resolve=False) is None
 
     def test_missing_method_returns_none(self) -> None:
         """Missing method should return None."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",
@@ -1567,7 +1547,6 @@ class TestGetRawSuccessSchema:
 
     def test_prefers_200_over_201(self) -> None:
         """Should prefer 200 status code over 201."""
-        from gitea_mcp_server.tools.schemas import get_success_schema
 
         spec: OpenAPISpec = {
             "openapi": "3.1.0",

@@ -8,9 +8,9 @@ resolves into the markdown channel through two paths:
   resolves the resource's ``format_hint`` (content metadata) into an
   ``ExecutionResult.markdown_formatter`` and forwards the remaining content
   meta (``owner``/``repo``/``type``) as ``ExecutionResult.extra``.
-- **Tools** — ``format.resolve_formatter`` binds a formatter by the response
-  schema's root type name (the ``types=`` argument below, issue #760), so a
-  tool renders the same domain view as its resource sibling.
+- **Tools** — ``format.resolve_formatter`` binds a formatter by the result's
+  ``response_type`` (the ``types=`` argument below), so a tool
+  renders the same domain view as its resource sibling.
 
 This module is a pure plugin set: the registry itself lives in
 ``format.py`` (the format layer) so the result pipeline resolves formatters
@@ -269,7 +269,7 @@ def _format_issues_markdown(data: Any, *, extra: dict | None = None) -> str:
 
 
 def _format_issue_detail(data: dict, *, extra: dict | None = None) -> str:
-    """Detail view for a single Issue dict (``issue_get_issue``, #760).
+    """Detail view for a single Issue dict (``issue_get_issue``).
 
     The collection whitelist drops ``body`` — the payload of a detail read —
     so this view renders the detail field set instead.  An issue that is a
@@ -391,7 +391,7 @@ def _format_labels_markdown(
     Items are dicts on both detail levels; the non-dict branch below is a
     defensive guard for unexpected shapes, not the collapse contract.
 
-    A *dict* arrives from single-label reads (``issue_get_label``, #760)
+    A *dict* arrives from single-label reads (``issue_get_label``)
     and renders the detail view instead of the collection list.
     """
     if isinstance(data, dict):
@@ -457,7 +457,7 @@ def _label_detail_lines(label: dict) -> list[str]:
 
 
 def _format_label_detail(label: dict, *, extra: dict | None = None) -> str:
-    """Detail view for a single Label dict (``issue_get_label``, #760).
+    """Detail view for a single Label dict (``issue_get_label``).
 
     No collection heading or validation-format section — those guide label
     *selection*; a detail read already holds one label.  The repo scope is

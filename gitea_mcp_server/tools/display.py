@@ -192,11 +192,56 @@ _RELEASE_FIELDS: dict[str, dict] = {
     "body": {},
 }
 
-# Detail views (issue #760): the collection fields plus the payload fields a
-# single-resource read must never drop (``body``, ``milestone``, ``assignees``,
-# merge state).  Reached when a *dict* arrives — ``issue_get_issue``,
-# ``repo_get_pull_request``, the auto resource for ``/issues/{index}``, …
-# The collection whitelists above stay untouched (resource parity).
+# Detail views: a *dict* result renders the collection fields plus the fields
+# a single-resource read must never drop — issue/pull keep their payload
+# (``body``, milestone, assignees, merge state); repo/user keep visibility,
+# permissions, and profile fields.  Reached when a *dict* arrives
+# (``issue_get_issue``, ``repo_get``, …); the collection whitelists above stay
+# untouched (resource parity).  Stale collection field names are intentionally
+# left to the whitelist-drift cleanup, not fixed here.
+_REPO_DETAIL_FIELDS: dict[str, dict] = {
+    **_REPO_FIELDS,
+    "id": {},
+    "private": {},
+    "fork": {},
+    "mirror": {},
+    "archived": {},
+    "template": {},
+    "internal": {},
+    "empty": {},
+    "permissions": {
+        "render": "compact_ref",
+        "template": "admin={admin}, push={push}, pull={pull}",
+    },
+    "website": {},
+    "language": {},
+    "watchers_count": {},
+    "open_pr_counter": {},
+    "release_counter": {},
+    "has_issues": {},
+    "has_wiki": {},
+    "has_pull_requests": {},
+    "has_projects": {},
+    "has_releases": {},
+    "has_packages": {},
+    "has_actions": {},
+    "archived_at": {},
+}
+# Profile fields a single-user read must keep (email, avatar, account state).
+_USER_DETAIL_FIELDS: dict[str, dict] = {
+    **_USER_FIELDS,
+    "id": {},
+    "email": {},
+    "avatar_url": {},
+    "description": {},
+    "visibility": {},
+    "is_admin": {},
+    "restricted": {},
+    "active": {},
+    "last_login": {},
+    "starred_repos_count": {},
+    "pronouns": {},
+}
 _ISSUE_DETAIL_FIELDS: dict[str, dict] = {
     "number": {},
     "title": {},
@@ -262,7 +307,7 @@ def _format_repo_markdown(data: Any) -> str:
         return format_as_markdown(
             data,
             title=data.get("full_name", "Repository"),
-            field_filter=_REPO_FIELDS,
+            field_filter=_REPO_DETAIL_FIELDS,
         )
     # Unexpected shape: render through the generic path so the agent still
     # sees the payload (#574 guard discipline).
@@ -370,7 +415,7 @@ def _format_user_markdown(data: Any) -> str:
     return format_as_markdown(
         normalized,
         title=normalized.get("login", "User"),
-        field_filter=_USER_FIELDS,
+        field_filter=_USER_DETAIL_FIELDS,
     )
 
 

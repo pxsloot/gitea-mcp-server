@@ -833,8 +833,9 @@ def _wrap_response_schema(response: dict[str, Any], spec: OpenAPISpec) -> None:
     the one place where the root type is still known (issue #760's binding
     key for object responses; root-list responses are inline arrays and keep
     their ``items.$ref`` naturally).  The stamp is stripped from the
-    agent-facing output schema by ``deep_resolve_schema`` (``format.py``) and
-    consumed by the result pipeline's type-bound formatter dispatch.
+    agent-facing output schema by ``deep_resolve_schema``
+    (``tools/schemas.py``) and consumed by the result pipeline's type-bound
+    formatter dispatch.
 
     Note: Response-level ``$ref`` responses (e.g.
     ``{"$ref": "#/components/responses/empty"}``) are skipped here because

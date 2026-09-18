@@ -216,6 +216,20 @@ class TestFormatterShapeTolerance:
         result = _format_repo_markdown({"name": "r", "full_name": "o/r"})
         assert result.startswith("# o/r")
 
+    def test_repo_dict_detail_keeps_state_and_permissions(self) -> None:
+        """A single-repo read keeps visibility/permissions the collection drops."""
+        repo = {
+            "full_name": "o/r",
+            "default_branch": "main",
+            "private": True,
+            "archived": True,
+            "permissions": {"admin": True, "push": False, "pull": True},
+        }
+        result = _format_repo_markdown(repo)
+        assert "| Private | True |" in result
+        assert "| Archived | True |" in result
+        assert "| Permissions | admin=True, push=False, pull=True |" in result
+
     def test_repo_scalar_passthrough_no_crash(self) -> None:
         """Unexpected scalar shape renders through the generic path (#574)."""
         result = _format_repo_markdown(42)
@@ -289,6 +303,20 @@ class TestFormatterShapeTolerance:
         result = _format_user_markdown(users)
         assert "Users - 2 items" in result
         assert "| Login | a |" in result
+
+    def test_user_dict_detail_keeps_email_and_visibility(self) -> None:
+        """A single-user read keeps profile fields the collection drops."""
+        user = {
+            "login": "dev2",
+            "email": "dev2@home.lan",
+            "visibility": "public",
+            "is_admin": False,
+        }
+        result = _format_user_markdown(user)
+        assert "# dev2" in result
+        assert "| Email | dev2@home.lan |" in result
+        assert "| Visibility | public |" in result
+        assert "| Is Admin | False |" in result
 
     def test_user_list_normalizes_created(self) -> None:
         """Per-item created→created_at normalization applies in lists too."""

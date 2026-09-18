@@ -597,16 +597,17 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    registry state.  This keeps the dependency Result → Format → Display — the
    result pipeline resolves formatters through `format.resolve_formatter`
    without importing `display`, so the generic pipeline never depends on the
-   Gitea-specific formatter catalog.  The tools package (`tools/__init__.py`)
-   imports `display` for its registration side effect; any code that imports
-   `gitea_mcp_server.tools` loads the plugins.
+   Gitea-specific formatter catalog.  The composition root (`server.py`)
+   imports `display` for its registration side effect; the test suite does the
+   same in `conftest.py`.
 
    **Formatters must be shape-tolerant.** A bound type arrives in both
    shapes: list tools (`repo_list_*`) hand over lists, detail tools
    (`repo_get`, `issue_get_issue`, …) hand over dicts.  The convention is
    list → *collection view* (curated field whitelist, per-item titles) and
-   dict → *detail view* (the whitelist plus payload fields such as `body` —
-   a detail read must never silently drop the payload).  `extra` context
+   dict → *detail view* (the full payload — every field present in the data,
+   rendered without a whitelist, so a detail read never drops a payload
+   field).  `extra` context
    (`owner`/`repo`/`org`/`type`) reaches formatters from the call args via
    the contract spine, or from resource content meta; always fall back
    gracefully when it is absent.  `org` is the owner-equivalent on

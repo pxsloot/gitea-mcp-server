@@ -5,13 +5,14 @@ Covers:
     - _format_user_markdown created_at fallback
     - _format_repo_markdown
     - _format_issues_markdown, _format_pulls_markdown, _format_release_markdown
-    - shape tolerance: collection (list) vs detail (dict) views 
+    - shape tolerance: collection (list) vs detail (dict) views
     - Formatter edge cases
     - Tool/resource formatting consistency
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -150,6 +151,22 @@ class TestTypeBindingRegistry:
             assert _TYPE_FORMATTERS.get(type_name) == formatter_name
             assert get_formatter_for_type(type_name) is not None
 
+    def test_duplicate_type_binding_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Rebinding a type to a different formatter warns; last registration wins."""
+
+        @register_formatter("first", types=["Dup"])
+        def _first(data: Any) -> str:
+            return "first"
+
+        with caplog.at_level(logging.WARNING, logger="gitea_mcp_server.format"):
+
+            @register_formatter("second", types=["Dup"])
+            def _second(data: Any) -> str:
+                return "second"
+
+        assert "already bound" in caplog.text
+        assert get_formatter_for_type("Dup") is _second
+
 
 class TestFormatterShapeTolerance:
     """a list renders the collection view, a dict the detail view.
@@ -178,18 +195,24 @@ class TestFormatterShapeTolerance:
         assert result.startswith("# o/r")
 
     def test_repo_dict_detail_keeps_state_and_permissions(self) -> None:
-        """A single-repo read keeps visibility/permissions the collection drops."""
+        """A single-repo read keeps the full payload the collection drops."""
         repo = {
             "full_name": "o/r",
             "default_branch": "main",
             "private": True,
             "archived": True,
+            "stars_count": 7,
             "permissions": {"admin": True, "push": False, "pull": True},
         }
         result = _format_repo_markdown(repo)
         assert "| Private | True |" in result
         assert "| Archived | True |" in result
-        assert "| Permissions | admin=True, push=False, pull=True |" in result
+        assert "| Stars Count | 7 |" in result
+        # Detail renders every payload field; nested objects become sections.
+        assert "## Permissions" in result
+        assert "| Admin | True |" in result
+        assert "| Push | False |" in result
+        assert "| Pull | True |" in result
 
     def test_repo_scalar_passthrough_no_crash(self) -> None:
         """Unexpected scalar shape renders through the generic path (#574)."""
@@ -237,13 +260,22 @@ class TestFormatterShapeTolerance:
             "number": 9,
             "title": "PR",
             "body": "PR PAYLOAD",
+            "additions": 12,
+            "deletions": 3,
+            "changed_files": 2,
             "base": {"ref": "main"},
             "head": {"ref": "feat"},
         }
         result = _format_pulls_markdown(pr)
         assert result.startswith("# Pull Request #9: PR")
         assert "PR PAYLOAD" in result
-        assert "| Base | main |" in result
+        # Diff stats are payload the collection view drops (#767).
+        assert "| Additions | 12 |" in result
+        assert "| Deletions | 3 |" in result
+        assert "| Changed Files | 2 |" in result
+        # Detail renders the full payload; base/head become sections.
+        assert "## Base" in result
+        assert "main" in result
 
     def test_pulls_dict_no_title(self) -> None:
         result = _format_pulls_markdown({"number": 10})
@@ -411,26 +443,24 @@ class TestFormatRepoMarkdown:
             "owner": {"login": "owner"},
             "html_url": "https://example.com/owner/repo",
             "default_branch": "main",
-            "stargazers_count": 42,
+            "stars_count": 42,
             "forks_count": 10,
             "open_issues_count": 5,
             "size": 1024,
             "created_at": "2024-01-01T00:00:00Z",
             "updated_at": "2024-01-15T00:00:00Z",
             "topics": ["test", "example"],
-            "license": {"name": "MIT"},
         }
         result = _format_repo_markdown(repo)
 
         assert "# owner/repo" in result
         assert "| Description | Test repo |" in result
-        # Owner renders as compact_ref flat row (login), not a nested section
-        assert "| Owner | owner |" in result
-        assert "## Owner" not in result
-        assert "| Stargazers Count | 42 |" in result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in result
+        assert "owner" in result
+        assert "| Stars Count | 42 |" in result
         assert "test" in result
         assert "example" in result
-        assert "## License" in result
 
     def test_handles_missing_fields(self) -> None:
         """Test repo with missing optional fields."""
@@ -443,9 +473,9 @@ class TestFormatRepoMarkdown:
 
         assert "# owner/repo" in result
         assert "| Property | Value |" in result
-        # Owner renders as compact_ref flat row
-        assert "| Owner | owner |" in result
-        assert "## Owner" not in result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in result
+        assert "owner" in result
 
 
 class TestResourceFormatters:
@@ -488,11 +518,10 @@ class TestResourceFormatters:
             "login": "johndoe",
             "full_name": "John Doe",
             "html_url": "https://example.com/johndoe",
-            "public_repos": 10,
             "followers_count": 5,
             "following_count": 3,
             "created_at": "2024-01-01T00:00:00Z",
-            "bio": "Software developer",
+            "description": "Software developer",
             "location": "NYC",
             "website": "https://johndoe.com",
         }
@@ -500,8 +529,8 @@ class TestResourceFormatters:
 
         assert "# johndoe" in result
         assert "| Full Name | John Doe |" in result
-        assert "| Public Repos | 10 |" in result
-        assert "| Bio | Software developer |" in result
+        assert "| Followers Count | 5 |" in result
+        assert "| Description | Software developer |" in result
 
     def test_format_user_markdown_organization(self) -> None:
         """Organization is a distinct shape — the user formatter must not claim it.
@@ -799,7 +828,7 @@ class TestToolResourceConsistency:
         assert "## Base" not in resource_result
 
     def test_repo_format_consistent_with_shared_formatter(self) -> None:
-        """_format_repo_markdown delegates to format_as_markdown with field_filter."""
+        """_format_repo_markdown: collection whitelist for lists, full dict detail."""
 
         repo = {
             "full_name": "owner/repo",
@@ -812,9 +841,9 @@ class TestToolResourceConsistency:
         assert "# owner/repo" in resource_result
         assert "| Full Name | owner/repo |" in resource_result
         assert "| Description | Test repo |" in resource_result
-        # Owner renders as compact_ref flat row (login), not a nested section
-        assert "| Owner | owner |" in resource_result
-        assert "## Owner" not in resource_result
+        # Detail renders the full payload; nested owner becomes a section.
+        assert "## Owner" in resource_result
+        assert "owner" in resource_result
 
     def test_user_format_consistent_with_shared_formatter(self) -> None:
         """_format_user_markdown delegates to format_as_markdown with field_filter."""
@@ -823,7 +852,7 @@ class TestToolResourceConsistency:
             "login": "johndoe",
             "full_name": "John Doe",
             "html_url": "https://example.com/johndoe",
-            "public_repos": 10,
+            "followers_count": 10,
         }
         resource_result = _format_user_markdown(user)
         assert "# johndoe" in resource_result

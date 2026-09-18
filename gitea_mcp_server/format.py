@@ -192,6 +192,14 @@ def register_formatter(
     def deco(fn: MarkdownFormatter) -> MarkdownFormatter:
         _FORMATTERS[name] = fn
         for type_name in types:
+            existing = _TYPE_FORMATTERS.get(type_name)
+            if existing is not None and existing != name:
+                logger.warning(
+                    "Response type %r already bound to formatter %r; rebinding to %r",
+                    type_name,
+                    existing,
+                    name,
+                )
             _TYPE_FORMATTERS[type_name] = name
         return fn
 

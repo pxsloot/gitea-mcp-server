@@ -15,6 +15,8 @@ Reasons to keep this file:
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 
 import pytest
 
@@ -254,3 +256,25 @@ class TestLayerDependencies:
 
         assert not hasattr(display_module, "_FORMATTERS")
         assert not hasattr(display_module, "_TYPE_FORMATTERS")
+
+    def test_importing_pipeline_does_not_load_display(self) -> None:
+        """The package import must not load the plugins; the root does.
+
+        Run in a fresh interpreter so the in-process registrations the test
+        suite performs (``conftest``) cannot mask the real import graph: if
+        ``tools/__init__.py`` re-grows a ``display`` side-effect import, this
+        fails even though ``test_result_pipeline_does_not_import_display``
+        (a namespace check) still passes.
+        """
+        code = (
+            "import sys; import gitea_mcp_server.tools.result_pipeline; "
+            "assert 'gitea_mcp_server.tools.display' not in sys.modules, "
+            "'importing result_pipeline pulled in the display plugins'"
+        )
+        result = subprocess.run(  # noqa: S603 - trusted interpreter, literal code
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr

@@ -602,7 +602,7 @@ async def _read_resource_tool(
         formatters).  The single result pipeline renders it — ``content``
         authoritative and always present, ``structured_content`` mirroring
         it.  Resources without a ``format_hint`` still get the domain view
-        when their response type is bound (``register_formatter(types=...)``.
+        when their response type is bound (``register_formatter(types=...)``).
 
     Raises:
         ValueError: If the resource is not found or cannot be read

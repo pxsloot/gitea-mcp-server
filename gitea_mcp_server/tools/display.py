@@ -24,11 +24,13 @@ of it) is stated canonically in ``format.py``; this module does not restate
 it.
 
 Formatters are *shape-tolerant*: a list renders the **collection view** (the
-curated per-item table the resource surface has always shown); a dict renders
-the **detail view** — the collection fields plus the payload fields (``body``,
-``milestone``, …) that a single-resource read must never drop.  The pipeline
-may hand a formatter either shape: list tools and list resources produce
-lists, detail tools (``repo_get``, ``issue_get_issue``, …) produce dicts.
+curated per-item table the resource surface has always shown, driven by the
+hand-maintained whitelists below); a dict renders the **detail view** — the
+full payload, every field present in the data, with no whitelist.  The
+pipeline may hand a formatter either shape: list tools and list resources
+produce lists, detail tools (``repo_get``, ``issue_get_issue``, …) produce
+dicts.  Detail renders dynamically so a single-resource read never drops a
+payload field and there is no second field list to drift from the schema.
 """
 
 from typing import Any
@@ -80,32 +82,29 @@ _REPO_FIELDS: dict[str, dict] = {
     "owner": {"render": "compact_ref", "template": "{login}"},
     "html_url": {},
     "default_branch": {},
-    "stargazers_count": {},
+    "stars_count": {},
     "forks_count": {},
     "open_issues_count": {},
     "size": {},
     "created_at": {},
     "updated_at": {},
     "topics": {},
-    "license": {},
 }
 _USER_FIELDS: dict[str, dict] = {
     "login": {},
     "full_name": {},
-    "type": {},
     "html_url": {},
-    "public_repos": {},
     "followers_count": {},
     "following_count": {},
     "created_at": {},
-    "bio": {},
+    "description": {},
     "location": {},
     "website": {},
 }
-# Organization shares no field names with User: it uses ``username``/``name``
-# (not ``login``), has no ``html_url``/``type``/``public_repos``/``bio``, and
-# carries ``description``/``visibility``/``repo_admin_change_team_access``.
-# Binding it to the user formatter dropped every identifying field (#766).
+# Organization is a distinct shape from User: it uses ``username``/``name``
+# (not ``login``) and carries ``description``/``visibility``/
+# ``repo_admin_change_team_access``.  Binding it to the user formatter dropped
+# every identifying field (#766).
 _ORG_FIELDS: dict[str, dict] = {
     "id": {},
     "username": {},
@@ -129,115 +128,6 @@ _RELEASE_FIELDS: dict[str, dict] = {
     "published_at": {},
     "body": {},
 }
-# Detail view for a single release: the collection set plus the fields a
-# detail read must not drop — author, assets, and the download URLs (#766).
-_RELEASE_DETAIL_FIELDS: dict[str, dict] = {
-    **_RELEASE_FIELDS,
-    "id": {},
-    "author": {},
-    "assets": {},
-    "html_url": {},
-    "target_commitish": {},
-    "tarball_url": {},
-    "zipball_url": {},
-    "url": {},
-}
-
-# Detail views: a *dict* result renders the collection fields plus the fields
-# a single-resource read must never drop — issue/pull keep their payload
-# (``body``, milestone, assignees, merge state); repo/user keep visibility,
-# permissions, and profile fields.  Reached when a *dict* arrives
-# (``issue_get_issue``, ``repo_get``, …); the collection whitelists above stay
-# untouched (resource parity).  Stale collection field names are intentionally
-# left to the whitelist-drift cleanup, not fixed here.
-_REPO_DETAIL_FIELDS: dict[str, dict] = {
-    **_REPO_FIELDS,
-    "id": {},
-    "private": {},
-    "fork": {},
-    "mirror": {},
-    "archived": {},
-    "template": {},
-    "internal": {},
-    "empty": {},
-    "permissions": {
-        "render": "compact_ref",
-        "template": "admin={admin}, push={push}, pull={pull}",
-    },
-    "website": {},
-    "language": {},
-    "watchers_count": {},
-    "open_pr_counter": {},
-    "release_counter": {},
-    "has_issues": {},
-    "has_wiki": {},
-    "has_pull_requests": {},
-    "has_projects": {},
-    "has_releases": {},
-    "has_packages": {},
-    "has_actions": {},
-    "archived_at": {},
-}
-# Profile fields a single-user read must keep (email, avatar, account state).
-_USER_DETAIL_FIELDS: dict[str, dict] = {
-    **_USER_FIELDS,
-    "id": {},
-    "email": {},
-    "avatar_url": {},
-    "description": {},
-    "visibility": {},
-    "is_admin": {},
-    "restricted": {},
-    "active": {},
-    "last_login": {},
-    "starred_repos_count": {},
-    "pronouns": {},
-}
-_ISSUE_DETAIL_FIELDS: dict[str, dict] = {
-    "number": {},
-    "title": {},
-    "state": {},
-    "user": {},
-    "body": {},
-    "labels": {"render": "compact_ref", "template": "{name}"},
-    "milestone": {},
-    "assignee": {},
-    "assignees": {},
-    "comments": {},
-    "created_at": {},
-    "updated_at": {},
-    "closed_at": {},
-    "due_date": {},
-    # Expanded (not badge) here: PullRequestMeta's merged/draft state matters
-    # on a detail read of an issue that is a PR.
-    "pull_request": {},
-    "ref": {},
-    "html_url": {},
-}
-_PULL_DETAIL_FIELDS: dict[str, dict] = {
-    "number": {},
-    "title": {},
-    "state": {},
-    "user": {},
-    "body": {},
-    "labels": {"render": "compact_ref", "template": "{name}"},
-    "milestone": {},
-    "assignees": {},
-    "base": {"render": "compact_ref", "template": "{ref}"},
-    "head": {"render": "compact_ref", "template": "{ref}"},
-    "comments": {},
-    "review_comments": {},
-    "draft": {},
-    "mergeable": {},
-    "merged": {},
-    "merged_at": {},
-    "closed_at": {},
-    "created_at": {},
-    "updated_at": {},
-    "html_url": {},
-}
-
-
 # ---------------------------------------------------------------------------
 # Domain formatters
 # ---------------------------------------------------------------------------
@@ -255,11 +145,8 @@ def _format_repo_markdown(data: Any) -> str:
             item_title_key="full_name",
         )
     if isinstance(data, dict):
-        return format_as_markdown(
-            data,
-            title=data.get("full_name", "Repository"),
-            field_filter=_REPO_DETAIL_FIELDS,
-        )
+        # Detail: render every field the payload carries (no whitelist).
+        return format_as_markdown(data, title=data.get("full_name", "Repository"))
     # Unexpected shape: render through the generic path so the agent still
     # sees the payload (#574 guard discipline).
     return format_as_markdown(data, title="Repository")
@@ -303,8 +190,8 @@ def _format_issue_detail(data: dict, *, extra: dict | None = None) -> str:
     """Detail view for a single Issue dict (``issue_get_issue``).
 
     The collection whitelist drops ``body`` — the payload of a detail read —
-    so this view renders the detail field set instead.  An issue that is a
-    pull request (``pull_request`` set, or ``type=pulls`` context) is titled
+    so a dict renders the full payload dynamically instead.  An issue that is
+    a pull request (``pull_request`` set, or ``type=pulls`` context) is titled
     accordingly.
     """
     is_pr = bool(data.get("pull_request")) or (extra or {}).get("type") == "pulls"
@@ -312,25 +199,18 @@ def _format_issue_detail(data: dict, *, extra: dict | None = None) -> str:
     number = data.get("number", "?")
     title = data.get("title")
     heading = f"{label} #{number}: {title}" if title else f"{label} #{number}"
-    return format_as_markdown(
-        data,
-        title=heading,
-        field_filter=_ISSUE_DETAIL_FIELDS,
-    )
+    return format_as_markdown(data, title=heading)
 
 
 @register_formatter("pull_requests", types=["PullRequest"])
 def _format_pulls_markdown(data: Any) -> str:
     if isinstance(data, dict):
-        # Detail view (repo_get_pull_request, the /pulls/{index} resource).
+        # Detail view (repo_get_pull_request, the /pulls/{index} resource):
+        # the full payload, every field the API returned.
         number = data.get("number", "?")
         title = data.get("title")
         heading = f"Pull Request #{number}: {title}" if title else f"Pull Request #{number}"
-        return format_as_markdown(
-            data,
-            title=heading,
-            field_filter=_PULL_DETAIL_FIELDS,
-        )
+        return format_as_markdown(data, title=heading)
     title = f"Pull Requests - {len(data)} items" if data else "Pull Requests"
     return format_as_markdown(
         data,
@@ -363,11 +243,8 @@ def _format_user_markdown(data: Any) -> str:
         }
         return format_as_markdown(fallback_data, title="User")
     normalized = _normalize_user(data)
-    return format_as_markdown(
-        normalized,
-        title=normalized.get("login", "User"),
-        field_filter=_USER_DETAIL_FIELDS,
-    )
+    # Detail: every profile field the payload carries (no whitelist).
+    return format_as_markdown(normalized, title=normalized.get("login", "User"))
 
 
 def _normalize_user(item: Any) -> Any:
@@ -409,25 +286,17 @@ def _format_org_markdown(data: Any) -> str:
         return format_as_markdown(fallback_data, title="Organization")
     normalized = _normalize_user(data)
     title = normalized.get("username") or normalized.get("name") or "Organization"
-    return format_as_markdown(
-        normalized,
-        title=title,
-        field_filter=_ORG_FIELDS,
-    )
+    # Detail: every org field the payload carries (no whitelist).
+    return format_as_markdown(normalized, title=title)
 
 
 @register_formatter("release", types=["Release"])
 def _format_release_markdown(data: Any) -> str:
     """Format a release dict or a list of releases as markdown."""
     if isinstance(data, dict):
-        # Detail view (release_get): the collection set plus author, assets,
-        # and download URLs a single-release read must not drop (#766).
+        # Detail view (release_get): the full release payload.
         tag = data.get("tag_name") or data.get("name") or "Release"
-        return format_as_markdown(
-            data,
-            title=f"Release {tag}",
-            field_filter=_RELEASE_DETAIL_FIELDS,
-        )
+        return format_as_markdown(data, title=f"Release {tag}")
     title = f"Releases - {len(data)} releases" if data else "Releases"
     return format_as_markdown(
         data,

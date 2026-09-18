@@ -90,14 +90,6 @@ class OpenAPIOperation(TypedDict, total=False):
     deprecated: bool
     requestBody: dict[str, Any]
     x_original_content_types: list[str]  # preserved before wrap
-    # Converter-stamped operation extensions (pre-wrap; see
-    # openapi_converter/type_references.py).  ``x-response-type`` is the
-    # display layer's type-binding key; the other two drive cache
-    # invalidation.  Keys are hyphenated on the wire; TypedDict keys cannot
-    # be, so they are declared snake_case and accessed via ``.get()``.
-    x_response_type: str
-    x_resource_types: list[str]
-    x_modifies_type: str
 
 
 class OpenAPIPathItem(TypedDict, total=False):

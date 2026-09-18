@@ -20,18 +20,11 @@ All tool-related runtime concerns live here:
 - result_pipeline: Single result pipeline (ExecutionResult + render) shared by
   autogen and synthetic tools and read_resource
 - display: Domain-specific formatter plugins, registered into the format-layer
-  registry (``format.register_formatter``); imported here so the plugins are
-  loaded whenever the tools package is used
+  registry (``format.register_formatter``); the composition root (``server.py``)
+  imports the module for its registration side effect
 """
 
 from gitea_mcp_server.scope import derive_required_scope
-
-# Import the domain formatter plugins for their registration side effect.
-# The registry lives in ``format.py`` (format layer) so ``result_pipeline``
-# never imports ``display`` (Result → Format → Display).  The composition
-# root must therefore load the plugins: importing this package guarantees
-# they are registered before any ``render()`` call.
-from gitea_mcp_server.tools import display as _display  # noqa: F401
 from gitea_mcp_server.tools.customize import (
     add_inferred_hints,
     categorize_tool,

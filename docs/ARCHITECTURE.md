@@ -412,7 +412,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets and per-resource cache TTLs (populated by ``make_api_resource``, consumed by ``build_invalidation_map`` and the response-cache TTL resolver) |
-| `tools/display.py` | Domain-specific display formatter **plugins** — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter`.  Holds no registry state — the registry lives in `format.py`, and `tools/__init__.py` imports this module for its registration side effect |
+| `tools/display.py` | Domain-specific display formatter **plugins** — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter`.  Holds no registry state — the registry lives in `format.py`, and `server.py` (the composition root) imports this module for its registration side effect |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -824,8 +824,8 @@ from the parameter schema.
       never collapse and never carry dead params.  The registry and the
       resolution policy live in the format layer (``format.py``), so the
       pipeline never imports the domain formatter module ``tools/display.py``
-      — the plugins register themselves and are loaded by
-      ``tools/__init__.py``.
+      — the plugins register themselves and are loaded by ``server.py`` (the
+      composition root; tests do the same in ``conftest.py``).
       Empty/out-of-range pages emit ``{"result": [], "message": "...",
       "has_more": false, "next_offset": null, "total_count": N}`` as JSON text.
 

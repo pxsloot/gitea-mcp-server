@@ -6,7 +6,7 @@ from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.schema_utils import get_schema_type
+from gitea_mcp_server.schema_utils import get_schema_type, ref_marker
 from gitea_mcp_server.tools.schemas import resolve_ref, unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
@@ -178,15 +178,16 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
-    When encountering ``$ref``, emits ``{"$ref": "TypeName"}`` instead of
-    inlining the referenced schema, **unless** ``depth == 0`` and
-    ``openapi_spec`` is provided — in that case the top-level ``$ref`` is
-    resolved one level so the agent sees actual field names instead of just
-    a type placeholder.  Nested ``$ref`` (depth >= 1) always emit the
-    compact placeholder.
+    When encountering ``$ref``, emits the canonical agent-facing marker
+    ``{"$ref": "TypeName"}`` (built by
+    :func:`~gitea_mcp_server.schema_utils.ref_marker`) instead of inlining the
+    referenced schema, **unless** ``depth == 0`` and ``openapi_spec`` is
+    provided — in that case the top-level ``$ref`` is resolved one level so
+    the agent sees actual field names instead of just a type placeholder.
+    Nested ``$ref`` (depth >= 1) always emit the marker.
 
-    The markdown formatter recognises the ``{"$ref": "TypeName"}`` pattern
-    and renders it as ``$ref:TypeName``.  All properties are included (no
+    The markdown formatter recognises the marker via ``is_ref_marker`` and
+    renders it as ``$ref:TypeName``.  All properties are included (no
     ``max_properties`` truncation).  Leaf types use the same meaningful
     example values as ``_schema_to_example``.
 
@@ -204,12 +205,13 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             a placeholder type name.
 
     Returns:
-        A compact representation: ``{"$ref": "TypeName"}`` for refs,
-        example values for leaf types, dicts/arrays with one level of nesting.
+        A compact representation: the ``{"$ref": "TypeName"}`` marker for
+        refs, example values for leaf types, dicts/arrays with one level of
+        nesting.
     """
     # $ref handling: at depth=0 with spec available, resolve one level so
     # agents see actual fields instead of just a placeholder type name.
-    # At depth > 0, emit {"$ref": "TypeName"} as a compact placeholder.
+    # At depth > 0, emit the canonical {"$ref": "TypeName"} marker.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
         if depth == 0 and openapi_spec is not None:
             resolved = resolve_ref(openapi_spec, schema["$ref"])
@@ -221,7 +223,7 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
                     resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                 )
             # Fall through to placeholder if resolution fails
-        return {"$ref": schema["$ref"].rsplit("/", 1)[-1]}
+        return ref_marker(schema["$ref"].rsplit("/", 1)[-1])
 
     if depth >= max_depth:
         return "{...}"

@@ -6,12 +6,13 @@ Kept at the flat level so neither domain depends on the other.
 Public functions:
     build_server_info_markdown - build server info markdown from
         the OpenAPI spec info block (not a registered domain formatter).
-    collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
-        to labels (``$ref:TypeName``).  Root-list items are *summarized*
-        (scalars kept, nested refs labelled), never label-replaced wholesale
-        (resolved one level via the OpenAPI spec, #759).  Used to shape data
-        before formatting so any formatter (json or markdown) receives
-        already-collapsed data.
+    collapse_data - walk data+schema, replace $ref-backed objects at depth>=1
+        with the canonical agent-facing ``$ref`` marker
+        (``{"$ref": "TypeName"}``; ``{"$ref": "TypeName", "count": N}`` for a
+        collapsed list).  Root-list items are *summarized* (scalars kept,
+        nested refs marked), never replaced wholesale (resolved one level via
+        the OpenAPI spec, #759).  Used to shape data before formatting so any
+        formatter (json or markdown) receives already-collapsed data.
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
@@ -50,7 +51,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
-from gitea_mcp_server.schema_utils import extract_type_name, extract_type_ref, get_schema_type
+from gitea_mcp_server.schema_utils import (
+    extract_type_name,
+    extract_type_ref,
+    get_schema_type,
+    is_ref_marker,
+    ref_marker,
+    ref_marker_label,
+)
 
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
@@ -83,10 +91,12 @@ logger = logging.getLogger(__name__)
 #
 # ``detail`` is deliberately NOT part of the contract: when ``detail="concise"``
 # and a schema is available the pipeline pre-collapses the page, so formatters
-# receive already-collapsed data.  Collapsed *fields* arrive as
-# ``$ref:TypeName`` strings; collapsed *items* do not exist — root-list items
-# are summarized (dicts with scalars intact and nested refs labelled, #759),
-# so formatters must not branch on item-level collapsed strings.
+# receive already-collapsed data.  Collapsed *fields* arrive as the canonical
+# ``$ref`` marker (``{"$ref": "TypeName"}``, or with ``count`` for a collapsed
+# list) and render through ``is_ref_marker``/``ref_marker_label``; collapsed
+# *items* do not exist — root-list items are summarized (dicts with scalars
+# intact and nested refs marked, #759), so formatters must not branch on
+# item-level collapsed shapes.
 MarkdownFormatter = Callable[..., str]
 
 
@@ -464,25 +474,26 @@ def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, n
     *,
     openapi_spec: OpenAPISpec | None = None,
 ) -> Any:
-    """Walk data+schema, collapsing $ref-backed objects to labels (S1-lite).
+    """Walk data+schema, replacing $ref-backed objects with the marker (S1-lite).
 
     Used to shape data before formatting: when ``detail="concise"``,
-    properties whose schema declares a ``$ref`` are collapsed to
-    ``"$ref:TypeName"`` (or ``"$ref:TypeName[N]"`` for lists).  Inline
-    schemas (no ``$ref``) are NOT collapsed — they remain as nested
-    dicts/lists for the formatter to render.
+    properties whose schema declares a ``$ref`` are replaced by the canonical
+    agent-facing marker — ``{"$ref": "TypeName"}`` for an object,
+    ``{"$ref": "TypeName", "count": N}`` for a list.  Inline schemas (no
+    ``$ref``) are NOT collapsed — they remain as nested dicts/lists for the
+    formatter to render.
 
-    **Root items are never label-replaced** (#759): the root object and
+    **Root items are never marker-replaced** (#759): the root object and
     the items of a root list keep their scalar fields; only their nested
     ``$ref``-backed fields collapse.  A root list whose item schema is a
     ``$ref`` is resolved one level via *openapi_spec* so each item is
     *summarized*; without a spec (or when resolution fails) the
-    whole-item label fallback applies.
+    whole-item marker fallback applies (each root item becomes a marker).
 
     When ``schema`` is ``None`` or ``detail="full"``, the data is returned
     unchanged (the tree is still walked for ``schema=None``, but no
     collapsing occurs).  Nothing is ever mutated or truncated — collapse
-    only replaces ``$ref``-backed subtrees with label strings.
+    only replaces ``$ref``-backed subtrees with the canonical marker.
 
     Args:
         data: The data to collapse (dict, list, or scalar).
@@ -493,10 +504,10 @@ def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, n
         openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve a
             root list's item ``$ref`` one level (S1-lite item summaries).
             ``None`` (synthetic tools, unit callers) keeps the whole-item
-            label fallback.
+            marker fallback.
 
     Returns:
-        Collapsed data (dicts, lists, strings) suitable for JSON serialization
+        Collapsed data (dicts, lists, markers) suitable for JSON serialization
         or markdown rendering.
     """
     if detail == "full":
@@ -513,7 +524,7 @@ def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, n
             # $ref, allOf, anyOf, oneOf at the top level.
             type_name = _extract_type_name(schema)
             if type_name:
-                return f"$ref:{type_name}"
+                return ref_marker(type_name)
             # No $ref — recurse (inline schemas stay expanded)
 
         combined = _merge_allof_schema(schema)
@@ -533,12 +544,12 @@ def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, n
         if _depth >= 1:
             type_name = _extract_type_name(items_schema)
             if type_name:
-                return f"$ref:{type_name}[{len(data)}]"
+                return ref_marker(type_name, len(data))
             # No $ref — recurse
         else:
             # Root list: items are roots — resolve a $ref item schema one
             # level so each item is summarized (scalars kept, nested refs
-            # collapsed) instead of being label-replaced wholesale (#759).
+            # marked) instead of being marker-replaced wholesale (#759).
             # Resolution is consumed here; recursive calls below are all at
             # depth >= 1 and never consult the spec again.
             resolved = _resolve_root_items_schema(items_schema, openapi_spec)
@@ -560,16 +571,15 @@ def _format_list_as_markdown(
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
         lines.append(f"{indent}_(empty)_")
-    # Flatten lists of {"$ref": "Type"} - render as bulleted $ref:X items.
-    # This is the EXAMPLE/TYPE-SUMMARY shape emitted by
-    # schema_to_compact_example (tool_info's output_example, resolve_type's
-    # summary) as *payload content* — NOT the collapse marker, which is a
-    # plain string handled by the scalar branches below.  #759 changed the
-    # collapse semantics; this branch must stay.
-    elif data and all(isinstance(v, dict) and set(v.keys()) == {"$ref"} for v in data):
-        items = [f"$ref:{v['$ref']}" for v in data]
-        for item in items:
-            lines.append(f"{indent}- {item}")
+    # Lists of $ref markers render as bulleted labels.  This is the canonical
+    # agent-facing marker, emitted by both producers: the example/type-summary
+    # generator (tool_info's output_example, resolve_type's summary) and the
+    # collapse's no-spec root-list fallback (each item is a marker).  Detection
+    # goes through the shared is_ref_marker predicate — no consumer
+    # pattern-matches its own marker variant.
+    elif data and all(is_ref_marker(v) for v in data):
+        for v in data:
+            lines.append(f"{indent}- {ref_marker_label(v)}")
     elif data and isinstance(data[0], dict):
         for i, item in enumerate(data):
             title: str | None = None
@@ -707,6 +717,14 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
             field_opts = field_filter.get(key, {}) if field_filter else {}
             render_hint = field_opts.get("render", "expand")
 
+            # The canonical $ref marker is checked before render hints.  A
+            # compact_ref template (e.g. owner -> "{login}") has no matching
+            # key on a marker and would otherwise fall back to a Python repr;
+            # the marker always renders as its compact label.
+            if is_ref_marker(raw_val):
+                flat.append((label, ref_marker_label(raw_val)))
+                continue
+
             # Render hints override nesting — compact_ref and badge
             # always produce flat table rows regardless of value type.
             if render_hint == "compact_ref" and isinstance(raw_val, dict):
@@ -723,17 +741,11 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
             elif render_hint == "badge":
                 flat.append((label, "Yes" if raw_val else "No"))
             elif isinstance(raw_val, (dict, list)):
-                # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-                # tables.  This is the EXAMPLE/TYPE-SUMMARY shape emitted by
-                # schema_to_compact_example (tool_info's output_example,
-                # resolve_type's summary) as *payload content* — NOT the
-                # collapse marker, which is a plain string handled by the
-                # scalar branch below.  The pipeline pre-collapses nested
-                # ``$ref``-backed objects to ``"$ref:TypeName"`` strings when
-                # ``detail=concise`` (#759), so this formatter only ever
-                # renders collapsed data — it does not collapse.
-                if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
-                    raw_val = f"$ref:{raw_val['$ref']}"
+                # The pipeline pre-collapses nested ``$ref``-backed objects to
+                # the canonical marker when ``detail=concise`` (#759), so this
+                # formatter only ever renders already-collapsed data — it does
+                # not collapse.  Markers were handled above; anything left here
+                # is real nested payload.
                 # Don't propagate field_filter into nested sub-objects -
                 # the parent's field names don't apply to child objects.
                 sub = format_as_markdown(

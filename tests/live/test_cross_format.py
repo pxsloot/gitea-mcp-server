@@ -170,7 +170,7 @@ class TestDetailLevels:
 
     @pytest.mark.live
     async def test_concise_collapses_refs(self, world: World) -> None:
-        """Detail=concise collapses $ref:nested objects to type labels."""
+        """Detail=concise replaces nested $ref objects with the marker dict."""
         workflow = Workflow(world)
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
         mcp = await world.server_for(DEV, SCOPE_WRITE)
@@ -180,19 +180,17 @@ class TestDetailLevels:
         )
         data = assert_result_ok(result)
         owner = data.get("owner")
-        assert isinstance(owner, str), (
-            f"Concise detail should collapse 'owner' to $ref:Type, "
-            f"got {type(owner).__name__}: {owner!r}"
+        assert owner == {"$ref": "User"}, (
+            f"Concise detail should replace 'owner' with the $ref marker, got {owner!r}"
         )
-        assert "$ref:" in owner, f"Expected $ref: prefix, got {owner!r}"
 
     @pytest.mark.live
     async def test_concise_list_items_summarized(self, world: World) -> None:
         """#759: concise on a root-list tool returns item summaries, not bare labels.
 
         The issue's reproduction pair: items must keep their scalar fields
-        (name) with nested $ref-backed fields collapsed (owner), instead of
-        every item collapsing to a content-free ``$ref:Repository``.
+        (name) with nested $ref-backed fields replaced by the marker (owner),
+        instead of every item collapsing to a content-free marker.
         """
         workflow = Workflow(world)
         _ = await workflow.ensure_repo(DEV.username, _REPO, user=DEV, scopes=SCOPE_WRITE)
@@ -207,8 +205,8 @@ class TestDetailLevels:
         item = data[0]
         assert isinstance(item, dict), f"concise items must be dicts, got {item!r}"
         assert item.get("name"), f"item scalar 'name' must survive collapse: {item!r}"
-        assert item.get("owner") == "$ref:User", (
-            f"nested $ref-backed field must collapse to a label, got {item.get('owner')!r}"
+        assert item.get("owner") == {"$ref": "User"}, (
+            f"nested $ref-backed field must become the marker, got {item.get('owner')!r}"
         )
 
     @pytest.mark.live

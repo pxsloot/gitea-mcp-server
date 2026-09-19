@@ -347,21 +347,21 @@ class TestCollapseData:
         data = {"owner": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"owner": {"$ref": "#/components/schemas/User"}}}
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        # Top-level dict stays as dict (not collapsed to $ref:TypeName)
+        # Top-level dict stays as dict (not marker-replaced)
         assert isinstance(result, dict)
         assert "owner" in result
-        # BUT the nested $ref property at depth 1 IS collapsed
-        assert result["owner"] == "$ref:User"
+        # BUT the nested $ref property at depth 1 IS replaced by the marker
+        assert result["owner"] == {"$ref": "User"}
 
     def test_depth_1_dict_with_ref_collapses(self) -> None:
-        """At depth>=1, a dict with $ref schema collapses to $ref:TypeName."""
+        """At depth>=1, a dict with a $ref schema becomes the marker."""
         data = {"user": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"user": {"$ref": "#/components/schemas/User"}}}
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        assert result["user"] == "$ref:User"
+        assert result["user"] == {"$ref": "User"}
 
     def test_depth_1_list_with_ref_collapses(self) -> None:
-        """At depth>=1, a list with $ref items collapses to $ref:TypeName[N]."""
+        """At depth>=1, a list with $ref items becomes a marker with a count."""
         data = {"labels": [{"id": 1, "name": "bug"}, {"id": 2, "name": "feature"}]}
         schema = {
             "type": "object",
@@ -370,7 +370,7 @@ class TestCollapseData:
             },
         }
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        assert result["labels"] == "$ref:Label[2]"
+        assert result["labels"] == {"$ref": "Label", "count": 2}
 
     def test_inline_schema_not_collapsed(self) -> None:
         """Inline schemas (no $ref) are NOT collapsed — they remain as nested dicts."""
@@ -396,7 +396,7 @@ class TestCollapseData:
             "properties": {"owner": {"allOf": [{"$ref": "#/components/schemas/User"}]}},
         }
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        assert result["owner"] == "$ref:User"
+        assert result["owner"] == {"$ref": "User"}
 
     def test_anyof_ref_collapses(self) -> None:
         """anyOf with $ref is resolved and collapsed."""
@@ -408,7 +408,7 @@ class TestCollapseData:
             },
         }
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        assert result["owner"] == "$ref:User"
+        assert result["owner"] == {"$ref": "User"}
 
     def test_none_no_collapse(self) -> None:
         """schema=None means no collapse occurs (data passed through)."""
@@ -438,32 +438,32 @@ class TestCollapseData:
         }
         result = collapse_data(data, schema, _depth=0, detail="concise")
         meta = result["meta"]
-        assert meta["owner"] == "$ref:User"
+        assert meta["owner"] == {"$ref": "User"}
         assert meta["description"] == "a repo"
 
     def test_list_at_depth_0_no_collapse(self) -> None:
-        """Without a spec, top-level list items keep the whole-item label fallback.
+        """Without a spec, top-level list items keep the whole-item marker fallback.
 
         Pre-#759 behavior is the documented fallback: the collapse can only
         summarize a root-list item when it can resolve the item ``$ref``,
         which needs the OpenAPI spec.  Callers that pass no spec (synthetic
-        tools, unit callers) get the bare ``$ref:TypeName`` item labels.
+        tools, unit callers) get one marker per root item.
         """
         data = [{"id": 1, "login": "user1"}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/User"}}
         result = collapse_data(data, schema, _depth=0, detail="concise")
-        # List stays as list (not collapsed to label)
+        # List stays as list (not marker-replaced wholesale)
         assert isinstance(result, list)
         assert len(result) == 1
-        # But nested items at depth>=1 ARE collapsed (no spec → fallback)
-        assert result[0] == "$ref:User"
+        # But nested items at depth>=1 ARE replaced by the marker (no spec → fallback)
+        assert result[0] == {"$ref": "User"}
 
     def test_root_list_with_spec_summarizes_items(self) -> None:
         """#759: with a spec, concise summarizes root-list items.
 
-        Scalars stay intact; nested ``$ref``-backed fields collapse to
-        ``$ref:TypeName`` labels; nested lists collapse to
-        ``$ref:TypeName[N]``.  This is the S1-lite contract.
+        Scalars stay intact; nested ``$ref``-backed fields become the marker
+        ``{"$ref": "TypeName"}``; nested lists become
+        ``{"$ref": "TypeName", "count": N}``.  This is the S1-lite contract.
         """
         spec = _issue_spec()
         data = [
@@ -482,8 +482,8 @@ class TestCollapseData:
         assert item["number"] == 1
         assert item["title"] == "Bug"
         assert item["body"] == "long text..."  # scalar intact
-        assert item["user"] == "$ref:User"  # nested ref collapses
-        assert item["labels"] == "$ref:Label[1]"  # nested list collapses
+        assert item["user"] == {"$ref": "User"}  # nested ref becomes marker
+        assert item["labels"] == {"$ref": "Label", "count": 1}  # nested list marker
 
     def test_root_list_no_truncation(self) -> None:
         """Scalars pass through verbatim — the collapse never truncates (#759 AC)."""
@@ -514,7 +514,7 @@ class TestCollapseData:
         data = [{"id": 7, "who": {"login": "u"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result[0] == {"id": 7, "who": "$ref:User"}
+        assert result[0] == {"id": 7, "who": {"$ref": "User"}}
 
     def test_root_list_allof_alias_chased(self) -> None:
         """A combinator-wrapped alias target is chased, not mislabeled.
@@ -543,7 +543,7 @@ class TestCollapseData:
         data = [{"id": 7, "who": {"login": "u"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result[0] == {"id": 7, "who": "$ref:User"}
+        assert result[0] == {"id": 7, "who": {"$ref": "User"}}
 
     def test_root_list_allof_cycle_falls_back(self) -> None:
         """A cycle routed through a combinator hits the hop cap → fallback label."""
@@ -553,7 +553,7 @@ class TestCollapseData:
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == ["$ref:Loop"]
+        assert result == [{"$ref": "Loop"}]
 
     def test_root_list_allof_merge_passes_extension_through(self) -> None:
         """A genuine allOf merge is chased to its first $ref member; the other
@@ -591,7 +591,7 @@ class TestCollapseData:
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
         assert result[0] == {
             "id": 7,
-            "who": "$ref:User",  # Base's nested ref collapses
+            "who": {"$ref": "User"},  # Base's nested ref becomes marker
             "extra": {"login": "x"},  # extension key: no schema → verbatim
         }
 
@@ -603,15 +603,15 @@ class TestCollapseData:
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == ["$ref:Loop"]
+        assert result == [{"$ref": "Loop"}]
 
     def test_root_list_missing_ref_falls_back(self) -> None:
-        """A pointer missing from the spec → whole-item label fallback."""
+        """A pointer missing from the spec → whole-item marker fallback."""
         spec = _issue_spec()
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Nope"}}
         result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == ["$ref:Nope"]
+        assert result == [{"$ref": "Nope"}]
 
     def test_root_list_anyof_ref_with_spec_summarizes(self) -> None:
         """anyOf-wrapped item refs resolve via the spec too."""
@@ -953,7 +953,8 @@ class TestFormatAsMarkdown:
 
         Collapsing is the display pipeline's job (``collapse_data``); the
         formatter receives already-collapsed data (nested ``$ref``-backed
-        objects are ``"$ref:TypeName"`` strings) and renders them as-is.
+        objects are the canonical ``{"$ref": "TypeName"}`` marker) and renders
+        them as-is.
         """
         # Outer wrapper pushes 'owner' and 'repo' to _depth=1
         data = {
@@ -1266,22 +1267,22 @@ class TestFormatAsMarkdown:
         result = format_as_markdown(data, field_filter=field_filter)
         assert "| Tags | alpha, beta |" in result
 
-    def test_dollar_ref_flattened_only_on_expand_path(self) -> None:
-        """$ref flattening happens after render hints so compact_ref still works."""
+    def test_ref_marker_precedes_render_hints(self) -> None:
+        """A $ref marker renders as its label even on a compact_ref field.
+
+        Marker detection must precede render hints: a ``compact_ref`` template
+        (e.g. ``{login}``/``{ref}``) has no matching key on a marker and would
+        otherwise leak a Python repr into the table (#763).
+        """
         data = {
             "base": {"$ref": "FakeRef"},
         }
-        # With an explicit compact_ref, the $ref dict should be handled
-        # by compact_ref (template likely fails → str fallback), not
-        # flattened to "$ref:FakeRef".
         field_filter = {
             "base": {"render": "compact_ref", "template": "{ref}"},
         }
         result = format_as_markdown(data, field_filter=field_filter)
-        # Should render as the str fallback (dict doesn't have 'ref' key)
-        assert "| Base | {'$ref': 'FakeRef'}" in result or "| Base |" in result
-        # Should NOT show the $ref flattened syntax
-        assert "$ref:FakeRef" not in result
+        assert "| Base | $ref:FakeRef |" in result
+        assert "{'$ref'" not in result
 
     def test_dollar_ref_flattened_on_expand_path(self) -> None:
         """$ref flattening still works on the default expand path."""

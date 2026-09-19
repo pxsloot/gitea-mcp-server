@@ -223,7 +223,9 @@ _VIRTUAL_PARAMS["detail"] = VirtualParam(
     description=(
         'Output detail level.  "full" (default) — complete information. '
         '"concise" — root items summarized (scalars intact), nested '
-        "$ref-backed objects collapsed to ``$ref:TypeName`` labels."
+        "$ref-backed objects collapsed to the ``$ref`` marker "
+        '(``{"$ref": "TypeName"}``, or with ``"count"`` for a collapsed list; '
+        "rendered as ``$ref:TypeName`` in markdown)."
     ),
 )
 

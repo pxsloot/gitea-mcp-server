@@ -113,7 +113,7 @@ mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
 | `limit`     | integer | page size for list/search tools |
 | `fetch_all`   | boolean | When true, return all matching results without page slicing (synthetic search/list tools only). Default `false` — single page only. See Pagination edge case below. |
 | `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
-| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` summarizes root items (scalars intact) and collapses nested objects to `$ref:TypeName` labels (affects both `json` and `markdown` output) |
+| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` summarizes root items (scalars intact) and replaces nested objects with the `$ref` marker `{"$ref": "TypeName"}` (`{"$ref": "TypeName", "count": N}` for a collapsed list), rendered as `$ref:TypeName` in markdown (affects both `json` and `markdown` output) |
 | `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
 
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
@@ -214,7 +214,7 @@ parameter:
 | `detail`  | Effect on output |
 |-----------|------------------|
 | `"full"` (default) | Complete information, full object expansion. |
-| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) collapse to ``$ref:TypeName`` labels. Lists *inside* an item collapse whole (``$ref:Type[N]``). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
+| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) are replaced by the marker `{"$ref": "TypeName"}`. Lists *inside* an item are replaced by `{"$ref": "TypeName", "count": N}`. In ``markdown`` the marker renders as `$ref:TypeName` (a collapsed list as `$ref:TypeName[N]`). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
 
 **Content is the contract.** The text channel (`content`) is authoritative
 and always present; `structured_content` mirrors it. For `format=json` and
@@ -239,16 +239,17 @@ For ``json`` format, the pagination envelope (``has_more``, ``next_offset``, ``t
 An out-of-range page keeps the object-shaped `result` (empty `content`) and
 adds a `message` (e.g. "Page N is out of range (total results: M)").
 
-Note on output shape: `output_example` and `format=json` results reference
-nested objects with `$ref:Type` markers (e.g. `$ref:User`, `$ref:Label`). These
-are not inline -- the full object is returned by the live API, but the example
-uses references to stay compact. Don't expect a flat structure; read the nested
-fields from the actual response. Scalar-result tools (e.g. boolean checks) show a bare primitive instead (`true`, `0`, `"example"`).
+Note on output shape: `output_example` and `format=json, detail=concise` results
+mark nested objects with `{"$ref": "TypeName"}` (plus `"count": N` where a list
+was collapsed); `markdown` renders it as `$ref:TypeName` (`$ref:TypeName[N]`).
+The marker is not an inline value — the full object is returned at `detail=full`.
+Don't expect a flat structure; read the nested fields from the actual response.
+Scalar-result tools (e.g. boolean checks) show a bare primitive instead (`true`, `0`, `"example"`).
 
-When you see a ``$ref:TypeName`` marker and need to know what fields that type
-contains, use ``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or
-read ``gitea://types/{TypeName}`` for a cached JSON read. The ``resolve_type``
-tool also shows which tools return or accept each type. Run
+When you see a `$ref` marker, pass its `$ref` value as the name to
+``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or read
+``gitea://types/{TypeName}`` for a cached JSON read. The ``resolve_type`` tool
+also shows which tools return or accept each type. Run
 ``tool_info("{{TOOL_PREFIX}}resolve_type")`` for the full parameter and output schema.
 
 ## Tool annotations

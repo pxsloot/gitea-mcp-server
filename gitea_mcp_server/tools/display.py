@@ -39,6 +39,7 @@ from gitea_mcp_server.format import (
     format_as_markdown,
     register_formatter,
 )
+from gitea_mcp_server.schema_utils import is_ref_marker, ref_marker_label
 
 # ---------------------------------------------------------------------------
 # Shared field specifications
@@ -170,7 +171,7 @@ def _format_issues_markdown(data: Any, *, extra: dict | None = None) -> str:
     else:
         # Guard against non-dict items (unexpected data shape).  Under
         # detail=concise items are summarized dicts (#759), never bare
-        # $ref strings, so the scan sees real ``pull_request`` fields.
+        # markers, so the scan sees real ``pull_request`` fields.
         has_prs = (
             (any(isinstance(item, dict) and item.get("pull_request") for item in data))
             if data
@@ -323,7 +324,9 @@ def _format_labels_markdown(
     items (#759) — the ``Label`` schema has no nested ``$ref`` fields, so
     a concise item is the full scalar dict and renders here unchanged.
     Items are dicts on both detail levels; the non-dict branch below is a
-    defensive guard for unexpected shapes, not the collapse contract.
+    defensive guard for unexpected shapes, not the collapse contract.  A
+    canonical ``$ref`` marker (the no-spec whole-item fallback) renders as its
+    compact label.
 
     A *dict* arrives from single-label reads (``issue_get_label``)
     and renders the detail view instead of the collection list.
@@ -357,6 +360,11 @@ def _format_labels_markdown(
         lines.append(f"## Labels ({len(data)})")
         lines.append("")
         for label in data:
+            if is_ref_marker(label):
+                # A collapsed/no-spec fallback item — render the marker label
+                # rather than treating it as a real Label dict (#763).
+                lines.append(f"- {ref_marker_label(label)}")
+                continue
             if not isinstance(label, dict):
                 # Guard against non-dict items (unexpected data shape).
                 lines.append(f"- {label}")

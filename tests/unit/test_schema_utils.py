@@ -4,12 +4,17 @@ Covers the exported functions:
 - ``schema_type_matches`` — type-as-list-aware matching
 - ``get_schema_type`` — extract primary type from type-as-list
 - ``extract_type_ref`` / ``extract_type_name`` — shared root-ref notion
+- ``ref_marker`` / ``is_ref_marker`` / ``ref_marker_label`` — the canonical
+  agent-facing ``$ref`` marker contract (#763)
 """
 
 from gitea_mcp_server.schema_utils import (
     extract_type_name,
     extract_type_ref,
     get_schema_type,
+    is_ref_marker,
+    ref_marker,
+    ref_marker_label,
     schema_type_matches,
 )
 
@@ -161,3 +166,40 @@ class TestExtractTypeName:
     def test_no_ref_returns_none(self) -> None:
         assert extract_type_name({"type": "object"}) is None
         assert extract_type_name(None) is None
+
+
+class TestRefMarker:
+    """The canonical agent-facing ``$ref`` marker contract (#763)."""
+
+    def test_object_marker_is_single_key(self) -> None:
+        assert ref_marker("User") == {"$ref": "User"}
+
+    def test_list_marker_carries_count(self) -> None:
+        assert ref_marker("Label", 2) == {"$ref": "Label", "count": 2}
+
+    def test_zero_count_is_kept(self) -> None:
+        """A collapsed empty list still carries ``count: 0`` (not omitted)."""
+        assert ref_marker("Label", 0) == {"$ref": "Label", "count": 0}
+
+    def test_is_ref_marker_accepts_both_forms(self) -> None:
+        assert is_ref_marker({"$ref": "User"}) is True
+        assert is_ref_marker({"$ref": "Label", "count": 2}) is True
+        assert is_ref_marker({"$ref": "Label", "count": 0}) is True
+
+    def test_is_ref_marker_rejects_other_shapes(self) -> None:
+        assert is_ref_marker("$ref:User") is False  # the retired string form
+        assert is_ref_marker({"$ref": 1}) is False  # type name must be a string
+        assert is_ref_marker({}) is False
+        assert is_ref_marker(None) is False
+        assert is_ref_marker([{"$ref": "User"}]) is False
+        # Extra keys beyond count are not the marker shape.
+        assert is_ref_marker({"$ref": "Label", "count": 2, "extra": 1}) is False
+
+    def test_is_ref_marker_count_must_be_int(self) -> None:
+        assert is_ref_marker({"$ref": "Label", "count": "2"}) is False
+
+    def test_label_renders_object_marker(self) -> None:
+        assert ref_marker_label(ref_marker("User")) == "$ref:User"
+
+    def test_label_renders_list_marker_with_count(self) -> None:
+        assert ref_marker_label(ref_marker("Label", 2)) == "$ref:Label[2]"

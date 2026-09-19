@@ -6,12 +6,19 @@ Flat utility module that breaks the circular import between
 helpers live here so any layer can import them without creating
 import cycles.
 
+It also owns the canonical **agent-facing ``$ref`` marker** contract
+(:func:`ref_marker` / :func:`is_ref_marker` / :func:`ref_marker_label`):
+"this object/list is represented by its type name" is one dict shape, emitted
+by the concise collapse (``format.collapse_data``) and the compact example
+generator (``tools.examples.schema_to_compact_example``) and read by every
+formatter through these helpers (#763).
+
 Following the same pattern as :mod:`gitea_mcp_server.scope` (a flat
 module that breaks a circular import between ``tools/`` and
 ``resources/``).
 """
 
-from typing import Any
+from typing import Any, TypeGuard
 
 
 def schema_type_matches(schema: dict[str, Any], expected: str) -> bool:
@@ -100,6 +107,94 @@ def extract_type_name(schema: Any) -> str | None:
     return ref.rsplit("/", 1)[-1] if ref else None
 
 
+# ---------------------------------------------------------------------------
+# Agent-facing ``$ref`` marker
+# ---------------------------------------------------------------------------
+# "This object/list is represented by its type name" is encoded as one small
+# dict on the agent-facing surface — the single marker shape:
+#
+#     {"$ref": "User"}                 # an object position
+#     {"$ref": "Label", "count": 2}    # a collapsed list position
+#
+# Two producers emit it — the concise-detail collapse
+# (``format.collapse_data``) and the compact example/type-summary generator
+# (``tools.examples.schema_to_compact_example``) — and every consumer
+# (formatters, ``resolve_type``, agents) reads it through these helpers, so
+# the shape is defined exactly once.  The marker is deliberately not a plain
+# string (``"$ref:User"`` would be ambiguous with real string data) and not a
+# JSON Schema ``$ref`` pointer (it carries a bare type name, not a pointer).
+REF_MARKER_KEY = "$ref"
+"""Key holding the referenced type name inside a marker."""
+
+REF_COUNT_KEY = "count"
+"""Optional key holding the collapsed-list item count inside a marker."""
+
+
+def ref_marker(type_name: str, count: int | None = None) -> dict[str, Any]:
+    """Build the canonical agent-facing ``$ref`` marker.
+
+    Args:
+        type_name: The referenced type name (e.g. ``"User"``) — a bare name,
+            not a JSON pointer, so it can be passed straight to
+            ``resolve_type``.
+        count: When the marker stands in for a collapsed *list*, the number of
+            items collapsed.  ``None`` for an object position.
+
+    Returns:
+        ``{"$ref": type_name}`` for an object position, or
+        ``{"$ref": type_name, "count": count}`` for a collapsed list.
+    """
+    marker: dict[str, Any] = {REF_MARKER_KEY: type_name}
+    if count is not None:
+        marker[REF_COUNT_KEY] = count
+    return marker
+
+
+def is_ref_marker(value: Any) -> TypeGuard[dict[str, Any]]:
+    """Return whether *value* is the canonical agent-facing ``$ref`` marker.
+
+    Accepts both marker forms — the object form (single key) and the collapsed
+    list form (``count`` beside the type name).  Structurally strict: a real
+    payload dict that merely happens to contain a ``$ref`` key is not a marker
+    unless it is exactly the marker shape.
+
+    Typed as a :data:`~typing.TypeGuard` so callers narrow the value to the
+    marker dict when the check passes (the marker renderer takes a dict).
+
+    Args:
+        value: Any candidate value.
+
+    Returns:
+        ``True`` for ``{"$ref": "User"}`` and
+        ``{"$ref": "Label", "count": 2}``; ``False`` otherwise.
+    """
+    if not isinstance(value, dict):
+        return False
+    if not isinstance(value.get(REF_MARKER_KEY), str):
+        return False
+    extra = set(value) - {REF_MARKER_KEY}
+    if not extra:
+        return True
+    return extra == {REF_COUNT_KEY} and isinstance(value[REF_COUNT_KEY], int)
+
+
+def ref_marker_label(marker: dict[str, Any]) -> str:
+    """Render a ``$ref`` marker as its compact markdown/scalar label.
+
+    Args:
+        marker: A marker produced by :func:`ref_marker`.
+
+    Returns:
+        ``"$ref:User"`` for an object marker, ``"$ref:Label[2]"`` for a
+        collapsed list marker.
+    """
+    type_name = marker[REF_MARKER_KEY]
+    count = marker.get(REF_COUNT_KEY)
+    if count is None:
+        return f"$ref:{type_name}"
+    return f"$ref:{type_name}[{count}]"
+
+
 def get_schema_type(schema: dict[str, Any]) -> str | None:
     """Extract the primary type name from a schema, resolving type-as-list.
 
@@ -136,8 +231,13 @@ def get_schema_type(schema: dict[str, Any]) -> str | None:
 
 
 __all__ = [
+    "REF_COUNT_KEY",
+    "REF_MARKER_KEY",
     "extract_type_name",
     "extract_type_ref",
     "get_schema_type",
+    "is_ref_marker",
+    "ref_marker",
+    "ref_marker_label",
     "schema_type_matches",
 ]

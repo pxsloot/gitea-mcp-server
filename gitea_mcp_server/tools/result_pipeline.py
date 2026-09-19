@@ -38,10 +38,11 @@ from the call args).  When ``detail="concise"`` and a schema is
 available, the pipeline pre-collapses the page (schema-aware ``$ref``
 collapse) before calling the formatter, so formatters receive
 already-collapsed data and must not re-collapse.  Root-list items are
-*summarized*, not label-replaced: the collapse resolves a root list's item
+*summarized*, not marker-replaced: the collapse resolves a root list's item
 ``$ref`` one level via the server's OpenAPI spec (``render(openapi_spec=...)``),
 so each item keeps its scalar fields and only its nested ``$ref``-backed
-fields collapse to ``$ref:TypeName`` labels (#759).
+fields collapse to the canonical ``$ref`` marker (``{"$ref": "TypeName"}``,
+or with ``count`` for a collapsed list; #759, #763).
 
 Result shapes (``ExecutionResult.shape``):
 

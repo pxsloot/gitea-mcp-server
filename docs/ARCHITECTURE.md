@@ -252,7 +252,7 @@ Agent reads a resource:
           │   format_as_markdown fallback — then dispatched via
           │   call_markdown_formatter, which passes only the kwargs the
           │   formatter declares, e.g. extra; detail is not forwarded —
-          │   collapsed fields are $ref:TypeName strings, items are dicts)
+          │   collapsed fields are {"$ref": "TypeName"} markers, items are dicts)
           └─ format/raw: serialized envelope {"result": <data>}
 ```
 

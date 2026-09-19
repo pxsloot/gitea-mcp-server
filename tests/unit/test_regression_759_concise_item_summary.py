@@ -158,16 +158,17 @@ class TestListToolItemSummaries:
         assert sc["result"][0]["user"] == {"$ref": "User"}
         assert sc["result"][0]["title"] == "t"
 
-    def test_no_spec_fallback_is_documented(self) -> None:
-        """Without a spec the pre-#759 whole-item marker fallback applies."""
+    def test_no_spec_leaves_list_uncollapsed(self) -> None:
+        """Without a spec an unresolvable root list is returned unchanged (#763)."""
+        data = [_issue(1, "t")]
         result = render(
-            ExecutionResult(data=[_issue(1, "t")], shape="list"),
+            ExecutionResult(data=data, shape="list"),
             fmt="json",
             detail="concise",
             schema=_ISSUES_SCHEMA,
         )
         parsed = parse_json_content(result)
-        assert parsed["result"] == [{"$ref": "Issue"}]
+        assert parsed["result"] == data
 
     def test_raw_never_collapses(self) -> None:
         """format=raw stays the unprocessed-data contract even with a spec."""

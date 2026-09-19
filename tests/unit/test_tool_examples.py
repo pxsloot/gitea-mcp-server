@@ -418,16 +418,18 @@ class TestSchemaToCompactExample:
 
         assert schema_to_compact_example({"type": "object", "properties": {}}) == "{...}"
 
-    def test_array_with_ref_items(self) -> None:
-        """A root array (depth 0) of $ref items returns [{"$ref": "Type"}]."""
+    def test_array_with_unresolvable_ref_items_returns_empty(self) -> None:
+        """A root array of $ref items without a spec yields no example item.
+
+        Never an array of content-free markers (#763).
+        """
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
             "type": "array",
             "items": {"$ref": "#/components/schemas/Branch"},
         }
-        result = schema_to_compact_example(schema)
-        assert result == [{"$ref": "Branch"}]
+        assert schema_to_compact_example(schema) == []
 
     def test_nested_array_with_ref_items_uses_collapsed_marker(self) -> None:
         """A nested array of $ref items emits the collapsed-list marker (#763).

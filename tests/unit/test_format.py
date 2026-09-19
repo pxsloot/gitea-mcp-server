@@ -23,6 +23,7 @@ from gitea_mcp_server.format import (
     call_markdown_formatter,
     collapse_data,
     format_as_markdown,
+    resolve_ref_chain,
 )
 from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
@@ -338,7 +339,7 @@ class TestCollapseData:
         """detail='full' returns data unchanged regardless of schema."""
         data = {"owner": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"owner": {"$ref": "#/components/schemas/User"}}}
-        result = collapse_data(data, schema, _depth=0, detail="full")
+        result = collapse_data(data, schema, detail="full")
         assert result is data
 
     def test_depth_0_no_collapse(self) -> None:
@@ -346,7 +347,7 @@ class TestCollapseData:
         $ref-backed properties at depth>=1 ARE collapsed."""
         data = {"owner": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"owner": {"$ref": "#/components/schemas/User"}}}
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         # Top-level dict stays as dict (not marker-replaced)
         assert isinstance(result, dict)
         assert "owner" in result
@@ -357,7 +358,7 @@ class TestCollapseData:
         """At depth>=1, a dict with a $ref schema becomes the marker."""
         data = {"user": {"id": 1, "login": "user1"}}
         schema = {"type": "object", "properties": {"user": {"$ref": "#/components/schemas/User"}}}
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         assert result["user"] == {"$ref": "User"}
 
     def test_depth_1_list_with_ref_collapses(self) -> None:
@@ -369,7 +370,7 @@ class TestCollapseData:
                 "labels": {"type": "array", "items": {"$ref": "#/components/schemas/Label"}},
             },
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         assert result["labels"] == {"$ref": "Label", "count": 2}
 
     def test_inline_schema_not_collapsed(self) -> None:
@@ -384,7 +385,7 @@ class TestCollapseData:
                 },
             },
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         assert isinstance(result["config"], dict)
         assert result["config"]["host"] == "localhost"
 
@@ -395,7 +396,7 @@ class TestCollapseData:
             "type": "object",
             "properties": {"owner": {"allOf": [{"$ref": "#/components/schemas/User"}]}},
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         assert result["owner"] == {"$ref": "User"}
 
     def test_anyof_ref_collapses(self) -> None:
@@ -407,14 +408,29 @@ class TestCollapseData:
                 "owner": {"anyOf": [{"$ref": "#/components/schemas/User"}, {"type": "null"}]},
             },
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         assert result["owner"] == {"$ref": "User"}
 
     def test_none_no_collapse(self) -> None:
         """schema=None means no collapse occurs (data passed through)."""
         data = {"owner": {"id": 1, "login": "user1"}}
-        result = collapse_data(data, None, _depth=0, detail="concise")
+        result = collapse_data(data, None, detail="concise")
         assert result is data
+
+    def test_root_object_unresolvable_ref_left_uncollapsed(self) -> None:
+        """An unresolvable root-object ``$ref`` leaves the payload unchanged."""
+        data = {"a": 1}
+        schema = {"$ref": "#/components/schemas/Nope"}
+        result = collapse_data(data, schema, detail="concise")
+        assert result is data
+
+    def test_scalar_payload_returned_unchanged(self) -> None:
+        """A scalar payload is returned unchanged."""
+        assert collapse_data("x", {"type": "string"}, detail="concise") == "x"
+
+    def test_resolve_ref_chain_without_ref_returns_none(self) -> None:
+        """An inline schema has no ``$ref`` chain to resolve."""
+        assert resolve_ref_chain({"type": "object"}, make_openapi_spec()) is None
 
     def test_nested_mixed(self) -> None:
         """Mixed $ref and inline schemas: only $ref properties collapse."""
@@ -436,27 +452,22 @@ class TestCollapseData:
                 },
             },
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         meta = result["meta"]
         assert meta["owner"] == {"$ref": "User"}
         assert meta["description"] == "a repo"
 
-    def test_list_at_depth_0_no_collapse(self) -> None:
-        """Without a spec, top-level list items keep the whole-item marker fallback.
+    def test_root_list_without_spec_left_uncollapsed(self) -> None:
+        """An unresolvable item type leaves the root list unchanged.
 
-        Pre-#759 behavior is the documented fallback: the collapse can only
-        summarize a root-list item when it can resolve the item ``$ref``,
-        which needs the OpenAPI spec.  Callers that pass no spec (synthetic
-        tools, unit callers) get one marker per root item.
+        The collapse can only summarize a root-list item when it can resolve
+        the item ``$ref``, which needs the OpenAPI spec.  Rather than emit a
+        content-free marker per item, the payload is returned intact (#763).
         """
         data = [{"id": 1, "login": "user1"}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/User"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise")
-        # List stays as list (not marker-replaced wholesale)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        # But nested items at depth>=1 ARE replaced by the marker (no spec → fallback)
-        assert result[0] == {"$ref": "User"}
+        result = collapse_data(data, schema, detail="concise")
+        assert result is data
 
     def test_root_list_with_spec_summarizes_items(self) -> None:
         """#759: with a spec, concise summarizes root-list items.
@@ -476,7 +487,7 @@ class TestCollapseData:
             },
         ]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         item = result[0]
         assert isinstance(item, dict)
         assert item["number"] == 1
@@ -491,7 +502,7 @@ class TestCollapseData:
         spec = _issue_spec()
         data = [{"number": 1, "title": "t", "body": long_body, "user": {"id": 1, "login": "u"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result[0]["body"] == long_body
 
     def test_root_list_alias_chain_resolved(self) -> None:
@@ -513,7 +524,7 @@ class TestCollapseData:
         )
         data = [{"id": 7, "who": {"login": "u"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result[0] == {"id": 7, "who": {"$ref": "User"}}
 
     def test_root_list_allof_alias_chased(self) -> None:
@@ -542,26 +553,26 @@ class TestCollapseData:
         )
         data = [{"id": 7, "who": {"login": "u"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Alias"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result[0] == {"id": 7, "who": {"$ref": "User"}}
 
-    def test_root_list_allof_cycle_falls_back(self) -> None:
-        """A cycle routed through a combinator hits the hop cap → fallback label."""
+    def test_root_list_allof_cycle_left_uncollapsed(self) -> None:
+        """A cycle routed through a combinator hits the hop cap → list unchanged."""
         spec = make_openapi_spec(
             components={"schemas": {"Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}]}}}
         )
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == [{"$ref": "Loop"}]
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
+        assert result is data
 
     def test_root_list_allof_merge_passes_extension_through(self) -> None:
         """A genuine allOf merge is chased to its first $ref member; the other
         members' keys carry no property schema and pass through verbatim.
 
         Documents the deliberate trade-off: the summary may be slightly
-        fatter (uncollapsed extension values) but never emptier than the
-        whole-item label the old code produced for this shape.
+        fatter (uncollapsed extension values) but never emptier than a
+        whole-item marker.
         """
         spec = make_openapi_spec(
             components={
@@ -588,30 +599,30 @@ class TestCollapseData:
         )
         data = [{"id": 7, "who": {"login": "u"}, "extra": {"login": "x"}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Merged"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result[0] == {
             "id": 7,
             "who": {"$ref": "User"},  # Base's nested ref becomes marker
             "extra": {"login": "x"},  # extension key: no schema → verbatim
         }
 
-    def test_root_list_ref_cycle_falls_back(self) -> None:
-        """A self-referential alias hits the hop cap → whole-item label fallback."""
+    def test_root_list_ref_cycle_left_uncollapsed(self) -> None:
+        """A self-referential alias hits the hop cap → list unchanged."""
         spec = make_openapi_spec(
             components={"schemas": {"Loop": {"$ref": "#/components/schemas/Loop"}}}
         )
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Loop"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == [{"$ref": "Loop"}]
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
+        assert result is data
 
-    def test_root_list_missing_ref_falls_back(self) -> None:
-        """A pointer missing from the spec → whole-item marker fallback."""
+    def test_root_list_missing_ref_left_uncollapsed(self) -> None:
+        """A pointer missing from the spec leaves the list unchanged."""
         spec = _issue_spec()
         data = [{"a": 1}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Nope"}}
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
-        assert result == [{"$ref": "Nope"}]
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
+        assert result is data
 
     def test_root_list_anyof_ref_with_spec_summarizes(self) -> None:
         """anyOf-wrapped item refs resolve via the spec too."""
@@ -621,7 +632,7 @@ class TestCollapseData:
             "items": {"anyOf": [{"$ref": "#/components/schemas/User"}, {"type": "null"}]},
         }
         data = [{"id": 1, "login": "x"}]
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         # User has no nested $ref fields — the summary is the full scalar dict
         assert result == [{"id": 1, "login": "x"}]
 
@@ -633,7 +644,7 @@ class TestCollapseData:
             "items": {"type": "object", "properties": {"host": {"type": "string"}}},
         }
         data = [{"host": "a"}]
-        result = collapse_data(data, schema, _depth=0, detail="concise", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result == [{"host": "a"}]
 
     def test_detail_full_ignores_spec(self) -> None:
@@ -641,7 +652,7 @@ class TestCollapseData:
         spec = _issue_spec()
         data = [{"user": {"id": 1}}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
-        result = collapse_data(data, schema, _depth=0, detail="full", openapi_spec=spec)
+        result = collapse_data(data, schema, detail="full", openapi_spec=spec)
         assert result is data
 
     def test_non_dict_prop_schema_guarded(self) -> None:
@@ -652,7 +663,7 @@ class TestCollapseData:
             "type": "object",
             "properties": {"labels": "not_a_dict"},
         }
-        result = collapse_data(data, schema, _depth=0, detail="concise")
+        result = collapse_data(data, schema, detail="concise")
         # The non-dict prop_schema is treated as None — data passes through unchanged
         assert isinstance(result, dict)
         assert "labels" in result
@@ -982,7 +993,7 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        collapsed = collapse_data(data, schema, _depth=0, detail="concise")
+        collapsed = collapse_data(data, schema, detail="concise")
         result = format_as_markdown(collapsed, schema)
         # The collapsed $ref labels render in the markdown
         assert "$ref:User" in result
@@ -1012,7 +1023,7 @@ class TestFormatAsMarkdown:
                 },
             },
         }
-        collapsed = collapse_data(data, schema, _depth=0, detail="concise")
+        collapsed = collapse_data(data, schema, detail="concise")
         result = format_as_markdown(collapsed, schema)
         assert "$ref:Label[2]" in result
         assert "bug" not in result
@@ -1584,21 +1595,6 @@ class TestFormatDateTime:
     def test_handles_invalid_format(self) -> None:
         """Test invalid format returns original string."""
         assert _format_datetime("not a date") == "not a date"
-
-
-class TestFormatListAsMarkdownRef:
-    """Tests for _format_list_as_markdown with $ref-flattened data."""
-
-    def test_ref_list_renders_bulleted_refs(self) -> None:
-        """List of {"$ref": "Type"} dicts renders as bulleted $ref:Type items."""
-        from gitea_mcp_server.format import _format_list_as_markdown
-
-        data = [{"$ref": "User"}, {"$ref": "Repo"}]
-        result = _format_list_as_markdown(data)
-        assert "$ref:User" in result
-        assert "$ref:Repo" in result
-        assert "- $ref:User" in result
-        assert "- $ref:Repo" in result
 
 
 class TestFormatDictAsMarkdownEmptyFieldFilter:

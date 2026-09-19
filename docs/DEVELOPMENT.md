@@ -570,9 +570,10 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    `detail=concise`, so formatters never collapse themselves and never see the
    `detail` flag — collapsed *fields* arrive as the canonical `$ref` marker
    (`{"$ref": "TypeName"}`, or with `count` for a collapsed list; render via
-   `is_ref_marker`/`ref_marker_label` from `marker.py`).  Root-list items
-   are always dicts (summarized, #759), so formatters must not branch on
-   collapsed item shapes.
+    `is_ref_marker`/`ref_marker_label` from `marker.py`).  Root-list items
+    are never object markers — they are summarized when the item type
+    resolves, otherwise the list is left whole (#759, #763) — so formatters
+    must not branch on collapsed item shapes.
 
    **`types=` binds the formatter to tools by response type (#760).** The
    format layer's `resolve_formatter` dispatches in three tiers: an

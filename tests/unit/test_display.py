@@ -102,19 +102,14 @@ class TestFormatLabelsMarkdownEdgeCases:
         result = _format_labels_markdown([])
         assert "?/?" in result
 
-    def test_no_spec_marker_items_render_compact_labels(self) -> None:
-        """Whole-item fallback markers render as compact label bullets (#763).
-
-        Production always carries a spec (so concise items are summarized
-        dicts); when a marker does arrive it must render as its label, not as
-        an unnamed ``Label`` dict.
-        """
+    def test_string_items_render_verbatim(self) -> None:
+        """Non-dict items render verbatim (defensive shape guard)."""
         result = _format_labels_markdown(
-            [{"$ref": "Label"}],
+            ["bug", "feature"],
             extra={"owner": "o", "repo": "r"},
         )
-        assert "- $ref:Label" in result
-        assert "Unnamed" not in result
+        assert "- bug" in result
+        assert "- feature" in result
 
 
 class TestTypeBindingRegistry:

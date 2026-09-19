@@ -4,11 +4,12 @@ from typing import Any
 
 from fastmcp.tools.base import Tool
 
+from gitea_mcp_server.format import resolve_ref_chain
 from gitea_mcp_server.marker import ref_marker
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.schema_utils import extract_type_name, get_schema_type
-from gitea_mcp_server.tools.schemas import resolve_ref, unwrap_result_schema
+from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
@@ -182,13 +183,14 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     When encountering ``$ref``, emits the canonical agent-facing marker
     ``{"$ref": "TypeName"}`` (built by
     :func:`~gitea_mcp_server.marker.ref_marker`) instead of inlining the
-    referenced schema, **unless** ``depth == 0`` and ``openapi_spec`` is
-    provided — in that case the top-level ``$ref`` is resolved one level so
-    the agent sees actual field names instead of just a type marker.
-    Nested ``$ref`` (depth >= 1) always emit the marker.  A nested list whose
-    items are a ``$ref`` emits the collapsed-list marker
-    ``{"$ref": "TypeName", "count": 1}`` — the same shape the concise collapse
-    produces (#763).
+    referenced schema, **unless** ``depth == 0`` and the chain resolves — in
+    that case the top-level ``$ref`` (or a root array's item ``$ref``) is
+    resolved to a concrete schema so the agent sees actual field names
+    instead of just a marker.  Nested ``$ref`` (depth >= 1) always emit the
+    marker.  A nested list whose items are a ``$ref`` emits the collapsed-list
+    marker ``{"$ref": "TypeName", "count": 1}`` — the same shape the concise
+    collapse produces (#763); an unresolvable root-array item type yields an
+    empty list, never an array of content-free markers.
 
     The markdown formatter recognises the marker via ``is_ref_marker`` and
     renders it as ``$ref:TypeName``.  All properties are included (no
@@ -203,23 +205,22 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         depth: Current recursion depth.
         max_depth: Maximum recursion depth before returning ``"{...}"``.
         prop_name: Property name hint for string example generation.
-        openapi_spec: Post-conversion OpenAPI 3.1 spec. When provided and
-            ``depth == 0``, a bare ``$ref`` at the top level is resolved
-            one level so agents see the type's properties instead of just
-            a marker for the type name.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec. At ``depth == 0`` the
+            root ``$ref`` chain (or a root array's item ``$ref``) is resolved
+            to a concrete schema; ``None`` leaves it unresolved.
 
     Returns:
         A compact representation: the ``{"$ref": "TypeName"}`` marker for
         refs (with ``count`` for a nested list), example values for leaf
         types, dicts/arrays with one level of nesting.
     """
-    # $ref handling: at depth=0 with spec available, resolve one level so
+    # $ref handling: at depth=0, resolve the chain to a concrete schema so
     # agents see actual fields instead of just a marker for the type name.
     # At depth > 0, emit the canonical {"$ref": "TypeName"} marker.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
-        if depth == 0 and openapi_spec is not None:
-            resolved = resolve_ref(openapi_spec, schema["$ref"])
-            if isinstance(resolved, dict):
+        if depth == 0:
+            resolved = resolve_ref_chain(schema, openapi_spec)
+            if resolved is not None:
                 # Recurse at same depth — the ref's resolved properties will
                 # be processed normally; nested $refs inside will hit depth >= 1
                 # and emit markers as usual.
@@ -274,16 +275,19 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         items = schema.get("items", {})
         if not (isinstance(items, dict) and items):
             return []
-        # A *nested* list of ``$ref`` items is represented by the same
-        # collapsed-list marker the concise collapse emits (#763): a marker
-        # with ``count``, not an array wrapping a marker.  The example shows
-        # one element, so the illustrative count is 1.  A root list
-        # (``depth == 0``) is not marker-replaced — its items are summarized
-        # one level (#759), mirroring ``collapse_data``.
-        if depth >= 1:
-            type_name = extract_type_name(items)
-            if type_name:
-                return ref_marker(type_name, 1)
+        type_name = extract_type_name(items)
+        if depth >= 1 and type_name:
+            # A nested list of ``$ref`` items is a collapsed relation: the
+            # marker with the example cardinality (one shown element).
+            return ref_marker(type_name, 1)
+        if depth == 0 and type_name:
+            # The root array is the payload.  Resolve the item ``$ref`` one
+            # level to summarize it; an unresolvable item type yields no
+            # example item rather than an array of content-free markers (#763).
+            resolved = resolve_ref_chain(items, openapi_spec)
+            if resolved is None:
+                return []
+            items = resolved
         return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
 
     if schema_type == "string":

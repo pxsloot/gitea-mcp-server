@@ -39,7 +39,7 @@ from gitea_mcp_server.format import (
     format_as_markdown,
     register_formatter,
 )
-from gitea_mcp_server.schema_utils import is_ref_marker, ref_marker_label
+from gitea_mcp_server.marker import is_ref_marker, ref_marker_label
 
 # ---------------------------------------------------------------------------
 # Shared field specifications
@@ -171,7 +171,8 @@ def _format_issues_markdown(data: Any, *, extra: dict | None = None) -> str:
     else:
         # Guard against non-dict items (unexpected data shape).  Under
         # detail=concise items are summarized dicts (#759), never bare
-        # markers, so the scan sees real ``pull_request`` fields.
+        # markers; the scan only reads ``pull_request`` truthiness, which a
+        # marker satisfies too.
         has_prs = (
             (any(isinstance(item, dict) and item.get("pull_request") for item in data))
             if data

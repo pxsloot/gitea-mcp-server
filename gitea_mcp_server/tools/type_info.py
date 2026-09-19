@@ -1,8 +1,8 @@
 """Type introspection tool and resource.
 
 Provides ``resolve_type`` (synthetic tool) and ``gitea://types/{typeName}``
-(resource) for resolving ``$ref:TypeName`` references that appear in
-``tool_info`` output.
+(resource) for resolving the ``$ref`` markers that appear in tool output and
+``tool_info``.
 
 Core logic:
   - ``build_type_index()`` — walks the OpenAPI spec once at startup to build

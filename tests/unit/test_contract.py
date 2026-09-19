@@ -413,12 +413,22 @@ class TestRefMarkerContract:
         "type": "object",
         "properties": {"owner": {"$ref": "#/components/schemas/User"}},
     }
+    _LIST_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/Label"},
+            }
+        },
+    }
 
     def test_producers_emit_the_same_marker(self) -> None:
         from gitea_mcp_server.format import collapse_data
-        from gitea_mcp_server.schema_utils import is_ref_marker
+        from gitea_mcp_server.marker import is_ref_marker
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
+        # Object position: both producers emit {"$ref": "User"}.
         from_example = schema_to_compact_example({"$ref": "#/components/schemas/User"})
         collapsed = collapse_data(
             {"owner": {"id": 1, "login": "u"}},
@@ -428,6 +438,19 @@ class TestRefMarkerContract:
         assert from_example == {"$ref": "User"}
         assert collapsed["owner"] == from_example
         assert is_ref_marker(collapsed["owner"])
+
+        # Collapsed-list position: both producers emit one marker with count,
+        # not an array wrapping a marker (#763 — the example is not an
+        # exception to unification).
+        example_list = schema_to_compact_example(self._LIST_SCHEMA)
+        collapsed_list = collapse_data(
+            {"labels": [{"id": 1, "name": "bug"}]},
+            self._LIST_SCHEMA,
+            detail="concise",
+        )
+        assert example_list["labels"] == {"$ref": "Label", "count": 1}
+        assert collapsed_list["labels"] == example_list["labels"]
+        assert is_ref_marker(collapsed_list["labels"])
 
     def test_tool_info_and_concise_json_agree(self) -> None:
         """The marker an agent reads in tool_info is the one in concise JSON."""

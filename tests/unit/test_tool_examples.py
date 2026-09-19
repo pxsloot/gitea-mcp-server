@@ -419,7 +419,7 @@ class TestSchemaToCompactExample:
         assert schema_to_compact_example({"type": "object", "properties": {}}) == "{...}"
 
     def test_array_with_ref_items(self) -> None:
-        """Array of $ref items should return [{"$ref": "Type"}]."""
+        """A root array (depth 0) of $ref items returns [{"$ref": "Type"}]."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
@@ -428,6 +428,28 @@ class TestSchemaToCompactExample:
         }
         result = schema_to_compact_example(schema)
         assert result == [{"$ref": "Branch"}]
+
+    def test_nested_array_with_ref_items_uses_collapsed_marker(self) -> None:
+        """A nested array of $ref items emits the collapsed-list marker (#763).
+
+        The example is not an exception to unification: a property list of
+        ``$ref`` items is represented by ``{"$ref": "Type", "count": 1}`` — the
+        same shape the concise collapse produces — not an array wrapping the
+        marker.
+        """
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/Label"},
+                },
+            },
+        }
+        result = schema_to_compact_example(schema)
+        assert result["labels"] == {"$ref": "Label", "count": 1}
 
     def test_array_with_literal_items(self) -> None:
         """Array of literal items should return example values."""

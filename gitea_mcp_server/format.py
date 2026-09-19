@@ -50,14 +50,12 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from gitea_mcp_server.marker import is_ref_marker, ref_marker, ref_marker_label
 from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
 from gitea_mcp_server.schema_utils import (
     extract_type_name,
     extract_type_ref,
     get_schema_type,
-    is_ref_marker,
-    ref_marker,
-    ref_marker_label,
 )
 
 if TYPE_CHECKING:

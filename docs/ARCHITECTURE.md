@@ -432,6 +432,7 @@ from the parameter schema.
 |--------|---------------|
 | `context_utils.py` | Safe MCP context helpers (``safe_ctx_info``, ``safe_ctx_report_progress``) |
 | `models.py` | TypedDict models for structured output types (zero runtime overhead) |
+| `marker.py` | Agent-facing ``$ref`` marker contract (``ref_marker`` / ``is_ref_marker`` / ``ref_marker_label``) |
 | `schema_utils.py` | Shared JSON Schema type utilities (circular-import breaker) |
 | `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |

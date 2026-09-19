@@ -1293,6 +1293,17 @@ class TestFormatAsMarkdown:
         # Without explicit render hints, the $ref dict is flattened
         assert "$ref:User" in result
 
+    def test_schema_pointer_not_flattened_as_marker(self) -> None:
+        """A JSON Schema ``$ref`` pointer renders as data, not a marker (#763).
+
+        ``is_ref_marker`` accepts only a bare type name, so a schema pointer
+        must not be collapsed to the bogus ``$ref:#/...`` label.
+        """
+        data = {"owner": {"$ref": "#/components/schemas/User"}}
+        result = format_as_markdown(data)
+        assert "$ref:#/" not in result
+        assert "#/components/schemas/User" in result
+
 
 class TestFormatType:
     """Tests for _format_type — type enrichment with enum/array info."""

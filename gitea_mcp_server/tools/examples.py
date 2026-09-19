@@ -4,9 +4,10 @@ from typing import Any
 
 from fastmcp.tools.base import Tool
 
+from gitea_mcp_server.marker import ref_marker
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.schema_utils import get_schema_type, ref_marker
+from gitea_mcp_server.schema_utils import extract_type_name, get_schema_type
 from gitea_mcp_server.tools.schemas import resolve_ref, unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
@@ -180,11 +181,14 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
 
     When encountering ``$ref``, emits the canonical agent-facing marker
     ``{"$ref": "TypeName"}`` (built by
-    :func:`~gitea_mcp_server.schema_utils.ref_marker`) instead of inlining the
+    :func:`~gitea_mcp_server.marker.ref_marker`) instead of inlining the
     referenced schema, **unless** ``depth == 0`` and ``openapi_spec`` is
     provided — in that case the top-level ``$ref`` is resolved one level so
-    the agent sees actual field names instead of just a type placeholder.
-    Nested ``$ref`` (depth >= 1) always emit the marker.
+    the agent sees actual field names instead of just a type marker.
+    Nested ``$ref`` (depth >= 1) always emit the marker.  A nested list whose
+    items are a ``$ref`` emits the collapsed-list marker
+    ``{"$ref": "TypeName", "count": 1}`` — the same shape the concise collapse
+    produces (#763).
 
     The markdown formatter recognises the marker via ``is_ref_marker`` and
     renders it as ``$ref:TypeName``.  All properties are included (no
@@ -202,15 +206,15 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         openapi_spec: Post-conversion OpenAPI 3.1 spec. When provided and
             ``depth == 0``, a bare ``$ref`` at the top level is resolved
             one level so agents see the type's properties instead of just
-            a placeholder type name.
+            a marker for the type name.
 
     Returns:
         A compact representation: the ``{"$ref": "TypeName"}`` marker for
-        refs, example values for leaf types, dicts/arrays with one level of
-        nesting.
+        refs (with ``count`` for a nested list), example values for leaf
+        types, dicts/arrays with one level of nesting.
     """
     # $ref handling: at depth=0 with spec available, resolve one level so
-    # agents see actual fields instead of just a placeholder type name.
+    # agents see actual fields instead of just a marker for the type name.
     # At depth > 0, emit the canonical {"$ref": "TypeName"} marker.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
         if depth == 0 and openapi_spec is not None:
@@ -218,11 +222,11 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             if isinstance(resolved, dict):
                 # Recurse at same depth — the ref's resolved properties will
                 # be processed normally; nested $refs inside will hit depth >= 1
-                # and emit placeholders as usual.
+                # and emit markers as usual.
                 return schema_to_compact_example(
                     resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
                 )
-            # Fall through to placeholder if resolution fails
+            # Fall through to the marker if resolution fails
         return ref_marker(schema["$ref"].rsplit("/", 1)[-1])
 
     if depth >= max_depth:
@@ -268,9 +272,19 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
 
     if schema_type == "array":
         items = schema.get("items", {})
-        if isinstance(items, dict) and items:
-            return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
-        return []
+        if not (isinstance(items, dict) and items):
+            return []
+        # A *nested* list of ``$ref`` items is represented by the same
+        # collapsed-list marker the concise collapse emits (#763): a marker
+        # with ``count``, not an array wrapping a marker.  The example shows
+        # one element, so the illustrative count is 1.  A root list
+        # (``depth == 0``) is not marker-replaced — its items are summarized
+        # one level (#759), mirroring ``collapse_data``.
+        if depth >= 1:
+            type_name = extract_type_name(items)
+            if type_name:
+                return ref_marker(type_name, 1)
+        return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
 
     if schema_type == "string":
         return _example_string(schema, prop_name=prop_name)
@@ -294,7 +308,7 @@ def serialize_tool_schema(
 
     When ``openapi_spec`` is provided, bare ``$ref`` at the top level of the
     schema will be resolved one level so agents see the type's actual fields
-    instead of just a placeholder type name.
+    instead of just a marker for the type name.
     """
     data: ToolSchemaResult = {
         "name": tool.name,

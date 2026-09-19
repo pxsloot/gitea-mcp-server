@@ -50,6 +50,7 @@ tests/
 │   ├── test_label_transform.py
 │   ├── test_label_validation.py
 │   ├── test_logging_config.py
+│   ├── test_marker.py
 │   ├── test_mcp_builder.py
 │   ├── test_mcp_extensions.py
 │   ├── test_mcp_tools.py

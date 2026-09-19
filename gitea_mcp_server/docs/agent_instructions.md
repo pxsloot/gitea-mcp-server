@@ -240,11 +240,11 @@ An out-of-range page keeps the object-shaped `result` (empty `content`) and
 adds a `message` (e.g. "Page N is out of range (total results: M)").
 
 Note on output shape: `output_example` and `format=json, detail=concise` results
-mark nested objects with `{"$ref": "TypeName"}` (plus `"count": N` where a list
-was collapsed); `markdown` renders it as `$ref:TypeName` (`$ref:TypeName[N]`).
-The marker is not an inline value — the full object is returned at `detail=full`.
-Don't expect a flat structure; read the nested fields from the actual response.
-Scalar-result tools (e.g. boolean checks) show a bare primitive instead (`true`, `0`, `"example"`).
+mark nested objects with `{"$ref": "TypeName"}`. A nested list is
+`{"$ref": "TypeName", "count": N}` (`output_example` shows `count: 1` as an
+example). `markdown` renders both as `$ref:TypeName` (`$ref:TypeName[N]`). The
+marker is not inline — read the real fields at `detail=full`; scalar-result
+tools show a bare primitive instead (`true`, `0`, `"example"`).
 
 When you see a `$ref` marker, pass its `$ref` value as the name to
 ``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or read

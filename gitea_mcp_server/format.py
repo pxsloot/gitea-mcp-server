@@ -590,6 +590,12 @@ def _format_list_as_markdown(
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
         lines.append(f"{indent}_(empty)_")
+    # A list whose items are all markers is the list-of-lists relation case: a
+    # root list whose items are themselves collapsed list relations (each a
+    # count marker).  Render each as its compact label, not a nested section.
+    elif data and all(is_ref_marker(v) for v in data):
+        for v in data:
+            lines.append(f"{indent}- {ref_marker_label(v)}")
     elif data and isinstance(data[0], dict):
         for i, item in enumerate(data):
             title: str | None = None

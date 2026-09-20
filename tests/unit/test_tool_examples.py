@@ -344,8 +344,8 @@ class TestSchemaToCompactExample:
         result = schema_to_compact_example(schema)
         assert result == {"$ref": "SomeDeeplyNestedType"}
 
-    def test_max_depth_returns_placeholder(self) -> None:
-        """At max_depth, should return '{...}'."""
+    def test_inline_nesting_expands_fully(self) -> None:
+        """Inline nested objects expand to their full depth (no depth cap)."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
@@ -364,9 +364,8 @@ class TestSchemaToCompactExample:
                 },
             },
         }
-        result = schema_to_compact_example(schema, max_depth=2)
-        # a -> depth 1, b -> depth 2 (hits max_depth), returns {...}
-        assert result["a"]["b"] == "{...}"
+        result = schema_to_compact_example(schema)
+        assert result["a"]["b"]["c"] == "example"
 
     def test_anyof_skips_null_first_option(self) -> None:
         """anyOf should pick the first non-null option."""

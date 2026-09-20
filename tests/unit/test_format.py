@@ -1597,6 +1597,18 @@ class TestFormatDateTime:
         assert _format_datetime("not a date") == "not a date"
 
 
+class TestFormatListAsMarkdownRef:
+    """A list of markers (the list-of-lists relation case) renders as labels."""
+
+    def test_ref_list_renders_bulleted_refs(self) -> None:
+        from gitea_mcp_server.format import _format_list_as_markdown
+
+        data = [{"$ref": "User"}, {"$ref": "Repo", "count": 2}]
+        result = _format_list_as_markdown(data)
+        assert "- $ref:User" in result
+        assert "- $ref:Repo[2]" in result
+
+
 class TestFormatDictAsMarkdownEmptyFieldFilter:
     """Tests for _format_dict_as_markdown with empty field_filter."""
 

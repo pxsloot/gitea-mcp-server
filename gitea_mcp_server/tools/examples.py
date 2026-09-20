@@ -173,24 +173,27 @@ def _schema_to_example(  # noqa: PLR0911, PLR0912
 
 def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     schema: dict[str, Any],
-    depth: int = 0,
-    max_depth: int = 2,
+    at_root: bool = True,
     prop_name: str | None = None,
     openapi_spec: OpenAPISpec | None = None,
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
-    When encountering ``$ref``, emits the canonical agent-facing marker
-    ``{"$ref": "TypeName"}`` (built by
-    :func:`~gitea_mcp_server.marker.ref_marker`) instead of inlining the
-    referenced schema, **unless** ``depth == 0`` and the chain resolves — in
-    that case the top-level ``$ref`` (or a root array's item ``$ref``) is
-    resolved to a concrete schema so the agent sees actual field names
-    instead of just a marker.  Nested ``$ref`` (depth >= 1) always emit the
-    marker.  A nested list whose items are a ``$ref`` emits the collapsed-list
-    marker ``{"$ref": "TypeName", "count": 1}`` — the same shape the concise
-    collapse produces (#763); an unresolvable root-array item type yields an
-    empty list, never an array of content-free markers.
+    ``at_root`` is the payload/relation distinction, mirroring
+    :func:`~gitea_mcp_server.format.collapse_data`:
+
+    - **payload** (``at_root``) — a ``$ref`` is resolved one level (via
+      :func:`~gitea_mcp_server.format.resolve_ref_chain`) so the agent sees
+      actual field names; a root array's item ``$ref`` is resolved the same
+      way so items are summarized.
+    - **relation** (below the payload) — a ``$ref`` is represented by the
+      canonical marker ``{"$ref": "TypeName"}`` (built by
+      :func:`~gitea_mcp_server.marker.ref_marker`), and a nested list of
+      ``$ref`` items by ``{"$ref": "TypeName", "count": 1}`` — the same shapes
+      the concise collapse produces (#763).
+
+    An unresolvable root-array item type yields an empty list, never an array
+    of content-free markers.
 
     The markdown formatter recognises the marker via ``is_ref_marker`` and
     renders it as ``$ref:TypeName``.  All properties are included (no
@@ -202,36 +205,29 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
 
     Args:
         schema: A JSON Schema dict - ideally pre-resolution (``$ref`` intact).
-        depth: Current recursion depth.
-        max_depth: Maximum recursion depth before returning ``"{...}"``.
+        at_root: ``True`` for the payload (resolve a root ``$ref``); ``False``
+            below it (a ``$ref`` becomes a marker).  Defaults to ``True``.
         prop_name: Property name hint for string example generation.
-        openapi_spec: Post-conversion OpenAPI 3.1 spec. At ``depth == 0`` the
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.  At the payload, the
             root ``$ref`` chain (or a root array's item ``$ref``) is resolved
             to a concrete schema; ``None`` leaves it unresolved.
 
     Returns:
         A compact representation: the ``{"$ref": "TypeName"}`` marker for
-        refs (with ``count`` for a nested list), example values for leaf
+        relations (with ``count`` for a nested list), example values for leaf
         types, dicts/arrays with one level of nesting.
     """
-    # $ref handling: at depth=0, resolve the chain to a concrete schema so
-    # agents see actual fields instead of just a marker for the type name.
-    # At depth > 0, emit the canonical {"$ref": "TypeName"} marker.
+    # A payload $ref is resolved so agents see actual fields; a relation $ref
+    # is represented by the canonical marker.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
-        if depth == 0:
+        if at_root:
             resolved = resolve_ref_chain(schema, openapi_spec)
             if resolved is not None:
-                # Recurse at same depth — the ref's resolved properties will
-                # be processed normally; nested $refs inside will hit depth >= 1
-                # and emit markers as usual.
                 return schema_to_compact_example(
-                    resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
+                    resolved, at_root, prop_name=prop_name, openapi_spec=openapi_spec
                 )
             # Fall through to the marker if resolution fails
         return ref_marker(schema["$ref"].rsplit("/", 1)[-1])
-
-    if depth >= max_depth:
-        return "{...}"
 
     # anyOf/oneOf - pick first non-null option
     for key in ("anyOf", "oneOf"):
@@ -240,7 +236,7 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             for opt in options:
                 if isinstance(opt, dict) and get_schema_type(opt) != "null":
                     return schema_to_compact_example(
-                        opt, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
+                        opt, at_root, prop_name=prop_name, openapi_spec=openapi_spec
                     )
 
     schema_type = schema.get("type")
@@ -264,8 +260,7 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             if isinstance(prop_schema, dict):
                 result[prop_name_inner] = schema_to_compact_example(
                     prop_schema,
-                    depth + 1,
-                    max_depth,
+                    False,
                     prop_name=prop_name_inner,
                     openapi_spec=openapi_spec,
                 )
@@ -276,11 +271,11 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         if not (isinstance(items, dict) and items):
             return []
         type_name = extract_type_name(items)
-        if depth >= 1 and type_name:
+        if type_name and not at_root:
             # A nested list of ``$ref`` items is a collapsed relation: the
             # marker with the example cardinality (one shown element).
             return ref_marker(type_name, 1)
-        if depth == 0 and type_name:
+        if type_name and at_root:
             # The root array is the payload.  Resolve the item ``$ref`` one
             # level to summarize it; an unresolvable item type yields no
             # example item rather than an array of content-free markers (#763).
@@ -288,7 +283,8 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             if resolved is None:
                 return []
             items = resolved
-        return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
+        # An array's items are payload items exactly when the array is.
+        return [schema_to_compact_example(items, at_root, openapi_spec=openapi_spec)]
 
     if schema_type == "string":
         return _example_string(schema, prop_name=prop_name)

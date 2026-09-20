@@ -252,7 +252,7 @@ Agent reads a resource:
           │   format_as_markdown fallback — then dispatched via
           │   call_markdown_formatter, which passes only the kwargs the
           │   formatter declares, e.g. extra; detail is not forwarded —
-          │   collapsed fields are $ref:TypeName strings, items are dicts)
+          │   collapsed fields are {"$ref": "TypeName"} markers, items are dicts)
           └─ format/raw: serialized envelope {"result": <data>}
 ```
 
@@ -432,6 +432,8 @@ from the parameter schema.
 |--------|---------------|
 | `context_utils.py` | Safe MCP context helpers (``safe_ctx_info``, ``safe_ctx_report_progress``) |
 | `models.py` | TypedDict models for structured output types (zero runtime overhead) |
+| `marker.py` | Agent-facing ``$ref`` marker contract (``RefMarker`` / ``ref_marker`` / ``is_ref_marker`` / ``ref_marker_label``) |
+| `ref_resolver.py` | Shared payload-``$ref`` chain resolver (``resolve_ref_chain``) used by the collapse and the compact example generator |
 | `schema_utils.py` | Shared JSON Schema type utilities (circular-import breaker) |
 | `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |

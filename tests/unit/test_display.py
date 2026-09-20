@@ -102,6 +102,15 @@ class TestFormatLabelsMarkdownEdgeCases:
         result = _format_labels_markdown([])
         assert "?/?" in result
 
+    def test_string_items_render_verbatim(self) -> None:
+        """Non-dict items render verbatim (defensive shape guard)."""
+        result = _format_labels_markdown(
+            ["bug", "feature"],
+            extra={"owner": "o", "repo": "r"},
+        )
+        assert "- bug" in result
+        assert "- feature" in result
+
 
 class TestTypeBindingRegistry:
     """``register_formatter(types=...)`` populates the type index."""
@@ -476,6 +485,20 @@ class TestFormatRepoMarkdown:
         # Detail renders the full payload; nested owner becomes a section.
         assert "## Owner" in result
         assert "owner" in result
+
+    def test_collapsed_owner_marker_renders_label(self) -> None:
+        """A concise owner marker renders ``$ref:User``, not a Python repr.
+
+        The collection view declares ``owner`` as a compact_ref
+        (``{login}``); under ``detail=concise`` the pipeline hands the
+        formatter the canonical marker.  Marker detection must win over the
+        render hint, or the template's missing key leaks ``str(marker)``
+        (#763).
+        """
+        repos = [{"name": "r", "full_name": "owner/r", "owner": {"$ref": "User"}}]
+        result = _format_repo_markdown(repos)
+        assert "| Owner | $ref:User |" in result
+        assert "{'$ref'" not in result
 
 
 class TestResourceFormatters:

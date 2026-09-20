@@ -4,10 +4,12 @@ from typing import Any
 
 from fastmcp.tools.base import Tool
 
+from gitea_mcp_server.marker import ref_marker
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.schema_utils import get_schema_type
-from gitea_mcp_server.tools.schemas import resolve_ref, unwrap_result_schema
+from gitea_mcp_server.ref_resolver import resolve_ref_chain
+from gitea_mcp_server.schema_utils import extract_type_name, get_schema_type
+from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
 _PROP_EXAMPLE_MAP: dict[str, str] = {
     "name": "example-name",
@@ -72,45 +74,6 @@ def _lookup_string_example(prop_name: str | None) -> str | None:
     return None
 
 
-def _example_object(
-    schema: dict[str, Any],
-    depth: int,
-    max_depth: int,
-    max_properties: int,
-) -> dict[str, Any]:
-    """Generate an example value from an object schema."""
-
-    if depth >= max_depth:
-        return {}
-    properties = schema.get("properties", {})
-    if not properties:
-        return {}
-    example: dict[str, Any] = {}
-    for prop_name in list(properties.keys())[:max_properties]:
-        prop_schema = properties[prop_name]
-        example[prop_name] = _schema_to_example(
-            prop_schema if isinstance(prop_schema, dict) else {},
-            depth + 1,
-            max_depth,
-            max_properties,
-            prop_name=prop_name,
-        )
-    return example
-
-
-def _example_array(
-    schema: dict[str, Any],
-    depth: int,
-    max_depth: int,
-    max_properties: int,
-) -> list[Any]:
-    """Generate an example value from an array schema."""
-    items = schema.get("items", {})
-    if isinstance(items, dict) and items:
-        return [_schema_to_example(items, depth, max_depth, max_properties)]
-    return []
-
-
 def _example_string(schema: dict[str, Any], prop_name: str | None = None) -> str:
     """Generate an example value from a string schema (respects format, enum, property name)."""
     fmt = schema.get("format")
@@ -129,102 +92,86 @@ def _example_string(schema: dict[str, Any], prop_name: str | None = None) -> str
     return "example"
 
 
-def _schema_to_example(  # noqa: PLR0911, PLR0912
-    schema: dict[str, Any],
-    depth: int = 0,
-    max_depth: int = 3,
-    max_properties: int = 15,
-    prop_name: str | None = None,
-) -> Any:
-    """Generate an example value from any JSON schema (recursive)."""
-    for key in ("anyOf", "oneOf"):
-        options = schema.get(key)
-        if isinstance(options, list):
-            for opt in options:
-                if isinstance(opt, dict) and get_schema_type(opt) != "null":
-                    return _schema_to_example(
-                        opt, depth, max_depth, max_properties, prop_name=prop_name
-                    )
+_MAX_INLINE_EXAMPLE_DEPTH = 10
+"""Internal safety bound on compact-example recursion.
 
-    schema_type = schema.get("type")
-    if isinstance(schema_type, list):
-        for t in schema_type:
-            if t != "null":
-                schema_type = t
-                break
-        else:
-            schema_type = "null"
-
-    if "example" in schema:
-        return schema["example"]
-
-    if schema_type == "object":
-        return _example_object(schema, depth, max_depth, max_properties)
-    if schema_type == "array":
-        return _example_array(schema, depth, max_depth, max_properties)
-    if schema_type == "string":
-        return _example_string(schema, prop_name=prop_name)
-    if schema_type in ("integer", "number", "boolean", "null"):
-        return {"integer": 0, "number": 0.0, "boolean": True, "null": None}[schema_type]
-    return None
+Recursion normally stops at ``$ref`` pointers, and alias chains are capped by
+:func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`; this bound also
+breaks a pathological inline schema (or a cyclic array-of-array ``$ref``
+chain) that would otherwise recurse without end.  It is an internal
+invariant, not a public knob — no production caller tunes it, and real specs
+stay far below it.
+"""
 
 
 def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     schema: dict[str, Any],
-    depth: int = 0,
-    max_depth: int = 2,
+    at_root: bool = True,
     prop_name: str | None = None,
     openapi_spec: OpenAPISpec | None = None,
+    _depth: int = 0,
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
-    When encountering ``$ref``, emits ``{"$ref": "TypeName"}`` instead of
-    inlining the referenced schema, **unless** ``depth == 0`` and
-    ``openapi_spec`` is provided — in that case the top-level ``$ref`` is
-    resolved one level so the agent sees actual field names instead of just
-    a type placeholder.  Nested ``$ref`` (depth >= 1) always emit the
-    compact placeholder.
+    ``at_root`` is the payload/relation distinction, mirroring
+    :func:`~gitea_mcp_server.format.collapse_data`:
 
-    The markdown formatter recognises the ``{"$ref": "TypeName"}`` pattern
-    and renders it as ``$ref:TypeName``.  All properties are included (no
-    ``max_properties`` truncation).  Leaf types use the same meaningful
-    example values as ``_schema_to_example``.
+    - **payload** (``at_root``) — a ``$ref`` is resolved one level (via
+      :func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`) so the agent
+      sees actual field names; a root array's item ``$ref`` is resolved the
+      same way so items are summarized.
+    - **relation** (below the payload) — a ``$ref`` is represented by the
+      canonical marker ``{"$ref": "TypeName"}`` (built by
+      :func:`~gitea_mcp_server.marker.ref_marker`), and a nested list of
+      ``$ref`` items by ``{"$ref": "TypeName", "count": 1}`` — the same shapes
+      the concise collapse produces (#763).
+
+    An unresolvable root-array item type yields an empty list, never an array
+    of content-free markers.
+
+    The markdown formatter recognises the marker via ``is_ref_marker`` and
+    renders it as ``$ref:TypeName``.  All properties are included (no
+    ``max_properties`` truncation).  Leaf types use the shared meaningful
+    example values.  Recursion is bounded by ``_MAX_INLINE_EXAMPLE_DEPTH`` so
+    a pathological inline nest (or a cyclic array-of-array ``$ref`` chain)
+    cannot run away.
 
     Designed to be called on the **raw** (unresolved) schema so that ``$ref``
     pointers are encountered naturally and serve as stop-recursion markers.
 
     Args:
         schema: A JSON Schema dict - ideally pre-resolution (``$ref`` intact).
-        depth: Current recursion depth.
-        max_depth: Maximum recursion depth before returning ``"{...}"``.
+        at_root: ``True`` for the payload (resolve a root ``$ref``); ``False``
+            below it (a ``$ref`` becomes a marker).  Defaults to ``True``.
         prop_name: Property name hint for string example generation.
-        openapi_spec: Post-conversion OpenAPI 3.1 spec. When provided and
-            ``depth == 0``, a bare ``$ref`` at the top level is resolved
-            one level so agents see the type's properties instead of just
-            a placeholder type name.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.  At the payload, the
+            root ``$ref`` chain (or a root array's item ``$ref``) is resolved
+            to a concrete schema; ``None`` leaves it unresolved.
+        _depth: Internal recursion depth — do not pass.
 
     Returns:
-        A compact representation: ``{"$ref": "TypeName"}`` for refs,
-        example values for leaf types, dicts/arrays with one level of nesting.
+        A compact representation: the ``{"$ref": "TypeName"}`` marker for
+        relations (with ``count`` for a nested list), example values for leaf
+        types, dicts/arrays with one level of nesting.
     """
-    # $ref handling: at depth=0 with spec available, resolve one level so
-    # agents see actual fields instead of just a placeholder type name.
-    # At depth > 0, emit {"$ref": "TypeName"} as a compact placeholder.
-    if "$ref" in schema and isinstance(schema.get("$ref"), str):
-        if depth == 0 and openapi_spec is not None:
-            resolved = resolve_ref(openapi_spec, schema["$ref"])
-            if isinstance(resolved, dict):
-                # Recurse at same depth — the ref's resolved properties will
-                # be processed normally; nested $refs inside will hit depth >= 1
-                # and emit placeholders as usual.
-                return schema_to_compact_example(
-                    resolved, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
-                )
-            # Fall through to placeholder if resolution fails
-        return {"$ref": schema["$ref"].rsplit("/", 1)[-1]}
-
-    if depth >= max_depth:
+    if _depth >= _MAX_INLINE_EXAMPLE_DEPTH:
         return "{...}"
+
+    # A payload $ref is resolved so agents see actual fields; a relation $ref
+    # is represented by the canonical marker.
+    if "$ref" in schema and isinstance(schema.get("$ref"), str):
+        if at_root:
+            resolved = resolve_ref_chain(schema, openapi_spec)
+            if resolved is not None:
+                return schema_to_compact_example(
+                    resolved,
+                    at_root,
+                    prop_name=prop_name,
+                    openapi_spec=openapi_spec,
+                    _depth=_depth + 1,
+                )
+            # Fall through to the marker if resolution fails
+        return ref_marker(schema["$ref"])
 
     # anyOf/oneOf - pick first non-null option
     for key in ("anyOf", "oneOf"):
@@ -233,7 +180,11 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             for opt in options:
                 if isinstance(opt, dict) and get_schema_type(opt) != "null":
                     return schema_to_compact_example(
-                        opt, depth, max_depth, prop_name=prop_name, openapi_spec=openapi_spec
+                        opt,
+                        at_root,
+                        prop_name=prop_name,
+                        openapi_spec=openapi_spec,
+                        _depth=_depth + 1,
                     )
 
     schema_type = schema.get("type")
@@ -257,18 +208,34 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             if isinstance(prop_schema, dict):
                 result[prop_name_inner] = schema_to_compact_example(
                     prop_schema,
-                    depth + 1,
-                    max_depth,
+                    False,
                     prop_name=prop_name_inner,
                     openapi_spec=openapi_spec,
+                    _depth=_depth + 1,
                 )
         return result
 
     if schema_type == "array":
         items = schema.get("items", {})
-        if isinstance(items, dict) and items:
-            return [schema_to_compact_example(items, depth, max_depth, openapi_spec=openapi_spec)]
-        return []
+        if not (isinstance(items, dict) and items):
+            return []
+        type_name = extract_type_name(items)
+        if type_name and not at_root:
+            # A nested list of ``$ref`` items is a collapsed relation: the
+            # marker with the example cardinality (one shown element).
+            return ref_marker(type_name, 1)
+        if type_name and at_root:
+            # The root array is the payload.  Resolve the item ``$ref`` one
+            # level to summarize it; an unresolvable item type yields no
+            # example item rather than an array of content-free markers (#763).
+            resolved = resolve_ref_chain(items, openapi_spec)
+            if resolved is None:
+                return []
+            items = resolved
+        # An array's items are payload items exactly when the array is.
+        return [
+            schema_to_compact_example(items, at_root, openapi_spec=openapi_spec, _depth=_depth + 1)
+        ]
 
     if schema_type == "string":
         return _example_string(schema, prop_name=prop_name)
@@ -292,7 +259,7 @@ def serialize_tool_schema(
 
     When ``openapi_spec`` is provided, bare ``$ref`` at the top level of the
     schema will be resolved one level so agents see the type's actual fields
-    instead of just a placeholder type name.
+    instead of just a marker for the type name.
     """
     data: ToolSchemaResult = {
         "name": tool.name,

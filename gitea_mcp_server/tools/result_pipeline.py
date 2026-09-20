@@ -38,10 +38,12 @@ from the call args).  When ``detail="concise"`` and a schema is
 available, the pipeline pre-collapses the page (schema-aware ``$ref``
 collapse) before calling the formatter, so formatters receive
 already-collapsed data and must not re-collapse.  Root-list items are
-*summarized*, not label-replaced: the collapse resolves a root list's item
+*summarized*, not marker-replaced: the collapse resolves a root list's item
 ``$ref`` one level via the server's OpenAPI spec (``render(openapi_spec=...)``),
 so each item keeps its scalar fields and only its nested ``$ref``-backed
-fields collapse to ``$ref:TypeName`` labels (#759).
+fields collapse to the canonical ``$ref`` marker (``{"$ref": "TypeName"}``,
+or with ``count`` for a collapsed list; #759, #763).  An unresolvable item
+type leaves the list unchanged rather than emitting content-free markers.
 
 Result shapes (``ExecutionResult.shape``):
 
@@ -200,8 +202,8 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         openapi_spec: Post-conversion OpenAPI 3.1 spec enabling root-list
             item summaries under ``detail="concise"`` (#759) — the collapse
             resolves a root list's item ``$ref`` one level so items keep
-            their scalar fields.  ``None`` keeps the whole-item label
-            fallback (synthetic tools with inline schemas need nothing).
+            their scalar fields.  ``None`` (or an unresolvable item type)
+            leaves the list unchanged — never a content-free marker (#763).
 
     Returns:
         A ``ToolResult`` whose ``content`` (the text channel) is authoritative
@@ -418,7 +420,6 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
             page_data = collapse_data(
                 page_data,
                 schema,
-                _depth=0,
                 detail="concise",
                 openapi_spec=openapi_spec,
             )

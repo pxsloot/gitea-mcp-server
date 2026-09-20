@@ -4,6 +4,8 @@ Covers the exported functions:
 - ``schema_type_matches`` — type-as-list-aware matching
 - ``get_schema_type`` — extract primary type from type-as-list
 - ``extract_type_ref`` / ``extract_type_name`` — shared root-ref notion
+
+The agent-facing ``$ref`` marker contract is tested in ``test_marker.py``.
 """
 
 from gitea_mcp_server.schema_utils import (

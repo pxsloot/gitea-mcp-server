@@ -1,8 +1,8 @@
 """Type introspection tool and resource.
 
 Provides ``resolve_type`` (synthetic tool) and ``gitea://types/{typeName}``
-(resource) for resolving ``$ref:TypeName`` references that appear in
-``tool_info`` output.
+(resource) for resolving the ``$ref`` markers that appear in tool output and
+``tool_info``.
 
 Core logic:
   - ``build_type_index()`` — walks the OpenAPI spec once at startup to build
@@ -211,9 +211,9 @@ def resolve_type_info(
 ) -> dict[str, Any] | None:
     """Resolve and return type info for a named type.
 
-    Produces a compact type summary with ``$ref`` placeholders (like
-    ``tool_info``'s ``output_example``), plus cross-references showing
-    which tools return or accept this type.
+    Produces a compact type summary with ``$ref`` markers (the canonical
+    ``{"$ref": "TypeName"}`` shape, like ``tool_info``'s ``output_example``),
+    plus cross-references showing which tools return or accept this type.
 
     When ``detail="full"``, the result also includes the fully-resolved
     output schema (``resolved_schema``).
@@ -238,7 +238,7 @@ def resolve_type_info(
 
     description: str = schema.get("description", "") or ""
 
-    # Build compact example with $ref placeholders.
+    # Build compact example with the canonical $ref marker.
     # Deferred import to avoid circular: examples → schemas → this module
     from gitea_mcp_server.tools.examples import schema_to_compact_example  # noqa: PLC0415
 
@@ -273,9 +273,10 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
 ) -> None:
     """Register the ``resolve_type`` tool and ``gitea://types/{typeName}`` resource.
 
-    The tool lets agents resolve ``$ref:TypeName`` references they see in
-    ``tool_info`` output.  The resource provides cached reads of the same
-    data.
+    The tool lets agents resolve the ``$ref`` markers they see in tool output
+    and ``tool_info`` — the canonical ``{"$ref": "TypeName"}`` shape (rendered
+    ``$ref:TypeName`` in markdown).  The resource provides cached reads of the
+    same data.
 
     Both are registration-time closures over the built type index.
 
@@ -360,8 +361,8 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
         if canonical is None:
             msg = (
                 f"Type '{name}' not found. "
-                "Use search_resources('type') or "
-                "call resolve_type with one of the tool's $ref:TypeName markers."
+                "Use search_resources('type') or resolve a "
+                '$ref marker from the tool output (e.g. {"$ref": "TypeName"}).'
             )
             await safe_ctx_info(
                 ctx,
@@ -381,8 +382,8 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
         if info is None:
             msg = (
                 f"Type '{name}' not found. "
-                "Use search_resources('type') or "
-                "call resolve_type with one of the tool's $ref:TypeName markers."
+                "Use search_resources('type') or resolve a "
+                '$ref marker from the tool output (e.g. {"$ref": "TypeName"}).'
             )
             await safe_ctx_info(
                 ctx,
@@ -408,10 +409,11 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
                 name="resolve_type",
                 description=(
                     "Resolve a ``$ref`` type name to its schema and cross-references. "
-                    "When ``tool_info`` shows ``$ref:TypeName`` in its output_example, "
-                    "use this tool to discover what fields that type contains. "
-                    "Returns a compact type summary (with ``$ref`` placeholders for "
-                    "nested types) and cross-references showing which tools return "
+                    "When ``tool_info``'s output_example shows a "
+                    '``{"$ref": "TypeName"}`` marker (rendered ``$ref:TypeName`` in '
+                    "markdown), use this tool to discover what fields that type "
+                    "contains. Returns a compact type summary (with ``$ref`` markers "
+                    "for nested types) and cross-references showing which tools return "
                     "or accept this type.\n\n"
                     '**Resource**: ``read_resource("gitea://types/{TypeName}")`` '
                     "for a cached JSON read."
@@ -438,7 +440,7 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
                                         {"type": "number"},
                                         {"type": "null"},
                                     ],
-                                    "description": "Compact type summary with $ref placeholders (primitives for scalar types)",
+                                    "description": "Compact type summary with $ref markers (primitives for scalar types)",
                                 },
                                 "resolved_schema": {
                                     "type": "object",
@@ -551,7 +553,8 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
         name="type_schema",
         description=(
             "Get the full schema (always detail='full') for a $ref type "
-            "by name.  Use after tool_info when you see ``$ref:TypeName`` "
+            "by name.  Use after tool_info when you see a "
+            '``{"$ref": "TypeName"}`` marker (``$ref:TypeName`` in markdown) '
             "and need to discover the type's fields.  For compact output, "
             "call ``resolve_type(name, detail='concise')`` instead. "
             f"Available types: {', '.join(available_types[:_MAX_TYPES_IN_RESOURCE_DESC])}"

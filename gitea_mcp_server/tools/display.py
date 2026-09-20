@@ -170,7 +170,8 @@ def _format_issues_markdown(data: Any, *, extra: dict | None = None) -> str:
     else:
         # Guard against non-dict items (unexpected data shape).  Under
         # detail=concise items are summarized dicts (#759), never bare
-        # $ref strings, so the scan sees real ``pull_request`` fields.
+        # markers, so the scan sees real ``pull_request`` fields; a marker
+        # (a dict without that key) simply reads as no-PR.
         has_prs = (
             (any(isinstance(item, dict) and item.get("pull_request") for item in data))
             if data

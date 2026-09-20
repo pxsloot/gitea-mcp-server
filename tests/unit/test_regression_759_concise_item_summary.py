@@ -115,9 +115,9 @@ class TestListToolItemSummaries:
             assert isinstance(item, dict)
             assert item["title"]  # scalar intact
             assert item["state"] == "open"
-            assert item["user"] == "$ref:User"  # nested ref collapsed
-            assert item["milestone"] == "$ref:Milestone"
-            assert item["labels"] == "$ref:Label[1]"  # nested list collapses
+            assert item["user"] == {"$ref": "User"}  # nested ref becomes marker
+            assert item["milestone"] == {"$ref": "Milestone"}
+            assert item["labels"] == {"$ref": "Label", "count": 1}  # collapsed list
 
     def test_markdown_channel_item_summaries(self) -> None:
         """format=markdown: the text channel shows titles, not bare $ref:Issue bullets."""
@@ -155,19 +155,20 @@ class TestListToolItemSummaries:
             openapi_spec=_spec(),
         )
         sc = get_structured(result)
-        assert sc["result"][0]["user"] == "$ref:User"
+        assert sc["result"][0]["user"] == {"$ref": "User"}
         assert sc["result"][0]["title"] == "t"
 
-    def test_no_spec_fallback_is_documented(self) -> None:
-        """Without a spec the pre-#759 whole-item label fallback applies."""
+    def test_no_spec_leaves_list_uncollapsed(self) -> None:
+        """Without a spec an unresolvable root list is returned unchanged (#763)."""
+        data = [_issue(1, "t")]
         result = render(
-            ExecutionResult(data=[_issue(1, "t")], shape="list"),
+            ExecutionResult(data=data, shape="list"),
             fmt="json",
             detail="concise",
             schema=_ISSUES_SCHEMA,
         )
         parsed = parse_json_content(result)
-        assert parsed["result"] == ["$ref:Issue"]
+        assert parsed["result"] == data
 
     def test_raw_never_collapses(self) -> None:
         """format=raw stays the unprocessed-data contract even with a spec."""
@@ -203,7 +204,7 @@ class TestPerResultSchemaPath:
         )
         parsed = parse_json_content(result)
         # Label is all-scalar: a summarized item is the full scalar dict —
-        # the content-free "$ref:Label" bullets are gone.
+        # the content-free marker bullets are gone.
         assert parsed["result"] == [
             {"id": 1, "name": "Kind/Bug"},
             {"id": 2, "name": "Priority/Medium"},
@@ -243,5 +244,5 @@ class TestWriteToolEcho:
         parsed = parse_json_content(result)
         assert parsed["result"]["number"] == 1
         assert parsed["result"]["title"] == "PR"
-        assert parsed["result"]["user"] == "$ref:User"
-        assert parsed["result"]["head"]["repo"] == "$ref:User"
+        assert parsed["result"]["user"] == {"$ref": "User"}
+        assert parsed["result"]["head"]["repo"] == {"$ref": "User"}

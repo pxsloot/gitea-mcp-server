@@ -510,8 +510,10 @@ async def _read_resource_tool(
     Output detail level:
     - ``"full"`` (default): complete information, full object expansion.
     - ``"concise"``: root items are summarized — scalar fields stay intact
-      while nested ``$ref``-backed fields collapse to ``$ref:TypeName``
-      labels (#759).  Affects both JSON and Markdown output.  Schema-aware
+      while nested ``$ref``-backed fields collapse to the canonical ``$ref``
+      marker (``{"$ref": "TypeName"}``, or ``{"$ref": "TypeName", "count":
+      N}`` for a collapsed list; rendered as ``$ref:TypeName`` in markdown)
+      (#759, #763).  Affects both JSON and Markdown output.  Schema-aware
       ``$ref`` collapse is applied when the resource carries a response
       schema.
 

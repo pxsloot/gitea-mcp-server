@@ -59,12 +59,14 @@ class TestFormatLabelsMarkdownGuard:
         assert "- bug" in result
         assert "- feature" in result
 
-    def test_collapsed_ref_items_ok(self) -> None:
-        """``$ref:Label[2]``-style strings render compactly, not crash.
+    def test_string_items_render_verbatim(self) -> None:
+        """Plain string items render verbatim, not crash.
 
         Defensive shape guard: since #759 the concise contract summarizes
-        items as dicts, so collapsed strings reaching a formatter represent
-        an unexpected payload, not the detail=concise path.
+        items as dicts, and since #763 a collapsed item is the dict marker
+        ``{"$ref": ...}`` (covered in ``test_display``), so a bare
+        ``"$ref:Label[2]"`` string is now just arbitrary string data — the
+        ``- <item>`` guard must still render it.
         """
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(

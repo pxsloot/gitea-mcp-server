@@ -1107,13 +1107,17 @@ class TestServerEdgeCases:
           message envelope in the Output format section (#727).
         - 341 lines: raised 2026-09-15 to state the tool/resource display-parity
           contract in the Resources section.
+        - 342 lines: raised 2026-09-19 to document the canonical ``$ref``
+          marker shape (``{"$ref": "TypeName"}``, with ``count`` for a
+          collapsed list) on the output-shape and ``resolve_type`` surfaces
+          (#763).
         """
         from gitea_mcp_server.server import _build_server_instructions
 
         result = _build_server_instructions()
         line_count = len(result.splitlines())
-        assert line_count <= 341, (
-            f"Instructions are {line_count} lines (budget: 341). "
+        assert line_count <= 342, (
+            f"Instructions are {line_count} lines (budget: 342). "
             "Increase the budget deliberately, not by trimming."
         )
 

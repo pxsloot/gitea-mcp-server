@@ -6,12 +6,16 @@ Kept at the flat level so neither domain depends on the other.
 Public functions:
     build_server_info_markdown - build server info markdown from
         the OpenAPI spec info block (not a registered domain formatter).
-    collapse_data - walk data+schema, collapse $ref-backed objects at depth>=1
-        to labels (``$ref:TypeName``).  Root-list items are *summarized*
-        (scalars kept, nested refs labelled), never label-replaced wholesale
-        (resolved one level via the OpenAPI spec, #759).  Used to shape data
-        before formatting so any formatter (json or markdown) receives
-        already-collapsed data.
+    collapse_data - shape data for ``detail="concise"``: keep the payload
+        (the root object / root-list items), replace ``$ref``-backed
+        *relations* with the canonical agent-facing ``$ref`` marker
+        (``{"$ref": "TypeName"}``; ``{"$ref": "TypeName", "count": N}`` for a
+        collapsed list).  A payload ``$ref`` — the root object's schema, or a
+        root list's item schema — is resolved one level via the OpenAPI spec
+        so the payload is summarized (#759); an unresolvable payload type
+        leaves the data unchanged — never a content-free marker (#763).  Used
+        to shape data before formatting so any formatter (json or markdown)
+        receives already-collapsed data.
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
@@ -49,8 +53,13 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
-from gitea_mcp_server.schema_utils import extract_type_name, extract_type_ref, get_schema_type
+from gitea_mcp_server.marker import is_ref_marker, ref_marker, ref_marker_label
+from gitea_mcp_server.ref_resolver import resolve_ref_chain
+from gitea_mcp_server.schema_utils import (
+    extract_type_name,
+    extract_type_ref,
+    get_schema_type,
+)
 
 if TYPE_CHECKING:
     from gitea_mcp_server.models import ToolSchemaResult
@@ -83,10 +92,14 @@ logger = logging.getLogger(__name__)
 #
 # ``detail`` is deliberately NOT part of the contract: when ``detail="concise"``
 # and a schema is available the pipeline pre-collapses the page, so formatters
-# receive already-collapsed data.  Collapsed *fields* arrive as
-# ``$ref:TypeName`` strings; collapsed *items* do not exist — root-list items
-# are summarized (dicts with scalars intact and nested refs labelled, #759),
-# so formatters must not branch on item-level collapsed strings.
+# receive already-collapsed data.  Collapsed *fields* arrive as the canonical
+# ``$ref`` marker (``{"$ref": "TypeName"}``, or with ``count`` for a collapsed
+# list) and render through ``is_ref_marker``/``ref_marker_label``.  Root-list
+# items are summarized, not label-replaced (dicts with scalars intact and
+# nested refs marked, #759), so formatters generally do not branch on
+# item-level shapes.  The one exception is a root list whose items are
+# themselves collapsed list relations (a list of lists): those arrive as count
+# markers and ``_format_list_as_markdown`` renders them as compact labels.
 MarkdownFormatter = Callable[..., str]
 
 
@@ -411,142 +424,132 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     return extract_type_name(schema)
 
 
-# Alias-chasing cap for root-item resolution: a ``$ref`` whose target is
-# itself a reference — bare (e.g. ``CreatePullReviewCommentOptions`` in the
-# live Gitea spec) or combinator-wrapped (``allOf``/``anyOf``/``oneOf``) —
-# is followed at most this many hops before resolution gives up and the
-# caller falls back to whole-item labelling.  The cap also breaks reference
-# cycles (including cycles routed through a combinator).
-_MAX_REF_ALIAS_HOPS = 5
+# Alias-chasing cap and the shared resolver live in ``ref_resolver.py``; the
+# collapse and the compact example generator both resolve a payload ``$ref``
+# through :func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`.
 
 
-def _resolve_root_items_schema(
-    items_schema: dict[str, Any],
-    openapi_spec: OpenAPISpec | None,
-) -> dict[str, Any] | None:
-    """Resolve a root list's item ``$ref`` for S1-lite collapse (#759).
-
-    Uses :func:`_extract_ref` at every hop — the same ``$ref`` notion the
-    collapse walker itself applies (top-level first, then combinator
-    options) — so resolver and walker can never disagree about whether a
-    schema *is* a reference.  A genuine ``allOf`` merge is chased to its
-    first ``$ref`` member; the remaining members' keys then carry no
-    property schema and pass through verbatim — a summary that is slightly
-    fatter, never emptier, than whole-item labelling.
-
-    Returns the concrete schema the referenced type resolves to, or
-    ``None`` when there is no spec, no ``$ref``, or resolution fails
-    (missing pointer or a reference chain longer than
-    :data:`_MAX_REF_ALIAS_HOPS`).  Callers fall back to whole-item
-    labelling on ``None``.
-    """
-    if openapi_spec is None:
-        return None
-    ref = _extract_ref(items_schema)
-    if ref is None:
-        return None
-    for _ in range(_MAX_REF_ALIAS_HOPS):
-        resolved = resolve_spec_ref(openapi_spec, ref)
-        if not isinstance(resolved, dict):
-            return None
-        nxt = _extract_ref(resolved)
-        if nxt is None:
-            return resolved  # concrete schema (properties / inline combinator)
-        ref = nxt  # alias (bare or combinator-wrapped) — chase one hop
-    return None
-
-
-def collapse_data(  # noqa: PLR0911 - 7 returns: 2 guard clauses (full detail, no schema), 2 collapse outcomes (dict $ref, list $ref), 2 recursive walks (dict recurse, list recurse), 1 scalar passthrough
+def collapse_data(
     data: Any,
     schema: dict[str, Any] | None = None,
-    _depth: int = 0,
     detail: str = "full",
     *,
     openapi_spec: OpenAPISpec | None = None,
 ) -> Any:
-    """Walk data+schema, collapsing $ref-backed objects to labels (S1-lite).
+    """Shape *data* for ``detail="concise"``: keep the payload, mark relations.
 
-    Used to shape data before formatting: when ``detail="concise"``,
-    properties whose schema declares a ``$ref`` are collapsed to
-    ``"$ref:TypeName"`` (or ``"$ref:TypeName[N]"`` for lists).  Inline
-    schemas (no ``$ref``) are NOT collapsed — they remain as nested
-    dicts/lists for the formatter to render.
+    The **payload** — the root object, or the items of a root list — is never
+    replaced by a marker (#759).  A root list whose item schema is a ``$ref``
+    is resolved one level (via *openapi_spec*) so each item is *summarized*:
+    scalar fields survive, nested ``$ref``-backed relations become markers.
+    When that item type cannot be resolved, the list is returned unchanged —
+    a content-free marker is never substituted for a payload item (#763).
 
-    **Root items are never label-replaced** (#759): the root object and
-    the items of a root list keep their scalar fields; only their nested
-    ``$ref``-backed fields collapse.  A root list whose item schema is a
-    ``$ref`` is resolved one level via *openapi_spec* so each item is
-    *summarized*; without a spec (or when resolution fails) the
-    whole-item label fallback applies.
+    Below the payload, a **relation** — a ``$ref``-backed value — is replaced
+    by the canonical agent-facing marker: ``{"$ref": "TypeName"}`` for an
+    object, ``{"$ref": "TypeName", "count": N}`` for a list.  Inline schemas
+    (no ``$ref``) are walked, not collapsed.
 
-    When ``schema`` is ``None`` or ``detail="full"``, the data is returned
-    unchanged (the tree is still walked for ``schema=None``, but no
-    collapsing occurs).  Nothing is ever mutated or truncated — collapse
-    only replaces ``$ref``-backed subtrees with label strings.
+    ``detail="full"`` or ``schema is None`` returns *data* unchanged.  Nothing
+    is ever mutated or truncated.
 
     Args:
-        data: The data to collapse (dict, list, or scalar).
+        data: The data to shape (dict, list, or scalar).
         schema: The JSON Schema describing *data*, or ``None``.
-        _depth: Current nesting depth — 0 means top-level (never collapsed).
-        detail: ``"full"`` (return unchanged) or ``"concise"`` (collapse nested
-            ``$ref``-backed fields; root items are summarized, never collapsed).
-        openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve a
-            root list's item ``$ref`` one level (S1-lite item summaries).
-            ``None`` (synthetic tools, unit callers) keeps the whole-item
-            label fallback.
+        detail: ``"full"`` (return unchanged) or ``"concise"``.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec, used to resolve the
+            payload's ``$ref`` one level.  ``None`` leaves the payload
+            uncollapsed.
 
     Returns:
-        Collapsed data (dicts, lists, strings) suitable for JSON serialization
-        or markdown rendering.
+        Shaped data (dicts, lists, markers) suitable for JSON serialization or
+        markdown rendering.
     """
-    if detail == "full":
+    if detail == "full" or schema is None:
         return data
+    return _summarize_payload(data, schema, openapi_spec)
 
-    # Without schema context there is nothing to collapse — the data
-    # tree stays as-is.  This avoids unnecessary dict/list copies.
-    if schema is None:
-        return data
+
+def _summarize_payload(
+    data: Any,
+    schema: dict[str, Any],
+    openapi_spec: OpenAPISpec | None,
+) -> Any:
+    """The requested payload: never replaced by a marker (#759).
+
+    A root object is walked as relations; a root list is summarized item by
+    item after resolving the payload schema and the item ``$ref`` one level
+    each.  An unresolvable payload ``$ref`` leaves the data unchanged rather
+    than emitting a marker.
+    """
+    if isinstance(data, list):
+        # Resolve the payload schema itself first: a root ``$ref`` may point
+        # at a named array type, whose ``items`` live on the resolved schema,
+        # not on the ``$ref`` wrapper.  This keeps the collapse in step with
+        # ``schema_to_compact_example``, which resolves the same root ref.
+        concrete = _concrete_schema(schema, openapi_spec)
+        if concrete is None:
+            return data  # payload type unresolved → leave the payload intact
+        items_schema = concrete.get("items", {}) if isinstance(concrete, dict) else {}
+        items_concrete = _concrete_schema(items_schema, openapi_spec)
+        if items_concrete is None:
+            return data  # item type unresolved → leave the payload intact
+        return [_collapse_relations(item, items_concrete) for item in data]
 
     if isinstance(data, dict):
-        if _depth >= 1:
-            # Use raw schema — _extract_type_name natively handles
-            # $ref, allOf, anyOf, oneOf at the top level.
-            type_name = _extract_type_name(schema)
-            if type_name:
-                return f"$ref:{type_name}"
-            # No $ref — recurse (inline schemas stay expanded)
+        concrete = _concrete_schema(schema, openapi_spec)
+        if concrete is None:
+            return data  # payload type unresolved → leave the payload intact
+        return _collapse_relations(data, concrete)
 
+    return data
+
+
+def _concrete_schema(
+    schema: dict[str, Any],
+    openapi_spec: OpenAPISpec | None,
+) -> dict[str, Any] | None:
+    """Return an inline schema as-is, or the resolved target of its root ``$ref``.
+
+    ``None`` means the schema is (or wraps) a ``$ref`` that cannot be resolved
+    against *openapi_spec* — the caller then leaves its payload uncollapsed.
+    """
+    if _extract_ref(schema) is None:
+        return schema
+    return resolve_ref_chain(schema, openapi_spec)
+
+
+def _collapse_relations(value: Any, schema: dict[str, Any] | None) -> Any:
+    """Replace a relation with a marker; walk inline schemas.
+
+    Below the payload, a value whose schema declares a ``$ref`` is a relation:
+    it is represented by the canonical marker instead of its content.  An
+    inline schema (no ``$ref``) is walked so deeper relations still collapse.
+    """
+    if isinstance(value, dict):
+        type_name = _extract_type_name(schema)
+        if type_name:
+            return ref_marker(type_name)
         combined = _merge_allof_schema(schema)
         properties = combined.get("properties", {}) if isinstance(combined, dict) else {}
 
         result: dict[str, Any] = {}
-        for k, v in data.items():
+        for k, v in value.items():
             prop_schema = properties.get(k) if properties else None
             if prop_schema is not None and not isinstance(prop_schema, dict):
                 prop_schema = None
             effective = _resolve_anyof_schema(prop_schema) if prop_schema else None
-            result[k] = collapse_data(v, effective or prop_schema, _depth + 1, detail)
+            result[k] = _collapse_relations(v, effective or prop_schema)
         return result
 
-    if isinstance(data, list):
+    if isinstance(value, list):
         items_schema = schema.get("items", {}) if isinstance(schema, dict) else {}
-        if _depth >= 1:
-            type_name = _extract_type_name(items_schema)
-            if type_name:
-                return f"$ref:{type_name}[{len(data)}]"
-            # No $ref — recurse
-        else:
-            # Root list: items are roots — resolve a $ref item schema one
-            # level so each item is summarized (scalars kept, nested refs
-            # collapsed) instead of being label-replaced wholesale (#759).
-            # Resolution is consumed here; recursive calls below are all at
-            # depth >= 1 and never consult the spec again.
-            resolved = _resolve_root_items_schema(items_schema, openapi_spec)
-            if resolved is not None:
-                items_schema = resolved
-        return [collapse_data(item, items_schema, _depth + 1, detail) for item in data]
+        type_name = _extract_type_name(items_schema)
+        if type_name:
+            return ref_marker(type_name, len(value))
+        return [_collapse_relations(item, items_schema) for item in value]
 
-    return data
+    return value
 
 
 def _format_list_as_markdown(
@@ -560,16 +563,12 @@ def _format_list_as_markdown(
     item_schema = schema.get("items") if isinstance(schema, dict) else None
     if not data:
         lines.append(f"{indent}_(empty)_")
-    # Flatten lists of {"$ref": "Type"} - render as bulleted $ref:X items.
-    # This is the EXAMPLE/TYPE-SUMMARY shape emitted by
-    # schema_to_compact_example (tool_info's output_example, resolve_type's
-    # summary) as *payload content* — NOT the collapse marker, which is a
-    # plain string handled by the scalar branches below.  #759 changed the
-    # collapse semantics; this branch must stay.
-    elif data and all(isinstance(v, dict) and set(v.keys()) == {"$ref"} for v in data):
-        items = [f"$ref:{v['$ref']}" for v in data]
-        for item in items:
-            lines.append(f"{indent}- {item}")
+    # A list whose items are all markers is the list-of-lists relation case: a
+    # root list whose items are themselves collapsed list relations (each a
+    # count marker).  Render each as its compact label, not a nested section.
+    elif data and all(is_ref_marker(v) for v in data):
+        for v in data:
+            lines.append(f"{indent}- {ref_marker_label(v)}")
     elif data and isinstance(data[0], dict):
         for i, item in enumerate(data):
             title: str | None = None
@@ -707,6 +706,14 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
             field_opts = field_filter.get(key, {}) if field_filter else {}
             render_hint = field_opts.get("render", "expand")
 
+            # The canonical $ref marker is checked before render hints.  A
+            # compact_ref template (e.g. owner -> "{login}") has no matching
+            # key on a marker and would otherwise fall back to a Python repr;
+            # the marker always renders as its compact label.
+            if is_ref_marker(raw_val):
+                flat.append((label, ref_marker_label(raw_val)))
+                continue
+
             # Render hints override nesting — compact_ref and badge
             # always produce flat table rows regardless of value type.
             if render_hint == "compact_ref" and isinstance(raw_val, dict):
@@ -723,17 +730,11 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
             elif render_hint == "badge":
                 flat.append((label, "Yes" if raw_val else "No"))
             elif isinstance(raw_val, (dict, list)):
-                # Flatten {"$ref": "TypeName"} to "$ref:TypeName" for markdown
-                # tables.  This is the EXAMPLE/TYPE-SUMMARY shape emitted by
-                # schema_to_compact_example (tool_info's output_example,
-                # resolve_type's summary) as *payload content* — NOT the
-                # collapse marker, which is a plain string handled by the
-                # scalar branch below.  The pipeline pre-collapses nested
-                # ``$ref``-backed objects to ``"$ref:TypeName"`` strings when
-                # ``detail=concise`` (#759), so this formatter only ever
-                # renders collapsed data — it does not collapse.
-                if isinstance(raw_val, dict) and set(raw_val.keys()) == {"$ref"}:
-                    raw_val = f"$ref:{raw_val['$ref']}"
+                # The pipeline pre-collapses nested ``$ref``-backed objects to
+                # the canonical marker when ``detail=concise`` (#759), so this
+                # formatter only ever renders already-collapsed data — it does
+                # not collapse.  Markers were handled above; anything left here
+                # is real nested payload.
                 # Don't propagate field_filter into nested sub-objects -
                 # the parent's field names don't apply to child objects.
                 sub = format_as_markdown(

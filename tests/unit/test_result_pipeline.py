@@ -472,7 +472,7 @@ class TestDetailConcise:
             schema=schema,
         )
         parsed = parse_json_content(result)
-        assert parsed["result"]["owner"] == "$ref:User"
+        assert parsed["result"]["owner"] == {"$ref": "User"}
 
     def test_json_full_no_collapse(self) -> None:
         data = {"owner": {"id": 1, "login": "user1"}}
@@ -509,7 +509,7 @@ class TestDetailConcise:
             schema=tool_schema,
         )
         parsed = parse_json_content(result)
-        assert parsed["result"]["owner"] == "$ref:User"
+        assert parsed["result"]["owner"] == {"$ref": "User"}
 
     def test_markdown_concise_collapses_page(self) -> None:
         """detail=concise pre-collapses the page for markdown, like json."""
@@ -550,7 +550,7 @@ class TestDetailConcise:
         text = extract_text_content(result.content)
         assert "$ref:User" in text
         sc = get_structured(result)
-        assert sc["result"]["owner"] == "$ref:User"
+        assert sc["result"]["owner"] == {"$ref": "User"}
 
     def test_raw_concise_does_not_collapse(self) -> None:
         """format=raw is the unprocessed-data contract — no collapse even with concise."""
@@ -599,7 +599,7 @@ class TestDetailConcise:
         )
         parsed = parse_json_content(result)
         item = parsed["result"][0]
-        assert item == {"title": "Bug", "user": "$ref:User"}
+        assert item == {"title": "Bug", "user": {"$ref": "User"}}
 
     def test_markdown_concise_root_list_summarized_with_spec(self) -> None:
         """The markdown channel renders item summaries, not bare $ref bullets (#759)."""
@@ -631,7 +631,7 @@ class TestDetailConcise:
         assert "$ref:User" in text  # nested ref collapsed
         assert "$ref:Issue" not in text  # items are never label-replaced
         sc = get_structured(result)
-        assert sc["result"][0] == {"title": "Bug", "user": "$ref:User"}
+        assert sc["result"][0] == {"title": "Bug", "user": {"$ref": "User"}}
 
 
 class TestMarkdownPageRendering:
@@ -700,7 +700,7 @@ class TestMarkdownPageRendering:
             fmt="markdown",
             detail="concise",
         )
-        assert received["data"]["owner"] == "$ref:User"
+        assert received["data"]["owner"] == {"$ref": "User"}
 
 
 class TestErrorRecovery:

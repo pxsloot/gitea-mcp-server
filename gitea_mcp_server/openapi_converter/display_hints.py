@@ -17,8 +17,11 @@ Two extensions are stamped on every operation whose success response has a
 primary type:
 
 * ``x-mcp-view-omit`` — property names to drop from the collection view.
-* ``x-mcp-view-compact`` — property names to render as a compact identity
-  instead of a nested section.
+* ``x-mcp-view-compact`` — a mapping of property name to the identity field
+  to read from the nested object (``{"base": "ref"}``), or ``null`` for the
+  generic identity policy (``login`` → ``username`` → ``name`` →
+  ``full_name`` → ``id``).  A relation whose object has no identity field
+  must name one here, or it would render as a Python repr.
 
 The hints are keyed by **type name**, not by operation: every operation
 returning ``Issue`` gets the same view, so a tool and its resource sibling
@@ -72,6 +75,7 @@ _VIEW_OMIT: dict[str, tuple[str, ...]] = {
         "original_author_id",
         "pin_order",
         "ref",
+        "body",
     ),
     "PullRequest": (
         "url",
@@ -84,6 +88,7 @@ _VIEW_OMIT: dict[str, tuple[str, ...]] = {
         "requested_reviewers_teams",
         "pin_order",
         "flow",
+        "body",
     ),
     "Repository": (
         "url",
@@ -99,8 +104,6 @@ _VIEW_OMIT: dict[str, tuple[str, ...]] = {
         "repo_transfer",
         "avatar_url",
         "wiki_branch",
-        "wiki_clone_url",
-        "wiki_ssh_url",
         "mirror_interval",
         "mirror_updated",
         "original_url",
@@ -124,7 +127,6 @@ _VIEW_OMIT: dict[str, tuple[str, ...]] = {
         "has_pull_requests",
         "has_releases",
         "has_wiki",
-        "has_wiki_contents",
         "empty",
         "template",
         "internal",
@@ -164,11 +166,32 @@ _VIEW_OMIT: dict[str, tuple[str, ...]] = {
 }
 
 #: Properties to render as a compact identity, keyed by type name.
-_VIEW_COMPACT: dict[str, tuple[str, ...]] = {
-    "Issue": ("user", "assignee", "assignees", "milestone", "pull_request"),
-    "PullRequest": ("user", "assignee", "assignees", "milestone", "base", "head"),
-    "Repository": ("owner",),
-    "Release": ("author",),
+#:
+#: The value is the identity field to read from the nested object (e.g.
+#: ``base`` → ``ref``), or ``None`` to use the generic identity policy
+#: (``login`` → ``username`` → ``name`` → ``full_name`` → ``id``).  A
+#: relation whose object has no identity field must name one here, or it
+#: would render as a Python repr.
+_VIEW_COMPACT: dict[str, dict[str, str | None]] = {
+    "Issue": {
+        "user": None,
+        "assignee": None,
+        "assignees": None,
+        "milestone": "title",
+        "pull_request": "merged",
+        "labels": "name",
+    },
+    "PullRequest": {
+        "user": None,
+        "assignee": None,
+        "assignees": None,
+        "milestone": "title",
+        "base": "ref",
+        "head": "ref",
+        "labels": "name",
+    },
+    "Repository": {"owner": None},
+    "Release": {"author": None},
 }
 
 
@@ -339,7 +362,7 @@ def stamp_display_hints(openapi_spec: OpenAPISpec) -> None:
                 operation[VIEW_OMIT_KEY] = list(omitted)
             compacted = _VIEW_COMPACT.get(response_type)
             if compacted:
-                operation[VIEW_COMPACT_KEY] = list(compacted)
+                operation[VIEW_COMPACT_KEY] = dict(compacted)
 
 
 __all__ = [

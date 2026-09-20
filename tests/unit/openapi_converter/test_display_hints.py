@@ -25,7 +25,7 @@ from tests.helpers.spec_fixtures import make_openapi_spec
 if TYPE_CHECKING:
     import pytest
 
-    from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 
 def _list_op(op_id: str, ref: str) -> dict[str, Any]:
@@ -310,6 +310,49 @@ class TestValidateHints:
             props.update({p: {} for p in _VIEW_COMPACT.get(type_name, ())})
             schemas[type_name] = {"type": "object", "properties": props}
         return make_openapi_spec(components={"schemas": schemas})
+
+    def test_real_spec_curated_hints_are_clean(
+        self, swagger_spec_fixture: dict[str, Any], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The curated tables validate against the real Gitea spec.
+
+        This is the conformance guard the old per-whitelist drift lacked: a
+        spec upgrade that renames or drops a hinted field fails here, not
+        silently in agent output.
+        """
+        from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
+
+        spec = cast(
+            "OpenAPISpec",
+            convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", swagger_spec_fixture)),
+        )
+        with caplog.at_level(
+            logging.ERROR, logger="gitea_mcp_server.openapi_converter.display_hints"
+        ):
+            _validate_hints(spec)
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert errors == [], [r.getMessage() for r in errors]
+
+    def test_real_spec_stamps_issue_and_pull_hints(
+        self, swagger_spec_fixture: dict[str, Any]
+    ) -> None:
+        """The real spec stamps the curated hints on Issue/PullRequest ops."""
+        from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
+
+        spec = cast(
+            "OpenAPISpec",
+            convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", swagger_spec_fixture)),
+        )
+        stamped = 0
+        for path_item in spec["paths"].values():
+            for operation in path_item.values():
+                if not isinstance(operation, dict):
+                    continue
+                if operation.get("x-response-type") == "Issue":
+                    assert "body" in operation[VIEW_OMIT_KEY]
+                    assert operation[VIEW_COMPACT_KEY]["pull_request"] == "merged"
+                    stamped += 1
+        assert stamped > 0
 
     def test_clean_spec_no_errors(self, caplog: pytest.LogCaptureFixture) -> None:
         spec = self._full_spec()

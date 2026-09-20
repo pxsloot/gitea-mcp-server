@@ -283,40 +283,52 @@ def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None
 _IDENTITY_KEYS: tuple[str, ...] = ("login", "username", "name", "full_name", "id")
 
 
-def _identity(value: Any) -> str:
-    """Render a ``$ref``-backed object as its identity, or a compact repr.
+def _identity(value: Any, key: str | None = None) -> str:
+    """Render a ``$ref``-backed object as its identity.
 
-    Tries the conventional identity fields in order; falls back to the
-    canonical ``$ref`` marker label for a collapsed relation, then to a
-    truncated repr so an unexpected shape is still visible.
+    *key* is the converter-stamped identity field for this relation (e.g.
+    ``base`` → ``ref``); ``None`` uses the generic policy (``login`` →
+    ``username`` → ``name`` → ``full_name`` → ``id``).  A collapsed relation
+    marker renders as its label.  A dict with no usable identity field
+    renders as a compact ``key=value`` summary — never a Python repr, which
+    would leak quotes and braces into agent-facing markdown.
     """
     if is_ref_marker(value):
         return ref_marker_label(value)
     if isinstance(value, dict):
-        for key in _IDENTITY_KEYS:
-            candidate = value.get(key)
+        keys = (key,) if key else _IDENTITY_KEYS
+        for candidate_key in keys:
+            candidate = value.get(candidate_key)
             if candidate is not None and not isinstance(candidate, (dict, list)):
                 return str(candidate)
-        return str(value)[:120]
+        # No identity field: render a compact, quote-free summary of the
+        # scalar fields rather than ``str(dict)``.
+        scalars = [
+            f"{k}={v}"
+            for k, v in value.items()
+            if v is not None and not isinstance(v, (dict, list))
+        ]
+        return ", ".join(scalars) if scalars else "—"
     return str(value)
 
 
-def _identity_list(value: list[Any]) -> str:
+def _identity_list(value: list[Any], key: str | None = None) -> str:
     """Render a list of ``$ref``-backed objects as comma-joined identities."""
-    return ", ".join(_identity(item) for item in value)
+    return ", ".join(_identity(item, key) for item in value)
 
 
 def _view_hints(
     openapi_spec: OpenAPISpec | None, response_type: str | None
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], dict[str, str | None]]:
     """Read the converter-stamped view hints for a response type.
 
-    Returns ``(omit, compact)`` — the property names to drop and the
-    property names to compact.  Both are empty when no spec/type is
-    available, so the view degrades to the plain schema derivation.
+    Returns ``(omit, compact)`` — the property names to drop and a mapping of
+    property name to identity field (``None`` = generic policy).  Both are
+    empty when no spec/type is available, so the view degrades to the plain
+    schema derivation.
     """
     if openapi_spec is None or not response_type:
-        return set(), set()
+        return set(), {}
     paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
     for path_item in paths.values():
         if not isinstance(path_item, dict):
@@ -330,9 +342,9 @@ def _view_hints(
             compact = operation.get("x-mcp-view-compact")
             return (
                 set(omit) if isinstance(omit, list) else set(),
-                set(compact) if isinstance(compact, list) else set(),
+                dict(compact) if isinstance(compact, dict) else {},
             )
-    return set(), set()
+    return set(), {}
 
 
 def _type_schema(
@@ -354,6 +366,7 @@ def _generic_collection_view(
     *,
     response_type: str | None,
     openapi_spec: OpenAPISpec | None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     """Render API objects as a schema-anchored view.
 
@@ -364,6 +377,9 @@ def _generic_collection_view(
     read must never drop a field.  Falls back to the generic renderer when
     the type schema is unavailable, so an unknown type keeps today's
     behavior.
+
+    *extra* carries the call context (``type`` for the issue/pull title);
+    the formatter declares it so ``call_markdown_formatter`` forwards it.
     """
     schema = _type_schema(openapi_spec, response_type)
     if schema is None:
@@ -375,7 +391,7 @@ def _generic_collection_view(
 
     if isinstance(data, dict):
         # Detail view: the full payload, every field present in the data.
-        return format_as_markdown(data, title=_detail_title(data, response_type))
+        return format_as_markdown(data, title=_detail_title(data, response_type, extra))
 
     omit, compact = _view_hints(openapi_spec, response_type)
     field_filter: dict[str, dict] = {}
@@ -383,11 +399,14 @@ def _generic_collection_view(
         if prop_name in omit:
             continue
         if prop_name in compact:
-            field_filter[prop_name] = {"render": "compact_identity"}
+            field_filter[prop_name] = {
+                "render": "compact_identity",
+                "identity_key": compact[prop_name],
+            }
         else:
             field_filter[prop_name] = {}
 
-    title = _collection_title(response_type, len(data))
+    title = _collection_title(response_type, len(data), extra)
     return format_as_markdown(
         data,
         title=title,
@@ -396,9 +415,20 @@ def _generic_collection_view(
     )
 
 
-def _detail_title(data: Any, response_type: str | None) -> str:
-    """Heading for a single-object read (``Repository``, ``Issue #1``)."""
+def _detail_title(data: Any, response_type: str | None, extra: dict[str, Any] | None = None) -> str:
+    """Heading for a single-object read (``Repository``, ``Issue #1``).
+
+    An Issue/PullRequest detail read gets a ``Issue #N: title`` heading; the
+    ``type`` filter (``pulls``) or a set ``pull_request`` field selects the
+    PR label.
+    """
     if isinstance(data, dict):
+        if response_type == "Issue":
+            is_pr = bool(data.get("pull_request")) or (extra or {}).get("type") == "pulls"
+            label = "Pull Request" if is_pr else "Issue"
+            number = data.get("number", "?")
+            title = data.get("title")
+            return f"{label} #{number}: {title}" if title else f"{label} #{number}"
         for key in ("full_name", "title", "name", "username", "login", "tag_name"):
             value = data.get(key)
             if value is not None:
@@ -413,9 +443,19 @@ def _fallback_title(data: Any, response_type: str | None) -> str:
     return _detail_title(data, response_type)
 
 
-def _collection_title(response_type: str | None, count: int) -> str:
-    """Pluralised heading for a collection view (``Issues - 3 items``)."""
-    label = _pluralize(response_type) if response_type else "Results"
+def _collection_title(
+    response_type: str | None, count: int, extra: dict[str, Any] | None = None
+) -> str:
+    """Pluralised heading for a collection view (``Issues - 3 items``).
+
+    The issue-list ``type`` filter (``issues`` / ``pulls``) overrides the
+    type-derived label, so ``?type=pulls`` titles ``Pull Requests``.
+    """
+    type_filter = (extra or {}).get("type")
+    if response_type == "Issue" and type_filter == "pulls":
+        label = "Pull Requests"
+    else:
+        label = _pluralize(response_type) if response_type else "Results"
     return f"{label} - {count} items" if count else label
 
 
@@ -429,8 +469,12 @@ def _pluralize(type_name: str) -> str:
 
 
 def _item_title_key(properties: dict[str, Any]) -> str | None:
-    """Pick the per-item title field from the schema's properties."""
-    for key in ("title", "name", "full_name", "username", "login", "tag_name"):
+    """Pick the per-item title field from the schema's properties.
+
+    ``full_name`` precedes ``name`` so a repository list titles each item
+    ``owner/repo`` rather than the bare name.
+    """
+    for key in ("title", "full_name", "name", "username", "login", "tag_name"):
         if key in properties:
             return key
     return None
@@ -904,9 +948,9 @@ def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - justified: scalar/nest
             # Render hints override nesting — compact_ref, compact_identity,
             # and badge always produce flat table rows regardless of value type.
             if render_hint == "compact_identity" and isinstance(raw_val, dict):
-                flat.append((label, _identity(raw_val)))
+                flat.append((label, _identity(raw_val, field_opts.get("identity_key"))))
             elif render_hint == "compact_identity" and isinstance(raw_val, list):
-                flat.append((label, _identity_list(raw_val)))
+                flat.append((label, _identity_list(raw_val, field_opts.get("identity_key"))))
             elif render_hint == "compact_ref" and isinstance(raw_val, dict):
                 template = field_opts.get("template", "{id}")
                 try:
